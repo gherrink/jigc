@@ -36,3 +36,18 @@ Running log of what we decided and **why**, dated. Short and punchy — this rot
 - **Agent-initiated `create` is workflow-gated** — the catalog of creatable types in a context is structure (workflow/cascade-owned); choosing among them is reasoning; the gate is a cascade setting.
 - **`finalize` ≡ `validate` + commit** — one validation engine, two entry points, so report and gate can't diverge; findings are severity-tagged and finalize blocks only on the *blocking* class (severity per check is a cascade setting); `--dry-run` dropped — `validate` is the preview, `diff` shows the changeset.
 - **Out-of-band reconciliation: binary, human-decided, blocks at `finalize`** — detect via `file ↔ CLI-state` hash; the agent blocks-and-routes on drift; import vs discard is the human's call; import needs round-trippable serialization (MVP detects + discards now, import lands with the format); three-way merge deferred.
+
+### On-disk storage
+
+- **Single-file canonical Markdown** — the `.md` *is* the source of truth, not a view over a model file; our locked principles (plain files are source, humans edit through git, OOB detected/reconciled) already imply it — a hidden model file would make the edited `.md` second-class.
+- **Schema-driven parse** — the file is read against its type's schema, so sections/slots/fields are schema-located and need no markers; only instance-minted identity gets marked.
+- **`{#id}` heading anchors are the only in-body markers** — they mark repeatable items (the one instance-minted body identity); the on-disk token *is* the address fragment, and the frozen slug survives a title rename.
+- **One field syntax, two locations** — fields are always `key: value`; the doc's header block → front-matter, a section/item block → a trailing `key: value` group; slots are the prose.
+- **id-source = the heading** — a doc's title is its H1 (frozen id = filename), an item's title is its `###` heading (frozen id = `{#id}`); same pattern at both levels.
+- **One prose slot per section preferred** — multi-slot renders under schema-fixed sub-labels (matched like headings, no new marker); nudges schemas toward one-purpose sections.
+- **One `.md` per instance; path = identity** — filed at the type's location, filename = frozen id; items live inside the parent file; physical order = order (reorder = move a block, no renumber).
+- **Committed Markdown is the only source of truth** — everything else is a rebuildable cache or transient working area; delete it all, rebuild from the `.md`, lose nothing — the system degrades to plain Markdown.
+- **All CLI state under gitignored `.tool/`** — edge index + file↔state hashes are derived caches, gitignored not committed (committing churns diffs and reintroduces dual-source-of-truth); they invalidate/rebuild when the checkout moves (stamped with HEAD/fingerprint).
+- **Staging = gitignored scratch dir of working copies** — `.tool/tasks/<task-id>/` in the same Markdown format; realizes the concurrency primitive directly (isolated subdirs + CLI by-task-id join), not git worktrees (git's text-merge ≠ our deterministic join); a task is pinned to its base, base-mismatch is detected-and-routed (rebase deferred).
+- **CLI orchestrates, git executes VCS** — the CLI never reimplements branch/worktree/merge; a workflow may trigger git deterministically; a fresh worktree rebuilds caches and seeds only local config, copies nothing else.
+- **git merges code; the CLI merges managed docs — never the reverse** — blind text-merging a `.md` would corrupt `{#id}` anchors/structure and reintroduce non-determinism; overlapping doc-writes go through the CLI join, disjoint coarse work may use worktrees + git merge.
