@@ -21,8 +21,9 @@ This is a pre-implementation **design collaboration**. Maurice develops the idea
 5. **Review, then commit** — Maurice reviews the written file; commit (conventional message, one logical change) only after he's satisfied.
 
 **Conventions:**
-- **One file, one purpose.** Detail lives in part-docs under `design/`, cross-referenced — not dumped into `VISION.md`. The document model, applied to this repo.
+- **One file, one purpose — route by home.** Thesis/framing → `VISION.md`; working truth & how-we-work → this file; the *why* of a decision → `DECISIONS.md`; architecture detail → a part-doc in `design/`. **Cross-reference, never restate** — if two docs state the same fact, one is wrong. Shared content earns its own part-doc (the document model, applied to us).
 - **No number prefixes** on part-docs (descriptive names only) — principle #2; we don't grow our own `01-`/`02.5-` disease.
+- **Flag the unsettled.** Mark illustrative notation as illustrative; list open questions explicitly rather than implying resolution.
 - **Decisions log.** Record every decision in `DECISIONS.md` (dated, ≤1 line of why) as it's made — the *when & why*, not the architecture (`VISION.md` + this file hold current truth).
 - **Trivial lane.** Small clarifications skip the loop — don't ceremony-tax a typo.
 
