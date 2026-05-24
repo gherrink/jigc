@@ -2,7 +2,7 @@
 
 The second dialect over the skeleton: how a workflow is **defined** and **composed** into the instruction set the agent receives. This is the *compose* half of the context compiler — the read path's counterpart to the document dialect's write path.
 
-Builds on [structural-grammar.md](structural-grammar.md) (the skeleton: steps, addressing, `include`, override), [document-type-schema.md](document-type-schema.md) (data-values navigate the document graph), [write-commands.md](write-commands.md) (command-refs route to write ops; the task/staging model), and [storage.md](storage.md) (isolated working areas, by-task-id merge). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**; the emitted-format micro-syntax is an open question.
+Builds on [structural-grammar.md](structural-grammar.md) (the skeleton: steps, addressing, `include`, override), [document-type-schema.md](document-type-schema.md) (data-values navigate the document graph), [write-commands.md](write-commands.md) (command-refs route to write ops; the task/staging model), [storage.md](storage.md) (isolated working areas, by-task-id merge, and the md + front-matter file pattern definitions reuse), and [overrides.md](overrides.md) (definitions resolve through the cascade). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**; the emitted-format micro-syntax is an open question.
 
 ## Shared grammar, divergent runtime
 
@@ -22,6 +22,8 @@ So: **doc = fill & persist instances; workflow = resolve & emit a view.** There 
 ## The composed output is a view
 
 A composed workflow is **ephemeral**: a derived view, re-composed on every `tool workflow <x> --task <id>` call from `definition + cascade + live state`. It is never persisted and never a source of truth (consistent with storage's "composed = derived, rebuildable"). `--explain` re-computes the resolution tree on demand rather than reading a stored one.
+
+A **flow diagram** (mermaid) is one such derived view: the CLI *generates* it from the composition (the ordered includes + `fan-out` markers) and can output it wherever useful — `--explain`, a `--diagram` flag, or leading the composed output. It is **descriptive, never prescriptive** — it reflects the includes, never defines flow — so it can't drift from the source or become a back-door for the banned DAGs/conditionals. Its value is mostly in visualizing `fan-out`; a straight sequence already reads as the ordered includes.
 
 ## Composition is substitution, not control flow
 
@@ -52,6 +54,40 @@ A step's body is a block of two leaf kinds:
 Resolution order: includes expand first (pulling in nested placeholders), then data-values and command-refs resolve. An empty resolution yields **empty text** — never conditional inclusion of surrounding prose (that would be control flow).
 
 **Data-values are full graph navigation, no logic.** A data-value walks the relation graph from a live-state root and slices by fragment — multi-hop is just chained deterministic relations (`{{task.spec.derived-from#goal}}`). There is **no filtering or selection** — navigation, not a query language. A path that fails to resolve is caught at validate-time by `workflow ↔ references`, not at runtime.
+
+## On-disk definition format
+
+A step and a workflow are each **one file**, reusing the same Markdown + front-matter pattern as document instances ([storage.md](storage.md)) — interpreted for definitions:
+
+- **A step** = a file: the YAML **front-matter** is the step's config (e.g. a `fan-out` marker); the **body is the prompt** — instruction prose with `{{placeholders}}`. The **id is the filename** (a frozen slug, like docs and items), so a plain step needs no front-matter at all — it's just a prompt body.
+- **A workflow** = a file: front-matter for workflow metadata; the **body is the ordered `{{include}}`s** — which *is* the composition and the ordering (principle #2: the workflow file is the ordered list; steps are the ID'd, reusable units it references).
+
+```markdown
+# steps/locate.md   — a plain step: id from filename, body is the prompt
+Read the spec for this task:
+{{ task.spec#criteria }}
+```
+
+```markdown
+# steps/implement-tasks.md   — a fan-out step: the marker lives in front-matter
+---
+fan-out:
+  over: "{{ milestone.tasks }}"
+  run:  workflow:single-task
+---
+Spawn a sub-agent per task and implement it.
+```
+
+```markdown
+# workflows/single-task.md   — body is the ordered includes
+{{ include: step:locate }}
+{{ include: step:implement }}
+{{ include: step:finalize }}
+```
+
+Because a step is a file with a stable id, **steps resolve through the cascade** ([overrides.md](overrides.md)): a step-id resolves to the highest-precedence layer's file, so overriding a pack step is just "the project ships its own `validate.md`, and project wins" — no special override machinery. Step files are reusable across workflows; that's what `include` references.
+
+(The doc-type *schema* definition format — sections/slots/fields/relations — is a separate open question; it is config-structured with little prose body, so it may not fit this pattern.)
 
 ## `fan-out` / `join`
 
@@ -108,3 +144,4 @@ The data-value resolved to a doc-slice, the command-ref resolved to a literal co
 - **Emitted-format micro-syntax** — the concrete visual grammar that marks "run this exact command" vs "author this doc slot" vs "reason about X," and how it relates to the slot/placeholder delimiters ([VISION.md](../VISION.md) → Open questions).
 - **Workflow progress / resumption** — whether "where am I" is purely re-derived from accumulated task effects (idempotent re-compose) or lightly tracked. Leaning re-derived, to match the ephemeral + blackboard model; not yet decided.
 - **`milestone-execution` orchestration** — how the milestone workflow partitions and recombines worktree-isolated tasks (cross-refs [storage.md](storage.md) → CLI and git).
+- **Doc-type schema definition format** — how a doc-type *definition* (sections/slots/fields/relations) serializes on disk; kept separate from this step/workflow definition format ([overrides.md](overrides.md) → Open questions).
