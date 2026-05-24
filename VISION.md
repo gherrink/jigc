@@ -197,9 +197,9 @@ Most of the questions raised here are now settled in `design/` part-docs (with t
 - State location & concurrency · sub-agent state-merge · on-disk diff-review format → [storage.md](design/storage.md)
 - Composition · sub-agent spawn/ack · placeholder vs slot delimiters → [workflow-dialect.md](design/workflow-dialect.md) (slots also in [document-type-schema.md](design/document-type-schema.md))
 - Override deltas · the cascade · defaults-versioning discipline → [overrides.md](design/overrides.md)
+- Doc-type schema definition format → [document-type-schema.md](design/document-type-schema.md)
 
 **Still open:**
-- **Doc-type schema definition format** — how a doc-type *definition* (sections/slots/fields/relations) serializes on disk; the step/workflow definition format is settled, this one was deliberately kept separate.
 - **Assistant adapter specifics** — the exact permanent-context placement and skill/command-file layout per assistant; the bootstrap *sentence* is settled ([bootstrap.md](design/bootstrap.md)), its *placement* is the adapter.
 - **Multi-pack composition** — can one project use more than one domain pack at once (e.g. dev + docs-writing), and how do packs compose in the cascade? Deferred.
 - **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.

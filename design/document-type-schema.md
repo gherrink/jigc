@@ -2,7 +2,7 @@
 
 The **document dialect** of the [structural grammar](structural-grammar.md). The skeleton — units, blocks, leaves, addressing, minting, composition, override, and the validation framework — is dialect-neutral and specified there; **read it first.** This document defines what is specific to documents: the leaf kinds (`slot`, `field`), the determinism boundary as it falls inside a document, the `relation` construct for cross-references, and the document-specific validation probes.
 
-This specifies the **schema**, not the pack content. The actual ADR / SPEC / PRD / commit definitions are development-pack content authored *in* this vocabulary and live elsewhere. Notation is **illustrative**; for the *why*, see [DECISIONS.md](../DECISIONS.md); for the framing, [VISION.md](../VISION.md) → Document model.
+This specifies the **schema** — the vocabulary *and* its on-disk form. The actual ADR / SPEC / PRD / commit definitions are development-pack content authored *in* this vocabulary and shipped with the pack; their file format is [On-disk definition format](#on-disk-definition-format) below. Notation is **illustrative**; for the *why*, see [DECISIONS.md](../DECISIONS.md); for the framing, [VISION.md](../VISION.md) → Document model.
 
 ## The trichotomy: section / slot / field
 
@@ -95,6 +95,57 @@ The trichotomy and addressing are the binding surface for systems designed in th
 - **Write-command vocabulary** — `set-slot`, `set-field`, `add-item`, and the structural ops each target an address; the trichotomy *generates* the verb set.
 - **Override ladder** — its by-ID structural ops operate on sections, the document dialect's units (see [structural-grammar.md](structural-grammar.md#override)).
 - **Validation** — one engine, addressable targets; the document dialect contributes the pack-provided `doc ↔ code` probe and relation-integrity checks (see [structural-grammar.md](structural-grammar.md#validation)).
+
+## On-disk definition format
+
+A doc-type definition is **config, not a document** — declaration-heavy with only light prose (hints) — so it lives in the **config family** ([overrides.md](overrides.md)) as **structured YAML**, not the md + front-matter form used for instances ([storage.md](storage.md)). (The parallel step/workflow definition format is in [workflow-dialect.md](workflow-dialect.md).)
+
+Three rules keep it legible to humans *and* LLMs:
+
+- **Document-order** — sections listed top-to-bottom as they appear in the doc, leaves under them, so the source reads like the doc's shape.
+- **Self-documenting** — each slot/section carries its one-line hint inline.
+- **One file per type** — the whole schema is one bounded file (e.g. `adr.yaml`) that does *not* grow with usage; instances are separate `.md` files. A genuinely-shared section can be pulled in with `include`, but inline is the default — sections are mostly self-contained, unlike workflow steps, which are externalized because they're reused.
+
+```yaml
+# doctypes/adr.yaml
+type: adr
+location: decisions/
+id-from: title                       # filename = slug of the title
+
+sections:
+  - id: status
+    header: true                     # → front-matter on the instance
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date,   type: date, set: on-create }
+    relations:
+      - { name: supersedes, to: adr, card: "0..1" }
+  - id: context
+    slot: { hint: "Why a decision was needed — the forces at play." }
+  - id: decision
+    slot: { hint: "What we decided, in a sentence or two." }
+  - id: consequences
+    slot: { hint: "Tradeoffs and follow-on effects." }
+```
+
+A repeatable section keeps its item-template inline:
+
+```yaml
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: "The criterion, testably phrased." } }
+        - { id: maps-to-test, type: code-anchor }
+```
+
+Two derived conveniences, no extra source:
+
+- **`--template` view** — the engine renders the *blank instance* a schema produces (headings + marked slots/fields + relation notes) on demand, like the generated mermaid flow, so "what does this produce" is legible without the source being a template.
+- **Validation needs no separate declaration** — it falls out of the typed leaves + relations + the cascade: a `code-anchor` field means `doc-code` applies, a relation's `card` is enforced, severities are cascade knobs ([validation.md](validation.md)).
+
+**Overrides** target sections/leaves by ID within the file (`adr#status`); a schema-structural delta's fragment is a small YAML section declaration — the config-family counterpart to a workflow's step-file fragment ([overrides.md](overrides.md)). Notation above is illustrative — keys (`id-from`, `card`, `set`, `of`, `header`) are placeholders pending implementation.
 
 ## Open questions
 
