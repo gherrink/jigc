@@ -187,19 +187,20 @@ The seam where sub-agents meet integration:
 - **Not an LLM wrapper.** The CLI core makes no LLM calls; composition is deterministic. (The *coding agent* may use the CLI to propose merges — that's the agent acting, not the CLI.)
 - **Not a replacement for the agent's reasoning.** It constrains placement, not thinking.
 
-## Open questions (deferred to part-level design)
+## Open questions
 
-- **The bootstrap sentence** — the single permanent-context line that wires the system into the agent ("never read/write docs directly; discover with `tool`, get instructions with `tool workflow <x>`, write back only through it"). This is the root of everything; exact wording TBD when the system is ready.
-- **Write-command vocabulary** — the exact set, kept coarse enough to be ergonomic yet structured enough to guarantee placement, sharing the override system's unit model. Ergonomics here is make-or-break: if writing through the CLI is painful, the agent routes around it.
-- **Content handoff** — how prose reaches the CLI (stdin / `--from-file` / editor buffer).
-- **Proposal staging formality** — conversational approval vs a first-class `propose / review / apply` staging area.
-- **State location & concurrency model** — almost certainly versioned files in-repo (visible in diffs); exact model TBD but must support **isolated per-task working areas + deterministic merge** (locked requirement from sub-agent support).
-- **Placeholder vs slot syntax** — distinct delimiters so neither human nor model confuses who fills which.
-- **Defaults as a public API** — versioning discipline and a public/internal distinction for stable IDs, since every stable ID and slot is a compatibility promise.
-- **Assistant adapter specifics** — the exact `CLAUDE.md` pointer line and skill/command-file layout, per assistant.
-- **Sub-agent spawn payload format** — concrete shape of dispatch (`task_id` + entrypoint) and ack (`status + task_id`).
-- **Sub-agent state-merge implementation** — concrete isolated-working-area + deterministic-join mechanics.
-- **Multi-pack composition** — can one project use more than one domain pack at once (e.g., dev + docs-writing), and how do packs compose in the cascade? Deferred.
-- **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; ingesting messy legacy docs is research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.
-- **On-disk format for diff-review** — the concrete file layout that keeps normalized, cross-referenced, ID-keyed documents legible in a GitHub diff.
+Most of the questions raised here are now settled in `design/` part-docs (with the *why* in [DECISIONS.md](DECISIONS.md)); what remains genuinely open is short.
+
+**Resolved — see `design/`:**
+- The bootstrap sentence → [bootstrap.md](design/bootstrap.md)
+- Write-command vocabulary · content handoff · proposal staging → [write-commands.md](design/write-commands.md)
+- State location & concurrency · sub-agent state-merge · on-disk diff-review format → [storage.md](design/storage.md)
+- Composition · sub-agent spawn/ack · placeholder vs slot delimiters → [workflow-dialect.md](design/workflow-dialect.md) (slots also in [document-type-schema.md](design/document-type-schema.md))
+- Override deltas · the cascade · defaults-versioning discipline → [overrides.md](design/overrides.md)
+
+**Still open:**
+- **Doc-type schema definition format** — how a doc-type *definition* (sections/slots/fields/relations) serializes on disk; the step/workflow definition format is settled, this one was deliberately kept separate.
+- **Assistant adapter specifics** — the exact permanent-context placement and skill/command-file layout per assistant; the bootstrap *sentence* is settled ([bootstrap.md](design/bootstrap.md)), its *placement* is the adapter.
+- **Multi-pack composition** — can one project use more than one domain pack at once (e.g. dev + docs-writing), and how do packs compose in the cascade? Deferred.
+- **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.
 - **The product name.**
