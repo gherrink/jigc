@@ -96,7 +96,5 @@ Integrity holds at the **`finalize` boundary**, not on every write (else bootstr
 
 ## Open questions
 
-- **On-disk serialization** — the concrete file format that keeps ID-keyed, cross-referenced artifacts legible in a diff. See [VISION.md](../VISION.md) → Open questions.
-- **Workflow dialect** — full specification of steps, the `placeholder`/`instruction` leaves, and `fan-out`/`join`, building on this skeleton.
 - **Multi-level repetition** — deferred unless a real type forces a second repeatable level.
 - **Minting mechanics** — exact slug normalization (case/charset) and collision-suffix form.

@@ -98,6 +98,6 @@ tool doc set-slot  adr:rate-limit-at-the-gateway#context --from-file -
 
 ## Open questions
 
-- **Form-marker syntax** — how the deferred fillable form delimits slots for unambiguous extraction; ties to the slot/placeholder delimiter question ([VISION.md](../VISION.md) → Open questions).
-- **`import` round-trip** — blocked on the serialization format (above); shares three-way-merge machinery with override conflicts.
+- **Form-marker syntax** — how the deferred fillable form delimits slots for unambiguous extraction (the slot/placeholder delimiters themselves are settled — `<<…>>` vs `{{…}}`).
+- **`import` three-way merge** — the serialization round-trips (single-file Markdown, [storage.md](storage.md)), so `import` is unblocked; the remaining open part is the both-sides-changed three-way merge, shared with override conflict resolution ([overrides.md](overrides.md)).
 - **Blocked/error payload** — the concrete shape a sub-agent writes to task state on a block ("import-vs-discard pending", "validation failed") and how it surfaces through the propose-to-human path.

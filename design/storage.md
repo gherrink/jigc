@@ -106,6 +106,6 @@ A fresh worktree **rebuilds** the derived caches (per the stamp rule) and copies
 
 ## Open questions
 
-- **Milestone worktree orchestration** — how `milestone-execution` partitions and recombines worktree-isolated tasks is workflow-dialect territory ([structural-grammar.md](structural-grammar.md#open-questions)); storage only needs to *accommodate* it, which it does.
+- **Milestone worktree orchestration** — how `milestone-execution` partitions and recombines worktree-isolated tasks is workflow-dialect territory ([workflow-dialect.md](workflow-dialect.md#open-questions)); storage only needs to *accommodate* it, which it does.
 - **Multi-slot sub-label syntax** — the exact rendering of the schema-fixed sub-labels that delimit multiple slots within one section.
 - **Config layout** — the concrete committed config-dir name and structure (tracks the undecided product name); the cascade's layers and homes are specified in [overrides.md](overrides.md).

@@ -151,4 +151,4 @@ Two derived conveniences, no extra source:
 
 - **Inline references in prose** — "mentions" embedded in a `slot` (e.g. `#issue-42` in commit-body prose) are a lighter validation concern than `field`-refs; not yet designed.
 
-Skeleton-level open questions (serialization, the workflow dialect, multi-level repetition, minting mechanics) are tracked in [structural-grammar.md](structural-grammar.md#open-questions).
+Skeleton-level open questions (multi-level repetition, minting mechanics) are tracked in [structural-grammar.md](structural-grammar.md#open-questions).

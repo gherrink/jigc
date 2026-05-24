@@ -141,7 +141,6 @@ The data-value resolved to a doc-slice, the command-ref resolved to a literal co
 
 ## Open questions
 
-- **Emitted-format micro-syntax** — the concrete visual grammar that marks "run this exact command" vs "author this doc slot" vs "reason about X," and how it relates to the slot/placeholder delimiters ([VISION.md](../VISION.md) → Open questions).
+- **Emitted-format micro-syntax** — the concrete visual grammar that marks "run this exact command" vs "author this doc slot" vs "reason about X" in the composed output (the underlying slot/placeholder delimiters are settled).
 - **Workflow progress / resumption** — whether "where am I" is purely re-derived from accumulated task effects (idempotent re-compose) or lightly tracked. Leaning re-derived, to match the ephemeral + blackboard model; not yet decided.
 - **`milestone-execution` orchestration** — how the milestone workflow partitions and recombines worktree-isolated tasks (cross-refs [storage.md](storage.md) → CLI and git).
-- **Doc-type schema definition format** — how a doc-type *definition* (sections/slots/fields/relations) serializes on disk; kept separate from this step/workflow definition format ([overrides.md](overrides.md) → Open questions).

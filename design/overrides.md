@@ -89,6 +89,5 @@ The probe emits validation findings with routes: `orphaned` → a `run-command` 
 ## Open questions
 
 - **Per-developer `local` layer** — deferred; if added it sits on top (`local > project`), restricted to non-structural / tighten-only (a dev may self-impose stricter checks, never weaken a team standard).
-- **Doc-type schema definition format** — how a doc-type *definition* (sections/slots/fields/relations) serializes on disk; kept separate from the step/workflow definition format ([workflow-dialect.md](workflow-dialect.md)).
 - **Team-layer distribution** — how a team *shares* its `team` config (each member installs the same external layer); a mechanics detail.
 - **Committed config dir layout** — the concrete name/structure of the project config location (tracks the undecided product name).
