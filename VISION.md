@@ -198,9 +198,9 @@ Most of the questions raised here are now settled in `design/` part-docs (with t
 - Composition · sub-agent spawn/ack · placeholder vs slot delimiters → [workflow-dialect.md](design/workflow-dialect.md) (slots also in [document-type-schema.md](design/document-type-schema.md))
 - Override deltas · the cascade · defaults-versioning discipline → [overrides.md](design/overrides.md)
 - Doc-type schema definition format → [document-type-schema.md](design/document-type-schema.md)
+- Assistant adapter (neutral core + per-assistant profile) → [assistant-adapter.md](design/assistant-adapter.md)
 
 **Still open:**
-- **Assistant adapter specifics** — the exact permanent-context placement and skill/command-file layout per assistant; the bootstrap *sentence* is settled ([bootstrap.md](design/bootstrap.md)), its *placement* is the adapter.
 - **Multi-pack composition** — can one project use more than one domain pack at once (e.g. dev + docs-writing), and how do packs compose in the cascade? Deferred.
 - **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.
 - **The product name.**

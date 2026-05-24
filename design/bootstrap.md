@@ -30,9 +30,9 @@ A thin *"run `tool start` for instructions"* loses to the agent's instinct to gr
 
 ## Placement is the adapter
 
-The sentence is **assistant-neutral**. *Where* it's injected as permanent context — root `CLAUDE.md` for Claude Code, the equivalent for Cursor/Codex — is the thin, assistant-specific **adapter**. That pointer (plus a small set of skill/command files that each just call the CLI) is the entire integration surface, and it is *routing, not content*.
+The sentence is **assistant-neutral**. *How and where* it reaches the agent — a static line in the always-loaded file (`CLAUDE.md` / `AGENT.md` / Cursor rules) and/or a **hook that calls the CLI** to inject it with a thin live nudge — is the thin, assistant-specific **adapter**, generated from a per-assistant profile. The adapter (injection + a `tool` allowlist + the spawn binding) is the entire integration surface, and it is *routing, not content*. See [assistant-adapter.md](assistant-adapter.md).
 
 ## Open questions
 
 - **Command / product name** — the `tool` / `tool start` tokens resolve once the product is named.
-- **Per-assistant adapter** — the exact placement and the skill/command-file layout per assistant (its own topic; [VISION.md](../VISION.md) → Open questions).
+- **Per-assistant adapter** — the model and the Claude Code profile are designed in [assistant-adapter.md](assistant-adapter.md); profiles for other assistants follow the same model.
