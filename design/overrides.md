@@ -35,27 +35,26 @@ These *are* the cascade's delta vocabulary — there is no separate "config syst
 
 A layer's deltas live in a **config-format manifest**; content lives in **native-format files**, never inline:
 
-- `scalar-set` → inline in the manifest (`key = value`).
+- `scalar-set` → inline in the manifest (`key: value`).
 - `structural-op` / `slot-fill` / `tracked-fork` → an operation entry referencing a native file (a step file in workflow-definition form, prose as Markdown). No prose-in-config.
 - Every **content-bearing** delta records its **base-version** and the target's **base-hash** (generalizing `tracked-fork`), which makes reconciliation stateless (below).
 
-```toml
+```yaml
 # project config — deltas against pack-default v1
-[scalar]
-"validation.doc-code.severity" = "advisory"
+scalar:
+  validation.doc-code.severity: advisory
 
-[[delta]]
-kind  = "insert-step"
-target = "workflow:single-task"
-after  = "locate"
-content = "steps/team-lint"          # a native step file in this layer
+deltas:
+  - kind: insert-step
+    target: workflow:single-task
+    after: locate
+    content: steps/team-lint          # a native step file in this layer
 
-[[delta]]
-kind = "tracked-fork"
-target = "workflow:single-task#validate"
-base-version = "v1"
-base-hash = "a3f9…"
-content = "steps/validate-forked"
+  - kind: tracked-fork
+    target: workflow:single-task#validate
+    base-version: v1
+    base-hash: "a3f9…"
+    content: steps/validate-forked
 ```
 
 Hand-editing is allowed **only in delta form** — edit the manifest or a native file, never fork a whole base definition into an untracked copy.
