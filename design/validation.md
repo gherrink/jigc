@@ -2,7 +2,7 @@
 
 The moat: **one deterministic engine runs read-only probes over a scope and reports severity-classified findings.** It is the *validate* stage of the loop and the gate behind `finalize`.
 
-Builds on [VISION.md](../VISION.md) principle #6, [structural-grammar.md](structural-grammar.md) (the edge index, the validation framing, override), [document-type-schema.md](document-type-schema.md) (the relations probes walk), [write-commands.md](write-commands.md) (`finalize ≡ validate + commit`, severity-as-cascade, the `reconcile` route), [storage.md](storage.md) (edge index, effective state), and [workflow-dialect.md](workflow-dialect.md) (findings feed composition; the `workflow-refs` probe). For the *why*, see [DECISIONS.md](../DECISIONS.md). Scope: the framework + the two engine-native MVP probes; `doc-code` and `override-default` are pinned at contract level only. Notation is **illustrative**.
+Builds on [VISION.md](../VISION.md) principle #6, [structural-grammar.md](structural-grammar.md) (the edge index, the validation framing, override), [document-type-schema.md](document-type-schema.md) (the relations probes walk), [write-commands.md](write-commands.md) (`finalize ≡ validate + commit`, severity-as-cascade, the `reconcile` route), [storage.md](storage.md) (edge index, effective state), and [workflow-dialect.md](workflow-dialect.md) (findings feed composition; the `workflow-refs` probe). For the *why*, see [DECISIONS.md](../DECISIONS.md). Scope: the framework + the two engine-native MVP probes; `doc-code` is pinned at contract level only (`override-default` is fully specified in [overrides.md](overrides.md)). Notation is **illustrative**.
 
 ## What validation is — and isn't
 
@@ -64,7 +64,7 @@ One uniform interface (`check(target, ctx) → [finding]`), two implementations:
 - **Engine-native** — built in, in-process. The MVP ships:
   - **`workflow-refs`** (target: workflow) — every `placeholder` / `include` / `command-ref` resolves, and no include cycles.
   - **`file-state`** (target: file) — the on-disk content hash matches the recorded state; drift → a `reconcile` finding.
-  - **`override-default`** (target: override) — pinned at contract level; per-delta `clean / conflict / orphaned`. Full logic awaits the override-ladder design.
+  - **`override-default`** (target: override) — per-delta `clean / conflict / orphaned` reconciliation on a guarded upgrade; full logic in [overrides.md](overrides.md).
 - **Pack probes** — *deferred*, the "not a public API yet" line. An **invoked process** with a JSON-in / JSON-out contract: language-neutral, **read-only and deterministic by contract** (`doc-code` must parse real code, so it can't be declarative). The development pack's **`doc-code`** (does this symbol exist? does a test cover this criterion? did referenced code change after the doc's timestamp?) lands here, after the doc-creation flows exist.
 
 ## How it gates `finalize`
@@ -74,6 +74,5 @@ One uniform interface (`check(target, ctx) → [finding]`), two implementations:
 ## Open questions
 
 - **Pack-probe sandboxing** — pack probes are arbitrary repo-reading code; enforcing read-only/determinism is a real concern, deferred with the pack-probe API (moot for the MVP, where no external probe runs).
-- **`override-default` logic** — its full per-delta reconciliation awaits the override-ladder part-doc.
 - **`doc-code` logic** — the development pack's symbol/test/timestamp checks.
 - **Findings: recomputed vs cached** — leaning recompute-on-demand (derived state, like composed workflows), but not yet decided.

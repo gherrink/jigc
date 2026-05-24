@@ -72,11 +72,14 @@ Committed source of truth and derived/transient state live apart:
 
 ```
 specs/  decisions/  …       # committed .md docs — the only source of truth
-.tool/                      # gitignored — all derived/transient state
+<config-dir>/               # committed — the project cascade layer (deltas + knobs)
+.tool/                      # gitignored — all derived/transient state (no config)
   tasks/<task-id>/          #   per-task working area (staging)
   index/                    #   edge index (rebuildable cache)
   state/                    #   file↔CLI-state hashes (rebuildable)
 ```
+
+The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo (the `<config-dir>/` above — deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/<tool>/`, shared across a machine's projects); **pack-default** ships with the installed pack. So `.tool/` holds *no config* — only derived/transient state.
 
 ### The per-task working area (staging)
 
@@ -99,10 +102,10 @@ The edge index and the file↔state hashes are **rebuildable from the committed 
 - **Overlapping writes to the same managed doc → always the CLI's deterministic by-task-id join** (one checkout). This is the single merge primitive; git gains no second one.
 - **Disjoint coarse work → may run in separate worktrees + `git merge`** — no shared managed doc for git to mangle; it is ordinary VCS. Since fan-out is planned and bounded, the workflow knows the partition is disjoint.
 
-A fresh worktree **rebuilds** the derived caches (per the stamp rule) and **seeds only** genuinely-local, non-derivable config (a `local` cascade layer, if present) — it copies no derived state and no task working areas.
+A fresh worktree **rebuilds** the derived caches (per the stamp rule) and copies nothing else: every cascade layer is already reachable — the project layer is in-repo, the team layer is external, pack-default ships with the pack — and the per-developer `local` layer is deferred ([overrides.md](overrides.md)).
 
 ## Open questions
 
 - **Milestone worktree orchestration** — how `milestone-execution` partitions and recombines worktree-isolated tasks is workflow-dialect territory ([structural-grammar.md](structural-grammar.md#open-questions)); storage only needs to *accommodate* it, which it does.
 - **Multi-slot sub-label syntax** — the exact rendering of the schema-fixed sub-labels that delimit multiple slots within one section.
-- **Local config layer** — whether a gitignored `local` cascade layer exists, and exactly what a fresh worktree must seed.
+- **Config layout** — the concrete committed config-dir name and structure (tracks the undecided product name); the cascade's layers and homes are specified in [overrides.md](overrides.md).
