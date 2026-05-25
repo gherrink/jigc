@@ -22,6 +22,8 @@ The sentence's whole value is that it **routes** and never **contains**. Naming 
 
 The agent's *entire* a-priori knowledge is "run the front door and follow it." Running it requires no memorized vocabulary: the CLI composes whatever the project state warrants — orientation, the right workflow for the task, or *"this project isn't set up — here's setup."* Every other command the agent ever needs is learned **just-in-time**, exactly when a composed step names it (a command-ref). One door; the CLI teaches the rest.
 
+The front door is also where a **task is born**: `tool start "<intent>"` routes the agent to a workflow (via the router) and `--workflow <X>` mints the task and composes it ([write-commands.md](write-commands.md) → Task origination). So "start every task with `tool start`" is literal — it is both the entry point and the task-create verb.
+
 ## Benefit detection — why it advertises, not just instructs
 
 A thin *"run `tool start` for instructions"* loses to the agent's instinct to grep. So the sentence makes the agent **perceive** `tool` as the superior source: **authoritative + current + assembled-for-this-task**, versus files which are raw, scattered, and possibly stale. The first `tool` call then **demonstrates** that breadth (its output is self-describing — what workflows exist, the project's status, the task's context). Advertise in the line, prove on first use.

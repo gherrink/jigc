@@ -28,7 +28,7 @@ The guarantee that makes this safe: **the agent addresses content by name; the C
 | `remove-item <item-addr>` | an item | — |
 | `reorder <section-addr> --order …` | the item ordering list | deterministic edit of the ordered list |
 
-**Lifecycle** — `tool task <verb> <id>`: `diff` (see the working changeset) · `validate` (check it) · `finalize` (validate + commit) · `discard` (abandon).
+**Lifecycle** — a task is born at `tool start` (see [Task origination](#task-origination)) and then managed with `tool task <verb> <id>`: `diff` (see the working changeset) · `validate` (check it) · `finalize` (validate + commit) · `discard` (abandon).
 
 A **fillable form** — `tool doc edit` emits the whole instance with slots marked, the agent fills in place, the CLI extracts-by-marker and places — is **deferred sugar** that compiles to a transactional batch of these primitives. It pays off only for multi-slot docs and carries the real risk (form corruption, handled like an out-of-band edit), so it lands when multi-slot flows do. The primitives are the MVP surface.
 
@@ -40,6 +40,18 @@ Splits by leaf kind, falling straight out of the slot/field distinction:
 - **Slots** (multi-line prose) → **stdin** `--from-file -` (or a file path). Never inline — prose through a shell arg is unreadable and escape-fragile.
 
 `add-item` follows the same rule: the id-source field is supplied inline so the slug can mint, the call returns the new item's address, and the item's prose slots are filled by follow-up `set-slot <item-addr>#<leaf>`. One slot per call; bulk fill is the deferred form's job, not a back-door all-at-once `add-item`.
+
+## Task origination
+
+The front door creates the task. The agent — knowing only the bootstrap ([bootstrap.md](bootstrap.md)) — runs **`tool start`**, the state-aware entry that *is* the task-create verb:
+
+- **`tool start "<intent>"`** (no workflow chosen) — the CLI composes the **router workflow** (the cascade default): it presents the workflow catalog with each workflow's "when-to-use" hint and a *recommended* default, and the agent picks. No task is minted yet — this is task-less orientation.
+- **`tool start --workflow <X> "<intent>"`** — mints the task and composes `X`. The id is a **slug from the intent** (frozen, collision-suffixed — a third minting site alongside doc-creation and item-add); the task is pinned to base = HEAD and opens its working area at `.tool/tasks/<id>/`.
+- bare **`tool start`** — orients (project state, in-progress tasks, the catalog); `--task <id>` resumes.
+
+So a task is minted at workflow-*selection* time, not at the bare call — no throwaway area for a "which workflow?" step. The CLI never *infers* the workflow (model-free): the router presents options, the agent's reasoning chooses, and a human can pre-pick via a catalog-generated adapter command ([assistant-adapter.md](assistant-adapter.md)). The agent supplies the *intent* (content); the CLI mints the *id* and opens the area (structure) — the determinism boundary holds.
+
+A task carries **context roles** its workflow declares (e.g. `spec`); the agent **binds** them explicitly (at `start`, or via a `locate` step), and `task.<role>` ([workflow-dialect.md](workflow-dialect.md)) navigates the bound doc. The CLI never infers a binding.
 
 ## Staging and the transaction model
 

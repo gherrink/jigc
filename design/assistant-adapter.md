@@ -19,7 +19,7 @@ The profile is a **config-family artifact** (YAML, like schemas and manifests): 
 
 `tool setup` (or `tool adapter install --assistant claude-code`) **generates** the adapter from the profile and **regenerates it on upgrade**, so the integration stays current and can't rot — the thesis applied to integration itself: structure is CLI-owned, not hand-maintained.
 
-There are **no per-command wrappers**. The agent shell-calls `tool` and learns each command just-in-time from composed output (command-refs); a wrapper-per-command would be a static, partial surface that undercuts the "one entrypoint" promise. (Optional human-facing slash-commands could exist as sugar, but they are not the agent's path.)
+There are **no per-command wrappers**. The agent shell-calls `tool` and learns each command just-in-time from composed output (command-refs); a wrapper-per-command would be a static, partial surface that undercuts the "one entrypoint" promise. What the adapter *does* generate is a small, **catalog-derived** set of **human-facing workflow launchers** (e.g. a Claude Code slash-command per workflow), each just calling `tool start --workflow <X>` — the *human's* path to kick off a specific workflow directly. That stays consistent with the rule: it's bounded and **regenerated from the workflow catalog** (not a hand-maintained pile), and it's not the agent's path (the agent still shell-calls the front door).
 
 ## The three responsibilities
 

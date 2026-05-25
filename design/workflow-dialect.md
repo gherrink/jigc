@@ -60,7 +60,7 @@ Resolution order: includes expand first (pulling in nested placeholders), then d
 A step and a workflow are each **one file**, reusing the same Markdown + front-matter pattern as document instances ([storage.md](storage.md)) — interpreted for definitions:
 
 - **A step** = a file: the YAML **front-matter** is the step's config (e.g. a `fan-out` marker); the **body is the prompt** — instruction prose with `{{placeholders}}`. The **id is the filename** (a frozen slug, like docs and items), so a plain step needs no front-matter at all — it's just a prompt body.
-- **A workflow** = a file: front-matter for workflow metadata; the **body is the ordered `{{include}}`s** — which *is* the composition and the ordering (principle #2: the workflow file is the ordered list; steps are the ID'd, reusable units it references).
+- **A workflow** = a file: front-matter for workflow metadata — including a one-line **`when`** hint the router uses for selection; the **body is the ordered `{{include}}`s** — which *is* the composition and the ordering (principle #2: the workflow file is the ordered list; steps are the ID'd, reusable units it references).
 
 ```markdown
 # steps/locate.md   — a plain step: id from filename, body is the prompt
@@ -79,7 +79,10 @@ Spawn a sub-agent per task and implement it.
 ```
 
 ```markdown
-# workflows/single-task.md   — body is the ordered includes
+# workflows/single-task.md   — front-matter carries the when-to-use hint; body is ordered includes
+---
+when: "Implement one well-scoped change against an existing spec."
+---
 {{ include: step:locate }}
 {{ include: step:implement }}
 {{ include: step:finalize }}
@@ -87,7 +90,16 @@ Spawn a sub-agent per task and implement it.
 
 Because a step is a file with a stable id, **steps resolve through the cascade** ([overrides.md](overrides.md)): a step-id resolves to the highest-precedence layer's file, so overriding a pack step is just "the project ships its own `validate.md`, and project wins" — no special override machinery. Step files are reusable across workflows; that's what `include` references.
 
-(The doc-type *schema* definition format — sections/slots/fields/relations — is a separate open question; it is config-structured with little prose body, so it may not fit this pattern.)
+(The doc-type *schema* definition format is config-structured — structured YAML, not this pattern — and is specified in [document-type-schema.md](document-type-schema.md).)
+
+## Workflow selection — the router default
+
+Which workflow a task runs is **not** the composer's job (composition is substitution, not control flow) and **not** the CLI's (it can't infer, model-free). It is resolved at the front door ([write-commands.md](write-commands.md) → Task origination):
+
+- `tool start --workflow <X>` composes `X` directly.
+- `tool start` with no workflow composes the **router** — the cascade-default workflow whose job is *selection*. The router is an ordinary composed workflow: its body assembles the **catalog** of available workflows with each one's **`when`** hint plus a *recommended* default, and instructs the agent to re-run `tool start --workflow <chosen>`. The agent picks; the CLI never does.
+
+So selection reuses the workflow machinery (no special selection logic), stays model-free, is cascade-overridable (a project can rewrite its routing advice, or set the default to a specific work-workflow), and **never forces** — the worst case is the agent gets routing help. A workflow earns its place in the router by declaring its one-line `when` hint, so adding a workflow surfaces it automatically.
 
 ## `fan-out` / `join`
 
