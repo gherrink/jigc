@@ -60,7 +60,16 @@ A **context compiler for coding agents**. A deterministic CLI assembles exactly 
 
 ## MVP scope
 
-First loop to build end-to-end: **`single task execution`** (discover → compose → execute → validate). Validation is in the MVP but **only the framework plus the two engine-native checks** that need no pack content or pre-existing docs: `workflow ↔ references` and `file ↔ CLI-state`. Pack-provided `doc ↔ code` probes come *after* the doc-creation flows exist (avoids a bootstrap circularity).
+First loop to build end-to-end: **`single task execution`** (discover → compose → execute → validate) — the cheapest proof the core loop beats a plain `CLAUDE.md`. Scope calls (rationale in [DECISIONS.md](DECISIONS.md), 2026-05-25):
+
+- **Spec-less.** The MVP `single-task` does **not** read a SPEC (no `task.spec`, no `spec` schema ships); the "what" comes from the human `intent` + the codebase. Adding spec support later is a trivial pack addition.
+- **Front door, no router.** `tool start` (the state-aware entry — mint task, resolve the default workflow, orient) is built; the **router** selection-guidance workflow is not. The "no-workflow-specified" default is a cascade knob set to `single-task`; it flips to the router when ≥2 work-workflows exist.
+- **The deliverable is `engine` + `cli` + a minimal *embedded* dev pack + the Claude Code profile** — not just the engine (which ships empty by invariant). MVP pack: the **`commit`** doc-type only, the **`single-task`** workflow + its steps, the cascade pack-default config, and **zero probes** (the two MVP checks are engine-native code).
+- **`finalize` is the commit boundary.** It validates, **renders the commit doc into the git commit message** (the commit type's sink is the VCS message, not a repo file), and `git`-commits the task's code changes + promoted managed docs as one commit. The CLI commits code too (the agent authors it directly; committing is the CLI's job — "CLI orchestrates, git executes").
+
+Validation is in the MVP but **only the framework plus the two engine-native checks** that need no pack content or pre-existing docs: `workflow ↔ references` and `file ↔ CLI-state`. Pack-provided `doc ↔ code` probes come *after* the doc-creation flows exist (avoids a bootstrap circularity).
+
+Implementation foundations (language/runtime, parsing, module layout) live in [implementation/](implementation/).
 
 ## Non-goals
 
