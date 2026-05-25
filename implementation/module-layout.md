@@ -1,0 +1,73 @@
+# Module layout
+
+How the locked architecture — engine / CLI / domain pack / assistant adapter — becomes **real Rust crates and modules**. The *architecture* (the engine/CLI/pack separation, the determinism boundary, "engine ships empty," "MCP could be another frontend") is settled in [VISION.md](../VISION.md) and [CLAUDE.md](../CLAUDE.md); this doc is purely its physical realization in code. The language and single-binary goals are in [language-runtime.md](language-runtime.md); the parse module's internals are in [parsing.md](parsing.md). For the *why*, see [DECISIONS.md](../DECISIONS.md).
+
+## Crate topology
+
+**A two-crate workspace: `engine` (lib) + `cli` (bin), `cli → engine`.**
+
+- **`engine`** — the neutral, **empty** core library: cascade resolution, the document/schema model, parsing & serialization, the doc registry, workflow composition, the validation engine, task/staging state, the edge index. It depends on no frontend and no domain content, and makes **no LLM calls**. Because it's a standalone library, a later **`mcp` bin** is just a third crate over the same engine — the one boundary that carries architectural weight.
+- **`cli`** — the `tool` binary frontend: argument parsing, command dispatch, the three renderers, adapter generation, and cascade-layer *location*. Depends on `engine`.
+
+Rejected: a **single crate** (engine not separately consumable → "MCP later" becomes a refactor, and the frontend boundary blurs); **many micro-crates** (a shared-types crate + version churn + compile-graph overhead, premature for the MVP). Engine internals are **modules**, split into sub-crates only if compile times or reuse later force it — `parse` is the natural first split-out.
+
+## The dev pack's home — embedded
+
+The development pack (doc-type schemas, workflows, steps, default config) is **data, not logic**, and it is **embedded in the `cli` binary** (`rust-embed`/`include_dir`), so `tool` is one self-contained artifact (the single-binary value from [language-runtime.md](language-runtime.md)). The **engine reads pack-default through a source abstraction**, so it stays empty of domain content; the dev pack versions *with* the release, which is exactly what override-reconciliation needs (pack-default version = binary version, [overrides.md](../design/overrides.md)).
+
+Rejected for now: installing the pack to a filesystem path — needed eventually for *third-party installable* packs, but for the single built-in pack it only adds path-discovery and a second install step. It arrives later **through the same source abstraction**, so it's a free extension, not a redesign. Adapter profiles are embedded the same way.
+
+This preserves the locked boundary as **internal discipline, not a public API** ([CLAUDE.md](../CLAUDE.md) non-goals): the engine loads pack content generically; domain specifics never leak into engine code. A second domain is what would turn the boundary into a real API — not yet.
+
+## The I/O boundary — CLI locates, engine resolves
+
+A clean split that keeps the engine neutral *and* testable:
+
+- **`cli` does bootstrap & presentation I/O** — it locates the three cascade layers (pack-default **embedded** · team **external** `~/.config/tool/` · project **in-repo** config dir, per [overrides.md](../design/overrides.md)), finds the repo root, and hands the engine its run context; then it renders the engine's results.
+- **`engine` does logic & managed I/O** — it resolves the cascade and owns all managed content I/O: the documents, the gitignored `.tool/` state and staging, the edge index ([storage.md](../design/storage.md)).
+
+So the engine is fed its layers and asked for results — *feed layers in, assert results out* — which is what makes the deterministic core directly testable.
+
+## Renderers (in `cli`)
+
+Presentation is strictly **downstream of the deterministic engine result** — the engine never formats for a surface.
+
+- **The engine's public result types are the renderer contract** — `ComposedWorkflow`, `DocView`, `Vec<Finding>`, `TaskStatus`, `Catalog`, … all `Serialize`. **JSON is then generic** (`serde_json` over any result, no per-type code); **agent-text and human are per-type** rendering in a `cli::render` layer.
+- **Format selection:** default **agent-text** (the primary consumer is an agent reading piped, non-TTY stdout); **interactive TTY → human-pretty**; `--format=agent|json|human` overrides. MVP human-pretty is *agent-text + light styling*; the **`ratatui` TUI is an additive `render::tui` module, post-MVP**.
+- **The non-interactive floor** is intrinsic: the agent path never blocks on a prompt. It's trivially met at MVP (no interactive prompts — `finalize` is autonomous); the post-MVP TUI must preserve it (every interactive affordance keeps a flag/JSON twin).
+- **Honest dependency:** the agent-text renderer *for composed workflows* is gated on the **emitted-format micro-syntax**, an open question in [workflow-dialect.md](../design/workflow-dialect.md). The seam exists (a `render` over `ComposedWorkflow`), but that specific output finalizes only once the micro-syntax is decided; other agent-text outputs don't block.
+
+## Adapter (in `cli`)
+
+- **Profiles are embedded data** (Claude Code in-box; more installable later), same pattern as the pack. `tool setup` / `tool adapter install --assistant claude-code` **generates** the adapter from `profile + engine catalog` and **regenerates on upgrade**, so it can't rot into a static pile ([assistant-adapter.md](../design/assistant-adapter.md)).
+- The generator **writes into the host project's assistant files** — the bootstrap static line into `CLAUDE.md`, the `tool` allowlist into `.claude/settings.json`, and catalog-derived per-workflow launchers (slash commands), each just `tool start --workflow X`.
+- **MVP scope:** the static-line **floor** + the **allowlist** (the path-of-least-resistance the bootstrap depends on). The **hook** (primary injection) and the **spawn binding** are post-MVP — the spawn payload is composed by the *engine* and rendered through the profile's launch template, but it rides on fan-out (post-MVP).
+
+## Probe boundary (in `engine`)
+
+- A **`Probe` trait** (`check(target, ctx) -> Vec<Finding>`, read-only); the engine owns scope→target resolution, scheduling, severity-via-cascade, aggregation, and the `finalize` gate (the fat-engine/thin-probe split, [validation.md](../design/validation.md)).
+- **Two implementations:** **in-process** (engine-native `workflow-refs`, `file-state`, `override-default`-at-contract) compiled in; **subprocess** (pack probes, JSON-in/out) — the only place a non-Rust, possibly-untrusted program runs, so sandboxing is deferred with it.
+- **MVP ships the trait + in-process impls only.** The subprocess invoker and JSON contract type are *designed for* but not built — the trait must admit the subprocess impl with **zero engine change**. **Probe executables live outside the workspace** (any language); the dev pack's `doc-code` (post-MVP) is a separate program, wired in because the schema's typed leaves imply it (`code-anchor` ⇒ `doc-code`, [document-type-schema.md](../design/document-type-schema.md)).
+
+## The dependency graph
+
+```
+cli (bin) ──depends──▶ engine (lib)
+  ├─ embeds: dev-pack data + adapter profiles
+  ├─ locates cascade layers: pack-default (embedded) · team (~/.config/tool) · project (in-repo)
+  ├─ render: agent-text · json · [tui post-MVP]   (over engine result types)
+  └─ adapter generation (profile + engine catalog → host project files)
+
+engine (lib) ──depends──▶ (no frontend, no domain content)
+  ├─ modules: cascade · schema · parse · doc-registry · compose · validate · state · index
+  ├─ Probe trait: in-process impls (MVP) + subprocess seam (post-MVP)
+  └─ result types (Serialize) = the renderer / JSON contract
+
+post-MVP:  mcp (bin) ──▶ engine      probe executables (external, any lang) ◀── subprocess Probe
+```
+
+## Open questions
+
+- **Engine internal module → crate splits** — kept as modules now; revisit if compile times or cross-frontend reuse demand crates (`parse` first).
+- **Embedded-resource mechanism** — `rust-embed` vs `include_dir` vs build-script, and how the engine's pack source abstraction reads embedded vs (later) on-disk layers uniformly.
+- **Subprocess probe contract + sandboxing** — the JSON shape and the read-only/determinism enforcement, deferred with the pack-probe API ([validation.md](../design/validation.md) open question).
