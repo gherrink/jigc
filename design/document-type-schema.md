@@ -145,7 +145,7 @@ Two derived conveniences, no extra source:
 - **`--template` view** — the engine renders the *blank instance* a schema produces (headings + marked slots/fields + relation notes) on demand, like the generated mermaid flow, so "what does this produce" is legible without the source being a template.
 - **Validation needs no separate declaration** — it falls out of the typed leaves + relations + the cascade: a `code-anchor` field means `doc-code` applies, a relation's `card` is enforced, severities are cascade knobs ([validation.md](validation.md)).
 
-**Overrides** target sections/leaves by ID within the file (`adr#status`); a schema-structural delta's fragment is a small YAML section declaration — the config-family counterpart to a workflow's step-file fragment ([overrides.md](overrides.md)). Notation above is illustrative — keys (`id-from`, `card`, `set`, `of`, `header`) are placeholders pending implementation.
+**Overrides** target sections/leaves by ID within the file (`adr#status`); a schema-structural delta's fragment is a small YAML section declaration — the config-family counterpart to a workflow's step-file fragment ([overrides.md](overrides.md)). Notation above is illustrative — the keys are placeholders pending implementation (`id-from` is the YAML spelling of the prose *id-source*; plus `card`, `set`, `of`, `header`).
 
 ## Open questions
 
