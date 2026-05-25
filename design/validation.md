@@ -65,7 +65,7 @@ One uniform interface (`check(target, ctx) → [finding]`), two implementations:
 
 - **Engine-native** — built in, in-process. The MVP ships:
   - **`workflow-refs`** (target: workflow) — every `placeholder` / `include` / `command-ref` resolves, and no include cycles.
-  - **`file-state`** (target: file) — the on-disk content hash matches the recorded state; drift → a `reconcile` finding.
+  - **`file-state`** (target: file) — the on-disk content hash matches the recorded state; drift → a `reconcile` finding. With no recorded hash (first run / fresh checkout), the current on-disk content is adopted as the baseline — absent-hash is not drift.
   - **`override-default`** (target: override) — per-delta `clean / conflict / orphaned` reconciliation on a guarded upgrade; full logic in [overrides.md](overrides.md).
 - **Pack probes** — *deferred*, the "not a public API yet" line. An **invoked process** with a JSON-in / JSON-out contract: language-neutral, **read-only and deterministic by contract** (`doc-code` must parse real code, so it can't be declarative). The development pack's **`doc-code`** (does this symbol exist? does a test cover this criterion? did referenced code change after the doc's timestamp?) lands here, after the doc-creation flows exist.
 

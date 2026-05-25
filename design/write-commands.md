@@ -81,13 +81,14 @@ A worked payoff: the **commit message is just a doc type.** Its format — a `ty
 
 ## Out-of-band reconciliation
 
-Humans edit files directly, and the system **detects and reconciles, never forbids** ([VISION.md](../VISION.md) principle #3):
+Humans edit files directly, and because the **files are the source of truth** ([storage.md](storage.md)), the system **honors a clean edit, not merely tolerates it** ([VISION.md](../VISION.md) principle #3). Reconciliation splits by *what kind* of edit it is:
 
-- **Detection** is the engine-native `file ↔ CLI-state` check — the CLI compares on-disk content to a recorded hash; divergence is an out-of-band edit.
-- **Resolution is binary and human-decided** — **import** (re-parse the human's file into the model) or **discard** (rewrite the file from CLI state). The agent never guesses: on drift it **blocks and routes to the human**, like any other block.
-- **Drift hard-blocks at `finalize`**, not on every operation — surfaced earlier by `validate`/`diff`, enforced at the boundary (mirroring the write-time/finalize-time split).
+- **Detection** is the engine-native `file ↔ CLI-state` check — the CLI compares on-disk content to a recorded hash. (On first run / a fresh checkout with no recorded hash, the CLI **adopts the current on-disk content as the baseline** — absent-hash is not drift.)
+- **Conformant, non-conflicting edit → accepted.** Files are truth, so the CLI re-reads it and rebuilds its caches. "Import" is *not* a deferred feature — it is the CLI's normal canonical-Markdown parse (the same one used to read any doc). Surfaced for awareness, not blocked.
+- **Nonconformant edit** (broke the schema — renamed a heading, dropped a `{#id}`, malformed a field) → **blocks with a precise conformance error**; the human fixes or reverts. Never silently accepted, never silently discarded.
+- **True conflict** (the task also changed the same doc) → **blocks and routes to the human**; *discard* (drop the human's edit) is an explicit choice here, never the default or silent. Three-way merge (both sides changed) is deferred — it parallels the override-conflict machinery.
 
-Dependency, surfaced honestly: **`import` requires the serialization to round-trip** (parse a human-edited file back into sections/slots/fields). So the MVP can **detect + discard** today (hash compare + render-from-state need no round-trip); full **import** lands with the on-disk format. Three-way merge (both sides changed) is deferred — it parallels the override-conflict machinery.
+So **`finalize` blocks on conflicting or nonconformant drift; benign external edits are absorbed** (consistent with "warn at read/write, hard-block at finalize"), and there is **no silent discard, ever** — no data loss.
 
 ## Worked example — the MVP write loop
 
