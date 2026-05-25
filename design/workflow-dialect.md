@@ -53,7 +53,19 @@ A step's body is a block of two leaf kinds:
 
 Resolution order: includes expand first (pulling in nested placeholders), then data-values and command-refs resolve. An empty resolution yields **empty text** — never conditional inclusion of surrounding prose (that would be control flow).
 
-**Data-values are full graph navigation, no logic.** A data-value walks the relation graph from a live-state root and slices by fragment — multi-hop is just chained deterministic relations (`{{task.spec.derived-from#goal}}`). There is **no filtering or selection** — navigation, not a query language. A path that fails to resolve is caught at validate-time by `workflow ↔ references`, not at runtime.
+**Data-values are full graph navigation, no logic** — and the path syntax turns on one rule that disambiguates the connectors:
+
+> **`.` crosses a relation edge** (doc → related doc, *inter*-document); **`#` enters a doc** (doc → section/item/leaf, *intra*-document); **`:` names a doc literally** (`type:name`).
+
+So a data-value is a **start** + `.relation` hops + an optional `#fragment` slice:
+
+```
+data-value := head ( "." relation )* ( "#" fragment )?
+head       := root | type:name          # a live-state root, or a literal doc id
+fragment   := unit ( "/" item )? ( "/" leaf )?   # the addressing fragment
+```
+
+`task.spec#criteria` = `task` root → `.spec` relation → `#criteria` section; `task.spec.derived-from#goal` = task → spec → the PRD → `#goal`; `prd:billing#goal` starts from a literal doc; `milestone.tasks` resolves to a **collection** (a `fan-out` source). The **root catalog** is declared, split on the engine/pack seam: engine-native `task` (the current task — its workflow-declared context roles, see [write-commands.md](write-commands.md) → Task origination) and `store` (the managed store, e.g. `store.findings`); pack-provided roots like `milestone`. A path resolves to a **scalar**, a **doc-slice**, or a **collection** — pure navigation, **no filtering or selection** — and one that fails to resolve is caught at validate-time by `workflow ↔ references`, not at runtime. (The `.` here is relation-traversal in placeholders; the dotted keys in cascade manifests like `validation.doc-code.severity` are a different grammar in a different context — no collision.)
 
 ## On-disk definition format
 
