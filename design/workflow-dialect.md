@@ -111,7 +111,7 @@ Which workflow a task runs is **not** the composer's job (composition is substit
 - `tool start --workflow <X>` composes `X` directly.
 - `tool start` with no workflow composes the **router** — the cascade-default workflow whose job is *selection*. The router is an ordinary composed workflow: its body assembles the **catalog** of available workflows with each one's **`when`** hint plus a *recommended* default, and instructs the agent to re-run `tool start --workflow <chosen>`. The agent picks; the CLI never does.
 
-So selection reuses the workflow machinery (no special selection logic), stays model-free, is cascade-overridable (a project can rewrite its routing advice, or set the default to a specific work-workflow), and **never forces** — the worst case is the agent gets routing help. A workflow earns its place in the router by declaring its one-line `when` hint, so adding a workflow surfaces it automatically.
+So selection reuses the workflow machinery (no special selection logic), stays model-free, is cascade-overridable (a project can rewrite its routing advice, or set the default to a specific work-workflow — as the **MVP** does, defaulting to `single-task` until ≥2 work-workflows exist, see [CLAUDE.md](../CLAUDE.md) → MVP scope), and **never forces** — the worst case is the agent gets routing help. A workflow earns its place in the router by declaring its one-line `when` hint, so adding a workflow surfaces it automatically.
 
 ## `fan-out` / `join`
 

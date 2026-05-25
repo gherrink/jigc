@@ -138,7 +138,7 @@ Run: `tool task finalize add-rate-limiter`
   ⚠ "SPEC criterion 'limit=100/min' maps to no test — add coverage before finalize."
 ```
 
-Everything in `{{…}}` was resolved deterministically by the CLI before the agent saw it; `<<author: addr>>` names a *document* slot the agent fills through the write path — the only thing the agent originates is that prose. The `⚠` is the validation engine speaking, not the agent. (The task itself was born at `tool start`; structural ops like registering a milestone phase are other workflows, out of this single-task scope.)
+Everything in `{{…}}` was resolved deterministically by the CLI before the agent saw it; `<<author: addr>>` names a *document* slot the agent fills through the write path — the only thing the agent originates is that prose. The `⚠` is the validation engine speaking, not the agent. (The task itself was born at `tool start`; structural ops like registering a milestone phase are other workflows, out of this single-task scope.) This illustrates the general, **spec-driven** shape; the **MVP** `single-task` is **spec-less** — its `locate` reads the human `intent` + the codebase, not a SPEC (see [CLAUDE.md](CLAUDE.md) → MVP scope).
 
 ## Sub-agents & assistant integration
 

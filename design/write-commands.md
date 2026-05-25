@@ -45,7 +45,7 @@ Splits by leaf kind, falling straight out of the slot/field distinction:
 
 The front door creates the task. The agent — knowing only the bootstrap ([bootstrap.md](bootstrap.md)) — runs **`tool start`**, the state-aware entry that *is* the task-create verb:
 
-- **`tool start "<intent>"`** (no workflow chosen) — the CLI composes the **router workflow** (the cascade default): it presents the workflow catalog with each workflow's "when-to-use" hint and a *recommended* default, and the agent picks. No task is minted yet — this is task-less orientation.
+- **`tool start "<intent>"`** (no workflow chosen) — the CLI composes the **router workflow** (the no-workflow cascade default *where ≥2 work-workflows exist*; the MVP sets this default to `single-task` directly — see [CLAUDE.md](../CLAUDE.md) → MVP scope): it presents the workflow catalog with each workflow's `when` hint and a *recommended* default, and the agent picks. No task is minted yet — this is task-less orientation.
 - **`tool start --workflow <X> "<intent>"`** — mints the task and composes `X`. The id is a **slug from the intent** (frozen, collision-suffixed — a third minting site alongside doc-creation and item-add); the task is pinned to base = HEAD and opens its working area at `.tool/tasks/<id>/`.
 - bare **`tool start`** — orients (project state, in-progress tasks, the catalog); `--task <id>` resumes.
 

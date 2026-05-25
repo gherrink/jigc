@@ -22,7 +22,7 @@ The sentence's whole value is that it **routes** and never **contains**. Naming 
 
 The agent's *entire* a-priori knowledge is "run the front door and follow it." Running it requires no memorized vocabulary: the CLI composes whatever the project state warrants — orientation, the right workflow for the task, or *"this project isn't set up — here's setup."* Every other command the agent ever needs is learned **just-in-time**, exactly when a composed step names it (a command-ref). One door; the CLI teaches the rest.
 
-The front door is also where a **task is born**: `tool start "<intent>"` routes the agent to a workflow (via the router) and `--workflow <X>` mints the task and composes it ([write-commands.md](write-commands.md) → Task origination). So "start every task with `tool start`" is literal — it is both the entry point and the task-create verb.
+The front door is also where a **task is born**: `tool start "<intent>"` routes the agent to a workflow (via the no-workflow cascade default — the router once ≥2 work-workflows exist; the MVP defaults to `single-task`) and `--workflow <X>` mints the task and composes it ([write-commands.md](write-commands.md) → Task origination). So "start every task with `tool start`" is literal — it is both the entry point and the task-create verb.
 
 ## Benefit detection — why it advertises, not just instructs
 
