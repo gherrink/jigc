@@ -1,6 +1,6 @@
 # Structural grammar
 
-The shared skeleton beneath every managed artifact. There is **one structural engine**; **document** and **workflow** are two *dialects* over it, sharing all structure and differing only in their leaf kinds and a few unit/type-level annotations. This document specifies the dialect-neutral skeleton. The document dialect is specified in [document-type-schema.md](document-type-schema.md); the workflow dialect in its own part-doc (not yet written).
+The shared skeleton beneath every managed artifact. There is **one structural engine**; **document** and **workflow** are two *dialects* over it, sharing all structure and differing only in their leaf kinds and a few unit/type-level annotations. This document specifies the dialect-neutral skeleton. The document dialect is specified in [document-type-schema.md](document-type-schema.md); the workflow dialect in [workflow-dialect.md](workflow-dialect.md).
 
 For the *why* behind each choice see [DECISIONS.md](../DECISIONS.md); for the framing, [VISION.md](../VISION.md) → The determinism boundary and principles #2/#3/#5/#6. Notation below is **illustrative** — the on-disk serialization format is an open question (see [VISION.md](../VISION.md) → Open questions).
 

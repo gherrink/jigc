@@ -22,6 +22,7 @@ This is a pre-implementation **design collaboration**. Maurice develops the idea
 
 **Conventions:**
 - **One file, one purpose — route by home.** Thesis/framing → `VISION.md`; working truth & how-we-work → this file; the *why* of a decision → `DECISIONS.md`; architecture detail → a part-doc in `design/`. **Cross-reference, never restate** — if two docs state the same fact, one is wrong. Shared content earns its own part-doc (the document model, applied to us).
+- **Reading order for `design/`.** VISION → `structural-grammar` → `document-type-schema` → `write-commands` → `storage` → `workflow-dialect` → `validation` → `overrides` → `bootstrap` → `assistant-adapter`. The first two are the foundation the rest build on; read `DECISIONS.md` alongside for the *why*.
 - **No number prefixes** on part-docs (descriptive names only) — principle #2; we don't grow our own `01-`/`02.5-` disease.
 - **Flag the unsettled.** Mark illustrative notation as illustrative; list open questions explicitly rather than implying resolution.
 - **Decisions log.** Record every decision in `DECISIONS.md` (dated, ≤1 line of why) as it's made — the *when & why*, not the architecture (`VISION.md` + this file hold current truth).

@@ -154,7 +154,7 @@ Agents coordinate **through the CLI, not through each other.** The agent-to-agen
 - **The message is a notification, never the source of truth.** The actual outcome lives in CLI state; the main agent always **re-derives state from the CLI**, so even a lying "finished" is caught when the task is queried.
 - **Errors and blocks route the same way:** a sub-agent writes the detail to CLI state keyed by its task and returns "failed/blocked — task 7"; resolution surfaces through the normal propose-to-human path. Nothing important ever rides the channel.
 
-This is the **blackboard pattern** — proven and robust — and it makes sub-agents cheap, stateless, and reproducible (their only memory is the task ID; same task ID in → same instructions out).
+This is the **blackboard pattern** (agents read and write a shared store — here the CLI — and never message each other directly) — proven and robust — and it makes sub-agents cheap, stateless, and reproducible (their only memory is the task ID; same task ID in → same instructions out).
 
 ### Parallelism is planned, bounded, and deterministic
 The structural decision "what runs in parallel" is deterministic and lives in the workflow as a `fan-out`/`join` step — *not* improvised by the agent. The CLI resolves the fan-out list and emits "spawn N sub-agents for these task IDs." Each sub-agent writes to an isolated working area keyed by its task ID; the CLI merges at a **deterministically-ordered join** (by task ID, not completion order) — the *ordering* is deterministic, though the *content* each sub-agent authored is still LLM prose, per the determinism boundary. Keep this the *only* concurrency primitive — concurrency is where determinism and simplicity go to die.

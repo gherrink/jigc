@@ -85,7 +85,7 @@ This is the *reliable* form of bidirectionality, forced by three locked invarian
 
 The determinism boundary holds: the forward ref is placed by the agent-via-CLI; the reverse edge is derived structure the CLI owns. Two riders:
 
-- The CLI keeps a **rebuildable edge index** — a derived cache (source of truth stays the documents) so a read needn't rescan the store; it also makes validation cheap (walk the index).
+- The CLI keeps a **rebuildable edge index** — a derived map of every cross-reference edge across the store (forward, with inverses computed), a cache whose source of truth stays the documents — so a read needn't rescan the store, and validation is cheap (walk the index).
 - **Inverse-cardinality and orphan obligations** ("a PRD must have ≥ 1 SPEC") are **completeness, not integrity** — they depend on *other* tasks (the SPEC is a later task's job), so they are **never** a per-task `finalize` gate: advisory by default, hard-enforced only at store/milestone scope ([validation.md](validation.md)). Forward-ref integrity *is* gated at `finalize`, because the task can satisfy it by creating the target in the same task.
 
 ## How this keys the rest
