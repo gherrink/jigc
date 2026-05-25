@@ -47,7 +47,7 @@ A **context compiler for coding agents**. A deterministic CLI assembles exactly 
 
 ## Architectural invariants (do not violate without revising VISION.md)
 
-- **The CLI core makes no LLM calls.** Composition is deterministic: same project state in → same workflow out. (The *coding agent* may use the CLI to draft a merge proposal — that is the agent acting, not the CLI.)
+- **The CLI core makes no LLM calls.** Composition is deterministic: same *resolved cascade* in → same workflow out. (The *coding agent* may use the CLI to draft a merge proposal — that is the agent acting, not the CLI.)
 - **The LLM writes only through the CLI.** It hands content for a *named slot*; the CLI owns placement, cross-ref wiring, versioning, and commit. The LLM places nothing, so it can misplace nothing.
 - **Stable opaque IDs, never positions.** Phases/docs/steps/slots have stable IDs; ordering lives in a separate ordered list. No renumbering; cross-references point at IDs and survive reorder.
 - **Engine vs CLI vs domain pack are separate.** The *engine* (config resolution, doc registry, workflow composition, validation, state) is frontend-neutral and ships **empty**. The *CLI* is the first frontend (an MCP adapter could come later). A *domain pack* supplies the bottom config layer (doc types, workflows, steps, defaults, probes). **Development is the first and only pack** — keep domain content out of the engine.
