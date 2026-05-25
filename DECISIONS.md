@@ -114,3 +114,17 @@ Running log of what we decided and **why**, dated. Short and punchy — this rot
 - **Hook stays routing + thin nudge, never a content dump** — same "routing, not content" discipline; its value is freshness/salience, not volume; the agent still pulls real context JIT. It also makes the bootstrap's "advertise + demonstrate" automatic (the hook runs the front door, so the first context already shows live orientation).
 - **Spawn binding = a launch template in the profile** — the CLI renders its fan-out dispatch (`task_id` + entrypoint) through the profile's template into the assistant's primitive (Claude Code: a Task-tool call running `tool workflow W --task <sub>`); CLI owns the payload, the template is the only assistant-specific bit.
 - **Profiles ship with the CLI + are installable** — known assistants (Claude Code first) ship in-box; more profiles can be installed later — a swappable layer parallel to packs.
+
+## 2026-05-25
+
+### Review remediation
+
+Resolutions to gaps surfaced by a four-agent read-only review of all docs.
+
+- **Task origination: `tool start` is the front door *and* create verb** — `tool start ["<intent>"] [--workflow X]` mints the task (slug-from-intent, base = HEAD, opens `.tool/tasks/<id>/`), minted at workflow-*selection* time (not the bare orientation call). Closes the MVP's missing "discover" entry.
+- **Workflow selection: hybrid, options-always-shown** — the catalog is always offered with a *recommended* default (a hint, never a silent force); the agent picks; a human can force one via a catalog-generated adapter command. The CLI never infers a workflow (model-free).
+- **The default is a router workflow** — "no workflow specified" composes a cascade-overridable *selection-guidance* workflow that presents the catalog + each workflow's "when-to-use" hint and routes the agent to pick. Workflow definitions gain a "when-to-use" front-matter hint; task context roles (e.g. `spec`) are workflow-declared and agent-bound (CLI never infers).
+- **Data-value path grammar** — `head ("." relation)* ("#" fragment)?`: `.` crosses a relation edge (inter-doc), `#` enters a doc (intra-doc), `:` names a doc literally; `head` is a declared live-state root (engine-native `task`/`store`, pack-provided `milestone`/domain) or a literal `type:name`. Resolves to scalar / doc-slice / collection; pure navigation, no logic; validated at compose-time.
+- **Finalize blocks only on task-controllable integrity** — forward-ref integrity, required slots, malformed values block (the task can fix them). Inverse/minimum-cardinality ("a PRD must have ≥1 SPEC") is *completeness*, not integrity — advisory by default, hard-enforced only at store/milestone scope, **never** a per-task finalize gate. Resolves the cross-task deadlock.
+- **fan-out join: sub-agents validate but never commit; the parent finalize is the commit boundary** — one commit per sub-task in task-id order (squash a cascade knob). Slug collisions are handled by isolation + CLI-owned wiring (the join suffixes the loser and rewrites its *local* self-refs in the merge pass; workflow-provisioned ids are sub-task-derived and can't collide). No sub-agent runs git → no races.
+- **Out-of-band reconciliation: files are truth** — a conformant, non-conflicting external edit is *accepted* (import is just the normal canonical-Markdown parse, not a deferred feature); a nonconformant edit *blocks* with a precise conformance error; a true conflict *routes to the human* — discard is an explicit choice, never silent. No silent data loss; three-way merge deferred.
