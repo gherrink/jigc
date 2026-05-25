@@ -22,8 +22,8 @@ The CLI parses an instance **against its type's schema**, never as blind Markdow
 
 Three parts, and only the first and third carry any "machine" content:
 
-1. **Front-matter** — the document's *header block* fields (status, dates, doc-level refs), as `key: value`. Doc-level refs here keep the graph scannable without parsing the body.
-2. **Body** — schema-fixed section headings; under each, the slot prose plus (if any) a trailing `key: value` field group. Same field syntax as front-matter — one rule everywhere.
+1. **Front-matter** — the document's *header block* fields (status, dates, doc-level refs), as `key: value`. A **flat field block** (a strict YAML *subset*, not an arbitrary YAML document — values are typed by the schema, not coerced by YAML); a list-valued field uses **inline flow** (`relates-to: [adr:a, adr:b]`). Doc-level refs here keep the graph scannable without parsing the body.
+2. **Body** — schema-fixed section headings; under each, the slot prose plus (if any) a trailing field group rendered as a **bullet list** (`- key: value`). The field *grammar* is the same as front-matter; the bullet is the body's structural frame (the counterpart to front-matter's `---` fences) that keeps fields distinct from the opaque prose around them.
 3. **`{#id}` item anchors** — the *only* in-body marker, on each repeatable item.
 
 An ADR (header-heavy, all-prose sections):
@@ -62,7 +62,7 @@ A short burst above the limit is tolerated for 2s.
 - **Identity is the path** — `specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file.
 - **id-source = the heading** — a doc's title is its H1 (its frozen id is the filename); an item's title is its `###` heading (its frozen id is the `{#id}`). The title is mutable; the id is frozen at creation, so `spec:auth-flow#criteria/rate-limit` survives a retitle.
 - **Order = physical order.** Reordering is moving a block — a clean diff move, never a renumber.
-- **One field syntax** (`key: value`); header block → front-matter, section/item block → trailing group.
+- **One field grammar** (`key: value`), two structural frames — header block → a flat front-matter block between `---`; a section/item block → a trailing **bullet list** (`- key: value`). `code-anchor` values carry presentational backticks (stripped on read, re-added on write) so the diff stays readable without polluting the stored value.
 - **One prose slot per section preferred.** Multi-slot sections are allowed but render each slot under a schema-fixed sub-label (matched like a heading — no new marker), which nudges schemas toward one-purpose sections.
 - **Items live inside their parent file** (the criteria-in-doc decision); no per-item files.
 
