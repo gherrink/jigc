@@ -57,6 +57,8 @@ Because findings are **navigable state**, a `fix-drift` workflow can `fan-out` o
 - **doc** — a single doc and its immediate references.
 - **store** — the whole committed state (a health check).
 
+**Integrity vs completeness.** The per-task `finalize` gate blocks only on **integrity the task can fix** — forward-ref resolution, required slots, malformed values. **Completeness obligations** (inverse/minimum-cardinality — "every PRD needs a SPEC") depend on *other* tasks, so they are **advisory by default and hard-enforced only at `store`/milestone scope**, never the per-task gate — otherwise legitimate PRD-first / SPEC-later authoring would deadlock. (Severity and scope are cascade-tunable as usual.)
+
 ## Probes
 
 One uniform interface (`check(target, ctx) → [finding]`), two implementations:

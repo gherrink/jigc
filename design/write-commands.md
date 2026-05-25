@@ -60,7 +60,7 @@ A task carries **context roles** its workflow declares (e.g. `spec`); the agent 
 **Two check times** ([VISION.md](../VISION.md): integrity holds at `finalize`, not per-write):
 
 - **Write-time — local adjudication.** A `set-field` rejects a malformed date or a non-member enum *now*; a mint rejects a bad slug. Fast, local feedback.
-- **Finalize-time — integrity.** Referential checks (dangling refs, inverse cardinality), required-slot presence, and unreconciled drift run at `finalize`. A ref may dangle in the working area until then, because its target can be created later in the *same* task. This split is what stops the bootstrap from deadlocking.
+- **Finalize-time — integrity the task can fix.** Forward-ref resolution (dangling refs), required-slot presence, and unreconciled drift run at `finalize` — a ref may dangle in the working area until then, because its target can be created in the *same* task. **Finalize blocks only on what the task can fix itself**; inverse/minimum-cardinality ("a PRD needs a SPEC") depends on *other* tasks and is **completeness, not a per-task gate** (see [document-type-schema.md](document-type-schema.md), [validation.md](validation.md)). This split is what stops the bootstrap from deadlocking.
 
 **`finalize` ≡ `validate` + commit.** Finalize has no private check path — it runs `validate` and commits only if it passes, so what `validate` reports and what `finalize` blocks on can never diverge. One task → one logical commit.
 
