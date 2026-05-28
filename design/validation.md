@@ -1,6 +1,6 @@
 # Validation engine
 
-The moat: **one deterministic engine runs read-only probes over a scope and reports severity-classified findings.** It is the *validate* stage of the loop and the gate behind `finalize`.
+**One deterministic engine runs read-only probes over a scope and reports severity-classified findings.** It is the *validate* stage of the loop and the gate behind `finalize`.
 
 Builds on [VISION.md](../VISION.md) principle #6, [structural-grammar.md](structural-grammar.md) (the edge index, the validation framing, override), [document-type-schema.md](document-type-schema.md) (the relations probes walk), [write-commands.md](write-commands.md) (`finalize ≡ validate + commit`, severity-as-cascade, the `reconcile` route), [storage.md](storage.md) (edge index, effective state), and [workflow-dialect.md](workflow-dialect.md) (findings feed composition; the `workflow-refs` probe). For the *why*, see [DECISIONS.md](../DECISIONS.md). Scope: the framework + the two engine-native MVP probes; `doc-code` is pinned at contract level only (`override-default` is fully specified in [overrides.md](overrides.md)). Notation is **illustrative**.
 
@@ -8,7 +8,7 @@ Builds on [VISION.md](../VISION.md) principle #6, [structural-grammar.md](struct
 
 Validation is **the determinism boundary applied to correctness**: the CLI-owned half of a project (references, structure, state) can be *mechanically verified*; the LLM-owned half (prose) cannot. So the engine checks exactly the structured half and **never judges the prose**.
 
-- **Mechanical, never semantic** — deterministic predicates, no LLM in the engine (it makes no model calls). There is no "is this spec well-written?" probe. The moat is *guaranteed referential integrity*, not content quality.
+- **Mechanical, never semantic** — deterministic predicates, no LLM in the engine (it makes no model calls). There is no "is this spec well-written?" probe. The integration advantage is *guaranteed referential integrity*, not content quality.
 - **Detect & route, never auto-fix** — the engine reports what's wrong and a direction to repair; it never authors the fix.
 - **Read-only & deterministic** — probes never mutate; same effective state → same findings.
 

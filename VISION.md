@@ -18,6 +18,8 @@ The failure mode shared by today's approaches is that **structural operations ar
 
 All three are symptoms of the same root cause. Fix the root cause and the symptoms go away.
 
+**Closest alternatives we don't name above.** Doc-as-code pipelines (Markdown + schemas + linting + ADR tooling + CI), LSP-style structured editing, structured knowledge bases (Notion/Confluence/Linear), and agent harnesses that generate prompts and constrain file ops share our diagnosis — structural operations belong to deterministic tools — and each delivers parts of what we claim: schema validation, refactoring, cross-references, prompt assembly. They're real competition, not a straw man. The gap isn't capability, it's packaging: **composition** (workflow from steps + cascade), **just-in-time context-assembly** for an agent with no editor in the loop, and **cross-doc graph integrity enforced at transaction boundaries** (not batched at CI) — all designed around a single agent-facing transactional channel. That packaging is the bet.
+
 ## What it is
 
 A **context compiler** for coding agents. The agent's context window is the scarce resource; instead of dumping everything in or letting the agent search ad hoc, a deterministic CLI assembles *exactly* the instructions and document slices needed for a specific task, just-in-time, and is the sole channel through which the agent reads and writes managed documents.
@@ -34,21 +36,23 @@ Each principle is tagged with the pain it eliminates.
 ### 1. Deterministic skeleton, LLM-filled slots
 Structure — which documents exist, their sections, cross-references, ordering, workflow steps — is config-driven and reproducible. Content — the prose of a spec — is LLM-authored into *named slots* the CLI controls. The CLI guarantees the wiring; it never touches the prose.
 *Kills:* non-reproducibility; "the LLM assumes the rest."
-*Honest boundary:* "reproducible" applies to **structure**, never to LLM prose. See [The determinism boundary](#the-determinism-boundary).
+*Honest boundary:* "reproducible" applies to **structure**, never to LLM prose. The structure/prose split isn't a natural law — many decisions are mixed (whether to create a new ADR, which doc to cite, how to name an entity). The CLI splits these by what it can mechanically check: **fields** are structured values like slugs, enums, and relation targets; **slots** are prose only the LLM/human can judge. Mixed decisions stay LLM judgment, but the *act* is a CLI command (workflow-gated `create`, typed-field `set`). The agent reasons; the CLI executes. See [The determinism boundary](#the-determinism-boundary).
 
 ### 2. Stable IDs, never positions
 Every phase, document, step, and slot has a stable opaque ID. Ordering lives in a separate ordered list. "Insert a phase after X" is one deterministic command that mints an ID and edits one ordering array — nothing renumbers, and cross-references (which point at IDs) never break on reorder.
 *Kills:* GSD's `01-`/`02.5-` renumbering mess; "never the same way twice."
+*Honest boundary:* IDs survive **reorder** and **rename** because minted IDs are content-slugs *frozen at creation* — the title can change, the id can't. Splits and merges are **explicit CLI ops**. Copy/paste is caught when it creates file-state drift, duplicate IDs, or schema/conformance errors; structurally valid duplicate concepts across docs remain a prose/review problem. IDs also don't prevent semantic drift — the same id meaning something subtly different over time — because the CLI never adjudicates prose.
 
 ### 3. The CLI is the only interface — reads *and* writes
 Files are storage; the CLI is the interface. Reads return assembled *views*, not raw files, so the document store can grow large without overwhelming anyone. Writes are routed: the LLM hands the CLI content for a named slot, and the CLI owns placement, cross-ref wiring, versioning, and commit. The LLM cannot misplace anything because it places nothing. Non-determinism is quarantined to slot contents.
 - The LLM writes **only** through the CLI.
-- Humans *should* use the CLI but will edit files directly anyway — so out-of-band edits are **detected and reconciled, never forbidden** ("this file changed outside the CLI; import or discard?").
+- Humans *should* use the CLI but will edit files directly anyway — so out-of-band edits are **detected and reconciled, never forbidden**. **Files are truth**: a conformant external edit imports automatically via the canonical-Markdown parse; a nonconformant edit blocks with a precise conformance error; a true conflict routes to the human, and discard is explicit, never silent. No silent data loss; three-way merge is deferred. See [storage](design/storage.md).
+- **Agent compliance is adapter-enforced, not sandboxed.** "The LLM writes only through the CLI" holds because the [assistant adapter](#sub-agents--assistant-integration) makes the CLI the path of least resistance — bootstrap routing, allowlisted commands, the right tool for managed docs — not because the agent is prevented from editing files. An agent that ignores the adapter contract can bypass us; the bet is on ergonomics + the bootstrap's *advertise + demonstrate* discipline doing the work.
 - Storage stays **human-readable and diff-friendly**: documents live in the repo as plain files that read cleanly in a normal PR diff, because humans review (and edit) through git regardless of the CLI. If the on-disk format isn't legible in a diff, review breaks and adoption dies.
 - Write-time validation is **transactional**: writes land in a working state; integrity must hold at a `finalize`/commit boundary, not on every write (otherwise bootstrapping deadlocks).
 - Under concurrency (sub-agents), each writer gets an **isolated working area keyed by task ID**; the CLI merges them at a **deterministically-ordered join** (by task ID, not completion order) so parallel work stays reproducible.
 
-This is what makes principle #1 enforceable *by construction* rather than by hope: the LLM cannot misplace a section, drop a cross-reference, or "just do things," because it never performs the placement. And because nobody navigates the directory directly, the "files nobody reads" problem and silent structural drift both lose their hiding place.
+*Given a compliant agent*, principle #1 is enforced *by construction* rather than by hope: the LLM cannot misplace a section, drop a cross-reference, or "just do things," because the CLI performs the placement and the LLM never sees positions to misplace into. And because nobody navigates the directory directly, the "files nobody reads" problem and silent structural drift both lose their hiding place.
 
 ### 4. Workflows are composed, not authored
 A workflow is not one file — it is reusable steps assembled by the CLI, with placeholders resolved deterministically against config + cascade + live state. Three placeholder kinds, all CLI-filled before the LLM sees the text:
@@ -73,7 +77,7 @@ On upgrade (defaults v1 → v2) the engine re-applies each delta and reports per
 *Kills:* "individualize and it bites you later."
 *Honest boundary:* detects **structural/syntactic** conflicts, not **semantic** ones (upstream changing the meaning around an untouched override). And great defaults matter more than the override machinery — if a project must override heavily to be productive, the defaults are wrong.
 
-### 6. Validate against reality — that's the moat
+### 6. Validate against reality — the integration advantage
 Normalized, cross-referenced documents are only valuable if referential integrity is *enforced*. One deterministic validation engine, many targets:
 - **doc ↔ code** — an ADR cites a module that no longer exists; a SPEC's criteria map to no test; referenced code changed after the doc's timestamp.
 - **override ↔ default** — the upgrade reconciliation above.
@@ -83,7 +87,7 @@ Normalized, cross-referenced documents are only valuable if referential integrit
 The engine provides the validation *framework*; the domain-specific **probes** are pack-provided. `doc ↔ code` (does this symbol exist? does a test cover this criterion?) is *development*-pack content; `override ↔ default`, `file ↔ CLI-state`, and `workflow ↔ references` are engine-native.
 
 *Kills:* documentation drift; the "files nobody keeps updated" problem.
-*Honest boundary:* "keep files updated" means the CLI **detects** drift deterministically and **routes** the LLM to repair it in a fixed shape — not that the CLI auto-authors fixes. Knowing what's stale, always, is the achievable and valuable promise.
+*Honest boundary:* "keep files updated" means the CLI **detects** drift deterministically and **routes** the LLM to repair it in a fixed shape — not that the CLI auto-authors fixes. Knowing what's stale, always, is the achievable and valuable promise. No single one of the four targets is novel — linters do workflow-style ref-checks, CMS systems enforce referential integrity, package managers reconcile overrides. The advantage is the *combination*: all four validated by one deterministic engine, with failures surfaced at the task's transaction boundary instead of later in CI or scattered across separate tools.
 
 ## The determinism boundary
 
@@ -115,11 +119,11 @@ Document types to define (starting set): commit messages, architecture documenta
 ### Workflows to ship
 `project setup (existing project)` · `project setup (new project with idea development)` · `project planning` · `milestone planning` · `milestone execution` · `single task execution`.
 
-The **first MVP loop** is `single task execution` end-to-end (discover → compose → execute → validate), because it is the cheapest way to prove the core loop beats a plain `CLAUDE.md`. **Validation is in the MVP, not deferred** — but specifically the validation *framework* plus the two **engine-native** checks that need no pack content or pre-existing docs: `workflow ↔ references` and `file ↔ CLI-state`. The pack-provided `doc ↔ code` probes land *after* the doc-creation flows exist, since they require real ADRs/SPECs to check against. This keeps the MVP small and dissolves a bootstrap circularity (meaningful `doc ↔ code` validation would otherwise require the very doc-creation flows the MVP excludes).
+The **first MVP loop** is `single task execution` end-to-end (discover → compose → execute → validate), because it is the cheapest way to prove the core loop beats a plain `CLAUDE.md`. **Validation is in the MVP, not deferred** — but specifically the validation *framework* plus the two **engine-native** checks that need no pack content or pre-existing docs: `workflow ↔ references` and `file ↔ CLI-state`. The pack-provided `doc ↔ code` probes land *after* the doc-creation flows exist, since they require real ADRs/SPECs to check against. This keeps the MVP **focused** — narrow in feature scope, substantial in foundation, because the differentiators rest on a shared substrate (round-trip parser, edge index, file-state hashing, config cascade, workflow composition, read-view assembly, write path, finalize gate). It also dissolves a bootstrap circularity (meaningful `doc ↔ code` validation would otherwise require the very doc-creation flows the MVP excludes).
 
 ## Worked example
 
-A composed `single-task-execution` workflow, as the agent receives it (notation **illustrative**; the delimiters are settled — `{{…}}` is CLI-resolved before you see it, `<<author: addr>>` points you at a doc slot to fill through the write path):
+A composed `single-task-execution` workflow, shown with placeholders unresolved so you can see the wiring (notation **illustrative**; the delimiters are settled — `{{…}}` is CLI-resolved before the agent sees it, replaced inline with the resolved value; `<<author: addr>>` points the agent at a doc slot to fill through the write path):
 
 ```text
 # single-task-execution · task add-rate-limiter · 3 steps
@@ -138,7 +142,7 @@ Run: `tool task finalize add-rate-limiter`
   ⚠ "SPEC criterion 'limit=100/min' maps to no test — add coverage before finalize."
 ```
 
-Everything in `{{…}}` was resolved deterministically by the CLI before the agent saw it; `<<author: addr>>` names a *document* slot the agent fills through the write path — the only thing the agent originates is that prose. The `⚠` is the validation engine speaking, not the agent. (The task itself was born at `tool start`; structural ops like registering a milestone phase are other workflows, out of this single-task scope.) This illustrates the general, **spec-driven** shape; the **MVP** `single-task` is **spec-less** — its `locate` reads the human `intent` + the codebase, not a SPEC (see [CLAUDE.md](CLAUDE.md) → MVP scope).
+What the agent actually sees has every `{{…}}` replaced inline with the deterministically-resolved value (a literal command, a doc slice, the included text); only `<<author: addr>>` survives into the agent's view, naming a *document* slot the agent fills through the write path — the only thing the agent originates is that prose. The `⚠` is the validation engine speaking, not the agent. (The task itself was born at `tool start`; structural ops like registering a milestone phase are other workflows, out of this single-task scope.) This illustrates the general, **spec-driven** shape; the **MVP** `single-task` is **spec-less** — its `locate` reads the human `intent` + the codebase, not a SPEC (see [CLAUDE.md](CLAUDE.md) → MVP scope).
 
 ## Sub-agents & assistant integration
 
@@ -178,7 +182,7 @@ The seam where sub-agents meet integration:
 
 ## Non-goals
 
-- **Not a workflow engine.** Ordered steps + includes, plus a single bounded concurrency primitive (`fan-out`/`join`) — but no DAGs, conditionals, cross-sub-agent messaging, or a runtime. Add branching only if real workflows demand it.
+- **Not a general-purpose workflow engine.** Ordered steps + includes, plus a single bounded concurrency primitive (`fan-out`/`join`) — but no DAGs, conditionals, cross-sub-agent messaging, or a runtime. Add branching only if real workflows demand it.
 - **Not an auto-doc-writer.** The CLI detects and routes; it does not author prose or silently auto-fix drift.
 - **Not one-size-fits-all.** It wires into one project via strong defaults + a setup workflow.
 - **Not a second domain (yet).** The engine/pack boundary is internal discipline, not a public extension API. Development is the only pack until a real second domain earns the cost of a public pack-authoring surface.
