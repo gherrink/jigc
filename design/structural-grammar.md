@@ -78,7 +78,7 @@ The `item` hop appears **iff** the unit is repeatable; the `leaf` hop appears if
 | **type**, **unit**, **leaf** | author-named in the schema — fixed, never minted |
 | container **instance**, repeatable **item** | minted by the CLI at creation |
 
-Runtime minting happens at **exactly two sites *in the managed-artifact family***: creating a container, and adding an item to a repeatable unit. This tightly scopes the only hard part (minting under concurrency). (The work-unit family — tasks, and planned milestone/slice — has its own mint sites; see [Work-units and runtime identity](#work-units-and-runtime-identity).)
+Runtime minting happens at **exactly two sites *in the managed-artifact family***: creating a container, and adding an item to a repeatable unit. This tightly scopes the only hard part (minting under concurrency). (The work-unit family — tasks, and planned milestone/increment — has its own mint sites; see [Work-units and runtime identity](#work-units-and-runtime-identity).)
 
 Minted IDs are **frozen content-slugs**:
 
@@ -93,14 +93,14 @@ Documents and workflows are the **managed-artifact family** — minted, structur
 
 - **task** (MVP) — the staging unit; one task → one `finalize` → one logical commit. Per-task working area, base pin, validation scope, fan-out join key.
 - **milestone** (planned) — a higher-level work container; tasks roll up to a milestone for store-scope validation (completeness obligations like inverse-cardinality).
-- **slice** (planned) — sits between milestone and task; the hierarchy is `milestone > slice > task`.
+- **increment** (planned) — sits between milestone and task: a **deliverable increment**, a coherent group of tasks that together deliver one vertical slice of a milestone's outcome. It is the unit `milestone-planning` decomposes a milestone into, and the rollup parent of its tasks; the hierarchy is `milestone > increment > task`. (Whether the increment or the task is the one-level `fan-out` boundary is a post-MVP question, deferred with the hierarchy.)
 
 All work-units use the same slug-from-source / frozen / collision-suffix discipline as artifacts; they don't have leaves to address into, so addresses are `type:name` with no fragment (`task:add-rate-limiter`, `milestone:m1`). They are referenced as live-state roots by data-values (`task.intent`, `milestone.tasks`), as command surfaces (`tool task …`, future `tool milestone …`), and as validation scopes.
 
 **Minting sites — full picture:**
 
 - managed-artifact family: exactly two sites (container creation, repeatable-item add) — see [Repetition](#repetition) and [IDs](#ids-provenance-and-minting).
-- work-unit family: each work-unit `create`/`start` operation (`tool start --workflow` mints a task; future `tool milestone create`, `tool slice create`).
+- work-unit family: each work-unit `create`/`start` operation (`tool start --workflow` mints a task; future `tool milestone create`, `tool increment create`).
 
 Both families' mints are deterministic under concurrency (task-id-ordered collision suffix), so reproducibility holds across the whole runtime, not just inside artifacts.
 

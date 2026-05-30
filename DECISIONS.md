@@ -184,7 +184,7 @@ Resolutions from the Codex cross-model review ([reviews/codex-2026-05-28/](../re
 
 ### Task identity & work-unit family
 
-- **Work-units are a first-class minted-identity family** alongside managed artifacts ([structural-grammar.md](design/structural-grammar.md) → Work-units and runtime identity) — `task` (MVP), with planned `milestone > slice > task` hierarchy. Promoted from a "third minting site" footnote into a parallel family with shared mint discipline but no internal dialect; addresses are `type:name` (no fragment). Settles the structural-grammar / write-commands drift (Pass 1 F2) and prepares the runtime grammar for the planned `slice` layer without forcing it now.
+- **Work-units are a first-class minted-identity family** alongside managed artifacts ([structural-grammar.md](design/structural-grammar.md) → Work-units and runtime identity) — `task` (MVP), with planned `milestone > slice > task` hierarchy. Promoted from a "third minting site" footnote into a parallel family with shared mint discipline but no internal dialect; addresses are `type:name` (no fragment). Settles the structural-grammar / write-commands drift (Pass 1 F2) and prepares the runtime grammar for the planned intermediate layer without forcing it now. *(That layer was called `slice` here; **renamed `increment` 2026-05-30** — see that date's entry. Meaning unchanged.)*
 
 ### Addressing — variable-depth, one grammar for every reference
 
@@ -582,3 +582,14 @@ Codex (foreclosed #4, SEV med): the `Probe` trait's "zero engine change" claim f
 ### Pass 5 complete
 
 All six foreclosed options resolved: **#3** + **#5** by prior passes (F12; the `<!-- fields -->` sentinel); **#1** (definition front-matter YAML), **#2 + #6** (frontend-neutral boundaries — closes the parked Pass 3 **#14**), Area-1-row-22 (absent-section insertion), **#4** (wire seam) this pass. Remaining table-yellows are acknowledged opens that can't resolve pre-implementation (span-precision spike, startup-time-with-pack-discovery, subprocess batching/caching), not design gaps. **The Codex 2026-05-28 cross-model review (all five passes) is now closed.**
+
+## 2026-05-30
+
+### Work-unit intermediate layer named `increment` (renamed from `slice`)
+
+Pre-planning vocabulary lock, so planning docs use a settled term. The layer between `milestone` and `task` — added as `slice` in the Pass 1 F2 work-unit-family decision (2026-05-28) but left under-specified — is now named and defined.
+
+- **Meaning (confirmed)**: an **increment** is a *deliverable increment* — a coherent group of tasks that together deliver one vertical slice of a milestone's outcome; the unit `milestone-planning` decomposes a milestone into, and the rollup parent of its tasks. Hierarchy: `milestone > increment > task`.
+- **Renamed `slice` → `increment` after a Codex cross-model naming review.** Two collisions drove the rename off the placeholder: `phase` (already finalize's 7-phase transaction + the override resolution's 9 phases + the GSD anti-pattern — triple-overloaded, never a work-unit name) and `slice` (collides with the pervasive read-path "doc-slice"/"context-slice" fragment term). `increment` is domain-neutral, collision-free, and **collapses name and meaning into one word** — it literally *is* the chosen "deliverable increment" role. Codex ranked it #1 (over segment / bundle / group / epic) and judged the `slice` collision not worth keeping since the work-unit usage was tiny vs the pervasive fragment term. Rejected: `slice` (collision), `phase` (overload), `segment`/`group` (less meaningful), `epic` (PM-jargon, implies larger scale).
+- **Still planned/post-MVP** — MVP stays task-only; this is vocabulary, not new MVP scope. Whether the `increment` or the `task` is the one-level `fan-out` boundary is a deferred post-MVP question.
+- **Doc placements**: [structural-grammar.md](design/structural-grammar.md) → Work-units (entry fleshed out with the meaning), [CLAUDE.md](CLAUDE.md) (invariant list — also drops the erroneous `phases`), [write-commands.md](design/write-commands.md) (work-unit-family siblings). The 2026-05-28 Pass 1 F2 entry is annotated superseded-on-naming. Doc-fragment "slice" / "doc-slice" / "context-slice" usages are deliberately untouched — a different concept on the read path.
