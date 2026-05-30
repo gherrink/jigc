@@ -39,14 +39,14 @@ Structure — which documents exist, their sections, cross-references, ordering,
 *Honest boundary:* "reproducible" applies to **structure**, never to LLM prose. The structure/prose split isn't a natural law — many decisions are mixed (whether to create a new ADR, which doc to cite, how to name an entity). The CLI splits these by what it can mechanically check: **fields** are structured values like slugs, enums, and relation targets; **slots** are prose only the LLM/human can judge. Mixed decisions stay LLM judgment, but the *act* is a CLI command (workflow-gated `create`, typed-field `set`). The agent reasons; the CLI executes. See [The determinism boundary](#the-determinism-boundary).
 
 ### 2. Stable IDs, never positions
-Every phase, document, step, and slot has a stable opaque ID. Ordering lives in a separate ordered list. "Insert a phase after X" is one deterministic command that mints an ID and edits one ordering array — nothing renumbers, and cross-references (which point at IDs) never break on reorder.
+Every phase, document, step, and slot has a stable opaque ID. Ordering lives in a separate ordered list. "Insert a phase after X" is one deterministic command that mints an ID and edits one ordering array — nothing renumbers, and cross-references (which point at IDs) never break on reorder. **"Never positions" bans IDs that *encode* order** (`01-`, `02.5-` prefixes; numeric positions used as references) — *not* physical-order serialization of an ordered list whose items carry their own non-positional IDs. Physical-order serialization is used uniformly: doc instances' repeatable items ([storage.md](design/storage.md) → "Order = physical order. Reordering is moving a block — a clean diff move, never a renumber") and workflow bodies' include lines ([workflow-dialect.md](design/workflow-dialect.md) → On-disk definition format) follow the same pattern — a line move is a reorder, nothing renumbers, cross-refs by ID keep resolving.
 *Kills:* GSD's `01-`/`02.5-` renumbering mess; "never the same way twice."
 *Honest boundary:* IDs survive **reorder** and **rename** because minted IDs are content-slugs *frozen at creation* — the title can change, the id can't. Splits and merges are **explicit CLI ops**. Copy/paste is caught when it creates file-state drift, duplicate IDs, or schema/conformance errors; structurally valid duplicate concepts across docs remain a prose/review problem. IDs also don't prevent semantic drift — the same id meaning something subtly different over time — because the CLI never adjudicates prose.
 
 ### 3. The CLI is the only interface — reads *and* writes
 Files are storage; the CLI is the interface. Reads return assembled *views*, not raw files, so the document store can grow large without overwhelming anyone. Writes are routed: the LLM hands the CLI content for a named slot, and the CLI owns placement, cross-ref wiring, versioning, and commit. The LLM cannot misplace anything because it places nothing. Non-determinism is quarantined to slot contents.
 - The LLM writes **only** through the CLI.
-- Humans *should* use the CLI but will edit files directly anyway — so out-of-band edits are **detected and reconciled, never forbidden**. **Files are truth**: a conformant external edit imports automatically via the canonical-Markdown parse; a nonconformant edit blocks with a precise conformance error; a true conflict routes to the human, and discard is explicit, never silent. No silent data loss; three-way merge is deferred. See [storage](design/storage.md).
+- Humans *should* use the CLI but will edit files directly anyway — so out-of-band edits are **detected and routed, never forbidden**. **Files are truth**: a conformant external edit imports automatically via the canonical-Markdown parse; a nonconformant edit blocks with a precise conformance error; a true conflict routes to the human, and discard is explicit, never silent. No silent data loss; three-way merge is deferred. See [storage](design/storage.md).
 - **Agent compliance is adapter-enforced, not sandboxed.** "The LLM writes only through the CLI" holds because the [assistant adapter](#sub-agents--assistant-integration) makes the CLI the path of least resistance — bootstrap routing, allowlisted commands, the right tool for managed docs — not because the agent is prevented from editing files. An agent that ignores the adapter contract can bypass us; the bet is on ergonomics + the bootstrap's *advertise + demonstrate* discipline doing the work.
 - Storage stays **human-readable and diff-friendly**: documents live in the repo as plain files that read cleanly in a normal PR diff, because humans review (and edit) through git regardless of the CLI. If the on-disk format isn't legible in a diff, review breaks and adoption dies.
 - Write-time validation is **transactional**: writes land in a working state; integrity must hold at a `finalize`/commit boundary, not on every write (otherwise bootstrapping deadlocks).
@@ -55,9 +55,9 @@ Files are storage; the CLI is the interface. Reads return assembled *views*, not
 *Given a compliant agent*, principle #1 is enforced *by construction* rather than by hope: the LLM cannot misplace a section, drop a cross-reference, or "just do things," because the CLI performs the placement and the LLM never sees positions to misplace into. And because nobody navigates the directory directly, the "files nobody reads" problem and silent structural drift both lose their hiding place.
 
 ### 4. Workflows are composed, not authored
-A workflow is not one file — it is reusable steps assembled by the CLI, with placeholders resolved deterministically against config + cascade + live state. Three placeholder kinds, all CLI-filled before the LLM sees the text:
+A workflow is not a monolithic prompt — its **definition** is an include-list file the CLI assembles from reusable steps, with placeholders resolved deterministically against config + cascade + live state. Three placeholder kinds, all CLI-filled before the LLM sees the text:
 - **Command references** — `{{ cli.add_phase_command }}` → the literal invocation to run next (routing the LLM back into the CLI for the structural op). Resolves through the cascade, so project overrides flow through.
-- **Data values** — `{{ current_milestone }}`, the relevant doc slice (pulling info together).
+- **Data values** — `{{ task.commit#summary }}` for the address, `{{ @task.spec#criteria }}` for the content at it (the relevant doc slice, pulling info together — see [workflow-dialect.md](design/workflow-dialect.md) → Leaves for the `@` rule).
 - **Includes** — `{{ include: step:validate-cross-refs }}` (composition/reuse).
 
 Placeholders (CLI-filled, read path) are the opposite of slots (LLM-filled, write path) and must stay visually distinct in syntax. The emitted workflow is structured markdown that makes unmistakably clear which lines are "run this exact command," which are "author this slot," and which are "reason about X." A `--explain` mode shows the resolution tree.
@@ -113,13 +113,13 @@ Document types to define (starting set): commit messages, architecture documenta
 ## Primary flows
 
 - **Compose / read loop:** LLM asks for a workflow → CLI composes from config + cascade + live state → resolves all placeholders deterministically → emits the composed instruction set → LLM *follows* it (including running the CLI commands it names for structural ops).
-- **Propose / write loop:** LLM reads via CLI → drafts content for a slot → proposes to the human (CLI shows a placement + integrity preview, `--dry-run` style) → on confirmation, writes via CLI, which places it, wires cross-refs, and commits. The human correction point is built into the write path, not bolted on.
+- **Write / finalize loop:** LLM reads via CLI → drafts content into a named slot via the CLI (stages in the per-task working area with write-time field-type/slug checks) → `tool task validate` / `diff` previews the changeset and findings → `tool task finalize` re-runs validation and commits. `finalize` defaults to autonomous (opt-in confirm-gate is a cascade setting); git/PR review is the durable correction point.
 - **Validate loop:** `tool validate [target]` checks integrity across all four targets and reports what is stale or broken, deterministically.
 
 ### Workflows to ship
 `project setup (existing project)` · `project setup (new project with idea development)` · `project planning` · `milestone planning` · `milestone execution` · `single task execution`.
 
-The **first MVP loop** is `single task execution` end-to-end (discover → compose → execute → validate), because it is the cheapest way to prove the core loop beats a plain `CLAUDE.md`. **Validation is in the MVP, not deferred** — but specifically the validation *framework* plus the two **engine-native** checks that need no pack content or pre-existing docs: `workflow ↔ references` and `file ↔ CLI-state`. The pack-provided `doc ↔ code` probes land *after* the doc-creation flows exist, since they require real ADRs/SPECs to check against. This keeps the MVP **focused** — narrow in feature scope, substantial in foundation, because the differentiators rest on a shared substrate (round-trip parser, edge index, file-state hashing, config cascade, workflow composition, read-view assembly, write path, finalize gate). It also dissolves a bootstrap circularity (meaningful `doc ↔ code` validation would otherwise require the very doc-creation flows the MVP excludes).
+The **first MVP loop** is `single task execution` end-to-end (discover → compose → execute → validate), because it is the cheapest way to prove the core loop beats a plain `CLAUDE.md`. **Validation is in the MVP, not deferred** — but specifically the validation *framework* plus the two **engine-native** probes that need no pack content or pre-existing docs: `workflow-refs` and `file-state` (see [validation.md](design/validation.md)). The pack-provided `doc ↔ code` probes land *after* the doc-creation flows exist, since they require real ADRs/SPECs to check against. This keeps the MVP **focused** — narrow in feature scope, substantial in foundation, because the differentiators rest on a shared substrate (round-trip parser, edge index, file-state hashing, config cascade, workflow composition, read-view assembly, write path, finalize gate). It also dissolves a bootstrap circularity (meaningful `doc ↔ code` validation would otherwise require the very doc-creation flows the MVP excludes).
 
 ## Worked example
 
@@ -130,7 +130,7 @@ A composed `single-task-execution` workflow, shown with placeholders unresolved 
 
 ## 1 · Locate
 Read the spec for this task:
-{{ task.spec#criteria }}          # the SPEC slice, resolved in
+{{ @task.spec#criteria }}         # the SPEC slice content, resolved in (the `@` derefs the path's address — see workflow-dialect.md)
 
 ## 2 · Implement, then hand back the commit prose
 Run: `tool doc set-field commit:add-rate-limiter#type --value feat`
@@ -191,18 +191,51 @@ The seam where sub-agents meet integration:
 
 ## Open questions
 
-Most of the questions raised here are now settled in `design/` part-docs (with the *why* in [DECISIONS.md](DECISIONS.md)); what remains genuinely open is short.
+Each part-doc tracks its own opens in its `## Open questions` section; this is the **categorized index** across the doc set.
 
-**Resolved — see `design/`:**
-- The bootstrap sentence → [bootstrap.md](design/bootstrap.md)
-- Write-command vocabulary · content handoff · proposal staging → [write-commands.md](design/write-commands.md)
-- State location & concurrency · sub-agent state-merge · on-disk diff-review format → [storage.md](design/storage.md)
-- Composition · sub-agent spawn/ack · placeholder vs slot delimiters → [workflow-dialect.md](design/workflow-dialect.md) (slots also in [document-type-schema.md](design/document-type-schema.md))
-- Override deltas · the cascade · defaults-versioning discipline → [overrides.md](design/overrides.md)
-- Doc-type schema definition format → [document-type-schema.md](design/document-type-schema.md)
-- Assistant adapter (neutral core + per-assistant profile) → [assistant-adapter.md](design/assistant-adapter.md)
-
-**Still open:**
+**Cross-cutting (VISION-level):**
 - **Multi-pack composition** — can one project use more than one domain pack at once (e.g. dev + docs-writing), and how do packs compose in the cascade? Deferred.
 - **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.
-- **The product name.**
+- **The product name** — pinned across [bootstrap.md](design/bootstrap.md), [overrides.md](design/overrides.md), [storage.md](design/storage.md) (config-dir name tracks it).
+
+**MVP-blocking:** *none currently open — the emitted-format micro-syntax was settled 2026-05-28 ([workflow-dialect.md](design/workflow-dialect.md#emitted-format)).*
+
+**Per part-doc opens (linked):**
+- [structural-grammar.md](design/structural-grammar.md#open-questions) — multi-level repetition; minting mechanics (slug normalization, collision-suffix form).
+- [document-type-schema.md](design/document-type-schema.md#open-questions) — inline references in slot prose.
+- [write-commands.md](design/write-commands.md#open-questions) — form-marker syntax; `import` three-way merge; blocked/error payload.
+- [workflow-dialect.md](design/workflow-dialect.md#open-questions) — workflow progress/resumption; `milestone-execution` orchestration.
+- [reconciliation.md](design/reconciliation.md#open-questions) — parser-tolerant vs parser-strict for cosmetic drift; concurrent OOB edits during a task; external-edit notification surface.
+- [finalize.md](design/finalize.md#open-questions) — multi-doc promotion ordering; `finalize --dry-run`; commit-msg hook output capture.
+- [command-catalog.md](design/command-catalog.md#open-questions) — per-workflow command-ref scoping; stdin as data-value binding; multi-target / variant commands.
+- [storage.md](design/storage.md#open-questions) — milestone worktree orchestration; multi-slot sub-label syntax; config-dir layout.
+- [validation.md](design/validation.md#open-questions) — pack-probe sandboxing; `doc-code` logic; findings recomputed vs cached.
+- [overrides.md](design/overrides.md#open-questions) — per-developer `local` layer; team-layer distribution; committed-config-dir layout.
+- [assistant-adapter.md](design/assistant-adapter.md#open-questions) — profiles beyond Claude Code; hook events per assistant.
+- [implementation/parsing.md](implementation/parsing.md#open-questions) — span precision under stress; multi-slot sub-label syntax (cross-ref); mentions-in-prose scanning.
+- [implementation/module-layout.md](implementation/module-layout.md#open-questions) — engine module → crate splits; embedded-resource mechanism; subprocess probe contract.
+
+**Resolved here, moved to `design/`** (with the *why* in [DECISIONS.md](DECISIONS.md)):
+- Bootstrap sentence → [bootstrap.md](design/bootstrap.md)
+- Write-command vocabulary · content handoff · proposal staging → [write-commands.md](design/write-commands.md)
+- State location & concurrency · sub-agent state-merge · on-disk diff-review format → [storage.md](design/storage.md)
+- Composition · sub-agent spawn/ack · placeholder vs slot delimiters · address-vs-content (`@` rule) → [workflow-dialect.md](design/workflow-dialect.md) (slots also in [document-type-schema.md](design/document-type-schema.md))
+- Override deltas · the cascade · defaults-versioning discipline · the 9-phase resolution algorithm (by-id shadowing → scalar deltas → structural deltas → slot-fills → cycle check → expansion → resolve → emit) → [overrides.md](design/overrides.md)
+- Doc-type schema definition format · cross-references as `ref` fields with relation metadata (`to`, `card`, `inverse`, `inverse-card`) → [document-type-schema.md](design/document-type-schema.md)
+- Addressing grammar (variable-depth, one grammar for every reference) · work-unit family identity · ID-source = title field rendered as heading → [structural-grammar.md](design/structural-grammar.md)
+- `tool start` semantics (four forms; orthogonal `creates-task` + `default-workflow` knobs) · task-id collision policy (reject in serial, suffix in parallel) → [write-commands.md](design/write-commands.md)
+- Emitted format — four-class micro-syntax (`Run:` · `>` · `<<author:>>` · prose) → [workflow-dialect.md](design/workflow-dialect.md)
+- `--explain` resolution-tree output contract → [workflow-dialect.md](design/workflow-dialect.md)
+- Finalize transaction (seven phases, atomicity rules, rollback discipline, dirty-tree policy) · commit-doc → git-message rendering → [finalize.md](design/finalize.md)
+- Out-of-band reconciliation (state machine, parse classifier, hash re-baselining, strict-MVP auto-repair scope) → [reconciliation.md](design/reconciliation.md)
+- Validation severity inventory (every MVP check; intrinsic vs tunable; cascade-key convention; locked-demotion rule) → [validation.md](design/validation.md)
+- Command catalog (typed args list: literal / `from:` / `agent:`; `<NAME>` agent-substitution markers; POSIX shell-safety; cascade-override behavior) → [command-catalog.md](design/command-catalog.md)
+- Workflow-gated `create` (the `allows-create: [<doctype-id>, ...]` workflow front-matter knob; default empty; cascade-overridable at `workflows.<id>.allows-create`; three rejection cases with structured error+route) → [write-commands.md](design/write-commands.md) and [workflow-dialect.md](design/workflow-dialect.md)
+- Edge-index lifecycle (five sites: committed rebuild, working overlay, OOB absorb, fan-out join, finalize commit; the "never persisted with task deltas in it" rule) → [storage.md](design/storage.md)
+- Orientation output examples (four states: unset / clean / active task / blocked task) → [bootstrap.md](design/bootstrap.md)
+- Worked examples (MVP single-task with optional ADR · OOB reconciliation · override application at compose time · finalize-to-git) → [worked-examples.md](design/worked-examples.md)
+- Assistant adapter (neutral core + per-assistant profile) → [assistant-adapter.md](design/assistant-adapter.md)
+- Slot / field-group boundary discipline (sentinel-marked field groups via `<!-- fields -->`; slot heading-depth ceiling at `##`/`###`) — eliminates content-sniffing at the parse-time slot boundary → [storage.md](design/storage.md) and [implementation/parsing.md](implementation/parsing.md)
+- OOB rename detection (path-rename is identity-change; two-tier signal: strong = path missing + content-hash match, weak = path missing alone; MVP routes to revert, `tool doc rename` post-MVP) → [reconciliation.md](design/reconciliation.md) and [write-commands.md](design/write-commands.md)
+- Pack-probe determinism contract (six rules + four meta-finding failure modes; locked now, OS-level sandboxing implementation post-MVP) → [validation.md](design/validation.md)
+- Bootstrap compaction resilience (universal routing footer on every CLI agent-text output + per-assistant resume hook seam) → [bootstrap.md](design/bootstrap.md), [workflow-dialect.md](design/workflow-dialect.md), [assistant-adapter.md](design/assistant-adapter.md)

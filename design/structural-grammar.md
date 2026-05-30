@@ -10,7 +10,7 @@ For the *why* behind each choice see [DECISIONS.md](../DECISIONS.md); for the fr
 |---|---|---|---|
 | unit | ID'd, ordered, block-bodied, `repeatable` | section | step |
 | leaves | *(extension point)* | `slot`, `field` | `placeholder`, `instruction` |
-| type-level extra | *(extension point)* | `relation` (edges) | `fan-out`/`join` marker |
+| type-level extra | *(extension point)* | `ref`-field relation metadata (`to`, `card`, `inverse`) | `fan-out`/`join` marker |
 | addressing | `type:name#unit/item/leaf` | same | same |
 | ID minting | types/units/leaves author-named; instances/items slug-minted | same | same |
 | composition | `include` by ID | same | same |
@@ -36,7 +36,7 @@ container            (document | workflow)
 - **Leaf** — the atom: an addressable, author-named hole. Its *kinds* are dialect-defined; the skeleton requires only that every dialect's leaf kinds divide into **CLI-adjudicated** and **agent-authored**, and that no kind is shared across dialects.
 - **Block** — an ordered set of leaves. *A block contains leaves only — never a unit.* This is the depth cap.
 - **Unit** — an ID'd, ordered node. Its body is **either** one block (a *simple* unit) **or** a list of blocks (a *repeatable* unit; see [Repetition](#repetition)).
-- **Container** — an ordered list of units. Ordering lives in a separate ordered list of IDs, never in positions ([VISION.md](../VISION.md) principle #2).
+- **Container** — an ordered list of units. Ordering lives in a separate ordered list of IDs ([VISION.md](../VISION.md) principle #2). "Never positions" bans position-token IDs (`01-`, `02.5-` prefixes that encode order in the identifier); **physical-order serialization** of that list — where items carry their own non-positional IDs — is fine and is used uniformly (doc instances' repeatable items in [storage.md](storage.md); workflow bodies' include lines in [workflow-dialect.md](workflow-dialect.md)).
 
 Why shallow (not flat, not recursive): flat denies repeated items the individual IDs that validation must address; arbitrary recursion is a CMS smell that fights the "small footprint, one purpose" model. A thing that seems to want a deep tree is the signal to split it and cross-reference instead.
 
@@ -44,22 +44,32 @@ Why shallow (not flat, not recursive): flat denies repeated items the individual
 
 A unit body is **either** one block (simple) **or** a list of blocks (`repeatable`) — the *only* place repetition lives. Each block in the list is an **item** with a minted, stable ID; ordering is a separate list. **One bounded level:** no repeatable-inside-repeatable, and a block still holds leaves only.
 
-A repeatable unit must designate one leaf as its **id-source** for slugging (see [Minting](#ids-provenance-and-minting)). It must be an *adjudicable* leaf — in the document dialect, a `field` — never agent-authored prose, because the CLI needs a short, clean value to slug.
+A repeatable unit must designate one leaf as its **id-source** for slugging (see [Minting](#ids-provenance-and-minting)). It must be an *adjudicable* leaf — in the document dialect, a `field` — never agent-authored prose, because the CLI needs a short, clean value to slug. *On-disk rendering is dialect-specific: in the document dialect, the id-source field is rendered as the item's `###` heading text (with `{#id}` carrying the frozen minted id), not as a trailing `- key: value` field — see [storage.md](storage.md) → Identity.*
 
 ## Addressing
 
-Every addressable unit has a URI-shaped address — *which resource*, then *where inside it*:
+Every addressable target has a URI-shaped address — *which resource*, then *where inside it*:
 
 ```
-type:name # unit / item / leaf
-└─ ref ─┘ ↑ └──  fragment  ──┘
-          location-within
+address  := ref ( "#" fragment )?
+ref      := type ":" slug                 # the container (a doc or workflow)
+fragment := unit ( "/" leaf )?            # in a non-repeatable unit
+          | unit "/" item ( "/" leaf )?   # in a repeatable unit
 ```
 
-- **Before `#` — the container** (the resource): `type:name`, type-prefixed so a reference is self-describing *and* type-checkable from the id alone. The `item` hop appears only inside a repeatable unit.
-- **After `#` — the fragment**: `/`-separated `unit / item / leaf`.
+**One principle: address at the depth of what you target.** Every path through the addressable tree is a valid address, pointing at whatever sits at that depth — a container, a unit (section/step), an item, or a leaf (field, slot, placeholder/instruction):
 
-The common case — referencing a whole container — is just `type:name`, a clean quotable atom with no fragment. This address is the single object every downstream system targets: a write command, a validation target, an override op, a cross-reference endpoint.
+| Form | What it points at |
+|---|---|
+| `type:slug` | the whole container (a doc, a workflow) |
+| `type:slug#unit` | a unit (section/step); when that unit declares a single unnamed slot, the unit's address *is* the slot's address |
+| `type:slug#unit/leaf` | a named leaf inside a non-repeatable unit (a field, a sub-labelled slot) |
+| `type:slug#unit/item` | a whole repeatable item (e.g. a SPEC criterion) |
+| `type:slug#unit/item/leaf` | a named leaf inside a repeatable item |
+
+The `item` hop appears **iff** the unit is repeatable; the `leaf` hop appears iff the schema names a leaf at that depth. So the schema *determines* which depths are valid for any given unit; the grammar *permits* every depth uniformly.
+
+**One grammar, every reference.** This is the single address atom every downstream system targets: write commands (`tool doc set-slot <addr>`), validation targets, override ops, data-values in workflows (`{{adr:foo#decision}}`), AND the **values of `ref` fields** that author cross-references (the `supersedes: adr:single-node-cache` pattern — see [document-type-schema.md](document-type-schema.md) → Cross-references). One grammar, one shape, one place to learn — used for every kind of reference, at whichever depth the reference needs.
 
 ## IDs: provenance and minting
 
@@ -68,7 +78,7 @@ The common case — referencing a whole container — is just `type:name`, a cle
 | **type**, **unit**, **leaf** | author-named in the schema — fixed, never minted |
 | container **instance**, repeatable **item** | minted by the CLI at creation |
 
-Runtime minting happens at **exactly two sites**: creating a container, and adding an item to a repeatable unit. This tightly scopes the only hard part (minting under concurrency).
+Runtime minting happens at **exactly two sites *in the managed-artifact family***: creating a container, and adding an item to a repeatable unit. This tightly scopes the only hard part (minting under concurrency). (The work-unit family — tasks, and planned milestone/slice — has its own mint sites; see [Work-units and runtime identity](#work-units-and-runtime-identity).)
 
 Minted IDs are **frozen content-slugs**:
 
@@ -76,6 +86,23 @@ Minted IDs are **frozen content-slugs**:
 - **minted once and frozen** at creation — the id outlives a later rename of its source,
 - never ordinal-looking (an ordinal is a position-smell; ids must not imply order),
 - under concurrency, colliding slugs get a **deterministic suffix** applied in task-id merge order, so ids stay stable and reproducible across a `fan-out`/`join` ([VISION.md](../VISION.md) → Parallelism).
+
+## Work-units and runtime identity
+
+Documents and workflows are the **managed-artifact family** — minted, structurally rich, dialect-specific. A second family — **work-units** — shares the minting discipline but has no internal section/leaf structure. Work-units are first-class minted identities that scope state, coordination, and validation:
+
+- **task** (MVP) — the staging unit; one task → one `finalize` → one logical commit. Per-task working area, base pin, validation scope, fan-out join key.
+- **milestone** (planned) — a higher-level work container; tasks roll up to a milestone for store-scope validation (completeness obligations like inverse-cardinality).
+- **slice** (planned) — sits between milestone and task; the hierarchy is `milestone > slice > task`.
+
+All work-units use the same slug-from-source / frozen / collision-suffix discipline as artifacts; they don't have leaves to address into, so addresses are `type:name` with no fragment (`task:add-rate-limiter`, `milestone:m1`). They are referenced as live-state roots by data-values (`task.intent`, `milestone.tasks`), as command surfaces (`tool task …`, future `tool milestone …`), and as validation scopes.
+
+**Minting sites — full picture:**
+
+- managed-artifact family: exactly two sites (container creation, repeatable-item add) — see [Repetition](#repetition) and [IDs](#ids-provenance-and-minting).
+- work-unit family: each work-unit `create`/`start` operation (`tool start --workflow` mints a task; future `tool milestone create`, `tool slice create`).
+
+Both families' mints are deterministic under concurrency (task-id-ordered collision suffix), so reproducibility holds across the whole runtime, not just inside artifacts.
 
 ## Composition
 

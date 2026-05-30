@@ -22,22 +22,49 @@ Front-matter is parsed as **our own flat `key: value` field block — not a gene
 
 **Mechanism:** pulldown-cmark's metadata-block extension *recognizes and bounds* the `---` block (it's just the first event — consistent with "the parser owns block boundaries"); our field-line parser reads the contents (self-stripping the fence is the trivial fallback if the extension's edge behavior is inconvenient — not load-bearing). **List-valued fields** (a forward relation with cardinality > 1) use **inline flow** — `relates-to: [adr:a, adr:b]` — preserving one line per field; the *many* side is usually the derived inverse or a repeatable section, so high-card lists rarely live here.
 
+**Scope.** This parser handles *document-instance* front-matter (and section-body field groups). Workflow and step *definition* front-matter is config-family YAML, parsed by the config parser ([overrides.md](../design/overrides.md)) — workflow defs need nested keys (e.g. `fan-out.over` / `fan-out.run`). Two parsers, two families: managed-document instances are flat-field; config-family files are YAML.
+
 ## Field-group delineation
 
-A section body is `[slot prose][trailing field group]`, and slot content is opaque — so the field group must be a **distinct block type**, located by the schema, not a line pattern.
+A section body is `[slot prose][trailing field group]`, and slot content is opaque — so the field group is **declared by a sentinel the CLI writes**, never inferred from bullet-key content. (Front-matter stays bare because its `---` fences already frame it: the **field grammar is one** (`key: value`); each location carries the structural frame that disambiguates — fences vs. sentinel + bullets.)
 
-- **Body/item fields are a trailing *bullet list* (`- key: value`).** A Markdown List is a different block than a Paragraph, so pulldown-cmark gives a clean prose/field boundary with trustworthy offsets — no content sniffing. (Front-matter stays bare because its `---` fences already frame it: the **field grammar is one** (`key: value`); each location carries the structural frame that disambiguates — fences vs. bullets.)
-- **The schema is the disambiguator.** The field group is *the final List block whose item keys match this section's declared fields*; everything before it is the opaque slot span.
-- **Robust by the determinism boundary:** the **CLI writes canonically** (field group after all slot content, blank-line separated, schema order) — unambiguous by construction. Reconciling a human edit matches the trailing List against the schema's keys; a clean match → fields, otherwise → fields-absent (if optional) or a precise **conformance error**. The one pathological case (prose coincidentally ending in `- somekey: val`) either parses to a valid value or routes as a conflict — never silent corruption.
-- **One rule, both places:** a repeatable item's body is also `[prose][trailing field group]`, bounded by the next `###`/section end.
+- **Body/item fields are a trailing *bullet list* (`- key: value`) preceded by an HTML-comment sentinel** on its own line, blank-line separated, in schema order:
+  ```markdown
+  Slot prose ends here.
+
+  <!-- fields -->
+  - status: accepted
+  - priority: high
+  ```
+  The parser identifies the field group by sentinel + following List, **never** by matching bullet content against declared field names. Slot prose that legitimately ends with `- status: TBD` has no sentinel and is unambiguously prose — the silent prose-to-field reclassification (the pathological case the old "schema-keys-match" rule allowed) is gone.
+- **The sentinel is a reserved structural marker.** `<!-- fields -->` may appear **only** at the canonical trailing position of a section / item body (after slot prose, preceded by a blank line, immediately followed by a bullet list). Anywhere else — inside slot prose, without a following list, with a following list whose keys don't match declared fields — is a conformance error. Slot prose may not include `<!-- fields -->` as decorative content.
+- **Sentinel is emitted only when fields exist.** A section / item with no declared body/item fields has no sentinel. Visual cost is bounded — sentinels appear only where the schema warrants them.
+- **One rule, both places:** a repeatable item's body is also `[prose][<!-- fields -->][bullet list]`, bounded by the next `###` / section end.
+- **Robust by the determinism boundary:** the **CLI writes canonically** (sentinel after all slot content, blank-line separated, schema order) — unambiguous by construction. Reconciling a human edit reads only the sentinel-following List against the schema's declared keys — match → fields, mismatch → precise conformance error (orphaned sentinel / unknown key / required field absent). Per strict-MVP scope ([reconciliation.md](../design/reconciliation.md) → Auto-repair scope), the error names the missing sentinel or key; no auto-restore.
 - **Field values** are the **literal text after `key:`**, trimmed, adjudicated by the schema type (not interpreted as Markdown). A `code-anchor` value carries presentational backticks: **stripped on read, re-added on write** (keeps diffs readable without polluting the stored value).
+
+## Slot heading-depth ceiling
+
+Slot prose may contain free-form Markdown — paragraphs, lists, code blocks, emphasis, inline links, thematic breaks — **with one exception**: no headings at the CLI's structural depths.
+
+- **Forbidden in slot prose:** ATX headings at `##` (section depth) and `###` (repeatable-item depth); Setext underline-style headings at any depth (`===` and `---` underlines — Setext is unusual in agent prose anyway).
+- **Allowed in slot prose:** ATX headings at `####` and deeper, for slot-internal structure.
+
+Why: `##` and `###` are unambiguously CLI-owned structural markers — section starts and repeatable-item starts. Letting slot prose contain them re-introduces the "is this a new section, or just prose with a heading?" content-sniff that the determinism boundary exists to prevent. A `## Decision` line authored inside a slot would otherwise either silently end the slot and start a new section that happens to match a schema name, or force the parser to compare heading text against schema sections (content-sniffing — exactly what the sentinel rule above eliminates for fields).
+
+The rule has **two enforcement sites**:
+
+1. **`set-slot` (write-time)** — scans the agent's content; on a violation, rejects with a precise conformance error pointing at the offending line: *"heading at schema-reserved depth `##` (or `###`) in slot prose at line N; use `####` or rephrase."* The agent retries with non-conflicting prose.
+2. **The parser (read-time)** — on encountering a forbidden heading inside an already-located slot span (e.g. on an OOB-edit re-parse), surfaces the same conformance error. Per strict-MVP scope ([reconciliation.md](../design/reconciliation.md) → Auto-repair scope), no auto-rewrite.
+
+The rule never bites the common case (most slot prose has no headings); it bites cleanly when it does. **The deeper principle**: the parser identifies structure by markers the CLI controls (sentinels, schema-fixed `##`/`###` headings, `{#id}` anchors), never by sniffing content against the schema.
 
 ## `{#id}` anchors
 
 The only instance-minted in-body identity. We use **pulldown-cmark's heading-attributes extension** (`ENABLE_HEADING_ATTRIBUTES`): with it on, the parser *consumes* `{#id}` and hands us the clean heading text (the item's mutable **title** / id-source) and `id` (the **frozen id**) separately, on one event with spans. With it off, `{#id}` is literal text we'd have to re-scan — no reason to.
 
 - **Only repeatable *items* carry `{#id}`.** Section headings are schema-fixed; the **doc** takes its identity from the **path** ([storage.md](../design/storage.md): "identity is the path"). A retitled H1 changes the title, never the frozen filename-id.
-- **Missing `{#id}` → mint-on-import; malformed/duplicate → conformance error.** A new `###` item with no anchor is conformant content missing its wiring: the CLI mints the id (slug from the heading) and writes the anchor back (a reviewable diff; CLI owns ids, human owns content). *MVP caveat ([write-commands.md](../design/write-commands.md)): MVP detects + blocks; mint-on-import lands with the full import flow.*
+- **Missing, malformed, or duplicate `{#id}` → conformance error.** A new `###` item with no anchor is conformant content missing its wiring, but MVP does not auto-repair — the conformance error names exactly what's missing and the human (or agent via a follow-up `add-item`) supplies the anchor. Auto-mint from the recorded id-source is post-MVP, paired with the broader `tool import` for entirely-new untracked files ([reconciliation.md](../design/reconciliation.md) → Auto-repair scope and MVP scope vs post-MVP). CLI owns ids, human owns content; silently reconstructing identity would be exactly the "the CLI just does things" behavior the determinism boundary exists to prevent.
 - **Uniqueness is enforced per repeatable section** — duplicate `{#id}` = conformance error.
 - **Boundary:** parsing reads `{#id}` as an opaque frozen token and maps it to the address fragment. The **slug-generation rules** (case/charset normalization, collision-suffix form) are *minting mechanics*, owned by [structural-grammar.md](../design/structural-grammar.md) — **not** decided here.
 
@@ -47,13 +74,15 @@ Two modes; which verb uses which is the spine:
 
 | verb | mode |
 |---|---|
-| `set-slot`, `set-field` (field present), `remove-item` | **surgical splice** — locate target span, replace/delete |
+| `set-slot` (section present), `set-field` (field present), `remove-item` | **surgical splice** — locate target span, replace/delete |
 | `reorder` | **splice as relocation** — move whole item spans |
-| `create`, `add-item`, `set-field` (field absent) | **generation** — emit new canonical bytes, then insert |
+| `create`, `add-item`, `set-field` (field absent), `set-slot` (section absent) | **generation** — emit new canonical bytes, then insert |
 
 **The load-bearing guarantee:** we **splice to edit existing content and generate only new content** — never regenerate-and-replace what's already there. An edit touches only the target's byte span, so a human's conformant-but-differently-spaced file is left byte-for-byte intact everywhere except the one thing changed. The canonical writer's fixed formatting applies *only* to bytes that didn't exist before (a new file, a new item block, an inserted field line). No churn, ever — the concrete cash-out of "files are truth."
 
-**The canonical writer (one component)** is the inverse of the parser: schema (+ id-source, field values, slot prose) → canonical Markdown. It serves five callers — `create`, `add-item`, `set-field`-when-absent (one bullet inserted in schema order), the `--template` blank-instance view, and a **string sink** (rendering the `commit` doc into the git commit message at finalize, rather than to a file — see [write-commands.md](../design/write-commands.md), [CLAUDE.md](../CLAUDE.md) MVP scope). Its invariant, **golden-tested**: *parser/writer symmetry* — the writer emits only parser-accepted forms, and `parse → write` is **idempotent** on canonical content. So generated and conformant-human content converge on one form, and the first CLI touch of a hand-written file splices cleanly without reformatting.
+**Absent structural homes generate at their schema-ordered position.** An *optional* section ([document-type-schema.md](../design/document-type-schema.md)) may be absent from the file, so a `set-slot` into it — or an `add-item` into an absent optional repeatable section — has no span to splice; it **materializes the section's structural home first**, then writes the leaf. Same generate-and-insert path the absent-`set-field` case already uses, lifted from leaves to sections. The **insertion point is deterministic from schema document-order** ([storage.md](../design/storage.md): schema order = physical order): the writer knows the full schema section list and which sections are present, and inserts the generated `##` heading so the present sections stay in schema order (after the nearest preceding present section, before the nearest following one). Generation scope is the **structural home only** — the heading plus the leaf being written; a field group and its sentinel, or sibling slots, materialize when *their* writes land, incrementally. Required-but-still-absent fields remain a `finalize` integrity concern, not forced at this write. Validate-after-write (below) covers the inserted region like any other edit.
+
+**The canonical writer (one component)** is the inverse of the parser: schema (+ id-source, field values, slot prose) → canonical Markdown. It serves six callers — `create`, `add-item`, `set-field`-when-absent (one bullet inserted in schema order), `set-slot`-when-section-absent (the section's structural home generated at its schema-ordered position), the `--template` blank-instance view, and a **string sink** (rendering the `commit` doc into the git commit message at finalize, rather than to a file — see [write-commands.md](../design/write-commands.md), [CLAUDE.md](../CLAUDE.md) MVP scope). Its invariant, **golden-tested**: *parser/writer symmetry* — the writer emits only parser-accepted forms, and `parse → write` is **idempotent** on canonical content. So generated and conformant-human content converge on one form, and the first CLI touch of a hand-written file splices cleanly without reformatting.
 
 **Validate-after-write — the local safety gate.** After every splice or generation, **re-parse the result and assert** before persisting: (a) it still parses against the schema, (b) *only the intended target changed*, (c) for `set-field`, the new value passes its type. On any anomaly, **abort the write** — never persist a file we can't re-parse. This is the *write-time local adjudication* of [write-commands.md](../design/write-commands.md), distinct from the `finalize` validation engine ([validation.md](../design/validation.md)), which owns cross-doc/ref integrity.
 
@@ -75,8 +104,8 @@ When a human edits a file out-of-band, the re-parse must turn "doesn't match the
 
 | outcome | cases |
 |---|---|
-| **blocks** | missing/renamed/reordered required section heading; duplicate or malformed `{#id}`; field value malformed for its type / unknown field key (with a cheap "did you mean") / required field absent; broken front-matter |
-| **auto-handled** | missing `{#id}` on an item → mint-on-import |
+| **blocks** | missing/renamed/reordered required section heading; missing, duplicate, or malformed `{#id}` on a repeatable item; **ATX heading at `##` or `###` depth inside slot prose, or any Setext heading inside slot prose**; **`<!-- fields -->` sentinel out of canonical position** (in slot prose, without a following bullet list, or with a following list whose keys don't match declared fields); **field group without a `<!-- fields -->` sentinel**; field value malformed for its type / unknown field key (with a cheap "did you mean") / required field absent; broken front-matter |
+| **auto-handled** | *none in MVP* — mint-on-import from the recorded id-source is post-MVP ([reconciliation.md](../design/reconciliation.md) → Auto-repair scope) |
 | **not a conformance concern** | slot prose (opaque — the determinism boundary); an empty *required* slot (a `finalize` integrity check, not a parse error) |
 
 ## Round-trip guarantees

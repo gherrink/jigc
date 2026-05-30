@@ -51,6 +51,8 @@ A SPEC (a repeatable `criteria` section with per-item structure and a local fiel
 
 ### Rate limit holds at 100/min  {#rate-limit}
 The gateway rejects the 101st request in a 60s window.
+
+<!-- fields -->
 - maps-to-test: `test/rate_limit_spec.rb#burst`
 
 ### Burst allowance  {#burst-allowance}
@@ -59,11 +61,12 @@ A short burst above the limit is tolerated for 2s.
 
 ### Identity, order, fields, slots, items
 
-- **Identity is the path** — `specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file.
-- **id-source = the heading** — a doc's title is its H1 (its frozen id is the filename); an item's title is its `###` heading (its frozen id is the `{#id}`). The title is mutable; the id is frozen at creation, so `spec:auth-flow#criteria/rate-limit` survives a retitle.
+- **Identity is the path** — `specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file. A **title rename** (H1) changes the title field; the id stays frozen (see next bullet). A **path rename** (`git mv`) is an **identity change** — the path *is* the identity — so it's detected and routed as a rename ([reconciliation.md](reconciliation.md) → Rename detection); CLI-orchestrated post-MVP via `tool doc rename`, with MVP routing the human to revert in git.
+- **id-source = the title field, rendered as the heading** — the schema declares a `string` field as the item's id-source (`id-from: title`, see [document-type-schema.md](document-type-schema.md)); that field is rendered on disk as the item's `###` heading text (not as a trailing `- key: value` field), with the minted `{#id}` anchor carrying the frozen id slugged from the field's value at creation. A doc's title is its H1 (filename = frozen id); an item's title is its `###` heading (`{#id}` = frozen id). The title is mutable (editing the heading edits the field's value); the id is frozen, so `spec:auth-flow#criteria/rate-limit` survives a retitle.
 - **Order = physical order.** Reordering is moving a block — a clean diff move, never a renumber.
-- **One field grammar** (`key: value`), two structural frames — header block → a flat front-matter block between `---`; a section/item block → a trailing **bullet list** (`- key: value`). `code-anchor` values carry presentational backticks (stripped on read, re-added on write) so the diff stays readable without polluting the stored value.
+- **One field grammar** (`key: value`), two structural frames — header block → a flat front-matter block between `---`; a section/item block → a trailing **bullet list** (`- key: value`) preceded by an `<!-- fields -->` sentinel on its own line (the field-group boundary marker — see [implementation/parsing.md](../implementation/parsing.md) → Field-group delineation). The sentinel makes the field group unambiguous *by marker*, not by content-matching the bullet keys against the schema — so slot prose that legitimately ends with `- status: TBD` stays prose. `code-anchor` values carry presentational backticks (stripped on read, re-added on write) so the diff stays readable without polluting the stored value.
 - **One prose slot per section preferred.** Multi-slot sections are allowed but render each slot under a schema-fixed sub-label (matched like a heading — no new marker), which nudges schemas toward one-purpose sections.
+- **Slot prose has a heading-depth ceiling** — no ATX headings at `##` (section) or `###` (repeatable-item) depth, and no Setext underline-style headings, inside slot prose; `####` and deeper are allowed for slot-internal structure (see [implementation/parsing.md](../implementation/parsing.md) → Slot heading-depth ceiling). This keeps the CLI's structural depths unambiguous: `##` and `###` always mean "structural marker," never "prose that happens to look like one."
 - **Items live inside their parent file** (the criteria-in-doc decision); no per-item files.
 
 ## Repository layout & state location
@@ -92,6 +95,22 @@ Only `finalize` produces committed changes; the working area itself is never com
 ### Derived caches
 
 The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed: committing them would churn diffs *and* reintroduce the dual-source-of-truth we eliminated with derived inverses. Each cache is **stamped with the HEAD (or a doc-set fingerprint) it was built against**; a branch switch, pull, or rebase changes the docs underneath it, so on a stamp mismatch the cache rebuilds. (The hash baseline's first-run edge case is noted in [write-commands.md](write-commands.md) → reconciliation.)
+
+### Edge index lifecycle
+
+The edge index ([document-type-schema.md](document-type-schema.md) → Bidirectional, but the inverse is derived) is a derived map of every cross-reference edge across the committed store. Its lifecycle has **five sites**, all deterministic:
+
+| site | action | persistence |
+|---|---|---|
+| **committed rebuild** | first read after a stamp mismatch (branch switch, pull, rebase) — rebuild from committed `.md`s | atomic; persists in `.tool/index/` with the new stamp |
+| **working overlay** | `validate(task)` overlays the task's pending writes on the committed index for the scope of the run ([validation.md](validation.md) → Scope = effective state) | derived per-call, never persisted |
+| **OOB absorb** | reconciliation's clean-absorb path incrementally updates the committed index for the absorbed doc's edges ([reconciliation.md](reconciliation.md) → Parse classifier) | atomic, in-place |
+| **fan-out join** | at `join`, sub-task working overlays merge into the parent's working overlay by task-id order ([workflow-dialect.md](workflow-dialect.md#fan-out--join)) | derived, in-memory, never persisted |
+| **finalize commit** | phase 7 invalidates the stamp; next read rebuilds against the new HEAD ([finalize.md](finalize.md)) | best-effort; cache-stamp absorbs failure |
+
+One rule keeps the model honest: **the index is never persisted with task deltas in it.** Task overlays live in-memory for the scope of a `validate` or `finalize` run; only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes "delete `.tool/`, rebuild from `.md`s, nothing lost" hold for the index too — committed `.md`s + the cascade are the only source of truth.
+
+The **working-overlay derivation**: walk the task's working area, parse each `.md` per the schema, emit the same `(source, relation, target)` edges the committed-rebuild path would emit, layer them over the committed index. Forward-ref integrity (the `finalize` gate) walks the *overlaid* graph; inverse-cardinality (completeness, store-scope) walks the *committed* graph. No expensive merge — overlay is read-side only.
 
 ## CLI and git
 

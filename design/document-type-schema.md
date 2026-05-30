@@ -27,13 +27,15 @@ LLM-authored prose on the write path. The CLI guarantees the slot's placement an
 - whether it is **required** (must be non-empty at `finalize`),
 - an optional **authoring hint** (guidance surfaced to the LLM when it fills the slot).
 
+**Addressing.** A section's single unnamed slot is addressed by the unit's address (`#unit`) — there is no named leaf below it in the schema. Multi-slot sections render each slot under a schema-fixed sub-label, and each sub-label is the slot's leaf id (`#unit/sub-label`). The address grammar permits both depths uniformly ([structural-grammar.md](structural-grammar.md#addressing)).
+
 The CLI's only checks on a slot are presence and the integrity of any references embedded in its prose (a lighter "mention" check, distinct from `field`-refs — see [Open questions](#open-questions)).
 
 ### Field
 
 A CLI-adjudicated typed value. Field **types** split along the engine/pack seam, mirroring the validation-probe split and keeping the engine empty of domain content:
 
-- **Engine-native:** `enum`, `string` (constrained: maxlen / pattern — also the id-source for slugging), `date`, `bool`, `int`, `ref` (a reference to a managed document or fragment).
+- **Engine-native:** `enum`, `string` (constrained: maxlen / pattern — also the id-source for slugging), `date`, `bool`, `int`, `ref` (a reference to a managed document or fragment; carries relation metadata — see [Cross-references](#cross-references--ref-fields-with-relation-metadata)).
 - **Pack-provided:** domain types such as `code-anchor` (points at a module / symbol / test). Their **adjudicator is pack-supplied** — "does this symbol exist? does this test cover this criterion?" is exactly the development pack's `doc ↔ code` probe. The meta-schema permits field types whose adjudicator ships in a pack.
 
 Field **provenance** (who supplies the value) is partly implied by type:
@@ -45,7 +47,7 @@ Field **provenance** (who supplies the value) is partly implied by type:
 
 ## Sections and repetition
 
-A document is an ordered list of **sections** (skeleton units). A section is **simple** (one block of leaves) or **`repeatable`** (a list of blocks; see [structural-grammar.md](structural-grammar.md#repetition) for the mechanism). In the document dialect a repeatable section's designated **id-source must be a `field`** — never a slot — so the CLI has a short, adjudicable value to slug.
+A document is an ordered list of **sections** (skeleton units). A section is **simple** (one block of leaves) or **`repeatable`** (a list of blocks; see [structural-grammar.md](structural-grammar.md#repetition) for the mechanism). In the document dialect a repeatable section's designated **id-source must be a `field`** — never a slot — so the CLI has a short, adjudicable value to slug. The id-source field is rendered on disk as the item's **`###` heading** (with the minted `{#id}` anchor), not as a trailing `- key: value` field — see [storage.md](storage.md) → Identity. The field-vs-heading split is *structural vs presentational*: structurally a field (typed, adjudicated, schema-located); rendered as a heading for diff-clean human-editable storage.
 
 The same construct scales both ways:
 
@@ -54,21 +56,48 @@ The same construct scales both ways:
 
 Consequence, accepted deliberately: a SPEC's criteria live *inside* the SPEC as records, addressed like `spec:auth-flow#criteria/rate-limit/statement` — not as separate child documents. The SPEC stays one cohesive, reviewable artifact; **"small footprint" therefore means one purpose, not few lines.**
 
-## Cross-references — the `relation` construct
+## Cross-references — `ref` fields with relation metadata
 
-A cross-reference is **two facets, not two choices** — the ORM pattern:
+A cross-reference is a **`ref`-type field** that carries **relation metadata** alongside its value. The schema declares the relation by declaring the field; one source of truth, one place to look.
 
-- the **field** is the instance endpoint — it lives in a section, has an address, and is placed like any leaf;
-- the **relation** is the type-level constraint that governs it.
+A `ref` field declares:
 
-A relation declares:
+| key | meaning | required |
+|---|---|---|
+| `id` | the field id (and the on-disk key) | yes |
+| `type: ref` | marks this field as a cross-reference | yes |
+| `to:` | the target type (e.g., `adr`, `prd`) | yes |
+| `card:` | UML-style cardinality (`"0..1"` / `"1"` / `"0..*"` / `"1..*"`) | default `"0..1"` |
+| `inverse:` | name of the derived back-edge in the target type's read view | required for any ref the target type expects to surface inversely |
+| `inverse-card:` | inverse-side cardinality (completeness obligation) | optional |
 
+Two worked declarations:
+
+```yaml
+# ADR's optional supersedes ref to another ADR; the target ADR's read view surfaces "superseded-by"
+- { id: supersedes, type: ref, to: adr, card: "0..1", inverse: superseded-by }
+
+# SPEC required to derive from a PRD; PRD's completeness obligation is at least one SPEC
+- { id: derived-from, type: ref, to: prd, card: "1", inverse: has-specs, inverse-card: "1..*" }
 ```
-source-type · forward-name + cardinality · target-type · inverse-name + inverse-cardinality
-e.g.   spec  ·  derived-from  (exactly 1)  ·   prd      ·   has-specs   (≥ 1)
-```
 
-This makes "normalized database, cross-reference instead of duplicate" real: relations are the schema's foreign-key edges, and validation walks them.
+This makes "normalized database, cross-reference instead of duplicate" real: `ref` fields are the schema's foreign-key edges, and validation walks them.
+
+**Why one declaration, not two.** A previous schema version had a parallel `relations:` block alongside `fields:` — the conceptual "two facets" framing ("instance endpoint + type-level constraint") rendered as two separate schema blocks. That framing is right *conceptually* — the two facets do exist — but they're properties of the same thing: a typed field with extra metadata. Splitting them across two schema blocks would have:
+
+- forced parsing, validation, and writer-generation to consult two declarations to handle one cross-reference,
+- left "is `supersedes` a field, a relation, or both?" with no good answer,
+- made overrides messier (an override touching cardinality would address the `relations:` block; one touching the value type would address `fields:`).
+
+One field declaration with relation keys is the single home: parser sees a field, validator sees a field, writer sees a field, address grammar treats it like any leaf. The type-level constraint travels *with* the field.
+
+**Address.** A `ref` field has an address like any leaf (`adr:bar#status/supersedes`), per the variable-depth grammar ([structural-grammar.md](structural-grammar.md#addressing)). Its **value** is also an address (the target it points at) — the same grammar at both ends, per the "one grammar, every reference" rule.
+
+**Storage.** A `ref` field renders like any other field on disk ([storage.md](storage.md)):
+
+- in a `header: true` section → front-matter (`supersedes: adr:single-node-cache`),
+- in a body section → trailing bullet (`- supersedes: adr:single-node-cache`),
+- `card > 1` → inline flow list (`relates-to: [adr:a, adr:b]`).
 
 ### Bidirectional, but the inverse is derived — never stored
 
@@ -86,7 +115,8 @@ This is the *reliable* form of bidirectionality, forced by three locked invarian
 The determinism boundary holds: the forward ref is placed by the agent-via-CLI; the reverse edge is derived structure the CLI owns. Two riders:
 
 - The CLI keeps a **rebuildable edge index** — a derived map of every cross-reference edge across the store (forward, with inverses computed), a cache whose source of truth stays the documents — so a read needn't rescan the store, and validation is cheap (walk the index).
-- **Inverse-cardinality and orphan obligations** ("a PRD must have ≥ 1 SPEC") are **completeness, not integrity** — they depend on *other* tasks (the SPEC is a later task's job), so they are **never** a per-task `finalize` gate: advisory by default, hard-enforced only at store/milestone scope ([validation.md](validation.md)). Forward-ref integrity *is* gated at `finalize`, because the task can satisfy it by creating the target in the same task.
+- **Inverse-cardinality and orphan obligations** ("a PRD must have ≥ 1 SPEC") are **completeness, not integrity** — they depend on *other* tasks (the SPEC is a later task's job), so they are **never** a per-task `finalize` gate: advisory by default, hard-enforced only at store/milestone scope ([validation.md](validation.md)). Forward-ref integrity *is* gated at `finalize`, because the task can satisfy it against the **committed store + the same task's working area** — see [validation.md](validation.md) → Forward-ref resolution for the policy on cross-task forward-refs (not supported in MVP).
+- **`ref` fields declare backward relationships to existing or same-task-created artifacts** — never planning markers. `supersedes: adr:b` means "I replace the earlier accepted ADR B," not "I plan to supersede a future ADR B"; refs to docs another task will create are unsupported (see [validation.md](validation.md) → Forward-ref resolution). If a provisional-ref pattern is ever needed, it lands as an explicit feature with its own design.
 
 ## How this keys the rest
 
@@ -118,8 +148,7 @@ sections:
     fields:
       - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
       - { id: date,   type: date, set: on-create }
-    relations:
-      - { name: supersedes, to: adr, card: "0..1" }
+      - { id: supersedes, type: ref, to: adr, card: "0..1", inverse: superseded-by }
   - id: context
     slot: { hint: "Why a decision was needed — the forces at play." }
   - id: decision
@@ -145,7 +174,7 @@ Two derived conveniences, no extra source:
 - **`--template` view** — the engine renders the *blank instance* a schema produces (headings + marked slots/fields + relation notes) on demand, like the generated mermaid flow, so "what does this produce" is legible without the source being a template.
 - **Validation needs no separate declaration** — it falls out of the typed leaves + relations + the cascade: a `code-anchor` field means `doc-code` applies, a relation's `card` is enforced, severities are cascade knobs ([validation.md](validation.md)).
 
-**Overrides** target sections/leaves by ID within the file (`adr#status`); a schema-structural delta's fragment is a small YAML section declaration — the config-family counterpart to a workflow's step-file fragment ([overrides.md](overrides.md)). Notation above is illustrative — the keys are placeholders pending implementation (`id-from` is the YAML spelling of the prose *id-source*; plus `card`, `set`, `of`, `header`).
+**Overrides** target sections/leaves by ID within the file (`adr#status`); a schema-structural delta's fragment is a small YAML section declaration — the config-family counterpart to a workflow's step-file fragment ([overrides.md](overrides.md)). Notation above is illustrative — the keys are placeholders pending implementation (`id-from` is the YAML spelling of the prose *id-source*; plus `card`, `set`, `of`, `header`, `to`, `inverse`, `inverse-card`).
 
 ## Open questions
 

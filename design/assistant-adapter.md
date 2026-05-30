@@ -29,6 +29,7 @@ The bootstrap reaches the agent by the assistant's *best available* mechanism, d
 
 - **A hook that calls the CLI** — injects the bootstrap plus a *thin live nudge* at session start (e.g. Claude Code's `SessionStart` running the front door). Fresher and higher-salience than a buried rules line, and it makes the bootstrap's "advertise *and* demonstrate" automatic: the agent's first context already shows live orientation. **Primary** where supported.
 - **A static line** in the always-loaded file (`CLAUDE.md` / `AGENT.md` / Cursor rules) — the **universal floor**: works where there's no hook system, and cheap insurance if the hook fails.
+- **A resume / post-compaction hook** (capability-dependent) — *if* the assistant exposes a "context resumed" or "compaction completed" event, the adapter re-injects the bootstrap on that event so a mid-task compaction doesn't lose the routing pointer. The profile's `resume` event slot declares whether the assistant supports it; Claude Code ships this when the API exposes such an event. The universal compaction baseline (independent of any hook capability) is the routing footer the CLI appends to every agent-facing output ([workflow-dialect.md](workflow-dialect.md#emitted-format) → Routing footer; [bootstrap.md](bootstrap.md) → Context compaction resilience).
 
 **Discipline:** the hook obeys the same *routing, not content* rule — it injects the bootstrap + at most a one-line current-state nudge, **never a content dump**. Its value is freshness and salience, not volume; the agent still *pulls* real context JIT via `tool`. (Capability-dependent: the profile declares which mechanisms the assistant supports; the line is the floor.)
 
@@ -36,9 +37,19 @@ The bootstrap reaches the agent by the assistant's *best available* mechanism, d
 
 Allowlist `tool` in the assistant's permission/settings so the agent runs it without friction. This is the **path-of-least-resistance** the bootstrap *depends on* — if `tool` prompts every time, the agent routes around it and the whole bet fails. Generating this makes it a guaranteed setup step, not something a human must remember.
 
+*Honest boundary: this is enforcement by **ergonomics**, not by sandbox.* A non-compliant agent that decides to ignore the adapter and edit files directly bypasses us — there is no kernel-level block, and the architecture explicitly does not promise one ([VISION.md](../VISION.md) principle #3). The bet: frictionless `tool` access + bootstrap *advertise+demonstrate* + "the CLI is the only path that knows the wiring" make compliance the cheaper path. Out-of-band edits, when they happen, are detected and reconciled via the engine-native `file-state` probe ([write-commands.md](write-commands.md) → Out-of-band reconciliation), not prevented.
+
 ### 3. Bind the spawn mechanism
 
 The profile carries a **launch template**. The CLI renders its fan-out dispatch (`task_id` + entrypoint) *through* the template into the assistant's launch primitive — for Claude Code, a Task-tool invocation running `tool workflow W --task <sub>`. The locked seam holds: **CLI owns the payload; the adapter owns the launch** — and the template is the *only* assistant-specific bit.
+
+**Launch templates are typed-schema validated at install.** The template is the actual surface that decides whether the sub-agent ever sees the CLI's payload, so an unvalidated template is a determinism-boundary leak: a stale profile could omit the `{{task_id}}` placeholder, paraphrase inline instructions, or fail to invoke `tool workflow` — and the sub-agent's writes would never reach the working area the join expects. The profile's launch template carries a schema declaring:
+
+- **required placeholders** the CLI fills (`{{task_id}}`, `{{workflow}}`);
+- **the required invocation pattern** — the template must invoke `tool workflow --task <id>` (the rendered command, however the assistant primitive surfaces it, must shell out to the CLI; no inline-paraphrased instructions to the sub-agent);
+- **forbidden patterns** — long inline blocks that would suggest paraphrased step prose, anything that would look like a workflow body re-authored in the template.
+
+Validation runs at `tool setup` / `tool adapter install` / `tool adapter regenerate`. **A broken template is an install-time error** with a precise pointer to the schema violation; the install does not complete. The runtime backstop — the join's **never-started detection** ([workflow-dialect.md](workflow-dialect.md) → `fan-out` / `join`) — catches the case where a template *passes* schema but somehow still fails to reach the CLI (the assistant changed an API, the user mis-wrapped the template, the spawn primitive misfires). Two complementary layers, each catching a failure mode the other can't: install-time catches the broken template before any sub-agent runs; the runtime backstop surfaces the silent "sub-agent never started" case as a distinct routing outcome rather than a deadlock.
 
 ## The adapter profile
 
@@ -49,7 +60,8 @@ A small YAML spec of "how to wire into assistant X" (illustrative):
 assistant: claude-code
 inject:
   - line: { file: CLAUDE.md, scope: project-root }            # universal floor
-  - hook: { event: SessionStart, run: "tool start --orient" } # primary; calls the CLI
+  - hook: { event: SessionStart, run: "tool start" }          # primary; calls the CLI — bare `tool start` is read-only orientation
+  - hook: { event: Resume, run: "tool start", when: supports(resume) }  # post-compaction re-injection (ships when the assistant API exposes the event)
 allowlist:
   file: .claude/settings.json
   permit: ["tool *"]
@@ -62,4 +74,4 @@ Profiles for known assistants **ship with the CLI** (Claude Code first); additio
 ## Open questions
 
 - **Profiles beyond Claude Code** — Cursor, Codex, and others follow the same model; their concrete profiles (events, files, spawn primitive) are incremental.
-- **Hook event(s) + nudge content** — the exact session-start (and any other) event per assistant, and the precise shape of the thin live nudge.
+- **Hook event(s) per assistant** — the precise session-start (and any other) hook event for each assistant; for Claude Code, `SessionStart` running bare `tool start` is settled (the orientation output *is* the nudge).
