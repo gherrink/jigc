@@ -69,7 +69,7 @@ fragment := unit ( "/" leaf )?            # in a non-repeatable unit
 
 The `item` hop appears **iff** the unit is repeatable; the `leaf` hop appears iff the schema names a leaf at that depth. So the schema *determines* which depths are valid for any given unit; the grammar *permits* every depth uniformly.
 
-**One grammar, every reference.** This is the single address atom every downstream system targets: write commands (`tool doc set-slot <addr>`), validation targets, override ops, data-values in workflows (`{{adr:foo#decision}}`), AND the **values of `ref` fields** that author cross-references (the `supersedes: adr:single-node-cache` pattern — see [document-type-schema.md](document-type-schema.md) → Cross-references). One grammar, one shape, one place to learn — used for every kind of reference, at whichever depth the reference needs.
+**One grammar, every reference.** This is the single address atom every downstream system targets: write commands (`jigc doc set-slot <addr>`), validation targets, override ops, data-values in workflows (`{{adr:foo#decision}}`), AND the **values of `ref` fields** that author cross-references (the `supersedes: adr:single-node-cache` pattern — see [document-type-schema.md](document-type-schema.md) → Cross-references). One grammar, one shape, one place to learn — used for every kind of reference, at whichever depth the reference needs.
 
 ## IDs: provenance and minting
 
@@ -95,12 +95,12 @@ Documents and workflows are the **managed-artifact family** — minted, structur
 - **milestone** (planned) — a higher-level work container; tasks roll up to a milestone for store-scope validation (completeness obligations like inverse-cardinality).
 - **increment** (planned) — sits between milestone and task: a **deliverable increment**, a coherent group of tasks that together deliver one vertical slice of a milestone's outcome. It is the unit `milestone-planning` decomposes a milestone into, and the rollup parent of its tasks; the hierarchy is `milestone > increment > task`. (Whether the increment or the task is the one-level `fan-out` boundary is a post-MVP question, deferred with the hierarchy.)
 
-All work-units use the same slug-from-source / frozen / collision-suffix discipline as artifacts; they don't have leaves to address into, so addresses are `type:name` with no fragment (`task:add-rate-limiter`, `milestone:m1`). They are referenced as live-state roots by data-values (`task.intent`, `milestone.tasks`), as command surfaces (`tool task …`, future `tool milestone …`), and as validation scopes.
+All work-units use the same slug-from-source / frozen / collision-suffix discipline as artifacts; they don't have leaves to address into, so addresses are `type:name` with no fragment (`task:add-rate-limiter`, `milestone:m1`). They are referenced as live-state roots by data-values (`task.intent`, `milestone.tasks`), as command surfaces (`jigc task …`, future `jigc milestone …`), and as validation scopes.
 
 **Minting sites — full picture:**
 
 - managed-artifact family: exactly two sites (container creation, repeatable-item add) — see [Repetition](#repetition) and [IDs](#ids-provenance-and-minting).
-- work-unit family: each work-unit `create`/`start` operation (`tool start --workflow` mints a task; future `tool milestone create`, `tool increment create`).
+- work-unit family: each work-unit `create`/`start` operation (`jigc start --workflow` mints a task; future `jigc milestone create`, `jigc increment create`).
 
 Both families' mints are deterministic under concurrency (task-id-ordered collision suffix), so reproducibility holds across the whole runtime, not just inside artifacts.
 

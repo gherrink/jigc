@@ -17,7 +17,7 @@ The guarantee that makes this safe: **the agent addresses content by name; the C
 
 ## The verbs
 
-**Write primitives** — `tool doc <verb> <addr>`:
+**Write primitives** — `jigc doc <verb> <addr>`:
 
 | verb | targets | content handoff |
 |---|---|---|
@@ -28,14 +28,14 @@ The guarantee that makes this safe: **the agent addresses content by name; the C
 | `remove-item <item-addr>` | an item | — |
 | `reorder <section-addr> --order …` | the item ordering list | deterministic edit of the ordered list |
 
-**Lifecycle** — a task is born at `tool start` (see [Task origination](#task-origination)) and then managed with `tool task <verb> <id>`: `diff` (see the working changeset) · `validate` (check it) · `finalize` (validate + commit) · `discard` (abandon).
+**Lifecycle** — a task is born at `jigc start` (see [Task origination](#task-origination)) and then managed with `jigc task <verb> <id>`: `diff` (see the working changeset) · `validate` (check it) · `finalize` (validate + commit) · `discard` (abandon).
 
-A **fillable form** — `tool doc edit` emits the whole instance with slots marked, the agent fills in place, the CLI extracts-by-marker and places — is **deferred sugar** that compiles to a transactional batch of these primitives. It pays off only for multi-slot docs and carries the real risk (form corruption, handled like an out-of-band edit), so it lands when multi-slot flows do. The primitives are the MVP surface.
+A **fillable form** — `jigc doc edit` emits the whole instance with slots marked, the agent fills in place, the CLI extracts-by-marker and places — is **deferred sugar** that compiles to a transactional batch of these primitives. It pays off only for multi-slot docs and carries the real risk (form corruption, handled like an out-of-band edit), so it lands when multi-slot flows do. The primitives are the MVP surface.
 
 **Post-MVP verbs — pinned, not designed in detail:**
 
-- **`tool doc rename <addr> --to <new-addr>`** — a path rename of a managed doc is an identity change ([storage.md](storage.md) → Identity), and this op handles it atomically: re-key the `file-state` hash · rewrite every referrer ref across the committed store · commit as one logical change (transactional like `finalize`). MVP detects OOB renames and routes the human to revert in git ([reconciliation.md](reconciliation.md) → Rename detection); the explicit CLI op ships when the verb is needed.
-- **`tool doc delete <addr>`** — confirms a deletion (the file is gone, the human meant it). Removes the `file-state` record and surfaces dangling referrer refs as integrity findings. Same deferral shape — MVP detects deletions and routes to restore.
+- **`jigc doc rename <addr> --to <new-addr>`** — a path rename of a managed doc is an identity change ([storage.md](storage.md) → Identity), and this op handles it atomically: re-key the `file-state` hash · rewrite every referrer ref across the committed store · commit as one logical change (transactional like `finalize`). MVP detects OOB renames and routes the human to revert in git ([reconciliation.md](reconciliation.md) → Rename detection); the explicit CLI op ships when the verb is needed.
+- **`jigc doc delete <addr>`** — confirms a deletion (the file is gone, the human meant it). Removes the `file-state` record and surfaces dangling referrer refs as integrity findings. Same deferral shape — MVP detects deletions and routes to restore.
 
 ## Content handoff
 
@@ -48,23 +48,23 @@ Splits by leaf kind, falling straight out of the slot/field distinction:
 
 ## Task origination
 
-The front door is `tool start`. The agent — knowing only the bootstrap ([bootstrap.md](bootstrap.md)) — runs it; the CLI does the rest. Four forms, all deterministic:
+The front door is `jigc start`. The agent — knowing only the bootstrap ([bootstrap.md](bootstrap.md)) — runs it; the CLI does the rest. Four forms, all deterministic:
 
-- **bare `tool start`** — **orients** (read-only): project state, in-progress tasks, the workflow catalog with each workflow's `when` hint, recent finalizations. Never mints, never composes a side-effectful workflow. Adapter `SessionStart` hooks call this ([assistant-adapter.md](assistant-adapter.md)).
-- **`tool start "<intent>"`** — composes the cascade's **default workflow** (the cascade knob `default-workflow: <id>`, [overrides.md](overrides.md)) with `{{task.intent}}` = `<intent>`. Whether this mints a task is the workflow's own **`creates-task`** declaration ([workflow-dialect.md](workflow-dialect.md)). The two knobs are orthogonal — any workflow can be the default, any workflow can mint or not.
+- **bare `jigc start`** — **orients** (read-only): project state, in-progress tasks, the workflow catalog with each workflow's `when` hint, recent finalizations. Never mints, never composes a side-effectful workflow. Adapter `SessionStart` hooks call this ([assistant-adapter.md](assistant-adapter.md)).
+- **`jigc start "<intent>"`** — composes the cascade's **default workflow** (the cascade knob `default-workflow: <id>`, [overrides.md](overrides.md)) with `{{task.intent}}` = `<intent>`. Whether this mints a task is the workflow's own **`creates-task`** declaration ([workflow-dialect.md](workflow-dialect.md)). The two knobs are orthogonal — any workflow can be the default, any workflow can mint or not.
   - MVP: `default-workflow: single-task` (a `creates-task: true` work-workflow) → one call mints.
   - Post-MVP: cascade flips `default-workflow` to a `router` (`creates-task: false`) → composing it presents the catalog and emits the explicit `--workflow X` call, which is what mints.
-- **`tool start --workflow <X> "<intent>"`** — composes `X` explicitly, bypassing the cascade default. Mints iff `X` declares `creates-task: true`. The id is a **slug from `<intent>`** (frozen, collision-suffixed under the same discipline as artifacts); pinned to base = HEAD; opens `.tool/tasks/<id>/`. Tasks are first-class identities in the **work-unit family** ([structural-grammar.md](structural-grammar.md#work-units-and-runtime-identity); planned siblings: `milestone`, `increment`). This is the agent's "I know what I want" path, and what the router's output names.
-- **`tool start --task <id>`** — resumes an existing task: loads its working area, shows where it is in its workflow. No minting.
+- **`jigc start --workflow <X> "<intent>"`** — composes `X` explicitly, bypassing the cascade default. Mints iff `X` declares `creates-task: true`. The id is a **slug from `<intent>`** (frozen, collision-suffixed under the same discipline as artifacts); pinned to base = HEAD; opens `.jigc/tasks/<id>/`. Tasks are first-class identities in the **work-unit family** ([structural-grammar.md](structural-grammar.md#work-units-and-runtime-identity); planned siblings: `milestone`, `increment`). This is the agent's "I know what I want" path, and what the router's output names.
+- **`jigc start --task <id>`** — resumes an existing task: loads its working area, shows where it is in its workflow. No minting.
 
 Minting is **structure declared by the workflow**, never inferred — the CLI reads `creates-task` and acts. The cascade decides the default, the router (when present) presents options, the agent's reasoning chooses, and a human can pre-pick via a catalog-generated adapter command ([assistant-adapter.md](assistant-adapter.md)). The agent supplies the *intent* (content); the CLI mints the *id* and opens the area (structure) — the determinism boundary holds.
 
 **Task-id collision & resume — serial vs parallel.** The same slug can arrive twice; policy splits by *how*:
 
-- **Active task already exists with the slugged id** (serial retry of `tool start "<intent>"` or `--workflow X "<intent>"`) → **reject**, with the existing task's status surfaced. The agent uses `tool start --task <id>` to resume or `tool task discard <id>` to abandon and retry. *Never silently suffixed, never silently reused* — a re-issued intent that lands on the same slug is almost always a forgotten resume, and silent suffixing would strand the original work.
+- **Active task already exists with the slugged id** (serial retry of `jigc start "<intent>"` or `--workflow X "<intent>"`) → **reject**, with the existing task's status surfaced. The agent uses `jigc start --task <id>` to resume or `jigc task discard <id>` to abandon and retry. *Never silently suffixed, never silently reused* — a re-issued intent that lands on the same slug is almost always a forgotten resume, and silent suffixing would strand the original work.
 - **Base mismatch on an existing task** (the task is pinned to commit `<A>`, you're on `<B>`) → blocked with the same divergence-routing prompt as [out-of-band reconciliation](#out-of-band-reconciliation): switch back to `<A>`, or `discard`. Applies to both serial collision and explicit `--task <id>` resume — the CLI never operates a task off its pinned base.
-- **`--task <id>` for a nonexistent id** → reject with "no task `<id>`". The in-progress catalog lives in bare `tool start` orientation output, so the agent has a path to discover live ids.
-- **Finalized task, slug reusable** → after `finalize` the working area is gone (`.tool/tasks/<id>/` removed), so the task-id slot is free; a re-issued intent slugs to the same id and mints normally. Any *managed-artifact* ids the prior task minted (`commit:<slug>`, `adr:<slug>`) live in committed storage and follow the artifact minting rule's collision-suffix discipline if the new task tries to mint the same name ([structural-grammar.md](structural-grammar.md#ids-provenance-and-minting)).
+- **`--task <id>` for a nonexistent id** → reject with "no task `<id>`". The in-progress catalog lives in bare `jigc start` orientation output, so the agent has a path to discover live ids.
+- **Finalized task, slug reusable** → after `finalize` the working area is gone (`.jigc/tasks/<id>/` removed), so the task-id slot is free; a re-issued intent slugs to the same id and mints normally. Any *managed-artifact* ids the prior task minted (`commit:<slug>`, `adr:<slug>`) live in committed storage and follow the artifact minting rule's collision-suffix discipline if the new task tries to mint the same name ([structural-grammar.md](structural-grammar.md#ids-provenance-and-minting)).
 - **Parallel collision under `fan-out`** (two sub-agents mint the same slug simultaneously) → the by-task-id merge applies the deterministic collision-suffix and rewrites *local* self-references ([workflow-dialect.md](workflow-dialect.md#fan-out--join)). This is the **only** place the suffix runs at task scope; the serial cases above all reject.
 
 The principle: **suffix only in the deterministic parallel case** (where both works are legitimate and the join needs to disambiguate); **reject in the serial case** (where it's almost certainly a forgotten resume the agent should see).
@@ -91,7 +91,7 @@ A task carries **context roles** its workflow declares (e.g. `spec`); the agent 
 A working instance must exist before you can `set-slot` into it. The CLI **always** owns the structural act — mint the id (slug from the type's id-source field) and place it at the schema-defined location ([structural-grammar.md](structural-grammar.md#ids-provenance-and-minting)). There are two triggers:
 
 - **Workflow-provisioned** (deterministic) — the composed workflow creates the instances the task obviously needs (e.g. the task's commit doc) and fills the id-source field deterministically, yielding a task-derived id like `commit:add-rate-limiter`. The agent only fills slots.
-- **Agent-initiated** (judgment) — `tool doc create adr --title "…"` when the agent decides a *new* doc is warranted mid-task. The CLI mints + places; the agent supplied only content.
+- **Agent-initiated** (judgment) — `jigc doc create adr --title "…"` when the agent decides a *new* doc is warranted mid-task. The CLI mints + places; the agent supplied only content.
 
 This keeps the determinism boundary intact: **deciding a doc is warranted is reasoning (agent); creating and placing it is structure (CLI).** Agent-initiated `create` is **workflow-gated** — the catalog of types creatable in a given context is structure (workflow/cascade-owned); *choosing* among them is reasoning.
 
@@ -101,16 +101,16 @@ The gate lives on the workflow's front-matter as **`allows-create: [<doctype-id>
 
 **Two entry forms.** Each `allows-create` entry is either a bare doctype id (`adr`) or an object `{type: <doctype-id>, as: <role>}`. The object form additionally **declares a context role and binds the created instance to it**: creating that doctype under the gate makes the new instance reachable as `task.<role>` ([workflow-dialect.md](workflow-dialect.md)) with no separate bind step. MVP `single-task` ships `allows-create: [{type: adr, as: decision}]`, so an agent-created ADR is reachable as `task.decision` — the surface the superseding-decision context-slice composes from (`{{@task.decision.supersedes#decision}}`, see [worked-examples.md](worked-examples.md) → Superseding decision). The bare form grants create permission without declaring a role.
 
-**Enforcement at every `tool doc create <type> --<args>`:**
+**Enforcement at every `jigc doc create <type> --<args>`:**
 
-1. Identify the active task — `.tool/tasks/<id>/` from cwd, or `--task <id>` explicit. **No active task** → reject: `"no active task — start one with \`tool start\`"`.
+1. Identify the active task — `.jigc/tasks/<id>/` from cwd, or `--task <id>` explicit. **No active task** → reject: `"no active task — start one with \`jigc start\`"`.
 2. Identify the task's workflow and resolve its effective `allows-create` through the cascade ([overrides.md](overrides.md) → Resolution algorithm).
 3. **Unknown doctype** (`<type>` not in the cascade-resolved schema set) → reject: `"unknown doctype \`<type>\`"`. (This is a separate failure mode from the gate; it fires before the gate check.)
 4. `<type>` ∈ `allows-create` → proceed: mint id, place per the schema's `location:`, **bind it to the entry's `as:` role if the entry declares one**, return the new address.
 5. `<type>` ∉ `allows-create` → reject with the structured gate-block error:
 
 ```text
-error: workflow 'single-task' does not allow `tool doc create spec` in-task.
+error: workflow 'single-task' does not allow `jigc doc create spec` in-task.
        allowed doctypes: [adr]
        to loosen: set `workflows.single-task.allows-create` in project config
 ```
@@ -142,18 +142,18 @@ The deterministic classifier (states, transitions, parse classification, hash re
 ```text
 # task add-rate-limiter; the workflow has provisioned commit:add-rate-limiter (empty)
 
-tool doc set-field commit:add-rate-limiter#type    --value feat
-tool doc set-slot  commit:add-rate-limiter#summary --from-file -      # prose piped in
-tool task validate add-rate-limiter                                   # blockers? (preview)
-tool task finalize add-rate-limiter                                   # validate + commit
+jigc doc set-field commit:add-rate-limiter#type    --value feat
+jigc doc set-slot  commit:add-rate-limiter#summary --from-file -      # prose piped in
+jigc task validate add-rate-limiter                                   # blockers? (preview)
+jigc task finalize add-rate-limiter                                   # validate + commit
 ```
 
 Agent-initiated create within the same task:
 
 ```text
-tool doc create adr --title "Rate-limit at the gateway"   # → adr:rate-limit-at-the-gateway
-tool doc set-field adr:rate-limit-at-the-gateway#status  --value accepted
-tool doc set-slot  adr:rate-limit-at-the-gateway#context --from-file -
+jigc doc create adr --title "Rate-limit at the gateway"   # → adr:rate-limit-at-the-gateway
+jigc doc set-field adr:rate-limit-at-the-gateway#status  --value accepted
+jigc doc set-slot  adr:rate-limit-at-the-gateway#context --from-file -
 ```
 
 ## Open questions

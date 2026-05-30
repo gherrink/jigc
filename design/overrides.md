@@ -11,16 +11,16 @@ Three layers over a versioned base, ordered by **specificity — most-specific w
 | layer | scope | lives | precedence |
 |---|---|---|---|
 | **project** | this repo | committed config dir (in-repo, diff-reviewed) | **highest — wins** |
-| **team** | cross-project / team-general | external `~/.config/<tool>/` | middle |
+| **team** | cross-project / team-general | external `~/.config/jigc/` | middle |
 | **pack-default** | universal (the pack's baseline) | ships with the installed pack | base |
 
 Project wins because it is the layer that *differs most* — the deliberate, specific decisions of the one repo you're in must override your general cross-project settings, not the reverse. `team` is **not per-developer**: what this system configures is *governance* (doc types, workflows, conventions, severities), which is a team/project concern, not a personal preference — so a per-developer layer has nothing to hold (deferred; see Open questions).
 
-Resolution applies the base, then `team` deltas, then `project` deltas (project last, so it wins). The in-repo `.tool/` dir holds **no config** — it stays purely derived/transient ([storage.md](storage.md)).
+Resolution applies the base, then `team` deltas, then `project` deltas (project last, so it wins). The in-repo `.jigc/` dir holds **no config** — it stays purely derived/transient ([storage.md](storage.md)).
 
 **Determinism.** Composition is a pure function of the *resolved cascade* — a declared, inspectable input, never hidden variance. The practical rule: **anything that must be reproducible from the repo alone belongs at project level** (committed), which is exactly where governance naturally lives.
 
-**Cascade provenance is visible on every long-lived surface.** The resolved cascade is a declared input to determinism, so the agent and the human must *see* what cascade is in effect — hidden cascade variance is the failure mode this discipline exists to prevent. `tool start` (orientation — see [bootstrap.md](bootstrap.md) → Orientation output examples), `tool task validate`, and `--explain` ([workflow-dialect.md](workflow-dialect.md) → `--explain` output contract) all show a one-line header: `Pack: <pack-id>/<version> · Project config: <path> · Branch: <branch> (HEAD <short>)`. When the external team layer at `~/.config/<tool>/` is populated, a `Team config: <path>` segment is added. `--explain` extends this with the per-definition resolved layer as resolution-tree layer 1.
+**Cascade provenance is visible on every long-lived surface.** The resolved cascade is a declared input to determinism, so the agent and the human must *see* what cascade is in effect — hidden cascade variance is the failure mode this discipline exists to prevent. `jigc start` (orientation — see [bootstrap.md](bootstrap.md) → Orientation output examples), `jigc task validate`, and `--explain` ([workflow-dialect.md](workflow-dialect.md) → `--explain` output contract) all show a one-line header: `Pack: <pack-id>/<version> · Project config: <path> · Branch: <branch> (HEAD <short>)`. When the external team layer at `~/.config/jigc/` is populated, a `Team config: <path>` segment is added. `--explain` extends this with the per-definition resolved layer as resolution-tree layer 1.
 
 ## The ladder — deltas, not forks
 
@@ -151,7 +151,7 @@ These were under-specified before; locking them here:
 
 ## Upgrade reconciliation — `override-default`
 
-When pack-default goes `v1 → v2`, a guarded `tool upgrade` re-applies each recorded delta and classifies it. This is the engine-native **`override-default` probe** ([validation.md](validation.md)); it asks two deterministic questions per delta against v2:
+When pack-default goes `v1 → v2`, a guarded `jigc upgrade` re-applies each recorded delta and classifies it. This is the engine-native **`override-default` probe** ([validation.md](validation.md)); it asks two deterministic questions per delta against v2:
 
 1. **Does the target still exist?** No → **`orphaned`** (loud failure).
 2. **Did the target change, *and does this delta depend on that content*?** Yes → **`conflict`** (review). No → **`clean`** (you inherit every other v2 improvement free).

@@ -2,7 +2,7 @@
 
 How the CLI handles edits to managed documents that happen **outside** its write path — humans editing files directly, `git checkout` switching branches, `git pull` bringing in upstream changes. Reconciliation is the deterministic state machine that classifies what changed and routes it: **absorb** cleanly, **conformance-block**, or **conflict-block**. Never silent.
 
-Builds on [VISION.md](../VISION.md) principle #3 ("files are truth"; out-of-band edits are detected and reconciled, never forbidden), [write-commands.md](write-commands.md) (the OOB philosophy; staging in `.tool/tasks/<id>/`), [validation.md](validation.md) (the `file-state` engine-native probe whose output this consumes; severity is tunable per its [Severity inventory](validation.md#severity-inventory)), [storage.md](storage.md) (`.tool/state/` hash records, the rebuildable edge index), [finalize.md](finalize.md) (the commit phase that updates hashes), and [implementation/parsing.md](../implementation/parsing.md) (the canonical-Markdown parse the classifier calls). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
+Builds on [VISION.md](../VISION.md) principle #3 ("files are truth"; out-of-band edits are detected and reconciled, never forbidden), [write-commands.md](write-commands.md) (the OOB philosophy; staging in `.jigc/tasks/<id>/`), [validation.md](validation.md) (the `file-state` engine-native probe whose output this consumes; severity is tunable per its [Severity inventory](validation.md#severity-inventory)), [storage.md](storage.md) (`.jigc/state/` hash records, the rebuildable edge index), [finalize.md](finalize.md) (the commit phase that updates hashes), and [implementation/parsing.md](../implementation/parsing.md) (the canonical-Markdown parse the classifier calls). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
 
 ## The principle
 
@@ -63,7 +63,7 @@ For `DRIFTED + TOUCHED`, both sides have moved: the on-disk file changed since t
 conflict on adr:rate-limit-at-the-gateway:
   external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
   resolution:
-    - tool task discard-write adr:rate-limit-at-the-gateway   # drop the task's changes
+    - jigc task discard-write adr:rate-limit-at-the-gateway   # drop the task's changes
     - revert the file on disk                                  # drop the human's edit
 ```
 
@@ -88,15 +88,15 @@ So rename detection is a separate classifier, running at the same trigger points
           likely renamed via `git mv`.
     resolution (MVP):
       $ git mv decisions/gateway-rate-limit.md decisions/rate-limit.md
-    post-MVP: `tool doc rename adr:rate-limit --to adr:gateway-rate-limit`
+    post-MVP: `jigc doc rename adr:rate-limit --to adr:gateway-rate-limit`
               will re-key file-state and rewrite every referrer ref atomically
               (see write-commands.md → post-MVP verbs).
   ```
-- **Weak signal — tracked path missing, no content-matching new file.** The tracked file is simply gone (deleted, accidentally removed). The CLI surfaces a conformance error: *"tracked managed doc adr:rate-limit (decisions/rate-limit.md) is missing — restore the file, or run `tool doc delete adr:rate-limit` to confirm deletion (post-MVP)."* MVP routes to restore.
+- **Weak signal — tracked path missing, no content-matching new file.** The tracked file is simply gone (deleted, accidentally removed). The CLI surfaces a conformance error: *"tracked managed doc adr:rate-limit (decisions/rate-limit.md) is missing — restore the file, or run `jigc doc delete adr:rate-limit` to confirm deletion (post-MVP)."* MVP routes to restore.
 
-**MVP policy: block, route to revert. No auto-rewrite of refs.** A path rename is an identity change, and identity changes must be CLI-orchestrated (consistent with [VISION.md](../VISION.md) principle #2's "splits and merges are explicit CLI ops"). MVP doesn't ship `tool doc rename` or `tool doc delete`; the human reverts in git, or waits for the post-MVP op. Same shape as the rest of strict-MVP scope ([Auto-repair scope](#auto-repair-scope)): the conformance error names exactly what's missing; the human (or post-MVP CLI op) resolves it explicitly.
+**MVP policy: block, route to revert. No auto-rewrite of refs.** A path rename is an identity change, and identity changes must be CLI-orchestrated (consistent with [VISION.md](../VISION.md) principle #2's "splits and merges are explicit CLI ops"). MVP doesn't ship `jigc doc rename` or `jigc doc delete`; the human reverts in git, or waits for the post-MVP op. Same shape as the rest of strict-MVP scope ([Auto-repair scope](#auto-repair-scope)): the conformance error names exactly what's missing; the human (or post-MVP CLI op) resolves it explicitly.
 
-**Post-MVP `tool doc rename`** is a single atomic transaction (transactional like `finalize`): re-key the `file-state` hash · rewrite every referrer ref across the committed store · commit as one logical change ([write-commands.md](write-commands.md) → post-MVP verbs). Not designed in detail until a real use case demands more than the contract.
+**Post-MVP `jigc doc rename`** is a single atomic transaction (transactional like `finalize`): re-key the `file-state` hash · rewrite every referrer ref across the committed store · commit as one logical change ([write-commands.md](write-commands.md) → post-MVP verbs). Not designed in detail until a real use case demands more than the contract.
 
 ## Detection timing
 
@@ -107,9 +107,9 @@ The `file-state` probe fires at six points; reconciliation runs the classifier a
 | **task `start`** | every managed doc the workflow will read or write | baseline-adopt unknowns, absorb clean drift, block before the task does any work |
 | **read through the CLI** | the doc being read | absorbs benign drift transparently; the agent sees current truth |
 | **write through the CLI** | the target doc | re-probe before staging; block if the doc has become conflicted since the task started |
-| **`tool task validate`** | every doc in the task's scope (working area + referenced docs) | full sweep — same sweep `finalize` runs |
-| **`tool task finalize` preflight** | same as validate | `finalize ≡ validate + commit` ([finalize.md](finalize.md)) |
-| **`tool validate` (ad-hoc)** | scope-flexible (doc / store) | manual check; no task context required |
+| **`jigc task validate`** | every doc in the task's scope (working area + referenced docs) | full sweep — same sweep `finalize` runs |
+| **`jigc task finalize` preflight** | same as validate | `finalize ≡ validate + commit` ([finalize.md](finalize.md)) |
+| **`jigc validate` (ad-hoc)** | scope-flexible (doc / store) | manual check; no task context required |
 
 Probing is cheap (one hash per doc); the classifier and the parse only run when state is `DRIFTED`.
 
@@ -151,8 +151,8 @@ The rule: **the conformance error names exactly what's missing; the human fixes 
 - **Auto-repair categories** — anchor re-mint, whitespace normalization, date canonicalization. Each is a separate per-category decision; none ships until demand is concrete.
 - **Section/leaf-level conflict granularity** — partial absorption when OOB-edit and task-touch don't overlap section-by-section. Pairs with three-way merge.
 - **Three-way merge for both-sides-changed conflicts** — currently deferred ([overrides.md](overrides.md); shared machinery with override-conflict resolution).
-- **`tool import` for entirely new untracked files** — adopting a brand-new `.md` file authored outside the CLI ([implementation/parsing.md](../implementation/parsing.md) → "mint-on-import lands with the full import flow"). MVP imports only edits to *managed* docs the CLI already knows about.
-- **`tool doc rename` / `tool doc delete`** — the explicit CLI ops that re-key file-state and atomically rewrite every referrer ref across the store (rename) or confirm a deletion (delete). MVP detects OOB renames and deletions and routes the human to revert in git; the ops ship post-MVP ([write-commands.md](write-commands.md) → post-MVP verbs).
+- **`jigc import` for entirely new untracked files** — adopting a brand-new `.md` file authored outside the CLI ([implementation/parsing.md](../implementation/parsing.md) → "mint-on-import lands with the full import flow"). MVP imports only edits to *managed* docs the CLI already knows about.
+- **`jigc doc rename` / `jigc doc delete`** — the explicit CLI ops that re-key file-state and atomically rewrite every referrer ref across the store (rename) or confirm a deletion (delete). MVP detects OOB renames and deletions and routes the human to revert in git; the ops ship post-MVP ([write-commands.md](write-commands.md) → post-MVP verbs).
 
 ## What reconciliation does NOT do
 
@@ -160,7 +160,7 @@ The rule: **the conformance error names exactly what's missing; the human fixes 
 - **No three-way merge.** Both-sides-changed blocks, never auto-resolves.
 - **No file forbidding.** The CLI never tries to prevent edits — it detects and reconciles.
 - **No identity reconstruction.** A dropped `{#id}` blocks; the CLI doesn't guess the id from context, even when it could.
-- **No silent rename.** A path change is an identity change ([Rename detection](#rename-detection)); the CLI never auto-rewrites referrer refs to follow a renamed file. Post-MVP `tool doc rename` does it on explicit confirmation.
+- **No silent rename.** A path change is an identity change ([Rename detection](#rename-detection)); the CLI never auto-rewrites referrer refs to follow a renamed file. Post-MVP `jigc doc rename` does it on explicit confirmation.
 - **No LLM call.** The classifier is deterministic — same `(file content + recorded hash + task working area + schema)` in → same classification out ([VISION.md](../VISION.md) principle #1).
 
 ## Open questions

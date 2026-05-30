@@ -61,7 +61,7 @@ A short burst above the limit is tolerated for 2s.
 
 ### Identity, order, fields, slots, items
 
-- **Identity is the path** — `specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file. A **title rename** (H1) changes the title field; the id stays frozen (see next bullet). A **path rename** (`git mv`) is an **identity change** — the path *is* the identity — so it's detected and routed as a rename ([reconciliation.md](reconciliation.md) → Rename detection); CLI-orchestrated post-MVP via `tool doc rename`, with MVP routing the human to revert in git.
+- **Identity is the path** — `specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file. A **title rename** (H1) changes the title field; the id stays frozen (see next bullet). A **path rename** (`git mv`) is an **identity change** — the path *is* the identity — so it's detected and routed as a rename ([reconciliation.md](reconciliation.md) → Rename detection); CLI-orchestrated post-MVP via `jigc doc rename`, with MVP routing the human to revert in git.
 - **id-source = the title field, rendered as the heading** — the schema declares a `string` field as the item's id-source (`id-from: title`, see [document-type-schema.md](document-type-schema.md)); that field is rendered on disk as the item's `###` heading text (not as a trailing `- key: value` field), with the minted `{#id}` anchor carrying the frozen id slugged from the field's value at creation. A doc's title is its H1 (filename = frozen id); an item's title is its `###` heading (`{#id}` = frozen id). The title is mutable (editing the heading edits the field's value); the id is frozen, so `spec:auth-flow#criteria/rate-limit` survives a retitle.
 - **Order = physical order.** Reordering is moving a block — a clean diff move, never a renumber.
 - **One field grammar** (`key: value`), two structural frames — header block → a flat front-matter block between `---`; a section/item block → a trailing **bullet list** (`- key: value`) preceded by an `<!-- fields -->` sentinel on its own line (the field-group boundary marker — see [implementation/parsing.md](../implementation/parsing.md) → Field-group delineation). The sentinel makes the field group unambiguous *by marker*, not by content-matching the bullet keys against the schema — so slot prose that legitimately ends with `- status: TBD` stays prose. `code-anchor` values carry presentational backticks (stripped on read, re-added on write) so the diff stays readable without polluting the stored value.
@@ -76,13 +76,13 @@ Committed source of truth and derived/transient state live apart:
 ```
 specs/  decisions/  …       # committed .md docs — the only source of truth
 <config-dir>/               # committed — the project cascade layer (deltas + knobs)
-.tool/                      # gitignored — all derived/transient state (no config)
+.jigc/                      # gitignored — all derived/transient state (no config)
   tasks/<task-id>/          #   per-task working area (staging)
   index/                    #   edge index (rebuildable cache)
   state/                    #   file↔CLI-state hashes (rebuildable)
 ```
 
-The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo (the `<config-dir>/` above — deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/<tool>/`, shared across a machine's projects); **pack-default** ships with the installed pack. So `.tool/` holds *no config* — only derived/transient state.
+The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo (the `<config-dir>/` above — deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, shared across a machine's projects); **pack-default** ships with the installed pack. So `.jigc/` holds *no config* — only derived/transient state.
 
 ### The per-task working area (staging)
 
@@ -102,13 +102,13 @@ The edge index ([document-type-schema.md](document-type-schema.md) → Bidirecti
 
 | site | action | persistence |
 |---|---|---|
-| **committed rebuild** | first read after a stamp mismatch (branch switch, pull, rebase) — rebuild from committed `.md`s | atomic; persists in `.tool/index/` with the new stamp |
+| **committed rebuild** | first read after a stamp mismatch (branch switch, pull, rebase) — rebuild from committed `.md`s | atomic; persists in `.jigc/index/` with the new stamp |
 | **working overlay** | `validate(task)` overlays the task's pending writes on the committed index for the scope of the run ([validation.md](validation.md) → Scope = effective state) | derived per-call, never persisted |
 | **OOB absorb** | reconciliation's clean-absorb path incrementally updates the committed index for the absorbed doc's edges ([reconciliation.md](reconciliation.md) → Parse classifier) | atomic, in-place |
 | **fan-out join** | at `join`, sub-task working overlays merge into the parent's working overlay by task-id order ([workflow-dialect.md](workflow-dialect.md#fan-out--join)) | derived, in-memory, never persisted |
 | **finalize commit** | phase 7 invalidates the stamp; next read rebuilds against the new HEAD ([finalize.md](finalize.md)) | best-effort; cache-stamp absorbs failure |
 
-One rule keeps the model honest: **the index is never persisted with task deltas in it.** Task overlays live in-memory for the scope of a `validate` or `finalize` run; only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes "delete `.tool/`, rebuild from `.md`s, nothing lost" hold for the index too — committed `.md`s + the cascade are the only source of truth.
+One rule keeps the model honest: **the index is never persisted with task deltas in it.** Task overlays live in-memory for the scope of a `validate` or `finalize` run; only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes "delete `.jigc/`, rebuild from `.md`s, nothing lost" hold for the index too — committed `.md`s + the cascade are the only source of truth.
 
 The **working-overlay derivation**: walk the task's working area, parse each `.md` per the schema, emit the same `(source, relation, target)` edges the committed-rebuild path would emit, layer them over the committed index. Forward-ref integrity (the `finalize` gate) walks the *overlaid* graph; inverse-cardinality (completeness, store-scope) walks the *committed* graph. No expensive merge — overlay is read-side only.
 

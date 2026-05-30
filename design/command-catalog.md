@@ -22,7 +22,7 @@ A catalog is a YAML list of command-refs, one entry per `id`. Each entry:
 
 ```yaml
 - id: <string>            # the {{cli.<id>}} name
-  command: <string>       # the executable (typically `tool`)
+  command: <string>       # the executable (typically `jigc`)
   args: [<arg>, …]        # ordered list; each arg is literal, from:, or agent:
   stdin: <string>         # optional; documents what stdin carries (renderer ignores)
   hint: <string>          # one-line documentation surfaced via `--explain` and catalog tooling
@@ -44,7 +44,7 @@ The data-value-path in `from:` uses the workflow-dialect grammar ([workflow-dial
 # packs/dev/commands.yaml
 commands:
   - id: set-commit-summary
-    command: tool
+    command: jigc
     args:
       - "doc"
       - "set-slot"
@@ -55,17 +55,17 @@ commands:
     hint: "Stage the commit summary slot from stdin."
 
   - id: validate-task
-    command: tool
+    command: jigc
     args: ["task", "validate", { from: "task.id" }]
     hint: "Preview validation findings without committing."
 
   - id: finalize-task
-    command: tool
+    command: jigc
     args: ["task", "finalize", { from: "task.id" }]
     hint: "Run validate + commit. One task → one commit."
 
   - id: create-adr
-    command: tool
+    command: jigc
     args:
       - "doc"
       - "create"
@@ -80,13 +80,13 @@ commands:
 For `{{cli.set-commit-summary}}` composed in a task `add-rate-limiter` workflow:
 
 ```text
-Run: `tool doc set-slot commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
 ```
 
 For `{{cli.create-adr}}`:
 
 ```text
-Run: `tool doc create adr --title <TITLE>`
+Run: `jigc doc create adr --title <TITLE>`
 ```
 
 The `<TITLE>` is the agent-substitution marker; the surrounding workflow prose (typically Reason-class) carries the `hint` for what to fill.
@@ -98,7 +98,7 @@ The composed output has three bracket families, each filled by a different party
 | family | example | who fills | when |
 |---|---|---|---|
 | `{{...}}` placeholder | `{{task.commit#summary}}` | CLI | compose-time (gone from emitted text) |
-| `<<...>>` slot-author | `<<author: commit:foo#summary>>` | LLM | write-path (through `tool doc set-slot`) |
+| `<<...>>` slot-author | `<<author: commit:foo#summary>>` | LLM | write-path (through `jigc doc set-slot`) |
 | `<...>` agent-substitution | `<TITLE>` | LLM | run-time (typed into shell) |
 
 `<...>` is visually distinct from `<<...>>`: single-angle vs double, uppercase identifier with no payload vs `name: address` payload. They cannot be confused at a glance.
@@ -136,7 +136,7 @@ deltas:
     target: catalog
     content:
       - id: lint-staged
-        command: tool
+        command: jigc
         args: ["task", "validate", { from: "task.id" }, "--probe", "lint"]
         hint: "Run only the lint probe against staged changes."
 

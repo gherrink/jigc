@@ -1,6 +1,6 @@
 # VISION
 
-> Working name: TBD. The command is referred to throughout as `tool` as a placeholder.
+> Working name: TBD. The command is referred to throughout as `jigc` as a placeholder.
 
 ## Thesis
 
@@ -113,8 +113,8 @@ Document types to define (starting set): commit messages, architecture documenta
 ## Primary flows
 
 - **Compose / read loop:** LLM asks for a workflow → CLI composes from config + cascade + live state → resolves all placeholders deterministically → emits the composed instruction set → LLM *follows* it (including running the CLI commands it names for structural ops).
-- **Write / finalize loop:** LLM reads via CLI → drafts content into a named slot via the CLI (stages in the per-task working area with write-time field-type/slug checks) → `tool task validate` / `diff` previews the changeset and findings → `tool task finalize` re-runs validation and commits. `finalize` defaults to autonomous (opt-in confirm-gate is a cascade setting); git/PR review is the durable correction point.
-- **Validate loop:** `tool validate [target]` checks integrity across all four targets and reports what is stale or broken, deterministically.
+- **Write / finalize loop:** LLM reads via CLI → drafts content into a named slot via the CLI (stages in the per-task working area with write-time field-type/slug checks) → `jigc task validate` / `diff` previews the changeset and findings → `jigc task finalize` re-runs validation and commits. `finalize` defaults to autonomous (opt-in confirm-gate is a cascade setting); git/PR review is the durable correction point.
+- **Validate loop:** `jigc validate [target]` checks integrity across all four targets and reports what is stale or broken, deterministically.
 
 ### Workflows to ship
 `project setup (existing project)` · `project setup (new project with idea development)` · `project planning` · `milestone planning` · `milestone execution` · `single task execution`.
@@ -133,23 +133,23 @@ Read the spec for this task:
 {{ @task.spec#criteria }}         # the SPEC slice content, resolved in (the `@` derefs the path's address — see workflow-dialect.md)
 
 ## 2 · Implement, then hand back the commit prose
-Run: `tool doc set-field commit:add-rate-limiter#type --value feat`
-Run: `tool doc set-slot  commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-field commit:add-rate-limiter#type --value feat`
+Run: `jigc doc set-slot  commit:add-rate-limiter#summary --from-file -`
      <<author: commit:add-rate-limiter#summary>>   # ← you write this; the CLI places & wires it
 
 ## Finalize
-Run: `tool task finalize add-rate-limiter`
+Run: `jigc task finalize add-rate-limiter`
   ⚠ "SPEC criterion 'limit=100/min' maps to no test — add coverage before finalize."
 ```
 
-What the agent actually sees has every `{{…}}` replaced inline with the deterministically-resolved value (a literal command, a doc slice, the included text); only `<<author: addr>>` survives into the agent's view, naming a *document* slot the agent fills through the write path — the only thing the agent originates is that prose. The `⚠` is the validation engine speaking, not the agent. (The task itself was born at `tool start`; structural ops like registering a milestone phase are other workflows, out of this single-task scope.) This illustrates the general, **spec-driven** shape; the **MVP** `single-task` is **spec-less** — its `locate` reads the human `intent` + the codebase, not a SPEC (see [CLAUDE.md](CLAUDE.md) → MVP scope).
+What the agent actually sees has every `{{…}}` replaced inline with the deterministically-resolved value (a literal command, a doc slice, the included text); only `<<author: addr>>` survives into the agent's view, naming a *document* slot the agent fills through the write path — the only thing the agent originates is that prose. The `⚠` is the validation engine speaking, not the agent. (The task itself was born at `jigc start`; structural ops like registering a milestone phase are other workflows, out of this single-task scope.) This illustrates the general, **spec-driven** shape; the **MVP** `single-task` is **spec-less** — its `locate` reads the human `intent` + the codebase, not a SPEC (see [CLAUDE.md](CLAUDE.md) → MVP scope).
 
 ## Sub-agents & assistant integration
 
 Sub-agents are first-class — and they ride on the architecture rather than fighting it.
 
 ### Sub-agents are just additional CLI consumers
-A sub-agent is an LLM that needs context, so it gets context the same way the main agent does: it calls `tool workflow <x> --task <id>` and the CLI composes its instructions. The CLI doesn't know or care whether it's a main agent or a sub-agent. On the **read/compose side, sub-agents need zero new machinery.**
+A sub-agent is an LLM that needs context, so it gets context the same way the main agent does: it calls `jigc workflow <x> --task <id>` and the CLI composes its instructions. The CLI doesn't know or care whether it's a main agent or a sub-agent. On the **read/compose side, sub-agents need zero new machinery.**
 
 ### Coordination is a control plane; the CLI is the data plane
 Agents coordinate **through the CLI, not through each other.** The agent-to-agent channel carries only control; the CLI carries data and is the single source of truth.
@@ -223,7 +223,7 @@ Each part-doc tracks its own opens in its `## Open questions` section; this is t
 - Override deltas · the cascade · defaults-versioning discipline · the 9-phase resolution algorithm (by-id shadowing → scalar deltas → structural deltas → slot-fills → cycle check → expansion → resolve → emit) → [overrides.md](design/overrides.md)
 - Doc-type schema definition format · cross-references as `ref` fields with relation metadata (`to`, `card`, `inverse`, `inverse-card`) → [document-type-schema.md](design/document-type-schema.md)
 - Addressing grammar (variable-depth, one grammar for every reference) · work-unit family identity · ID-source = title field rendered as heading → [structural-grammar.md](design/structural-grammar.md)
-- `tool start` semantics (four forms; orthogonal `creates-task` + `default-workflow` knobs) · task-id collision policy (reject in serial, suffix in parallel) → [write-commands.md](design/write-commands.md)
+- `jigc start` semantics (four forms; orthogonal `creates-task` + `default-workflow` knobs) · task-id collision policy (reject in serial, suffix in parallel) → [write-commands.md](design/write-commands.md)
 - Emitted format — four-class micro-syntax (`Run:` · `>` · `<<author:>>` · prose) → [workflow-dialect.md](design/workflow-dialect.md)
 - `--explain` resolution-tree output contract → [workflow-dialect.md](design/workflow-dialect.md)
 - Finalize transaction (seven phases, atomicity rules, rollback discipline, dirty-tree policy) · commit-doc → git-message rendering → [finalize.md](design/finalize.md)
@@ -236,6 +236,6 @@ Each part-doc tracks its own opens in its `## Open questions` section; this is t
 - Worked examples (MVP single-task with optional ADR · OOB reconciliation · override application at compose time · finalize-to-git) → [worked-examples.md](design/worked-examples.md)
 - Assistant adapter (neutral core + per-assistant profile) → [assistant-adapter.md](design/assistant-adapter.md)
 - Slot / field-group boundary discipline (sentinel-marked field groups via `<!-- fields -->`; slot heading-depth ceiling at `##`/`###`) — eliminates content-sniffing at the parse-time slot boundary → [storage.md](design/storage.md) and [implementation/parsing.md](implementation/parsing.md)
-- OOB rename detection (path-rename is identity-change; two-tier signal: strong = path missing + content-hash match, weak = path missing alone; MVP routes to revert, `tool doc rename` post-MVP) → [reconciliation.md](design/reconciliation.md) and [write-commands.md](design/write-commands.md)
+- OOB rename detection (path-rename is identity-change; two-tier signal: strong = path missing + content-hash match, weak = path missing alone; MVP routes to revert, `jigc doc rename` post-MVP) → [reconciliation.md](design/reconciliation.md) and [write-commands.md](design/write-commands.md)
 - Pack-probe determinism contract (six rules + four meta-finding failure modes; locked now, OS-level sandboxing implementation post-MVP) → [validation.md](design/validation.md)
 - Bootstrap compaction resilience (universal routing footer on every CLI agent-text output + per-assistant resume hook seam) → [bootstrap.md](design/bootstrap.md), [workflow-dialect.md](design/workflow-dialect.md), [assistant-adapter.md](design/assistant-adapter.md)

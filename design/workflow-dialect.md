@@ -21,7 +21,7 @@ So: **doc = fill & persist instances; workflow = resolve & emit a view.** There 
 
 ## The composed output is a view
 
-A composed workflow is **ephemeral**: a derived view, re-composed on every `tool workflow <x> --task <id>` call from `definition + cascade + live state`. It is never persisted and never a source of truth (consistent with storage's "composed = derived, rebuildable"). `--explain` re-computes the resolution tree on demand rather than reading a stored one.
+A composed workflow is **ephemeral**: a derived view, re-composed on every `jigc workflow <x> --task <id>` call from `definition + cascade + live state`. It is never persisted and never a source of truth (consistent with storage's "composed = derived, rebuildable"). `--explain` re-computes the resolution tree on demand rather than reading a stored one.
 
 A **flow diagram** (mermaid) is one such derived view: the CLI *generates* it from the composition (the ordered includes + `fan-out` markers) and can output it wherever useful — `--explain`, a `--diagram` flag, or leading the composed output. It is **descriptive, never prescriptive** — it reflects the includes, never defines flow — so it can't drift from the source or become a back-door for the banned DAGs/conditionals. Its value is mostly in visualizing `fan-out`; a straight sequence already reads as the ordered includes.
 
@@ -48,8 +48,8 @@ workflow:single-task                              (pack-default · dev/v0.3.0)
     step:implement                                (pack-default · dev/steps/implement.md)
       {{cli.set-commit-summary}}
         cascade:  project (—) → team (—) → pack-default (matched)
-        template: "tool doc set-slot {{addr}} --from-file -"
-        result:   "tool doc set-slot commit:add-rate-limiter#summary --from-file -"
+        template: "jigc doc set-slot {{addr}} --from-file -"
+        result:   "jigc doc set-slot commit:add-rate-limiter#summary --from-file -"
       {{task.commit#summary}}
         path:     task → .commit → #summary
         resolved: commit:add-rate-limiter#summary (address)
@@ -117,7 +117,7 @@ The two "machine" classes (**Run**, **Author**) carry markers; the two "human-is
 
 The four rules:
 
-1. **`Run: ` is reserved.** A line whose left margin starts with `Run: ` is a directive the composer emits, never authored by step prose. The command always follows in backticks: `` Run: `tool doc set-slot commit:add-rate-limiter#summary --from-file -` ``. Backticks make the command both visually distinct *and* machine-extractable by a strict line-pattern (`` ^Run: `(.+)`$ ``).
+1. **`Run: ` is reserved.** A line whose left margin starts with `Run: ` is a directive the composer emits, never authored by step prose. The command always follows in backticks: `` Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -` ``. Backticks make the command both visually distinct *and* machine-extractable by a strict line-pattern (`` ^Run: `(.+)`$ ``).
 2. **`> ` blockquote is content** — emitted around the resolution of a `{{@…}}` data-value. A multi-line doc-slice is a multi-line blockquote. Renders cleanly in any Markdown viewer; the agent reads it as "this is material I was given," not "this is something to run."
 3. **`<<author: <address>>` is the only thing the agent originates.** Its rules are settled in [Leaves](#leaves-instructions-and-placeholders): exactly one address parameter; the address is the doc slot the agent fills via the write path; the `<<…>>` wrapper survives composition unchanged.
 4. **Everything else is reasoning prose** — no marker, no special handling, no overhead. The agent treats it as instruction it should think with.
@@ -127,7 +127,7 @@ The four rules:
 **Routing footer (compaction resilience).** Every composed workflow output in agent-text and human-pretty format ends with a one-line routing footer:
 
 ```
-— tool · run `tool start` for orientation; all writes through `tool`.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
 ```
 
 The footer reinforces the bootstrap routing pointer on every CLI emission, so context compaction can't strip the agent's a-priori knowledge that the CLI is the interface ([bootstrap.md](bootstrap.md) → Context compaction resilience). It is CLI-emitted at phase 9 of the [resolution algorithm](overrides.md#resolution-algorithm), after step content; a step body never authors it. JSON-format output (consumed by tooling, not the agent's reading flow) carries no footer. Stays within the *routing, not content* discipline: names the entrypoint, embeds no rules.
@@ -153,7 +153,7 @@ fragment   := unit ( "/" item )? ( "/" leaf )?   # the addressing fragment
 A step and a workflow are each **one file**, reusing the same **shape** as document instances — a Markdown body under a `---`-fenced front-matter block ([storage.md](storage.md)) — but **not the same front-matter grammar**: a definition's front-matter is **config-family YAML** (nested keys like `fan-out.over`, `allows-create: [{type, as}]`), parsed by the config parser, *not* the flat `key: value` field block used for document instances ([parsing.md](../implementation/parsing.md) → Front-matter; [overrides.md](overrides.md)). Interpreted for definitions:
 
 - **A step** = a file: the YAML **front-matter** is the step's config (e.g. a `fan-out` marker); the **body is the prompt** — instruction prose with `{{placeholders}}`. The **id is the filename** (a frozen slug, like docs and items), so a plain step needs no front-matter at all — it's just a prompt body.
-- **A workflow** = a file: front-matter for workflow metadata — a one-line **`when`** hint the router uses for selection, a **`creates-task`** boolean (default `true`) declaring whether running this workflow mints a task ([write-commands.md](write-commands.md) → Task origination), and an optional **`allows-create: [<doctype-id>, ...]`** list naming the doctypes the agent may `tool doc create` during the task (default empty — no agent-initiated creates allowed; [write-commands.md](write-commands.md) → Instance provisioning); the **body is the ordered `{{include}}`s** — which *is* the composition and the ordering (principle #2: the workflow file is the ordered list; steps are the ID'd, reusable units it references).
+- **A workflow** = a file: front-matter for workflow metadata — a one-line **`when`** hint the router uses for selection, a **`creates-task`** boolean (default `true`) declaring whether running this workflow mints a task ([write-commands.md](write-commands.md) → Task origination), and an optional **`allows-create: [<doctype-id>, ...]`** list naming the doctypes the agent may `jigc doc create` during the task (default empty — no agent-initiated creates allowed; [write-commands.md](write-commands.md) → Instance provisioning); the **body is the ordered `{{include}}`s** — which *is* the composition and the ordering (principle #2: the workflow file is the ordered list; steps are the ID'd, reusable units it references).
 
 ```markdown
 # steps/locate.md   — a plain step: id from filename, body is the prompt
@@ -182,7 +182,7 @@ Spawn a sub-agent per task and implement it.
 # workflows/single-task.md   — front-matter carries the when-to-use hint + create-gate; body is ordered includes
 ---
 when: "Implement one well-scoped change against an existing spec."
-allows-create: [{type: adr, as: decision}]   # agent may `tool doc create adr ...`; the created ADR binds to task.decision
+allows-create: [{type: adr, as: decision}]   # agent may `jigc doc create adr ...`; the created ADR binds to task.decision
 ---
 {{ include: step:locate }}
 {{ include: step:implement }}
@@ -212,8 +212,8 @@ Because a step is a file with a stable id, **steps resolve through the cascade**
 
 Which workflow a task runs is **not** the composer's job (composition is substitution, not control flow) and **not** the CLI's (it can't infer, model-free). It is resolved at the front door ([write-commands.md](write-commands.md) → Task origination):
 
-- `tool start --workflow <X>` composes `X` directly.
-- `tool start` with no workflow composes the **router** — the cascade-default workflow whose job is *selection*. The router is an ordinary composed workflow: its body assembles the **catalog** of available workflows with each one's **`when`** hint plus a *recommended* default, and instructs the agent to re-run `tool start --workflow <chosen>`. The agent picks; the CLI never does.
+- `jigc start --workflow <X>` composes `X` directly.
+- `jigc start` with no workflow composes the **router** — the cascade-default workflow whose job is *selection*. The router is an ordinary composed workflow: its body assembles the **catalog** of available workflows with each one's **`when`** hint plus a *recommended* default, and instructs the agent to re-run `jigc start --workflow <chosen>`. The agent picks; the CLI never does.
 
 So selection reuses the workflow machinery (no special selection logic), stays model-free, is cascade-overridable (a project can rewrite its routing advice, or set the default to a specific work-workflow — as the **MVP** does, defaulting to `single-task` until ≥2 work-workflows exist, see [CLAUDE.md](../CLAUDE.md) → MVP scope), and **never forces** — the worst case is the agent gets routing help. A workflow earns its place in the router by declaring its one-line `when` hint, so adding a workflow surfaces it automatically.
 
@@ -223,13 +223,13 @@ The single bounded concurrency primitive, assembled from the locked concurrency 
 
 - A **`fan-out` step** declares a **list-source** — a data-value resolving to a *collection* (e.g. `{{milestone.tasks}}` from a many-relation, or `{{spec#criteria}}` from a repeatable section's items) — and a **referenced sub-workflow** each spawn runs.
 - The **CLI resolves the list and emits dispatch instructions** ("spawn these task-ids running `W`"); the **assistant adapter launches** them. The locked seam holds — *CLI owns the payload, the assistant owns the launch* — and the CLI never spawns (it makes no agent calls).
-- Each **sub-agent re-enters the composer** (`tool workflow W --task <sub>`) and gets the *same deterministic composed workflow* it would get as a main agent — **referenced, not inline** (inline would reintroduce a lossy paraphrase). It writes to its isolated `.tool/tasks/<sub>/`, acks `status + task_id`, and writes any detail to CLI state; the main agent **re-derives from the CLI, never trusts the message**. A sub-agent never commits (see the join, below).
+- Each **sub-agent re-enters the composer** (`jigc workflow W --task <sub>`) and gets the *same deterministic composed workflow* it would get as a main agent — **referenced, not inline** (inline would reintroduce a lossy paraphrase). It writes to its isolated `.jigc/tasks/<sub>/`, acks `status + task_id`, and writes any detail to CLI state; the main agent **re-derives from the CLI, never trusts the message**. A sub-agent never commits (see the join, below).
 - **Sub-task id = the fanned item's id** — the list-source resolves to a collection of managed instances, each carrying a frozen minted id, and that id becomes the sub-task id, so the by-task-id merge is meaningful and deterministic.
 - **`join` is a barrier:** all sub-tasks complete, the CLI merges working areas **by task-id order** (never completion order), and the main workflow re-composes its post-join steps against the merged state. Synchronization is through CLI state, not messages.
 - **The parent task's `finalize` is the commit boundary** — sub-agents may `validate` their own area for early feedback but **never run git**, so there are no races. The parent's `finalize` validates the merged effective state and emits **one commit per sub-task in task-id order** (squash is a cascade knob), plus the parent's own commit. "One task → one logical commit" is preserved per sub-task, deterministically ordered.
 - **Slug collisions resolve in the merge pass.** Two sub-agents minting the same slug → the join suffixes the loser (task-id order) and **rewrites that area's *local* self-references** to match (the CLI owns wiring — the agent placed nothing). Workflow-provisioned ids are sub-task-derived and can't collide at all.
 - **Cross-area refs are rejected at join, not silently rewritten.** Filesystem isolation prevents a sub-agent from *writing into* a sibling's area, but it does not prevent the sub-agent from *typing* a plausible sibling slug — e.g. sub-task B writes `supersedes: adr:cache` guessing sub-task A's ADR id. The join validates each sub-task's outgoing refs against `(committed store ∪ this sub-task's own working area)` only — **same surface as the cross-task forward-ref policy** ([validation.md](validation.md) → Forward-ref resolution) — and rejects cross-area refs as blocking integrity errors. The dangling ref surfaces; the human routes. Coordinating creates that need to reference each other belong in **sequential steps** before the fan-out splits; ID reservation or provisional refs would land as a separate post-MVP feature with its own design, not as a quiet retarget.
-- **Never-started sub-tasks surface as a distinct outcome.** The join derives every sub-task's state from the CLI ("messages are notifications, CLI state is truth" — [VISION.md](../VISION.md) → Sub-agents). A sub-task with **no recorded CLI activity** — no reads, no writes, no working-area presence — is treated as **never-started**, distinct from "started and failed." This is the runtime backstop for adapter-template corruption: if the assistant's launch template is stale or broken and the sub-agent never invokes `tool workflow --task <id>`, the join surfaces "never-started" for routing rather than waiting forever or producing a quiet zero-output success ([assistant-adapter.md](assistant-adapter.md) → Bind the spawn mechanism).
+- **Never-started sub-tasks surface as a distinct outcome.** The join derives every sub-task's state from the CLI ("messages are notifications, CLI state is truth" — [VISION.md](../VISION.md) → Sub-agents). A sub-task with **no recorded CLI activity** — no reads, no writes, no working-area presence — is treated as **never-started**, distinct from "started and failed." This is the runtime backstop for adapter-template corruption: if the assistant's launch template is stale or broken and the sub-agent never invokes `jigc workflow --task <id>`, the join surfaces "never-started" for routing rather than waiting forever or producing a quiet zero-output success ([assistant-adapter.md](assistant-adapter.md) → Bind the spawn mechanism).
 
 Two bounds, both consistent with prior decisions:
 
@@ -262,11 +262,11 @@ Read the spec for this task:
 > • Rate limit holds at 100/min → maps-to-test: test/rate_limit_spec.rb#burst
 
 ## implement · author the commit prose
-Run: `tool doc set-slot commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
 <<author: commit:add-rate-limiter#summary>>
 
 ## finalize
-Run: `tool task finalize add-rate-limiter`
+Run: `jigc task finalize add-rate-limiter`
 ```
 
 The **`@`-marked data-value** resolved to a doc-slice and emitted as a `> ` blockquote (Content class); the command-ref resolved through the cascade and emitted as a `` Run: `<cmd>` `` directive (Run class); the **`<<author: …>>` slot-author directive** survived composition with its embedded `{{task.commit#summary}}` placeholder resolved to the doc address — it points the agent at a *document* slot to fill via the write path (Author class). The reasoning-prose lines ("Read the spec for this task:", "author the commit prose") carry no marker — that's the Reason class, the default. The workflow dialect itself stores nothing.

@@ -16,11 +16,11 @@ The MVP flow: the agent reads its intent + the codebase, implements, optionally 
 
 ```text
 # orientation — read-only
-$ tool start
+$ jigc start
 > ... (clean project; see bootstrap.md → Orientation output examples 2) ...
 
-# start the task; mints commit:add-rate-limiter, opens .tool/tasks/add-rate-limiter/
-$ tool start "add per-client rate limit at the gateway"
+# start the task; mints commit:add-rate-limiter, opens .jigc/tasks/add-rate-limiter/
+$ jigc start "add per-client rate limit at the gateway"
 > task: add-rate-limiter · workflow: single-task · base: a3f9c2
 
 # the composed workflow emits its steps using the four-class emitted format
@@ -34,28 +34,28 @@ codebase to confirm scope before implementing.
 ## implement
 Implement the change directly in the working tree. When done, stage the commit prose:
 
-Run: `tool doc set-field commit:add-rate-limiter#type --value feat`
-Run: `tool doc set-slot commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-field commit:add-rate-limiter#type --value feat`
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
 <<author: commit:add-rate-limiter#summary>>
 
 If a decision is warranted (e.g., choosing a rate-limit algorithm), create an ADR:
 
-Run: `tool doc create adr --title <TITLE>`
-Run: `tool doc set-field adr:<id>#status --value accepted`
-Run: `tool doc set-slot adr:<id>#context --from-file -`
+Run: `jigc doc create adr --title <TITLE>`
+Run: `jigc doc set-field adr:<id>#status --value accepted`
+Run: `jigc doc set-slot adr:<id>#context --from-file -`
 <<author: adr:<id>#context>>
    (... similar for #decision, #consequences)
 
 ## finalize
-Run: `tool task finalize add-rate-limiter`
+Run: `jigc task finalize add-rate-limiter`
 ```
 
 What runs where:
 
-- `tool start` orients ([bootstrap.md](bootstrap.md) → State-aware front door).
-- `tool start "<intent>"` composes `single-task` via the cascade default ([write-commands.md](write-commands.md) → Task origination); `creates-task: true` mints.
+- `jigc start` orients ([bootstrap.md](bootstrap.md) → State-aware front door).
+- `jigc start "<intent>"` composes `single-task` via the cascade default ([write-commands.md](write-commands.md) → Task origination); `creates-task: true` mints.
 - The composed workflow uses the [emitted format](workflow-dialect.md#emitted-format) — `Run:`, `<<author:>>`, blockquoted Content, plain Reason prose.
-- `tool doc create adr` is permitted because `single-task` declares `allows-create: [adr]` ([write-commands.md](write-commands.md) → The create-gate).
+- `jigc doc create adr` is permitted because `single-task` declares `allows-create: [adr]` ([write-commands.md](write-commands.md) → The create-gate).
 - `<TITLE>` is the agent-substitution marker from the [command catalog](command-catalog.md); the agent fills it before running the command.
 - `finalize` runs the [seven phases](finalize.md) — see flow 4.
 - `single-task` also includes a `superseded-context` step; in this non-superseding task its `{{@task.decision.supersedes#decision}}` slice resolves to empty text and emits nothing ([workflow-dialect.md](workflow-dialect.md#leaves-instructions-and-placeholders) → empty vs unresolvable). It carries weight only in [flow 5](#5-superseding-decision--context-slice--edge-integrity).
@@ -68,7 +68,7 @@ The human edits `decisions/adr-cache-policy.md` directly between two task steps.
 
 ```text
 # task add-rate-limiter is mid-flight; the agent runs a read
-$ tool doc read adr:cache-policy
+$ jigc doc read adr:cache-policy
 > external edit absorbed: adr:cache-policy
 >
 > (... the doc content as-edited ...)
@@ -81,7 +81,7 @@ $ tool doc read adr:cache-policy
 A nonconformant edit — the human dropped a `{#id}` anchor from a repeatable item:
 
 ```text
-$ tool doc read adr:cache-policy
+$ jigc doc read adr:cache-policy
 > error: nonconformant edit on adr:cache-policy
 >   file: decisions/adr-cache-policy.md, line 18
 >   expected: {#id} anchor on item heading "### Memory pressure response"
@@ -95,11 +95,11 @@ State stays `DRIFTED`; the task is blocked from progressing on this doc until th
 The human edited the same doc the task is also writing to:
 
 ```text
-$ tool doc set-slot adr:cache-policy#consequences --from-file -
+$ jigc doc set-slot adr:cache-policy#consequences --from-file -
 > error: conflict on adr:cache-policy
 >   external edit since 2026-05-28T14:03:00Z + task add-rate-limiter has staged changes.
 >   resolution:
->     - tool task discard-write adr:cache-policy   # drop the task's changes
+>     - jigc task discard-write adr:cache-policy   # drop the task's changes
 >     - revert the file on disk                    # drop the human's edit
 ```
 
@@ -109,7 +109,7 @@ File-level block; three-way merge is [deferred](reconciliation.md#mvp-scope-vs-p
 
 The pack-default `single-task` workflow uses `validate` as its third step. The project wants a stricter version that also runs a custom lint probe.
 
-Project's `.tool-config/manifest.yaml`:
+Project's `.jigc-config/manifest.yaml`:
 
 ```yaml
 deltas:
@@ -118,16 +118,16 @@ deltas:
     with: step:project-validate
 ```
 
-Project's `.tool-config/steps/project-validate.md`:
+Project's `.jigc-config/steps/project-validate.md`:
 
 ```markdown
 Run before finalize: validation + the project's lint probe.
 
-Run: `tool task validate {{task.id}}`
-Run: `tool task validate {{task.id}} --probe lint`
+Run: `jigc task validate {{task.id}}`
+Run: `jigc task validate {{task.id}} --probe lint`
 ```
 
-When the agent runs `tool start "..."`, the composer runs the [9-phase resolution algorithm](overrides.md#resolution-algorithm):
+When the agent runs `jigc start "..."`, the composer runs the [9-phase resolution algorithm](overrides.md#resolution-algorithm):
 
 - **Phase 2** (by-id shadowing): `step:validate` resolves to pack-default; `step:project-validate` resolves to the project layer.
 - **Phase 4** (structural deltas): `replace-step` swaps `validate` for `project-validate` in `single-task`'s include list. The list is now `[locate, implement, project-validate]`.
@@ -137,7 +137,7 @@ When the agent runs `tool start "..."`, the composer runs the [9-phase resolutio
 
 The emitted workflow's third step is now the project's validate. Same workflow id, same address, different content — and the agent doesn't need to know it happened.
 
-`tool start --explain add-rate-limiter` ([workflow-dialect.md](workflow-dialect.md#--explain-output-contract)) shows the resolution tree with `project-validate` named as a project-layer override of pack-default's `validate`:
+`jigc start --explain add-rate-limiter` ([workflow-dialect.md](workflow-dialect.md#--explain-output-contract)) shows the resolution tree with `project-validate` named as a project-layer override of pack-default's `validate`:
 
 ```text
 workflow:single-task    (pack-default · dev/v0.3.0)
@@ -145,10 +145,10 @@ workflow:single-task    (pack-default · dev/v0.3.0)
   includes:
     step:locate              (pack-default · dev/steps/locate.md)
     step:implement           (pack-default · dev/steps/implement.md)
-    step:project-validate    (project · .tool-config/steps/project-validate.md
+    step:project-validate    (project · .jigc-config/steps/project-validate.md
                               ← replaces step:validate at position 3)
-      {{cli.validate-task}}  → tool task validate add-rate-limiter
-      {{cli.lint-task}}      → tool task validate add-rate-limiter --probe lint
+      {{cli.validate-task}}  → jigc task validate add-rate-limiter
+      {{cli.lint-task}}      → jigc task validate add-rate-limiter --probe lint
   findings (workflow-refs): 0
 ```
 
@@ -157,7 +157,7 @@ workflow:single-task    (pack-default · dev/v0.3.0)
 The seven phases of `finalize` ([finalize.md](finalize.md)), producing exactly one commit:
 
 ```text
-$ tool task finalize add-rate-limiter
+$ jigc task finalize add-rate-limiter
 
 [1 preflight]  task exists; base a3f9c2 = HEAD ✓; git committable ✓
 [2 validate]   no blocking findings (1 advisory: subject 71 chars)
@@ -169,14 +169,14 @@ $ tool task finalize add-rate-limiter
                → b8e2d4 "feat: add per-client rate limit at the gateway"
 [7 post]       edge-index stamp invalidated
                file-state hashes updated (1 doc)
-               .tool/tasks/add-rate-limiter/ removed
+               .jigc/tasks/add-rate-limiter/ removed
 ```
 
-A pre-commit hook rejection at phase 6 would have rolled back phases 4–5: `git restore --staged --worktree` on the promoted ADR path, the ADR copy deleted from `decisions/`, the working area `.tool/tasks/add-rate-limiter/` intact ([finalize.md](finalize.md) → Rollback discipline). The agent sees the hook's stderr verbatim and re-runs `finalize` after fixing the issue. **Never `--no-verify`** — hooks are user policy.
+A pre-commit hook rejection at phase 6 would have rolled back phases 4–5: `git restore --staged --worktree` on the promoted ADR path, the ADR copy deleted from `decisions/`, the working area `.jigc/tasks/add-rate-limiter/` intact ([finalize.md](finalize.md) → Rollback discipline). The agent sees the hook's stderr verbatim and re-runs `finalize` after fixing the issue. **Never `--no-verify`** — hooks are user policy.
 
 The [dirty-tree policy](finalize.md#dirty-tree-policy) applies: the code changes the agent made directly in the working tree (between base `a3f9c2` and HEAD-tree) are committed alongside the ADR — one task → one commit. The base-pin check in phase 1 would have caught a "you switched branches mid-task" accident before any staging happened.
 
-After phase 7, `tool start` returns to the "clean project" orientation ([bootstrap.md](bootstrap.md) → Orientation output examples 2) — the task is gone, the recent-finalizations list ticks up by one, the cascade is unchanged, the next `tool start "<intent>"` mints the next task.
+After phase 7, `jigc start` returns to the "clean project" orientation ([bootstrap.md](bootstrap.md) → Orientation output examples 2) — the task is gone, the recent-finalizations list ticks up by one, the cascade is unchanged, the next `jigc start "<intent>"` mints the next task.
 
 ## 5. Superseding decision — context-slice + edge integrity
 
@@ -185,14 +185,14 @@ The flow that proves three differentiators at once: a later task records a decis
 ### Setup — task 1 commits the ADR that will be superseded
 
 ```text
-$ tool start "cache sessions in a single in-memory node"
+$ jigc start "cache sessions in a single in-memory node"
 > task: cache-sessions · workflow: single-task · base: a3f9c2
 
-$ tool doc create adr --title "Single-node session cache"   # → adr:single-node-cache (allows-create binds it to task.decision)
-$ tool doc set-field adr:single-node-cache#status   --value accepted
-$ tool doc set-slot  adr:single-node-cache#decision --from-file -
+$ jigc doc create adr --title "Single-node session cache"   # → adr:single-node-cache (allows-create binds it to task.decision)
+$ jigc doc set-field adr:single-node-cache#status   --value accepted
+$ jigc doc set-slot  adr:single-node-cache#decision --from-file -
    (... prose ...)
-$ tool task finalize cache-sessions
+$ jigc task finalize cache-sessions
 > b8e2d4 "feat: cache sessions in a single in-memory node"
 ```
 
@@ -201,19 +201,19 @@ $ tool task finalize cache-sessions
 ### Task 2 — supersede it, and the workflow surfaces the prior decision
 
 ```text
-$ tool start "move the session cache to a shared redis cluster"
+$ jigc start "move the session cache to a shared redis cluster"
 > task: shared-redis-session-cache · workflow: single-task · base: b8e2d4
 
 # the agent decides this replaces the earlier decision and creates the new ADR
-$ tool doc create adr --title "Shared Redis session cache"      # → adr:shared-redis-session-cache, bound to task.decision
-$ tool doc set-field adr:shared-redis-session-cache#status            --value accepted
-$ tool doc set-field adr:shared-redis-session-cache#status/supersedes --value adr:single-node-cache
+$ jigc doc create adr --title "Shared Redis session cache"      # → adr:shared-redis-session-cache, bound to task.decision
+$ jigc doc set-field adr:shared-redis-session-cache#status            --value accepted
+$ jigc doc set-field adr:shared-redis-session-cache#status/supersedes --value adr:single-node-cache
 ```
 
 The agent **re-composes** to pick up context now that the edge exists ([workflow-dialect.md](workflow-dialect.md) → Open questions: re-derived progress):
 
 ```text
-$ tool start --task shared-redis-session-cache
+$ jigc start --task shared-redis-session-cache
 ...
 ## superseded-context
 If your decision supersedes an earlier one, here is that decision for reference —
@@ -222,7 +222,7 @@ make your consequences explain what changes:
 > network hop; acceptable because sessions are cheap to reconstruct on a cold node.
 
 ## finalize
-Run: `tool task finalize shared-redis-session-cache`
+Run: `jigc task finalize shared-redis-session-cache`
 ```
 
 - The `{{@task.decision.supersedes#decision}}` placeholder resolved: `task.decision` → `adr:shared-redis-session-cache` (bound at create), `.supersedes` → `adr:single-node-cache`, `#decision` → its decision slice, emitted as a `> ` **Content** blockquote ([workflow-dialect.md](workflow-dialect.md#emitted-format)).
@@ -234,7 +234,7 @@ The agent writes `#consequences` referencing what changes, then finalizes.
 ### Finalize — the edge index walk
 
 ```text
-$ tool task finalize shared-redis-session-cache
+$ jigc task finalize shared-redis-session-cache
 [2 validate]   forward-ref: adr:shared-redis-session-cache#status/supersedes → adr:single-node-cache ✓ (committed store)
 ...
 > c1a9f7 "feat: move the session cache to a shared redis cluster"
@@ -247,8 +247,8 @@ Forward-ref resolution walks the overlaid edge index and finds the target in the
 Had the agent pointed `supersedes` at an ADR that exists in neither surface:
 
 ```text
-$ tool doc set-field adr:shared-redis-session-cache#status/supersedes --value adr:typo-nonexistent
-$ tool task finalize shared-redis-session-cache
+$ jigc doc set-field adr:shared-redis-session-cache#status/supersedes --value adr:typo-nonexistent
+$ jigc task finalize shared-redis-session-cache
 > error: forward-ref integrity — adr:shared-redis-session-cache#status/supersedes
 >   target adr:typo-nonexistent resolves in neither the committed store nor this task's working area
 >   resolution:

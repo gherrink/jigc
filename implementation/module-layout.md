@@ -7,7 +7,7 @@ How the locked architecture — engine / CLI / domain pack / assistant adapter �
 **A two-crate workspace: `engine` (lib) + `cli` (bin), `cli → engine`.**
 
 - **`engine`** — the neutral, **empty** core library: cascade resolution, the document/schema model, parsing & serialization, the doc registry, workflow composition, the validation engine, task/staging state, the edge index. It depends on no frontend and no domain content, and makes **no LLM calls**. Because it's a standalone library, a later **`mcp` bin** is just a third crate over the same engine — the one boundary that carries architectural weight.
-- **`cli`** — the `tool` binary frontend: argument parsing, command dispatch, the three renderers, adapter generation, and cascade-layer *location*. Depends on `engine`.
+- **`cli`** — the `jigc` binary frontend: argument parsing, command dispatch, the three renderers, adapter generation, and cascade-layer *location*. Depends on `engine`.
 
 Rejected: a **single crate** (engine not separately consumable → "MCP later" becomes a refactor, and the frontend boundary blurs); **many micro-crates** (a shared-types crate + version churn + compile-graph overhead, premature for the MVP). Engine internals are **modules**, split into sub-crates only if compile times or reuse later force it — `parse` is the natural first split-out.
 
@@ -24,7 +24,7 @@ trait PackSource {
 }
 ```
 
-`PackSource` is **how `cli` provides the pack-default cascade layer** to the engine — pack-default is just one located layer ([the I/O boundary](#the-io-boundary--cli-locates-engine-resolves)), not a special case. Two impls: **`EmbeddedPack`** (MVP — bytes embedded via `rust-embed`/`include_dir`, so `tool` is one self-contained artifact, the single-binary value from [language-runtime.md](language-runtime.md)) and **`FilesystemPack`** (post-MVP — installable third-party packs read from a path). The dev pack versions *with* the release, which is exactly what override-reconciliation needs (built-in pack-default version = binary version, [overrides.md](../design/overrides.md)).
+`PackSource` is **how `cli` provides the pack-default cascade layer** to the engine — pack-default is just one located layer ([the I/O boundary](#the-io-boundary--cli-locates-engine-resolves)), not a special case. Two impls: **`EmbeddedPack`** (MVP — bytes embedded via `rust-embed`/`include_dir`, so `jigc` is one self-contained artifact, the single-binary value from [language-runtime.md](language-runtime.md)) and **`FilesystemPack`** (post-MVP — installable third-party packs read from a path). The dev pack versions *with* the release, which is exactly what override-reconciliation needs (built-in pack-default version = binary version, [overrides.md](../design/overrides.md)).
 
 **Where the built-in bytes live — embed in `cli` now, relocate when a second frontend lands.** For the MVP's single frontend the `EmbeddedPack` bytes live embedded in the `cli` binary. The moment a second frontend exists (the post-MVP `mcp` bin), the embedded built-in pack + its `EmbeddedPack` impl **relocate to a shared `pack-builtin` data-crate** both bins depend on — so neither re-embeds the pack nor depends on the other's packaging, and **the engine never changes** (it only knows the `PackSource` trait). The crate is *not* created now: for one frontend it would be the premature ceremony [Crate topology](#crate-topology) already declined; the forward-binding rule makes MCP a mechanical move, not a retrofit. Installing the built-in pack to a filesystem path was likewise rejected for now — it only adds path-discovery + a second install step for a single built-in — and arrives later as `FilesystemPack` **through the same trait**, a free extension. Adapter profiles follow the same pattern (embedded now; relocate with the pack if a second frontend shares them).
 
@@ -34,8 +34,8 @@ This preserves the locked boundary as **internal discipline, not a public API** 
 
 A clean split that keeps the engine neutral *and* testable:
 
-- **`cli` does bootstrap & presentation I/O** — it locates the three cascade layers (pack-default **embedded** · team **external** `~/.config/tool/` · project **in-repo** config dir, per [overrides.md](../design/overrides.md)), finds the repo root, and hands the engine its run context; then it renders the engine's results.
-- **`engine` does logic & managed I/O** — it resolves the cascade and owns all managed content I/O: the documents, the gitignored `.tool/` state and staging, the edge index ([storage.md](../design/storage.md)).
+- **`cli` does bootstrap & presentation I/O** — it locates the three cascade layers (pack-default **embedded** · team **external** `~/.config/jigc/` · project **in-repo** config dir, per [overrides.md](../design/overrides.md)), finds the repo root, and hands the engine its run context; then it renders the engine's results.
+- **`engine` does logic & managed I/O** — it resolves the cascade and owns all managed content I/O: the documents, the gitignored `.jigc/` state and staging, the edge index ([storage.md](../design/storage.md)).
 
 So the engine is fed its layers and asked for results — *feed layers in, assert results out* — which is what makes the deterministic core directly testable.
 
@@ -50,8 +50,8 @@ Presentation is strictly **downstream of the deterministic engine result** — t
 
 ## Adapter (in `cli`)
 
-- **Profiles are embedded data** (Claude Code in-box; more installable later), same pattern as the pack. `tool setup` / `tool adapter install --assistant claude-code` **generates** the adapter from `profile + engine catalog` and **regenerates on upgrade**, so it can't rot into a static pile ([assistant-adapter.md](../design/assistant-adapter.md)).
-- The generator **writes into the host project's assistant files** — the bootstrap static line into `CLAUDE.md`, the `tool` allowlist into `.claude/settings.json`, and catalog-derived per-workflow launchers (slash commands), each just `tool start --workflow X`.
+- **Profiles are embedded data** (Claude Code in-box; more installable later), same pattern as the pack. `jigc setup` / `jigc adapter install --assistant claude-code` **generates** the adapter from `profile + engine catalog` and **regenerates on upgrade**, so it can't rot into a static pile ([assistant-adapter.md](../design/assistant-adapter.md)).
+- The generator **writes into the host project's assistant files** — the bootstrap static line into `CLAUDE.md`, the `jigc` allowlist into `.claude/settings.json`, and catalog-derived per-workflow launchers (slash commands), each just `jigc start --workflow X`.
 - **MVP scope:** the static-line **floor** + the **allowlist** (the path-of-least-resistance the bootstrap depends on). The **hook** (primary injection) and the **spawn binding** are post-MVP — the spawn payload is composed by the *engine* and rendered through the profile's launch template, but it rides on fan-out (post-MVP).
 
 ## Probe boundary (in `engine`)
@@ -65,7 +65,7 @@ Presentation is strictly **downstream of the deterministic engine result** — t
 ```
 cli (bin) ──depends──▶ engine (lib)
   ├─ embeds: dev-pack data (EmbeddedPack) + adapter profiles
-  ├─ provides cascade layers: pack-default (PackSource::EmbeddedPack) · team (~/.config/tool) · project (in-repo)
+  ├─ provides cascade layers: pack-default (PackSource::EmbeddedPack) · team (~/.config/jigc) · project (in-repo)
   ├─ render: agent-text · json · [tui post-MVP]   (over engine result types)
   └─ adapter generation (profile + engine catalog → host project files)
 

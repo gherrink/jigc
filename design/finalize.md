@@ -9,7 +9,7 @@ Builds on [VISION.md](../VISION.md) (the commit boundary; the determinism bounda
 `finalize ≡ validate(task) + commit`. One task → one logical commit. The shape:
 
 ```
-tool task finalize <task-id>
+jigc task finalize <task-id>
   → validate                (blocking findings abort cleanly)
   → render commit-doc       (→ git message string)
   → promote managed docs    (working area → canonical paths)
@@ -26,7 +26,7 @@ The transaction is **atomic up through `git commit`**: any failure before that p
 
 Cheap rejections before any expensive work:
 
-- **Task exists.** `.tool/tasks/<task-id>/` must exist; otherwise reject with "no task `<id>`".
+- **Task exists.** `.jigc/tasks/<task-id>/` must exist; otherwise reject with "no task `<id>`".
 - **Base pin matches HEAD.** The task was started at base `<A>`; if HEAD ≠ `<A>`, reject with the divergence-routing prompt ("switch back to `<A>` or discard") — same philosophy as [out-of-band reconciliation](write-commands.md#out-of-band-reconciliation). The CLI never operates a task off its pinned base.
 - **Git in a committable state.** No in-progress merge/rebase/bisect. The CLI does *not* require a clean working tree (see [Dirty-tree policy](#dirty-tree-policy)).
 
@@ -48,7 +48,7 @@ This phase has **no disk side effects** — it returns a string. A missing requi
 
 ### 4. Promote managed docs
 
-For each managed doc instance in the task's working area (`.tool/tasks/<task-id>/*.md`):
+For each managed doc instance in the task's working area (`.jigc/tasks/<task-id>/*.md`):
 
 - **Copy** (not move) the file from the working area to its canonical path. The path comes from the doc type's `location:` field ([document-type-schema.md](document-type-schema.md) → On-disk definition format): an ADR lands in `decisions/`, a SPEC in `specs/`, and so on.
 - The commit doc (`commit:<task-id>`) is **not** promoted — its sink is the git message rendered in phase 3, not a repo file ([write-commands.md](write-commands.md) → Instance provisioning).
@@ -79,9 +79,9 @@ After the commit lands, three updates happen — none can affect commit truth, a
 
 - **Invalidate the edge-index stamp** ([storage.md](storage.md) → Derived caches). The next read rebuilds from the new HEAD.
 - **Update `file-state` hashes** for every committed managed doc. The next `file-state` probe sees them as in-sync.
-- **Remove `.tool/tasks/<task-id>/`.** The staging area's job is done; it persisted until here so rollback was possible across phases 4–6.
+- **Remove `.jigc/tasks/<task-id>/`.** The staging area's job is done; it persisted until here so rollback was possible across phases 4–6.
 
-A failure in any of these is **logged**, not raised — the commit is real, the system reads correctly because the edge-index stamp invalidates eventually, and a stale `.tool/tasks/<id>/` gets cleaned up by `tool task discard <id>` or the next `finalize` reusing the slot.
+A failure in any of these is **logged**, not raised — the commit is real, the system reads correctly because the edge-index stamp invalidates eventually, and a stale `.jigc/tasks/<id>/` gets cleaned up by `jigc task discard <id>` or the next `finalize` reusing the slot.
 
 ## Dirty-tree policy
 
@@ -91,7 +91,7 @@ The rule is simple by design:
 
 - **No "declared touch-set."** The agent doesn't tell the CLI what it plans to edit; the CLI doesn't refuse changes outside a scope.
 - **No `--include-all` flag, no "stash unrelated."** A task is a coherent unit of work; the tree's deltas from base define it.
-- **Parallel hand-editing** (a human editing other files on the same branch while a task runs) is caught upstream by the base-pin: if the human commits, HEAD moves and the base-mismatch rejection in phase 1 fires; if the human only edits without committing, the changes show in `tool task diff <id>` before `finalize` so they're visible at preview time.
+- **Parallel hand-editing** (a human editing other files on the same branch while a task runs) is caught upstream by the base-pin: if the human commits, HEAD moves and the base-mismatch rejection in phase 1 fires; if the human only edits without committing, the changes show in `jigc task diff <id>` before `finalize` so they're visible at preview time.
 
 The cost is honesty: if you started a task on a checkout, the tree-diff from base **is** the task. The benefit is the absence of a hidden allow/deny list the agent would have to reason about.
 
@@ -161,5 +161,5 @@ The rendered shape:
 ## Open questions
 
 - **Multi-doc promotion ordering** — when a task produces multiple managed docs (e.g., an ADR plus edits to an existing SPEC), the stage set is order-independent for git, and the edge-index updates after commit. Flagged as a non-issue under the current edge-index design; revisit if it surfaces.
-- **`finalize --dry-run`** — `tool task validate <id>` already previews validation; whether to add a dry-run that also walks render/promote/stage (without commit) is pending. `validate` covers most of the value.
+- **`finalize --dry-run`** — `jigc task validate <id>` already previews validation; whether to add a dry-run that also walks render/promote/stage (without commit) is pending. `validate` covers most of the value.
 - **Commit-msg hook output capture** — git surfaces hook stderr to the terminal; the precise shape the CLI uses to relay it back to the agent (so the agent can act on it) needs design alongside the broader blocked/error-payload question ([write-commands.md](write-commands.md#open-questions)).
