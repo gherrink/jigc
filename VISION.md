@@ -196,6 +196,7 @@ Each part-doc tracks its own opens in its `## Open questions` section; this is t
 **Cross-cutting (VISION-level):**
 - **Multi-pack composition** — can one project use more than one domain pack at once (e.g. dev + docs-writing), and how do packs compose in the cascade? Deferred.
 - **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.
+- **`describe` self-description surface** — an on-demand **prose projection** of jigc's resolved definitions (*what we have and how we use it*) that an LLM can call or be pointed at; facts-not-advice, usage-not-mechanism, **non-contractual by design**. Direction locked, **parked post-MVP**; full shape in [ideas/describe.md](ideas/describe.md), *why* in [DECISIONS.md](DECISIONS.md) (2026-05-30). Open thread: the authored `description:`/`usage:` field (which definitions carry it, required vs optional, cascade replace-vs-append). Candidate home `design/introspection.md`.
 
 **MVP-blocking:** *none currently open — the emitted-format micro-syntax was settled 2026-05-28 ([workflow-dialect.md](design/workflow-dialect.md#emitted-format)).*
 
