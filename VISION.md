@@ -196,7 +196,6 @@ Each part-doc tracks its own opens in its `## Open questions` section; this is t
 **Cross-cutting (VISION-level):**
 - **Multi-pack composition** — can one project use more than one domain pack at once (e.g. dev + docs-writing), and how do packs compose in the cascade? Deferred.
 - **Legacy ingestion / migration** — the `project setup (existing project)` flow must ingest docs in inconsistent states; research-grade (cf. GSD's `ingest-docs`). Flagged as hard, not solved.
-- **The product name** — pinned across [bootstrap.md](design/bootstrap.md), [overrides.md](design/overrides.md), [storage.md](design/storage.md) (config-dir name tracks it).
 
 **MVP-blocking:** *none currently open — the emitted-format micro-syntax was settled 2026-05-28 ([workflow-dialect.md](design/workflow-dialect.md#emitted-format)).*
 
@@ -208,7 +207,7 @@ Each part-doc tracks its own opens in its `## Open questions` section; this is t
 - [reconciliation.md](design/reconciliation.md#open-questions) — parser-tolerant vs parser-strict for cosmetic drift; concurrent OOB edits during a task; external-edit notification surface.
 - [finalize.md](design/finalize.md#open-questions) — multi-doc promotion ordering; `finalize --dry-run`; commit-msg hook output capture.
 - [command-catalog.md](design/command-catalog.md#open-questions) — per-workflow command-ref scoping; stdin as data-value binding; multi-target / variant commands.
-- [storage.md](design/storage.md#open-questions) — milestone worktree orchestration; multi-slot sub-label syntax; config-dir layout.
+- [storage.md](design/storage.md#open-questions) — milestone worktree orchestration; multi-slot sub-label syntax; config internal structure.
 - [validation.md](design/validation.md#open-questions) — pack-probe sandboxing; `doc-code` logic; findings recomputed vs cached.
 - [overrides.md](design/overrides.md#open-questions) — per-developer `local` layer; team-layer distribution; committed-config-dir layout.
 - [assistant-adapter.md](design/assistant-adapter.md#open-questions) — profiles beyond Claude Code; hook events per assistant.

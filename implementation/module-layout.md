@@ -35,7 +35,7 @@ This preserves the locked boundary as **internal discipline, not a public API** 
 A clean split that keeps the engine neutral *and* testable:
 
 - **`cli` does bootstrap & presentation I/O** — it locates the three cascade layers (pack-default **embedded** · team **external** `~/.config/jigc/` · project **in-repo** config dir, per [overrides.md](../design/overrides.md)), finds the repo root, and hands the engine its run context; then it renders the engine's results.
-- **`engine` does logic & managed I/O** — it resolves the cascade and owns all managed content I/O: the documents, the gitignored `.jigc/` state and staging, the edge index ([storage.md](../design/storage.md)).
+- **`engine` does logic & managed I/O** — it resolves the cascade and owns all managed content I/O: the documents, the `.jigc/` tree (committed config + gitignored caches/staging), the edge index ([storage.md](../design/storage.md)).
 
 So the engine is fed its layers and asked for results — *feed layers in, assert results out* — which is what makes the deterministic core directly testable.
 

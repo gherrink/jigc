@@ -109,7 +109,7 @@ File-level block; three-way merge is [deferred](reconciliation.md#mvp-scope-vs-p
 
 The pack-default `single-task` workflow uses `validate` as its third step. The project wants a stricter version that also runs a custom lint probe.
 
-Project's `.jigc-config/manifest.yaml`:
+Project's `.jigc/config/manifest.yaml`:
 
 ```yaml
 deltas:
@@ -118,7 +118,7 @@ deltas:
     with: step:project-validate
 ```
 
-Project's `.jigc-config/steps/project-validate.md`:
+Project's `.jigc/config/steps/project-validate.md`:
 
 ```markdown
 Run before finalize: validation + the project's lint probe.
@@ -145,7 +145,7 @@ workflow:single-task    (pack-default · dev/v0.3.0)
   includes:
     step:locate              (pack-default · dev/steps/locate.md)
     step:implement           (pack-default · dev/steps/implement.md)
-    step:project-validate    (project · .jigc-config/steps/project-validate.md
+    step:project-validate    (project · .jigc/config/steps/project-validate.md
                               ← replaces step:validate at position 3)
       {{cli.validate-task}}  → jigc task validate add-rate-limiter
       {{cli.lint-task}}      → jigc task validate add-rate-limiter --probe lint

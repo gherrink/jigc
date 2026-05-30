@@ -75,14 +75,15 @@ Committed source of truth and derived/transient state live apart:
 
 ```
 specs/  decisions/  …       # committed .md docs — the only source of truth
-<config-dir>/               # committed — the project cascade layer (deltas + knobs)
-.jigc/                      # gitignored — all derived/transient state (no config)
-  tasks/<task-id>/          #   per-task working area (staging)
-  index/                    #   edge index (rebuildable cache)
-  state/                    #   file↔CLI-state hashes (rebuildable)
+.jigc/                      # one project-state home (committed config + gitignored caches)
+  config/                   #   committed — the project cascade layer (deltas + knobs)
+  .gitignore                #   ignores the derived/transient subdirs below
+  tasks/<task-id>/          #   gitignored — per-task working area (staging)
+  index/                    #   gitignored — edge index (rebuildable cache)
+  state/                    #   gitignored — file↔CLI-state hashes (rebuildable)
 ```
 
-The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo (the `<config-dir>/` above — deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, shared across a machine's projects); **pack-default** ships with the installed pack. So `.jigc/` holds *no config* — only derived/transient state.
+The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo at `.jigc/config/` (deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, shared across a machine's projects); **pack-default** ships with the installed pack. So `.jigc/` is one home: its `config/` subdir is committed, while `tasks/`, `index/`, and `state/` are gitignored (via `.jigc/.gitignore`) and fully disposable.
 
 ### The per-task working area (staging)
 
@@ -108,7 +109,7 @@ The edge index ([document-type-schema.md](document-type-schema.md) → Bidirecti
 | **fan-out join** | at `join`, sub-task working overlays merge into the parent's working overlay by task-id order ([workflow-dialect.md](workflow-dialect.md#fan-out--join)) | derived, in-memory, never persisted |
 | **finalize commit** | phase 7 invalidates the stamp; next read rebuilds against the new HEAD ([finalize.md](finalize.md)) | best-effort; cache-stamp absorbs failure |
 
-One rule keeps the model honest: **the index is never persisted with task deltas in it.** Task overlays live in-memory for the scope of a `validate` or `finalize` run; only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes "delete `.jigc/`, rebuild from `.md`s, nothing lost" hold for the index too — committed `.md`s + the cascade are the only source of truth.
+One rule keeps the model honest: **the index is never persisted with task deltas in it.** Task overlays live in-memory for the scope of a `validate` or `finalize` run; only `finalize` writes them through (indirectly, via stamp invalidation → next read rebuilds against the new HEAD). This is what makes "delete `.jigc/`'s gitignored caches, rebuild from `.md`s, nothing lost" hold for the index too — committed `.md`s + the cascade (now including committed `.jigc/config/`) are the only source of truth.
 
 The **working-overlay derivation**: walk the task's working area, parse each `.md` per the schema, emit the same `(source, relation, target)` edges the committed-rebuild path would emit, layer them over the committed index. Forward-ref integrity (the `finalize` gate) walks the *overlaid* graph; inverse-cardinality (completeness, store-scope) walks the *committed* graph. No expensive merge — overlay is read-side only.
 
@@ -127,4 +128,4 @@ A fresh worktree **rebuilds** the derived caches (per the stamp rule) and copies
 
 - **Milestone worktree orchestration** — how `milestone-execution` partitions and recombines worktree-isolated tasks is workflow-dialect territory ([workflow-dialect.md](workflow-dialect.md#open-questions)); storage only needs to *accommodate* it, which it does.
 - **Multi-slot sub-label syntax** — the exact rendering of the schema-fixed sub-labels that delimit multiple slots within one section.
-- **Config layout** — the concrete committed config-dir name and structure (tracks the undecided product name); the cascade's layers and homes are specified in [overrides.md](overrides.md).
+- **Config layout** — the committed config home is `.jigc/config/`; its *internal* structure (manifest + `steps/` + deltas) is illustrated in [worked-examples.md](worked-examples.md) but not yet formally schema'd. The cascade's layers and homes are specified in [overrides.md](overrides.md).

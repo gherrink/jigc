@@ -16,7 +16,7 @@ Three layers over a versioned base, ordered by **specificity — most-specific w
 
 Project wins because it is the layer that *differs most* — the deliberate, specific decisions of the one repo you're in must override your general cross-project settings, not the reverse. `team` is **not per-developer**: what this system configures is *governance* (doc types, workflows, conventions, severities), which is a team/project concern, not a personal preference — so a per-developer layer has nothing to hold (deferred; see Open questions).
 
-Resolution applies the base, then `team` deltas, then `project` deltas (project last, so it wins). The in-repo `.jigc/` dir holds **no config** — it stays purely derived/transient ([storage.md](storage.md)).
+Resolution applies the base, then `team` deltas, then `project` deltas (project last, so it wins). The in-repo `project` layer lives in committed `.jigc/config/`; the rest of `.jigc/` is gitignored derived/transient state ([storage.md](storage.md)).
 
 **Determinism.** Composition is a pure function of the *resolved cascade* — a declared, inspectable input, never hidden variance. The practical rule: **anything that must be reproducible from the repo alone belongs at project level** (committed), which is exactly where governance naturally lives.
 

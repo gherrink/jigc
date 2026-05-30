@@ -45,7 +45,7 @@ The setup workflow walks the pack choice, the project config dir, and the first 
 ```text
 jigc — orientation
 
-Pack: dev/v0.3.0 · Project config: .jigc-config/ · Branch: main (HEAD a3f9c2)
+Pack: dev/v0.3.0 · Project config: .jigc/config/ · Branch: main (HEAD a3f9c2)
 
 Available workflows:
   - single-task    — Implement one well-scoped change against an existing spec.
@@ -61,7 +61,7 @@ Run: `jigc start "<intent>"`   — composes the default workflow (single-task)
 ```text
 jigc — orientation
 
-Pack: dev/v0.3.0 · Project config: .jigc-config/ · Branch: main (HEAD a3f9c2)
+Pack: dev/v0.3.0 · Project config: .jigc/config/ · Branch: main (HEAD a3f9c2)
 
 Active task: add-rate-limiter
   workflow: single-task · step 2/3 (implement) · base: a3f9c2
@@ -78,7 +78,7 @@ Run: `jigc task discard add-rate-limiter`    — abandon
 ```text
 jigc — orientation
 
-Pack: dev/v0.3.0 · Project config: .jigc-config/ · Branch: main (HEAD a3f9c2)
+Pack: dev/v0.3.0 · Project config: .jigc/config/ · Branch: main (HEAD a3f9c2)
 
 Active task: add-rate-limiter
   workflow: single-task · step 3/3 (finalize) · base: a3f9c2
