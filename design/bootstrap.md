@@ -16,7 +16,7 @@ For the *why*, see [DECISIONS.md](../DECISIONS.md). The command tokens below (`j
 
 ## Routing, not content — the discipline
 
-The sentence's whole value is that it **routes** and never **contains**. Naming the *categories* the tool is the source for is routing; embedding a convention, a workflow, or a doc list would be content — and the instant it does, we've reinvented the bloated `CLAUDE.md` it exists to kill. Categories are stable; contents rot. The line carries no rule that the CLI couldn't compose fresh on demand.
+The sentence's whole value is that it **routes** and never **contains**. Naming the *categories* jigc is the source for is routing; embedding a convention, a workflow, or a doc list would be content — and the instant it does, we've reinvented the bloated `CLAUDE.md` it exists to kill. Categories are stable; contents rot. The line carries no rule that the CLI couldn't compose fresh on demand.
 
 ## The state-aware front door
 
