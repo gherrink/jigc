@@ -11,6 +11,7 @@
 
 pub mod address;
 pub mod cascade;
+pub mod catalog;
 pub mod compose;
 pub mod index;
 pub mod parse;
