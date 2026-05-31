@@ -1,0 +1,15 @@
+---
+source: crates/engine/src/splice.rs
+expression: out
+---
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.

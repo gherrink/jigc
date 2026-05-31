@@ -45,10 +45,12 @@
 //! schema-valid instances).
 
 use std::fmt::Write as _;
+use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use crate::field_block::{self, Field, FieldBlock};
+use crate::field_block::{self, Field, FieldBlock, Value};
+use crate::parse::{self, Block};
 use crate::schema::{Schema, Section, SectionBody};
 
 /// A full in-memory document instance, ready to render — the writer's input and the
@@ -610,5 +612,593 @@ sections:
             let out = render(&schema, &instance);
             prop_assert_eq!(out.contains(FIELD_SENTINEL), test_value.is_some());
         }
+    }
+}
+
+// ============================================================================
+// Surgical splice — the edit half of the write path (see module doc above; the
+// generate half is the canonical writer). Present-target edits splice the located
+// byte span; absent targets route to generation.
+// ============================================================================
+
+/// A located surgical-splice failure: the target the caller named is not present in
+/// the source (so the caller must route to the *generation* path), or the source
+/// does not conform to the schema (so no target can be located at all).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpliceError {
+    /// The named section / field / item is **absent** from the source. A present
+    /// target is a surgical splice; an absent one is a generation concern, so the
+    /// caller routes to [`crate::write`] + insertion, not here.
+    NotPresent {
+        /// A human-readable description of what was sought (e.g. `field "status"`).
+        what: String,
+    },
+    /// The source does not parse against the schema, so no span can be located. The
+    /// surgical splice only runs over a conformant buffer.
+    NotConformant,
+}
+
+/// Replace the bytes of `span` in `source` with `replacement`, copying every other
+/// byte through verbatim. The pure splice primitive: `source[..start]` then
+/// `replacement` then `source[end..]`. Surgical by construction — nothing outside the
+/// span is touched, so an unedited, differently-spaced buffer stays byte-for-byte
+/// intact.
+pub fn splice(source: &str, span: Range<usize>, replacement: &str) -> String {
+    let mut out = String::with_capacity(source.len() - (span.end - span.start) + replacement.len());
+    out.push_str(&source[..span.start]);
+    out.push_str(replacement);
+    out.push_str(&source[span.end..]);
+    out
+}
+
+/// `set-slot` (section present): replace the located slot prose span of `section_id`
+/// with `new_prose`, leaving every other byte intact. The slot span is the parser's
+/// recorded opaque span; the new prose is placed verbatim (the determinism boundary).
+/// An absent section / a section with no slot → [`SpliceError::NotPresent`].
+pub fn set_slot(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    new_prose: &str,
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    let span = section
+        .slot
+        .as_ref()
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("slot in section {section_id:?}"),
+        })?;
+    Ok(splice(source, span.start..span.end, new_prose))
+}
+
+/// `set-field` (field present): replace the **value** bytes of `field_key` in
+/// `section_id` with `new_value`, leaving the key, the `:`, the leading space, and
+/// every other byte intact. Locates the field's physical line via the block parse
+/// (front-matter or a sentinelled body bullet) and splices only the value text after
+/// `key:`. An absent field / section → [`SpliceError::NotPresent`].
+pub fn set_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    field_key: &str,
+    new_value: &str,
+) -> Result<String, SpliceError> {
+    // Re-parse to assert conformance and that the field is present (read path types
+    // the value; here we only need to confirm presence before locating bytes).
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    if !section.fields.iter().any(|f| f.key == field_key) {
+        return Err(SpliceError::NotPresent {
+            what: format!("field {field_key:?} in section {section_id:?}"),
+        });
+    }
+
+    let value_span =
+        locate_field_value(source, field_key).ok_or_else(|| SpliceError::NotPresent {
+            what: format!("field {field_key:?} value line"),
+        })?;
+    Ok(splice(source, value_span, new_value))
+}
+
+/// `remove-item` (item present): delete the whole block of the repeatable item
+/// `item_id` in `section_id` — its `### …{#id}` heading through the start of the
+/// next item / section boundary, including the trailing blank-line separator — so the
+/// surrounding items stay canonically spaced. An absent item / non-repeatable section
+/// → [`SpliceError::NotPresent`].
+pub fn remove_item(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_id: &str,
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    // The section must be repeatable and the item must be present.
+    let schema_section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or(SpliceError::NotConformant)?;
+    if !matches!(schema_section.body, SectionBody::Repeatable { .. }) {
+        return Err(SpliceError::NotPresent {
+            what: format!("repeatable item in non-repeatable section {section_id:?}"),
+        });
+    }
+    if !section.items.iter().any(|i| i.id == item_id) {
+        return Err(SpliceError::NotPresent {
+            what: format!("item {item_id:?} in section {section_id:?}"),
+        });
+    }
+
+    let span = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
+        what: format!("item {item_id:?} block"),
+    })?;
+    Ok(splice(source, span, ""))
+}
+
+/// Locate the **value** byte span of the field `key` — the bytes after `key:` (and
+/// its single separating space) to the end of that physical line. Reuses the block
+/// parse to find the line: a front-matter `key: value` line or a body `- key: value`
+/// bullet. Returns `None` if no such field line exists (block parse, never a naive
+/// scan, so a `key:`-looking line inside fenced prose is not matched).
+fn locate_field_value(source: &str, key: &str) -> Option<Range<usize>> {
+    for block in parse::scan_blocks(source) {
+        match block {
+            // Front-matter: each `key: value` line inside the metadata content range.
+            Block::Metadata { content } => {
+                if let Some(span) = field_value_in_lines(source, content.clone(), key, false) {
+                    return Some(span);
+                }
+            }
+            // A body field group: each list item is a `- key: value` bullet.
+            Block::List { items, .. } => {
+                for item in &items {
+                    if let Some(span) = field_value_in_lines(source, item.clone(), key, true) {
+                        return Some(span);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Within the byte range `region` of `source`, find the `key: value` line whose key
+/// matches `key` and return the **value** span (after `key:` + one space, to the
+/// line's end, trailing whitespace excluded). `bullet` strips a leading `- ` marker
+/// before reading the key.
+fn field_value_in_lines(
+    source: &str,
+    region: Range<usize>,
+    key: &str,
+    bullet: bool,
+) -> Option<Range<usize>> {
+    let text = &source[region.clone()];
+    let mut line_start = region.start;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_end_matches('\n');
+        // The byte offset of the line's content within the source.
+        let mut cursor = line_start;
+        let mut rest = trimmed;
+        if bullet {
+            // Strip a leading `- ` (or `-`) bullet marker, advancing the cursor.
+            if let Some(stripped) = rest.strip_prefix("- ") {
+                cursor += rest.len() - stripped.len();
+                rest = stripped;
+            } else if let Some(stripped) = rest.strip_prefix('-') {
+                cursor += rest.len() - stripped.len();
+                rest = stripped;
+            }
+        }
+        // Leading whitespace before the key.
+        let key_start_trim = rest.len() - rest.trim_start().len();
+        cursor += key_start_trim;
+        let bare = rest.trim_start();
+        if let Some((line_key, after_colon)) = bare.split_once(':')
+            && line_key.trim() == key
+        {
+            // The value starts after the colon and one optional separating space,
+            // matching the canonical `key: value` and the trimmed read value.
+            let colon_off = line_key.len() + 1; // up to and including the ':'
+            let mut value_start = cursor + colon_off;
+            let leading = after_colon.len() - after_colon.trim_start().len();
+            value_start += leading;
+            let value_end = value_start + after_colon.trim().len();
+            return Some(value_start..value_end);
+        }
+        line_start += line.len();
+    }
+    None
+}
+
+/// Locate the whole byte span of the repeatable item whose `{#id}` anchor is `id` —
+/// from its `### …{#id}` heading start to the start of the next `###` item heading or
+/// the next `##` section heading (or EOF), **including** the trailing blank-line
+/// separator so the deletion leaves the surrounding items canonically spaced.
+fn locate_item_block(source: &str, id: &str) -> Option<Range<usize>> {
+    let blocks = parse::scan_blocks(source);
+    // The target item's `### …{#id}` heading start, located by its anchor.
+    let mut target_start: Option<usize> = None;
+    for block in &blocks {
+        if let Block::Heading {
+            level: pulldown_cmark::HeadingLevel::H3,
+            range,
+            ..
+        } = block
+            && anchor_of(&source[range.clone()]) == Some(id)
+        {
+            target_start = Some(range.start);
+        }
+    }
+    let start = target_start?;
+
+    // The block end: the next `###` item or `##` section heading after `start`, else
+    // EOF. We extend through the trailing blank line(s) up to that next boundary so
+    // the remaining items stay separated by exactly one blank line.
+    let next_boundary = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading {
+                level: pulldown_cmark::HeadingLevel::H3 | pulldown_cmark::HeadingLevel::H2,
+                range,
+                ..
+            } if range.start > start => Some(range.start),
+            _ => None,
+        })
+        .min()
+        .unwrap_or(source.len());
+
+    Some(start..next_boundary)
+}
+
+/// Re-scan a `### …` heading's raw source for its `{#id}` anchor, returning the inner
+/// slug if present and well-formed (mirrors the parser's anchor read). Used only to
+/// match an item by id; malformed anchors won't match any present item.
+fn anchor_of(raw: &str) -> Option<&str> {
+    let first_line = raw.lines().next()?;
+    let (_, after) = first_line.split_once("{#")?;
+    let (inner, _) = after.split_once('}')?;
+    if inner.is_empty() { None } else { Some(inner) }
+}
+
+/// A scalar field value as the canonical `key: value` form's value text (used by
+/// callers building a replacement). A [`Value::List`] renders inline-flow; a scalar
+/// is its literal text. Kept here so `set-field` callers can pass a [`Value`] without
+/// reaching into [`crate::field_block`].
+pub fn value_text(value: &Value) -> String {
+    match value {
+        Value::Scalar(s) => s.clone(),
+        Value::List(items) => format!("[{}]", items.join(", ")),
+    }
+}
+
+#[cfg(test)]
+mod splice {
+    //! The surgical-splice contract — the #1-risk round-trip on the **edit** side
+    //! (`parsing.md` → Round-trip guarantees clause 2: surgical on edits). Golden
+    //! (insta): change one field/slot, assert only that target's bytes differ.
+    //! Property (proptest): parse an arbitrary conformant doc → splice one target →
+    //! assert the byte-diff is confined to exactly the located span.
+
+    use super::*;
+    use crate::parse::parse_sections;
+    use crate::schema::{Schema, load_schema};
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    fn spec_schema() -> Schema {
+        let yaml = b"\
+type: spec
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"x\" } }
+        - { id: maps-to-test, type: code-anchor }
+";
+        load_schema(yaml).expect("spec schema loads")
+    }
+
+    /// A canonical ADR fixture (the frozen byte form).
+    const CANONICAL_ADR: &str = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Decision
+
+Centralize rate limiting at the gateway.
+
+## Consequences
+
+Each service drops its local limiter.
+";
+
+    /// Assert that exactly the lines `changed` differ between `before` and `after`,
+    /// every other line byte-identical, and the two have the same line count. The
+    /// surgical-on-edit contract at line granularity.
+    fn assert_only_lines_differ(before: &str, after: &str, changed: &[usize]) {
+        let b: Vec<&str> = before.split_inclusive('\n').collect();
+        let a: Vec<&str> = after.split_inclusive('\n').collect();
+        assert_eq!(b.len(), a.len(), "line count must be unchanged");
+        for (i, (bl, al)) in b.iter().zip(a.iter()).enumerate() {
+            if changed.contains(&i) {
+                assert_ne!(bl, al, "line {i} was expected to change");
+            } else {
+                assert_eq!(bl, al, "line {i} must be byte-identical");
+            }
+        }
+    }
+
+    /// Golden + surgical: `set-field` of `status` on a canonical ADR changes only
+    /// the `status:` value bytes. The snapshot pins the full result; the line check
+    /// asserts only line 1 (`status: …`) differs.
+    #[test]
+    fn set_field_changes_only_the_field_value() {
+        let out = set_field(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "status",
+            "status",
+            "superseded",
+        )
+        .expect("status field present");
+        insta::assert_snapshot!("set_field_status", out);
+        // Line index 1 is `status: proposed` (line 0 is the `---` fence).
+        assert_only_lines_differ(CANONICAL_ADR, &out, &[1]);
+        assert!(out.contains("status: superseded"));
+    }
+
+    /// Surgical on a **non-canonically-spaced** but conformant input: a file with
+    /// extra blank lines and two spaces after a field colon keeps every unedited
+    /// byte identical when one field changes. The concrete "files are truth" claim.
+    #[test]
+    fn set_field_preserves_noncanonical_spacing() {
+        // Two spaces after `date:`, an extra blank line before `## Decision`.
+        let noncanon = "\
+---
+status: proposed
+date:  2026-05-23
+---
+
+# A decision
+
+
+## Context
+
+Forces.
+
+## Decision
+
+We decided.
+
+## Consequences
+
+Fine.
+";
+        let out = set_field(&adr_schema(), noncanon, "status", "status", "accepted")
+            .expect("status present");
+        // Only the status value changed; the odd `date:  ` spacing and the double
+        // blank line are preserved verbatim everywhere else.
+        assert_only_lines_differ(noncanon, &out, &[1]);
+        assert!(out.contains("date:  2026-05-23"), "odd spacing preserved");
+        assert!(out.contains("\n\n\n## Context"), "double blank preserved");
+    }
+
+    /// `set-slot`: replacing the `decision` slot prose changes only that slot's
+    /// bytes; the front-matter, headings, and the other two slots are untouched.
+    #[test]
+    fn set_slot_changes_only_the_slot_prose() {
+        let out = set_slot(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "decision",
+            "Adopt a token bucket per client.",
+        )
+        .expect("decision slot present");
+        insta::assert_snapshot!("set_slot_decision", out);
+        // The decision prose line is line index 13.
+        assert_only_lines_differ(CANONICAL_ADR, &out, &[13]);
+        assert!(out.contains("Adopt a token bucket per client."));
+        assert!(!out.contains("Centralize rate limiting"));
+    }
+
+    /// `remove-item`: deleting the first of two repeatable items removes exactly its
+    /// block (heading → next item) and leaves the surviving item byte-intact and
+    /// canonically spaced (no leading blank, no double blank).
+    #[test]
+    fn remove_item_deletes_only_the_item_block() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.
+";
+        let out = remove_item(&spec_schema(), src, "criteria", "rate-limit").expect("item present");
+        insta::assert_snapshot!("remove_item_first", out);
+        // The surviving item parses and is the only one left.
+        let doc = parse_sections(&spec_schema(), &out).expect("result still conforms");
+        let criteria = doc.sections.iter().find(|s| s.id == "criteria").unwrap();
+        assert_eq!(criteria.items.len(), 1);
+        assert_eq!(criteria.items[0].id, "burst-allowance");
+        // The surviving item's heading + prose survive verbatim.
+        assert!(out.contains("### Burst allowance  {#burst-allowance}"));
+        assert!(out.contains("A short burst is tolerated."));
+        assert!(!out.contains("rate-limit"));
+    }
+
+    /// An absent target routes to generation: a `set-field` for a field not present
+    /// (no `supersedes` in the fixture) is [`SpliceError::NotPresent`], not an edit.
+    #[test]
+    fn absent_field_is_not_present() {
+        let err = set_field(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "status",
+            "supersedes",
+            "adr:x",
+        )
+        .expect_err("supersedes is absent");
+        assert!(matches!(err, SpliceError::NotPresent { .. }));
+    }
+
+    /// The pure primitive: `splice` replaces exactly `[start,end)` and copies the
+    /// rest verbatim.
+    #[test]
+    fn splice_primitive_replaces_only_the_span() {
+        let s = "abcXXXdef";
+        assert_eq!(splice(s, 3..6, "Y"), "abcYdef");
+        assert_eq!(splice(s, 3..6, ""), "abcdef");
+    }
+}
+
+#[cfg(test)]
+mod splice_prop_tests {
+    //! The #1-risk surgical-on-edit property: parse an arbitrary conformant ADR →
+    //! splice a single field/slot → the byte-diff is confined to **exactly** the
+    //! located target's recorded span; every other byte is unchanged.
+
+    use super::*;
+    use crate::parse::parse_sections;
+    use crate::schema::{Schema, load_schema};
+    use proptest::prelude::*;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    /// Heading-free, sentinel-free slot prose paragraphs (so the canonical fixture
+    /// parses cleanly), joined by blank lines.
+    fn prose() -> impl Strategy<Value = String> {
+        let line = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        prop::collection::vec(line, 1..3).prop_map(|ls| ls.join("\n\n"))
+    }
+
+    /// Build a conformant canonical ADR from generated prose + status.
+    fn build_adr(status: &str, context: &str, decision: &str, consequences: &str) -> String {
+        format!(
+            "---\nstatus: {status}\ndate: 2026-05-23\n---\n\n# A decision\n\n\
+             ## Context\n\n{context}\n\n## Decision\n\n{decision}\n\n\
+             ## Consequences\n\n{consequences}\n"
+        )
+    }
+
+    /// Assert the byte-diff between `before` and `after` is confined to exactly
+    /// `span` in `before`. The prefix `[..span.start)` is byte-identical at the head
+    /// of `after`, and the suffix `[span.end..)` is byte-identical at its tail — which
+    /// together prove every byte *outside* the span is untouched, leaving only the
+    /// span's bytes free to differ (the surgical-on-edit contract). The replacement
+    /// occupies exactly `after.len() - prefix.len() - suffix.len()` bytes between them.
+    fn assert_diff_confined_to(before: &str, after: &str, span: std::ops::Range<usize>) {
+        let prefix = &before[..span.start];
+        let suffix = &before[span.end..];
+        assert!(after.starts_with(prefix), "prefix bytes must be intact");
+        assert!(after.ends_with(suffix), "suffix bytes must be intact");
+        assert!(
+            after.len() >= prefix.len() + suffix.len(),
+            "prefix and suffix must not overlap (the diff stays inside the span)"
+        );
+    }
+
+    proptest! {
+        /// Surgical on a `set-field`: changing `status` over an arbitrary conformant
+        /// ADR confines the diff to exactly the `status:` value bytes.
+        #[test]
+        fn set_field_diff_confined_to_value(
+            from in prop::sample::select(vec!["proposed", "accepted", "superseded"]),
+            to in prop::sample::select(vec!["proposed", "accepted", "superseded"]),
+            context in prose(),
+            decision in prose(),
+            consequences in prose(),
+        ) {
+            let src = build_adr(from, &context, &decision, &consequences);
+            let schema = adr_schema();
+            let value_span = locate_field_value(&src, "status").expect("status line located");
+            let out = set_field(&schema, &src, "status", "status", to).expect("status present");
+            assert_diff_confined_to(&src, &out, value_span.clone());
+            prop_assert_eq!(&src[value_span.clone()], from);
+            prop_assert_eq!(&out[value_span.start..value_span.start + to.len()], to);
+        }
+
+        /// Surgical on a `set-slot`: changing the `decision` slot over an arbitrary
+        /// conformant ADR confines the diff to exactly the recorded slot span.
+        #[test]
+        fn set_slot_diff_confined_to_span(
+            context in prose(),
+            decision in prose(),
+            consequences in prose(),
+            new_prose in prose(),
+        ) {
+            let src = build_adr("proposed", &context, &decision, &consequences);
+            let schema = adr_schema();
+            let doc = parse_sections(&schema, &src).expect("conformant ADR parses");
+            let span = doc.sections.iter().find(|s| s.id == "decision")
+                .unwrap().slot.as_ref().unwrap().clone();
+            let out = set_slot(&schema, &src, "decision", &new_prose).expect("decision present");
+            assert_diff_confined_to(&src, &out, span.start..span.end);
+            prop_assert_eq!(&out[span.start..span.start + new_prose.len()], new_prose.as_str());
+        }
+    }
+
+    /// A non-prop scalar/list value-text rendering check (kept with the property
+    /// module so its helper is exercised).
+    #[test]
+    fn value_text_renders_scalar_and_list() {
+        assert_eq!(value_text(&Value::Scalar("x".into())), "x");
+        assert_eq!(
+            value_text(&Value::List(vec!["a".into(), "b".into()])),
+            "[a, b]"
+        );
     }
 }

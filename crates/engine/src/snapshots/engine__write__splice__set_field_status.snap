@@ -1,0 +1,22 @@
+---
+source: crates/engine/src/splice.rs
+expression: out
+---
+---
+status: superseded
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Decision
+
+Centralize rate limiting at the gateway.
+
+## Consequences
+
+Each service drops its local limiter.

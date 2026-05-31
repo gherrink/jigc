@@ -340,8 +340,12 @@ fn heading_matches(text: &str, section_id: &str) -> bool {
 /// A coarse block: the structural events the schema mapping cares about, each with
 /// its byte range and 1-based start line. Inline content and paragraph internals
 /// are *not* modelled — slot prose is opaque.
+///
+/// Crate-visible so the surgical-splice edit path ([`crate::write`]) can locate target
+/// spans over the *same* trustworthy block parse (never a line scanner — the
+/// determinism boundary).
 #[derive(Debug)]
-enum Block {
+pub(crate) enum Block {
     /// A `---`-fenced metadata (front-matter) block, carrying the byte range of its
     /// **inner content** (the bare `key: value` lines between the fences). The
     /// header section's fields are read from this range via [`crate::field_block`].
@@ -372,7 +376,10 @@ enum Block {
 /// Walk the CommonMark block events once, projecting the structural blocks the
 /// schema mapping needs (headings, the metadata block, the field-group sentinel,
 /// top-level bullet lists), each with its byte range and start line.
-fn scan_blocks(source: &str) -> Vec<Block> {
+///
+/// Crate-visible so the surgical-splice edit path ([`crate::write`]) locates target
+/// spans over this same block parse rather than a fragile line scanner.
+pub(crate) fn scan_blocks(source: &str) -> Vec<Block> {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
     opts.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
