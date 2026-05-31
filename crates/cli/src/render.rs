@@ -104,11 +104,8 @@ pub fn orientation_clean(header: &str, orientation: &Orientation) -> String {
 /// composed text already ends with a trailing newline; the footer follows it on
 /// its own line.
 ///
-/// Not yet wired into `main`: the `jigc start "<intent>"` dispatch that mints a
-/// task and emits this view lands in a later increment-3 task. Retained behind
-/// `#[allow(dead_code)]` (the established pattern for ahead-of-dispatch render
-/// fns here, alongside `json` / `orientation_agent_text`).
-#[allow(dead_code)]
+/// Wired into the `jigc start "<intent>"` dispatch (`crate::cli::run_compose`),
+/// which mints a task and emits this composed view.
 pub fn composed(format: Format, view: &ComposedWorkflow) -> String {
     match format {
         Format::Json => json(view),

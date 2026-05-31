@@ -12,9 +12,6 @@ mod locate;
 mod orient;
 mod pack;
 mod render;
-// `start` (task minting) is consumed by the `Start { intent: Some(_) }` compose
-// dispatch in a later increment-3 step; until then only its tests exercise it.
-#[allow(dead_code)]
 mod start;
 
 use clap::Parser;

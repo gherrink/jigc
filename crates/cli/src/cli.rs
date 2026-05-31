@@ -9,6 +9,7 @@
 
 use crate::orient;
 use crate::render;
+use crate::start;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::process::ExitCode;
 
@@ -49,17 +50,41 @@ pub enum Command {
 }
 
 impl Cli {
-    /// Dispatch the parsed command. Increment-1 scope: bare `start` (no
-    /// `intent`) runs the read-only orientation end-to-end; an `<intent>` is
-    /// composition, which lands in increment 3.
+    /// Dispatch the parsed command: bare `start` (no `intent`) runs the
+    /// read-only orientation end-to-end; an `<intent>` mints a task and composes
+    /// the cascade's default workflow (`design/write-commands.md` → Task
+    /// origination).
     pub fn dispatch(self) -> ExitCode {
         match self.command {
             Command::Start { intent: None } => run_orient(self.format),
-            Command::Start { intent: Some(_) } => {
-                // Composition (`jigc start "<intent>"`) lands in increment 3.
-                eprintln!("composition is not yet implemented (increment 3)");
-                ExitCode::FAILURE
-            }
+            Command::Start {
+                intent: Some(intent),
+            } => run_compose(self.format, &intent),
+        }
+    }
+}
+
+/// Mint a task from `intent` and compose the cascade's default workflow against
+/// the current working directory, render the composed view through the selected
+/// `format`, and print it — mapping success/failure to the process exit code. A
+/// blocking gate / minting finding surfaces on stderr (with its route) and exits
+/// non-zero; nothing is emitted past a block.
+fn run_compose(format: Format, intent: &str) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match start::compose_in_repo(&cwd, intent) {
+        Ok(view) => {
+            println!("{}", render::composed(format, &view));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
         }
     }
 }

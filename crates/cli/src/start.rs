@@ -1,4 +1,4 @@
-//! `jigc start "<intent>"` — task minting (the structural half).
+//! `jigc start "<intent>"` — task minting + composition (the front door).
 //!
 //! The CLI reads HEAD (`git rev-parse`) and hands the engine an explicit base
 //! SHA; the engine slugs the intent, opens `.jigc/tasks/<id>/`, and writes the
@@ -8,13 +8,27 @@
 //! lives here, never in the engine, so the engine stays a pure function of its
 //! inputs.
 //!
-//! This module lands minting only. Composing the workflow the mint feeds into
-//! (`jigc start "<intent>"` → emit the `single-task` view) is a later increment-3
-//! step; the `Start { intent: Some(_) }` dispatch arm stays its stub until that
-//! wiring lands.
+//! After minting, [`compose_in_repo`] composes the cascade's default workflow
+//! (`single-task`) with `{{task.intent}}` = the intent — locating the cascade
+//! (CLI locates, engine resolves), running the `workflow-refs` gate at
+//! compose-time, then emitting the four-class composed view
+//! ([write-commands.md](../../../design/write-commands.md) → Task origination;
+//! [workflow-dialect.md](../../../design/workflow-dialect.md) → The composed
+//! output is a view). Composition is deterministic and makes no LLM call (same
+//! resolved cascade in → same workflow out).
 
-use anyhow::{Context, Result};
+use crate::pack::EmbeddedPack;
+use anyhow::{Context, Result, bail};
+use engine::address::Address;
+use engine::compose::{
+    self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, WorkflowDef, load_command_catalog,
+    load_step_def, load_workflow_def,
+};
+use engine::data_value::{ComposeContext, TaskRoot};
+use engine::finding::{Finding, Severity};
+use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state::{self, BasePin, MintedTask};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -37,13 +51,144 @@ pub fn mint_in_repo(start: &Path, intent: &str) -> Result<MintedTask> {
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(&repo_root)?;
 
-    state::mint_task(&jigc_root, intent, FALLBACK_TYPE, base).map_err(|finding| {
-        let route = finding
-            .route
-            .map(|r| format!("\n  route: {r}"))
-            .unwrap_or_default();
-        anyhow::anyhow!("{}{route}", finding.message)
-    })
+    state::mint_task(&jigc_root, intent, FALLBACK_TYPE, base).map_err(finding_to_err)
+}
+
+/// The cascade knob the default-workflow id is read from
+/// (`design/overrides.md`; `design/write-commands.md` → Task origination: the
+/// `default-workflow: <id>` cascade knob the front door composes). The MVP pack
+/// ships `default-workflow: single-task` in its `config/defaults` resource.
+const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
+
+/// Mint a task from `intent`, then compose the cascade's default workflow over
+/// it — the `jigc start "<intent>"` front door.
+///
+/// Locates the cascade (a missing project layer routes to `jigc setup`), reads
+/// `default-workflow` from the pack's `config/defaults`, mints the task (seq 12),
+/// builds the [`ComposeContext`] binding `{{task.intent}}`/`{{task.id}}` and
+/// declaring the workflow's `allows-create` roles unbound, runs the
+/// `workflow-refs` gate at compose-time, and on a clean gate emits the
+/// deterministic four-class composed view. A blocking gate finding short-circuits
+/// with that finding's message + route — nothing is emitted past the gate.
+///
+/// Returns the composed view; the caller renders it through the selected format.
+pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let pack = EmbeddedPack::new();
+    let workflow_id = default_workflow_id(&pack)?;
+    let workflow_bytes = read_pack(&pack, PackResourceKind::Workflows, &workflow_id)?;
+    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    let catalog = load_catalog(&pack)?;
+
+    // Mint the task (reads HEAD) — `single-task` declares `creates-task: true`,
+    // so the front door mints in one call. Minting after the definition loads so
+    // a malformed pack never leaves a task dir behind.
+    let minted = mint_in_repo(&repo_root, intent)?;
+
+    let ctx = build_context(&minted.id, intent, &def);
+    let source = PackStepSource { pack: &pack };
+
+    // Compose-time `workflow-refs` gate: validate every placeholder / include /
+    // command-ref / marker before any output reaches the agent. A blocking
+    // finding short-circuits.
+    let findings = compose::workflow_refs(&workflow_bytes, &source, &catalog, &ctx);
+    if let Some(finding) = findings
+        .into_iter()
+        .find(|f| f.severity == Severity::Blocking)
+    {
+        return Err(finding_to_err(finding));
+    }
+
+    compose::compose(&def, &source, &catalog, &ctx).map_err(finding_to_err)
+}
+
+/// Build the [`ComposeContext`] for the composed workflow.
+///
+/// Binds the engine-native `task.id`/`task.intent` scalars, the task's **commit**
+/// role to `commit:<id>` (the always-present sink of a `creates-task` work-
+/// workflow — its `<<author: {{task.commit#summary}}>>` slot must resolve to that
+/// address), and declares each `allows-create` role **unbound** (the created
+/// instance binds during the task, not at compose-time, so `{{@task.<role>.…}}`
+/// resolves to absent/empty now — `design/workflow-dialect.md` → Empty vs
+/// unresolvable).
+fn build_context(id: &str, intent: &str, def: &WorkflowDef) -> ComposeContext {
+    let mut roles: BTreeMap<String, Option<Address>> = BTreeMap::new();
+    // The task's commit doc — the engine-native sink, bound to `commit:<id>`.
+    let commit =
+        Address::parse(&format!("commit:{id}")).expect("`commit:<slug>` is a valid address");
+    roles.insert("commit".to_owned(), Some(commit));
+    // `allows-create` roles are declared but unbound until created in-task.
+    for entry in &def.allows_create {
+        roles.entry(entry.as_role.clone()).or_insert(None);
+    }
+    ComposeContext {
+        task: TaskRoot {
+            id: id.to_owned(),
+            intent: intent.to_owned(),
+            roles,
+        },
+    }
+}
+
+/// A [`StepSource`] that resolves step ids against the embedded pack. The MVP
+/// cascade has no project step overrides, so the pack-default layer owns every
+/// step — the engine consumes this mapping and stays a pure function of it.
+struct PackStepSource<'a> {
+    pack: &'a EmbeddedPack,
+}
+
+impl StepSource for PackStepSource<'_> {
+    fn step(&self, id: &str) -> Option<StepDef> {
+        let bytes = self
+            .pack
+            .read(PackResourceKind::Steps, &ResourceId::from(id))
+            .ok()?;
+        load_step_def(id, &bytes).ok()
+    }
+}
+
+/// Read the `default-workflow` id from the pack's `config/defaults` resource.
+fn default_workflow_id(pack: &EmbeddedPack) -> Result<String> {
+    let bytes = read_pack(pack, PackResourceKind::Config, "defaults")?;
+    let text = String::from_utf8(bytes).context("`config/defaults` is not UTF-8")?;
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).context("`config/defaults` is not valid YAML")?;
+    value
+        .get(DEFAULT_WORKFLOW_KEY)
+        .and_then(serde_yaml_ng::Value::as_str)
+        .map(str::to_owned)
+        .with_context(|| format!("`config/defaults` declares no `{DEFAULT_WORKFLOW_KEY}`"))
+}
+
+/// Load and parse the pack's command catalog (`config/commands`).
+fn load_catalog(pack: &EmbeddedPack) -> Result<CommandCatalog> {
+    let bytes = read_pack(pack, PackResourceKind::Config, "commands")?;
+    load_command_catalog(&bytes).map_err(finding_to_err)
+}
+
+/// Read a pack resource by kind + id, mapping a missing resource to an error.
+fn read_pack(pack: &EmbeddedPack, kind: PackResourceKind, id: &str) -> Result<Vec<u8>> {
+    pack.read(kind, &ResourceId::from(id))
+        .with_context(|| format!("the embedded pack is missing `{id}`"))
+}
+
+/// Map an engine [`Finding`] to an `anyhow` error carrying its message + route —
+/// the same envelope minting already uses (a hard block is a blocking-severity
+/// finding carrying a route, `DECISIONS.md` 2026-05-31).
+fn finding_to_err(finding: Finding) -> anyhow::Error {
+    let route = finding
+        .route
+        .map(|r| format!("\n  route: {r}"))
+        .unwrap_or_default();
+    anyhow::anyhow!("{}{route}", finding.message)
 }
 
 /// Read HEAD as a [`BasePin`] (full + short SHA) by shelling out to the user's
