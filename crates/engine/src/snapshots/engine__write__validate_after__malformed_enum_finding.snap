@@ -1,0 +1,14 @@
+---
+source: crates/engine/src/write.rs
+expression: "serde_json::to_string_pretty(&finding).unwrap()"
+---
+{
+  "severity": "blocking",
+  "code": "write.malformed-value",
+  "message": "write rejected: \"rejected\" is not a member of enum \"status\" (allowed: proposed, accepted, superseded)",
+  "location": {
+    "line": 1,
+    "col": 1
+  },
+  "route": null
+}

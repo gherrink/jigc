@@ -1955,6 +1955,521 @@ Prose.
     }
 }
 
+// ============================================================================
+// Validate-after-write — the local safety gate (`parsing.md` → Validate-after-write).
+// After every splice/generation, re-parse the result and assert (a) it parses, (b)
+// only the intended target changed, (c) for `set-field`, the new value passes its
+// declared type. On any anomaly, abort: return a blocking `Finding`, never a buffer
+// to persist. This is the write-time local adjudication of `write-commands.md`,
+// distinct from the `finalize` validation engine (cross-doc/ref integrity).
+// ============================================================================
+
+use crate::finding::{Finding, Location};
+use crate::schema::{Field as SchemaField, FieldType};
+
+/// Type-check a `set-field`'s new value against its declared schema [`FieldType`] —
+/// the *write-time local adjudication* of [`design/write-commands.md`]: a malformed
+/// date or a non-member enum is rejected **now**, with fast local feedback.
+///
+/// Engine-native checks: an `enum` value must be a declared member (`of`); a `date`
+/// must be ISO `YYYY-MM-DD`; a `bool` must be `true`/`false`; an `int` must parse as
+/// a signed integer. `string`, `ref`, and `code-anchor` accept any non-empty opaque
+/// value — full `ref` resolution is a `finalize` (edge-index) concern and the
+/// `code-anchor` adjudicator ships in a pack, so neither is typed here. A
+/// [`Value::List`] is checked element-wise. Returns a human-readable description of
+/// the malformation on failure (the [`Finding`] message the caller surfaces).
+pub fn check_value(field: &SchemaField, value: &Value) -> Result<(), String> {
+    match value {
+        Value::Scalar(s) => check_scalar(field, s),
+        Value::List(items) => {
+            for item in items {
+                check_scalar(field, item)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Type-check a single scalar value against `field`'s declared type.
+fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
+    match field.ty {
+        FieldType::Enum => {
+            let members = field.of.as_deref().unwrap_or(&[]);
+            if members.iter().any(|m| m == value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{value:?} is not a member of enum {:?} (allowed: {})",
+                    field.id,
+                    members.join(", ")
+                ))
+            }
+        }
+        FieldType::Date => {
+            if is_iso_date(value) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{value:?} is not an ISO date (expected `YYYY-MM-DD`)"
+                ))
+            }
+        }
+        FieldType::Bool => {
+            if value == "true" || value == "false" {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{value:?} is not a bool (expected `true` or `false`)"
+                ))
+            }
+        }
+        FieldType::Int => {
+            if value.parse::<i64>().is_ok() {
+                Ok(())
+            } else {
+                Err(format!("{value:?} is not an integer"))
+            }
+        }
+        // Non-empty opaque value; deeper adjudication is a finalize / pack concern.
+        FieldType::String | FieldType::Ref | FieldType::CodeAnchor => {
+            if value.is_empty() {
+                Err(format!("{:?} must not be empty", field.id))
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Whether `s` is an ISO calendar date `YYYY-MM-DD` with an in-range month/day. A
+/// minimal hand-rolled check (no chrono dependency) — month `01..=12`, day
+/// `01..=31`; the local gate rejects obvious malformations, the canonical-date
+/// authority is the CLI `set: on-create` deriver, not free user input.
+fn is_iso_date(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() != 10 || bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+    let digits = |range: std::ops::Range<usize>| s[range].bytes().all(|b| b.is_ascii_digit());
+    if !(digits(0..4) && digits(5..7) && digits(8..10)) {
+        return false;
+    }
+    let month: u8 = s[5..7].parse().unwrap_or(0);
+    let day: u8 = s[8..10].parse().unwrap_or(0);
+    (1..=12).contains(&month) && (1..=31).contains(&day)
+}
+
+/// The validate-after-write gate over an already-edited buffer: re-parse `edited`
+/// against the schema and assert (a) it parses, and (b) the byte-diff from `source`
+/// is confined to exactly `target` (the located target span). Returns a blocking
+/// [`Finding`] — and the caller persists **nothing** — on either anomaly.
+///
+/// (b) is checked structurally on the bytes: the prefix `source[..target.start]` and
+/// the suffix `source[target.end..]` must both survive intact at the head and tail of
+/// `edited` (every byte outside the target span unchanged); the replacement occupies
+/// the bytes between. This is the surgical-on-edit contract, *re-verified* after the
+/// write rather than trusted from the splice primitive.
+pub fn validate_after(
+    schema: &Schema,
+    source: &str,
+    edited: &str,
+    target: Range<usize>,
+) -> Result<(), Finding> {
+    // (a) the result still parses against the schema.
+    if let Err(findings) = parse::parse_sections(schema, edited) {
+        let first = findings.into_iter().next();
+        let detail = first
+            .map(|f| f.message)
+            .unwrap_or_else(|| "the edited buffer no longer conforms".to_string());
+        return Err(Finding::blocking(
+            "write.non-reparseable",
+            format!("write rejected: result does not re-parse ({detail})"),
+            Location::at(1, 1),
+        ));
+    }
+
+    // (b) the byte-diff is confined to exactly the target span.
+    let prefix = &source[..target.start];
+    let suffix = &source[target.end..];
+    let confined = edited.starts_with(prefix)
+        && edited.ends_with(suffix)
+        && edited.len() >= prefix.len() + suffix.len();
+    if !confined {
+        return Err(Finding::blocking(
+            "write.target-escape",
+            "write rejected: the change touched bytes outside the intended target",
+            Location::at(1, 1),
+        ));
+    }
+
+    Ok(())
+}
+
+/// The gated `set-field`: the full write-time local adjudication for a present-field
+/// value edit. Type-checks `new_value` against the field's declared schema type (c),
+/// performs the surgical splice, then runs [`validate_after`] (a + b). Returns the
+/// new buffer to persist, or a blocking [`Finding`] (and **no** buffer) on any
+/// anomaly — a malformed value, a non-reparseable result, or a target escape.
+///
+/// An absent field / section (a [`SpliceError`]) is reported as a blocking finding
+/// too: at this gate the caller asked to *edit* a present field, so absence is an
+/// abort (routing an absent target to the generation path is the caller's concern,
+/// not the gate's).
+pub fn set_field_validated(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    field_key: &str,
+    new_value: &Value,
+) -> Result<String, Finding> {
+    // (c) the new value passes its declared type — *before* touching bytes.
+    let field = field_schema(schema, section_id, field_key).ok_or_else(|| {
+        Finding::blocking(
+            "write.unknown-field",
+            format!("no field {field_key:?} declared in section {section_id:?}"),
+            Location::at(1, 1),
+        )
+    })?;
+    if let Err(why) = check_value(field, new_value) {
+        return Err(Finding::blocking(
+            "write.malformed-value",
+            format!("write rejected: {why}"),
+            Location::at(1, 1),
+        ));
+    }
+
+    // Locate the target span (the field's value bytes) before the splice, so the
+    // validate-after diff-confinement check has the intended target to assert against.
+    let target = locate_field_value(source, field_key).ok_or_else(|| {
+        Finding::blocking(
+            "write.not-present",
+            format!("field {field_key:?} value line is not present in section {section_id:?}"),
+            Location::at(1, 1),
+        )
+    })?;
+
+    let edited = set_field(
+        schema,
+        source,
+        section_id,
+        field_key,
+        &value_text(new_value),
+    )
+    .map_err(|e| splice_error_finding(&e))?;
+
+    // (a) + (b): re-parse and only-target-changed. Abort (no buffer) on any anomaly.
+    validate_after(schema, source, &edited, target)?;
+    Ok(edited)
+}
+
+/// Find the schema [`SchemaField`] declared for `field_key` in `section_id`, across a
+/// header/simple section's `fields`. Returns `None` when the field is not declared.
+fn field_schema<'a>(
+    schema: &'a Schema,
+    section_id: &str,
+    field_key: &str,
+) -> Option<&'a SchemaField> {
+    let section = schema.sections.iter().find(|s| s.id == section_id)?;
+    let fields = match &section.body {
+        SectionBody::Simple { fields, .. } => fields,
+        SectionBody::Repeatable { .. } => return None,
+    };
+    fields.iter().find(|f| f.id == field_key)
+}
+
+/// Render a [`SpliceError`] as the gate's blocking [`Finding`].
+fn splice_error_finding(err: &SpliceError) -> Finding {
+    let (code, message) = match err {
+        SpliceError::NotPresent { what } => (
+            "write.not-present",
+            format!("write rejected: {what} is not present"),
+        ),
+        SpliceError::NotConformant => (
+            "write.non-reparseable",
+            "write rejected: the source does not conform to the schema".to_string(),
+        ),
+    };
+    Finding::blocking(code, message, Location::at(1, 1))
+}
+
+#[cfg(test)]
+mod validate_after {
+    //! The write-time local safety gate (`parsing.md` → Validate-after-write). After
+    //! every splice/generation we **re-parse** the result and assert (a) it parses,
+    //! (b) only the intended target changed, (c) for `set-field`, the new value passes
+    //! its declared type — aborting (a [`Finding`], never a persisted buffer) on any
+    //! anomaly. This is the *write-time local adjudication* of
+    //! [`design/write-commands.md`], distinct from the `finalize` validation engine.
+
+    use super::*;
+    use crate::field_block::Value;
+    use crate::schema::{Schema, load_schema};
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    /// A canonical ADR with a typed `status` enum and a `date` field present.
+    const CANONICAL_ADR: &str = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Decision
+
+Centralize rate limiting at the gateway.
+
+## Consequences
+
+Each service drops its local limiter.
+";
+
+    fn scalar(v: &str) -> Value {
+        Value::Scalar(v.to_string())
+    }
+
+    /// (c) Type-check, then write: a `status` enum value that is a declared member
+    /// (`accepted`) passes the gate — the gate returns the new buffer, which re-parses
+    /// with only the `status:` value changed.
+    #[test]
+    fn valid_set_field_returns_buffer_and_reparses() {
+        let out = set_field_validated(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "status",
+            "status",
+            &scalar("accepted"),
+        )
+        .expect("a declared enum member passes the gate");
+        // The buffer re-parses against the schema (a).
+        parse::parse_sections(&adr_schema(), &out).expect("gated result re-parses");
+        assert!(out.contains("status: accepted"));
+        // (b) only the status value line changed.
+        assert!(out.contains("date: 2026-05-23"));
+        assert!(out.contains("Centralize rate limiting at the gateway."));
+    }
+
+    /// (c) A `set-field` whose new value is **not** a declared enum member is rejected
+    /// with a Blocking [`Finding`] and **no** buffer — the malformed value never
+    /// reaches disk. The located finding is snapshotted.
+    #[test]
+    fn malformed_enum_value_is_blocking_finding() {
+        let finding = set_field_validated(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "status",
+            "status",
+            &scalar("rejected"),
+        )
+        .expect_err("`rejected` is not a declared status member ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        insta::assert_snapshot!(
+            "malformed_enum_finding",
+            serde_json::to_string_pretty(&finding).unwrap()
+        );
+    }
+
+    /// (c) A `set-field` whose new `date` value is not an ISO `YYYY-MM-DD` date is
+    /// rejected with a Blocking [`Finding`] and no buffer.
+    #[test]
+    fn malformed_date_value_is_blocking_finding() {
+        let finding = set_field_validated(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "status",
+            "date",
+            &scalar("23rd of May"),
+        )
+        .expect_err("a non-ISO date ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.malformed-value");
+    }
+
+    /// The type-check primitive accepts well-formed values and rejects malformed ones,
+    /// per declared [`crate::schema::FieldType`]: enum membership, ISO date, bool, int.
+    /// `string`/`ref`/`code-anchor` accept any non-empty opaque value (full ref /
+    /// code-anchor adjudication is a `finalize` / pack concern).
+    #[test]
+    fn check_value_types_each_native_kind() {
+        use crate::schema::{Field as SField, FieldType};
+        let field = |ty: FieldType, of: Option<Vec<String>>| SField {
+            id: "f".into(),
+            ty,
+            of,
+            default: None,
+            set: None,
+            to: None,
+            card: None,
+            inverse: None,
+            inverse_card: None,
+        };
+
+        // enum
+        let status = field(
+            FieldType::Enum,
+            Some(vec!["proposed".into(), "accepted".into()]),
+        );
+        assert!(check_value(&status, &scalar("accepted")).is_ok());
+        assert!(check_value(&status, &scalar("rejected")).is_err());
+
+        // date — ISO YYYY-MM-DD only
+        let date = field(FieldType::Date, None);
+        assert!(check_value(&date, &scalar("2026-05-31")).is_ok());
+        assert!(check_value(&date, &scalar("2026-13-01")).is_err());
+        assert!(check_value(&date, &scalar("not a date")).is_err());
+
+        // bool
+        let flag = field(FieldType::Bool, None);
+        assert!(check_value(&flag, &scalar("true")).is_ok());
+        assert!(check_value(&flag, &scalar("false")).is_ok());
+        assert!(check_value(&flag, &scalar("yes")).is_err());
+
+        // int
+        let count = field(FieldType::Int, None);
+        assert!(check_value(&count, &scalar("42")).is_ok());
+        assert!(check_value(&count, &scalar("-7")).is_ok());
+        assert!(check_value(&count, &scalar("4.2")).is_err());
+
+        // string / ref / code-anchor: any non-empty value
+        let name = field(FieldType::String, None);
+        assert!(check_value(&name, &scalar("anything goes")).is_ok());
+        assert!(check_value(&name, &scalar("")).is_err());
+        let r = field(FieldType::Ref, None);
+        assert!(check_value(&r, &scalar("adr:single-node-cache")).is_ok());
+    }
+
+    /// (b) The only-intended-target gate rejects a buffer whose byte-diff escapes the
+    /// declared target span — a write that touched more than the target aborts with a
+    /// Blocking [`Finding`], never persists.
+    #[test]
+    fn target_escape_is_blocking_finding() {
+        // The located `status` value span in the canonical ADR.
+        let span = locate_field_value(CANONICAL_ADR, "status").expect("status located");
+        // A tampered buffer: a valid in-span replacement PLUS a stray edit to slot
+        // prose elsewhere (still conformant — so the re-parse passes and the
+        // only-target-changed check is what must catch the escape).
+        let tampered = splice(CANONICAL_ADR, span.clone(), "accepted")
+            .replace("Each service drops its local limiter.", "Tampered prose.");
+        assert_ne!(
+            tampered,
+            splice(CANONICAL_ADR, span.clone(), "accepted"),
+            "the stray edit must actually change bytes"
+        );
+        let finding = validate_after(&adr_schema(), CANONICAL_ADR, &tampered, span)
+            .expect_err("a diff outside the target span ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.target-escape");
+    }
+
+    /// (a) The re-parse gate rejects a buffer that no longer parses — a write that
+    /// produced a non-conformant result aborts with a Blocking [`Finding`].
+    #[test]
+    fn nonreparseable_result_is_blocking_finding() {
+        // The `decision` slot span; replace its prose with a forbidden `###` heading,
+        // which the parser rejects inside a slot (heading-depth ceiling).
+        let doc = parse::parse_sections(&adr_schema(), CANONICAL_ADR).unwrap();
+        let span = doc
+            .sections
+            .iter()
+            .find(|s| s.id == "decision")
+            .unwrap()
+            .slot
+            .clone()
+            .unwrap();
+        let target = span.start..span.end;
+        let broken = splice(CANONICAL_ADR, target.clone(), "### Sneaky heading");
+        let finding = validate_after(&adr_schema(), CANONICAL_ADR, &broken, target)
+            .expect_err("a non-reparseable result ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.non-reparseable");
+    }
+}
+
+#[cfg(test)]
+mod validate_after_prop_tests {
+    //! The #1-risk property on validate-after: for arbitrary single `set-field` edits
+    //! over conformant ADRs, the gate's accepted buffer re-parses and changed exactly
+    //! the one target — validate-after never passes a write it can't re-read.
+
+    use super::*;
+    use crate::field_block::Value;
+    use crate::schema::{Schema, load_schema};
+    use proptest::prelude::*;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    fn prose() -> impl Strategy<Value = String> {
+        let line = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        prop::collection::vec(line, 1..3).prop_map(|ls| ls.join("\n\n"))
+    }
+
+    fn build_adr(status: &str, context: &str, decision: &str, consequences: &str) -> String {
+        format!(
+            "---\nstatus: {status}\ndate: 2026-05-23\n---\n\n# A decision\n\n\
+             ## Context\n\n{context}\n\n## Decision\n\n{decision}\n\n\
+             ## Consequences\n\n{consequences}\n"
+        )
+    }
+
+    proptest! {
+        /// Validate-after never passes a write it can't re-read: an arbitrary
+        /// conformant ADR, a `set-field` of `status` to a declared member, runs the
+        /// gate; the accepted buffer re-parses **and** the only byte-diff is the
+        /// target's value span.
+        #[test]
+        fn gated_set_field_reparses_and_changes_one_target(
+            from in prop::sample::select(vec!["proposed", "accepted", "superseded"]),
+            to in prop::sample::select(vec!["proposed", "accepted", "superseded"]),
+            context in prose(),
+            decision in prose(),
+            consequences in prose(),
+        ) {
+            let src = build_adr(from, &context, &decision, &consequences);
+            let schema = adr_schema();
+            let span = locate_field_value(&src, "status").expect("status located");
+            let out = set_field_validated(&schema, &src, "status", "status", &Value::Scalar(to.into()))
+                .expect("a declared member passes the gate");
+            // (a) the accepted buffer re-parses.
+            parse::parse_sections(&schema, &out).expect("gated buffer re-parses");
+            // (b) the byte-diff is confined to exactly the target span.
+            prop_assert!(out.starts_with(&src[..span.start]));
+            prop_assert!(out.ends_with(&src[span.end..]));
+            prop_assert_eq!(&out[span.start..span.start + to.len()], to);
+        }
+
+        /// A `set-field` of `status` to a value that is **not** a declared member is
+        /// always rejected with a Blocking [`Finding`] and never returns a buffer.
+        #[test]
+        fn gated_set_field_rejects_non_member(
+            bad in "[a-z]{1,10}".prop_filter("not a status member", |s: &String| {
+                !["proposed", "accepted", "superseded"].contains(&s.as_str())
+            }),
+            context in prose(),
+            decision in prose(),
+            consequences in prose(),
+        ) {
+            let src = build_adr("proposed", &context, &decision, &consequences);
+            let schema = adr_schema();
+            let finding = set_field_validated(&schema, &src, "status", "status", &Value::Scalar(bad))
+                .expect_err("a non-member is rejected");
+            prop_assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        }
+    }
+}
+
 #[cfg(test)]
 mod generate_prop_tests {
     //! The #1-risk property on the generation path: inserting an absent section's home
