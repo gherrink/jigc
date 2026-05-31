@@ -1,0 +1,40 @@
+---
+source: crates/engine/src/parse.rs
+expression: "project(&doc, src)"
+---
+[
+    (
+        "status",
+        None,
+    ),
+    (
+        "context",
+        Some(
+            (
+                83,
+                173,
+                "Per-client limits were enforced ad hoc.\n\n```\n## fenced not a heading\n```\n\nA trailing line.",
+            ),
+        ),
+    ),
+    (
+        "decision",
+        Some(
+            (
+                187,
+                227,
+                "Centralize rate limiting at the gateway.",
+            ),
+        ),
+    ),
+    (
+        "consequences",
+        Some(
+            (
+                245,
+                282,
+                "Each service drops its local limiter.",
+            ),
+        ),
+    ),
+]

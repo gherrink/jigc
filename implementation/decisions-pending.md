@@ -18,8 +18,7 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 2 — parser/writer
 
-- **(D) Exact canonical byte form** — the precise bytes the canonical writer emits (blank-line placement, `<!-- fields -->` sentinel spacing, field-bullet form). [storage.md](../design/storage.md) / [parsing.md](parsing.md) specify the rules; the golden tests need them pinned to literal bytes.
-- **(I) pulldown-cmark handling** — offset/front-matter edge behavior (the span-precision spike flagged in [parsing.md](parsing.md) → Open questions).
+- **(D) Exact canonical byte form** — the precise bytes the canonical writer emits (blank-line placement, `<!-- fields -->` sentinel spacing, field-bullet form). [storage.md](../design/storage.md) / [parsing.md](parsing.md) specify the rules; the golden tests need them pinned to literal bytes. *(Already frozen in DECISIONS.md 2026-05-31 → Canonical byte form; consumed by the writer task.)*
 
 ## Increment 3 — compose
 

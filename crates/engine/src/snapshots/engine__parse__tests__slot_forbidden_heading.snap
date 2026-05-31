@@ -1,0 +1,17 @@
+---
+source: crates/engine/src/parse.rs
+expression: ceiling
+---
+Finding {
+    severity: Blocking,
+    code: "conformance.slot-heading-depth",
+    message: "heading at schema-reserved depth `###` in slot prose at line 11; use `####` or rephrase",
+    location: Some(
+        Location {
+            address: None,
+            line: 11,
+            col: 1,
+        },
+    ),
+    route: None,
+}
