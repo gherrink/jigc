@@ -91,7 +91,10 @@ fn parse_when(id: &ResourceId, bytes: &[u8]) -> Result<String, CatalogError> {
 /// `None` if the text does not open with a fence (no front-matter block). The
 /// canonical writer emits LF (`parsing.md` → Round-trip guarantees), so this
 /// reads the LF form.
-fn front_matter(text: &str) -> Option<&str> {
+///
+/// Shared with [`crate::compose`], which loads the full workflow front-matter
+/// (not just `when`) over the same slicer — one front-matter recognizer, reused.
+pub(crate) fn front_matter(text: &str) -> Option<&str> {
     let rest = text.strip_prefix("---\n")?;
     // The closing fence is a line that is exactly `---`.
     let end = rest
