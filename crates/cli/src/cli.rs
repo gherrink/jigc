@@ -58,8 +58,9 @@ pub enum Command {
     },
 
     /// The task lifecycle surface — `jigc task <verb> <id>` (`diff` · `validate` ·
-    /// `discard`; `finalize` lands next) over a named task's working area
-    /// (`design/write-commands.md` → Lifecycle).
+    /// `discard` · `finalize`) over a named task's working area
+    /// (`design/write-commands.md` → Lifecycle; `design/finalize.md` → the commit
+    /// boundary).
     Task {
         #[command(subcommand)]
         verb: TaskCommand,
