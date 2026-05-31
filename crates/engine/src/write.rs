@@ -320,9 +320,10 @@ mod canonical {
     }
 
     /// Golden: a fixed `commit` instance renders to the exact frozen bytes — front
-    /// matter (`subject`), a single blank line, the `# H1`, the `## Body` section
-    /// with its slot prose, exactly one trailing newline. Pins the no-field-group
-    /// case (the body slot has no fields, so no sentinel).
+    /// matter (`type`), a single blank line, the `# H1`, the `## Summary` and
+    /// `## Body` slot sections with their prose, the empty `## Trailers` repeatable
+    /// section, exactly one trailing newline. Pins the no-field-group case (the slot
+    /// sections have no fields, so no sentinel).
     #[test]
     fn commit_instance_renders_canonical_bytes() {
         let instance = Instance {
@@ -330,7 +331,12 @@ mod canonical {
             sections: vec![
                 SectionContent {
                     id: "header".to_string(),
-                    fields: vec![scalar("subject", "Add the rate limiter")],
+                    fields: vec![scalar("type", "feat")],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "summary".to_string(),
+                    slot: Some("Add a per-client rate limit at the gateway.".to_string()),
                     ..Default::default()
                 },
                 SectionContent {
@@ -2678,11 +2684,14 @@ mod roundtrip {
             })
     }
 
-    /// Build a canonical-LF `commit` document from generated parts.
-    fn build_commit(subject: &str, body: &str) -> String {
+    /// Build a canonical-LF `commit` document from generated parts: a `type`
+    /// front-matter field, the `## Summary` + `## Body` slot sections, and the empty
+    /// `## Trailers` repeatable section (matches the `render` byte form exactly).
+    fn build_commit(ty: &str, summary: &str, body: &str) -> String {
         format!(
-            "---\nsubject: {subject}\n---\n\n# {subject}\n\n## Body\n\n{body}\n",
-            subject = subject,
+            "---\ntype: {ty}\n---\n\n# {summary}\n\n## Summary\n\n{summary}\n\n## Body\n\n{body}\n\n## Trailers\n",
+            ty = ty,
+            summary = summary.trim(),
             body = body.trim_end(),
         )
     }
@@ -2714,13 +2723,21 @@ mod roundtrip {
     fn arb_doc() -> impl Strategy<Value = GenDoc> {
         let eol = prop_oneof![Just("\n".to_string()), Just("\r\n".to_string())];
 
-        let commit = (scalar_value(), edgy_prose()).prop_map(|(subject, body)| {
-            (
-                "commit".to_string(),
-                build_commit(&subject, &body),
-                Some(("subject".to_string(), "a-new-subject".to_string())),
-            )
-        });
+        let commit = (
+            prop::sample::select(vec!["feat", "fix", "docs", "chore", "refactor"]),
+            scalar_value(),
+            edgy_prose(),
+        )
+            .prop_map(|(ty, summary, body)| {
+                // Re-set `type` to a *different* enum member so the edit always
+                // changes a byte (the surgical clause asserts exactly one line differs).
+                let new_type = if ty == "feat" { "fix" } else { "feat" };
+                (
+                    "commit".to_string(),
+                    build_commit(ty, &summary, &body),
+                    Some(("type".to_string(), new_type.to_string())),
+                )
+            });
 
         let adr = (
             scalar_value(),

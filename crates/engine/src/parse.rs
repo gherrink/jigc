@@ -991,19 +991,25 @@ Each service drops its local limiter.
         );
     }
 
-    /// Golden: a `commit` fixture (header section + one body slot) parses to two
-    /// sections; the `body` slot span re-slices to the opaque message prose.
+    /// Golden: a `commit` fixture (header section + `summary`/`body` slots + an
+    /// empty `trailers` repeatable section) parses to four sections; the slot spans
+    /// re-slice to the opaque subject + message prose.
     #[test]
     fn sections_commit_fixture() {
         let src = "\
 ---
-subject: Add the rate limiter
+type: feat
 ---
 
 # Add the rate limiter
 
+## Summary
+Add the rate limiter
+
 ## Body
 Why this change: centralize limiting.
+
+## Trailers
 ";
         let doc = parse_sections(&commit_schema(), src).expect("conformant commit parses");
         insta::assert_debug_snapshot!("sections_commit_fixture", project(&doc, src));

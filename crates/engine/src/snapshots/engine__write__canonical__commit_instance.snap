@@ -3,11 +3,17 @@ source: crates/engine/src/write.rs
 expression: out
 ---
 ---
-subject: Add the rate limiter
+type: feat
 ---
 
 # Add the rate limiter
 
+## Summary
+
+Add a per-client rate limit at the gateway.
+
 ## Body
 
 Centralize limiting at the gateway.
+
+## Trailers

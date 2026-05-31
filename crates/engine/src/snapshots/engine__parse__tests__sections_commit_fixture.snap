@@ -8,13 +8,27 @@ expression: "project(&doc, src)"
         None,
     ),
     (
+        "summary",
+        Some(
+            (
+                55,
+                75,
+                "Add the rate limiter",
+            ),
+        ),
+    ),
+    (
         "body",
         Some(
             (
-                71,
-                108,
+                85,
+                122,
                 "Why this change: centralize limiting.",
             ),
         ),
+    ),
+    (
+        "trailers",
+        None,
     ),
 ]

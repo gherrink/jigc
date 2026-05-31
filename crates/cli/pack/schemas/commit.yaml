@@ -1,13 +1,27 @@
 # commit — the MVP transient doc-type. Sink = the git commit message, so it has
-# no `location:` and is never persisted as a repo file (DECISIONS.md 2026-05-31
-# → Schema model + commit/adr schema YAML). A header section + prose slots.
+# no `location:` and is never persisted as a repo file. The schema the write loop
+# and the commit renderer actually address (finalize.md → Commit-doc rendering;
+# worked-examples.md flow #1; write-commands.md → the commit-is-a-doc payoff):
+# Conventional-Commits header (`type` enum + optional `scope`), a `summary` slot,
+# an optional `body` slot, and a repeatable `trailers` footer.
+# The commit's identity is task-derived (`commit:<task-id>`, workflow-provisioned),
+# not field-slugged, so no `id-from:` — the only id-source candidate (`summary`) is a
+# slot, never a field. See DECISIONS.md 2026-05-31 → inc-4 commit schema.
 type: commit
-id-from: subject
 
 sections:
   - id: header
     header: true
     fields:
-      - { id: subject, type: string }
+      - { id: type, type: enum, of: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert] }
+      - { id: scope, type: string }
+  - id: summary
+    slot: { hint: "The subject line — what changed, imperative mood, <=50 chars." }
   - id: body
     slot: { hint: "Why this change — the motivation and any notable context." }
+  - id: trailers
+    repeatable:
+      id-from: key
+      block:
+        - { id: key, type: string }
+        - { id: value, type: string }
