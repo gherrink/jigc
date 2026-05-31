@@ -5,6 +5,7 @@
 //! `implementation/module-layout.md` → The I/O boundary.
 
 mod adapter;
+mod cli;
 // `locate` is consumed by command dispatch (`start`, later in inc 1); until
 // `main` wires it in, its public API is exercised only by its own tests.
 #[allow(dead_code)]
@@ -18,7 +19,8 @@ mod pack;
 #[allow(dead_code)]
 mod render;
 
+use clap::Parser;
+
 fn main() {
-    // Scaffold entry point. Command dispatch (`start`, `doc`, `task`) lands in
-    // the first implementation increment.
+    cli::Cli::parse().dispatch();
 }
