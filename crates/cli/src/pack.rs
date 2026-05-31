@@ -237,6 +237,7 @@ mod tests {
 
         let defaults = read_text(&pack, PackResourceKind::Config, "defaults");
         insta::assert_snapshot!(defaults, @r###"
+        pack-id: dev
         default-workflow: single-task
         "###);
 
@@ -246,6 +247,20 @@ mod tests {
         assert!(
             commands.contains("set-commit-summary"),
             "the commands catalog must define the workflow's command-refs; got:\n{commands}",
+        );
+    }
+
+    /// The pack-default config layer declares the pack's own identity: its
+    /// `pack-id` is `dev`. This is what makes the `Pack: dev/<version>`
+    /// provenance segment cascade-sourced rather than a CLI constant — the pack
+    /// names itself. See overrides.md → pack-default layer carries pack id.
+    #[test]
+    fn embedded_pack_config_declares_pack_id() {
+        let pack = EmbeddedPack::new();
+        let defaults = read_text(&pack, PackResourceKind::Config, "defaults");
+        assert!(
+            defaults.lines().any(|l| l.trim() == "pack-id: dev"),
+            "the pack config must declare `pack-id: dev`; got:\n{defaults}",
         );
     }
 }

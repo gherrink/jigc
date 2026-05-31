@@ -15,18 +15,19 @@
 
 use crate::locate::{self, RunContext};
 use crate::pack::EmbeddedPack;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::catalog::build_catalog;
-use engine::packsource::{PackResourceKind, PackSource};
+use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::result::OrientationView;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-/// The embedded dev pack's cascade id — the `Pack: dev/<version>` provenance
-/// segment. The built-in pack has no `config/` layer declaring its own id yet
-/// (increment 6), so the CLI names it here; the version comes from the pack.
-const DEV_PACK_ID: &str = "dev";
+/// The pack-default config key that carries the pack's own cascade id — the
+/// `Pack: <pack-id>/<version>` provenance segment. The pack names itself
+/// (`overrides.md` → pack-default layer carries pack id); the version comes from
+/// the pack binary.
+const PACK_ID_KEY: &str = "pack-id";
 
 /// Produce the structured bare-`start` orientation result for the repo `start`
 /// is run from.
@@ -55,12 +56,9 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
         .into_iter()
         .map(|id| id.as_str().to_owned())
         .collect();
-    let pack_default = PackDefaultLayer::new(
-        DEV_PACK_ID,
-        pack.pack_version(),
-        BTreeMap::new(),
-        pack_files,
-    );
+    let pack_id = pack_id_from_config(pack)?;
+    let pack_default =
+        PackDefaultLayer::new(pack_id, pack.pack_version(), BTreeMap::new(), pack_files);
     let project = OverrideLayer::empty().config_path(project_config.display().to_string());
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
 
@@ -72,15 +70,46 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
     ))
 }
 
+/// Read the pack's own cascade id from its `config/defaults` `pack-id` field.
+/// The pack-default layer carries its identity, so the provenance header's pack
+/// segment is cascade-sourced, never a CLI constant (`overrides.md`).
+fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
+    let bytes = pack
+        .read(PackResourceKind::Config, &ResourceId::from("defaults"))
+        .context("the pack must ship a `config/defaults` resource")?;
+    let text = String::from_utf8(bytes).context("`config/defaults` is not UTF-8")?;
+    let value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).context("`config/defaults` is not valid YAML")?;
+    value
+        .get(PACK_ID_KEY)
+        .and_then(serde_yaml_ng::Value::as_str)
+        .map(str::to_owned)
+        .with_context(|| format!("`config/defaults` declares no `{PACK_ID_KEY}`"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use engine::packsource::{PackError, ResourceId};
     use std::path::PathBuf;
 
-    /// A `PackSource` that serves one fenced-front-matter workflow, so the
-    /// orient core can be exercised without the binary-embedded pack.
-    struct FakePack;
+    /// A `PackSource` that serves one fenced-front-matter workflow plus a
+    /// `config/defaults` declaring its own `pack-id`, so the orient core can be
+    /// exercised without the binary-embedded pack. The `pack_id` field lets a
+    /// test vary the declared id and assert the provenance header tracks config.
+    struct FakePack {
+        pack_id: &'static str,
+    }
+
+    impl FakePack {
+        fn new() -> Self {
+            FakePack { pack_id: "dev" }
+        }
+
+        fn with_pack_id(pack_id: &'static str) -> Self {
+            FakePack { pack_id }
+        }
+    }
 
     impl PackSource for FakePack {
         fn pack_version(&self) -> String {
@@ -90,18 +119,26 @@ mod tests {
         fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
             match kind {
                 PackResourceKind::Workflows => vec![ResourceId::from("single-task")],
+                PackResourceKind::Config => vec![ResourceId::from("defaults")],
                 _ => Vec::new(),
             }
         }
 
         fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
-            if kind == PackResourceKind::Workflows && id.as_str() == "single-task" {
-                return Ok(b"---\nwhen: implement one scoped change end-to-end\n---\n".to_vec());
+            match (kind, id.as_str()) {
+                (PackResourceKind::Workflows, "single-task") => {
+                    Ok(b"---\nwhen: implement one scoped change end-to-end\n---\n".to_vec())
+                }
+                (PackResourceKind::Config, "defaults") => Ok(format!(
+                    "pack-id: {}\ndefault-workflow: single-task\n",
+                    self.pack_id
+                )
+                .into_bytes()),
+                _ => Err(PackError::NotFound {
+                    kind,
+                    id: id.clone(),
+                }),
             }
-            Err(PackError::NotFound {
-                kind,
-                id: id.clone(),
-            })
         }
     }
 
@@ -115,14 +152,17 @@ mod tests {
 
     #[test]
     fn absent_project_layer_yields_unset_project_view() {
-        let view = orient_with(&ctx(None), &FakePack).expect("orient succeeds");
+        let view = orient_with(&ctx(None), &FakePack::new()).expect("orient succeeds");
         assert_eq!(view, OrientationView::unset_project());
     }
 
     #[test]
     fn present_project_layer_yields_clean_view_with_header_and_catalog() {
-        let view = orient_with(&ctx(Some(PathBuf::from("/repo/.jigc/config"))), &FakePack)
-            .expect("orient succeeds");
+        let view = orient_with(
+            &ctx(Some(PathBuf::from("/repo/.jigc/config"))),
+            &FakePack::new(),
+        )
+        .expect("orient succeeds");
         let OrientationView::Clean {
             header, workflows, ..
         } = &view
@@ -139,5 +179,22 @@ mod tests {
         let entry = &workflows.entries()[0];
         assert_eq!(entry.id, "single-task");
         assert_eq!(entry.when, "implement one scoped change end-to-end");
+    }
+
+    /// The provenance header's pack segment is sourced from the pack's own
+    /// `config/defaults` `pack-id`, not a CLI constant: a pack that declares
+    /// `pack-id: xyz` renders `Pack: xyz/<version>`. This is the read-path wire
+    /// that closes the increment-6 hardcode.
+    #[test]
+    fn pack_segment_is_sourced_from_pack_config() {
+        let view = orient_with(
+            &ctx(Some(PathBuf::from("/repo/.jigc/config"))),
+            &FakePack::with_pack_id("xyz"),
+        )
+        .expect("orient succeeds");
+        let OrientationView::Clean { header, .. } = &view else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
+        assert!(header.contains("Pack: xyz/v0.3.0"), "got:\n{header}");
     }
 }
