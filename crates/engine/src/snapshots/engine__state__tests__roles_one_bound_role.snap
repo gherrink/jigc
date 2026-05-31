@@ -1,0 +1,9 @@
+---
+source: crates/engine/src/state.rs
+expression: bytes
+---
+{
+  "roles": {
+    "decision": "adr:shared-redis-session-cache"
+  }
+}

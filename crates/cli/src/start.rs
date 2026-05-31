@@ -27,7 +27,7 @@ use engine::compose::{
 use engine::data_value::{ComposeContext, TaskRoot};
 use engine::finding::{Finding, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::state::{self, BasePin, MintedTask};
+use engine::state::{self, BasePin, MintedTask, RolesRecord};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
@@ -166,7 +166,9 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     // for the `jigc doc set-field`/`set-slot` write loop.
     provision_commit_doc(&pack, &minted)?;
 
-    let ctx = build_context(&minted.id, intent, &def);
+    // At mint there are no bound context roles yet (the agent binds them in-task,
+    // e.g. an ADR via the create-gate); resume re-reads them from roles.json.
+    let ctx = build_context(&minted.id, intent, &def, &RolesRecord::new());
     let source = PackStepSource { pack: &pack };
 
     // Compose-time `workflow-refs` gate: validate every placeholder / include /
@@ -183,24 +185,101 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     compose::compose(&def, &source, &catalog, &ctx).map_err(finding_to_err)
 }
 
+/// Resume an existing task by `id` and re-compose its default workflow — the
+/// `jigc start --task <id>` form (`design/write-commands.md` → Task-id collision &
+/// resume; `DECISIONS.md` 2026-05-31 → Four `jigc start` forms).
+///
+/// Unlike [`compose_in_repo`] this **mints nothing**: it resolves the existing
+/// `.jigc/tasks/<id>/` working area, reads its persisted state (base pin, the
+/// original intent, the bound context roles in `roles.json`), verifies the task's
+/// base still matches the current checkout (the CLI never operates a task off its
+/// pinned base — `storage.md` → A task is pinned to its base), then re-composes
+/// with the bound roles in scope. A role bound since the task was minted (e.g. an
+/// ADR created in-task through the create-gate) now resolves in the composed view
+/// — the surface the superseding-decision context-slice reads
+/// (`worked-examples.md` → Superseding decision).
+///
+/// A nonexistent id rejects with `no task \`<id>\``; a base mismatch rejects with
+/// the divergence-routing prompt (`write-commands.md` → Base mismatch on an
+/// existing task).
+pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let task_dir = repo_root.join(".jigc").join("tasks").join(id);
+    if !task_dir.is_dir() {
+        bail!("no task `{id}` — list live tasks with `jigc start`");
+    }
+
+    // The task is pinned to its base; never operate it off its pinned commit.
+    let pinned = state::read_base_pin(&task_dir)
+        .with_context(|| format!("could not read the base pin for task `{id}`"))?;
+    let head = read_head(&repo_root)?;
+    if pinned.sha != head.sha {
+        bail!(
+            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or `jigc task discard {id}`",
+            pinned.short,
+            head.short,
+            pinned.short,
+        );
+    }
+
+    let intent = state::read_intent(&task_dir)
+        .with_context(|| format!("could not read intent for `{id}`"))?;
+    let bound =
+        RolesRecord::load(&task_dir).with_context(|| format!("could not read roles for `{id}`"))?;
+
+    let pack = EmbeddedPack::new();
+    let workflow_id = default_workflow_id(&pack)?;
+    let workflow_bytes = read_pack(&pack, PackResourceKind::Workflows, &workflow_id)?;
+    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    let catalog = load_catalog(&pack)?;
+
+    let ctx = build_context(id, &intent, &def, &bound);
+    let source = PackStepSource { pack: &pack };
+
+    let findings = compose::workflow_refs(&workflow_bytes, &source, &catalog, &ctx);
+    if let Some(finding) = findings
+        .into_iter()
+        .find(|f| f.severity == Severity::Blocking)
+    {
+        return Err(finding_to_err(finding));
+    }
+
+    compose::compose(&def, &source, &catalog, &ctx).map_err(finding_to_err)
+}
+
 /// Build the [`ComposeContext`] for the composed workflow.
 ///
 /// Binds the engine-native `task.id`/`task.intent` scalars, the task's **commit**
 /// role to `commit:<id>` (the always-present sink of a `creates-task` work-
 /// workflow — its `<<author: {{task.commit#summary}}>>` slot must resolve to that
-/// address), and declares each `allows-create` role **unbound** (the created
-/// instance binds during the task, not at compose-time, so `{{@task.<role>.…}}`
-/// resolves to absent/empty now — `design/workflow-dialect.md` → Empty vs
-/// unresolvable).
-fn build_context(id: &str, intent: &str, def: &WorkflowDef) -> ComposeContext {
+/// address), and declares each `allows-create` role from the workflow gate. A
+/// role **bound** in `roles` (persisted in the task's `roles.json` once the agent
+/// created the doc through the create-gate) binds to its recorded address; an
+/// **unbound** gate role declares as `None`, so `{{@task.<role>.…}}` resolves to
+/// absent/empty (`design/workflow-dialect.md` → Empty vs unresolvable). At mint
+/// `roles` is empty (nothing is bound yet); on `--task <id>` resume it carries
+/// the binds recorded since (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding
+/// at create).
+fn build_context(id: &str, intent: &str, def: &WorkflowDef, bound: &RolesRecord) -> ComposeContext {
     let mut roles: BTreeMap<String, Option<Address>> = BTreeMap::new();
     // The task's commit doc — the engine-native sink, bound to `commit:<id>`.
     let commit =
         Address::parse(&format!("commit:{id}")).expect("`commit:<slug>` is a valid address");
     roles.insert("commit".to_owned(), Some(commit));
-    // `allows-create` roles are declared but unbound until created in-task.
+    // Each `allows-create` role is declared; bound iff `roles.json` recorded it.
     for entry in &def.allows_create {
-        roles.entry(entry.as_role.clone()).or_insert(None);
+        let binding = bound
+            .get(&entry.as_role)
+            .and_then(|addr| Address::parse(addr).ok());
+        roles.entry(entry.as_role.clone()).or_insert(binding);
     }
     ComposeContext {
         task: TaskRoot {

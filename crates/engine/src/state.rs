@@ -30,6 +30,20 @@ use std::path::{Path, PathBuf};
 /// The base-pin filename inside a task's working area.
 const BASE_PIN_FILE: &str = "base.json";
 
+/// The bound-roles filename inside a task's working area (`DECISIONS.md`
+/// 2026-05-31 → inc-5 `as:` role binding at create: the bound context roles live
+/// in `.jigc/tasks/<id>/roles.json`, read back on resume).
+const ROLES_FILE: &str = "roles.json";
+
+/// The intent filename inside a task's working area — the original human intent
+/// the task was minted from, persisted verbatim so `jigc start --task <id>`
+/// resume re-composes with the same `{{task.intent}}` (the id is a *lossy* slug
+/// of the intent, so the intent itself must be stored to survive a resume;
+/// `storage.md` → The per-task working area: "it persists on disk across
+/// sessions, so work resumes"). Plain text, no trailing-newline normalization
+/// (read back byte-for-byte).
+const INTENT_FILE: &str = "intent";
+
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
@@ -214,7 +228,35 @@ pub fn mint_task(
     let body = render_base_pin(&base);
     std::fs::write(&pin_path, body).map_err(|err| io_finding(&id, "write the base pin", &err))?;
 
+    // Persist the original intent verbatim so resume re-composes with the same
+    // `{{task.intent}}` (the id is a lossy slug; the intent must be stored).
+    std::fs::write(dir.join(INTENT_FILE), intent)
+        .map_err(|err| io_finding(&id, "write the task intent", &err))?;
+
     Ok(MintedTask { id, dir, base })
+}
+
+/// Read the persisted original intent of a task from its working area
+/// (`<task_dir>/intent`). The companion of the [`mint_task`] write — resume reads
+/// it back to re-compose with the same `{{task.intent}}`. A missing file yields
+/// an empty intent (a task minted before this file existed, or an empty intent),
+/// never an error.
+pub fn read_intent(task_dir: &Path) -> std::io::Result<String> {
+    match std::fs::read_to_string(task_dir.join(INTENT_FILE)) {
+        Ok(intent) => Ok(intent),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(err) => Err(err),
+    }
+}
+
+/// Read the persisted [`BasePin`] of a task from its working area
+/// (`<task_dir>/base.json`) — the companion of [`mint_task`]'s pin write, read
+/// back on resume to compare against the current checkout. A missing or malformed
+/// pin is an error (the pin is written at mint, so its absence is a real fault).
+pub fn read_base_pin(task_dir: &Path) -> std::io::Result<BasePin> {
+    let bytes = std::fs::read(task_dir.join(BASE_PIN_FILE))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
 /// Slug the id-source into the task id, applying the empty → type-name fallback.
@@ -256,6 +298,73 @@ fn collision_finding(id: &str) -> Finding {
         route: Some(format!(
             "resume with `jigc start --task {id}` or abandon with `jigc task discard {id}`"
         )),
+    }
+}
+
+/// The task's **bound context roles** — a map from a workflow-declared role name
+/// (e.g. `decision`) to the `<type>:<slug>` address the agent bound to it
+/// (`write-commands.md` → Task origination: "A task carries context roles its
+/// workflow declares; the agent binds them explicitly … the CLI never infers a
+/// binding"). Persisted at `.jigc/tasks/<id>/roles.json` so a re-composed
+/// `jigc start --task <id>` resolves `task.<role>` to the bound doc
+/// (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding at create).
+///
+/// A [`BTreeMap`](std::collections::BTreeMap) so the serialized JSON is
+/// **key-sorted and deterministic** — the byte form is golden-stable, the same
+/// convention as `base.json` / `file-state.json`. The record carries no schema
+/// version of its own: it is task-local working-area state, disposable with the
+/// task, not a committed contract surface.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RolesRecord {
+    /// `role → <type>:<slug>` address, role-sorted for deterministic output.
+    pub roles: std::collections::BTreeMap<String, String>,
+}
+
+impl RolesRecord {
+    /// An empty record.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The record's on-disk location inside a task's working area.
+    pub fn path_in(task_dir: &Path) -> PathBuf {
+        task_dir.join(ROLES_FILE)
+    }
+
+    /// Bind `role` to `address` (overwriting any prior binding for that role).
+    pub fn bind(&mut self, role: impl Into<String>, address: impl Into<String>) {
+        self.roles.insert(role.into(), address.into());
+    }
+
+    /// The address bound to `role`, if any.
+    pub fn get(&self, role: &str) -> Option<&str> {
+        self.roles.get(role).map(String::as_str)
+    }
+
+    /// Serialize to the frozen on-disk byte form: pretty JSON, role-sorted, one
+    /// trailing newline (golden-locked, matching the `base.json` convention).
+    pub fn to_bytes(&self) -> String {
+        let mut s = serde_json::to_string_pretty(self).expect("RolesRecord serializes");
+        s.push('\n');
+        s
+    }
+
+    /// Save the record atomically to `<task_dir>/roles.json` (temp + rename, the
+    /// shared working-area atomic-write primitive).
+    pub fn save(&self, task_dir: &Path) -> std::io::Result<()> {
+        write_atomic(&Self::path_in(task_dir), self.to_bytes().as_bytes())
+    }
+
+    /// Load the record from `<task_dir>/roles.json`. A missing file is the
+    /// *no-roles-bound-yet* case — a task that has bound nothing — and yields an
+    /// empty record, never an error (mirrors [`FileStateRecord::load`]'s
+    /// absent-is-empty contract).
+    pub fn load(task_dir: &Path) -> std::io::Result<Self> {
+        match std::fs::read(Self::path_in(task_dir)) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::new()),
+            Err(err) => Err(err),
+        }
     }
 }
 
@@ -323,8 +432,14 @@ pub fn create(
 /// rejects with the structured `create.gate-blocked` [`Finding`] (step 5) carrying a
 /// loosen route; an **admitted** doctype proceeds to [`create`].
 ///
-/// Commit-only inc-4 scope drives the workflow-provisioned [`create`] path; the
-/// `as:` role binding of an admitted instance to `task.<role>` is inc-5.
+/// On an **object-form** gate entry (`{type, as: <role>}`), the created instance
+/// is additionally **bound to that context role** (`write-commands.md` → The
+/// create-gate, step 4: "bind it to the entry's `as:` role if the entry declares
+/// one"): the minted `<type>:<slug>` is recorded in `<task_dir>/roles.json`, so a
+/// re-composed `jigc start --task <id>` resolves `task.<role>` to the created doc
+/// (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding at create). A
+/// **bare-form** entry (an empty `as_role`) grants create permission without
+/// declaring a role and binds nothing.
 pub fn create_gated(
     task_dir: &Path,
     schemas: &std::collections::BTreeMap<String, Schema>,
@@ -337,11 +452,21 @@ pub fn create_gated(
         return Err(unknown_doctype_finding(type_name));
     }
     // Step 5: a known-but-disallowed doctype is gate-blocked.
-    if !gate.iter().any(|e| e.doc_type == type_name) {
+    let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
         return Err(gate_blocked_finding(type_name, gate));
+    };
+    // Step 4: admitted → mint + provision …
+    let created = create(task_dir, schemas, type_name, id_source)?;
+    // … then bind it to the entry's `as:` role if the entry declares one.
+    if !entry.as_role.is_empty() {
+        let mut roles = RolesRecord::load(task_dir)
+            .map_err(|err| io_finding(&created.address, "read the bound roles", &err))?;
+        roles.bind(entry.as_role.clone(), created.address.clone());
+        roles
+            .save(task_dir)
+            .map_err(|err| io_finding(&created.address, "record the bound role", &err))?;
     }
-    // Step 4: admitted → mint + provision (the `as:` role bind is inc-5).
-    create(task_dir, schemas, type_name, id_source)
+    Ok(created)
 }
 
 /// The unknown-doctype block: a blocking finding naming the unrecognized type,
@@ -736,5 +861,63 @@ mod tests {
         let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x")
             .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
+    }
+
+    /// The done-criterion (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding at
+    /// create; `write-commands.md` → The create-gate, step 4: "bind it to the
+    /// entry's `as:` role"). A `create_gated` admitting an entry carrying `as:
+    /// <role>` records the minted `<type>:<slug>` as the task's bound role in
+    /// `roles.json` (read back on resume); a bare-form entry (no `as:` role)
+    /// writes **nothing**.
+    #[test]
+    fn create_gate_binds_admitted_adr_to_task_role() {
+        use crate::compose::AllowsCreate;
+
+        let root = TempRoot::new("create-gate-binds");
+        let task_dir = root.path().join("tasks").join("supersede");
+        let mut all = schemas();
+        all.insert("adr".to_string(), commit_schema()); // shape-irrelevant for the bind
+
+        // The object-form gate entry declares `as: decision`.
+        let gate = [AllowsCreate {
+            doc_type: "adr".to_string(),
+            as_role: "decision".to_string(),
+        }];
+
+        // No roles.json before any create.
+        assert!(
+            !RolesRecord::path_in(&task_dir).exists(),
+            "no roles.json exists before a bound create"
+        );
+
+        let created = create_gated(&task_dir, &all, &gate, "adr", "Shared Redis session cache")
+            .expect("the gate-admitted adr is created");
+        assert_eq!(created.address, "adr:shared-redis-session-cache");
+
+        // The bind landed: roles.json maps `decision -> adr:<slug>`, read back.
+        let roles = RolesRecord::load(&task_dir).expect("roles.json loads");
+        assert_eq!(
+            roles.get("decision"),
+            Some("adr:shared-redis-session-cache"),
+            "the admitted instance binds to its `as:` role"
+        );
+
+        // Golden over the frozen roles.json byte form for one bound role.
+        let bytes =
+            std::fs::read_to_string(RolesRecord::path_in(&task_dir)).expect("roles.json on disk");
+        insta::assert_snapshot!("roles_one_bound_role", bytes);
+
+        // A bare-form entry (no `as:` role) for a *different* type writes nothing.
+        let bare_dir = root.path().join("tasks").join("bare");
+        let bare_gate = [AllowsCreate {
+            doc_type: "commit".to_string(),
+            as_role: String::new(), // the bare form: create permission, no role
+        }];
+        let _ = create_gated(&bare_dir, &all, &bare_gate, "commit", "Add rate limiter")
+            .expect("the bare-form-gated commit is created");
+        assert!(
+            !RolesRecord::path_in(&bare_dir).exists(),
+            "a bare-form entry (no `as:` role) binds nothing — no roles.json written"
+        );
     }
 }
