@@ -121,6 +121,36 @@ pub enum ParseError {
     TooManyHops,
 }
 
+impl Fragment {
+    /// Parse the text *after* `#` into a typed [`Fragment`].
+    ///
+    /// Splits by `/` into 1–3 hops (unit, unit/leaf, unit/item/leaf) per the
+    /// addressing grammar; an empty input, an empty hop, or more than three hops
+    /// is a [`ParseError`]. This is the single fragment recognizer the data-value
+    /// path grammar ([`crate::data_value`]) also reuses for its `#fragment` slice.
+    pub fn parse(frag: &str) -> Result<Self, ParseError> {
+        if frag.is_empty() {
+            return Err(ParseError::EmptyFragment);
+        }
+        let hops: Vec<&str> = frag.split('/').collect();
+        if hops.iter().any(|h| h.is_empty()) {
+            return Err(ParseError::EmptyHop);
+        }
+        Ok(match hops.as_slice() {
+            [unit] => Fragment::Unit(Unit::from(unit.to_string())),
+            [unit, leaf] => {
+                Fragment::UnitLeaf(Unit::from(unit.to_string()), Leaf::from(leaf.to_string()))
+            }
+            [unit, item, leaf] => Fragment::UnitItemLeaf(
+                Unit::from(unit.to_string()),
+                Item::from(item.to_string()),
+                Leaf::from(leaf.to_string()),
+            ),
+            _ => return Err(ParseError::TooManyHops),
+        })
+    }
+}
+
 impl Address {
     /// Parse an address string against the URI grammar.
     pub fn parse(s: &str) -> Result<Self, ParseError> {
@@ -137,31 +167,7 @@ impl Address {
             return Err(ParseError::EmptySlug);
         }
 
-        let fragment = match fragment {
-            None => None,
-            Some(frag) => {
-                if frag.is_empty() {
-                    return Err(ParseError::EmptyFragment);
-                }
-                let hops: Vec<&str> = frag.split('/').collect();
-                if hops.iter().any(|h| h.is_empty()) {
-                    return Err(ParseError::EmptyHop);
-                }
-                Some(match hops.as_slice() {
-                    [unit] => Fragment::Unit(Unit::from(unit.to_string())),
-                    [unit, leaf] => Fragment::UnitLeaf(
-                        Unit::from(unit.to_string()),
-                        Leaf::from(leaf.to_string()),
-                    ),
-                    [unit, item, leaf] => Fragment::UnitItemLeaf(
-                        Unit::from(unit.to_string()),
-                        Item::from(item.to_string()),
-                        Leaf::from(leaf.to_string()),
-                    ),
-                    _ => return Err(ParseError::TooManyHops),
-                })
-            }
-        };
+        let fragment = fragment.map(Fragment::parse).transpose()?;
 
         Ok(Address {
             r#type: Type::from(ty.to_string()),
