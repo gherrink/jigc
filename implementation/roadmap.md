@@ -78,7 +78,7 @@ A usable `jigc` an agent is pointed at, proving the core loop (discover → comp
 **Deliverable:** a `jigc` an agent can be handed — installed, allowlisted, and documented.
 
 **Grouped scope:**
-- `jigc setup` / adapter install: the static bootstrap line into `CLAUDE.md` + the `jigc` allowlist into `.claude/settings.json` (the adapter MVP scope); the Claude Code profile ([assistant-adapter.md](../design/assistant-adapter.md), [module-layout.md](module-layout.md) → Adapter).
+- `jigc setup` / adapter install: the bootstrap **reference** (`@.jigc/AGENT.md` import) into `CLAUDE.md` + a managed `.jigc/AGENT.md`, the **`SessionStart` hook** + the `jigc` allowlist into `.claude/settings.json`, and project-layer init (`.jigc/config/`) — the adapter MVP scope; the Claude Code profile ([assistant-adapter.md](../design/assistant-adapter.md), [module-layout.md](module-layout.md) → Adapter). (The `Resume` hook + fan-out spawn binding stay post-MVP.)
 - The embedded dev pack finalized (`commit` + `adr` doc-types, `single-task` + steps, pack-default config incl. the create-gate).
 - Release build + a quickstart.
 

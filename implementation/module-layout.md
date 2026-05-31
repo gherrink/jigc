@@ -52,7 +52,7 @@ Presentation is strictly **downstream of the deterministic engine result** — t
 
 - **Profiles are embedded data** (Claude Code in-box; more installable later), same pattern as the pack. `jigc setup` / `jigc adapter install --assistant claude-code` **generates** the adapter from `profile + engine catalog` and **regenerates on upgrade**, so it can't rot into a static pile ([assistant-adapter.md](../design/assistant-adapter.md)).
 - The generator **writes into the host project's assistant files** — the bootstrap static line into `CLAUDE.md`, the `jigc` allowlist into `.claude/settings.json`, and catalog-derived per-workflow launchers (slash commands), each just `jigc start --workflow X`.
-- **MVP scope:** the static-line **floor** + the **allowlist** (the path-of-least-resistance the bootstrap depends on). The **hook** (primary injection) and the **spawn binding** are post-MVP — the spawn payload is composed by the *engine* and rendered through the profile's launch template, but it rides on fan-out (post-MVP).
+- **MVP scope:** the static-**reference** floor (a managed `.jigc/AGENT.md` + an `@`-import line in the always-loaded file), the **`SessionStart` hook** (primary injection — bare `jigc start` orientation at session start), the **allowlist** (the path-of-least-resistance the bootstrap depends on), and **project-layer init** (`.jigc/config/`). The **`Resume`/post-compaction hook** (capability-gated) and the **spawn binding** stay post-MVP — the spawn payload is composed by the *engine* and rendered through the profile's launch template, but it rides on fan-out (post-MVP).
 
 ## Probe boundary (in `engine`)
 
