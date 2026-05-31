@@ -32,9 +32,133 @@
 //! yields none.
 
 use crate::field_block::Field;
+use crate::file_state::{FileStateRecord, file_state};
 use crate::finding::{Finding, Location, Severity};
-use crate::parse::{Document, ParsedSection};
+use crate::parse::{Document, ParsedSection, parse_sections};
+use crate::result::ValidationReport;
 use crate::schema::{Field as SchemaField, Schema, Section, SectionBody};
+use std::collections::BTreeMap;
+use std::path::Path;
+
+/// The working-area sub-directory holding the task's staged doc instances
+/// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
+/// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
+const DOCS_DIR: &str = "docs";
+
+/// Validate one task working area — the single engine both `task validate` and
+/// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
+/// two entry points, so what `validate` reports and what `finalize` blocks on can
+/// never diverge). No git, no commit.
+///
+/// Resolves the working area's staged doc instances (`<dir>/docs/*.md`, each named
+/// `<type>:<slug>.md`), then over each instance runs the two MVP task-scope probes
+/// and aggregates their severity-classified findings into a [`ValidationReport`]:
+///
+/// - **`file-state`** — hashes the staged bytes against `record` (baseline-adopt on
+///   first encounter, blocking drift on a recorded mismatch). The probe advances the
+///   record on adopt; the caller persists it.
+/// - **`schema-conformance`** — parses each instance against its (caller-supplied)
+///   schema. A *parse-level* conformance failure (missing/renamed heading, malformed
+///   anchor, …) surfaces those findings directly; a clean parse then runs the
+///   [`schema_conformance`] checks (required slot/field present, field-value
+///   conformant) over the instance.
+///
+/// `schemas` maps a doc-type name to its resolved [`Schema`] — the engine stays
+/// **domain-empty** (`CLAUDE.md` → engine ships empty of domain content): the caller
+/// (CLI) resolves the cascade and feeds the schemas in. A staged file whose type
+/// prefix has no schema in `schemas` raises a blocking `schema-conformance.unknown-type`
+/// finding (the working area references a type the resolved cascade does not define).
+///
+/// Findings aggregate in a stable sweep order: docs by path-sorted filename, and
+/// within each doc `file-state` before `schema-conformance`. `ref-resolves`
+/// (forward-ref / edge index) is **not** run — it is inc-5 (no edge index yet).
+pub fn validate_task(
+    dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    record: &mut FileStateRecord,
+) -> std::io::Result<ValidationReport> {
+    let mut findings = Vec::new();
+    for entry in staged_instances(dir)? {
+        let StagedInstance { rel_key, filename } = entry;
+        let bytes = std::fs::read(dir.join(DOCS_DIR).join(&filename))?;
+
+        // `file-state` over this one instance, keyed by its docs-relative path.
+        findings.extend(file_state(record, &[(rel_key.as_str(), &bytes)]));
+
+        // `schema-conformance` over the instance, resolving its type from the
+        // `<type>:<slug>.md` filename. A non-UTF-8 instance can't be a managed
+        // Markdown doc; the parser owns that, so we require a UTF-8 read here.
+        let source = String::from_utf8_lossy(&bytes);
+        findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
+    }
+    Ok(ValidationReport::new(findings))
+}
+
+/// One staged doc instance under `<dir>/docs/`: its `docs/<filename>` record key
+/// and the bare `filename` (`<type>:<slug>.md`).
+struct StagedInstance {
+    rel_key: String,
+    filename: String,
+}
+
+/// The task's staged doc instances under `<dir>/docs/`, in **path-sorted** filename
+/// order (the stable sweep order). A working area with no `docs/` dir (nothing
+/// staged yet) yields an empty list, not an error. Only `*.md` files are instances.
+fn staged_instances(dir: &Path) -> std::io::Result<Vec<StagedInstance>> {
+    let docs = dir.join(DOCS_DIR);
+    let read = match std::fs::read_dir(&docs) {
+        Ok(read) => read,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    };
+    let mut names: Vec<String> = Vec::new();
+    for entry in read {
+        let entry = entry?;
+        if !entry.file_type()?.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".md") {
+            names.push(name);
+        }
+    }
+    names.sort();
+    Ok(names
+        .into_iter()
+        .map(|filename| StagedInstance {
+            rel_key: format!("{DOCS_DIR}/{filename}"),
+            filename,
+        })
+        .collect())
+}
+
+/// Run `schema-conformance` over one staged instance: resolve its type from the
+/// `<type>:<slug>.md` filename, parse against the schema, and surface parse-level
+/// findings or the [`schema_conformance`] checks. A type with no schema in the
+/// resolved cascade raises a blocking `schema-conformance.unknown-type`.
+fn conformance_for(
+    filename: &str,
+    schemas: &BTreeMap<String, Schema>,
+    rel_key: &str,
+    source: &str,
+) -> Vec<Finding> {
+    let ty = filename.split(':').next().unwrap_or(filename);
+    let Some(schema) = schemas.get(ty) else {
+        return vec![Finding {
+            severity: Severity::Blocking,
+            code: "schema-conformance.unknown-type".to_string(),
+            message: format!(
+                "staged doc `{rel_key}` has type `{ty}`, which the resolved cascade does not define"
+            ),
+            location: Some(Location::addressed(rel_key, 1, 1)),
+            route: None,
+        }];
+    };
+    match parse_sections(schema, source) {
+        Ok(doc) => schema_conformance(schema, source, &doc),
+        Err(parse_findings) => parse_findings,
+    }
+}
 
 /// Run the synthetic `schema-conformance` checks over a parsed instance: every
 /// declared body slot is non-empty (`required-slot-present`), every author-required
@@ -309,5 +433,167 @@ The note body prose.
                 "{expected_code} must be blocking"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod validate_task_tests {
+    //! The task-scope sweep: `validate_task` resolves a working area's staged doc
+    //! instances, runs `file-state` + `schema-conformance` over them, and aggregates
+    //! the severity-classified findings into one report exposing `has_blocking()`.
+
+    use super::*;
+    use crate::file_state::hash_bytes;
+    use crate::schema::load_schema;
+    use std::path::PathBuf;
+
+    /// A throwaway working-area root that removes itself on drop.
+    struct TempArea(PathBuf);
+
+    impl TempArea {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-validate-task-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(path.join(DOCS_DIR)).expect("create docs dir");
+            TempArea(path)
+        }
+
+        fn dir(&self) -> &Path {
+            &self.0
+        }
+
+        /// Stage a doc instance at `docs/<filename>` and return its docs-relative
+        /// path key (the form the `file-state` record is keyed by).
+        fn stage(&self, filename: &str, bytes: &[u8]) -> String {
+            let rel = format!("{DOCS_DIR}/{filename}");
+            std::fs::write(self.0.join(&rel), bytes).expect("stage instance");
+            rel
+        }
+    }
+
+    impl Drop for TempArea {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The `note` schema used by inc-4's conformance fixtures: one author-required
+    /// enum field plus one body slot — enough to make an instance conformance-broken
+    /// by leaving the slot empty.
+    fn note_schema() -> Schema {
+        let yaml = b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: kind, type: enum, of: [memo, brief] }
+  - id: body
+    slot: { hint: \"The note body.\" }
+";
+        load_schema(yaml).expect("note schema loads")
+    }
+
+    /// A fully-conformant `note` instance: slot filled, required field present.
+    const CONFORMANT: &str = "\
+---
+title: A note
+kind: memo
+---
+
+# A note
+
+## Body
+
+The note body prose.
+";
+
+    /// A conformance-broken `note` instance: the `## Body` heading parses but the
+    /// slot is empty — one `schema-conformance.required-slot-present`.
+    const BROKEN: &str = "\
+---
+title: A note
+kind: memo
+---
+
+# A note
+
+## Body
+";
+
+    fn schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert("note".to_string(), note_schema());
+        m
+    }
+
+    /// The done-criterion. Over a working area with **one drifted file** and **one
+    /// conformance-broken instance**, `validate_task` returns *both* findings and
+    /// `has_blocking() == true`; over a **clean** area it returns an empty report and
+    /// `has_blocking() == false`.
+    #[test]
+    fn validate_task_aggregates_probe_findings() {
+        // --- The broken area: a drifted instance + a conformance-broken instance.
+        let area = TempArea::new("broken");
+
+        // `note:drift.md` was committed with the conformant bytes (its hash is in the
+        // record), but the working area now holds *different* bytes → file-state drift.
+        let drift_rel = area.stage("note:drift.md", BROKEN.as_bytes());
+        let mut record = FileStateRecord::new();
+        record.record(drift_rel.clone(), hash_bytes(CONFORMANT.as_bytes()));
+
+        // `note:broken.md` is a fresh instance (no recorded hash → baseline-adopt,
+        // advisory) whose slot is empty → schema-conformance blocks.
+        area.stage("note:broken.md", BROKEN.as_bytes());
+
+        let report = validate_task(area.dir(), &schemas(), &mut record).expect("sweep runs");
+
+        // Both blocking findings are present in the aggregate.
+        let codes: Vec<&str> = report.findings.iter().map(|f| f.code.as_str()).collect();
+        assert!(
+            codes.contains(&"file-state.hash-matches"),
+            "the drifted file must surface a file-state drift finding, got {codes:?}"
+        );
+        assert!(
+            codes.contains(&"schema-conformance.required-slot-present"),
+            "the broken instance must surface a conformance finding, got {codes:?}"
+        );
+        assert!(
+            report.has_blocking(),
+            "a drifted + conformance-broken area must block, got {:?}",
+            report.findings
+        );
+
+        // --- The clean area: a single conformant instance, freshly baselined.
+        let clean = TempArea::new("clean");
+        clean.stage("note:ok.md", CONFORMANT.as_bytes());
+        let mut clean_record = FileStateRecord::new();
+
+        let clean_report =
+            validate_task(clean.dir(), &schemas(), &mut clean_record).expect("clean sweep runs");
+
+        // A fresh file baselines (advisory, non-blocking) and conforms → no blocker.
+        assert!(
+            !clean_report.has_blocking(),
+            "a clean area must not block, got {:?}",
+            clean_report.findings
+        );
+        assert!(
+            clean_report
+                .findings
+                .iter()
+                .all(|f| f.severity != Severity::Blocking),
+            "no blocking findings over a clean area, got {:?}",
+            clean_report.findings
+        );
     }
 }

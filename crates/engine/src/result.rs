@@ -11,6 +11,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::finding::{Finding, Severity};
+
 /// The result-contract schema version. Bumped only when the JSON projection of a
 /// public result type changes in a way an external consumer must notice.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -131,6 +133,44 @@ impl OrientationView {
     }
 }
 
+/// The aggregated result of a `validate` scope sweep — the versioned report both
+/// `task validate` and `finalize` phase 2 read (`validation.md` → How it gates
+/// `finalize`: one engine, two entry points, so what `validate` reports and what
+/// `finalize` blocks on can never diverge).
+///
+/// It carries the severity-classified [`Finding`]s the probes raised over the
+/// scope, in sweep order. [`ValidationReport::has_blocking`] is the gate predicate
+/// `finalize` consults: it blocks iff any finding is [`Severity::Blocking`]
+/// (advisory findings are surfaced but never stop the commit). Presentation-free —
+/// the renderers in `cli::render` format the findings; the engine carries the data.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValidationReport {
+    /// The result-contract schema version (see [`SCHEMA_VERSION`]).
+    pub schema_version: u32,
+    /// Every finding the probes raised over the scope, in sweep order.
+    pub findings: Vec<Finding>,
+}
+
+impl ValidationReport {
+    /// Build a report over the aggregated `findings`, stamping the current
+    /// [`SCHEMA_VERSION`].
+    pub fn new(findings: Vec<Finding>) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            findings,
+        }
+    }
+
+    /// Whether the scope holds at least one [`Severity::Blocking`] finding — the
+    /// predicate `finalize` blocks on (`validation.md` → How it gates `finalize`).
+    /// Advisory / warning findings do not count.
+    pub fn has_blocking(&self) -> bool {
+        self.findings
+            .iter()
+            .any(|f| f.severity == Severity::Blocking)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -209,6 +249,50 @@ mod tests {
                     { "id": "single-task", "when": "Implement one well-scoped change." }
                 ]
             })
+        );
+    }
+
+    /// `ValidationReport` projects to the stable `{schema_version, findings}` shape
+    /// and `has_blocking()` is true iff any finding is blocking — the gate predicate
+    /// `finalize` consults. An advisory-only report is non-blocking.
+    #[test]
+    fn validation_report_projection_and_has_blocking() {
+        use crate::finding::Location;
+
+        // Empty report: non-blocking, version-stamped, empty findings array.
+        let empty = ValidationReport::new(Vec::new());
+        assert!(!empty.has_blocking(), "empty report does not block");
+        assert_eq!(
+            serde_json::to_value(&empty).expect("serializes"),
+            serde_json::json!({ "schema_version": 1, "findings": [] })
+        );
+
+        // Advisory-only: surfaced but does not block.
+        let advisory = Finding {
+            severity: Severity::Advisory,
+            code: "file-state.baseline-adopt".into(),
+            message: "baseline adopted".into(),
+            location: Some(Location::addressed("docs/note:ok.md", 1, 1)),
+            route: None,
+        };
+        let report = ValidationReport::new(vec![advisory.clone()]);
+        assert!(
+            !report.has_blocking(),
+            "an advisory-only report does not block"
+        );
+
+        // A blocking finding flips the gate.
+        let blocking = Finding {
+            severity: Severity::Blocking,
+            code: "schema-conformance.required-slot-present".into(),
+            message: "required slot is empty".into(),
+            location: None,
+            route: None,
+        };
+        let report = ValidationReport::new(vec![advisory, blocking]);
+        assert!(
+            report.has_blocking(),
+            "any blocking finding blocks the gate"
         );
     }
 }
