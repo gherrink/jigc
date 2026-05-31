@@ -22,6 +22,7 @@ pub mod schema;
 pub mod slug;
 pub mod state;
 pub mod validate;
+pub mod write;
 
 pub mod packsource;
 pub mod probe;

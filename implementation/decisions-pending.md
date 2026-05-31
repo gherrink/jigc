@@ -16,10 +16,6 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 - *(none — slug / minting normalization **settled 2026-05-31**: lowercase ASCII kebab-case + transliterate non-ASCII + numeric collision suffix in task-id merge order; see [DECISIONS.md](../DECISIONS.md). The write path is unblocked.)*
 
-## Increment 2 — parser/writer
-
-- **(D) Exact canonical byte form** — the precise bytes the canonical writer emits (blank-line placement, `<!-- fields -->` sentinel spacing, field-bullet form). [storage.md](../design/storage.md) / [parsing.md](parsing.md) specify the rules; the golden tests need them pinned to literal bytes. *(Already frozen in DECISIONS.md 2026-05-31 → Canonical byte form; consumed by the writer task.)*
-
 ## Increment 3 — compose
 
 - **(D) Task working-area on-disk layout** — the exact files under `.jigc/tasks/<id>/` (base-pin, bound context roles, staged docs). [storage.md](../design/storage.md) is illustrative.

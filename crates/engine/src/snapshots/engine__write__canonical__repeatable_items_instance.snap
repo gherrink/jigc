@@ -1,0 +1,22 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds at 100/min  {#rate-limit}
+
+The gateway rejects the 101st request in a 60s window.
+
+<!-- fields -->
+- maps-to-test: `test/rate_limit_spec.rb#burst`
+
+### Burst allowance  {#burst-allowance}
+
+A short burst above the limit is tolerated for 2s.

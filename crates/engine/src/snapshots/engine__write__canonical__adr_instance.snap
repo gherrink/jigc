@@ -1,0 +1,23 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+status: accepted
+date: 2026-05-23
+supersedes: adr:single-node-cache
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Decision
+
+Centralize rate limiting at the gateway.
+
+## Consequences
+
+Each service drops its local limiter.

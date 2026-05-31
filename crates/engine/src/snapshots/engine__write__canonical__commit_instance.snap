@@ -1,0 +1,13 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+subject: Add the rate limiter
+---
+
+# Add the rate limiter
+
+## Body
+
+Centralize limiting at the gateway.
