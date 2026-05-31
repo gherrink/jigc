@@ -1,0 +1,6 @@
+assistant: claude-code
+inject:
+  - line: { file: CLAUDE.md, scope: project-root }
+allowlist:
+  file: .claude/settings.json
+  permit: ["jigc *"]

@@ -4,8 +4,11 @@
 //! and cascade-layer *location* (CLI locates, engine resolves). See
 //! `implementation/module-layout.md` → The I/O boundary.
 
-// `adapter` (bootstrap line + allowlist generation) is consumed by `jigc setup`
-// in increment 6; it is a `//!`-only stub until then.
+// `adapter` ships the embedded profiles + the typed profile model/loader; its
+// generation surface (`jigc setup` host-file injection) wires in a later inc-6
+// task, so the model/loader is `#[allow(dead_code)]` until then (the
+// established pre-wire pattern).
+#[allow(dead_code)]
 mod adapter;
 mod cli;
 mod doc;
