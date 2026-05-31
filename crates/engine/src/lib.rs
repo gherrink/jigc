@@ -18,6 +18,7 @@ pub mod index;
 pub mod parse;
 pub mod registry;
 pub mod schema;
+pub mod slug;
 pub mod state;
 pub mod validate;
 
