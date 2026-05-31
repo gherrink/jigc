@@ -1045,6 +1045,46 @@ fn item_field(item: &ItemContent, key: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// Reconstruct the in-memory [`Instance`] from a staged doc's `source` bytes — the
+/// **parse-to-instance** inverse of [`render`], so a caller (e.g. the `finalize`
+/// planner rendering the staged `commit` doc) can recover the writer's input from
+/// the file on disk.
+///
+/// Parses `source` against `schema` ([`parse::parse_sections`]), recovers the H1
+/// title from the source, and slices each section's recorded slot span back to its
+/// opaque prose (fields and items are carried verbatim). A parse-level conformance
+/// failure surfaces the parser's [`Finding`]s. The result is a faithful round-trip
+/// pre-image: `render(schema, &instance_from_source(schema, source)?)` reproduces
+/// the canonical bytes of a canonical `source`.
+pub fn instance_from_source(schema: &Schema, source: &str) -> Result<Instance, Vec<Finding>> {
+    let doc = parse::parse_sections(schema, source)?;
+    let title = source
+        .lines()
+        .find_map(|l| l.strip_prefix("# "))
+        .unwrap_or("")
+        .to_string();
+    let sections = doc
+        .sections
+        .iter()
+        .map(|s| SectionContent {
+            id: s.id.clone(),
+            slot: s.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+            fields: s.fields.clone(),
+            items: s
+                .items
+                .iter()
+                .map(|it| ItemContent {
+                    id: it.id.clone(),
+                    title: it.title.clone(),
+                    slot: it.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+                    fields: it.fields.clone(),
+                })
+                .collect(),
+        })
+        .collect();
+    Ok(Instance { title, sections })
+}
+
 // ============================================================================
 // Generation-and-insert — the other half of the write path. When the structural
 // home a write targets is **absent** (an optional section not yet in the file, an
