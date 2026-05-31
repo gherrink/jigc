@@ -1,1 +1,4 @@
 /target
+
+# insta transient pending-snapshot logs (inline snapshots accepted in-source)
+*.pending-snap

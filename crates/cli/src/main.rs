@@ -13,6 +13,9 @@ mod locate;
 // wires it in, its public API is exercised only by its own tests.
 #[allow(dead_code)]
 mod pack;
+// The renderers are consumed by command dispatch (`start`, later in inc 1);
+// until `main` wires them in, their API is exercised only by their own tests.
+#[allow(dead_code)]
 mod render;
 
 fn main() {
