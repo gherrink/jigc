@@ -632,3 +632,10 @@ Three increment-1/2 cross-cutting picks (shape many signatures, so settled up fr
 - **(I) Test tooling** = `insta` (snapshot/golden) + `proptest` (property/fuzz) — exactly what the [parsing.md](implementation/parsing.md) round-trip contract asks for.
 
 Also established the **decision-backlog** convention: `implementation/decisions-pending.md` lists decisions each increment will force (tagged (D) design vs (I) impl), graduating to DECISIONS.md when made. Tasks still cut per-increment at pickup.
+
+## 2026-05-31
+
+### Address grammar parse/Display + id-hop newtypes (inc 1)
+
+- **Fragment parse is structural by hop-count** — 1 hop = `unit`, 2 = `unit/leaf`, 3 = `unit/item/leaf`. `#unit/item` and `#unit/leaf` are byte-identical, so a schema-free parser yields `UnitLeaf`; the `UnitItem` variant exists in the typed model but is reachable only with schema knowledge. Both render to the same two-hop bytes, so round-trip holds either way.
+- **Id hops are thin `String` newtypes** (`Type/Slug/Unit/Item/Leaf`, via a small macro) carrying raw token text verbatim — no normalization on the parse path (slug/minting normalization stays deferred to inc 3/4 per decisions-pending). `Display` writes the bytes back unchanged, giving byte-for-byte round-trip.

@@ -9,6 +9,7 @@
 //! Each module below is a stub home for an increment to fill; the names are taken
 //! verbatim from the module-layout dependency graph.
 
+pub mod address;
 pub mod cascade;
 pub mod compose;
 pub mod index;
