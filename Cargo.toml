@@ -1,0 +1,18 @@
+[workspace]
+resolver = "3"
+members = ["crates/engine", "crates/cli"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+# Load-bearing crates (language-runtime.md). Declared centrally; each member
+# opts in per-increment with `<crate>.workspace = true` when it actually needs them.
+[workspace.dependencies]
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+pulldown-cmark = "0.13"
+engine = { path = "crates/engine" }
