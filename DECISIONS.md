@@ -649,3 +649,8 @@ Also established the **decision-backlog** convention: `implementation/decisions-
 
 - **`PackSource` is a plain object-safe trait** (`pack_version`/`list`/`read`), no serde derives — it's the *input* provider boundary the engine resolves over, not a result type, so it stays off the versioned-API surface.
 - **Sketch's `Version`/`Bytes`/`Result` ground out as `String`/`Vec<u8>`/`Result<_, PackError>`** — no new dep (no `semver`); `pack_version` carries the binary version verbatim and reconciliation parsing belongs to the override layer, not this seam. `ResourceId` is a thin `String` newtype (the `address` id-newtype style); `PackError::NotFound{kind,id}` is the only read failure mode.
+
+### `EmbeddedPack` + embedded dev-pack layout (inc 1)
+
+- **Embedded pack tree = `crates/cli/pack/`, one sub-dir per `PackResourceKind`** (`workflows/` `schemas/` `steps/` `config/`); a resource's `ResourceId` is its **file stem** (so `workflows/single-task.yaml` → id `single-task`). Embedded whole via `include_dir!("$CARGO_MANIFEST_DIR/pack")`; `list`/`read` resolve the kind→sub-dir then match/strip the stem. `pack_version` = `env!("CARGO_PKG_VERSION")` (built-in pack-default version = binary version).
+- **Inc-1 ships a minimal `single-task.yaml` stub** (id + `when` only) so the catalog is non-empty and `read` returns non-empty bytes; the full workflow definition (steps/slots/`allows-create`) lands in inc 3. `EmbeddedPack` is `#[allow(dead_code)]` until the cascade-location task wires it into `main` (later in inc 1).

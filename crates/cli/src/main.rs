@@ -6,6 +6,9 @@
 
 mod adapter;
 mod locate;
+// `EmbeddedPack` is consumed by the cascade-layer location task (later in inc 1);
+// until `main` wires it in, its public API is exercised only by its own tests.
+#[allow(dead_code)]
 mod pack;
 mod render;
 
