@@ -555,6 +555,162 @@ fn parse_include_line(line: &str) -> Option<String> {
     Some(id.to_owned())
 }
 
+/// Supplies a step definition by its resolved id — the engine's view of the
+/// cascade-resolved step file set.
+///
+/// Per the engine invariant (CLI locates cascade layers, engine resolves —
+/// `VISION.md` principle #4 / `CLAUDE.md`), the *frontend* maps a step id to the
+/// highest-precedence present layer's file (`overrides.md` phase 2 by-id
+/// shadowing, already built in [`crate::cascade::Resolved::file_owner`]) and
+/// loads its bytes into a [`StepDef`]. The engine consumes that mapping through
+/// this trait, so [`expand_includes`] stays a pure function of `(WorkflowDef,
+/// StepSource)` — feed-layers-in / assert-results-out. A `None` is a *dangling*
+/// include id: the include names a step no layer provides.
+pub trait StepSource {
+    /// Resolve a step id to its [`StepDef`], or `None` if no layer provides it.
+    fn step(&self, id: &str) -> Option<StepDef>;
+}
+
+/// One leaf of the flattened composition: a step's id and its body, placeholders
+/// **still unresolved** (phase 7 output, before phase 8 placeholder resolution).
+///
+/// `body` is the step's verbatim prompt with its own nested `{{include: …}}`
+/// lines removed — those nested steps are flattened into their own
+/// [`ComposedStep`]s in pre-order immediately after this one (`overrides.md`
+/// phase 7: "recursively expand each `{{include: step:foo}}` … Result: a flat
+/// composition"). For a *plain* step (no nested includes — every MVP step), the
+/// body is the verbatim step body unchanged.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ComposedStep {
+    /// The frozen step id this leaf came from.
+    pub id: String,
+    /// The step's prompt body, nested include lines removed, placeholders unresolved.
+    pub body: String,
+}
+
+/// The flat, ordered composition tree of a workflow: its step bodies in
+/// pre-order include traversal, placeholders unresolved.
+///
+/// This is the phase-7 output (`overrides.md` → Resolution algorithm). Phase 8
+/// (placeholder resolution) and phase 9 (emit) consume it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Composition {
+    /// The flattened step leaves, in pre-order include order.
+    pub steps: Vec<ComposedStep>,
+}
+
+impl Composition {
+    /// The flattened step ids, in order — the composition order a golden pins.
+    pub fn step_ids(&self) -> Vec<&str> {
+        self.steps.iter().map(|s| s.id.as_str()).collect()
+    }
+}
+
+/// Expand a workflow's include list into a flat, ordered [`Composition`] —
+/// phases 6 (cycle detection) and 7 (include expansion) of `overrides.md` →
+/// Resolution algorithm, for the workflow-only path.
+///
+/// Walks `def.includes` in order; each id resolves to a [`StepDef`] via `source`
+/// (the cascade-resolved file set — highest-precedence layer wins, already done
+/// upstream). Each step is expanded **recursively**: a `{{include: step:<id>}}`
+/// line inside a step body pulls that sub-step in at that point, flattened in
+/// pre-order. The result is a flat list of step bodies, placeholders still
+/// unresolved (phase 8's job).
+///
+/// Phase 6 runs **interleaved** with the walk: the active include path is
+/// tracked, and re-entering an id already on it is a **cycle** — a blocking
+/// `workflow-refs.include-cycle-absent` [`Finding`] (`overrides.md`: "cycles are
+/// never broken automatically"). An include id `source` cannot resolve is a
+/// **dangling** include — a blocking `workflow-refs.include-resolves`
+/// [`Finding`]. Both reuse the settled block envelope (`DECISIONS.md`
+/// 2026-05-31).
+///
+/// Expansion is a **pure function** of `(def, source)` — same resolved cascade
+/// in → same composition out (the determinism boundary; no I/O, clock, or LLM).
+pub fn expand_includes(def: &WorkflowDef, source: &dyn StepSource) -> Result<Composition, Finding> {
+    let mut steps = Vec::new();
+    let mut on_path = Vec::new();
+    for id in &def.includes {
+        expand_step(id, source, &mut steps, &mut on_path)?;
+    }
+    Ok(Composition { steps })
+}
+
+/// Recursively expand one step id into `out`, pre-order, with cycle detection.
+///
+/// `on_path` is the active include path (the DFS stack). If `id` is already on
+/// it, this is an include cycle. Otherwise the step resolves, its body's nested
+/// include lines are split out, the de-included body is emitted as this step's
+/// [`ComposedStep`], and each nested include is expanded in physical order
+/// immediately after — yielding a pre-order flattening.
+fn expand_step(
+    id: &str,
+    source: &dyn StepSource,
+    out: &mut Vec<ComposedStep>,
+    on_path: &mut Vec<String>,
+) -> Result<(), Finding> {
+    if on_path.iter().any(|p| p == id) {
+        let cycle = on_path
+            .iter()
+            .map(String::as_str)
+            .chain(std::iter::once(id))
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        return Err(Finding::blocking(
+            "workflow-refs.include-cycle-absent",
+            format!("include cycle: {cycle}"),
+            Location::at(1, 1),
+        ));
+    }
+
+    let step = source.step(id).ok_or_else(|| {
+        Finding::blocking(
+            "workflow-refs.include-resolves",
+            format!("include `step:{id}` resolves to no step file in the cascade"),
+            Location::at(1, 1),
+        )
+    })?;
+
+    let (body, nested) = split_nested_includes(&step.body);
+    out.push(ComposedStep {
+        id: id.to_owned(),
+        body,
+    });
+
+    on_path.push(id.to_owned());
+    for child in &nested {
+        expand_step(child, source, out, on_path)?;
+    }
+    on_path.pop();
+    Ok(())
+}
+
+/// Split a step body into `(de_included_body, nested_ids)`: the body with its
+/// `{{include: step:<id>}}` lines removed, and the ordered ids those lines named.
+///
+/// A line is a nested include when [`parse_include_line`] accepts its trimmed
+/// form (the same recognizer the workflow body uses). Non-include lines — the
+/// step's prose, its `{{cli.…}}` / `{{…}}` / `<<author:…>>` leaves — are kept
+/// verbatim. A body with no nested includes (every MVP step) returns unchanged.
+fn split_nested_includes(body: &str) -> (String, Vec<String>) {
+    // Fast path: no include line at all → body is returned byte-for-byte.
+    if !body.lines().any(|l| parse_include_line(l.trim()).is_some()) {
+        return (body.to_owned(), Vec::new());
+    }
+    let mut kept = String::with_capacity(body.len());
+    let mut nested = Vec::new();
+    for line in body.lines() {
+        match parse_include_line(line.trim()) {
+            Some(id) => nested.push(id),
+            None => {
+                kept.push_str(line);
+                kept.push('\n');
+            }
+        }
+    }
+    (kept, nested)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1132,6 +1288,194 @@ reference — make your consequences explain what changes:
             let first = render_command(cmd, &ctx);
             let second = render_command(cmd, &ctx);
             proptest::prop_assert_eq!(first, second);
+        }
+    }
+
+    /// A test [`StepSource`] backed by an id → body map. Stands in for the
+    /// frontend's cascade-resolved step file set: a present key resolves to a
+    /// [`StepDef`] with that body; an absent key is a dangling include.
+    struct MapSource(std::collections::BTreeMap<String, String>);
+
+    impl MapSource {
+        fn new(pairs: &[(&str, &str)]) -> Self {
+            MapSource(
+                pairs
+                    .iter()
+                    .map(|(id, body)| ((*id).to_owned(), (*body).to_owned()))
+                    .collect(),
+            )
+        }
+    }
+
+    impl StepSource for MapSource {
+        fn step(&self, id: &str) -> Option<StepDef> {
+            self.0.get(id).map(|body| StepDef {
+                id: id.to_owned(),
+                body: body.clone(),
+            })
+        }
+    }
+
+    /// The four shipped single-task step bodies, byte-identical to the pack files
+    /// (the plain ones are asserted equal to the in-module consts above).
+    fn single_task_source() -> MapSource {
+        MapSource::new(&[
+            ("locate", STEP_LOCATE),
+            (
+                "implement",
+                include_str!("../../cli/pack/steps/implement.yaml"),
+            ),
+            ("superseded-context", STEP_SUPERSEDED),
+            (
+                "finalize",
+                include_str!("../../cli/pack/steps/finalize.yaml"),
+            ),
+        ])
+    }
+
+    /// Core done-criterion (`include_expansion_flattens_in_order`): the shipped
+    /// single-task workflow expands to the four step bodies in include order —
+    /// `[locate, implement, superseded-context, finalize]` — placeholders still
+    /// unresolved. A dangling include id is a typed `include-resolves` error; a
+    /// synthetic include cycle is a typed `include-cycle-absent` error. The golden
+    /// pins the flattened step-id order.
+    #[test]
+    fn include_expansion_flattens_in_order() {
+        let def = load_workflow_def(SINGLE_TASK.as_bytes()).expect("loads");
+        let source = single_task_source();
+
+        let composition = expand_includes(&def, &source).expect("expands");
+
+        // The flattened step-id order is exactly the include-list order.
+        assert_eq!(
+            composition.step_ids(),
+            vec!["locate", "implement", "superseded-context", "finalize"]
+        );
+        insta::assert_snapshot!(composition.step_ids().join(" -> "), @"locate -> implement -> superseded-context -> finalize");
+
+        // Plain step bodies are carried verbatim, placeholders unresolved.
+        let locate = &composition.steps[0];
+        assert_eq!(locate.id, "locate");
+        assert_eq!(locate.body, STEP_LOCATE);
+        assert!(locate.body.contains("{{ @task.intent }}"));
+
+        // A dangling include id (no step file in the cascade) → typed error.
+        let dangling = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            includes: vec!["locate".to_owned(), "not-a-step".to_owned()],
+        };
+        let err = expand_includes(&dangling, &source).expect_err("dangling include rejects");
+        assert_eq!(err.code, "workflow-refs.include-resolves");
+        assert_eq!(err.severity, crate::finding::Severity::Blocking);
+
+        // A synthetic include cycle (A includes B includes A) → typed error.
+        let cyclic_source = MapSource::new(&[
+            ("a", "prose a\n{{ include: step:b }}\n"),
+            ("b", "prose b\n{{ include: step:a }}\n"),
+        ]);
+        let cyclic = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            includes: vec!["a".to_owned()],
+        };
+        let err = expand_includes(&cyclic, &cyclic_source).expect_err("cycle rejects");
+        assert_eq!(err.code, "workflow-refs.include-cycle-absent");
+        assert_eq!(err.severity, crate::finding::Severity::Blocking);
+    }
+
+    /// A nested include inside a step body is expanded in pre-order: the parent
+    /// step's de-included body comes first, then the nested step's body — phase 7
+    /// recursive expansion (`overrides.md`). The nested `{{include:}}` line is
+    /// removed from the parent body; the parent's other prose survives verbatim.
+    #[test]
+    fn nested_include_in_step_body_flattens_pre_order() {
+        let source = MapSource::new(&[
+            ("parent", "before\n{{ include: step:child }}\nafter\n"),
+            ("child", "child body\n"),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            includes: vec!["parent".to_owned()],
+        };
+
+        let composition = expand_includes(&def, &source).expect("expands");
+
+        assert_eq!(composition.step_ids(), vec!["parent", "child"]);
+        // The parent body keeps its prose but drops the nested include line.
+        assert_eq!(composition.steps[0].body, "before\nafter\n");
+        assert_eq!(composition.steps[1].body, "child body\n");
+    }
+
+    /// A self-including step (A includes A) is a cycle the moment it re-enters.
+    #[test]
+    fn self_include_is_a_cycle() {
+        let source = MapSource::new(&[("a", "loop\n{{ include: step:a }}\n")]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            includes: vec!["a".to_owned()],
+        };
+        let err = expand_includes(&def, &source).expect_err("self-cycle rejects");
+        assert_eq!(err.code, "workflow-refs.include-cycle-absent");
+    }
+
+    /// A diamond (A→B, A→C, B→D, C→D) is **not** a cycle: D is reached twice but
+    /// never while already on the active path, so it expands once per inclusion in
+    /// pre-order. Cycle detection keys on the active DFS path, not on having seen
+    /// an id before.
+    #[test]
+    fn diamond_is_not_a_cycle() {
+        let source = MapSource::new(&[
+            ("a", "{{ include: step:b }}\n{{ include: step:c }}\n"),
+            ("b", "{{ include: step:d }}\n"),
+            ("c", "{{ include: step:d }}\n"),
+            ("d", "leaf\n"),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            includes: vec!["a".to_owned()],
+        };
+        let composition = expand_includes(&def, &source).expect("diamond expands");
+        // Pre-order: a, then b's subtree (b, d), then c's subtree (c, d).
+        assert_eq!(composition.step_ids(), vec!["a", "b", "d", "c", "d"]);
+    }
+
+    proptest::proptest! {
+        /// For an acyclic include forest, the flattened leaf order equals the
+        /// pre-order include traversal. We generate a flat workflow over N distinct
+        /// plain steps (no nested includes), so the pre-order traversal is exactly
+        /// the include-list order — expansion must reproduce it.
+        #[test]
+        fn flattened_order_equals_include_order_for_acyclic(
+            ids in proptest::collection::vec("[a-z][a-z0-9-]{0,7}", 0..8)
+        ) {
+            // Distinct ids only (a repeated include id is legitimate re-use, but
+            // we want the pre-order == include-order invariant over a forest of
+            // distinct plain leaves; duplicates would still satisfy it but muddy
+            // the assertion).
+            let mut seen = std::collections::BTreeSet::new();
+            let ids: Vec<String> = ids.into_iter().filter(|id| seen.insert(id.clone())).collect();
+
+            let pairs: Vec<(&str, &str)> = ids.iter().map(|id| (id.as_str(), "plain body\n")).collect();
+            let source = MapSource::new(&pairs);
+            let def = WorkflowDef {
+                when: None,
+                creates_task: true,
+                allows_create: vec![],
+                includes: ids.clone(),
+            };
+
+            let composition = expand_includes(&def, &source).expect("acyclic forest expands");
+            let flattened: Vec<String> = composition.steps.iter().map(|s| s.id.clone()).collect();
+            proptest::prop_assert_eq!(flattened, ids);
         }
     }
 }
