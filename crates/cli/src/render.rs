@@ -23,12 +23,22 @@ pub const ROUTING_FOOTER: &str =
 /// Render any `Serialize` result type to pretty JSON — the **generic** JSON
 /// renderer. Carries no routing footer (JSON is consumed by tooling, not the
 /// agent's reading flow).
+///
+/// Not yet reached from dispatch: `--format` selection (the `Format → renderer`
+/// mapping) is wired in a later task; until then bare `start` always renders
+/// agent-text, so this is exercised only by its own test.
+#[allow(dead_code)]
 pub fn json<T: Serialize>(value: &T) -> String {
     serde_json::to_string_pretty(value).expect("engine result types serialize")
 }
 
 /// Render an `Orientation` to **agent-text**: one line per workflow (`id — when`)
 /// followed by the routing footer.
+///
+/// Superseded for orientation by [`orientation_clean`] (which adds the
+/// provenance header + `Available workflows:` framing per `design/bootstrap.md`);
+/// retained as the leaner per-entry shape for callers that want just the list.
+#[allow(dead_code)]
 pub fn orientation_agent_text(orientation: &Orientation) -> String {
     let mut out = String::new();
     for entry in orientation.workflows.entries() {
@@ -37,6 +47,48 @@ pub fn orientation_agent_text(orientation: &Orientation) -> String {
         out.push_str(entry.when.as_str());
         out.push('\n');
     }
+    out.push_str(ROUTING_FOOTER);
+    out
+}
+
+/// Render the **clean, no active task** orientation (`design/bootstrap.md` →
+/// Orientation output examples, state 2): the cascade/provenance `header`, the
+/// available-workflows catalog (`  - id — when` per entry), the `jigc start`
+/// next-step directive, then the universal routing footer.
+///
+/// Branch/HEAD and the "Recent: …" finalization line from the design example are
+/// deferred — they need git-HEAD inspection and task state, neither of which
+/// exists in increment 1 (bare `start` is read-only, no task store yet).
+pub fn orientation_clean(header: &str, orientation: &Orientation) -> String {
+    let mut out = String::from("jigc — orientation\n\n");
+    out.push_str(header);
+    out.push_str("\n\nAvailable workflows:\n");
+    for entry in orientation.workflows.entries() {
+        out.push_str("  - ");
+        out.push_str(entry.id.as_str());
+        out.push_str(" — ");
+        out.push_str(entry.when.as_str());
+        out.push('\n');
+    }
+    out.push_str(
+        "\nRun: `jigc start \"<intent>\"`   — composes the default workflow (single-task)\n",
+    );
+    out.push_str(ROUTING_FOOTER);
+    out
+}
+
+/// Render the **unset project** orientation (`design/bootstrap.md` → Orientation
+/// output examples, state 1): no project layer is set up, so route the agent to
+/// `jigc setup` and end with the universal routing footer.
+pub fn orientation_unset() -> String {
+    let mut out = String::from("jigc — orientation\n\n");
+    out.push_str(
+        "This project isn't set up. No domain pack is installed; the cascade has only engine defaults.\n\n",
+    );
+    out.push_str("Run: `jigc setup`\n\n");
+    out.push_str(
+        "The setup workflow walks the pack choice, the project config dir, and the first workflow.\n",
+    );
     out.push_str(ROUTING_FOOTER);
     out
 }
@@ -65,6 +117,52 @@ mod tests {
         insta::assert_snapshot!(text, @r"
         single-task — Implement one well-scoped change.
         project-setup — Set up the development pack on a fresh repo.
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+
+        assert!(text.ends_with(ROUTING_FOOTER));
+    }
+
+    /// The clean-no-task orientation (state 2) prints the provenance header, the
+    /// available-workflows catalog with each `when` hint, the `jigc start`
+    /// next-step directive, and ends with the routing footer.
+    #[test]
+    fn render_orientation_clean_has_header_catalog_and_footer() {
+        let text = orientation_clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            &fixture(),
+        );
+
+        insta::assert_snapshot!(text, @r#"
+        jigc — orientation
+
+        Pack: dev/v0.3.0 · Project config: .jigc/config
+
+        Available workflows:
+          - single-task — Implement one well-scoped change.
+          - project-setup — Set up the development pack on a fresh repo.
+
+        Run: `jigc start "<intent>"`   — composes the default workflow (single-task)
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        "#);
+
+        assert!(text.ends_with(ROUTING_FOOTER));
+    }
+
+    /// The unset-project orientation (state 1) routes the agent to `jigc setup`
+    /// and ends with the routing footer.
+    #[test]
+    fn render_orientation_unset_routes_to_setup() {
+        let text = orientation_unset();
+
+        insta::assert_snapshot!(text, @r"
+        jigc — orientation
+
+        This project isn't set up. No domain pack is installed; the cascade has only engine defaults.
+
+        Run: `jigc setup`
+
+        The setup workflow walks the pack choice, the project config dir, and the first workflow.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
 

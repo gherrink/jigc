@@ -7,7 +7,9 @@
 //! `implementation/module-layout.md` → Renderers (format selection) and
 //! `design/write-commands.md` → Task origination (bare `jigc start`).
 
+use crate::orient;
 use clap::{Parser, Subcommand, ValueEnum};
+use std::process::ExitCode;
 
 /// The `jigc` CLI — a context compiler for coding agents.
 #[derive(Debug, Parser, PartialEq, Eq)]
@@ -46,14 +48,39 @@ pub enum Command {
 }
 
 impl Cli {
-    /// Dispatch the parsed command. Increment-1 stub: `start` is wired but the
-    /// orient/compose body lands in a later task.
-    pub fn dispatch(self) {
+    /// Dispatch the parsed command. Increment-1 scope: bare `start` (no
+    /// `intent`) runs the read-only orientation end-to-end; an `<intent>` is
+    /// composition, which lands in increment 3.
+    pub fn dispatch(self) -> ExitCode {
         match self.command {
-            Command::Start { .. } => {
-                // Handler stub: bare-start orientation lands in a later inc-1
-                // task (it wires `locate` + `build_catalog` + `render`).
+            Command::Start { intent: None } => run_orient(),
+            Command::Start { intent: Some(_) } => {
+                // Composition (`jigc start "<intent>"`) lands in increment 3.
+                eprintln!("composition is not yet implemented (increment 3)");
+                ExitCode::FAILURE
             }
+        }
+    }
+}
+
+/// Run the bare-`start` orientation against the current working directory and
+/// print it, mapping success/failure to the process exit code.
+fn run_orient() -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match orient::orient(&cwd) {
+        Ok(text) => {
+            println!("{text}");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
         }
     }
 }

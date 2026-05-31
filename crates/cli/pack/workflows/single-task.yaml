@@ -1,6 +1,8 @@
+---
 # single-task — the MVP work-workflow (cascade default-workflow).
-# Minimal stub: increment 1 only needs this id to appear in the catalog and
-# read back as non-empty bytes. The full definition (steps, allows-create,
-# slots/placeholders) is filled in increment 3 (compose). See roadmap.md.
-id: single-task
+# Minimal stub: increment 1 only needs the `when` selection hint to surface in
+# the orientation catalog (the id is the filename stem, not a front-matter
+# field). The full definition (steps, allows-create, slots/placeholders) is
+# filled in increment 3 (compose). See roadmap.md.
 when: implement one scoped change end-to-end
+---
