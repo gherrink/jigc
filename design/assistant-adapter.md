@@ -19,6 +19,8 @@ The profile is a **config-family artifact** (YAML, like schemas and manifests): 
 
 `jigc setup` (or `jigc adapter install --assistant claude-code`) **generates** the adapter from the profile and **regenerates it on upgrade**, so the integration stays current and can't rot — the thesis applied to integration itself: structure is CLI-owned, not hand-maintained.
 
+`jigc setup` also **initializes the in-repo project layer** (`.jigc/config/`) when absent — so the project resolves as *set up* (orientation's clean state, [bootstrap.md](bootstrap.md) → Orientation output examples — keyed on the project layer's presence) and the cascade has a committed project layer to record deltas into ([overrides.md](overrides.md)). A fresh layer is empty (no customizations yet); it exists so the project reads as configured and is ready to carry deltas.
+
 There are **no per-command wrappers**. The agent shell-calls `jigc` and learns each command just-in-time from composed output (command-refs); a wrapper-per-command would be a static, partial surface that undercuts the "one entrypoint" promise. What the adapter *does* generate is a small, **catalog-derived** set of **human-facing workflow launchers** (e.g. a Claude Code slash-command per workflow), each just calling `jigc start --workflow <X>` — the *human's* path to kick off a specific workflow directly. That stays consistent with the rule: it's bounded and **regenerated from the workflow catalog** (not a hand-maintained pile), and it's not the agent's path (the agent still shell-calls the front door).
 
 ## The three responsibilities
@@ -28,7 +30,7 @@ There are **no per-command wrappers**. The agent shell-calls `jigc` and learns e
 The bootstrap reaches the agent by the assistant's *best available* mechanism, declared in the profile:
 
 - **A hook that calls the CLI** — injects the bootstrap plus a *thin live nudge* at session start (e.g. Claude Code's `SessionStart` running the front door). Fresher and higher-salience than a buried rules line, and it makes the bootstrap's "advertise *and* demonstrate" automatic: the agent's first context already shows live orientation. **Primary** where supported.
-- **A static line** in the always-loaded file (`CLAUDE.md` / `AGENT.md` / Cursor rules) — the **universal floor**: works where there's no hook system, and cheap insurance if the hook fails.
+- **A static reference** in the always-loaded file (`CLAUDE.md` / `AGENT.md` / Cursor rules) — the **universal floor**: works where there's no hook system, and cheap insurance if the hook fails. The reference is *not the sentence inlined* — it is a stable one-line pointer (Claude Code: an `@.jigc/AGENT.md` import) to a **managed bootstrap file** the adapter writes under `.jigc/` and **regenerates on every `setup`**. This keeps the always-loaded file clean (a single pointer line, no marker-fenced block of content) and keeps the bootstrap text CLI-owned and rot-proof — the *structure is generated, not hand-maintained* discipline applied to the floor itself. The always-loaded file is touched only to ensure the pointer is present (idempotent on the exact reference line); the content lives in the managed file. (An assistant with no import mechanism falls back to inlining the sentence; the profile declares which.)
 - **A resume / post-compaction hook** (capability-dependent) — *if* the assistant exposes a "context resumed" or "compaction completed" event, the adapter re-injects the bootstrap on that event so a mid-task compaction doesn't lose the routing pointer. The profile's `resume` event slot declares whether the assistant supports it; Claude Code ships this when the API exposes such an event. The universal compaction baseline (independent of any hook capability) is the routing footer the CLI appends to every agent-facing output ([workflow-dialect.md](workflow-dialect.md#emitted-format) → Routing footer; [bootstrap.md](bootstrap.md) → Context compaction resilience).
 
 **Discipline:** the hook obeys the same *routing, not content* rule — it injects the bootstrap + at most a one-line current-state nudge, **never a content dump**. Its value is freshness and salience, not volume; the agent still *pulls* real context JIT via `jigc`. (Capability-dependent: the profile declares which mechanisms the assistant supports; the line is the floor.)
@@ -59,7 +61,7 @@ A small YAML spec of "how to wire into assistant X" (illustrative):
 # adapters/claude-code.yaml
 assistant: claude-code
 inject:
-  - line: { file: CLAUDE.md, scope: project-root }            # universal floor
+  - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }  # floor: a managed bootstrap file + an `@`-import pointer (no inlined block)
   - hook: { event: SessionStart, run: "jigc start" }          # primary; calls the CLI — bare `jigc start` is read-only orientation
   - hook: { event: Resume, run: "jigc start", when: supports(resume) }  # post-compaction re-injection (ships when the assistant API exposes the event)
 allowlist:
