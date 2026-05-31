@@ -1,17 +1,24 @@
 //! `jigc setup` — the adapter install handler.
 //!
-//! Orchestrates the two MVP adapter injections (`design/assistant-adapter.md` →
-//! The three responsibilities, items 1 + 2) against the located repo root, using
-//! the embedded Claude Code profile:
-//!   1. inject the marker-fenced bootstrap **line** into `CLAUDE.md` (the
-//!      universal floor);
-//!   2. merge the `jigc *` **allowlist** into `.claude/settings.json` (the
-//!      path-of-least-resistance the bootstrap depends on).
+//! Orchestrates the MVP adapter install (`design/assistant-adapter.md` →
+//! Generated, minimal, regenerated; `DECISIONS.md` 2026-05-31 → adapter install
+//! reworked) against the located repo root, using the embedded Claude Code
+//! profile:
+//!   1. write the canonical bootstrap sentence to the managed `.jigc/AGENT.md`
+//!      and inject a bare `@.jigc/AGENT.md` import into `CLAUDE.md` (the
+//!      reference floor — no marker-fenced block);
+//!   2. initialize the project cascade layer (`.jigc/config/.gitkeep` +
+//!      `.jigc/.gitignore`), so the project resolves as *set up*;
+//!   3. merge the `jigc *` **allowlist** into `.claude/settings.json` (the
+//!      path-of-least-resistance the bootstrap depends on);
+//!   4. install the `SessionStart` **hook** running `jigc start` into the same
+//!      settings file (the primary bootstrap injection — advertise+demonstrate at
+//!      session start).
 //!
 //! `jigc setup` is the install the unset-project orientation routes the agent to
 //! (`crate::orient` → `OrientationView::unset_project`; `design/bootstrap.md` →
-//! Orientation output examples). The hook + spawn binding are post-MVP and out of
-//! scope here — MVP adapter scope is the static-line floor + the allowlist only.
+//! Orientation output examples). The `Resume` hook + the fan-out spawn binding are
+//! post-MVP and out of scope here.
 //!
 //! Outcome is reported through the settled **finding** envelope (`DECISIONS.md`
 //! 2026-05-31 → block-payload = a blocking-severity finding carrying a route):
@@ -33,7 +40,8 @@ const SETUP_ASSISTANT: &str = "claude-code";
 /// two host targets, so the dispatcher can render a precise success summary.
 #[derive(Debug)]
 pub struct SetupSummary {
-    /// The repo-root-relative file the bootstrap line was injected into.
+    /// The repo-root-relative always-loaded file the bootstrap reference was
+    /// injected into.
     pub line_file: String,
     /// The repo-root-relative settings file the allowlist was merged into.
     pub allowlist_file: String,
@@ -71,20 +79,61 @@ pub fn run(start: &Path) -> Result<SetupSummary, Finding> {
 /// to a blocking `setup.*` finding with a route. The testable core of [`run`]
 /// (no location step).
 fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, Finding> {
-    let line_file = profile.inject[0].line.file.clone();
-    adapter::inject_line(repo_root).map_err(|err| {
+    let reference = profile.reference().ok_or_else(|| {
         Finding::block(
-            "setup.inject-line",
-            format!("cannot write the bootstrap block into `{line_file}`: {err}"),
+            "setup.profile-incomplete",
+            format!(
+                "the `{}` adapter profile declares no inject reference floor",
+                profile.assistant
+            ),
+            "reinstall jigc — the embedded adapter profile is missing its bootstrap reference",
+        )
+    })?;
+    let line_file = reference.file.clone();
+    let bootstrap_file = reference.to.clone();
+
+    // 1. Reference floor: write the managed bootstrap file, then point the
+    //    always-loaded file at it with a bare import line.
+    adapter::write_bootstrap_file(repo_root).map_err(|err| {
+        Finding::block(
+            "setup.write-bootstrap",
+            format!("cannot write the managed bootstrap file `{bootstrap_file}`: {err}"),
+            format!("ensure `{bootstrap_file}` is writable, then re-run `jigc setup`"),
+        )
+    })?;
+    adapter::inject_reference(repo_root).map_err(|err| {
+        Finding::block(
+            "setup.inject-reference",
+            format!("cannot inject the bootstrap reference into `{line_file}`: {err}"),
             format!("ensure `{line_file}` is writable, then re-run `jigc setup`"),
         )
     })?;
 
+    // 2. Initialize the project cascade layer, so the project resolves as set up.
+    adapter::init_project_layer(repo_root).map_err(|err| {
+        Finding::block(
+            "setup.init-project-layer",
+            format!("cannot initialize the project layer under `.jigc/`: {err}"),
+            "ensure `.jigc/` is writable, then re-run `jigc setup`",
+        )
+    })?;
+
+    // 3. Allowlist `jigc` so the agent runs it without friction.
     let allowlist_file = profile.allowlist.file.clone();
     adapter::inject_allowlist(repo_root, profile).map_err(|err| {
         Finding::block(
             "setup.inject-allowlist",
             format!("cannot merge the allowlist into `{allowlist_file}`: {err}"),
+            format!("ensure `{allowlist_file}` is writable, then re-run `jigc setup`"),
+        )
+    })?;
+
+    // 4. Install the SessionStart hook (the primary bootstrap injection) into the
+    //    same settings file. A no-op for a profile that declares no hook.
+    adapter::inject_hook(repo_root, profile).map_err(|err| {
+        Finding::block(
+            "setup.inject-hook",
+            format!("cannot install the session hook into `{allowlist_file}`: {err}"),
             format!("ensure `{allowlist_file}` is writable, then re-run `jigc setup`"),
         )
     })?;

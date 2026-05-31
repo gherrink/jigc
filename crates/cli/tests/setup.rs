@@ -1,13 +1,20 @@
 //! End-to-end integration test for `jigc setup` — the adapter install.
 //!
 //! Drives the built `jigc` binary against a throwaway temp repo and asserts the
-//! two injections from `design/assistant-adapter.md` → The three
-//! responsibilities (inject the bootstrap line floor + allowlist `jigc`):
-//!   1. the marker-fenced bootstrap block lands in `CLAUDE.md`;
-//!   2. the `jigc *` permit lands in `.claude/settings.json`.
+//! reworked install (`design/assistant-adapter.md` → Generated, minimal,
+//! regenerated; `DECISIONS.md` 2026-05-31 → adapter install reworked):
+//!   1. the bootstrap sentence lands in a managed `.jigc/AGENT.md`;
+//!   2. a bare `@.jigc/AGENT.md` import line lands in `CLAUDE.md` (no marker
+//!      comments);
+//!   3. the project layer is initialized (`.jigc/config/.gitkeep`) and
+//!      `.jigc/.gitignore` exists;
+//!   4. the `jigc *` permit **and** the `SessionStart` hook running `jigc start`
+//!      land in `.claude/settings.json`.
 //!
-//! It also asserts the command exits clean and is idempotent (a second run leaves
-//! both files byte-identical), per `design/assistant-adapter.md`.
+//! It also asserts the command exits clean, is idempotent (a second run leaves
+//! `CLAUDE.md` + `.jigc/AGENT.md` + `.claude/settings.json` byte-identical), and
+//! that `jigc start` renders the *clean* orientation after setup (the project
+//! reads as set up).
 //!
 //! No external test crates: the binary path comes from Cargo's
 //! `CARGO_BIN_EXE_jigc`, the temp repo is built with `std::fs`, and a
@@ -63,8 +70,18 @@ fn run_setup(repo: &Path, home: &Path) -> std::process::Output {
         .expect("run the jigc binary")
 }
 
+/// Run the built `jigc start` binary with `cwd = repo` and `$HOME = home`.
+fn run_start(repo: &Path, home: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("start")
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
 #[test]
-fn setup_installs_line_and_allowlist() {
+fn setup_installs_reference_layer_and_allowlist() {
     let repo = TempDir::new("install");
     mark_repo(repo.path());
     let home = TempDir::new("home");
@@ -77,35 +94,63 @@ fn setup_installs_line_and_allowlist() {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // 1. The bootstrap block landed in CLAUDE.md, fenced by its markers.
+    // (a) The bootstrap sentence lands in a managed `.jigc/AGENT.md`.
+    let agent_md =
+        fs::read_to_string(repo.path().join(".jigc/AGENT.md")).expect(".jigc/AGENT.md was written");
+    assert!(
+        agent_md.contains("`jigc` is your interface to this project"),
+        ".jigc/AGENT.md must carry the bootstrap sentence; got:\n{agent_md}",
+    );
+
+    // (b) CLAUDE.md carries the bare `@.jigc/AGENT.md` reference and NO markers.
     let claude_md =
         fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md was written");
     assert!(
-        claude_md.contains("<!-- jigc:bootstrap:start -->"),
-        "CLAUDE.md must carry the bootstrap start marker; got:\n{claude_md}",
+        claude_md.contains("@.jigc/AGENT.md"),
+        "CLAUDE.md must carry the bare `@.jigc/AGENT.md` reference; got:\n{claude_md}",
     );
     assert!(
-        claude_md.contains("<!-- jigc:bootstrap:end -->"),
-        "CLAUDE.md must carry the bootstrap end marker; got:\n{claude_md}",
-    );
-    assert!(
-        claude_md.contains("`jigc` is your interface to this project"),
-        "CLAUDE.md must carry the bootstrap sentence; got:\n{claude_md}",
+        !claude_md.contains("<!-- jigc:bootstrap"),
+        "CLAUDE.md must NOT carry the old marker comments; got:\n{claude_md}",
     );
 
-    // 2. The `jigc *` permit landed in .claude/settings.json.
-    let settings = fs::read_to_string(repo.path().join(".claude/settings.json"))
+    // (c) The project layer is initialized and the `.jigc/.gitignore` exists.
+    assert!(
+        repo.path().join(".jigc/config/.gitkeep").exists(),
+        "setup must create `.jigc/config/.gitkeep`",
+    );
+    assert!(
+        repo.path().join(".jigc/.gitignore").exists(),
+        "setup must create `.jigc/.gitignore`",
+    );
+
+    // (d) Both the `jigc *` allowlist AND the SessionStart hook running
+    //     `jigc start` landed in .claude/settings.json (parsed as JSON).
+    let settings_raw = fs::read_to_string(repo.path().join(".claude/settings.json"))
         .expect(".claude/settings.json was written");
     assert!(
-        settings.contains("\"jigc *\""),
-        ".claude/settings.json must permit `jigc *`; got:\n{settings}",
+        settings_raw.contains("\"jigc *\""),
+        ".claude/settings.json must permit `jigc *`; got:\n{settings_raw}",
+    );
+    let settings: serde_json::Value =
+        serde_json::from_str(&settings_raw).expect(".claude/settings.json must be valid JSON");
+    assert_eq!(
+        settings["permissions"]["allow"][0], "jigc *",
+        "the allowlist must permit `jigc *`; got:\n{settings_raw}",
+    );
+    assert!(
+        session_start_runs_jigc_start(&settings),
+        "settings.json must carry a SessionStart hook running `jigc start`; got:\n{settings_raw}",
     );
 
-    // Idempotent: a second run leaves both files byte-identical.
+    // Idempotent: a second run leaves CLAUDE.md + .jigc/AGENT.md +
+    // .claude/settings.json byte-identical (no duplicated allowlist or hook).
     let out2 = run_setup(repo.path(), home.path());
     assert!(out2.status.success(), "second `jigc setup` must exit 0");
     let claude_md2 =
         fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md still present");
+    let agent_md2 = fs::read_to_string(repo.path().join(".jigc/AGENT.md"))
+        .expect(".jigc/AGENT.md still present");
     let settings2 = fs::read_to_string(repo.path().join(".claude/settings.json"))
         .expect(".claude/settings.json still present");
     assert_eq!(
@@ -113,7 +158,54 @@ fn setup_installs_line_and_allowlist() {
         "a second `jigc setup` must leave CLAUDE.md byte-identical",
     );
     assert_eq!(
-        settings, settings2,
+        agent_md, agent_md2,
+        "a second `jigc setup` must leave .jigc/AGENT.md byte-identical",
+    );
+    assert_eq!(
+        settings_raw, settings2,
         "a second `jigc setup` must leave .claude/settings.json byte-identical",
+    );
+}
+
+/// Whether `settings` carries a `hooks.SessionStart[*].hooks[*]` entry that runs
+/// the `jigc start` command — the structural presence the hook install ensures.
+fn session_start_runs_jigc_start(settings: &serde_json::Value) -> bool {
+    settings["hooks"]["SessionStart"]
+        .as_array()
+        .is_some_and(|matchers| {
+            matchers.iter().any(|matcher| {
+                matcher["hooks"].as_array().is_some_and(|hooks| {
+                    hooks
+                        .iter()
+                        .any(|hook| hook["command"] == "jigc start" && hook["type"] == "command")
+                })
+            })
+        })
+}
+
+#[test]
+fn start_renders_clean_orientation_after_setup() {
+    let repo = TempDir::new("orient");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let setup = run_setup(repo.path(), home.path());
+    assert!(setup.status.success(), "`jigc setup` must exit 0");
+
+    let out = run_start(repo.path(), home.path());
+    assert!(
+        out.status.success(),
+        "`jigc start` must exit 0 after setup; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !stdout.contains("isn't set up"),
+        "after setup, `jigc start` must NOT report the unset-project view; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("Pack:"),
+        "after setup, `jigc start` must render the clean provenance header; got:\n{stdout}",
     );
 }

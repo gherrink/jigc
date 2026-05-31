@@ -183,7 +183,7 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
         })),
         Format::Agent | Format::Human => {
             let mut out = String::from("jigc setup — adapter installed\n\n");
-            out.push_str("  - bootstrap line → ");
+            out.push_str("  - bootstrap reference → ");
             out.push_str(&summary.line_file);
             out.push('\n');
             out.push_str("  - jigc allowlist → ");

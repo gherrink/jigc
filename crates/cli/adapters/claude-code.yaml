@@ -1,6 +1,7 @@
 assistant: claude-code
 inject:
-  - line: { file: CLAUDE.md, scope: project-root }
+  - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }
+  - hook: { event: SessionStart, run: "jigc start" }
 allowlist:
   file: .claude/settings.json
   permit: ["jigc *"]

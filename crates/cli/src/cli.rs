@@ -78,10 +78,11 @@ pub enum Command {
     },
 
     /// The adapter install. Generates the Claude Code adapter from the embedded
-    /// profile: injects the bootstrap line into `CLAUDE.md` and allowlists
-    /// `jigc *` in `.claude/settings.json` (`design/assistant-adapter.md` →
-    /// Generated, minimal, regenerated). Idempotent; the install the
-    /// unset-project orientation routes the agent to.
+    /// profile: writes the managed `.jigc/AGENT.md` bootstrap and a bare
+    /// `@.jigc/AGENT.md` reference into `CLAUDE.md`, initializes the project layer
+    /// (`.jigc/config/`), and allowlists `jigc *` in `.claude/settings.json`
+    /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
+    /// Idempotent; the install the unset-project orientation routes the agent to.
     Setup,
 }
 
@@ -118,8 +119,9 @@ impl Cli {
 }
 
 /// Run `jigc setup` (the adapter install) against the current working directory:
-/// locate the repo root, install the Claude Code adapter (bootstrap line +
-/// `jigc *` allowlist), render the outcome through the selected `format`, and map
+/// locate the repo root, install the Claude Code adapter (bootstrap reference +
+/// project-layer init + `jigc *` allowlist), render the outcome through the
+/// selected `format`, and map
 /// it to the exit code. Success prints a summary on stdout and exits 0; a write
 /// failure prints a blocking `setup.*` finding (with its route) on stderr and
 /// exits non-zero (`design/assistant-adapter.md` → Generated, minimal,

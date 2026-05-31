@@ -1,19 +1,27 @@
 //! Assistant-adapter generation from embedded profiles + the engine catalog.
 //!
-//! MVP scope: the static bootstrap line + the `jigc` allowlist (hooks and spawn
+//! MVP scope: the bootstrap floor (by reference) + the `SessionStart` hook (the
+//! primary injection) + the `jigc` allowlist (the `Resume` hook and the spawn
 //! binding are post-MVP). See `design/assistant-adapter.md`.
 //!
 //! Adapter **profiles** are embedded config-family data, the same pattern as the
 //! pack (`implementation/module-layout.md` → Adapter (in `cli`): "Profiles are
 //! embedded data … same pattern as the pack"). Each profile is the
 //! assistant-neutral→assistant shim: the source of *where/how* to inject the
-//! bootstrap and *how* to allowlist `jigc`. This module is the **typed model +
-//! loader** only — it generates no host files yet (`jigc setup` arrives in a
-//! later increment). The MVP model carries exactly the two in-scope surfaces:
-//! the inject **line** target (the universal floor) and the **allowlist** target
-//! (the path-of-least-resistance the bootstrap depends on); the **hook** and
-//! **spawn** profile fields are post-MVP and intentionally absent from both the
-//! model and the shipped profile bytes, so what we test is what ships.
+//! bootstrap and *how* to allowlist `jigc`. The MVP model carries the in-scope
+//! surfaces: the inject **reference** target (the universal floor — a managed
+//! bootstrap file plus an `@`-import pointer), the inject **hook** target (the
+//! primary injection — a `SessionStart` event running the front door), and the
+//! **allowlist** target (the path-of-least-resistance the bootstrap depends on);
+//! the `Resume` hook and the **spawn** binding are post-MVP and intentionally
+//! absent from both the model and the shipped profile bytes, so what we test is
+//! what ships.
+//!
+//! The bootstrap floor is **by reference, not inlined** (`DECISIONS.md`
+//! 2026-05-31 → adapter install reworked): `jigc setup` writes the canonical
+//! sentence into a managed `.jigc/AGENT.md` (regenerated whole each run) and
+//! injects a bare `@.jigc/AGENT.md` import into the always-loaded file, idempotent
+//! on that exact reference line — no marker-fenced block in `CLAUDE.md`.
 
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
@@ -29,8 +37,9 @@ static ADAPTERS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/adapters");
 /// and how* to wire into one coding assistant.
 ///
 /// Deserialized from the config-family YAML at `adapters/<assistant>.yaml`. The
-/// MVP surface is the inject **line** floor + the **allowlist**; hooks and the
-/// spawn launch template are post-MVP and absent here.
+/// MVP surface is the inject **reference** floor + the **hook** + the
+/// **allowlist**; the `Resume` hook and the spawn launch template are post-MVP
+/// and absent here.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterProfile {
@@ -38,33 +47,89 @@ pub struct AdapterProfile {
     /// file stem the loader resolves by.
     pub assistant: String,
 
-    /// The bootstrap injection targets. MVP ships exactly one: the static
-    /// **line** floor in the always-loaded file.
+    /// The bootstrap injection targets. MVP ships two: the **reference** floor
+    /// (a managed bootstrap file plus an `@`-import pointer in the always-loaded
+    /// file) and the **hook** (the primary injection — a `SessionStart` event
+    /// running the front door).
     pub inject: Vec<InjectTarget>,
 
     /// Where and what to allowlist so `jigc` runs without friction.
     pub allowlist: Allowlist,
 }
 
-/// One bootstrap injection target. MVP carries only the `line` variant (the
-/// universal floor); the `hook` / `resume` variants are post-MVP.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct InjectTarget {
-    /// The static-line floor: inject the bootstrap line into this file.
-    pub line: LineTarget,
+impl AdapterProfile {
+    /// The first inject **reference** floor target, if the profile declares one —
+    /// the always-loaded-file pointer `setup` injects.
+    pub fn reference(&self) -> Option<&ReferenceTarget> {
+        self.inject.iter().find_map(|t| match t {
+            InjectTarget::Reference { reference } => Some(reference),
+            InjectTarget::Hook { .. } => None,
+        })
+    }
+
+    /// The first inject **hook** target, if the profile declares one — the
+    /// session-event binding `setup` installs into the assistant settings file.
+    pub fn hook(&self) -> Option<&HookTarget> {
+        self.inject.iter().find_map(|t| match t {
+            InjectTarget::Hook { hook } => Some(hook),
+            InjectTarget::Reference { .. } => None,
+        })
+    }
 }
 
-/// The static-line floor target: which always-loaded file the bootstrap line
-/// lands in, and at what scope.
+/// One bootstrap injection target — an **untagged** variant keyed by its single
+/// YAML map key (`reference:` or `hook:`), the natural config-family shape (each
+/// list entry is a one-key map). MVP carries the `reference` floor and the `hook`
+/// (the primary `SessionStart` injection); the `resume` hook and the spawn variant
+/// are post-MVP. Untagged (not serde's externally-tagged enum) because the YAML is
+/// a map-with-one-key, not a `!Tag`; the two variants' fields are disjoint, so
+/// disambiguation is unambiguous.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum InjectTarget {
+    /// The reference floor: write the bootstrap into a managed file and point the
+    /// always-loaded file at it with an import line.
+    Reference {
+        /// The reference floor target.
+        reference: ReferenceTarget,
+    },
+
+    /// The hook injection: bind an assistant session event (e.g. `SessionStart`)
+    /// to a `jigc` command so the bootstrap reaches the agent at session start.
+    Hook {
+        /// The hook injection target.
+        hook: HookTarget,
+    },
+}
+
+/// The reference floor target: which always-loaded file gets the import line,
+/// the managed bootstrap file it points `to`, and the import `syntax`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct LineTarget {
-    /// The always-loaded file to inject into (e.g. `CLAUDE.md`).
+pub struct ReferenceTarget {
+    /// The always-loaded file the import line lands in (e.g. `CLAUDE.md`).
     pub file: String,
 
-    /// The scope the file is resolved at (e.g. `project-root`).
-    pub scope: String,
+    /// The managed bootstrap file the import points at (e.g. `.jigc/AGENT.md`).
+    pub to: String,
+
+    /// The import syntax the assistant understands (e.g. `at-import` →
+    /// `@<to>`).
+    pub syntax: String,
+}
+
+/// The hook injection target: the assistant session `event` to bind and the
+/// `jigc` command to `run` on it (e.g. `SessionStart` → `jigc start`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HookTarget {
+    /// The assistant session event to bind (e.g. `SessionStart`). Matches the key
+    /// the assistant settings file groups hooks under.
+    pub event: String,
+
+    /// The `jigc` command the hook runs on the event (e.g. `jigc start` —
+    /// read-only orientation, the primary bootstrap injection).
+    pub run: String,
 }
 
 /// The allowlist target: which settings file to edit and which command patterns
@@ -131,65 +196,69 @@ impl std::error::Error for ProfileError {
     }
 }
 
-/// The marker-fenced bootstrap block injected into the always-loaded file
-/// (`CLAUDE.md`).
+/// The managed bootstrap file's contents: the canonical routing sentence as the
+/// file body, with a trailing newline.
 ///
-/// A pure function of the embedded profile contract — no filesystem. Returns the
-/// canonical routing sentence (`design/bootstrap.md` → The sentence, verbatim)
-/// wrapped in stable HTML-comment idempotency markers. `jigc setup` writes this
-/// block into the always-loaded file; on a re-run the markers let it locate and
-/// replace its own block instead of appending a duplicate.
-pub fn bootstrap_block() -> String {
-    format!("{BOOTSTRAP_START_MARKER}\n{BOOTSTRAP_SENTENCE}\n{BOOTSTRAP_END_MARKER}\n")
+/// A pure function of the embedded contract — no filesystem. The file is wholly
+/// CLI-owned and rewritten in full each `setup`, so it needs no in-file
+/// idempotency markers; the body is just the sentence.
+pub fn bootstrap_file() -> String {
+    format!("{BOOTSTRAP_SENTENCE}\n")
 }
 
-/// Idempotently write the marker-fenced bootstrap block ([`bootstrap_block`])
-/// into the host project's always-loaded file (`<repo_root>/CLAUDE.md`).
+/// Write the managed bootstrap file (`<repo_root>/.jigc/AGENT.md`) with the
+/// canonical sentence, creating `.jigc/` if needed.
 ///
-/// `jigc setup`'s static-line floor ([`assistant-adapter.md`] → Inject the
-/// bootstrap; [`bootstrap.md`] → Placement is the adapter). Idempotent by the
-/// marker fence: a missing file is created with just the block; a file without
-/// the markers gets the block **appended** (surrounding content untouched); a
-/// file already carrying the markers has only the fenced region **replaced**,
-/// leaving every byte outside the markers identical. Run twice ⇒ byte-identical
-/// file. Regenerated on upgrade, so the integration can't rot.
-pub fn inject_line(repo_root: &Path) -> std::io::Result<()> {
+/// `jigc setup`'s reference floor ([`assistant-adapter.md`] → Inject the
+/// bootstrap). Fully CLI-owned: rewritten **whole** on every run, so a re-run is
+/// byte-identical and the content stays rot-proof (the *structure-is-generated*
+/// discipline applied to the floor). Regenerated on upgrade.
+pub fn write_bootstrap_file(repo_root: &Path) -> std::io::Result<()> {
+    let target = repo_root.join(BOOTSTRAP_FILE_REL);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&target, bootstrap_file())
+}
+
+/// Idempotently inject the bare `@.jigc/AGENT.md` import line into the host
+/// project's always-loaded file (`<repo_root>/CLAUDE.md`).
+///
+/// `jigc setup`'s reference floor ([`assistant-adapter.md`] → Inject the
+/// bootstrap; [`bootstrap.md`] → Placement is the adapter). Idempotent by
+/// detecting the exact reference line: a missing file is created with the heading
+/// and the import line; a file already carrying the exact `@.jigc/AGENT.md` line
+/// is left **byte-identical** (no duplicate); a file without it gets the section
+/// **appended** (surrounding content untouched). No marker comments — the floor
+/// is a single pointer line, with the content in the managed file.
+pub fn inject_reference(repo_root: &Path) -> std::io::Result<()> {
     let target = repo_root.join("CLAUDE.md");
-    let block = bootstrap_block();
+    let section = format!("## Project interface\n\n{BOOTSTRAP_IMPORT_LINE}\n");
 
     let next = match std::fs::read_to_string(&target) {
-        // No file yet: it is exactly the block.
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => block,
+        // No file yet: it is exactly the section.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => section,
         Err(e) => return Err(e),
-        Ok(existing) => match marker_span(&existing) {
-            // Already has our fence: replace only the fenced region, leaving
-            // every byte outside it identical. `block` ends in one `\n`; the
-            // byte after the end marker (a `\n` or EOF) lives in `suffix`, so
-            // splice the block *without* its trailing newline to avoid doubling.
-            Some((start, end)) => {
-                let mut out = String::with_capacity(existing.len() + block.len());
-                out.push_str(&existing[..start]);
-                out.push_str(block.trim_end_matches('\n'));
-                out.push_str(&existing[end..]);
+        Ok(existing) => {
+            if contains_import_line(&existing) {
+                // The exact reference is already present: a byte-for-byte no-op.
+                return Ok(());
+            }
+            // Append the section, separated from existing content by a blank
+            // line. An empty file degenerates to just the section.
+            if existing.is_empty() {
+                section
+            } else {
+                let mut out = String::with_capacity(existing.len() + section.len() + 2);
+                out.push_str(&existing);
+                if !out.ends_with('\n') {
+                    out.push('\n');
+                }
+                out.push('\n');
+                out.push_str(&section);
                 out
             }
-            // No fence: append the block, separated from existing content by a
-            // blank line. An empty file degenerates to just the block.
-            None => {
-                if existing.is_empty() {
-                    block
-                } else {
-                    let mut out = String::with_capacity(existing.len() + block.len() + 2);
-                    out.push_str(&existing);
-                    if !out.ends_with('\n') {
-                        out.push('\n');
-                    }
-                    out.push('\n');
-                    out.push_str(&block);
-                    out
-                }
-            }
-        },
+        }
     };
 
     std::fs::write(&target, next)
@@ -212,14 +281,7 @@ pub fn inject_line(repo_root: &Path) -> std::io::Result<()> {
 pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
     let target = repo_root.join(&profile.allowlist.file);
 
-    let mut settings: serde_json::Value = match std::fs::read_to_string(&target) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            serde_json::Value::Object(serde_json::Map::new())
-        }
-        Err(e) => return Err(e),
-        Ok(text) => serde_json::from_str(&text)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
-    };
+    let mut settings = read_settings(&target)?;
 
     // Navigate/create `permissions.allow`, then ensure each permit is present.
     let allow = settings
@@ -256,35 +318,149 @@ pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
         }
     }
 
+    write_settings(&target, &settings)
+}
+
+/// Idempotently install the profile's session-event **hook** into the host
+/// project's assistant settings file (`<repo_root>/<profile.allowlist.file>`,
+/// e.g. `.claude/settings.json`).
+///
+/// `jigc setup`'s primary bootstrap injection (`design/assistant-adapter.md` →
+/// Inject the bootstrap: hook (primary); `DECISIONS.md` 2026-05-31 → pull the
+/// SessionStart hook into the MVP adapter). The same **structure-aware** JSON
+/// merge as the allowlist: ensure a `hooks.<event>` matcher exists whose inner
+/// `hooks` array carries a `{ type: command, command: <run> }` entry. Idempotent
+/// by **structural presence** — if any matcher under the event already runs the
+/// command, it is a no-op, so a re-run is byte-identical; unrelated events,
+/// matchers, and top-level keys are preserved. Shares the file with the allowlist
+/// merge: each is an independent structural no-op on a re-run, so running both
+/// leaves the file byte-stable. A no-op for a profile that declares no hook.
+pub fn inject_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+    let Some(hook) = profile.hook() else {
+        return Ok(());
+    };
+    let target = repo_root.join(&profile.allowlist.file);
+
+    let mut settings = read_settings(&target)?;
+
+    // Navigate/create `hooks.<event>` (an array of matcher objects).
+    let event_matchers = settings
+        .as_object_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "settings root is not a JSON object",
+            )
+        })?
+        .entry("hooks")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "`hooks` is not a JSON object",
+            )
+        })?
+        .entry(hook.event.clone())
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "`hooks.<event>` is not a JSON array",
+            )
+        })?;
+
+    // Idempotent by structural presence: bail if any matcher already runs the
+    // command.
+    let already_present = event_matchers.iter().any(|matcher| {
+        matcher
+            .get("hooks")
+            .and_then(|h| h.as_array())
+            .is_some_and(|inner| {
+                inner
+                    .iter()
+                    .any(|cmd| cmd.get("command").and_then(|c| c.as_str()) == Some(&hook.run))
+            })
+    });
+    if !already_present {
+        event_matchers.push(serde_json::json!({
+            "hooks": [ { "type": "command", "command": hook.run } ]
+        }));
+    }
+
+    write_settings(&target, &settings)
+}
+
+/// Read the assistant settings file as a JSON value, treating an absent file as
+/// an empty object — the shared open step for the structure-aware settings merges
+/// ([`inject_allowlist`], [`inject_hook`]).
+fn read_settings(target: &Path) -> std::io::Result<serde_json::Value> {
+    match std::fs::read_to_string(target) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Ok(serde_json::Value::Object(serde_json::Map::new()))
+        }
+        Err(e) => Err(e),
+        Ok(text) => serde_json::from_str(&text)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e)),
+    }
+}
+
+/// Write `settings` back as pretty JSON with a single trailing newline, creating
+/// the parent dir if needed — the shared write step for the settings merges.
+fn write_settings(target: &Path, settings: &serde_json::Value) -> std::io::Result<()> {
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let mut out = serde_json::to_string_pretty(&settings)
+    let mut out = serde_json::to_string_pretty(settings)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     out.push('\n');
-    std::fs::write(&target, out)
+    std::fs::write(target, out)
 }
 
-/// Locate the byte span of the marker-fenced bootstrap block in `content`, from
-/// the start of the start marker to the end of the end marker (exclusive of any
-/// following newline). Returns `None` when either marker is absent. The first
-/// occurrence of each marker is used; on a re-run we wrote exactly one fence, so
-/// a conformant file has exactly one.
-fn marker_span(content: &str) -> Option<(usize, usize)> {
-    let start = content.find(BOOTSTRAP_START_MARKER)?;
-    let end_marker = content[start..].find(BOOTSTRAP_END_MARKER)?;
-    let end = start + end_marker + BOOTSTRAP_END_MARKER.len();
-    Some((start, end))
+/// Initialize the in-repo **project cascade layer** so the project resolves as
+/// *set up* (`design/assistant-adapter.md` → Generated, minimal, regenerated;
+/// `DECISIONS.md` 2026-05-31 → adapter install reworked).
+///
+/// Creates `<repo_root>/.jigc/config/` (the project layer — orientation's
+/// clean/unset discriminator keys on its presence, `crate::locate` →
+/// `PROJECT_CONFIG_REL`) with a tracked `.gitkeep` so git keeps the otherwise
+/// empty dir, and ensures `<repo_root>/.jigc/.gitignore` ignores the transient
+/// subdirs (`tasks/`/`index/`/`state/`) so `config/`, its `.gitkeep`, and
+/// `AGENT.md` are committed while the working area is not (mirrors
+/// `task.rs::ensure_jigc_gitignore`). Idempotent: an existing `.gitignore` is
+/// left untouched, and the empty `.gitkeep` is rewritten byte-identically.
+pub fn init_project_layer(repo_root: &Path) -> std::io::Result<()> {
+    let config_dir = repo_root.join(".jigc").join("config");
+    std::fs::create_dir_all(&config_dir)?;
+    std::fs::write(config_dir.join(".gitkeep"), b"")?;
+
+    let gitignore = repo_root.join(".jigc").join(".gitignore");
+    if !gitignore.exists() {
+        std::fs::write(&gitignore, "tasks/\nindex/\nstate/\n")?;
+    }
+    Ok(())
 }
 
-/// Opening idempotency marker for the bootstrap block (decided 2026-05-31). An
-/// HTML comment so it is invisible in rendered markdown; the `jigc:` namespace
-/// keeps it unambiguous against any other tool's markers.
-const BOOTSTRAP_START_MARKER: &str = "<!-- jigc:bootstrap:start -->";
+/// Whether `content` already carries the exact bare `@.jigc/AGENT.md` import
+/// line — the idempotency check for [`inject_reference`]. Matches a line that is
+/// exactly the import (after trimming surrounding whitespace), so a re-run that
+/// finds it is a byte-for-byte no-op.
+fn contains_import_line(content: &str) -> bool {
+    content
+        .lines()
+        .any(|line| line.trim() == BOOTSTRAP_IMPORT_LINE)
+}
 
-/// Closing idempotency marker for the bootstrap block. `jigc setup` replaces the
-/// span between the start and end markers, making re-injection idempotent.
-const BOOTSTRAP_END_MARKER: &str = "<!-- jigc:bootstrap:end -->";
+/// The managed bootstrap file's repo-relative path (`.jigc/AGENT.md`) — the
+/// `to` target the always-loaded file imports. Kept out of the cascade config
+/// dir `.jigc/config/` so the cascade loader never trips on a markdown file
+/// (`DECISIONS.md` 2026-05-31 → adapter install reworked).
+const BOOTSTRAP_FILE_REL: &str = ".jigc/AGENT.md";
+
+/// The bare `@`-import line injected into the always-loaded file — a Claude Code
+/// import pointing at the managed bootstrap file. The whole floor in `CLAUDE.md`.
+const BOOTSTRAP_IMPORT_LINE: &str = "@.jigc/AGENT.md";
 
 /// The canonical routing sentence, verbatim from `design/bootstrap.md` → The
 /// sentence. The backticks are content (they fence the command tokens, as in the
@@ -318,41 +494,58 @@ mod tests {
 
     /// Golden over the embedded `claude-code.yaml` bytes — the canonical profile
     /// contract. The file *is* the source of truth (no serializer here), so the
-    /// golden pins exactly the MVP bytes that ship: the inject line floor + the
-    /// allowlist, and nothing else (no hook/spawn — those are post-MVP).
+    /// golden pins exactly the MVP bytes that ship: the inject reference floor +
+    /// the `SessionStart` hook + the allowlist, and nothing else (no `Resume`
+    /// hook / spawn — those are post-MVP).
     #[test]
     fn claude_code_profile_bytes_are_canonical() {
         let bytes = include_str!("../adapters/claude-code.yaml");
         insta::assert_snapshot!(bytes, @r###"
         assistant: claude-code
         inject:
-          - line: { file: CLAUDE.md, scope: project-root }
+          - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }
+          - hook: { event: SessionStart, run: "jigc start" }
         allowlist:
           file: .claude/settings.json
           permit: ["jigc *"]
         "###);
     }
 
-    /// The loader deserializes the shipped profile and exposes the two MVP
-    /// surfaces: the inject **line** target is `CLAUDE.md` (the universal floor),
-    /// the **allowlist** file is `.claude/settings.json`, and the permit pattern
-    /// is `jigc *`.
+    /// The loader deserializes the shipped profile and exposes the MVP surfaces:
+    /// the inject **reference** target points `CLAUDE.md` at the managed
+    /// `.jigc/AGENT.md` (the universal floor), the inject **hook** binds
+    /// `SessionStart` to `jigc start` (the primary injection), the **allowlist**
+    /// file is `.claude/settings.json`, and the permit pattern is `jigc *`.
     #[test]
     fn claude_code_profile_loads_with_inject_and_allowlist_targets() {
         let profile = load_profile("claude-code").expect("the shipped profile loads");
 
         assert_eq!(profile.assistant, "claude-code");
 
+        let reference = profile
+            .reference()
+            .expect("the profile declares a reference floor");
         assert_eq!(
-            profile.inject.len(),
-            1,
-            "MVP ships exactly the static-line floor; got {:?}",
-            profile.inject,
+            reference.file, "CLAUDE.md",
+            "the inject reference floor targets CLAUDE.md",
         );
         assert_eq!(
-            profile.inject[0].line.file, "CLAUDE.md",
-            "the inject line floor targets CLAUDE.md",
+            reference.to, ".jigc/AGENT.md",
+            "the inject reference points at the managed `.jigc/AGENT.md`",
         );
+        assert_eq!(
+            reference.syntax, "at-import",
+            "the inject reference uses the at-import syntax",
+        );
+
+        let hook = profile
+            .hook()
+            .expect("the profile declares a SessionStart hook");
+        assert_eq!(
+            hook.event, "SessionStart",
+            "the hook binds the SessionStart event"
+        );
+        assert_eq!(hook.run, "jigc start", "the hook runs bare `jigc start`");
 
         assert_eq!(
             profile.allowlist.file, ".claude/settings.json",
@@ -365,18 +558,14 @@ mod tests {
         );
     }
 
-    /// Golden over [`bootstrap_block`]: the canonical routing sentence
-    /// (`design/bootstrap.md` → The sentence, verbatim) fenced by the pinned
-    /// idempotency markers. Byte-exact: start marker, blank line, the sentence,
-    /// blank line, end marker, trailing newline. This is the exact text
-    /// `jigc setup` injects into `CLAUDE.md`; the markers let a re-run find and
-    /// replace its own block rather than appending a duplicate.
+    /// Golden over [`bootstrap_file`]: the canonical routing sentence
+    /// (`design/bootstrap.md` → The sentence, verbatim) as the managed file body,
+    /// with a single trailing newline. This is the exact content `jigc setup`
+    /// writes into `.jigc/AGENT.md` (rewritten whole each run — no markers).
     #[test]
-    fn bootstrap_block_is_the_marker_fenced_sentence() {
-        insta::assert_snapshot!(bootstrap_block(), @r###"
-        <!-- jigc:bootstrap:start -->
+    fn bootstrap_file_is_the_sentence_body() {
+        insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
-        <!-- jigc:bootstrap:end -->
         "###);
     }
 
@@ -413,126 +602,117 @@ mod tests {
     }
 
     /// First inject into a project with **no** `CLAUDE.md` creates the file with
-    /// just the block; a second inject is a no-op at the byte level (run twice ⇒
-    /// byte-identical). The created-file form is golden-locked: exactly the
-    /// fenced block, nothing else.
+    /// the heading + the bare import line; a second inject is a no-op at the byte
+    /// level (run twice ⇒ byte-identical). The created-file form is golden-locked:
+    /// the `## Project interface` heading and the bare `@.jigc/AGENT.md` line, no
+    /// marker comments.
     #[test]
     fn inject_creates_then_is_idempotent() {
         let dir = TempDir::new();
         let claude_md = dir.path().join("CLAUDE.md");
 
-        inject_line(dir.path()).expect("first inject");
+        inject_reference(dir.path()).expect("first inject");
         assert!(claude_md.exists(), "inject creates CLAUDE.md when absent");
         let after_first = std::fs::read_to_string(&claude_md).expect("read after first");
 
-        inject_line(dir.path()).expect("second inject");
+        inject_reference(dir.path()).expect("second inject");
         let after_second = std::fs::read_to_string(&claude_md).expect("read after second");
 
         assert_eq!(
             after_first, after_second,
             "inject is idempotent: a second run leaves the file byte-identical",
         );
+        assert!(
+            !after_first.contains("<!-- jigc:bootstrap"),
+            "no marker comments in CLAUDE.md, got:\n{after_first}",
+        );
 
         insta::assert_snapshot!(after_first, @r###"
-        <!-- jigc:bootstrap:start -->
-        `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
-        <!-- jigc:bootstrap:end -->
+        ## Project interface
+
+        @.jigc/AGENT.md
         "###);
     }
 
-    /// Inject into a `CLAUDE.md` that already has user prose **and** a stale
-    /// block replaces only the fenced region: the user content above and below
-    /// the markers stays byte-identical, only the block's interior is refreshed.
-    /// A re-run is then idempotent.
+    /// Inject into a `CLAUDE.md` that already has user prose but **no** reference
+    /// appends the section at the end, preserving the existing content byte-for-
+    /// byte, and re-running does not duplicate it.
     #[test]
-    fn inject_replaces_only_between_markers() {
-        let dir = TempDir::new();
-        let claude_md = dir.path().join("CLAUDE.md");
-
-        // A file with user prose around a *stale* block (a marker fence whose
-        // interior differs from the current bootstrap sentence).
-        let preexisting = "\
-# My Project
-
-Some project rules a human wrote.
-
-<!-- jigc:bootstrap:start -->
-STALE sentence from an older jigc version.
-<!-- jigc:bootstrap:end -->
-
-More rules below, also human-authored.
-";
-        std::fs::write(&claude_md, preexisting).expect("seed CLAUDE.md");
-
-        inject_line(dir.path()).expect("inject over a stale block");
-        let after = std::fs::read_to_string(&claude_md).expect("read after inject");
-
-        assert!(
-            after.starts_with("# My Project\n\nSome project rules a human wrote.\n"),
-            "user prose above the block is preserved byte-for-byte, got:\n{after}",
-        );
-        assert!(
-            after.ends_with("More rules below, also human-authored.\n"),
-            "user prose below the block is preserved byte-for-byte, got:\n{after}",
-        );
-        assert!(
-            !after.contains("STALE sentence"),
-            "the stale block interior is replaced, got:\n{after}",
-        );
-        assert_eq!(
-            after.matches(BOOTSTRAP_START_MARKER).count(),
-            1,
-            "exactly one block — no duplicate appended, got:\n{after}",
-        );
-        assert!(
-            after.contains("never read or edit managed docs directly"),
-            "the current bootstrap sentence is present, got:\n{after}",
-        );
-
-        // Idempotent: a second inject over the now-current block is a no-op.
-        inject_line(dir.path()).expect("second inject");
-        let after_second = std::fs::read_to_string(&claude_md).expect("read after second");
-        assert_eq!(after, after_second, "re-inject is byte-identical");
-
-        insta::assert_snapshot!(after, @r###"
-        # My Project
-
-        Some project rules a human wrote.
-
-        <!-- jigc:bootstrap:start -->
-        `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
-        <!-- jigc:bootstrap:end -->
-
-        More rules below, also human-authored.
-        "###);
-    }
-
-    /// Append into a `CLAUDE.md` that has user prose but **no** block adds the
-    /// fenced block at the end, preserving the existing content, and re-running
-    /// does not duplicate it.
-    #[test]
-    fn inject_appends_when_no_marker_present() {
+    fn inject_appends_when_reference_absent() {
         let dir = TempDir::new();
         let claude_md = dir.path().join("CLAUDE.md");
         std::fs::write(&claude_md, "# My Project\n\nHuman rules.\n").expect("seed CLAUDE.md");
 
-        inject_line(dir.path()).expect("first inject");
+        inject_reference(dir.path()).expect("first inject");
         let after_first = std::fs::read_to_string(&claude_md).expect("read after first");
         assert!(
             after_first.starts_with("# My Project\n\nHuman rules.\n"),
             "existing content is preserved, got:\n{after_first}",
         );
         assert_eq!(
-            after_first.matches(BOOTSTRAP_START_MARKER).count(),
+            after_first.matches(BOOTSTRAP_IMPORT_LINE).count(),
             1,
-            "the block is appended once, got:\n{after_first}",
+            "the reference is appended once, got:\n{after_first}",
         );
 
-        inject_line(dir.path()).expect("second inject");
+        inject_reference(dir.path()).expect("second inject");
         let after_second = std::fs::read_to_string(&claude_md).expect("read after second");
         assert_eq!(
             after_first, after_second,
             "appending is idempotent: run twice ⇒ byte-identical",
+        );
+
+        insta::assert_snapshot!(after_first, @r###"
+        # My Project
+
+        Human rules.
+
+        ## Project interface
+
+        @.jigc/AGENT.md
+        "###);
+    }
+
+    /// A `CLAUDE.md` that already carries the exact bare `@.jigc/AGENT.md` line —
+    /// even under a different heading the human wrote — is left **byte-identical**:
+    /// the idempotency keys on the bare reference line, not on our heading.
+    #[test]
+    fn inject_leaves_existing_reference_untouched() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+        let preexisting = "# My Project\n\n## Imports\n\n@.jigc/AGENT.md\n\nMore rules.\n";
+        std::fs::write(&claude_md, preexisting).expect("seed CLAUDE.md");
+
+        inject_reference(dir.path()).expect("inject over an existing reference");
+        let after = std::fs::read_to_string(&claude_md).expect("read after inject");
+
+        assert_eq!(
+            after, preexisting,
+            "a file already carrying the reference is left byte-identical, got:\n{after}",
+        );
+    }
+
+    /// [`write_bootstrap_file`] writes the managed `.jigc/AGENT.md` with the
+    /// sentence body, creating `.jigc/` when absent, and a re-run is byte-identical
+    /// (the file is rewritten whole each time).
+    #[test]
+    fn bootstrap_file_written_then_idempotent() {
+        let dir = TempDir::new();
+        let agent_md = dir.path().join(".jigc/AGENT.md");
+
+        write_bootstrap_file(dir.path()).expect("first write");
+        assert!(
+            agent_md.exists(),
+            "writes `.jigc/AGENT.md`, creating `.jigc/`"
+        );
+        let after_first = std::fs::read_to_string(&agent_md).expect("read after first");
+        assert_eq!(after_first, bootstrap_file());
+
+        write_bootstrap_file(dir.path()).expect("second write");
+        let after_second = std::fs::read_to_string(&agent_md).expect("read after second");
+        assert_eq!(
+            after_first, after_second,
+            "rewriting whole is byte-identical on a re-run",
         );
     }
 
@@ -640,6 +820,109 @@ More rules below, also human-authored.
           "permissions": {
             "allow": [
               "Bash(ls:*)",
+              "jigc *"
+            ]
+          }
+        }
+        "###);
+    }
+
+    /// First hook install into a project with **no** `.claude/settings.json`
+    /// creates the file with a `hooks.SessionStart` matcher running `jigc start`;
+    /// a second install is a no-op at the byte level (run twice ⇒ byte-identical).
+    /// The created form is golden-locked: the Claude Code SessionStart shape.
+    #[test]
+    fn hook_added_then_idempotent() {
+        let dir = TempDir::new();
+        let settings = dir.path().join(".claude/settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        inject_hook(dir.path(), &profile).expect("first hook install");
+        assert!(
+            settings.exists(),
+            "hook install creates .claude/settings.json when absent",
+        );
+        let after_first = std::fs::read_to_string(&settings).expect("read after first");
+
+        inject_hook(dir.path(), &profile).expect("second hook install");
+        let after_second = std::fs::read_to_string(&settings).expect("read after second");
+
+        assert_eq!(
+            after_first, after_second,
+            "hook install is idempotent: a second run leaves the file byte-identical",
+        );
+        assert_eq!(
+            after_first.matches("\"jigc start\"").count(),
+            1,
+            "the hook command appears exactly once — no duplicate, got:\n{after_first}",
+        );
+
+        insta::assert_snapshot!(after_first, @r###"
+        {
+          "hooks": {
+            "SessionStart": [
+              {
+                "hooks": [
+                  {
+                    "command": "jigc start",
+                    "type": "command"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+        "###);
+    }
+
+    /// Installing the hook into a `.claude/settings.json` that already holds the
+    /// allowlist (the real `setup` ordering: allowlist first, then hook) adds the
+    /// hook **alongside** the permissions without clobbering them, and a re-run is
+    /// byte-identical.
+    #[test]
+    fn hook_install_preserves_allowlist() {
+        let dir = TempDir::new();
+        let settings = dir.path().join(".claude/settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        inject_allowlist(dir.path(), &profile).expect("allowlist first");
+        inject_hook(dir.path(), &profile).expect("hook second");
+        let after = std::fs::read_to_string(&settings).expect("read after both");
+
+        assert!(
+            after.contains("\"jigc *\""),
+            "the allowlist permit is preserved, got:\n{after}",
+        );
+        assert!(
+            after.contains("\"SessionStart\""),
+            "the hook event is present, got:\n{after}",
+        );
+
+        // Idempotent across both merges: re-running both is byte-identical.
+        inject_allowlist(dir.path(), &profile).expect("re-allowlist");
+        inject_hook(dir.path(), &profile).expect("re-hook");
+        let after_second = std::fs::read_to_string(&settings).expect("read after re-run");
+        assert_eq!(
+            after, after_second,
+            "re-running both merges is byte-identical"
+        );
+
+        insta::assert_snapshot!(after, @r###"
+        {
+          "hooks": {
+            "SessionStart": [
+              {
+                "hooks": [
+                  {
+                    "command": "jigc start",
+                    "type": "command"
+                  }
+                ]
+              }
+            ]
+          },
+          "permissions": {
+            "allow": [
               "jigc *"
             ]
           }

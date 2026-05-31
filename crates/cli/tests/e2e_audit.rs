@@ -206,24 +206,31 @@ fn scenario_1_setup_is_idempotent() {
     assert_ok(&first, "first `jigc setup`");
 
     let claude1 = fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md written");
+    let agent1 =
+        fs::read_to_string(repo.path().join(".jigc/AGENT.md")).expect(".jigc/AGENT.md written");
     let settings1 =
         fs::read_to_string(repo.path().join(".claude/settings.json")).expect("settings written");
 
-    // The bootstrap block + allowlist landed.
+    // The bootstrap reference (no marker comments) + managed file + allowlist landed.
     assert!(
-        claude1.contains("<!-- jigc:bootstrap:start -->")
-            && claude1.contains("<!-- jigc:bootstrap:end -->"),
-        "setup must inject the marker-fenced bootstrap block; got:\n{claude1}"
+        claude1.contains("@.jigc/AGENT.md") && !claude1.contains("<!-- jigc:bootstrap"),
+        "setup must inject the bare `@.jigc/AGENT.md` reference, not a marker block; got:\n{claude1}"
+    );
+    assert!(
+        agent1.contains("`jigc` is your interface to this project"),
+        ".jigc/AGENT.md must carry the bootstrap sentence; got:\n{agent1}"
     );
     assert!(
         settings1.contains("\"jigc *\""),
         "setup must allowlist `jigc *`; got:\n{settings1}"
     );
 
-    // Second run: byte-identical (no duplicate block, no duplicate permit).
+    // Second run: byte-identical (no duplicate reference, no duplicate permit).
     let second = jigc(repo.path(), home.path(), &["setup"]);
     assert_ok(&second, "second `jigc setup`");
     let claude2 = fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md present");
+    let agent2 =
+        fs::read_to_string(repo.path().join(".jigc/AGENT.md")).expect(".jigc/AGENT.md present");
     let settings2 =
         fs::read_to_string(repo.path().join(".claude/settings.json")).expect("settings present");
     assert_eq!(
@@ -231,15 +238,19 @@ fn scenario_1_setup_is_idempotent() {
         "CLAUDE.md must be byte-identical after re-run"
     );
     assert_eq!(
+        agent1, agent2,
+        ".jigc/AGENT.md must be byte-identical after re-run"
+    );
+    assert_eq!(
         settings1, settings2,
         "settings.json must be byte-identical after re-run"
     );
 
-    // Exactly one bootstrap block (not two).
+    // Exactly one bootstrap reference (not two).
     assert_eq!(
-        claude2.matches("<!-- jigc:bootstrap:start -->").count(),
+        claude2.matches("@.jigc/AGENT.md").count(),
         1,
-        "exactly one bootstrap block must exist; got:\n{claude2}"
+        "exactly one bootstrap reference must exist; got:\n{claude2}"
     );
 }
 
