@@ -969,6 +969,97 @@ pub fn compose(
     Ok(ComposedWorkflow { text })
 }
 
+/// The engine-native `workflow-refs` probe: validate a workflow definition + its
+/// expanded composition tree at compose-time, before any output reaches the agent
+/// (`validation.md` → Probes (`workflow-refs`) + Severity inventory; the seven
+/// intrinsic-blocking checks).
+///
+/// One uniform pass runs the seven checks over `(workflow_bytes, source, catalog,
+/// ctx)` — the same resolved-cascade inputs [`compose`] consumes — and returns the
+/// blocking [`Finding`]s it found (empty ⇒ the definition is conformant). The
+/// checks map onto the composition pipeline that already detects each break, so
+/// the probe is that pipeline run as a **gate**:
+///
+/// - `body-include-only` — the workflow body is include-only at top level
+///   ([`load_workflow_def`]). Also surfaces malformed/missing front-matter.
+/// - `include-resolves` / `include-cycle-absent` — every `{{include}}` resolves
+///   to a step in the cascade and the include graph is acyclic
+///   ([`expand_includes`]).
+/// - `run-marker-not-shadowed` — no step's instruction prose starts a line with
+///   the composer-reserved `Run: ` marker (`workflow-dialect.md` → Compose-time
+///   conformance); checked per expanded step body by [`find_run_shadow`].
+/// - `command-ref-resolves` / `placeholder-resolves` / `at-marker-on-non-scalar`
+///   — every `{{cli.…}}` resolves against the catalog, every `{{…}}`/`{{@…}}`
+///   data-value resolves (or is legitimately absent), and no `@` applies to a
+///   scalar ([`emit_step_body`], which drives the seq-5 resolver + the seq-6/7
+///   catalog).
+///
+/// A definition that fails to load or expand cannot be emitted, so those checks
+/// short-circuit (one structural finding, no half-built tree to walk). Once the
+/// tree expands, each step body is checked independently so multiple steps each
+/// surface their own break. The probe is a **pure function** of its inputs (the
+/// determinism boundary; no I/O, clock, or LLM) — the same resolved cascade in
+/// yields the same findings out.
+pub fn workflow_refs(
+    workflow_bytes: &[u8],
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    ctx: &crate::data_value::ComposeContext,
+) -> Vec<Finding> {
+    // body-include-only (and malformed/missing front-matter): a definition that
+    // does not load has no tree to walk.
+    let def = match load_workflow_def(workflow_bytes) {
+        Ok(def) => def,
+        Err(finding) => return vec![finding],
+    };
+
+    // include-resolves / include-cycle-absent: a tree that does not expand cannot
+    // be emitted.
+    let composition = match expand_includes(&def, source) {
+        Ok(composition) => composition,
+        Err(finding) => return vec![finding],
+    };
+
+    // Per expanded step body: the reserved-marker shadow check, then emission
+    // (command-ref-resolves / placeholder-resolves / at-marker-on-non-scalar).
+    let mut findings = Vec::new();
+    for step in &composition.steps {
+        if let Some(finding) = find_run_shadow(&step.body) {
+            findings.push(finding);
+        }
+        if let Err(finding) = emit_step_body(&step.body, ctx, catalog) {
+            findings.push(finding);
+        }
+    }
+    findings
+}
+
+/// If a step body line shadows the composer-reserved `Run: ` marker, return a
+/// blocking `run-marker-not-shadowed` [`Finding`] located at that line; else
+/// `None`.
+///
+/// `Run: ` at a line's left margin is the composer's directive, emitted only from
+/// a resolved `{{cli.…}}` command-ref (`workflow-dialect.md` → Compose-time
+/// conformance: "instruction prose in a step definition must not start a line with
+/// `Run: `"). The body here is the de-included step prose with placeholders still
+/// unresolved, so a literal `Run: ` line is authored prose, never a resolved
+/// command-ref (which is `{{ cli.… }}` at this stage). The first shadowing line is
+/// reported with a precise (step-body-relative) line pointer.
+fn find_run_shadow(body: &str) -> Option<Finding> {
+    body.lines().enumerate().find_map(|(offset, line)| {
+        line.trim_start().starts_with("Run: ").then(|| {
+            Finding::blocking(
+                "workflow-refs.run-marker-not-shadowed",
+                format!(
+                    "step prose shadows the composer-reserved `Run: ` marker: `{}`",
+                    line.trim()
+                ),
+                Location::at(offset + 1, 1),
+            )
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1977,5 +2068,129 @@ reference — make your consequences explain what changes:
             let second = compose(&def, &source, &catalog, &ctx);
             proptest::prop_assert_eq!(first, second);
         }
+    }
+
+    /// Render a findings list to a compact `code @ line:col` table for goldens.
+    fn finding_codes(findings: &[Finding]) -> String {
+        findings
+            .iter()
+            .map(|f| {
+                let loc = f
+                    .location
+                    .as_ref()
+                    .map(|l| format!("{}:{}", l.line, l.col))
+                    .unwrap_or_else(|| "-".to_owned());
+                format!("{} @ {loc}", f.code)
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Core done-criterion (`workflow_refs_flags_each_break`): the engine-native
+    /// `workflow-refs` probe runs the seven intrinsic compose-time checks over a
+    /// workflow definition + its expanded tree. A clean `single-task` yields zero
+    /// findings; six minimal negative fixtures each trip **exactly one** check with
+    /// a blocking [`Finding`] carrying the right `code`. The golden pins the
+    /// findings list (code @ line:col) per fixture, and every finding is asserted
+    /// `Severity::Blocking` (every `workflow-refs` check is intrinsic-blocking,
+    /// `validation.md` → Severity inventory).
+    #[test]
+    fn workflow_refs_flags_each_break() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        // Clean: the shipped single-task composes with zero findings.
+        let clean = workflow_refs(
+            SINGLE_TASK.as_bytes(),
+            &single_task_source(),
+            &catalog,
+            &ctx,
+        );
+        assert!(
+            clean.is_empty(),
+            "a clean single-task must yield zero findings, got {clean:?}"
+        );
+        insta::assert_snapshot!(finding_codes(&clean), @"");
+
+        // 1) A dangling include id (no step file in the cascade) → include-resolves.
+        let dangling_wf = b"---\nwhen: x\n---\n{{ include: step:not-a-step }}\n";
+        let dangling = workflow_refs(dangling_wf, &single_task_source(), &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&dangling),
+            @"workflow-refs.include-resolves @ 1:1"
+        );
+
+        // 2) A dangling `{{cli.unknown}}` command-ref → command-ref-resolves.
+        let unknown_cli = MapSource::new(&[("only", "{{ cli.unknown }}\n")]);
+        let unknown_cli_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let cli = workflow_refs(unknown_cli_wf, &unknown_cli, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&cli),
+            @"workflow-refs.command-ref-resolves @ 1:1"
+        );
+
+        // 3) A step body line literally starting `Run: ` shadows the reserved
+        //    composer marker → run-marker-not-shadowed.
+        let shadow_src = MapSource::new(&[("only", "do the thing\nRun: jigc do-it\nthen stop\n")]);
+        let shadow_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let shadow = workflow_refs(shadow_wf, &shadow_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&shadow),
+            @"workflow-refs.run-marker-not-shadowed @ 2:1"
+        );
+
+        // 4) A workflow body with a prose line → body-include-only.
+        let prose_wf = b"---\nwhen: x\n---\n{{ include: step:locate }}\nthis is prose\n";
+        let prose = workflow_refs(prose_wf, &single_task_source(), &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&prose),
+            @"workflow-refs.body-include-only @ 5:1"
+        );
+
+        // 5) An `@`-marker on a scalar-resolving path → at-marker-on-non-scalar.
+        let at_scalar_src = MapSource::new(&[("only", "{{ @task.intent }}\n")]);
+        let at_scalar_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let at_scalar = workflow_refs(at_scalar_wf, &at_scalar_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&at_scalar),
+            @"workflow-refs.at-marker-on-non-scalar @ 1:1"
+        );
+
+        // 6) An include cycle (A includes B includes A) → include-cycle-absent.
+        let cyclic_src = MapSource::new(&[
+            ("a", "prose a\n{{ include: step:b }}\n"),
+            ("b", "prose b\n{{ include: step:a }}\n"),
+        ]);
+        let cyclic_wf = b"---\nwhen: x\n---\n{{ include: step:a }}\n";
+        let cyclic = workflow_refs(cyclic_wf, &cyclic_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&cyclic),
+            @"workflow-refs.include-cycle-absent @ 1:1"
+        );
+
+        // Every finding the probe emits is intrinsic blocking.
+        for findings in [&dangling, &cli, &shadow, &prose, &at_scalar, &cyclic] {
+            assert_eq!(findings.len(), 1, "each fixture trips exactly one check");
+            assert_eq!(
+                findings[0].severity,
+                crate::finding::Severity::Blocking,
+                "every workflow-refs check is intrinsic-blocking"
+            );
+        }
+    }
+
+    /// The `placeholder-resolves` check: an undeclared data-value root (a
+    /// structurally-invalid path, not a merely-absent value) is a blocking
+    /// `workflow-refs` finding surfaced by the probe.
+    #[test]
+    fn workflow_refs_flags_undeclared_placeholder() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let src = MapSource::new(&[("only", "{{ nope.field }}\n")]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let findings = workflow_refs(wf, &src, &catalog, &ctx);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code, "workflow-refs.undeclared-root");
+        assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
     }
 }
