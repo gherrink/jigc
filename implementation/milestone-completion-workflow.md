@@ -1,6 +1,8 @@
-# Milestone workflow (audit → plan → fix → re-verify)
+# Milestone completion workflow (audit → plan → fix → re-verify)
 
-The loop for **finishing a milestone** — once its [increments](roadmap.md) are all built and individually validated ([increment workflow](increment-workflow.md)), independently **audit the whole assembled milestone** and remediate before calling it shipped. It is the outermost loop, completing the set: [design](design-workflow.md) governs a *decision*, [dev](dev-workflow.md) a *task*, [increment](increment-workflow.md) an *increment*, and this one a *milestone* — the `milestone > increment > task` hierarchy ([structural-grammar.md](../design/structural-grammar.md) → Work-units), end to end.
+The loop for **finishing a milestone** — the *completion* half of the milestone lifecycle, not the whole of it. **Planning** a milestone (decomposing it into ordered increments) is the [roadmap](roadmap.md); building those increments is the [increment workflow](increment-workflow.md). This doc owns only what comes *after* the last increment lands: once a milestone's increments are all built and individually validated, independently **audit the whole assembled milestone** and remediate before calling it shipped.
+
+It is the outermost *execution* loop, completing the set: [design](design-workflow.md) governs a *decision*, [dev](dev-workflow.md) a *task*, [increment](increment-workflow.md) an *increment*, and this one the *finishing of a milestone* — the `milestone > increment > task` hierarchy ([structural-grammar.md](../design/structural-grammar.md) → Work-units), end to end.
 
 ## Why a separate audit (the per-increment validate isn't enough)
 
