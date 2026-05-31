@@ -1,0 +1,57 @@
+---
+source: crates/engine/src/schema.rs
+expression: json
+---
+{
+  "type": "adr",
+  "location": "decisions/",
+  "id-from": "title",
+  "sections": [
+    {
+      "id": "status",
+      "header": true,
+      "fields": [
+        {
+          "id": "status",
+          "type": "enum",
+          "of": [
+            "proposed",
+            "accepted",
+            "superseded"
+          ],
+          "default": "proposed"
+        },
+        {
+          "id": "date",
+          "type": "date",
+          "set": "on-create"
+        },
+        {
+          "id": "supersedes",
+          "type": "ref",
+          "to": "adr",
+          "card": "0..1",
+          "inverse": "superseded-by"
+        }
+      ]
+    },
+    {
+      "id": "context",
+      "slot": {
+        "hint": "Why a decision was needed — the forces at play."
+      }
+    },
+    {
+      "id": "decision",
+      "slot": {
+        "hint": "What we decided, in a sentence or two."
+      }
+    },
+    {
+      "id": "consequences",
+      "slot": {
+        "hint": "Tradeoffs and follow-on effects."
+      }
+    }
+  ]
+}

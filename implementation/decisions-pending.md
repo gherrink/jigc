@@ -19,7 +19,6 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 ## Increment 2 — parser/writer
 
 - **(D) Exact canonical byte form** — the precise bytes the canonical writer emits (blank-line placement, `<!-- fields -->` sentinel spacing, field-bullet form). [storage.md](../design/storage.md) / [parsing.md](parsing.md) specify the rules; the golden tests need them pinned to literal bytes.
-- **(I) In-memory schema representation** — the Rust types the doctype YAML deserializes into (drives parse + the canonical writer).
 - **(I) pulldown-cmark handling** — offset/front-matter edge behavior (the span-precision spike flagged in [parsing.md](parsing.md) → Open questions).
 
 ## Increment 3 — compose

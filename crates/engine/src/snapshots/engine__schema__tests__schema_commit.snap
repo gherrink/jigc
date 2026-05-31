@@ -1,0 +1,26 @@
+---
+source: crates/engine/src/schema.rs
+expression: json
+---
+{
+  "type": "commit",
+  "id-from": "subject",
+  "sections": [
+    {
+      "id": "header",
+      "header": true,
+      "fields": [
+        {
+          "id": "subject",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "body",
+      "slot": {
+        "hint": "Why this change — the motivation and any notable context."
+      }
+    }
+  ]
+}

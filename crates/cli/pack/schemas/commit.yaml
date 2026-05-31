@@ -1,0 +1,13 @@
+# commit — the MVP transient doc-type. Sink = the git commit message, so it has
+# no `location:` and is never persisted as a repo file (DECISIONS.md 2026-05-31
+# → Schema model + commit/adr schema YAML). A header section + prose slots.
+type: commit
+id-from: subject
+
+sections:
+  - id: header
+    header: true
+    fields:
+      - { id: subject, type: string }
+  - id: body
+    slot: { hint: "Why this change — the motivation and any notable context." }
