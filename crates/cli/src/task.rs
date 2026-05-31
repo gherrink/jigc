@@ -307,9 +307,13 @@ impl TaskArea {
         let report = self.validate()?;
 
         // The diff-presence signal the planner's empty-commit guard needs: any
-        // working-tree change from base, or any staged managed doc.
+        // working-tree change from base, any staged managed doc, or any untracked
+        // file. `git diff <base>` lists only tracked changes, but the stage step
+        // (`git add --all`) also commits untracked files — so they count too, else
+        // an untracked-only task would abort as falsely "empty".
         let has_diff = !git_diff(&self.repo_root, &base.sha)?.trim().is_empty()
-            || !self.staged_docs()?.is_empty();
+            || !self.staged_docs()?.is_empty()
+            || !git_untracked(&self.repo_root)?.trim().is_empty();
 
         let schemas = self.schemas()?;
         let commit_schema = schemas
@@ -539,6 +543,24 @@ fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
     String::from_utf8(out.stdout).context("`git diff` produced non-UTF-8 output")
 }
 
+/// List untracked, non-ignored files via `git ls-files --others --exclude-standard`.
+/// `git diff <base>` never reports these, but the finalize stage (`git add --all`)
+/// commits them — so the empty-commit guard counts them as a diff signal.
+fn git_untracked(repo_root: &Path) -> Result<String> {
+    let out = Command::new("git")
+        .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git ls-files --others` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    String::from_utf8(out.stdout).context("`git ls-files` produced non-UTF-8 output")
+}
+
 /// Read HEAD's full SHA via `git rev-parse HEAD` (the supplied HEAD the planner
 /// checks the base pin against — `design/finalize.md` → 1. Preflight). Shells out to
 /// the user's `git` (`DECISIONS.md` 2026-05-31 → Git invocation).
@@ -658,4 +680,39 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
         .ancestors()
         .find(|dir| dir.join(".git").exists())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `git_untracked` is the empty-commit guard's untracked signal: a brand-new
+    /// file that `git diff <base>` would miss but `git add --all` would commit must
+    /// register, so an untracked-only task is not falsely treated as empty.
+    #[test]
+    fn git_untracked_reports_new_files_and_nothing_when_clean() {
+        let dir = std::env::temp_dir().join(format!("jigc-untracked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mk temp repo");
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git runs");
+        };
+        run(&["init", "-q"]);
+        // A fresh repo with no files: nothing untracked.
+        assert!(git_untracked(&dir).expect("clean").trim().is_empty());
+        // A new, unstaged file is untracked.
+        std::fs::write(dir.join("new.rs"), "fn main() {}\n").expect("write");
+        assert!(
+            git_untracked(&dir).expect("dirty").contains("new.rs"),
+            "an untracked file is reported"
+        );
+        // Once tracked (added), it is no longer "untracked".
+        run(&["add", "new.rs"]);
+        assert!(git_untracked(&dir).expect("staged").trim().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
