@@ -14,7 +14,7 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Cross-cutting — still open
 
-- **(D) Slug / minting normalization** — case/charset rules + collision-suffix form. Open in [structural-grammar.md](../design/structural-grammar.md) → Open questions. **Decide before increment 3/4** (`create` / `add-item` mint ids). The one real design decision standing between us and the write path.
+- *(none — slug / minting normalization **settled 2026-05-31**: lowercase ASCII kebab-case + transliterate non-ASCII + numeric collision suffix in task-id merge order; see [DECISIONS.md](../DECISIONS.md). The write path is unblocked.)*
 
 ## Increment 2 — parser/writer
 
@@ -30,8 +30,7 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 4 — write + finalize
 
-- **(D) Git invocation** — shell out to the `git` binary vs a Rust lib (`gitoxide` / `git2`). Lean shell-out (respects user hooks; matches "CLI orchestrates, git executes" — [storage.md](../design/storage.md), [finalize.md](../design/finalize.md)), but a real call.
-- **(D) Blocked / error payload shape** — the structured error+route the agent receives on a block. Open in [write-commands.md](../design/write-commands.md) → Open questions; touches finalize's hook-output relay too ([finalize.md](../design/finalize.md) → Open questions).
+- *(both **settled 2026-05-31** — git invocation: shell out to the `git` binary; blocked/error payload: reuse the `finding` shape (severity + located message + `route`). See [DECISIONS.md](../DECISIONS.md).)*
 
 ## Increment 5 — persisted ADR + edge index
 
@@ -40,6 +39,6 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 6 — adapter & ship
 
-- **(D) Product name** — still `jigc` placeholder ([VISION.md](../VISION.md)). Shipping wants the real name decided before this increment.
+- **(D) Product name** — *settled 2026-05-31: ship the MVP as `jigc` (adopt the placeholder as the name). See [DECISIONS.md](../DECISIONS.md).*
 - **(D) `jigc setup` injection mechanism** — idempotent markers for writing the bootstrap line + allowlist into `CLAUDE.md` / `.claude/settings.json` ([assistant-adapter.md](../design/assistant-adapter.md)).
 - **(I) Release / cross-compile + quickstart** — packaging the single binary.

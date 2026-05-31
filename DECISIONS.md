@@ -689,3 +689,23 @@ Also established the **decision-backlog** convention: `implementation/decisions-
 ### `--format` wiring for orientation (inc 1)
 
 - **`orient` now returns a structured `engine::result::OrientationView`, not a pre-rendered `String`** — a `#[serde(tag = "state")]` enum (`unset-project` | `clean { header, workflows }`), each stamping `SCHEMA_VERSION`. It's the versioned contract the renderer maps over (presentation stays in `cli::render`, engine stays presentation-free). **`render::orientation(Format, &OrientationView)`** is the one `Format → renderer` mapping: `agent`/`human` → the existing per-state agent-text (with `ROUTING_FOOTER`); `json` → generic `render::json` (serde, **no footer**). `run_orient(format)` threads `self.format` through; agent-text bytes for both states are byte-for-byte unchanged (insta snapshots untouched). MVP `human` renders identically to `agent` (TUI is post-MVP).
+
+## Increment 2–6 design-gate pre-decisions (settled 2026-05-31)
+
+Decided up front so increments 2–6 run autonomously without stopping to surface a genuine fork mid-run (the four `(D)` gates that needed a human call; the rest are doc-elaborations the executor pins+logs at pickup).
+
+### Slug / minting normalization (cross-cutting; blocks inc 3/4 write path)
+
+- **Frozen content-slugs are lowercase ASCII kebab-case.** Normalize the id-source: lowercase; spaces and `_` → `-`; **transliterate non-ASCII to ASCII** (e.g. `café`→`cafe`); strip to `[a-z0-9-]`; collapse repeated `-` and trim leading/trailing `-`; cap at ~50 chars truncated at a word (`-`) boundary; empty result falls back to the type name. **Collisions get a numeric suffix** `-2`, `-3`, … applied **deterministically in task-id merge order** (the only suffix site at task scope is the `fan-out`/`join` parallel case; serial collisions reject per write-commands.md). Numeric (not hash) for readability; the suffix is disambiguation, not ordering, so it doesn't violate "ids must not imply order". Closes structural-grammar.md → Open questions (minting mechanics).
+
+### Git invocation at finalize (inc 4)
+
+- **Shell out to the user's `git` binary** (not git2/gitoxide). Respects the user's hooks/config, matches "CLI orchestrates, git executes", keeps the pure-Rust no-C-dep cross-compile story, requires `git` on PATH (already assumed by the adapter). Closes decisions-pending inc-4 (D).
+
+### Blocked / error payload shape (inc 4)
+
+- **A block reuses the `finding` shape** — severity + located message + a `route` directing the agent's next action — the same envelope as validation findings and conformance diagnostics (validation.md → "one finding shape, two producers"). One channel the agent and renderers learn once; a hard block is a blocking-severity finding carrying a route, not a separate type. Closes decisions-pending inc-4 (D) and the write-commands.md / finalize.md open question on block payloads.
+
+### Product name (inc 6)
+
+- **Ship the MVP as `jigc`** — adopt the placeholder as the real name; no rename pass in inc 6. A later rename (if a better name emerges) is a mechanical find-replace, not a blocker. Resolves the `jigc` token placeholders across the docs for MVP purposes. Closes decisions-pending inc-6 (D, product name).
