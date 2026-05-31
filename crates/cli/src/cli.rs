@@ -11,6 +11,7 @@ use crate::doc::DocCommand;
 use crate::orient;
 use crate::render;
 use crate::start;
+use crate::task::TaskCommand;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::process::ExitCode;
 
@@ -55,6 +56,14 @@ pub enum Command {
         #[command(subcommand)]
         verb: DocCommand,
     },
+
+    /// The task lifecycle surface — `jigc task <verb> <id>` (`diff` · `validate` ·
+    /// `discard`; `finalize` lands next) over a named task's working area
+    /// (`design/write-commands.md` → Lifecycle).
+    Task {
+        #[command(subcommand)]
+        verb: TaskCommand,
+    },
 }
 
 impl Cli {
@@ -69,8 +78,23 @@ impl Cli {
                 intent: Some(intent),
             } => run_compose(self.format, &intent),
             Command::Doc { verb } => run_doc(verb),
+            Command::Task { verb } => run_task(self.format, verb),
         }
     }
+}
+
+/// Dispatch a `jigc task <verb> <id>` lifecycle verb against the current working
+/// directory. The selected `--format` flows through to the finding renderer for
+/// `validate`; `diff` / `discard` produce plain output.
+fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    verb.dispatch(&cwd, format)
 }
 
 /// Dispatch a `jigc doc <verb>` write against the active task in the current

@@ -14,6 +14,7 @@ mod orient;
 mod pack;
 mod render;
 mod start;
+mod task;
 
 use clap::Parser;
 use std::process::ExitCode;

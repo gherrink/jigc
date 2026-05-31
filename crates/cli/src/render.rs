@@ -11,7 +11,8 @@
 
 use crate::cli::Format;
 use engine::compose::ComposedWorkflow;
-use engine::result::{Orientation, OrientationView};
+use engine::finding::{Finding, Severity};
+use engine::result::{Orientation, OrientationView, ValidationReport};
 use serde::Serialize;
 
 /// The one-line routing footer appended to every agent-text / human CLI output.
@@ -119,6 +120,52 @@ pub fn composed(format: Format, view: &ComposedWorkflow) -> String {
             out
         }
     }
+}
+
+/// Render a [`ValidationReport`] to the surface `format` selects: `agent` / `human`
+/// emit one line per finding (`severity · code — message`, with an indented
+/// `route:` line where the finding carries one) followed by the routing footer;
+/// `json` emits the **generic** JSON projection of the report with **no** footer
+/// (consumed by tooling, not the agent's reading flow). A clean report renders a
+/// single `no findings` line so the agent sees a positive signal.
+///
+/// This is the `task validate` view (`design/validation.md` → How it gates
+/// `finalize`: validate previews what finalize blocks on). The exit code — which
+/// tracks `report.has_blocking()` — is the dispatcher's concern, not the renderer's.
+pub fn validation(format: Format, report: &ValidationReport) -> String {
+    match format {
+        Format::Json => json(report),
+        Format::Agent | Format::Human => {
+            let mut out = String::new();
+            if report.findings.is_empty() {
+                out.push_str("no findings — the task validates clean\n");
+            } else {
+                for finding in &report.findings {
+                    out.push_str(&finding_line(finding));
+                }
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
+/// `route:` line when the finding carries a repair direction (the settled
+/// block-payload envelope — a hard block is a blocking finding carrying a route).
+fn finding_line(finding: &Finding) -> String {
+    let severity = match finding.severity {
+        Severity::Blocking => "blocking",
+        Severity::Warning => "warning",
+        Severity::Advisory => "advisory",
+    };
+    let mut line = format!("{severity} · {} — {}\n", finding.code, finding.message);
+    if let Some(route) = &finding.route {
+        line.push_str("  route: ");
+        line.push_str(route);
+        line.push('\n');
+    }
+    line
 }
 
 /// Render the **unset project** orientation (`design/bootstrap.md` → Orientation
@@ -265,5 +312,54 @@ mod tests {
 
         // No footer in JSON output.
         assert!(!rendered.contains(ROUTING_FOOTER));
+    }
+
+    /// A blocking [`ValidationReport`] renders one `severity · code — message` line
+    /// per finding (with an indented `route:` line where present) and ends with the
+    /// routing footer; the clean report renders a positive `no findings` line + the
+    /// footer. JSON is the generic projection with no footer.
+    #[test]
+    fn render_validation_lists_findings_or_clean_and_footers_agent_text() {
+        use engine::finding::{Finding, Location, Severity};
+
+        let report = ValidationReport::new(vec![
+            Finding {
+                severity: Severity::Blocking,
+                code: "file-state.hash-matches".into(),
+                message: "on-disk content of `docs/commit:x.md` differs".into(),
+                location: Some(Location::addressed("docs/commit:x.md", 1, 1)),
+                route: Some("reconcile docs/commit:x.md".into()),
+            },
+            Finding {
+                severity: Severity::Blocking,
+                code: "schema-conformance.required-slot-present".into(),
+                message: "required slot in section `summary` is empty".into(),
+                location: None,
+                route: None,
+            },
+        ]);
+
+        let agent = validation(Format::Agent, &report);
+        insta::assert_snapshot!(agent, @r"
+        blocking · file-state.hash-matches — on-disk content of `docs/commit:x.md` differs
+          route: reconcile docs/commit:x.md
+        blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        assert!(agent.ends_with(ROUTING_FOOTER));
+        assert_eq!(validation(Format::Human, &report), agent);
+
+        // A clean report renders the positive line + the footer.
+        let clean = validation(Format::Agent, &ValidationReport::new(Vec::new()));
+        insta::assert_snapshot!(clean, @r"
+        no findings — the task validates clean
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+
+        // JSON is the generic projection of the report — no footer.
+        let json_out = validation(Format::Json, &report);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let back: ValidationReport = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, report);
     }
 }
