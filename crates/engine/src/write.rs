@@ -2223,10 +2223,17 @@ fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
                 Err(format!("{value:?} is not an integer"))
             }
         }
-        // Non-empty opaque value; deeper adjudication is a finalize / pack concern.
+        // Non-empty, single-line opaque value; deeper adjudication is a finalize /
+        // pack concern. Control chars (newline/tab/…) are rejected so a value can
+        // never inject a second field line when spliced onto its `- key: value` line.
         FieldType::String | FieldType::Ref | FieldType::CodeAnchor => {
             if value.is_empty() {
                 Err(format!("{:?} must not be empty", field.id))
+            } else if value.chars().any(|c| c.is_control()) {
+                Err(format!(
+                    "{:?} must not contain control characters",
+                    field.id
+                ))
             } else {
                 Ok(())
             }
@@ -2249,7 +2256,16 @@ fn is_iso_date(s: &str) -> bool {
     }
     let month: u8 = s[5..7].parse().unwrap_or(0);
     let day: u8 = s[8..10].parse().unwrap_or(0);
-    (1..=12).contains(&month) && (1..=31).contains(&day)
+    // Per-month day ceiling; February allows 29 unconditionally (no leap-year
+    // computation in this minimal check — the canonical date comes from the
+    // `set: on-create` deriver, this only rejects obvious malformations).
+    let max_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => 29,
+        _ => return false,
+    };
+    (1..=max_day).contains(&day)
 }
 
 /// The validate-after-write gate over an already-edited buffer: re-parse `edited`
@@ -2652,6 +2668,11 @@ Each service drops its local limiter.
         assert!(check_value(&date, &scalar("2026-05-31")).is_ok());
         assert!(check_value(&date, &scalar("2026-13-01")).is_err());
         assert!(check_value(&date, &scalar("not a date")).is_err());
+        // impossible calendar dates are rejected, not merely out-of-range months/days
+        assert!(check_value(&date, &scalar("2026-02-31")).is_err());
+        assert!(check_value(&date, &scalar("2026-04-31")).is_err());
+        assert!(check_value(&date, &scalar("2026-01-31")).is_ok());
+        assert!(check_value(&date, &scalar("2026-02-29")).is_ok());
 
         // bool
         let flag = field(FieldType::Bool, None);
@@ -2671,6 +2692,11 @@ Each service drops its local limiter.
         assert!(check_value(&name, &scalar("")).is_err());
         let r = field(FieldType::Ref, None);
         assert!(check_value(&r, &scalar("adr:single-node-cache")).is_ok());
+        // scalar values are single-line: a control char (newline/tab) is rejected,
+        // so a value can never inject a second field line on splice.
+        assert!(check_value(&name, &scalar("line one\nline two")).is_err());
+        assert!(check_value(&r, &scalar("adr:a\nadr:b")).is_err());
+        assert!(check_value(&r, &scalar("adr:a\tb")).is_err());
     }
 
     /// (b) The only-intended-target gate rejects a buffer whose byte-diff escapes the
