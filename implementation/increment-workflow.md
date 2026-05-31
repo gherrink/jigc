@@ -29,6 +29,16 @@ This is the discipline that lets the loop run unattended without violating [CLAU
 
 The increment is **done** when validation passes (zero blocking findings, gate green, deliverable genuinely holds). The next increment then begins on top of it.
 
+## Validation hardening (audit-derived)
+
+An external, adversarial audit of the first autonomous run (increments 2–6) found two real issues the per-increment validator had passed over — a reachable parser panic on out-of-band input, and an MVP-scope component built and unit-tested but never wired to a command. Both are fixed; the lessons fold back here as **mandatory validator checks**, because they are the exact blind spots an automated validator inherits:
+
+1. **Every grouped-scope bullet, not just the headline.** "Deliverable holds" must be asserted for *each* bullet of the roadmap increment's *Grouped scope*, every one **exercised through the binary** — not only the marquee acceptance path. A passing headline flow can hide a sibling sub-deliverable that has no command surface.
+2. **`pub`-but-test-only is a scope finding.** A `pub fn` whose only callers live under `#[cfg(test)]` is dead in production — and it slips past a `#[allow(dead_code)]` grep *precisely because it is public*. The validator must trace that every shipped capability is reachable from a command path, and flag any public surface invoked only from tests.
+3. **Parsers get a hostile-input pass, not only round-trip-on-conformant.** Property/round-trip tests over *conformant* input prove losslessness but never exercise the malformed-input contract ("every mismatch is a located finding, never a panic"). Any parser or reader must be fuzzed on hostile/foreign input — non-ASCII, BOM, truncation, mixed EOL — as its own check.
+
+These turn the scope-honesty check from "grep for dead-code markers" into "prove each capability is reachable through the binary, and each parser is panic-free on garbage."
+
 ## Halt and resume
 
 The loop **stops and surfaces to the human** at exactly three points: a **new fork** at Plan, a **blocked task** at Execute, **still-blocking after 3 rounds** at Validate. A halt returns a structured report — which increment, which phase, the precise reason — and is **resumable**: prior committed work stands, completed steps replay from cache, and the run continues once the human clears the blocker. Nothing is guessed past a point the design says is the human's.
