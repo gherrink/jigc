@@ -622,3 +622,13 @@ Increment-1 gating decisions, both behind interfaces (embed behind the `PackSour
 - **Config-family YAML = `serde_yaml_ng`** (the leaf-instance flat parser is separate, [parsing.md](implementation/parsing.md)). Maintained serde-native drop-in fork of the archived `serde_yaml`; rejected `serde_yaml` (unmaintained) and `serde_yml` (contested fork). Typed structs govern coercion, so YAML footguns do not bite.
 
 Both declared in `[workspace.dependencies]`, consumed per-increment; exact versions pin at first `cargo add` in increment 1.
+
+### Cross-cutting build crates: thiserror+anyhow, blake3, insta+proptest
+
+Three increment-1/2 cross-cutting picks (shape many signatures, so settled up front; all reversible behind their seams). Captured forward-look for later increments in [implementation/decisions-pending.md](implementation/decisions-pending.md).
+
+- **(I) Errors** = `thiserror` (engine, typed/exhaustive) + `anyhow` (cli, ergonomic context) — the standard split, fits the union-heavy domain.
+- **(I) Hashing** = `blake3` — one fast modern algo for `file-state` + content-drift; no crypto-compat need, so chosen over `sha2`.
+- **(I) Test tooling** = `insta` (snapshot/golden) + `proptest` (property/fuzz) — exactly what the [parsing.md](implementation/parsing.md) round-trip contract asks for.
+
+Also established the **decision-backlog** convention: `implementation/decisions-pending.md` lists decisions each increment will force (tagged (D) design vs (I) impl), graduating to DECISIONS.md when made. Tasks still cut per-increment at pickup.
