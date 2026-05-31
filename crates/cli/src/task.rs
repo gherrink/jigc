@@ -257,20 +257,21 @@ impl TaskArea {
     /// record (`design/validation.md` → How it gates `finalize`; `design/reconciliation.md`
     /// → Detection timing: the `task validate` full sweep).
     ///
-    /// The record is **loaded** (so drift of a copied-in committed doc against its
-    /// real committed baseline is detected) but **not persisted** back: the staged
-    /// working-area docs are *not* committed state, and "task writes do not update the
-    /// committed-state hash" (`reconciliation.md` → Hash re-baselining — the record
-    /// advances only at adopt/absorb/commit, none of which is a `validate` of a
-    /// working-area edit). So a working-area instance with no committed baseline
+    /// The record is **loaded** (so drift of a committed doc against its recorded
+    /// baseline is detected) but **not persisted** back from `validate`: the record
+    /// advances only at adopt/absorb/commit, and a `validate` is none of those for
+    /// committed state — `finalize` phase 7 re-derives the committed hashes from the
+    /// just-landed commit. So a working-area instance with no committed baseline
     /// baseline-adopts fresh (advisory) each run rather than drifting against a stale
-    /// staged hash — clean validate stays clean as the agent fills it. Absorb of
-    /// clean OOB drift on a *committed* doc is inc-5.
+    /// staged hash — clean validate stays clean as the agent fills it.
     ///
-    /// The sweep also runs `schema-conformance.ref-resolves` (forward-ref / edge-index
-    /// integrity), so it needs the committed-store root, the `.jigc/` home (where the
-    /// edge index caches), and the current HEAD (the stamp the committed index is built
-    /// against — read via `git`, keeping the engine shell-free). The two reachable
+    /// The sweep runs `engine::file_state::reconcile_committed_store` over the committed
+    /// store (`reconciliation.md` → Detection timing: the `task validate` full sweep,
+    /// shared by `finalize`'s preflight) — routing OOB drift on a committed `decisions/*.md`
+    /// (absorb the conformant, conformance/conflict-block the rest, detect renames) — and
+    /// `schema-conformance.ref-resolves` (forward-ref / edge-index integrity). Both need
+    /// the committed-store root, the `.jigc/` home (where the edge index caches), and the
+    /// current HEAD (read via `git`, keeping the engine shell-free). The two reachable
     /// surfaces (committed store + this task's working area) make `validate` preview
     /// exactly the forward-ref block `finalize` gates on.
     fn validate(&self) -> Result<engine::result::ValidationReport> {

@@ -112,12 +112,26 @@ pub fn validate_task(
         findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
     }
 
+    // Committed-store OOB reconciliation — sweep the committed managed docs and route
+    // any out-of-band drift (`reconciliation.md` → The state machine / Detection timing:
+    // the `task validate` full sweep, shared by `finalize`'s preflight). Runs over the
+    // freshly-loaded committed edge index so a clean absorb's new edges feed the
+    // forward-ref walk below; the record/index advance in place (the caller persists).
+    let mut committed = crate::index::load_committed(repo_root, jigc_root, schemas, head);
+    findings.extend(crate::file_state::reconcile_committed_store(
+        record,
+        &mut committed,
+        schemas,
+        repo_root,
+        dir,
+    ));
+
     // `schema-conformance.ref-resolves` — the cross-doc forward-ref / edge-index
     // integrity sweep, run once over the whole task (`validation.md` → Forward-ref
-    // resolution). The committed edge index (rebuilt/loaded against `head`) is overlaid
-    // with this task's staged edges; every task-touched forward edge must resolve in
-    // one of the two reachable surfaces (committed store or this task's working area).
-    let committed = crate::index::load_committed(repo_root, jigc_root, schemas, head);
+    // resolution). The committed edge index (rebuilt/loaded against `head`, with any
+    // absorbed OOB edges folded in) is overlaid with this task's staged edges; every
+    // task-touched forward edge must resolve in one of the two reachable surfaces
+    // (committed store or this task's working area).
     let overlay = crate::index::overlay_working(&committed, dir, schemas);
     findings.extend(crate::index::ref_resolves(
         &overlay, repo_root, dir, schemas,

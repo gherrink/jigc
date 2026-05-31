@@ -226,6 +226,182 @@ pub fn reconcile_committed(
     }
 }
 
+/// Sweep the **committed store** for out-of-band drift and route it — the command-
+/// surface wiring of [`reconcile_committed`] + [`detect_rename`] over every tracked
+/// committed managed doc (`reconciliation.md` → Detection timing: the `task validate`
+/// full sweep, shared by `finalize`'s preflight).
+///
+/// For each persisted (`location:`-bearing) schema in `schemas`, walks
+/// `<repo_root>/<location>/*.md`, derives each doc's `<type>:<slug>` identity and its
+/// `<location>/<slug>.md` record key, and:
+///
+/// - **present on disk** → [`reconcile_committed`] against the recorded baseline.
+///   `task_touched` is true iff this task's working area stages the same identity at
+///   `<task_dir>/docs/<type>:<slug>.md` (a `DRIFTED + TOUCHED` conflict). Absorb
+///   mutates `record` + `index` in place; a block leaves both pinned.
+/// - **recorded but now absent on disk** → [`detect_rename`] over the untracked
+///   candidates (the on-disk `.md` files of that type with no recorded hash), routing
+///   a suspected `git mv` (strong signal) or a restore (weak signal).
+///
+/// Mutating: `record` (baseline-adopt / absorb) and `index` (absorb) advance in place;
+/// the caller persists them. Findings aggregate in a stable order: persisted schemas
+/// by type, then committed docs by path-sorted slug, then rename findings for each
+/// recorded-but-missing path (also type-then-path sorted). No I/O beyond reading the
+/// committed `.md` bytes — the engine stays shell-free.
+pub fn reconcile_committed_store(
+    record: &mut FileStateRecord,
+    index: &mut crate::index::EdgeIndex,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    repo_root: &Path,
+    task_dir: &Path,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    // Snapshot the recorded committed paths *before* the reconcile loop mutates the
+    // record (baseline-adopt records fresh paths), so rename detection below can tell a
+    // genuinely-tracked path from one this same sweep just adopted.
+    let recorded_at_entry: std::collections::BTreeSet<String> = record
+        .hashes
+        .keys()
+        .filter(|p| persisted_committed_path(p, schemas))
+        .cloned()
+        .collect();
+    // Track which recorded paths we saw on disk, so a recorded-but-missing path can be
+    // routed to rename detection afterward.
+    let mut seen_on_disk: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    for (ty, schema) in schemas {
+        let Some(location) = schema.location.as_deref() else {
+            continue; // a transient (location-less) type has no committed docs.
+        };
+        let dir = repo_root.join(location);
+        let mut slugs: Vec<String> = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+                .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
+                .collect(),
+            Err(_) => Vec::new(), // no committed docs of this type yet.
+        };
+        slugs.sort();
+
+        for slug in &slugs {
+            let path = format!("{location}{slug}.md");
+            seen_on_disk.insert(path.clone());
+            let from = format!("{ty}:{slug}");
+            let Ok(bytes) = std::fs::read(repo_root.join(location).join(format!("{slug}.md")))
+            else {
+                continue; // read race: skip; the next sweep re-checks.
+            };
+            let task_touched = task_dir.join("docs").join(format!("{from}.md")).exists();
+            findings.extend(reconcile_committed(
+                record,
+                index,
+                schema,
+                &path,
+                &from,
+                &bytes,
+                task_touched,
+            ));
+        }
+    }
+
+    // Rename detection: a recorded committed path of a persisted type that is no longer
+    // on disk is a suspected rename/deletion (`reconciliation.md` → Rename detection).
+    // The untracked candidates are the on-disk `.md` files (of any persisted type) that
+    // carry no recorded hash, paired with their raw-byte hash.
+    let recorded_missing: Vec<String> = recorded_at_entry
+        .iter()
+        .filter(|p| !seen_on_disk.contains(*p))
+        .cloned()
+        .collect();
+    if !recorded_missing.is_empty() {
+        let untracked = untracked_committed(&recorded_at_entry, schemas, repo_root);
+        let untracked_refs: Vec<(&str, String)> = untracked
+            .iter()
+            .map(|(p, h)| (p.as_str(), h.clone()))
+            .collect();
+        for path in recorded_missing {
+            let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
+            let recorded_hash = record.get(&path).unwrap_or("").to_string();
+            findings.extend(detect_rename(&path, &from, &recorded_hash, &untracked_refs));
+        }
+    }
+
+    findings
+}
+
+/// Whether `path` (a `file-state` record key like `decisions/x.md`) lives under a
+/// persisted schema's `location:` — i.e. it is a committed managed doc, not a staged
+/// working-area key (`docs/…`) or a code path.
+fn persisted_committed_path(
+    path: &str,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+) -> bool {
+    schemas
+        .values()
+        .filter_map(|s| s.location.as_deref())
+        .any(|loc| path.starts_with(loc) && path.ends_with(".md"))
+}
+
+/// The `<type>:<slug>` identity for a committed record path (`decisions/x.md` → its
+/// persisted type's `adr:x`), or `None` when no persisted schema owns it.
+fn identity_of(
+    path: &str,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+) -> Option<String> {
+    for (ty, schema) in schemas {
+        let Some(location) = schema.location.as_deref() else {
+            continue;
+        };
+        if let Some(rest) = path.strip_prefix(location)
+            && let Some(slug) = rest.strip_suffix(".md")
+        {
+            return Some(format!("{ty}:{slug}"));
+        }
+    }
+    None
+}
+
+/// The on-disk committed `.md` files (under any persisted `location:`) that carry **no**
+/// recorded hash — the untracked rename candidates, each paired with its raw-byte hash
+/// (`reconciliation.md` → Rename detection: an untracked path with a content-hash match
+/// is a suspected `git mv`).
+fn untracked_committed(
+    recorded_at_entry: &std::collections::BTreeSet<String>,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    repo_root: &Path,
+) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    for schema in schemas.values() {
+        let Some(location) = schema.location.as_deref() else {
+            continue;
+        };
+        let dir = repo_root.join(location);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for path in entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        {
+            let Some(slug) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let key = format!("{location}{slug}.md");
+            if recorded_at_entry.contains(&key) {
+                continue; // tracked at entry, not an untracked candidate.
+            }
+            if let Ok(bytes) = std::fs::read(&path) {
+                out.push((key, hash_bytes(&bytes)));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// **Rename detection** — the separate classifier for a tracked managed-doc path
 /// gone *missing* on disk (`reconciliation.md` → Rename detection; `storage.md` →
 /// Identity: a path change is an identity change). Runs at the same trigger points
@@ -687,6 +863,128 @@ Slightly higher write latency for resilience.
         assert!(
             route.contains("restore"),
             "the weak-signal route directs a restore of the missing file: {route:?}"
+        );
+    }
+
+    /// The command-surface sweep [`reconcile_committed_store`] routes committed-store
+    /// drift end-to-end: it walks `<repo_root>/decisions/*.md`, reconciles each against
+    /// the recorded baseline, and aggregates the classifier's findings — a conformant
+    /// OOB edit **absorbs** (advisory, record advances) while a nonconformant one
+    /// **conformance-blocks** (record pinned). This is the contract `validate_task`
+    /// relies on (`reconciliation.md` → Detection timing: the `task validate` full sweep).
+    #[test]
+    fn reconcile_committed_store_sweeps_and_routes_drift() {
+        let schema = adr_schema();
+        let mut schemas: std::collections::BTreeMap<String, Schema> =
+            std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), schema);
+
+        // A committed store with two ADRs at their canonical paths.
+        let root = TempRoot::new("sweep");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+
+        // `clean`: a conformant OOB edit (a `## Decision` prose change) → absorb.
+        let clean_path = "decisions/clean.md";
+        std::fs::write(
+            decisions.join("clean.md"),
+            ADR_B_EDITED_SUPERSEDES, // differs from ADR_B_BASE (adds a supersedes)
+        )
+        .expect("write clean ADR");
+        // `broken`: a structural nonconformance (renamed heading) → conformance-block.
+        let broken_path = "decisions/broken.md";
+        let broken = ADR_B_BASE.replace("## Decision", "## Decisionz");
+        std::fs::write(decisions.join("broken.md"), &broken).expect("write broken ADR");
+
+        // Record both baselines as the pre-edit content (so both DRIFT).
+        let mut record = FileStateRecord::new();
+        record.record(clean_path, hash_bytes(ADR_B_BASE.as_bytes()));
+        record.record(broken_path, hash_bytes(ADR_B_BASE.as_bytes()));
+
+        let mut index = EdgeIndex::default();
+        // No active task touches either doc (a separate empty task dir).
+        let task = TempRoot::new("sweep-task");
+
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+
+        // The clean ADR absorbed (advisory) and its baseline advanced + edge folded in.
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "reconciliation.absorb" && f.message.contains(clean_path)),
+            "the conformant edit absorbs: {findings:?}"
+        );
+        assert_eq!(
+            record.get(clean_path),
+            Some(hash_bytes(ADR_B_EDITED_SUPERSEDES.as_bytes()).as_str()),
+            "absorb advances the clean doc's recorded baseline"
+        );
+        assert!(
+            index.edges.contains(&Edge {
+                from: "adr:clean".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }),
+            "absorb folds the clean doc's new forward edge into the index: {:?}",
+            index.edges
+        );
+
+        // The broken ADR conformance-blocked and its baseline stayed pinned.
+        let block = findings
+            .iter()
+            .find(|f| f.code == "reconciliation.conformance-block")
+            .expect("the nonconformant edit conformance-blocks");
+        assert_eq!(block.severity, Severity::Blocking);
+        assert!(
+            block.message.contains(broken_path),
+            "the block names the offending file: {block:?}"
+        );
+        assert_eq!(
+            record.get(broken_path),
+            Some(hash_bytes(ADR_B_BASE.as_bytes()).as_str()),
+            "conformance-block does not advance the recorded hash"
+        );
+    }
+
+    /// [`reconcile_committed_store`] routes a recorded committed doc that has gone
+    /// **missing** on disk to rename detection: a content-hash-matching untracked file
+    /// is a strong-signal `git mv` suspect (`reconciliation.md` → Rename detection).
+    #[test]
+    fn reconcile_committed_store_routes_a_missing_recorded_doc_to_rename() {
+        let schema = adr_schema();
+        let mut schemas: std::collections::BTreeMap<String, Schema> =
+            std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), schema);
+
+        let root = TempRoot::new("rename-sweep");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+
+        // The tracked path is recorded but absent on disk; a content-matching file
+        // exists at a new (untracked) path — a suspected `git mv`.
+        let tracked = "decisions/old-name.md";
+        let moved_slug = "new-name";
+        std::fs::write(decisions.join(format!("{moved_slug}.md")), ADR_B_BASE)
+            .expect("write moved ADR");
+
+        let mut record = FileStateRecord::new();
+        record.record(tracked, hash_bytes(ADR_B_BASE.as_bytes()));
+
+        let mut index = EdgeIndex::default();
+        let task = TempRoot::new("rename-task");
+
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+
+        let rename = findings
+            .iter()
+            .find(|f| f.code == "reconciliation.rename")
+            .expect("the missing recorded doc routes to rename detection");
+        assert_eq!(rename.severity, Severity::Blocking);
+        assert!(
+            rename.message.contains(tracked) && rename.message.contains("new-name"),
+            "the strong-signal rename names both the missing tracked path and the suspect: {rename:?}"
         );
     }
 
