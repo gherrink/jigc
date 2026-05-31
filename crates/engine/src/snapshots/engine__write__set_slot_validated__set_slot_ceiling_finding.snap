@@ -1,0 +1,14 @@
+---
+source: crates/engine/src/write.rs
+expression: "serde_json::to_string_pretty(&finding).unwrap()"
+---
+{
+  "severity": "blocking",
+  "code": "write.slot-heading-depth",
+  "message": "heading at schema-reserved depth `##` in slot prose at line 3; use `####` or rephrase",
+  "location": {
+    "line": 3,
+    "col": 1
+  },
+  "route": null
+}

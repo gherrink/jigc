@@ -52,6 +52,7 @@ use serde::{Deserialize, Serialize};
 use crate::field_block::{self, Field, FieldBlock, Value};
 use crate::parse::{self, Block};
 use crate::schema::{Schema, Section, SectionBody};
+use pulldown_cmark::HeadingLevel;
 
 /// A full in-memory document instance, ready to render — the writer's input and the
 /// natural inverse of the parser's [`crate::parse::Document`].
@@ -2205,6 +2206,139 @@ pub fn set_field_validated(
     Ok(edited)
 }
 
+/// The gated `set-slot`: the full write-time local adjudication for a slot prose
+/// write — the slot sibling to [`set_field_validated`]. Enforces the **slot
+/// heading-depth ceiling** on `new_prose` *before* touching bytes (a `##`/`###` ATX
+/// heading or any Setext heading is rejected with a located `write.slot-heading-depth`
+/// / `write.slot-setext-heading` finding naming the offending line), then surgically
+/// splices the present section's slot — or **generates** the section's structural home
+/// when the section is absent — and runs [`validate_after`] (re-parse + only the
+/// intended target changed). Returns the new buffer to persist, or a blocking
+/// [`Finding`] (and **no** buffer) on any anomaly.
+///
+/// The ceiling check is the **write-time** enforcement site of the heading-depth
+/// ceiling (`parsing.md` → Slot heading-depth ceiling, enforcement site 1): the
+/// parser is the read-time site, but scanning the agent's content here gives precise,
+/// fast local feedback pointing at the offending line *within the prose* (1-based),
+/// so the agent retries with non-conflicting prose before any byte is written.
+pub fn set_slot_validated(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    new_prose: &str,
+) -> Result<String, Finding> {
+    // The heading-depth ceiling — scanned on the standalone prose so the located line
+    // is relative to the agent's content (the first violation is the surfaced block).
+    if let Some(finding) = slot_ceiling_finding(new_prose) {
+        return Err(finding);
+    }
+
+    // Present section ⇒ surgical splice of the located slot span; absent section ⇒
+    // generate the section's structural home at its schema-ordered position.
+    match set_slot(schema, source, section_id, new_prose) {
+        Ok(edited) => {
+            // Locate the (pre-edit) slot span as the validate-after target.
+            let target = locate_slot_span(schema, source, section_id).ok_or_else(|| {
+                Finding::blocking(
+                    "write.not-present",
+                    format!("slot in section {section_id:?} is not present"),
+                    Location::at(1, 1),
+                )
+            })?;
+            validate_after(schema, source, &edited, target)?;
+            Ok(edited)
+        }
+        Err(SpliceError::NotPresent { .. }) => {
+            // The section (or its slot) is absent: materialize its structural home and
+            // write the prose. Generation is not a single-span splice, so the only
+            // post-write gate is re-parse (the surgical-span check does not apply).
+            let edited = generate_section(schema, source, section_id, Some(new_prose), &[])
+                .map_err(|e| generate_error_finding(&e))?;
+            if let Err(findings) = parse::parse_sections(schema, &edited) {
+                let detail = findings
+                    .into_iter()
+                    .next()
+                    .map(|f| f.message)
+                    .unwrap_or_else(|| "the generated buffer no longer conforms".to_string());
+                return Err(Finding::blocking(
+                    "write.non-reparseable",
+                    format!("write rejected: result does not re-parse ({detail})"),
+                    Location::at(1, 1),
+                ));
+            }
+            Ok(edited)
+        }
+        Err(e @ SpliceError::NotConformant) => Err(splice_error_finding(&e)),
+    }
+}
+
+/// The first heading-depth-ceiling violation in standalone slot `prose`, if any — a
+/// `##`/`###` ATX heading or a Setext underline, located by its **1-based line within
+/// the prose**. Reuses the same block parse the read-time parser uses (never a line
+/// scanner — a `## …` inside a fenced code block is correctly *not* a heading), so the
+/// write-time and read-time ceiling agree. Emits a `write.*` finding (the write-path
+/// envelope), distinct from the parser's `conformance.*` producer.
+fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
+    parse::scan_blocks(prose).into_iter().find_map(|b| match b {
+        Block::Heading { is_atx, line, .. } if !is_atx => Some(Finding::blocking(
+            "write.slot-setext-heading",
+            format!(
+                "Setext heading in slot prose at line {line}; use `####` ATX depth or rephrase"
+            ),
+            Location::at(line, 1),
+        )),
+        Block::Heading { level, line, .. }
+            if matches!(level, HeadingLevel::H2 | HeadingLevel::H3) =>
+        {
+            let depth = if level == HeadingLevel::H2 {
+                "##"
+            } else {
+                "###"
+            };
+            Some(Finding::blocking(
+                "write.slot-heading-depth",
+                format!(
+                    "heading at schema-reserved depth `{depth}` in slot prose at line {line}; \
+                     use `####` or rephrase"
+                ),
+                Location::at(line, 1),
+            ))
+        }
+        _ => None,
+    })
+}
+
+/// Locate the byte span of `section_id`'s slot prose in `source` (the parser's
+/// recorded opaque span), the validate-after target for a present-section set-slot.
+fn locate_slot_span(schema: &Schema, source: &str, section_id: &str) -> Option<Range<usize>> {
+    let doc = parse::parse_sections(schema, source).ok()?;
+    let span = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)?
+        .slot
+        .as_ref()?;
+    Some(span.start..span.end)
+}
+
+/// Render a [`GenerateError`] as the gate's blocking [`Finding`].
+fn generate_error_finding(err: &GenerateError) -> Finding {
+    let (code, message) = match err {
+        GenerateError::AlreadyPresent { what } => (
+            "write.already-present",
+            format!("write rejected: {what} is already present"),
+        ),
+        GenerateError::UnknownSection { id } => (
+            "write.unknown-section",
+            format!("write rejected: no section {id:?} declared in the schema"),
+        ),
+        GenerateError::WrongShape { what } => {
+            ("write.wrong-shape", format!("write rejected: {what}"))
+        }
+    };
+    Finding::blocking(code, message, Location::at(1, 1))
+}
+
 /// Find the schema [`SchemaField`] declared for `field_key` in `section_id`, across a
 /// header/simple section's `fields`. Returns `None` when the field is not declared.
 fn field_schema<'a>(
@@ -2434,6 +2568,115 @@ Each service drops its local limiter.
             .expect_err("a non-reparseable result ⇒ abort");
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
         assert_eq!(finding.code, "write.non-reparseable");
+    }
+}
+
+#[cfg(test)]
+mod set_slot_validated {
+    //! The gated `set-slot` (`parsing.md` → Slot heading-depth ceiling: set-slot
+    //! write-time enforcement site; → Validate-after-write). The slot sibling to
+    //! `set_field_validated`: enforce the heading-depth ceiling on the agent's prose
+    //! at write-time (a precise per-line `write.*` blocking finding naming the
+    //! offending line), splice the located slot span, run [`validate_after`], and
+    //! return the new buffer or a blocking [`Finding`] — persisting nothing on a
+    //! block.
+
+    use super::*;
+    use crate::schema::{Schema, load_schema};
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    const CANONICAL_ADR: &str = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Decision
+
+Centralize rate limiting at the gateway.
+
+## Consequences
+
+Each service drops its local limiter.
+";
+
+    /// The done-criterion. A clean set-slot returns a buffer differing **only** in the
+    /// slot span (surgical-on-edit) and re-parses; ceiling-violating prose (a `##`
+    /// ATX heading, a `###` ATX heading, a Setext underline) is each rejected with a
+    /// located `write.*` blocking finding naming the offending line and persists
+    /// nothing.
+    #[test]
+    fn set_slot_validated_gates_ceiling_and_target() {
+        let schema = adr_schema();
+
+        // --- Clean set-slot: surgical on the slot span. ---
+        let target = set_slot_span(&schema, CANONICAL_ADR, "decision");
+        let out = set_slot_validated(&schema, CANONICAL_ADR, "decision", "We centralize.")
+            .expect("clean prose passes the gate");
+        // Re-parses (a).
+        parse::parse_sections(&schema, &out).expect("gated result re-parses");
+        // Surgical (b): only the slot span's bytes differ — the prefix and suffix
+        // around the located target survive byte-for-byte.
+        assert!(out.starts_with(&CANONICAL_ADR[..target.start]));
+        assert!(out.ends_with(&CANONICAL_ADR[target.end..]));
+        assert_eq!(
+            &out[target.start..target.start + "We centralize.".len()],
+            "We centralize."
+        );
+
+        // --- Ceiling: a `## Decision` ATX heading in slot prose is rejected. ---
+        let finding = set_slot_validated(
+            &schema,
+            CANONICAL_ADR,
+            "decision",
+            "Intro.\n\n## Decision\n\nMore.",
+        )
+        .expect_err("a `##` heading in slot prose ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.slot-heading-depth");
+        // The located finding names the offending line (line 3 within the prose).
+        assert_eq!(finding.location.as_ref().unwrap().line, 3);
+        insta::assert_snapshot!(
+            "set_slot_ceiling_finding",
+            serde_json::to_string_pretty(&finding).unwrap()
+        );
+
+        // --- Ceiling: a `### x` ATX heading (item depth) is rejected. ---
+        let finding = set_slot_validated(&schema, CANONICAL_ADR, "decision", "### Sneaky")
+            .expect_err("a `###` heading in slot prose ⇒ abort");
+        assert_eq!(finding.code, "write.slot-heading-depth");
+        assert_eq!(finding.location.as_ref().unwrap().line, 1);
+
+        // --- Ceiling: a Setext underline heading is rejected at any depth. ---
+        let finding = set_slot_validated(&schema, CANONICAL_ADR, "decision", "A title\n=======")
+            .expect_err("a Setext heading in slot prose ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.slot-setext-heading");
+        assert_eq!(finding.location.as_ref().unwrap().line, 1);
+    }
+
+    /// Locate the `decision` slot's byte span in `source` (the parser's recorded
+    /// opaque span), for the surgical-on-edit assertion.
+    fn set_slot_span(schema: &Schema, source: &str, section_id: &str) -> Range<usize> {
+        let doc = parse::parse_sections(schema, source).expect("source parses");
+        let span = doc
+            .sections
+            .iter()
+            .find(|s| s.id == section_id)
+            .and_then(|s| s.slot.clone())
+            .expect("slot located");
+        span.start..span.end
     }
 }
 
