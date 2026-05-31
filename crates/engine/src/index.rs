@@ -276,6 +276,28 @@ pub fn overlay_working(
     }
 }
 
+impl WorkingOverlay {
+    /// Walk one `.relation` edge from `from` (a `<type>:<slug>` identity) over the
+    /// **overlaid** graph (this task's working edges layered over the committed
+    /// edges), returning the target identity `to`, or `None` when no such edge
+    /// exists.
+    ///
+    /// The task's working edges take precedence: an `adr:b` staged in this task
+    /// with a `supersedes` edge resolves to that staged target even if the
+    /// committed index carried a different (stale) one. A `None` means the relation
+    /// is **unset** on `from` — the context-slice reads that as an absent value
+    /// (empty text), not an error (`workflow-dialect.md` → Empty vs unresolvable).
+    ///
+    /// Pure over the overlay's in-memory edge sets — no I/O.
+    pub fn walk_edge(&self, from: &str, relation: &str) -> Option<String> {
+        self.task_edges
+            .iter()
+            .chain(self.committed.iter())
+            .find(|e| e.from == from && e.relation == relation)
+            .map(|e| e.to.clone())
+    }
+}
+
 /// The synthetic `schema-conformance.ref-resolves` check (forward-ref integrity, the
 /// inc-5 check deferred from inc-4) over the working `overlay` — walk every
 /// **task-touched** forward edge and require its `to` target resolve in one of the

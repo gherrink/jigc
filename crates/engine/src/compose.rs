@@ -421,10 +421,32 @@ pub fn emit_step_body(
     ctx: &crate::data_value::ComposeContext,
     catalog: &CommandCatalog,
 ) -> Result<String, Finding> {
+    emit_step_body_with(body, ctx, catalog, None)
+}
+
+/// Emit one composed step body, dereferencing `{{@<path>}}` Content lines through
+/// `store` when one is provided — the store-backed sibling of [`emit_step_body`].
+///
+/// With a `store`, an `@`-Content data-value that resolves to a bound role plus a
+/// cross-doc `.relation` hop chain (the superseding-decision `{{@task.decision.
+/// supersedes#decision}}`) is **dereferenced**: the role's bound doc is walked along
+/// each relation edge (via the edge overlay), the landing doc's `#fragment` is
+/// sliced through [`crate::store`], and the prose is emitted as a multi-line `> `
+/// Content blockquote (`workflow-dialect.md` → Emitted format). An unbound role or
+/// an unset relation short-circuits to an **empty line** (no finding — the
+/// empty-vs-unresolvable contract). Without a `store` (the structural
+/// `workflow_refs` gate, the pure tests) Content lines carry the resolved address
+/// handle, the inc-3 stance.
+pub fn emit_step_body_with(
+    body: &str,
+    ctx: &crate::data_value::ComposeContext,
+    catalog: &CommandCatalog,
+    store: Option<&dyn ContentStore>,
+) -> Result<String, Finding> {
     let trailing_newline = body.ends_with('\n');
     let mut out_lines = Vec::new();
     for line in body.lines() {
-        out_lines.push(emit_line(line, ctx, catalog)?);
+        out_lines.push(emit_line(line, ctx, catalog, store)?);
     }
     let mut emitted = out_lines.join("\n");
     if trailing_newline {
@@ -438,6 +460,7 @@ fn emit_line(
     line: &str,
     ctx: &crate::data_value::ComposeContext,
     catalog: &CommandCatalog,
+    store: Option<&dyn ContentStore>,
 ) -> Result<String, Finding> {
     let trimmed = line.trim();
 
@@ -466,7 +489,7 @@ fn emit_line(
     {
         // Re-attach the `@` the resolver expects.
         let path = parse_data_value(&format!("@{path_text}"))?;
-        return emit_content(&path, ctx);
+        return emit_content(&path, ctx, store);
     }
 
     // Reason (resolved data-value): a lone bare `{{<path>}}` data-value — the
@@ -485,21 +508,153 @@ fn emit_line(
     Ok(line.to_owned())
 }
 
-/// Emit a resolved `{{@<path>}}` content line: a `> ` blockquote of the resolved
-/// address, or an **empty line** when the path resolves to
-/// [`Resolution::Absent`] (a declared-but-unbound role; empty-not-finding).
+/// A read-side dereference surface for `{{@<path>}}` Content lines: walk one
+/// cross-doc relation edge, and slice a committed/working doc fragment to its prose.
+///
+/// The composer stays a pure function of its inputs (the determinism boundary); the
+/// **I/O** of reading the committed store and the edge index lives behind this
+/// trait, fed in by the frontend (CLI locates layers + builds the overlay; engine
+/// resolves — `VISION.md` principle #4). The reference implementation is
+/// [`StoreContext`], over the inc-5 [`crate::index::WorkingOverlay`] +
+/// [`crate::store`]; a test may supply a fake.
+pub trait ContentStore {
+    /// Walk one `.relation` edge from `from` (a `<type>:<slug>` identity), returning
+    /// the target identity, or `None` when the relation is unset on `from` (an
+    /// **absent** value → empty text, not an error).
+    fn walk_edge(&self, from: &str, relation: &str) -> Option<String>;
+
+    /// Slice the committed/working doc named by `address` to its `#fragment` prose,
+    /// or a blocking [`Finding`] when the target is missing/unparseable/unsliceable
+    /// (the one block envelope, routed).
+    fn read_slice(&self, address: &crate::address::Address) -> Result<String, Finding>;
+}
+
+/// The reference [`ContentStore`] — the inc-5 committed store + edge overlay.
+///
+/// Holds the cascade-resolved schema set, the repo root (committed store), and the
+/// active task's [`WorkingOverlay`](crate::index::WorkingOverlay) (committed ∪ this
+/// task's working edges). [`walk_edge`](ContentStore::walk_edge) walks the overlaid
+/// graph; [`read_slice`](ContentStore::read_slice) reads the committed store
+/// (`crate::store::read_slice` — identity-is-the-path). The CLI builds one per
+/// compose; the engine consumes it through the trait.
+pub struct StoreContext<'a> {
+    /// The committed-store repo root (`<repo_root>/<location>/<slug>.md`).
+    pub repo_root: &'a std::path::Path,
+    /// The cascade-resolved schema set (type → schema).
+    pub schemas: &'a std::collections::BTreeMap<String, crate::schema::Schema>,
+    /// The active task's edge overlay (committed ∪ this task's working edges).
+    pub overlay: &'a crate::index::WorkingOverlay,
+}
+
+impl ContentStore for StoreContext<'_> {
+    fn walk_edge(&self, from: &str, relation: &str) -> Option<String> {
+        self.overlay.walk_edge(from, relation)
+    }
+
+    fn read_slice(&self, address: &crate::address::Address) -> Result<String, Finding> {
+        crate::store::read_slice(self.repo_root, self.schemas, address)
+    }
+}
+
+/// Emit a resolved `{{@<path>}}` content line.
+///
+/// Without a `store` (the structural `workflow_refs` gate): a bound resolution emits
+/// a `> ` blockquote of the resolved **address handle**, an [`Resolution::Absent`]
+/// emits an empty line (the inc-3 stance).
+///
+/// With a `store` (the live read path): a bound role plus a cross-doc `.relation`
+/// hop chain is **dereferenced** — the bound doc is walked along each relation edge
+/// over the overlay, the landing doc's `#fragment` is sliced through the store, and
+/// the prose is emitted as a multi-line `> ` Content blockquote (each prose line
+/// prefixed, `workflow-dialect.md` → Emitted format). An unbound role
+/// ([`Resolution::Absent`]) or an unset relation (a hop with no edge) short-circuits
+/// to an **empty line** — no finding (`worked-examples.md` flow #1; the
+/// empty-vs-unresolvable contract).
 fn emit_content(
     path: &crate::data_value::Path,
     ctx: &crate::data_value::ComposeContext,
+    store: Option<&dyn ContentStore>,
 ) -> Result<String, Finding> {
     use crate::data_value::Resolution;
     match path.resolve(ctx)? {
-        Resolution::Content { address } | Resolution::Address { address } => {
-            Ok(format!("> {address}"))
-        }
+        Resolution::Content { address } => match store {
+            // The live read path: dereference through the edge hops + the store.
+            Some(store) => match deref_content(path, &address, store)? {
+                Some(prose) => Ok(blockquote(&prose)),
+                None => Ok(String::new()), // an unset relation → empty, no finding.
+            },
+            // No store (the structural gate): the resolved address handle.
+            None => Ok(format!("> {address}")),
+        },
+        Resolution::Address { address } => Ok(format!("> {address}")),
         Resolution::Scalar { value } => Ok(format!("> {value}")),
         Resolution::Absent => Ok(String::new()),
     }
+}
+
+/// Dereference a bound-role `@`-Content `path` to the prose its final address slices
+/// to, walking the cross-doc `.relation` hops past the role over `store`'s overlay.
+///
+/// `bound` is the bound role's doc address ([`Resolution::Content`] built it from the
+/// role binding). The path's hops are `[role, relation*]`: the **first** hop is the
+/// role (already resolved into `bound`), the **rest** are cross-doc relation edges to
+/// walk (e.g. `supersedes`). Each hop walks one edge over the overlay; an **unset**
+/// relation (no edge) yields `Ok(None)` → the caller emits empty text. The landing
+/// identity carries the path's own `#fragment`, which the store slices to its prose.
+///
+/// A walk that lands on a malformed identity, or a store read that fails (missing /
+/// unparseable / unsliceable target), surfaces the store's blocking [`Finding`] —
+/// the one routed block envelope, never a panic.
+fn deref_content(
+    path: &crate::data_value::Path,
+    bound: &crate::address::Address,
+    store: &dyn ContentStore,
+) -> Result<Option<String>, Finding> {
+    // The bound role's doc identity — `<type>:<slug>`, fragment dropped (it is the
+    // *final* slice, re-attached after the hops land).
+    let mut current = format!("{}:{}", bound.r#type, bound.slug);
+
+    // Walk every cross-doc relation hop past the role (the first hop is the role).
+    for hop in path.hops.iter().skip(1) {
+        match store.walk_edge(&current, hop.as_str()) {
+            Some(to) => current = to,
+            None => return Ok(None), // unset relation → absent, empty text.
+        }
+    }
+
+    // The landing doc, sliced at the path's own `#fragment`.
+    let landing = match &path.fragment {
+        Some(fragment) => format!("{current}#{fragment}"),
+        None => current,
+    };
+    let address = crate::address::Address::parse(&landing).map_err(|source| {
+        Finding::blocking(
+            "workflow-refs.malformed-data-value",
+            format!("the dereferenced target `{landing}` is not a valid address: {source}"),
+            Location::at(1, 1),
+        )
+    })?;
+    store.read_slice(&address).map(Some)
+}
+
+/// Render `prose` as a Markdown blockquote — each line prefixed `> ` (a blank line
+/// becomes a bare `>`), so a multi-line doc-slice is a multi-line blockquote
+/// (`workflow-dialect.md` → Emitted format: "a multi-line doc-slice is a multi-line
+/// blockquote"). A trailing newline on `prose` is dropped (the slice is the slot
+/// bytes; the blockquote is the emitted form).
+fn blockquote(prose: &str) -> String {
+    prose
+        .trim_end_matches('\n')
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                ">".to_string()
+            } else {
+                format!("> {line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Emit a resolved bare `{{<path>}}` data-value as inline Reason text: a
@@ -949,10 +1104,29 @@ pub fn compose(
     catalog: &CommandCatalog,
     ctx: &crate::data_value::ComposeContext,
 ) -> Result<ComposedWorkflow, Finding> {
+    compose_with_store(def, source, catalog, ctx, None)
+}
+
+/// Compose a workflow end-to-end, dereferencing `{{@<path>}}` Content lines through
+/// `store` when one is provided — the store-backed sibling of [`compose`].
+///
+/// With a `store`, the superseding-decision `{{@task.decision.supersedes#decision}}`
+/// is dereferenced to the superseded ADR's `#decision` prose, emitted as a `> `
+/// Content blockquote (`worked-examples.md` → Superseding decision); without one,
+/// Content lines carry the resolved address handle (the structural path). Everything
+/// else is [`compose`]'s behavior. Still a pure function of its inputs once `store`'s
+/// reads are fixed — the engine never reaches outside the fed-in surfaces.
+pub fn compose_with_store(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    ctx: &crate::data_value::ComposeContext,
+    store: Option<&dyn ContentStore>,
+) -> Result<ComposedWorkflow, Finding> {
     let composition = expand_includes(def, source)?;
     let mut emitted_steps = Vec::with_capacity(composition.steps.len());
     for step in &composition.steps {
-        emitted_steps.push(emit_step_body(&step.body, ctx, catalog)?);
+        emitted_steps.push(emit_step_body_with(&step.body, ctx, catalog, store)?);
     }
     // Join the per-step emitted texts with a single blank line between steps, so
     // the composed view reads as one ordered document. Each step body already
@@ -1157,6 +1331,239 @@ If your decision supersedes an earlier one, here is that decision:
 
         after
         "###);
+    }
+
+    // -- The superseding-decision context-slice (inc-5 seq 5) ----------------
+    //
+    // `{{@task.decision.supersedes#decision}}` dereferenced through the bound
+    // `task.decision` role + the `supersedes` edge hop + the committed store to the
+    // superseded ADR's `#decision` prose, emitted as a `> ` Content blockquote
+    // (`worked-examples.md` → Superseding decision). An unbound role or an unset
+    // `supersedes` short-circuits to empty text — no finding (flow #1).
+
+    use crate::address::Address;
+    use crate::index::{self, WorkingOverlay};
+    use crate::schema::Schema;
+    use std::collections::BTreeMap;
+    use std::path::{Path, PathBuf};
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    /// A throwaway directory that removes itself on drop.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-compose-slice-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp root");
+            TempRoot(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn adr_schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "adr".to_string(),
+            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+        );
+        m
+    }
+
+    /// The committed ADR the supersede points at (`decisions/single-node-cache.md`).
+    const COMMITTED_ADR: &str = "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Single-node session cache
+
+## Context
+Session lookups must stay sub-millisecond.
+
+## Decision
+A single in-memory node keeps session lookups sub-millisecond and avoids a
+network hop; acceptable because sessions are cheap to reconstruct on a cold node.
+
+## Consequences
+A cold node loses its sessions; clients re-authenticate.
+";
+
+    /// A working-area ADR `B` whose `supersedes` is `supersedes` (or unset when
+    /// `None`).
+    fn working_adr_b(supersedes: Option<&str>) -> String {
+        let field = supersedes
+            .map(|to| format!("supersedes: {to}\n"))
+            .unwrap_or_default();
+        format!(
+            "\
+---
+status: accepted
+date: 2026-05-30
+{field}---
+
+# Shared redis session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+"
+        )
+    }
+
+    /// Commit ADR `A` at `decisions/single-node-cache.md` under `repo_root`.
+    fn commit_adr_a(repo_root: &Path) {
+        let dir = repo_root.join("decisions");
+        std::fs::create_dir_all(&dir).expect("mk decisions/");
+        std::fs::write(dir.join("single-node-cache.md"), COMMITTED_ADR).expect("write A");
+    }
+
+    /// Stage ADR `B` at `<task_dir>/docs/adr:shared-redis-session-cache.md`.
+    fn stage_adr_b(task_dir: &Path, supersedes: Option<&str>) {
+        let docs = task_dir.join("docs");
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(
+            docs.join("adr:shared-redis-session-cache.md"),
+            working_adr_b(supersedes),
+        )
+        .expect("stage B");
+    }
+
+    /// The `ComposeContext` with `task.decision` **bound** to the staged ADR `B`
+    /// (the create-gate binding) — what the superseding task's resume sees.
+    fn ctx_decision_bound() -> crate::data_value::ComposeContext {
+        let mut roles = BTreeMap::new();
+        roles.insert(
+            "commit".to_owned(),
+            Some(Address::parse("commit:shared-redis-session-cache").expect("valid")),
+        );
+        roles.insert(
+            "decision".to_owned(),
+            Some(Address::parse("adr:shared-redis-session-cache").expect("valid")),
+        );
+        crate::data_value::ComposeContext {
+            task: crate::data_value::TaskRoot {
+                id: "shared-redis-session-cache".to_owned(),
+                intent: "move the session cache to a shared redis cluster".to_owned(),
+                roles,
+            },
+        }
+    }
+
+    /// Build the live [`StoreContext`] over the committed store + the task overlay.
+    fn store_ctx<'a>(
+        repo_root: &'a Path,
+        schemas: &'a BTreeMap<String, Schema>,
+        overlay: &'a WorkingOverlay,
+    ) -> StoreContext<'a> {
+        StoreContext {
+            repo_root,
+            schemas,
+            overlay,
+        }
+    }
+
+    /// HEADLINE: `{{@task.decision.supersedes#decision}}` dereferences the bound
+    /// `task.decision` (`adr:shared-redis-session-cache`) → its `supersedes` edge
+    /// (`adr:single-node-cache`, committed) → that ADR's `#decision` slice, emitted
+    /// as a multi-line `> ` Content blockquote of the committed prose — byte-exact
+    /// from the committed fixture (`worked-examples.md` → Superseding decision).
+    #[test]
+    fn superseded_context_slices_the_prior_decision() {
+        let repo = TempRoot::new("slice-repo");
+        let task = TempRoot::new("slice-task");
+        commit_adr_a(repo.path());
+        stage_adr_b(task.path(), Some("adr:single-node-cache"));
+
+        let schemas = adr_schemas();
+        let committed = index::rebuild_committed(repo.path(), &schemas, "HEAD");
+        let overlay = index::overlay_working(&committed, task.path(), &schemas);
+        let store = store_ctx(repo.path(), &schemas, &overlay);
+
+        let catalog = CommandCatalog {
+            commands: BTreeMap::new(),
+        };
+        let body = "{{ @task.decision.supersedes#decision }}\n";
+        let emitted = emit_step_body_with(body, &ctx_decision_bound(), &catalog, Some(&store))
+            .expect("emits");
+
+        insta::assert_snapshot!(emitted, @r"
+        > A single in-memory node keeps session lookups sub-millisecond and avoids a
+        > network hop; acceptable because sessions are cheap to reconstruct on a cold node.
+        ");
+    }
+
+    /// FLOW #1 / no-edge: with `task.decision` bound but `supersedes` **unset** (no
+    /// edge), and with `task.decision` **unbound**, the same placeholder emits an
+    /// empty line — no `> ` blockquote, zero findings (empty-vs-unresolvable).
+    #[test]
+    fn superseded_context_empty_when_no_edge() {
+        let repo = TempRoot::new("empty-repo");
+        let schemas = adr_schemas();
+        let catalog = CommandCatalog {
+            commands: BTreeMap::new(),
+        };
+        let body = "before\n{{ @task.decision.supersedes#decision }}\nafter\n";
+
+        // (1) Bound decision, but `supersedes` unset → no edge → empty.
+        let task_unset = TempRoot::new("empty-task-unset");
+        stage_adr_b(task_unset.path(), None);
+        let committed = index::rebuild_committed(repo.path(), &schemas, "HEAD");
+        let overlay_unset = index::overlay_working(&committed, task_unset.path(), &schemas);
+        let store_unset = store_ctx(repo.path(), &schemas, &overlay_unset);
+        let emitted_unset =
+            emit_step_body_with(body, &ctx_decision_bound(), &catalog, Some(&store_unset))
+                .expect("emits");
+        assert_eq!(
+            emitted_unset, "before\n\nafter\n",
+            "an unset `supersedes` emits an empty line, no `>`: {emitted_unset:?}"
+        );
+
+        // (2) Unbound decision role → absent → empty, even with a store present.
+        let task_unbound = TempRoot::new("empty-task-unbound");
+        let overlay_unbound = index::overlay_working(&committed, task_unbound.path(), &schemas);
+        let store_unbound = store_ctx(repo.path(), &schemas, &overlay_unbound);
+        let mut roles = BTreeMap::new();
+        roles.insert("decision".to_owned(), None); // declared, unbound.
+        let ctx_unbound = crate::data_value::ComposeContext {
+            task: crate::data_value::TaskRoot {
+                id: "t".to_owned(),
+                intent: "i".to_owned(),
+                roles,
+            },
+        };
+        let emitted_unbound =
+            emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
+        assert_eq!(
+            emitted_unbound, "before\n\nafter\n",
+            "an unbound decision role emits an empty line: {emitted_unbound:?}"
+        );
+        assert!(
+            !emitted_unbound.contains('>'),
+            "no blockquote when the role is unbound"
+        );
     }
 
     proptest::proptest! {
