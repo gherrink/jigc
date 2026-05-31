@@ -1,0 +1,17 @@
+---
+source: crates/engine/src/parse.rs
+expression: f
+---
+Finding {
+    severity: Blocking,
+    code: "conformance.unknown-field",
+    message: "unknown field key `nonsense`",
+    location: Some(
+        Location {
+            address: None,
+            line: 12,
+            col: 1,
+        },
+    ),
+    route: None,
+}

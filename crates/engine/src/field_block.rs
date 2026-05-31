@@ -30,6 +30,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// A field value as read from disk: an opaque scalar string, or an inline-flow
 /// list of opaque scalar strings.
 ///
@@ -38,7 +40,7 @@ use std::fmt;
 /// (it is none of those to *us*). The distinction the reader *does* draw is
 /// structural: a value wrapped in `[ … ]` at the top level is a [`Value::List`]
 /// (cardinality > 1, inline flow), everything else is a [`Value::Scalar`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
     /// A single opaque value — the literal text after `key:`, trimmed.
     Scalar(String),
@@ -47,7 +49,7 @@ pub enum Value {
 }
 
 /// One parsed field: its `key` and its raw [`Value`], in the order it appeared.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Field {
     /// The field key (the text before the first `:`), trimmed.
     pub key: String,

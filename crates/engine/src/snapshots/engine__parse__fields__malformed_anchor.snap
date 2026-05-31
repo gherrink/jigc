@@ -1,0 +1,17 @@
+---
+source: crates/engine/src/parse.rs
+expression: f
+---
+Finding {
+    severity: Blocking,
+    code: "conformance.item-anchor-malformed",
+    message: "malformed `{#id}` anchor `{#Bad Id}` (must be a slug `[a-z0-9-]`)",
+    location: Some(
+        Location {
+            address: None,
+            line: 9,
+            col: 1,
+        },
+    ),
+    route: None,
+}

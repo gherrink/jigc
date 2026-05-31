@@ -1,0 +1,29 @@
+---
+source: crates/engine/src/parse.rs
+expression: view
+---
+[
+    (
+        "rate-limit",
+        "Rate limit holds at 100/min",
+        Some(
+            "The gateway rejects the 101st request in a 60s window.",
+        ),
+        [
+            Field {
+                key: "maps-to-test",
+                value: Scalar(
+                    "`test/rate_limit_spec.rb#burst`",
+                ),
+            },
+        ],
+    ),
+    (
+        "burst-allowance",
+        "Burst allowance",
+        Some(
+            "A short burst above the limit is tolerated for 2s.",
+        ),
+        [],
+    ),
+]

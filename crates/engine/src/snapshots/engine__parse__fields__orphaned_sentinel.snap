@@ -1,0 +1,17 @@
+---
+source: crates/engine/src/parse.rs
+expression: f
+---
+Finding {
+    severity: Blocking,
+    code: "conformance.orphaned-sentinel",
+    message: "`<!-- fields -->` sentinel without a following bullet list",
+    location: Some(
+        Location {
+            address: None,
+            line: 11,
+            col: 1,
+        },
+    ),
+    route: None,
+}

@@ -1,0 +1,24 @@
+---
+source: crates/engine/src/parse.rs
+expression: "&status.fields"
+---
+[
+    Field {
+        key: "status",
+        value: Scalar(
+            "accepted",
+        ),
+    },
+    Field {
+        key: "date",
+        value: Scalar(
+            "2026-05-23",
+        ),
+    },
+    Field {
+        key: "supersedes",
+        value: Scalar(
+            "adr:single-node-cache",
+        ),
+    },
+]

@@ -1,0 +1,17 @@
+---
+source: crates/engine/src/parse.rs
+expression: f
+---
+Finding {
+    severity: Blocking,
+    code: "conformance.item-anchor-missing",
+    message: "repeatable item `A criterion with no anchor` has no `{#id}` anchor",
+    location: Some(
+        Location {
+            address: None,
+            line: 9,
+            col: 1,
+        },
+    ),
+    route: None,
+}
