@@ -379,6 +379,21 @@ pub(crate) enum Block {
 ///
 /// Crate-visible so the surgical-splice edit path ([`crate::write`]) locates target
 /// spans over this same block parse rather than a fragile line scanner.
+/// Strip a single leading UTF-8 BOM in place — read-tolerance per `parsing.md` →
+/// Round-trip guarantees ("BOM — tolerate on read (skip — it would break
+/// front-matter detection)"). No-op when absent.
+///
+/// Applied at the committed-store read boundary ([`crate::store`], [`crate::index`])
+/// *before* both parse and slot-slice, so spans stay aligned with the source the
+/// caller holds. The working-area copy-in canonicalizes separately
+/// ([`crate::write::first_touch_canonicalize`]); this covers the read-only paths
+/// that parse committed bytes directly.
+pub(crate) fn strip_leading_bom(source: &mut String) {
+    if source.starts_with('\u{feff}') {
+        source.replace_range(..'\u{feff}'.len_utf8(), "");
+    }
+}
+
 pub(crate) fn scan_blocks(source: &str) -> Vec<Block> {
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);

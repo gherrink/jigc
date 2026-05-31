@@ -101,7 +101,7 @@ pub fn read_slice(
     };
 
     // Read the committed bytes; a missing file is a located block, not a panic.
-    let source = std::fs::read_to_string(&path).map_err(|err| {
+    let mut source = std::fs::read_to_string(&path).map_err(|err| {
         block(
             "store.not-found",
             format!(
@@ -112,6 +112,8 @@ pub fn read_slice(
             "create the referenced doc, or fix the reference to an existing one".to_string(),
         )
     })?;
+    // Tolerate a leading BOM on read (Windows-editor edits) before parse + slice.
+    parse::strip_leading_bom(&mut source);
 
     // Parse the committed file against its schema; conformance failures surface the
     // first blocking finding (re-located onto the address for the caller).
@@ -288,6 +290,26 @@ A cold node loses its sessions; clients re-authenticate.
         A single in-memory node keeps session lookups sub-millisecond and avoids a
         network hop; acceptable because sessions are cheap to reconstruct on a cold node.
         ");
+    }
+
+    /// Read-tolerance: a committed ADR saved with a leading UTF-8 BOM (common from
+    /// Windows editors — the file is an editable channel) still reads and slices,
+    /// per `parsing.md` → Round-trip guarantees ("BOM — tolerate on read (skip)").
+    /// The BOM is stripped before both parse and slice, so the prose stays aligned.
+    #[test]
+    fn store_tolerates_a_leading_bom_on_a_committed_adr() {
+        let root = TempRoot::new("bom");
+        let path = root.path().join("decisions").join("single-node-cache.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(&path, format!("\u{feff}{COMMITTED_ADR}")).expect("write BOM'd ADR");
+
+        let address = Address::parse("adr:single-node-cache#decision").expect("valid address");
+        let prose = read_slice(root.path(), &schemas(), &address)
+            .expect("a BOM-prefixed committed ADR still resolves");
+        assert!(
+            prose.starts_with("A single in-memory node"),
+            "sliced prose is byte-aligned despite the BOM: {prose:?}"
+        );
     }
 
     /// A missing target file yields a blocking [`Finding`] with a located message

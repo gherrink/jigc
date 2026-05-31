@@ -180,9 +180,10 @@ pub fn rebuild_committed(
             let Some(slug) = path.file_stem().and_then(|s| s.to_str()) else {
                 continue;
             };
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(mut source) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            crate::parse::strip_leading_bom(&mut source);
             let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
                 continue; // unparseable committed file: skip; not the index's gate.
             };
@@ -292,9 +293,10 @@ pub fn overlay_working(
             };
             task_froms.push(from.to_string());
 
-            let Ok(source) = std::fs::read_to_string(&path) else {
+            let Ok(mut source) = std::fs::read_to_string(&path) else {
                 continue;
             };
+            crate::parse::strip_leading_bom(&mut source);
             let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
                 continue; // unparseable staged file: skip; not the overlay's gate.
             };
