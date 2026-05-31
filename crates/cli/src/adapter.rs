@@ -195,6 +195,76 @@ pub fn inject_line(repo_root: &Path) -> std::io::Result<()> {
     std::fs::write(&target, next)
 }
 
+/// Idempotently merge the profile's allowlist permits into the host project's
+/// assistant settings file (`<repo_root>/<profile.allowlist.file>`, e.g.
+/// `.claude/settings.json`).
+///
+/// `jigc setup`'s allowlist step ([`assistant-adapter.md`] → Make `jigc`
+/// frictionless: the path-of-least-resistance the bootstrap depends on). A
+/// **structure-aware** JSON merge, not a text splice: parse (or create) the
+/// settings object, ensure every permit pattern from the profile is present in
+/// the `permissions.allow` array, and write back pretty JSON. Idempotent by
+/// **structural presence** (decided 2026-05-31), not by text markers — a permit
+/// already in the array is a no-op, so a re-run is byte-identical; unrelated
+/// top-level keys and unrelated permissions are preserved (a missing file is
+/// created with just the permit(s); a missing `permissions` object or `allow`
+/// array is created). Regenerated on upgrade, so the integration can't rot.
+pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+    let target = repo_root.join(&profile.allowlist.file);
+
+    let mut settings: serde_json::Value = match std::fs::read_to_string(&target) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            serde_json::Value::Object(serde_json::Map::new())
+        }
+        Err(e) => return Err(e),
+        Ok(text) => serde_json::from_str(&text)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?,
+    };
+
+    // Navigate/create `permissions.allow`, then ensure each permit is present.
+    let allow = settings
+        .as_object_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "settings root is not a JSON object",
+            )
+        })?
+        .entry("permissions")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "`permissions` is not a JSON object",
+            )
+        })?
+        .entry("allow")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "`permissions.allow` is not a JSON array",
+            )
+        })?;
+
+    for permit in &profile.allowlist.permit {
+        let present = allow.iter().any(|v| v.as_str() == Some(permit.as_str()));
+        if !present {
+            allow.push(serde_json::Value::String(permit.clone()));
+        }
+    }
+
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut out = serde_json::to_string_pretty(&settings)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    out.push('\n');
+    std::fs::write(&target, out)
+}
+
 /// Locate the byte span of the marker-fenced bootstrap block in `content`, from
 /// the start of the start marker to the end of the end marker (exclusive of any
 /// following newline). Returns `None` when either marker is absent. The first
@@ -464,6 +534,117 @@ More rules below, also human-authored.
             after_first, after_second,
             "appending is idempotent: run twice ⇒ byte-identical",
         );
+    }
+
+    /// First allowlist merge into a project with **no** `.claude/settings.json`
+    /// creates the file (and the `.claude/` dir) with a `permissions.allow` array
+    /// holding exactly the profile's permit pattern; a second merge is a no-op at
+    /// the byte level (run twice ⇒ byte-identical). The created form is
+    /// golden-locked: pretty JSON, the `jigc *` permit present once.
+    #[test]
+    fn allowlist_added_then_idempotent() {
+        let dir = TempDir::new();
+        let settings = dir.path().join(".claude/settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        inject_allowlist(dir.path(), &profile).expect("first allowlist merge");
+        assert!(
+            settings.exists(),
+            "merge creates .claude/settings.json when absent",
+        );
+        let after_first = std::fs::read_to_string(&settings).expect("read after first");
+
+        inject_allowlist(dir.path(), &profile).expect("second allowlist merge");
+        let after_second = std::fs::read_to_string(&settings).expect("read after second");
+
+        assert_eq!(
+            after_first, after_second,
+            "allowlist merge is idempotent: a second run leaves the file byte-identical",
+        );
+        assert_eq!(
+            after_first.matches("\"jigc *\"").count(),
+            1,
+            "the permit appears exactly once — no duplicate, got:\n{after_first}",
+        );
+
+        insta::assert_snapshot!(after_first, @r###"
+        {
+          "permissions": {
+            "allow": [
+              "jigc *"
+            ]
+          }
+        }
+        "###);
+    }
+
+    /// Merging into a `.claude/settings.json` that already holds an unrelated
+    /// top-level key **and** an unrelated permission preserves both: the `jigc *`
+    /// permit is added once to the existing allow list, the unrelated permission
+    /// stays, and the unrelated top-level key is untouched. A re-run is then
+    /// idempotent.
+    #[test]
+    fn allowlist_preserves_existing_settings() {
+        let dir = TempDir::new();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).expect("create .claude");
+        let settings = claude_dir.join("settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        // A settings file with an unrelated top-level key and an unrelated
+        // already-present permission.
+        let preexisting = r#"{
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)"
+    ]
+  }
+}
+"#;
+        std::fs::write(&settings, preexisting).expect("seed settings.json");
+
+        inject_allowlist(dir.path(), &profile).expect("merge into existing settings");
+        let after = std::fs::read_to_string(&settings).expect("read after merge");
+
+        assert!(
+            after.contains("\"jigc *\""),
+            "the jigc permit is added, got:\n{after}",
+        );
+        assert!(
+            after.contains("\"Bash(ls:*)\""),
+            "the unrelated permission is preserved, got:\n{after}",
+        );
+        assert!(
+            after.contains("rust-analyzer-lsp@claude-plugins-official"),
+            "the unrelated top-level key is preserved, got:\n{after}",
+        );
+        assert_eq!(
+            after.matches("\"jigc *\"").count(),
+            1,
+            "the permit is added exactly once, got:\n{after}",
+        );
+
+        // Idempotent: a second merge over the now-current file is a no-op.
+        inject_allowlist(dir.path(), &profile).expect("second merge");
+        let after_second = std::fs::read_to_string(&settings).expect("read after second");
+        assert_eq!(after, after_second, "re-merge is byte-identical");
+
+        insta::assert_snapshot!(after, @r###"
+        {
+          "enabledPlugins": {
+            "rust-analyzer-lsp@claude-plugins-official": true
+          },
+          "permissions": {
+            "allow": [
+              "Bash(ls:*)",
+              "jigc *"
+            ]
+          }
+        }
+        "###);
     }
 
     /// An unknown assistant name is a clear not-found error, never a panic.

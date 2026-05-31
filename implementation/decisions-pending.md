@@ -31,5 +31,4 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 ## Increment 6 — adapter & ship
 
 - **(D) Product name** — *settled 2026-05-31: ship the MVP as `jigc` (adopt the placeholder as the name). See [DECISIONS.md](../DECISIONS.md).*
-- **(D) `jigc setup` injection mechanism** — idempotent markers for writing the bootstrap line + allowlist into `CLAUDE.md` / `.claude/settings.json` ([assistant-adapter.md](../design/assistant-adapter.md)).
 - **(I) Release / cross-compile + quickstart** — packaging the single binary.
