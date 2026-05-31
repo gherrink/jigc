@@ -709,3 +709,31 @@ Decided up front so increments 2–6 run autonomously without stopping to surfac
 ### Product name (inc 6)
 
 - **Ship the MVP as `jigc`** — adopt the placeholder as the real name; no rename pass in inc 6. A later rename (if a better name emerges) is a mechanical find-replace, not a blocker. Resolves the `jigc` token placeholders across the docs for MVP purposes. Closes decisions-pending inc-6 (D, product name).
+
+## 2026-05-31 — Increment 2 doc-elaboration pins (parser/writer)
+
+Pinned at inc-2 pickup (the executor pins concrete forms + logs; settled gates above stay authoritative). All follow the locked `parsing.md` / `storage.md` / `document-type-schema.md`; this records the *concrete* byte/struct choices the round-trip golden tests freeze.
+
+### Canonical byte form (frozen in golden tests)
+
+- **Frozen by golden test, the exact serializer output** (`storage.md` → Anatomy, `parsing.md` → Field-group delineation / Round-trip guarantees): front-matter is a `---\n`-fenced flat `key: value` block (one field per line, schema order, no blank line between fences and fields), then a **single blank line**, then the `# H1` title; sections are `## <Heading>\n` followed by a blank line then slot prose; a body/item field group is `<slot prose>\n\n<!-- fields -->\n- key: value\n- key2: value2` — i.e. exactly one blank line before the sentinel, the sentinel on its own line, then a contiguous bullet list (`- ` prefix, single space), one field per line in schema order, **no** blank line between sentinel and list or between bullets. Repeatable items are `### <title>  {#id}\n` (two spaces before `{#id}`, matching the storage.md SPEC example) then a blank line then item body. Exactly one trailing newline (LF) at EOF; LF line endings for generated content. Sentinel emitted **only** when ≥1 declared field has a value. Why: one concrete form makes generated and conformant-human content converge, so the idempotent-on-canonical clause is byte-checkable.
+
+### Round-trip canonicalization ledger (the modulo in the fuzz contract)
+
+- **The only first-touch canonicalizations** (everything else preserved byte-for-byte per `parsing.md` → Round-trip guarantees): strip a leading BOM; normalize trailing newline to exactly one; never reflow prose or normalize interior blank lines. EOL is *preserved* (matched locally at edit sites), not normalized — so the no-op-write fuzz assertion is "byte-identical after BOM-strip + single-trailing-newline normalization," nothing else. Why: bounds the fuzz oracle precisely so "byte-identical modulo declared canonicalizations" is a decidable assertion.
+
+### Finding shape (conformance diagnostics + block envelope)
+
+- **`engine::finding::Finding { severity: Severity, code: String, message: String, location: Option<Location>, route: Option<String> }`** with `Severity { Blocking, Warning, Advisory }` and `Location { address: Option<String>, line: usize, col: usize }` — the one envelope used by conformance diagnostics (this increment), and later validation findings + hard blocks (the settled inc-4 block-payload gate). Inc-2 produces only conformance `Finding`s (severity `Blocking`, with `code` + located `message`; `route` typically `None` at parse scope). Why: "one finding shape, two producers" (`parsing.md` → Conformance diagnostics) — introduce it where the first producer (the parser) needs it.
+
+### Schema model + commit/adr schema YAML
+
+- **`commit` ships now, `adr` ships as a structural skeleton** (`document-type-schema.md` → On-disk definition format; roadmap inc-2 "commit (and skeleton adr)"). `commit` = a header section + prose slot(s), sink = git message (no `location:`/persisted). `adr` skeleton = the `status` header section (`status` enum, `date`, `supersedes` ref) + `context`/`decision`/`consequences` slots + `location: decisions/` + `id-from: title` — enough for the writer/parser to round-trip an ADR fixture; the `create`-gate + promotion wiring is inc-5. Schema YAML lives in the embedded pack under `pack/schemas/<type>.yaml`, loaded via `PackResourceKind::Schemas`. Why: inc-2 must round-trip both MVP doc-types over fixtures; the persisted ADR is what the #1-risk golden splice exercises.
+
+### Slug normalization home
+
+- **`engine::slug::slugify(id_source: &str) -> String`** implements the settled normalization (lowercase; spaces/`_`→`-`; transliterate non-ASCII to ASCII; strip to `[a-z0-9-]`; collapse/trim `-`; ~50-char cap at a `-` boundary; empty→type-name handled by the caller that knows the type). Collision-suffix (`-2`, `-3`) is the caller's concern at mint sites (inc 3/4); inc-2 needs the pure normalization for the generation path's `{#id}` minting and is golden+property-tested here (idempotent: `slugify(slugify(x)) == slugify(x)`; output always matches `^[a-z0-9-]*$`). Why: the writer's generation/`add-item` path mints item anchors from the id-source, so the normalization lands with its first consumer.
+
+### Finding envelope — serde-projection picks (implements the pinned shape)
+
+- **`engine::finding` realizes the pinned `Finding`/`Severity`/`Location` shape**, fixing the serde projection that became its stable JSON contract: `Severity` is `#[serde(rename_all = "kebab-case")]` (`"blocking"`/`"warning"`/`"advisory"`); `Location.address` is `#[serde(default, skip_serializing_if = "Option::is_none")]` so a positional diagnostic projects to exactly `{line,col}`; `Finding.route` is **kept** (projects as `null` when absent) so the block envelope always carries the key. `line`/`col` are 1-based. The golden pins `serde_json::to_string_pretty` (the field-*ordered* string), not a key-sorted value, so it locks field order too — `assert_json_snapshot` was rejected because it sorts keys and would misrepresent the projection order. Why: the parser (first producer, inc-2) needs the envelope, and its JSON projection is a renderer/JSON contract that must be pinned by attribute, not by derive accident.
