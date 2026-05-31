@@ -2,7 +2,7 @@
 
 The build order for the MVP — **one milestone, decomposed into increments**, each a coherent group of tasks delivering one runnable slice of the loop. This is sequencing, not design: every increment cross-references the design doc that specifies *what* it builds; this doc owns only the *order* and the *grouping*. For scope (what's in the MVP vs deferred) see [CLAUDE.md](../CLAUDE.md) → MVP scope; for the *why* of the ordering, [DECISIONS.md](../DECISIONS.md).
 
-Work-unit terms are `milestone > increment > task` ([structural-grammar.md](../design/structural-grammar.md) → Work-units). **Tasks are intentionally not enumerated here yet** — they're cut per-increment when that increment is picked up, so the list stays honest against what the prior increments actually produced.
+Work-unit terms are `milestone > increment > task` ([structural-grammar.md](../design/structural-grammar.md) → Work-units). **Tasks are intentionally not enumerated here yet** — they're cut per-increment when that increment is picked up, so the list stays honest against what the prior increments actually produced. *How* an increment is taken from "not started" to "validated and committed" — the plan → execute → validate → fix loop that cuts and runs those tasks — is the [increment workflow](increment-workflow.md).
 
 The ordering principle is **risk-first**: stand up the spine, retire the #1 technical risk in isolation, build the loop, prove the differentiator, then ship. The spine is strictly linear — each increment builds on the one before.
 
@@ -86,4 +86,4 @@ A usable `jigc` an agent is pointed at, proving the core loop (discover → comp
 
 ## Status
 
-Increment 1 not yet started; the [cargo workspace scaffold](module-layout.md) is in place. Tasks are cut per-increment at pickup.
+All six increments (1–6) complete and validated as of 2026-05-31 — the single-task execution loop is built end-to-end (the [superseding-decision](../design/worked-examples.md) acceptance path passes). Tasks were cut per-increment at pickup via the [increment workflow](increment-workflow.md).

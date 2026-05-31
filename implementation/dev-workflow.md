@@ -1,6 +1,6 @@
 # Dev workflow (TDD)
 
-The loop for **building jigc** — how a single implementation task is taken from "not started" to "committed," test-first. This is distinct from the **design-collaboration loop** in [CLAUDE.md](../CLAUDE.md) → How we work together: that one governs *decisions* (discuss → converge → write a design doc); this one governs *code tasks*. It runs **per task within an increment** ([roadmap.md](roadmap.md)); tasks are cut when an increment is picked up.
+The loop for **building jigc** — how a single implementation task is taken from "not started" to "committed," test-first. This is distinct from the **design-collaboration loop** in [CLAUDE.md](../CLAUDE.md) → How we work together: that one governs *decisions* (discuss → converge → write a design doc); this one governs *code tasks*. It runs **per task within an increment** ([roadmap.md](roadmap.md)); tasks are cut when an increment is picked up. This is the **inner** loop: the [increment workflow](increment-workflow.md) is the outer one that cuts an increment's tasks, runs each through the loop below, then independently validates the increment and fixes until clean.
 
 The loop is shaped as named, ordered steps on purpose: each maps onto a future jigc `step:` and the whole onto a future `workflow:dev-task`. We run it by hand now; when jigc can compose, it promotes into the workflow dialect almost verbatim ([workflow-dialect.md](../design/workflow-dialect.md)).
 
