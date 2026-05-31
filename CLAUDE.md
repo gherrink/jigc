@@ -4,21 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Pre-implementation. No code or build system yet; design lives in `VISION.md` (thesis), `DECISIONS.md` (running log of *what* and *why*), the `design/` part-docs, and `implementation/` (build decisions). Core language is **Rust** (see [implementation/language-runtime.md](implementation/language-runtime.md)). The product name is undecided — the CLI is referred to as `jigc` as a placeholder throughout.
+Implementation has begun. Design lives in `VISION.md` (thesis), `DECISIONS.md` (running log of *what* and *why*), the `design/` part-docs, and `implementation/` (build decisions, the [roadmap](implementation/roadmap.md), and the [dev](implementation/dev-workflow.md) / [design](implementation/design-workflow.md) workflows). Core language is **Rust** ([implementation/language-runtime.md](implementation/language-runtime.md)); the code is a two-crate cargo workspace (`crates/engine` + `crates/cli`, binary `jigc`). The product name is undecided — the CLI is referred to as `jigc` as a placeholder throughout.
 
-When implementation begins, update this file with the actual build/lint/test commands.
+**Build / lint / test:** `cargo build` · `cargo test` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt --check` (the dev-workflow gate).
 
 ## How we work together
 
-This is a pre-implementation **design collaboration**. Maurice develops the idea; Claude is a constructive-critical partner, not a code monkey. The default output is **discussion, not artifacts** — do not write files until told to.
+Two operating modes, each with its own loop:
 
-**The loop:**
-0. **Scope** — Maurice says roughly what's next. Before developing, restate in one line *what* we're deciding and *at what depth*; if ambiguous, wait for a nod.
-1. **Develop & present in chat** — options, tradeoffs, a recommendation with reasoning. One decision at a time; never a batched "whole design" dump.
-2. **Discuss & iterate** — push back, name risks, flag honest boundaries. Constructive-and-critical is the standing stance, not a per-request ask.
-3. **Converge** — write **only** on an explicit "write it." Never infer convergence from enthusiasm.
-4. **Write** — into the agreed home at the agreed granularity.
-5. **Review, then commit** — Maurice reviews the written file; commit (conventional message, one logical change) only after he's satisfied.
+- **Design decisions & docs** → the [design workflow](implementation/design-workflow.md) (discuss → converge → write; default output is discussion).
+- **Code** → the [dev workflow](implementation/dev-workflow.md) (test-first: scope → red → green → refactor → gate → commit).
+
+The conventions below apply across both.
 
 **Conventions:**
 - **One file, one purpose — route by home.** Thesis/framing → `VISION.md`; working truth & how-we-work → this file; the *why* of a decision → `DECISIONS.md`; architecture detail → a part-doc in `design/`; a shaped-but-unscheduled idea → one descriptive file in `ideas/`. **Cross-reference, never restate** — if two docs state the same fact, one is wrong. Shared content earns its own part-doc (the document model, applied to us).

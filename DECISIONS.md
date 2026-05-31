@@ -609,3 +609,7 @@ Build order locked in [implementation/roadmap.md](implementation/roadmap.md): th
 ### Dev workflow (TDD) defined for the build
 
 The implementation loop is captured in [implementation/dev-workflow.md](implementation/dev-workflow.md): a six-step test-first loop (scope → red → green → refactor → gate → commit) run per task within an increment, distinct from the design-collaboration loop. Written as prose-steps now; shaped as named ordered steps so it promotes into the jigc workflow dialect (`step:` files + `workflow:dev-task`) once jigc can compose. The loop deliberately mirrors jigc in miniature (gate≈validate, commit≈finalize) so dogfooding informs the real `single-task` workflow.
+
+### CLAUDE.md flipped to implementation mode; design-collaboration loop extracted
+
+CLAUDE.md updated for the implementation phase: "Project state" now reflects the cargo workspace + real build/lint/test commands; the **design-collaboration loop** is extracted to [implementation/design-workflow.md](implementation/design-workflow.md) (parallel to dev-workflow.md), with CLAUDE.md keeping a two-modes reference (design vs dev) plus the durable conventions verbatim. MVP scope left in place for now (removed post-MVP). The conventions stay in CLAUDE.md because they are cross-mode governance, not planning-only.
