@@ -18,6 +18,7 @@
 //!   `reconciliation.md` → Hash re-baselining), all of which are *callers* of
 //!   [`FileStateRecord::save`], not this module's concern.
 
+use crate::finding::{Finding, Location, Severity};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -97,6 +98,71 @@ impl FileStateRecord {
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::new()),
             Err(err) => Err(err),
         }
+    }
+}
+
+/// The engine-native `file-state` probe over a set of files: classify each
+/// `(path, bytes)` against the recorded baseline and emit the MVP findings.
+///
+/// Three states (the only two transitions the commit-only loop needs —
+/// `validation.md` → Probes (`file-state`); `reconciliation.md` → Baseline
+/// adoption; OOB absorb/conflict are inc-5):
+///
+/// - **`UNKNOWN`** (no recorded hash — first run / fresh checkout) → **baseline-adopt**:
+///   the current on-disk content *is* the baseline. The probe records the hash on
+///   `record` and emits an informational `file-state.baseline-adopt` finding
+///   ([`Severity::Advisory`], no route). Absent-hash is not drift.
+/// - **recorded + matching** → no finding (the file is `IN_SYNC`).
+/// - **recorded + differing** → **drift**: a `file-state.hash-matches` finding —
+///   blocking by default ([`Severity::Blocking`], the severity-inventory default),
+///   tunable post-MVP — carrying a `reconcile <target>` route for the
+///   reconciliation classifier ([`reconciliation.md`](../../../design/reconciliation.md)).
+///   The recorded hash is **not** advanced on drift: re-baselining happens only at
+///   the three named sites (adopt / absorb / commit), and drift is none of them.
+///
+/// Mutating: the `UNKNOWN → baseline` transition records into `record`, so the
+/// caller persists the advanced record after the probe runs. The probe does no
+/// I/O of its own — the caller supplies the raw bytes already read.
+pub fn file_state(record: &mut FileStateRecord, files: &[(&str, &[u8])]) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (path, bytes) in files {
+        let current = hash_bytes(bytes);
+        match record.get(path) {
+            None => {
+                record.record(*path, current);
+                findings.push(baseline_adopt_finding(path));
+            }
+            Some(recorded) if recorded == current => {}
+            Some(_) => findings.push(drift_finding(path)),
+        }
+    }
+    findings
+}
+
+/// The informational baseline-adopt finding (`reconciliation.md` → Baseline
+/// adoption: "baseline adopted: `<doc>`"). Advisory, no route — first encounter
+/// is the normal case, not a problem to repair.
+fn baseline_adopt_finding(path: &str) -> Finding {
+    Finding {
+        severity: Severity::Advisory,
+        code: "file-state.baseline-adopt".to_string(),
+        message: format!("baseline adopted: `{path}`"),
+        location: Some(Location::addressed(path, 1, 1)),
+        route: None,
+    }
+}
+
+/// The drift block: the on-disk content no longer matches the recorded hash. A
+/// blocking `file-state.hash-matches` finding carrying a `reconcile <target>`
+/// route the engine never executes (`validation.md` → Findings: the `reconcile`
+/// route; severity inventory: `hash-matches` default blocking).
+fn drift_finding(path: &str) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "file-state.hash-matches".to_string(),
+        message: format!("on-disk content of `{path}` differs from the recorded state"),
+        location: Some(Location::addressed(path, 1, 1)),
+        route: Some(format!("reconcile {path}")),
     }
 }
 
@@ -189,5 +255,66 @@ mod tests {
         let root = TempRoot::new("missing");
         let loaded = FileStateRecord::load(root.path()).expect("missing file loads empty");
         assert_eq!(loaded, FileStateRecord::new());
+    }
+
+    /// The done-criterion for the `file-state` probe across the three MVP states:
+    ///
+    /// 1. **Fresh file (`UNKNOWN`)** → exactly one informational
+    ///    `file-state.baseline-adopt` finding (advisory, no route) **and** the
+    ///    record advances: the file's hash is now recorded.
+    /// 2. **Unchanged second run** → zero findings (the file is `IN_SYNC`).
+    /// 3. **Mutated file** → exactly one blocking `file-state.hash-matches`
+    ///    finding carrying a non-`None` `reconcile` route, and the recorded hash
+    ///    is **not** advanced (re-baselining is not a drift-site).
+    ///
+    /// All findings are the one [`Finding`] envelope.
+    #[test]
+    fn file_state_probe_baselines_and_detects_drift() {
+        const PATH: &str = "decisions/rate-limit.md";
+        let original: &[u8] = b"## Decision\n\nadopt a token bucket\n";
+        let mutated: &[u8] = b"## Decision\n\nadopt a leaky bucket\n";
+
+        let mut record = FileStateRecord::new();
+
+        // (1) Fresh file: baseline-adopt + the record advances.
+        let findings = file_state(&mut record, &[(PATH, original)]);
+        assert_eq!(findings.len(), 1, "first encounter emits one finding");
+        let adopt = &findings[0];
+        assert_eq!(adopt.code, "file-state.baseline-adopt");
+        assert_eq!(adopt.severity, Severity::Advisory);
+        assert_eq!(adopt.route, None, "baseline adoption is not a repair");
+        assert_eq!(
+            record.get(PATH),
+            Some(hash_bytes(original).as_str()),
+            "baseline-adopt records the current hash (the record advances)",
+        );
+
+        // (2) Unchanged second run: zero findings, no spurious re-adoption.
+        let findings = file_state(&mut record, &[(PATH, original)]);
+        assert!(
+            findings.is_empty(),
+            "a matching hash is IN_SYNC — no finding, got {findings:?}",
+        );
+
+        // (3) Mutated file: exactly one blocking hash-matches drift finding with a
+        // non-None reconcile route; the recorded hash stays pinned (not advanced).
+        let findings = file_state(&mut record, &[(PATH, mutated)]);
+        assert_eq!(findings.len(), 1, "drift emits exactly one finding");
+        let drift = &findings[0];
+        assert_eq!(drift.code, "file-state.hash-matches");
+        assert_eq!(drift.severity, Severity::Blocking);
+        let route = drift
+            .route
+            .as_deref()
+            .expect("drift carries a reconcile route");
+        assert!(
+            route.starts_with("reconcile"),
+            "the drift route is a reconcile direction, got {route:?}",
+        );
+        assert_eq!(
+            record.get(PATH),
+            Some(hash_bytes(original).as_str()),
+            "drift does not advance the recorded hash (re-baselining is not a drift-site)",
+        );
     }
 }
