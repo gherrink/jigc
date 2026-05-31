@@ -4,10 +4,14 @@
 //!
 //! The store layer is a raw-byte [`blake3`] hash and byte-stable JSON I/O over the
 //! record. Built atop it: [`file_state`], the inc-4 working-area/commit-only probe
-//! (baseline-adopt + hash-matches); and [`reconcile_committed`], the inc-5 OOB
+//! (baseline-adopt + hash-matches); [`reconcile_committed`], the inc-5 OOB
 //! reconciliation state machine over a *committed* managed doc — absorb /
 //! conformance-block / conflict-block (`reconciliation.md` → The state machine;
-//! `validation.md` → the `file-state` probe).
+//! `validation.md` → the `file-state` probe); and [`detect_rename`], the separate
+//! rename classifier for a tracked path gone *missing* — strong signal (a
+//! content-hash-matching untracked path → suspected `git mv`) / weak signal
+//! (restore), routed to human-side revert, never auto-rewriting referrer refs
+//! (`reconciliation.md` → Rename detection / No silent rename).
 //!
 //! - **Raw-byte hash** (`parsing.md` → Round-trip guarantees → Drift hash): the
 //!   `file ↔ CLI-state` check hashes the file's *raw bytes*, so a conformant
@@ -219,6 +223,75 @@ pub fn reconcile_committed(
                 }
             }
         }
+    }
+}
+
+/// **Rename detection** — the separate classifier for a tracked managed-doc path
+/// gone *missing* on disk (`reconciliation.md` → Rename detection; `storage.md` →
+/// Identity: a path change is an identity change). Runs at the same trigger points
+/// as [`reconcile_committed`], but only when the recorded path is **absent** — the
+/// state machine there sees the old path as missing and a moved file as a fresh
+/// untracked file, so neither catches a `git mv`.
+///
+/// Given the missing tracked `path`, its `<type>:<slug>` identity `from`, its
+/// `recorded_hash`, and the on-disk `untracked` candidates (`(path, raw-byte hash)`
+/// pairs the caller collected), it emits exactly one blocking `reconciliation.rename`
+/// finding routed for human-side revert:
+///
+/// - **Strong signal** — some untracked path carries the **same** `recorded_hash`: a
+///   suspected `git mv`. The finding names both paths and routes to
+///   `git mv <suspect> <tracked>` (revert the move). The first hash-matching
+///   candidate in `untracked` order is named.
+/// - **Weak signal** — no untracked path matches: the file is simply gone. The
+///   finding names the missing path and routes to **restore** it (or, post-MVP,
+///   confirm the deletion via `jigc doc delete`).
+///
+/// **No auto-rewrite.** A path rename is an identity change; the MVP blocks and routes
+/// to revert, and **never** rewrites referrer refs or mutates the edge index
+/// (`reconciliation.md` → No silent rename). This function is pure of I/O and of any
+/// edge/referrer mutation by construction — it reads its inputs and returns findings.
+pub fn detect_rename(
+    path: &str,
+    from: &str,
+    recorded_hash: &str,
+    untracked: &[(&str, String)],
+) -> Vec<Finding> {
+    match untracked.iter().find(|(_, hash)| hash == recorded_hash) {
+        Some((suspect, _)) => vec![rename_strong_finding(path, from, suspect)],
+        None => vec![rename_weak_finding(path, from)],
+    }
+}
+
+/// The blocking **strong-signal** rename finding (`reconciliation.md` → Rename
+/// detection → strong signal): the missing tracked doc and the content-matching
+/// suspect, routed to revert the suspected `git mv`. Referrer refs are untouched —
+/// the route hands the identity change back to the human.
+fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "reconciliation.rename".to_string(),
+        message: format!(
+            "tracked managed doc {from} ({path}) is missing; {suspect} has the same content hash — likely renamed via `git mv`"
+        ),
+        location: Some(Location::addressed(path, 1, 1)),
+        route: Some(format!(
+            "revert the move: `git mv {suspect} {path}` (post-MVP: `jigc doc rename` will re-key file-state and rewrite referrer refs)"
+        )),
+    }
+}
+
+/// The blocking **weak-signal** rename finding (`reconciliation.md` → Rename
+/// detection → weak signal): the tracked doc is simply gone, no content-matching
+/// suspect, routed to restore the file.
+fn rename_weak_finding(path: &str, from: &str) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "reconciliation.rename".to_string(),
+        message: format!("tracked managed doc {from} ({path}) is missing"),
+        location: Some(Location::addressed(path, 1, 1)),
+        route: Some(format!(
+            "restore {path} (post-MVP: `jigc doc delete {from}` to confirm deletion)"
+        )),
     }
 }
 
@@ -538,6 +611,82 @@ Slightly higher write latency for resilience.
         assert!(
             index.edges.is_empty(),
             "conflict-block does not update the edge index"
+        );
+    }
+
+    /// **Strong signal** — a tracked managed-doc path is missing **and** an untracked
+    /// path carries the **same recorded content hash**: a suspected `git mv`. The
+    /// detector emits exactly one blocking `reconciliation.rename` finding naming both
+    /// the missing tracked path and the suspect path, routed to a `git mv … revert`,
+    /// and rewrites **no** referrer refs / edges (`reconciliation.md` → Rename
+    /// detection → strong signal).
+    #[test]
+    fn rename_strong_signal_routes_to_git_mv_revert() {
+        const TRACKED: &str = "decisions/rate-limit.md";
+        const MOVED: &str = "decisions/gateway-rate-limit.md";
+        const FROM: &str = "adr:rate-limit";
+
+        // The recorded baseline hash for the (now-missing) tracked doc.
+        let recorded = hash_bytes(ADR_B_BASE.as_bytes());
+
+        // The untracked candidates on disk: the moved file carries the *same* content,
+        // so its raw-byte hash matches the recorded baseline (a suspected `git mv`).
+        let untracked: Vec<(&str, String)> = vec![(MOVED, hash_bytes(ADR_B_BASE.as_bytes()))];
+
+        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked);
+
+        assert_eq!(findings.len(), 1, "strong signal emits exactly one finding");
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.rename");
+        assert_eq!(f.severity, Severity::Blocking);
+        assert!(
+            f.message.contains(TRACKED) && f.message.contains(MOVED),
+            "the strong-signal finding names both the missing tracked path and the suspect path: {f:?}"
+        );
+        let route = f
+            .route
+            .as_deref()
+            .expect("strong signal carries a revert route");
+        assert!(
+            route.contains("git mv") && route.contains(MOVED) && route.contains(TRACKED),
+            "the route directs a `git mv … revert` of the moved file back to the tracked path: {route:?}"
+        );
+    }
+
+    /// **Weak signal** — a tracked managed-doc path is missing and **no** untracked
+    /// path carries the recorded content hash: the file is simply gone (deleted). The
+    /// detector emits exactly one blocking `reconciliation.rename` finding routed to
+    /// **restore**, naming the missing path and rewriting **no** referrer refs / edges
+    /// (`reconciliation.md` → Rename detection → weak signal).
+    #[test]
+    fn rename_weak_signal_routes_to_restore() {
+        const TRACKED: &str = "decisions/rate-limit.md";
+        const FROM: &str = "adr:rate-limit";
+
+        let recorded = hash_bytes(ADR_B_BASE.as_bytes());
+
+        // Untracked candidates exist, but none matches the recorded hash (different
+        // content) — so there is no rename suspect, only a missing file.
+        let untracked: Vec<(&str, String)> =
+            vec![("decisions/unrelated.md", hash_bytes(b"some other body\n"))];
+
+        let findings = detect_rename(TRACKED, FROM, &recorded, &untracked);
+
+        assert_eq!(findings.len(), 1, "weak signal emits exactly one finding");
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.rename");
+        assert_eq!(f.severity, Severity::Blocking);
+        assert!(
+            f.message.contains(TRACKED) && f.message.contains("missing"),
+            "the weak-signal finding names the missing tracked path: {f:?}"
+        );
+        let route = f
+            .route
+            .as_deref()
+            .expect("weak signal carries a restore route");
+        assert!(
+            route.contains("restore"),
+            "the weak-signal route directs a restore of the missing file: {route:?}"
         );
     }
 

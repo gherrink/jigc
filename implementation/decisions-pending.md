@@ -26,7 +26,7 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 5 — persisted ADR + edge index
 
-- *(reconciliation OOB state machine **settled 2026-05-31** — `engine::file_state::reconcile_committed`: absorb / conformance-block / conflict-block over a committed doc; see [DECISIONS.md](../DECISIONS.md). **Rename detection** remains the open inc-5 reconciliation item: strong/weak signal classifier routed to git-revert, per [reconciliation.md](../design/reconciliation.md) → Rename detection.)*
+- *(reconciliation OOB state machine + rename detection both **settled 2026-05-31** — `engine::file_state::reconcile_committed` (absorb / conformance-block / conflict-block over a committed doc) and `engine::file_state::detect_rename` (strong/weak signal for a missing tracked path, routed to git-revert, no ref rewrite); see [DECISIONS.md](../DECISIONS.md).)*
 
 ## Increment 6 — adapter & ship
 
