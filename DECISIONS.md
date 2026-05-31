@@ -639,3 +639,8 @@ Also established the **decision-backlog** convention: `implementation/decisions-
 
 - **Fragment parse is structural by hop-count** — 1 hop = `unit`, 2 = `unit/leaf`, 3 = `unit/item/leaf`. `#unit/item` and `#unit/leaf` are byte-identical, so a schema-free parser yields `UnitLeaf`; the `UnitItem` variant exists in the typed model but is reachable only with schema knowledge. Both render to the same two-hop bytes, so round-trip holds either way.
 - **Id hops are thin `String` newtypes** (`Type/Slug/Unit/Item/Leaf`, via a small macro) carrying raw token text verbatim — no normalization on the parse path (slug/minting normalization stays deferred to inc 3/4 per decisions-pending). `Display` writes the bytes back unchanged, giving byte-for-byte round-trip.
+
+### Result envelope: `Orientation`/`Catalog`/`CatalogEntry` + `SCHEMA_VERSION` (inc 1)
+
+- **`schema_version` is a root scalar marker on the result envelope** (`pub const SCHEMA_VERSION: u32 = 1`, stamped by `Orientation::new`), not a per-type or wrapper field — one bump point covers the whole projection, and a contract test pins the exact JSON shape so any rename is intentional.
+- **`Catalog` is `#[serde(transparent)]` over `Vec<CatalogEntry>`** so it projects as a bare `workflows[]` array under `Orientation`; entry keys are the verbatim `id`/`when` from the bootstrap orientation example.

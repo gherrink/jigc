@@ -2,3 +2,129 @@
 //!
 //! A versioned semantic API (explicit serde projection + schema-version marker),
 //! not incidental serde output. See `implementation/module-layout.md` → Renderers.
+//!
+//! The JSON projection of these types is the stable surface the three renderers,
+//! external JSON consumers, and a future `mcp` frontend all bind to. Field names
+//! are pinned with explicit `serde` attributes and the projection carries a
+//! [`SCHEMA_VERSION`] marker, so a rename is an intentional, versioned change —
+//! never an accident of `#[derive(Serialize)]`.
+
+use serde::{Deserialize, Serialize};
+
+/// The result-contract schema version. Bumped only when the JSON projection of a
+/// public result type changes in a way an external consumer must notice.
+pub const SCHEMA_VERSION: u32 = 1;
+
+/// One workflow as it appears in orientation's catalog: a stable `id` and its
+/// selection-guidance `when` line (the [`design/bootstrap.md`] orientation example
+/// renders these as `single-task — Implement one well-scoped change…`).
+///
+/// [`design/bootstrap.md`]: ../../../design/bootstrap.md
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CatalogEntry {
+    /// Stable workflow id (e.g. `single-task`).
+    pub id: String,
+    /// One-line selection guidance shown next to the id.
+    pub when: String,
+}
+
+impl CatalogEntry {
+    /// Build a catalog entry from its id and selection-guidance line.
+    pub fn new(id: impl Into<String>, when: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            when: when.into(),
+        }
+    }
+}
+
+/// The catalog of available workflows. Serializes transparently as a JSON array of
+/// [`CatalogEntry`], so it projects to `workflows[]` when held by [`Orientation`].
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Catalog {
+    entries: Vec<CatalogEntry>,
+}
+
+impl Catalog {
+    /// Build a catalog from its entries.
+    pub fn new(entries: Vec<CatalogEntry>) -> Self {
+        Self { entries }
+    }
+
+    /// Borrow the catalog entries in order.
+    pub fn entries(&self) -> &[CatalogEntry] {
+        &self.entries
+    }
+}
+
+/// The read-only result of `jigc start` orientation: the version marker plus the
+/// catalog of workflows the agent can choose from. This is the versioned contract
+/// the renderers read — its JSON keys (`schema_version`, `workflows`) are stable.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Orientation {
+    /// The result-contract schema version (see [`SCHEMA_VERSION`]).
+    pub schema_version: u32,
+    /// Available workflows, in display order.
+    pub workflows: Catalog,
+}
+
+impl Orientation {
+    /// Build an orientation result over a workflow catalog, stamping the current
+    /// [`SCHEMA_VERSION`].
+    pub fn new(workflows: Catalog) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            workflows,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Constructing an `Orientation` over a two-entry catalog and serializing it
+    /// must project to the documented, stable keys: `schema_version` at the root
+    /// and `workflows[].id` / `workflows[].when` per entry. A field rename breaks
+    /// this — that is the contract being locked.
+    #[test]
+    fn orientation_json_projection_is_the_stable_contract() {
+        let orientation = Orientation::new(Catalog::new(vec![
+            CatalogEntry::new("single-task", "Implement one well-scoped change."),
+            CatalogEntry::new(
+                "project-setup",
+                "Set up the development pack on a fresh repo.",
+            ),
+        ]));
+
+        let json = serde_json::to_value(&orientation).expect("serializes");
+
+        // Root marker.
+        assert_eq!(json["schema_version"], serde_json::json!(SCHEMA_VERSION));
+
+        // The catalog projects under `workflows` as an array.
+        let workflows = json["workflows"].as_array().expect("workflows is an array");
+        assert_eq!(workflows.len(), 2);
+
+        // Each entry exposes stable `id` / `when` keys.
+        assert_eq!(workflows[0]["id"], serde_json::json!("single-task"));
+        assert_eq!(
+            workflows[0]["when"],
+            serde_json::json!("Implement one well-scoped change.")
+        );
+        assert_eq!(workflows[1]["id"], serde_json::json!("project-setup"));
+
+        // The full projection is exactly the documented shape — no stray keys.
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "schema_version": 1,
+                "workflows": [
+                    { "id": "single-task", "when": "Implement one well-scoped change." },
+                    { "id": "project-setup", "when": "Set up the development pack on a fresh repo." }
+                ]
+            })
+        );
+    }
+}
