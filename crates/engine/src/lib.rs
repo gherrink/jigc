@@ -15,6 +15,7 @@ pub mod catalog;
 pub mod compose;
 pub mod data_value;
 pub mod field_block;
+pub mod file_state;
 pub mod finding;
 pub mod index;
 pub mod parse;
