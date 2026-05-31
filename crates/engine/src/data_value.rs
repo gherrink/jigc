@@ -179,6 +179,8 @@ impl Path {
 /// undeclared root or role is a `workflow-refs` [`Finding`].
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskRoot {
+    /// The bound `task.id` scalar — the task's frozen minted slug.
+    pub id: String,
     /// The bound `task.intent` scalar — the human intent that minted the task.
     pub intent: String,
     /// The workflow-declared context roles. A present key is declared; its value
@@ -290,18 +292,25 @@ impl Path {
             ));
         };
 
-        // The `intent` scalar: no address/content distinction, so `@` is an error.
-        if first.as_str() == "intent" {
+        // The engine-native scalars (`id`, `intent`): no address/content
+        // distinction, so `@` is an error (`command-catalog.md` → `task.id` is a
+        // scalar; `workflow-dialect.md` → Leaves).
+        if let Some(scalar) = match first.as_str() {
+            "id" => Some(ctx.task.id.clone()),
+            "intent" => Some(ctx.task.intent.clone()),
+            _ => None,
+        } {
             if self.marker {
                 return Err(Finding::blocking(
                     "workflow-refs.at-marker-on-non-scalar",
-                    "the `@` content marker cannot apply to scalar `task.intent`".to_owned(),
+                    format!(
+                        "the `@` content marker cannot apply to scalar `task.{}`",
+                        first.as_str()
+                    ),
                     Location::at(1, 1),
                 ));
             }
-            return Ok(Resolution::Scalar {
-                value: ctx.task.intent.clone(),
-            });
+            return Ok(Resolution::Scalar { value: scalar });
         }
 
         // A context role: declared (present in the map) vs undeclared.
@@ -516,6 +525,7 @@ mod tests {
         roles.insert("decision".to_owned(), None);
         ComposeContext {
             task: TaskRoot {
+                id: "resolve-the-data-value".to_owned(),
                 intent: "resolve the data-value path against live state".to_owned(),
                 roles,
             },

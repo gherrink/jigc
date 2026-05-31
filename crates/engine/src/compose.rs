@@ -280,6 +280,112 @@ struct RawCommandRef {
     hint: String,
 }
 
+/// Render a resolved command-ref to a shell-safe command line — the literal
+/// command string **without** the `Run:` wrapper (the emitter adds that).
+///
+/// For each arg of the [`CommandRef`] (`command-catalog.md` → The three arg
+/// kinds): a [`CommandArg::Literal`] renders as its token; a [`CommandArg::From`]
+/// parses its data-value path and resolves it against `ctx` via the seq-5
+/// resolver, then renders the resolved value (a scalar's text, an address's
+/// canonical form, or empty text for an [`Resolution::Absent`]); a
+/// [`CommandArg::Agent`] renders as an uppercase `<NAME>` marker left for the
+/// agent to fill at run-time. Each rendered token is then POSIX-quoted per
+/// [`shell_quote`], and the command + quoted args are joined by single spaces.
+///
+/// Rendering is a **pure function** of `(cmd, ctx)` — same inputs always yield
+/// the same line (the determinism boundary). A `from:` path that fails to parse
+/// or resolve surfaces the resolver's blocking [`Finding`].
+pub fn render_command(
+    cmd: &CommandRef,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    let mut words = Vec::with_capacity(cmd.args.len() + 1);
+    words.push(shell_quote(&cmd.command));
+    for arg in &cmd.args {
+        words.push(render_arg(arg, ctx)?);
+    }
+    Ok(words.join(" "))
+}
+
+/// Render one command-ref arg to its shell-quoted token.
+///
+/// - [`CommandArg::Literal`] → the literal text.
+/// - [`CommandArg::From`] → the data-value path is parsed and resolved against
+///   `ctx`; the resolved value's text is the token ([`Resolution::Scalar`] → its
+///   value; [`Resolution::Address`] / [`Resolution::Content`] → the canonical
+///   address string; [`Resolution::Absent`] → empty text, per
+///   `workflow-dialect.md` → Empty vs unresolvable).
+/// - [`CommandArg::Agent`] → an uppercase `<NAME>` marker (the agent fills it at
+///   run-time); the marker is left **bare** by [`shell_quote`] since its
+///   character set is the bare-allowed set (`command-catalog.md` → Shell-safe).
+fn render_arg(
+    arg: &CommandArg,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    use crate::data_value::{Path, Resolution};
+    let token = match arg {
+        CommandArg::Literal { literal } => literal.clone(),
+        // The `<NAME>` agent marker is emitted **bare** (it is the agent's
+        // run-time substitution point, not a value to quote — `command-catalog.md`
+        // → Shell-safe rendering). It bypasses `shell_quote` entirely.
+        CommandArg::Agent { agent, .. } => return Ok(format!("<{}>", agent.to_uppercase())),
+        CommandArg::From { from } => {
+            let path = Path::parse(from).map_err(|source| {
+                Finding::blocking(
+                    "workflow-refs.malformed-data-value",
+                    format!("command-ref `from:` path `{from}` is malformed: {source}"),
+                    Location::at(1, 1),
+                )
+            })?;
+            match path.resolve(ctx)? {
+                Resolution::Scalar { value } => value,
+                Resolution::Address { address } | Resolution::Content { address } => {
+                    address.to_string()
+                }
+                Resolution::Absent => String::new(),
+            }
+        }
+    };
+    Ok(shell_quote(&token))
+}
+
+/// POSIX single-arg quoting, deterministic (`command-catalog.md` → Shell-safe
+/// rendering).
+///
+/// - A **non-empty** arg whose every char is in the bare charset
+///   `[A-Za-z0-9._:#/=@+-]` is returned unchanged (addresses, identifiers, flag
+///   names, single-dash stdin).
+/// - Anything else (whitespace, a shell metachar, or the empty string) is
+///   **single-quoted**; an embedded `'` is closed-escaped-reopened (`'it'\''s'`).
+///
+/// The `<NAME>` agent marker (`<` / `>` are metachars, *not* in the bare charset)
+/// is never passed here — [`render_arg`] emits it bare directly.
+fn shell_quote(arg: &str) -> String {
+    let is_bare = !arg.is_empty() && arg.chars().all(is_bare_char);
+    if is_bare {
+        return arg.to_owned();
+    }
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('\'');
+    for ch in arg.chars() {
+        if ch == '\'' {
+            // Close the quote, emit an escaped literal quote, reopen.
+            out.push_str("'\\''");
+        } else {
+            out.push(ch);
+        }
+    }
+    out.push('\'');
+    out
+}
+
+/// Whether `ch` is in the shell bare charset `[A-Za-z0-9._:#/=@+-]`
+/// (`command-catalog.md` → Shell-safe rendering: addresses, identifiers, flag
+/// names, single-dash stdin).
+fn is_bare_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || "._:#/=@+-".contains(ch)
+}
+
 /// A parsed step definition: its frozen id (the resource id the pack assigns from
 /// the filename stem) and its verbatim prompt body.
 ///
@@ -884,6 +990,148 @@ reference — make your consequences explain what changes:
             }
             let def = load_workflow_def(body.as_bytes()).expect("loads");
             proptest::prop_assert_eq!(def.includes, ids);
+        }
+    }
+
+    use crate::data_value::{ComposeContext, TaskRoot};
+
+    /// The `command-catalog.md` worked context: a task `add-rate-limiter` whose
+    /// `commit` role is bound (a `creates-task` workflow's commit doc carries the
+    /// task's own slug). `task.id` and `task.intent` are the engine-native scalars.
+    fn add_rate_limiter_ctx() -> ComposeContext {
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
+            "commit".to_owned(),
+            Some(crate::address::Address::parse("commit:add-rate-limiter").expect("valid address")),
+        );
+        ComposeContext {
+            task: TaskRoot {
+                id: "add-rate-limiter".to_owned(),
+                intent: "add a rate limiter to the API".to_owned(),
+                roles,
+            },
+        }
+    }
+
+    /// Core done-criterion (`command_ref_renders_shell_safe`): the shipped
+    /// command-refs render to the exact shell-safe lines of `command-catalog.md`
+    /// → What the renderer emits, with the `Run:` wrapper *not* included (the
+    /// emitter's job). A `from:` arg resolves through the data-value resolver and
+    /// renders bare (its value is in the bare charset); an `agent:` arg renders as
+    /// an uppercase `<NAME>` marker, bare.
+    #[test]
+    fn command_ref_renders_shell_safe() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = add_rate_limiter_ctx();
+
+        let set_commit = catalog.get("set-commit-summary").expect("present");
+        assert_eq!(
+            render_command(set_commit, &ctx).expect("renders"),
+            "jigc doc set-slot commit:add-rate-limiter#summary --from-file -"
+        );
+
+        let create_adr = catalog.get("create-adr").expect("present");
+        assert_eq!(
+            render_command(create_adr, &ctx).expect("renders"),
+            "jigc doc create adr --title <TITLE>"
+        );
+
+        let finalize = catalog.get("finalize-task").expect("present");
+        assert_eq!(
+            render_command(finalize, &ctx).expect("renders"),
+            "jigc task finalize add-rate-limiter"
+        );
+
+        let validate = catalog.get("validate-task").expect("present");
+        assert_eq!(
+            render_command(validate, &ctx).expect("renders"),
+            "jigc task validate add-rate-limiter"
+        );
+
+        // Golden table over the four shipped command-refs → rendered line. The
+        // golden pins the exact bytes so a quoting or join change breaks it.
+        let mut rows = Vec::new();
+        for id in [
+            "create-adr",
+            "finalize-task",
+            "set-commit-summary",
+            "validate-task",
+        ] {
+            let line = render_command(catalog.get(id).expect("present"), &ctx).expect("renders");
+            rows.push(format!("{id}\n  => {line}"));
+        }
+        insta::assert_snapshot!(rows.join("\n"), @r#"
+        create-adr
+          => jigc doc create adr --title <TITLE>
+        finalize-task
+          => jigc task finalize add-rate-limiter
+        set-commit-summary
+          => jigc doc set-slot commit:add-rate-limiter#summary --from-file -
+        validate-task
+          => jigc task validate add-rate-limiter
+        "#);
+    }
+
+    /// Per-arg POSIX quoting (`command-catalog.md` → Shell-safe rendering): a bare
+    /// charset arg stays unquoted; an arg with whitespace or a shell metachar is
+    /// single-quoted; an embedded `'` is closed-escaped-reopened (`'it'\''s'`).
+    #[test]
+    fn shell_quotes_per_arg() {
+        // Bare: the full bare charset stays unquoted.
+        assert_eq!(
+            shell_quote("commit:add-rate-limiter#summary"),
+            "commit:add-rate-limiter#summary"
+        );
+        assert_eq!(shell_quote("--from-file"), "--from-file");
+        assert_eq!(shell_quote("-"), "-");
+        assert_eq!(shell_quote("<TITLE>"), "'<TITLE>'");
+
+        // Whitespace / metachars → single-quoted.
+        assert_eq!(shell_quote("two words"), "'two words'");
+        assert_eq!(shell_quote("a;rm -rf"), "'a;rm -rf'");
+        assert_eq!(shell_quote("a|b"), "'a|b'");
+
+        // An embedded single quote: closed-escaped-reopened.
+        assert_eq!(shell_quote("it's"), "'it'\\''s'");
+
+        // The empty string renders as an explicit empty quoted word.
+        assert_eq!(shell_quote(""), "''");
+    }
+
+    proptest::proptest! {
+        /// Quoting predicate: an arg whose every char is in the bare charset
+        /// `[A-Za-z0-9._:#/=@+-]` (and is non-empty) renders bare; anything else
+        /// renders single-quoted, and a quoted rendering both opens and closes with
+        /// `'`. The rendered token is always a single shell word.
+        #[test]
+        fn quoting_predicate_holds(arg in ".{0,40}") {
+            let rendered = shell_quote(&arg);
+            let is_bare = !arg.is_empty()
+                && arg.chars().all(|c| {
+                    c.is_ascii_alphanumeric() || "._:#/=@+-".contains(c)
+                });
+            if is_bare {
+                proptest::prop_assert_eq!(&rendered, &arg, "bare arg should stay bare");
+            } else {
+                proptest::prop_assert!(
+                    rendered.starts_with('\'') && rendered.ends_with('\''),
+                    "non-bare arg {:?} should be single-quoted, got {:?}", arg, rendered
+                );
+            }
+        }
+
+        /// Purity / determinism: rendering the same `(command-ref, ctx)` twice
+        /// yields an identical line. Rendering is a pure function of its inputs
+        /// (the determinism boundary). Generated over the four shipped refs.
+        #[test]
+        fn render_is_pure(idx in 0usize..4) {
+            let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+            let ctx = add_rate_limiter_ctx();
+            let id = ["create-adr", "finalize-task", "set-commit-summary", "validate-task"][idx];
+            let cmd = catalog.get(id).expect("present");
+            let first = render_command(cmd, &ctx);
+            let second = render_command(cmd, &ctx);
+            proptest::prop_assert_eq!(first, second);
         }
     }
 }

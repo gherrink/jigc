@@ -19,7 +19,6 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 ## Increment 3 — compose
 
 - **(D) Task working-area on-disk layout** — the exact files under `.jigc/tasks/<id>/` (base-pin, bound context roles, staged docs). [storage.md](../design/storage.md) is illustrative.
-- **(I) Data-value path resolver + command-catalog shell-quoting** — algorithms are specified ([workflow-dialect.md](../design/workflow-dialect.md), [command-catalog.md](../design/command-catalog.md)); this is implementing them.
 - **(cleanup) Stale emitted-format open question** — [module-layout.md](module-layout.md) → Renderers still calls the emitted-format micro-syntax "an open question," but it's settled (the four-class format in [workflow-dialect.md](../design/workflow-dialect.md#emitted-format); VISION says settled 2026-05-28). Confirm and remove the stale ref.
 
 ## Increment 4 — write + finalize
