@@ -22,11 +22,131 @@
 //! (jigc-root, intent, type-name, base) → on-disk effect, golden-testable.
 
 use crate::finding::{Finding, Location, Severity};
+use crate::schema::Schema;
+use crate::write::{self, Instance, SectionContent};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// The base-pin filename inside a task's working area.
 const BASE_PIN_FILE: &str = "base.json";
+
+/// The working-area sub-directory holding a task's staged doc instances
+/// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
+/// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
+const DOCS_DIR: &str = "docs";
+
+/// The bare filename of a staged doc instance: the `:`-joined address slug
+/// (`<type>:<slug>.md`), the on-disk form the working-area layout pins
+/// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout).
+fn instance_filename(type_name: &str, slug: &str) -> String {
+    format!("{type_name}:{slug}.md")
+}
+
+/// The on-disk path a staged `<type>:<slug>` instance lives at within `task_dir`:
+/// `<task_dir>/docs/<type>:<slug>.md`.
+pub fn instance_path(task_dir: &Path, type_name: &str, slug: &str) -> PathBuf {
+    task_dir
+        .join(DOCS_DIR)
+        .join(instance_filename(type_name, slug))
+}
+
+/// Build the **empty** in-memory instance for `schema` — the canonical template the
+/// workflow provisions: the H1 title is the task-derived `slug`, and every schema
+/// section is left content-free (no field values, no slot prose, no items). Rendered
+/// through [`crate::write::render`], this yields the full skeleton — front-matter (no
+/// values), the `# <slug>` H1, and every `## Heading` with an empty slot — the bytes
+/// the agent then fills slot-by-slot (`design/write-commands.md` → Instance
+/// provisioning: "the agent only fills slots").
+fn empty_instance(schema: &Schema, slug: &str) -> Instance {
+    Instance {
+        title: slug.to_string(),
+        sections: schema
+            .sections
+            .iter()
+            .map(|s| SectionContent {
+                id: s.id.clone(),
+                ..Default::default()
+            })
+            .collect(),
+    }
+}
+
+/// **Provision** a workflow-provisioned empty doc instance into the task working area
+/// (`design/write-commands.md` → Instance provisioning → Workflow-provisioned;
+/// `implementation/parsing.md` → The write pipeline → "Writes land in the task working
+/// area"). Materializes `<task_dir>/docs/<type>:<slug>.md` with the canonical
+/// empty-template bytes ([`crate::write::render`] of [`empty_instance`]), atomically
+/// (temp + rename), and returns its path. The `docs/` dir is created on demand.
+///
+/// Pure working-area filesystem effect — no verbs, no git. The `type` name is read
+/// from the schema; the `slug` is the task-derived id (`commit:<task-id>`).
+pub fn provision_doc(task_dir: &Path, schema: &Schema, slug: &str) -> std::io::Result<PathBuf> {
+    let path = instance_path(task_dir, &schema.ty, slug);
+    let bytes = write::render(schema, &empty_instance(schema, slug));
+    write_atomic(&path, bytes.as_bytes())?;
+    Ok(path)
+}
+
+/// **Copy-in on first touch** of a pre-existing managed doc into the task working area
+/// (`implementation/parsing.md` → The write pipeline → "an existing doc is copied in
+/// (base-pinned) on first touch"; `DECISIONS.md` 2026-05-31 → copy-in-on-first-touch).
+/// Applies the *only* permitted first-touch canonicalization
+/// ([`crate::write::first_touch_canonicalize`] — BOM strip + single trailing newline,
+/// EOL-preserving, everything else byte-for-byte) and persists the result atomically at
+/// `<task_dir>/docs/<type>:<slug>.md`, returning its path. The committed source file is
+/// untouched (this writes only the working copy).
+pub fn copy_in(
+    task_dir: &Path,
+    type_name: &str,
+    slug: &str,
+    source: &str,
+) -> std::io::Result<PathBuf> {
+    let path = instance_path(task_dir, type_name, slug);
+    let canonical = write::first_touch_canonicalize(source);
+    write_atomic(&path, canonical.as_bytes())?;
+    Ok(path)
+}
+
+/// **Atomic persist** of an edited buffer to a working-area doc path
+/// (`implementation/parsing.md` → The write pipeline → "Atomic on disk — write temp +
+/// rename"). Writes `bytes` to a sibling temp file, then `rename`s it over `path`, so a
+/// reader never observes a partial write and no temp residue survives a successful
+/// persist. The parent dir is created on demand.
+pub fn persist(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_atomic(path, bytes)
+}
+
+/// Write `bytes` to `path` via the temp-file + `rename` dance (the atomic-on-disk
+/// primitive shared by [`provision_doc`], [`copy_in`], and [`persist`]). The temp file
+/// is a sibling (`<filename>.tmp`) so the `rename` stays on the same filesystem (atomic);
+/// it is removed on a write failure and consumed by the rename on success — never left
+/// behind. The parent dir is created on demand.
+fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = temp_sibling(path);
+    if let Err(err) = std::fs::write(&tmp, bytes) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err);
+    }
+    if let Err(err) = std::fs::rename(&tmp, path) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(err);
+    }
+    Ok(())
+}
+
+/// The sibling temp path for an atomic write of `path` — its filename with a `.tmp`
+/// suffix (same directory, so `rename` is intra-filesystem and atomic).
+fn temp_sibling(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".tmp");
+    match path.parent() {
+        Some(parent) => parent.join(name),
+        None => PathBuf::from(name),
+    }
+}
 
 /// The base commit a task was started against: the full 40-char SHA and the
 /// abbreviated short SHA, both as `git rev-parse` reports them.
@@ -273,5 +393,90 @@ mod tests {
             prop_assume!(!slug.is_empty());
             prop_assert_eq!(mint_id(&intent, "commit"), slug);
         }
+    }
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+
+    fn commit_schema() -> Schema {
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
+    }
+
+    /// The done-criterion (`DECISIONS.md` 2026-05-31 → inc-4 working-area layout).
+    /// Provisioning opens `.jigc/tasks/<id>/docs/commit:<id>.md` whose bytes equal
+    /// `write::render` of the empty commit instance (golden); a subsequent atomic
+    /// persist of an edited buffer replaces those bytes byte-for-byte, leaving **no**
+    /// temp-file residue.
+    #[test]
+    fn working_area_provisions_and_persists_atomically() {
+        let root = TempRoot::new("working-area");
+        let schema = commit_schema();
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+
+        // Provision: the empty commit template lands at docs/commit:<id>.md.
+        let path =
+            provision_doc(&task_dir, &schema, "add-rate-limiter").expect("provision succeeds");
+        assert_eq!(
+            path,
+            task_dir.join("docs").join("commit:add-rate-limiter.md"),
+            "provisioned at the `:`-joined address slug under docs/"
+        );
+        assert!(path.is_file(), "provisioned file must exist");
+
+        let provisioned = std::fs::read_to_string(&path).expect("read provisioned");
+        // The provisioned bytes ARE `write::render` of the empty commit instance.
+        let expected = write::render(&schema, &empty_instance(&schema, "add-rate-limiter"));
+        assert_eq!(
+            provisioned, expected,
+            "provisioned bytes equal write::render of the empty commit instance"
+        );
+        // Golden over the provisioned empty-commit byte form.
+        insta::assert_snapshot!("provisioned_empty_commit", provisioned);
+
+        // No temp residue from the atomic provision.
+        let tmp = task_dir.join("docs").join("commit:add-rate-limiter.md.tmp");
+        assert!(!tmp.exists(), "no leftover temp path after provisioning");
+
+        // Persist an edited buffer: atomic temp+rename replaces the file byte-for-byte.
+        let edited = "---\ntype: feat\n---\n\n# add-rate-limiter\n\n## Summary\n\nLimit at the gateway.\n\n## Body\n\n## Trailers\n";
+        persist(&path, edited.as_bytes()).expect("persist succeeds");
+
+        let after = std::fs::read_to_string(&path).expect("read persisted");
+        assert_eq!(after, edited, "persisted bytes equal the input buffer");
+        assert!(
+            !tmp.exists(),
+            "no leftover temp path after the atomic persist"
+        );
+    }
+
+    /// Copy-in on first touch persists a pre-existing managed doc into the working
+    /// area, applying the only first-touch canonicalization (BOM strip + single
+    /// trailing newline, EOL-preserving) and leaving everything else byte-for-byte —
+    /// the committed source is never the thing written. A BOM-prefixed, double-trailing
+    /// -newline source lands canonicalized; an already-canonical source is byte-stable.
+    #[test]
+    fn copy_in_canonicalizes_on_first_touch() {
+        let root = TempRoot::new("copy-in");
+        let task_dir = root.path().join("tasks").join("supersede");
+
+        let source =
+            "\u{feff}---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n\n\n";
+        let path = copy_in(&task_dir, "adr", "rate-limit", source).expect("copy-in succeeds");
+
+        assert_eq!(
+            path,
+            task_dir.join("docs").join("adr:rate-limit.md"),
+            "copied in at the `:`-joined address slug under docs/"
+        );
+        let landed = std::fs::read_to_string(&path).expect("read copied-in");
+        // BOM stripped, trailing newlines collapsed to exactly one; interior intact.
+        assert_eq!(
+            landed, "---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n",
+            "first-touch canonicalization: BOM strip + single trailing newline only"
+        );
+        assert_eq!(
+            landed,
+            write::first_touch_canonicalize(source),
+            "copy-in IS first_touch_canonicalize of the source"
+        );
     }
 }
