@@ -40,10 +40,16 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::field_block::Value;
+use crate::finding::{Finding, Location, Severity};
 use crate::schema::{FieldType, Schema, SectionBody};
 
 /// The `edges.json` filename inside `<jigc_root>/index/`.
 const EDGES_FILE: &str = "edges.json";
+
+/// The working-area sub-directory holding the task's staged doc instances
+/// (`<task_dir>/docs/<type>:<slug>.md` — the `:`-joined address slug, `DECISIONS.md`
+/// 2026-05-31 → Task working-area on-disk layout).
+const DOCS_DIR: &str = "docs";
 
 /// One forward cross-reference edge: doc `from` carries a `ref` field `relation`
 /// pointing at `to`.
@@ -181,6 +187,176 @@ pub fn load_committed(
     let rebuilt = rebuild_committed(repo_root, schemas, head);
     let _ = rebuilt.save(jigc_root);
     rebuilt
+}
+
+/// The working overlay (lifecycle site 2, `storage.md` → Edge index lifecycle): the
+/// active task's working-area edges layered over the committed index, **in-memory,
+/// never persisted** ("the index is never persisted with task deltas in it").
+///
+/// `committed` is the [`EdgeIndex`]'s edges (surface a's edge map); `task_edges` are
+/// the forward edges the task's `docs/*.md` contribute (surface b — this task's
+/// pending writes). `task_froms` records each `from` identity the task touched (the
+/// `<type>:<slug>` of each staged instance), so [`ref_resolves`] walks only
+/// **task-touched** edges — a committed-only edge is not this task's to fix.
+///
+/// Forward-ref integrity walks the *overlaid* graph (committed ∪ task); the overlay
+/// is read-side only, derived per call and discarded — only `finalize` writes through
+/// (indirectly, via stamp invalidation → next read rebuilds against the new HEAD).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkingOverlay {
+    /// The committed forward edges (surface a).
+    pub committed: Vec<Edge>,
+    /// The task working-area forward edges (surface b — this task's pending writes).
+    pub task_edges: Vec<Edge>,
+    /// The `from` identities the task touched (`<type>:<slug>` per staged instance).
+    pub task_froms: Vec<String>,
+}
+
+/// Derive the working overlay: parse the active task's `docs/*.md`, emit the same
+/// `(from, relation, to)` forward edges the committed-rebuild path emits, and layer
+/// them over `committed` — in-memory, never persisted (lifecycle site 2).
+///
+/// A staged instance lives at `<task_dir>/docs/<type>:<slug>.md`; its `from` identity
+/// is the filename stem (already `<type>:<slug>`, the `:`-joined address slug). Its
+/// type prefix (before the first `:`) resolves to a [`Schema`] in `schemas`; an
+/// unparseable or unknown-type instance contributes no edges (best-effort, mirroring
+/// the committed rebuild — per-doc conformance is the `schema-conformance` gate's
+/// concern, not the overlay's). The task's `from` identities are recorded so
+/// [`ref_resolves`] walks only task-touched edges.
+///
+/// A working area with no `docs/` dir (nothing staged yet) yields an empty overlay
+/// over the committed edges.
+pub fn overlay_working(
+    committed: &EdgeIndex,
+    task_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> WorkingOverlay {
+    let mut task_edges = Vec::new();
+    let mut task_froms = Vec::new();
+
+    let docs = task_dir.join(DOCS_DIR);
+    if let Ok(entries) = std::fs::read_dir(&docs) {
+        let mut staged: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+            .collect();
+        staged.sort();
+
+        for path in staged {
+            let Some(from) = path.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            // The type prefix before the first `:` resolves the schema.
+            let ty = from.split(':').next().unwrap_or(from);
+            let Some(schema) = schemas.get(ty) else {
+                continue; // unknown type: no edges (best-effort, mirrors rebuild).
+            };
+            task_froms.push(from.to_string());
+
+            let Ok(source) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
+                continue; // unparseable staged file: skip; not the overlay's gate.
+            };
+            task_edges.extend(doc_edges(schema, &doc, from));
+        }
+    }
+
+    task_edges.sort();
+    task_edges.dedup();
+    task_froms.sort();
+    task_froms.dedup();
+
+    WorkingOverlay {
+        committed: committed.edges.clone(),
+        task_edges,
+        task_froms,
+    }
+}
+
+/// The synthetic `schema-conformance.ref-resolves` check (forward-ref integrity, the
+/// inc-5 check deferred from inc-4) over the working `overlay` — walk every
+/// **task-touched** forward edge and require its `to` target resolve in one of the
+/// **two reachable surfaces** (`validation.md` → Forward-ref resolution):
+///
+/// - **(a) the committed store** — `<repo_root>/<location>/<slug>.md` exists; or
+/// - **(b) this task's working area** — `<task_dir>/docs/<type>:<slug>.md` exists
+///   (created by deltas in the *same* task).
+///
+/// A target in *neither* is a **blocking** `schema-conformance.ref-resolves`
+/// [`Finding`] whose message names the three routing options (fix the ref / create
+/// the target in this task / drop the field — `worked-examples.md` → Superseding
+/// decision, the dangling variant). Cross-task forward-refs are unsupported (same
+/// finding). A resolvable edge yields nothing; a fully-resolvable task yields an empty
+/// `Vec`. Intrinsic blocking (severity inventory); no cascade tuning wired yet
+/// (parallels the other intrinsic checks).
+pub fn ref_resolves(
+    overlay: &WorkingOverlay,
+    repo_root: &Path,
+    task_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for edge in &overlay.task_edges {
+        // Only edges originating from a task-touched doc are this task's to resolve.
+        if !overlay.task_froms.contains(&edge.from) {
+            continue;
+        }
+        if !target_reachable(&edge.to, repo_root, task_dir, schemas) {
+            findings.push(dangling(edge));
+        }
+    }
+    findings
+}
+
+/// Is `to` (`<type>:<slug>`) reachable in either surface — the committed store
+/// (`<location>/<slug>.md` exists) or this task's working area
+/// (`docs/<type>:<slug>.md` exists)?
+fn target_reachable(
+    to: &str,
+    repo_root: &Path,
+    task_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> bool {
+    // Surface b: this task's working area, keyed by the `:`-joined identity.
+    if task_dir.join(DOCS_DIR).join(format!("{to}.md")).exists() {
+        return true;
+    }
+    // Surface a: the committed store at the target type's canonical path.
+    let (ty, slug) = match to.split_once(':') {
+        Some(pair) => pair,
+        None => return false, // not a `<type>:<slug>` identity: unreachable.
+    };
+    let Some(schema) = schemas.get(ty) else {
+        return false; // unknown type: no committed location to reach.
+    };
+    crate::store::canonical_path(repo_root, schema, slug)
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+/// A blocking `schema-conformance.ref-resolves` [`Finding`] for a dangling forward
+/// edge — located at the source doc's identity, naming the three routing options.
+fn dangling(edge: &Edge) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "schema-conformance.ref-resolves".to_string(),
+        message: format!(
+            "forward-ref integrity — `{from}#{relation}` target `{to}` resolves in \
+             neither the committed store nor this task's working area; resolution: \
+             fix the reference to an existing target, create the target in this task, \
+             or drop the `{relation}` field",
+            from = edge.from,
+            relation = edge.relation,
+            to = edge.to,
+        ),
+        location: Some(Location::addressed(edge.from.clone(), 1, 1)),
+        route: Some(
+            "fix the reference, create the target in this task, or drop the field".to_string(),
+        ),
+    }
 }
 
 /// Emit the forward edges a single parsed doc contributes: one per present schema
@@ -401,6 +577,245 @@ Slightly higher write latency for resilience.
         )
         .expect("persisted index parses");
         assert_eq!(on_disk.stamp, "v2");
+    }
+}
+
+#[cfg(test)]
+mod overlay_tests {
+    //! The working overlay (lifecycle site 2) + `ref-resolves` forward-ref integrity
+    //! over the two reachable surfaces. The overlay is in-memory, never persisted; a
+    //! task-touched edge whose target resolves in neither surface blocks.
+
+    use super::*;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    /// A throwaway directory that removes itself on drop.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-overlay-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp root");
+            TempRoot(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "adr".to_string(),
+            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+        );
+        m
+    }
+
+    /// A committed ADR `A` (the supersede target), with no outgoing ref.
+    const ADR_A: &str = "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Single-node session cache
+
+## Context
+Session lookups must stay sub-millisecond.
+
+## Decision
+A single in-memory node keeps session lookups sub-millisecond.
+
+## Consequences
+A cold node loses its sessions; clients re-authenticate.
+";
+
+    /// A working-area ADR `B` whose `supersedes` points at `to`.
+    fn adr_b_superseding(to: &str) -> String {
+        format!(
+            "\
+---
+status: accepted
+date: 2026-05-30
+supersedes: {to}
+---
+
+# Shared redis session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+"
+        )
+    }
+
+    /// Commit ADR `A` at its canonical `decisions/single-node-cache.md`.
+    fn commit_adr_a(repo_root: &Path) {
+        let dir = repo_root.join("decisions");
+        std::fs::create_dir_all(&dir).expect("mk decisions/");
+        std::fs::write(dir.join("single-node-cache.md"), ADR_A).expect("write A");
+    }
+
+    /// Stage a working-area ADR `B` at `<task_dir>/docs/adr:<slug>.md`.
+    fn stage_adr_b(task_dir: &Path, slug: &str, supersedes: &str) {
+        let docs = task_dir.join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(
+            docs.join(format!("adr:{slug}.md")),
+            adr_b_superseding(supersedes),
+        )
+        .expect("stage B");
+    }
+
+    /// PASSES when the supersede target is in the committed store: committed `A`,
+    /// task working area holds `B` with `supersedes: adr:single-node-cache` → the
+    /// overlay layers B's edge over the committed index and `ref_resolves` returns
+    /// no findings (surface a).
+    #[test]
+    fn ref_resolves_passes_when_target_committed() {
+        let repo = TempRoot::new("pass-repo");
+        let task = TempRoot::new("pass-task");
+        commit_adr_a(repo.path());
+        stage_adr_b(
+            task.path(),
+            "shared-redis-session-cache",
+            "adr:single-node-cache",
+        );
+
+        // The committed index over A (no outgoing edge); the overlay adds B→A.
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        assert!(committed.edges.is_empty(), "A has no outgoing ref");
+
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+        assert_eq!(
+            overlay.task_edges,
+            vec![Edge {
+                from: "adr:shared-redis-session-cache".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }],
+            "the overlay layers B's supersedes edge"
+        );
+
+        let findings = ref_resolves(&overlay, repo.path(), task.path(), &schemas());
+        assert!(
+            findings.is_empty(),
+            "the supersede target is committed → no findings, got {findings:?}"
+        );
+
+        // The overlay was NOT persisted: no edges.json under the task area.
+        assert!(
+            !task.path().join("index").join("edges.json").exists(),
+            "the working overlay is never persisted"
+        );
+    }
+
+    /// Surface b: the supersede target is created in the SAME task's working area
+    /// (not committed) → still resolves.
+    #[test]
+    fn ref_resolves_passes_when_target_in_same_task() {
+        let repo = TempRoot::new("same-repo");
+        let task = TempRoot::new("same-task");
+        // No committed A. The target `adr:single-node-cache` is staged in this task.
+        let docs = task.path().join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(docs.join("adr:single-node-cache.md"), ADR_A).expect("stage target");
+        stage_adr_b(
+            task.path(),
+            "shared-redis-session-cache",
+            "adr:single-node-cache",
+        );
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+
+        let findings = ref_resolves(&overlay, repo.path(), task.path(), &schemas());
+        assert!(
+            findings.is_empty(),
+            "the target created in the same task resolves (surface b), got {findings:?}"
+        );
+    }
+
+    /// BLOCKS when the supersede target dangles: `supersedes: adr:typo-nonexistent`
+    /// resolves in neither surface → exactly one blocking
+    /// `schema-conformance.ref-resolves` finding whose message names the three
+    /// routing options (fix / create-in-task / drop). The overlay is not persisted.
+    #[test]
+    fn ref_resolves_blocks_when_target_dangles() {
+        let repo = TempRoot::new("dangle-repo");
+        let task = TempRoot::new("dangle-task");
+        commit_adr_a(repo.path());
+        stage_adr_b(
+            task.path(),
+            "shared-redis-session-cache",
+            "adr:typo-nonexistent",
+        );
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+
+        let findings = ref_resolves(&overlay, repo.path(), task.path(), &schemas());
+        assert_eq!(
+            findings.len(),
+            1,
+            "a dangling forward-ref yields exactly one finding, got {findings:?}"
+        );
+        let f = &findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.code, "schema-conformance.ref-resolves");
+        assert!(
+            f.message.contains("adr:typo-nonexistent"),
+            "names the unresolved target: {}",
+            f.message
+        );
+        // The three routing options are named in the message.
+        assert!(
+            f.message.contains("fix"),
+            "names the fix option: {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("create the target in this task"),
+            "names the create-in-task option: {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("drop"),
+            "names the drop option: {}",
+            f.message
+        );
+        assert!(
+            f.location.is_some(),
+            "the block is located at the source doc"
+        );
+
+        // The overlay was NOT persisted to .jigc/index/edges.json (byte-unchanged: it
+        // never existed). No edges.json was written under the task area at all.
+        assert!(
+            !task.path().join("index").join("edges.json").exists(),
+            "the working overlay is never persisted"
+        );
     }
 }
 
