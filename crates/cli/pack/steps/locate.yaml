@@ -1,0 +1,5 @@
+Reason about the change. The intent is:
+{{ @task.intent }}
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.

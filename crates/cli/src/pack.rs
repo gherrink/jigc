@@ -119,4 +119,133 @@ mod tests {
         let pack = EmbeddedPack::new();
         assert_eq!(pack.pack_version(), env!("CARGO_PKG_VERSION"));
     }
+
+    /// Read a resource as UTF-8 text (pack definitions are text).
+    fn read_text(pack: &EmbeddedPack, kind: PackResourceKind, id: &str) -> String {
+        let bytes = pack
+            .read(kind, &ResourceId::from(id))
+            .unwrap_or_else(|e| panic!("resource `{id}` must read back: {e}"));
+        String::from_utf8(bytes).expect("pack resources are UTF-8 text")
+    }
+
+    /// The single-task workflow ships the full MVP definition: spec-less `when`,
+    /// `creates-task: true`, the `{type: adr, as: decision}` create-gate, and a
+    /// body that is exactly the four ordered step includes. Golden over the bytes
+    /// pins the canonical pack content (no serializer here — the file *is* the
+    /// contract). See workflow-dialect.md → On-disk definition format.
+    #[test]
+    fn single_task_workflow_body_is_the_canonical_definition() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Workflows, "single-task");
+        insta::assert_snapshot!(body, @r###"
+        ---
+        when: implement one scoped change end-to-end
+        creates-task: true
+        allows-create: [{type: adr, as: decision}]
+        ---
+        {{ include: step:locate }}
+        {{ include: step:implement }}
+        {{ include: step:superseded-context }}
+        {{ include: step:finalize }}
+        "###);
+    }
+
+    /// list(Steps) yields the four MVP step ids, sorted (the pack lists in stem
+    /// order). The composer's includes resolve against exactly these.
+    #[test]
+    fn embedded_pack_lists_the_four_single_task_steps() {
+        let pack = EmbeddedPack::new();
+        let steps = pack.list(PackResourceKind::Steps);
+        assert_eq!(
+            steps,
+            vec![
+                ResourceId::from("finalize"),
+                ResourceId::from("implement"),
+                ResourceId::from("locate"),
+                ResourceId::from("superseded-context"),
+            ],
+        );
+    }
+
+    #[test]
+    fn step_locate_body_is_canonical() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Steps, "locate");
+        insta::assert_snapshot!(body, @r###"
+        Reason about the change. The intent is:
+        {{ @task.intent }}
+
+        The relevant code paths are not yet known. Inspect the codebase to confirm
+        scope before implementing.
+        "###);
+    }
+
+    #[test]
+    fn step_implement_body_is_canonical() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Steps, "implement");
+        insta::assert_snapshot!(body, @r###"
+        Implement the change directly in the working tree. When done, stage the
+        commit prose:
+
+        {{ cli.set-commit-summary }}
+        <<author: {{ task.commit#summary }}>>
+
+        If a decision is warranted, create an ADR and author its slots:
+
+        {{ cli.create-adr }}
+        "###);
+    }
+
+    #[test]
+    fn step_superseded_context_body_is_canonical() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Steps, "superseded-context");
+        insta::assert_snapshot!(body, @r###"
+        If your decision supersedes an earlier one, here is that decision for
+        reference — make your consequences explain what changes:
+        {{ @task.decision.supersedes#decision }}
+        "###);
+    }
+
+    #[test]
+    fn step_finalize_body_is_canonical() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Steps, "finalize");
+        insta::assert_snapshot!(body, @r###"
+        Validate and commit the task as one logical commit:
+
+        {{ cli.finalize-task }}
+        "###);
+    }
+
+    /// list(Config) carries the `defaults` resource whose `default-workflow`
+    /// points at `single-task` (the MVP cascade knob — CLAUDE.md → MVP scope),
+    /// plus the `commands` catalog. The composer reads both.
+    #[test]
+    fn embedded_pack_config_carries_defaults_and_commands() {
+        let pack = EmbeddedPack::new();
+        let config = pack.list(PackResourceKind::Config);
+        assert!(
+            config.contains(&ResourceId::from("defaults")),
+            "the pack config layer must ship a `defaults` resource; got {config:?}",
+        );
+        assert!(
+            config.contains(&ResourceId::from("commands")),
+            "the pack config layer must ship the `commands` catalog; got {config:?}",
+        );
+
+        let defaults = read_text(&pack, PackResourceKind::Config, "defaults");
+        insta::assert_snapshot!(defaults, @r###"
+        default-workflow: single-task
+        "###);
+
+        // The commands catalog is present and readable (its parser arrives with
+        // the composer; here we only pin its presence + canonical bytes).
+        let commands = read_text(&pack, PackResourceKind::Config, "commands");
+        assert!(
+            commands.contains("set-commit-summary"),
+            "the commands catalog must define the workflow's command-refs; got:\n{commands}",
+        );
+    }
 }

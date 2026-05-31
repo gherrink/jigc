@@ -1,0 +1,35 @@
+# The MVP command catalog — the {{cli.<id>}} command-refs the single-task
+# workflow's steps resolve against. See design/command-catalog.md → Worked
+# catalog. The catalog parser arrives with the composer (later in increment 3);
+# these bytes are the canonical contract it will load.
+commands:
+  - id: set-commit-summary
+    command: jigc
+    args:
+      - "doc"
+      - "set-slot"
+      - { from: "task.commit#summary" }
+      - "--from-file"
+      - "-"
+    stdin: "the slot prose"
+    hint: "Stage the commit summary slot from stdin."
+
+  - id: validate-task
+    command: jigc
+    args: ["task", "validate", { from: "task.id" }]
+    hint: "Preview validation findings without committing."
+
+  - id: finalize-task
+    command: jigc
+    args: ["task", "finalize", { from: "task.id" }]
+    hint: "Run validate + commit. One task → one commit."
+
+  - id: create-adr
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "adr"
+      - "--title"
+      - { agent: title, hint: "short declarative sentence describing the decision" }
+    hint: "Create a new ADR in the current task."

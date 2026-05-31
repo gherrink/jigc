@@ -1,8 +1,9 @@
 ---
-# single-task — the MVP work-workflow (cascade default-workflow).
-# Minimal stub: increment 1 only needs the `when` selection hint to surface in
-# the orientation catalog (the id is the filename stem, not a front-matter
-# field). The full definition (steps, allows-create, slots/placeholders) is
-# filled in increment 3 (compose). See roadmap.md.
 when: implement one scoped change end-to-end
+creates-task: true
+allows-create: [{type: adr, as: decision}]
 ---
+{{ include: step:locate }}
+{{ include: step:implement }}
+{{ include: step:superseded-context }}
+{{ include: step:finalize }}

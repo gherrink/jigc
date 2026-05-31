@@ -1,0 +1,3 @@
+If your decision supersedes an earlier one, here is that decision for
+reference — make your consequences explain what changes:
+{{ @task.decision.supersedes#decision }}

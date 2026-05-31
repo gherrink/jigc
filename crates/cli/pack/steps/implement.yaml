@@ -1,0 +1,9 @@
+Implement the change directly in the working tree. When done, stage the
+commit prose:
+
+{{ cli.set-commit-summary }}
+<<author: {{ task.commit#summary }}>>
+
+If a decision is warranted, create an ADR and author its slots:
+
+{{ cli.create-adr }}
