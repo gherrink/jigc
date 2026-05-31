@@ -644,3 +644,8 @@ Also established the **decision-backlog** convention: `implementation/decisions-
 
 - **`schema_version` is a root scalar marker on the result envelope** (`pub const SCHEMA_VERSION: u32 = 1`, stamped by `Orientation::new`), not a per-type or wrapper field — one bump point covers the whole projection, and a contract test pins the exact JSON shape so any rename is intentional.
 - **`Catalog` is `#[serde(transparent)]` over `Vec<CatalogEntry>`** so it projects as a bare `workflows[]` array under `Orientation`; entry keys are the verbatim `id`/`when` from the bootstrap orientation example.
+
+### `PackSource` provider trait + `PackResourceKind`/`ResourceId` (inc 1)
+
+- **`PackSource` is a plain object-safe trait** (`pack_version`/`list`/`read`), no serde derives — it's the *input* provider boundary the engine resolves over, not a result type, so it stays off the versioned-API surface.
+- **Sketch's `Version`/`Bytes`/`Result` ground out as `String`/`Vec<u8>`/`Result<_, PackError>`** — no new dep (no `semver`); `pack_version` carries the binary version verbatim and reconciliation parsing belongs to the override layer, not this seam. `ResourceId` is a thin `String` newtype (the `address` id-newtype style); `PackError::NotFound{kind,id}` is the only read failure mode.
