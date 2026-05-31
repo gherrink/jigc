@@ -613,3 +613,12 @@ The implementation loop is captured in [implementation/dev-workflow.md](implemen
 ### CLAUDE.md flipped to implementation mode; design-collaboration loop extracted
 
 CLAUDE.md updated for the implementation phase: "Project state" now reflects the cargo workspace + real build/lint/test commands; the **design-collaboration loop** is extracted to [implementation/design-workflow.md](implementation/design-workflow.md) (parallel to dev-workflow.md), with CLAUDE.md keeping a two-modes reference (design vs dev) plus the durable conventions verbatim. MVP scope left in place for now (removed post-MVP). The conventions stay in CLAUDE.md because they are cross-mode governance, not planning-only.
+
+### Gating build crates picked: include_dir (embed) + serde_yaml_ng (config YAML)
+
+Increment-1 gating decisions, both behind interfaces (embed behind the `PackSource` trait, YAML behind serde) so either is swappable.
+
+- **Embed mechanism = `include_dir`** (closes the module-layout.md open question). Always-embedded → what you test is what ships; rejected `rust-embed` for its debug-disk/release-embed duality (dev/prod divergence, a determinism smell) despite its nicer iteration, and the build-script approach as needless boilerplate the crate already solves.
+- **Config-family YAML = `serde_yaml_ng`** (the leaf-instance flat parser is separate, [parsing.md](implementation/parsing.md)). Maintained serde-native drop-in fork of the archived `serde_yaml`; rejected `serde_yaml` (unmaintained) and `serde_yml` (contested fork). Typed structs govern coercion, so YAML footguns do not bite.
+
+Both declared in `[workspace.dependencies]`, consumed per-increment; exact versions pin at first `cargo add` in increment 1.
