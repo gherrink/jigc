@@ -130,6 +130,33 @@ impl std::error::Error for ProfileError {
     }
 }
 
+/// The marker-fenced bootstrap block injected into the always-loaded file
+/// (`CLAUDE.md`).
+///
+/// A pure function of the embedded profile contract — no filesystem. Returns the
+/// canonical routing sentence (`design/bootstrap.md` → The sentence, verbatim)
+/// wrapped in stable HTML-comment idempotency markers. `jigc setup` writes this
+/// block into the always-loaded file; on a re-run the markers let it locate and
+/// replace its own block instead of appending a duplicate.
+pub fn bootstrap_block() -> String {
+    format!("{BOOTSTRAP_START_MARKER}\n{BOOTSTRAP_SENTENCE}\n{BOOTSTRAP_END_MARKER}\n")
+}
+
+/// Opening idempotency marker for the bootstrap block (decided 2026-05-31). An
+/// HTML comment so it is invisible in rendered markdown; the `jigc:` namespace
+/// keeps it unambiguous against any other tool's markers.
+const BOOTSTRAP_START_MARKER: &str = "<!-- jigc:bootstrap:start -->";
+
+/// Closing idempotency marker for the bootstrap block. `jigc setup` replaces the
+/// span between the start and end markers, making re-injection idempotent.
+const BOOTSTRAP_END_MARKER: &str = "<!-- jigc:bootstrap:end -->";
+
+/// The canonical routing sentence, verbatim from `design/bootstrap.md` → The
+/// sentence. The backticks are content (they fence the command tokens, as in the
+/// routing footer); the doc's surrounding bold is blockquote presentation, not
+/// part of the sentence.
+const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.";
+
 /// Load the embedded adapter profile for `assistant` (its file stem under
 /// `adapters/`).
 ///
@@ -201,6 +228,21 @@ mod tests {
             vec!["jigc *".to_string()],
             "the allowlist permits the `jigc *` command pattern",
         );
+    }
+
+    /// Golden over [`bootstrap_block`]: the canonical routing sentence
+    /// (`design/bootstrap.md` → The sentence, verbatim) fenced by the pinned
+    /// idempotency markers. Byte-exact: start marker, blank line, the sentence,
+    /// blank line, end marker, trailing newline. This is the exact text
+    /// `jigc setup` injects into `CLAUDE.md`; the markers let a re-run find and
+    /// replace its own block rather than appending a duplicate.
+    #[test]
+    fn bootstrap_block_is_the_marker_fenced_sentence() {
+        insta::assert_snapshot!(bootstrap_block(), @r###"
+        <!-- jigc:bootstrap:start -->
+        `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
+        <!-- jigc:bootstrap:end -->
+        "###);
     }
 
     /// An unknown assistant name is a clear not-found error, never a panic.
