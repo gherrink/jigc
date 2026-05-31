@@ -1,0 +1,126 @@
+//! Release-artifact smoke test — proves the shipped `jigc` binary is real.
+//!
+//! Increment 6 (`implementation/roadmap.md` → Increment 6: *Release build + a
+//! quickstart*; **Proves:** the path of least resistance exists on a real
+//! machine). Three assertions over the *built* binary + the shipped doc:
+//!   1. `jigc --version` reports the workspace version (the artifact identifies
+//!      itself as `jigc <version>`, the settled name — `DECISIONS.md`
+//!      2026-05-31 → Product name);
+//!   2. `jigc setup` in a fresh temp repo exits 0 and leaves *both* adapter
+//!      files in place (the install end-to-end over the real binary);
+//!   3. `QUICKSTART.md` exists and names the three loop commands
+//!      (`jigc setup` → `jigc start "<intent>"` → `jigc task finalize`).
+//!
+//! No external test crates: the binary path comes from Cargo's
+//! `CARGO_BIN_EXE_jigc`, the version from `CARGO_PKG_VERSION`, the temp repo is
+//! built with `std::fs`, and a self-cleaning `TempDir` keeps the test off the
+//! developer's real repo.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        let unique = format!(
+            "jigc-smoke-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        );
+        path.push(unique);
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Mark `root` as a git repo for repo-root discovery, without invoking git — a
+/// bare `.git` directory is enough for `locate`.
+fn mark_repo(root: &Path) {
+    fs::create_dir_all(root.join(".git")).expect("create .git marker");
+}
+
+/// The repo root, derived from this test crate's manifest dir
+/// (`<root>/crates/cli`).
+fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("repo root is two levels above crates/cli")
+        .to_path_buf()
+}
+
+#[test]
+fn version_reports_the_workspace_version() {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("--version")
+        .output()
+        .expect("run the jigc binary");
+    assert!(out.status.success(), "`jigc --version` must exit 0");
+
+    let stdout = String::from_utf8(out.stdout).expect("version output is UTF-8");
+    let expected = format!("jigc {}\n", env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        stdout, expected,
+        "`jigc --version` must report the workspace version as `jigc <version>`",
+    );
+}
+
+#[test]
+fn setup_runs_end_to_end_over_the_built_binary() {
+    let repo = TempDir::new("setup");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("setup")
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // Both adapter files are in place after the install.
+    assert!(
+        repo.path().join("CLAUDE.md").is_file(),
+        "`jigc setup` must leave CLAUDE.md in place",
+    );
+    assert!(
+        repo.path().join(".claude/settings.json").is_file(),
+        "`jigc setup` must leave .claude/settings.json in place",
+    );
+}
+
+#[test]
+fn quickstart_documents_the_three_loop_commands() {
+    let quickstart = repo_root().join("QUICKSTART.md");
+    let body = fs::read_to_string(&quickstart)
+        .unwrap_or_else(|_| panic!("QUICKSTART.md must exist at the repo root: {quickstart:?}"));
+
+    for cmd in ["jigc setup", "jigc start", "jigc task finalize"] {
+        assert!(
+            body.contains(cmd),
+            "QUICKSTART.md must name the loop command `{cmd}`",
+        );
+    }
+}

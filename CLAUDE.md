@@ -8,6 +8,8 @@ Implementation has begun. Design lives in `VISION.md` (thesis), `DECISIONS.md` (
 
 **Build / lint / test:** `cargo build` · `cargo test` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt --check` (the dev-workflow gate).
 
+**Quickstart:** [QUICKSTART.md](QUICKSTART.md) walks the MVP loop on a real machine — install → `jigc setup` → `jigc start "<intent>"` → `jigc task finalize <id>`.
+
 ## How we work together
 
 Two operating modes, each with its own loop:

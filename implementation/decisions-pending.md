@@ -31,4 +31,4 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 ## Increment 6 — adapter & ship
 
 - **(D) Product name** — *settled 2026-05-31: ship the MVP as `jigc` (adopt the placeholder as the name). See [DECISIONS.md](../DECISIONS.md).*
-- **(I) Release / cross-compile + quickstart** — packaging the single binary.
+- *(release / quickstart **settled 2026-05-31** — a clean `cargo build --release -p cli` produces `target/release/jigc`; `crates/cli/tests/release_smoke.rs` verifies the built binary's `--version` + `jigc setup`; `QUICKSTART.md` documents the loop, referenced from CLAUDE.md. Cross-compile is out of MVP scope. See [DECISIONS.md](../DECISIONS.md).)*
