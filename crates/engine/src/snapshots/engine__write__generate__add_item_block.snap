@@ -1,0 +1,22 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.
+
+### Add a rate limiter  {#add-a-rate-limiter}
+
+The gateway rejects the 101st request.
+
+<!-- fields -->
+- maps-to-test: `test/rate_limit_spec.rb#burst`

@@ -1,0 +1,16 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+title: A note
+---
+
+# A note
+
+## Detail
+
+Some opaque prose here.
+
+<!-- fields -->
+- owner: platform-team

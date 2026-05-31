@@ -1,0 +1,22 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+status: proposed
+date: 2026-05-23
+---
+
+# A decision
+
+## Context
+
+Forces at play.
+
+## Decision
+
+We centralize.
+
+## Consequences
+
+Local limiters retired.

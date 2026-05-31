@@ -892,6 +892,406 @@ pub fn value_text(value: &Value) -> String {
     }
 }
 
+// ============================================================================
+// Generation-and-insert — the other half of the write path. When the structural
+// home a write targets is **absent** (an optional section not yet in the file, an
+// item being added, the first field of a fieldless section), there is no span to
+// splice. We *generate* the canonical bytes for the new structural home (heading,
+// item block, or sentinel + bullet) and **insert** them at the deterministic
+// schema-document-order position (`parsing.md` → The write pipeline → "Absent
+// structural homes generate at their schema-ordered position"). Generation scope is
+// the structural home only — the heading plus the one leaf being written;
+// sibling slots / a field group materialize incrementally when *their* writes land.
+// ============================================================================
+
+/// A located generation-and-insert failure: the target's structural home is already
+/// present (so the caller should have routed to the *surgical splice* path), or the
+/// source does not conform enough to locate the schema-ordered insertion point.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GenerateError {
+    /// The section / item the caller asked to generate is **already present** — a
+    /// present target is a surgical splice ([`set_slot`] / [`add_item`] of a new id),
+    /// not a generation. Routes the caller back to the edit path.
+    AlreadyPresent {
+        /// A human-readable description of what was already present.
+        what: String,
+    },
+    /// The named section is not declared by the schema, so there is no schema-ordered
+    /// position to insert at.
+    UnknownSection {
+        /// The unknown section id.
+        id: String,
+    },
+    /// The section's shape does not match the requested generation (e.g. `add_item`
+    /// into a simple section, or `generate_section` for the header).
+    WrongShape {
+        /// A human-readable description of the mismatch.
+        what: String,
+    },
+}
+
+/// `set-slot` (section **absent**): materialize the absent body section `section_id`'s
+/// structural home at its schema-document-order position and write `slot` prose (plus
+/// any `fields`) into it. The generated `## Heading` is inserted **after the nearest
+/// preceding present section, before the nearest following one**, so the present
+/// sections stay in schema order (`parsing.md` → Absent structural homes). A section
+/// already present → [`GenerateError::AlreadyPresent`] (route to [`set_slot`]).
+pub fn generate_section(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    slot: Option<&str>,
+    fields: &[Field],
+) -> Result<String, GenerateError> {
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    if section.header {
+        return Err(GenerateError::WrongShape {
+            what: format!(
+                "section {section_id:?} is the header (front-matter), not a body section"
+            ),
+        });
+    }
+
+    let present = present_body_sections(schema, source);
+    if present.iter().any(|(id, _)| id == section_id) {
+        return Err(GenerateError::AlreadyPresent {
+            what: format!("section {section_id:?}"),
+        });
+    }
+
+    // The generated structural home: the canonical section block (heading + prose +
+    // optional field group), no surrounding blank lines (the insertion adds those).
+    let block = render_generated_section(section, slot, fields);
+    let at = insertion_offset(schema, source, section_id, &present);
+    Ok(insert_block(source, at, &block))
+}
+
+/// `add-item` (repeatable section): mint a `{#id}` from `title` via [`crate::slug`],
+/// generate the `### <title>  {#id}` item block (slot prose + optional fields), and
+/// insert it at the **end of the section's existing items** (append order; `reorder`
+/// is a separate verb). If the repeatable section's own `##` home is absent, it is
+/// materialized first at its schema-ordered position, then the item generated into it.
+/// A minted id colliding with a present item → [`GenerateError::AlreadyPresent`].
+pub fn add_item(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    title: &str,
+    slot: Option<&str>,
+    fields: &[Field],
+) -> Result<String, GenerateError> {
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    if !matches!(section.body, SectionBody::Repeatable { .. }) {
+        return Err(GenerateError::WrongShape {
+            what: format!("section {section_id:?} is not repeatable"),
+        });
+    }
+
+    // Mint the item anchor from the id-source (the title) via slugify.
+    let id = crate::slug::slugify(title);
+
+    let item = render_item(&ItemContent {
+        id: id.clone(),
+        title: title.to_string(),
+        slot: slot.map(str::to_string),
+        fields: fields.to_vec(),
+    });
+
+    let present = present_body_sections(schema, source);
+    if present.iter().any(|(sid, _)| sid == section_id) {
+        // The section is present: append the item after its last present item (or
+        // right after the heading if it has none yet).
+        let blocks = parse::scan_blocks(source);
+        let region = section_region(&blocks, source, section_id, &present).ok_or_else(|| {
+            GenerateError::WrongShape {
+                what: format!("section {section_id:?} region not locatable"),
+            }
+        })?;
+        // Reject a minted id that collides with a present item in this section.
+        if item_anchor_present(&blocks, source, region.clone(), &id) {
+            return Err(GenerateError::AlreadyPresent {
+                what: format!("item {id:?} in section {section_id:?}"),
+            });
+        }
+        let at = last_item_end(source, region);
+        Ok(insert_block(source, at, &item))
+    } else {
+        // The section's home is absent: generate the `## Heading` with the first item
+        // as its body, inserted at the section's schema-ordered position.
+        let block = format!("## {}\n\n{}", heading_text(&section.id), item);
+        let at = insertion_offset(schema, source, section_id, &present);
+        Ok(insert_block(source, at, &block))
+    }
+}
+
+/// `set-field` (field **absent**, section present): insert the field bullet for
+/// `field` into `section_id`'s trailing field group, materializing the
+/// `<!-- fields -->` sentinel **once** if the section has no field group yet (the
+/// "first field into a fieldless section" case). The bullet is appended after the
+/// section's present bullets, in physical order. A field key already present →
+/// [`GenerateError::AlreadyPresent`] (route to [`set_field`]).
+pub fn insert_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    field: &Field,
+) -> Result<String, GenerateError> {
+    let _section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+
+    let present = present_body_sections(schema, source);
+    let blocks = parse::scan_blocks(source);
+    let region = section_region(&blocks, source, section_id, &present).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("section {section_id:?} not present"),
+        }
+    })?;
+
+    let bullet = format!("- {}", emit_one_field(field));
+
+    // Is there an existing field group (a sentinel + list) in the section's region?
+    match field_group_list(&blocks, region.clone()) {
+        Some((list_range, items)) => {
+            // The field key must not already be present (that is a surgical set-field).
+            if field_key_in_list(&blocks, source, &items, &field.key) {
+                return Err(GenerateError::AlreadyPresent {
+                    what: format!("field {:?} in section {section_id:?}", field.key),
+                });
+            }
+            // Append the bullet right after the last present bullet (the list end).
+            let at = list_range.end;
+            Ok(insert_after_line(source, at, &bullet))
+        }
+        None => {
+            // No field group yet: materialize the sentinel + this first bullet at the
+            // end of the section's slot prose (the region's trimmed end).
+            let at = slot_prose_end(source, region);
+            let group = format!("\n\n{FIELD_SENTINEL}\n{bullet}");
+            Ok(insert_at(source, at, &group))
+        }
+    }
+}
+
+/// Render a body section's canonical block (`## Heading` + slot prose + optional
+/// field group), with **no** surrounding blank lines — the caller's insertion adds
+/// the separating blanks. Mirrors [`render_section`]'s simple-section body but takes
+/// the slot/fields directly (the generation caller supplies them, not an `Instance`).
+fn render_generated_section(section: &Section, slot: Option<&str>, fields: &[Field]) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "## {}", heading_text(&section.id));
+    out.push('\n');
+    out.push_str(slot.unwrap_or("").trim_end());
+    append_field_group(&mut out, fields);
+    // Drop the single trailing `\n` `append_field_group` leaves so the block is bare;
+    // `insert_block` owns the surrounding blank lines.
+    while out.ends_with('\n') {
+        out.pop();
+    }
+    out
+}
+
+/// The present body sections, as `(schema id, heading start offset)` pairs in source
+/// order. A present heading is an `## H2` whose text matches a schema **body** section
+/// id (case-insensitive). Built without requiring a clean conformant parse — the
+/// target section is, by construction, absent.
+fn present_body_sections(schema: &Schema, source: &str) -> Vec<(String, usize)> {
+    let body_ids: Vec<&str> = schema
+        .sections
+        .iter()
+        .filter(|s| !s.header)
+        .map(|s| s.id.as_str())
+        .collect();
+    let mut present = Vec::new();
+    for block in parse::scan_blocks(source) {
+        if let Block::Heading {
+            level: pulldown_cmark::HeadingLevel::H2,
+            text,
+            range,
+            ..
+        } = &block
+            && let Some(id) = body_ids
+                .iter()
+                .find(|id| text.trim().eq_ignore_ascii_case(id.trim()))
+        {
+            present.push((id.to_string(), range.start));
+        }
+    }
+    present
+}
+
+/// The byte offset at which to insert an absent section's generated home so the
+/// present sections stay in **schema document order**: the heading start of the
+/// nearest *following* present section (the first present section whose schema index
+/// is greater than the target's), else end-of-document.
+fn insertion_offset(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    present: &[(String, usize)],
+) -> usize {
+    let order = |id: &str| schema.sections.iter().position(|s| s.id == id);
+    let target_idx = order(section_id);
+    present
+        .iter()
+        .filter(|(id, _)| order(id) > target_idx)
+        .map(|(_, start)| *start)
+        .min()
+        .unwrap_or(source.len())
+}
+
+/// Insert a bare section/item `block` at `at` (a section-heading boundary or EOF),
+/// surrounding it with exactly one blank line on each adjoining side so the result is
+/// canonically spaced. At a following heading's start, the block precedes it
+/// (`block\n\n`); at EOF, the block follows the last section (`\nblock\n`).
+fn insert_block(source: &str, at: usize, block: &str) -> String {
+    if at >= source.trim_end().len() {
+        // Append at end-of-document: one blank line, the block, one trailing newline.
+        let head = source.trim_end();
+        return format!("{head}\n\n{block}\n");
+    }
+    // Insert before a following heading: the block then one blank line then the head.
+    splice(source, at..at, &format!("{block}\n\n"))
+}
+
+/// The byte region `[content_start, region_end)` of a present body section
+/// `section_id`: from just past its `##` heading to the next `##`/EOF.
+fn section_region(
+    blocks: &[Block],
+    source: &str,
+    section_id: &str,
+    present: &[(String, usize)],
+) -> Option<Range<usize>> {
+    let &(_, head_start) = present.iter().find(|(id, _)| id == section_id)?;
+    let content_start = blocks.iter().find_map(|b| match b {
+        Block::Heading {
+            level: pulldown_cmark::HeadingLevel::H2,
+            range,
+            content_start,
+            ..
+        } if range.start == head_start => Some(*content_start),
+        _ => None,
+    })?;
+    let end = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading {
+                level: pulldown_cmark::HeadingLevel::H2,
+                range,
+                ..
+            } if range.start > head_start => Some(range.start),
+            _ => None,
+        })
+        .min()
+        .unwrap_or(source.len());
+    Some(content_start..end)
+}
+
+/// The byte offset at the end of a repeatable section's items: the section region's
+/// content, back-trimmed to just past the last item's last non-blank byte — where a
+/// new `### …` item block appends. With no items yet, the section's content start
+/// (just past its heading), back-trimmed.
+fn last_item_end(source: &str, region: Range<usize>) -> usize {
+    region.start + source[region.clone()].trim_end().len()
+}
+
+/// Whether a `### …{#id}` item with anchor `id` is already present in `region`.
+fn item_anchor_present(blocks: &[Block], source: &str, region: Range<usize>, id: &str) -> bool {
+    blocks.iter().any(|b| match b {
+        Block::Heading {
+            level: pulldown_cmark::HeadingLevel::H3,
+            range,
+            ..
+        } if range.start >= region.start && range.start < region.end => {
+            anchor_of(&source[range.clone()]) == Some(id)
+        }
+        _ => false,
+    })
+}
+
+/// The trailing-field-group bullet list in a section `region`, if present: a
+/// `<!-- fields -->` sentinel immediately followed by a top-level list. Returns the
+/// list's byte range and its per-item ranges.
+fn field_group_list(
+    blocks: &[Block],
+    region: Range<usize>,
+) -> Option<(Range<usize>, Vec<Range<usize>>)> {
+    let sentinel = blocks.iter().find_map(|b| match b {
+        Block::FieldSentinel { range }
+            if range.start >= region.start && range.start < region.end =>
+        {
+            Some(range.clone())
+        }
+        _ => None,
+    })?;
+    blocks.iter().find_map(|b| match b {
+        Block::List { range, items } if range.start >= sentinel.end && range.start < region.end => {
+            Some((range.clone(), items.clone()))
+        }
+        _ => None,
+    })
+}
+
+/// Whether `key` is already a bullet key in the field-group `items`.
+fn field_key_in_list(_blocks: &[Block], source: &str, items: &[Range<usize>], key: &str) -> bool {
+    items.iter().any(|item| {
+        let raw = source[item.clone()].trim_end();
+        let bare = raw
+            .strip_prefix("- ")
+            .or_else(|| raw.strip_prefix('-'))
+            .unwrap_or(raw)
+            .trim_start();
+        bare.split_once(':')
+            .map(|(k, _)| k.trim() == key)
+            .unwrap_or(false)
+    })
+}
+
+/// The byte offset where a simple section's slot prose ends (its region content,
+/// back-trimmed) — where a first `<!-- fields -->` field group materializes.
+fn slot_prose_end(source: &str, region: Range<usize>) -> usize {
+    region.start + source[region.clone()].trim_end().len()
+}
+
+/// Insert `text` verbatim at byte offset `at` (no spacing added — the caller owns it).
+fn insert_at(source: &str, at: usize, text: &str) -> String {
+    splice(source, at..at, text)
+}
+
+/// Insert `bullet` as a new line immediately after the list ending at `at` (the list
+/// range's end sits just past the last bullet's newline), preserving the contiguous
+/// bullet block.
+fn insert_after_line(source: &str, at: usize, bullet: &str) -> String {
+    // The list range ends after the last bullet's content; ensure we land just past
+    // its terminating newline so the new bullet is its own line.
+    let mut pos = at;
+    if !source[..pos].ends_with('\n') {
+        // Advance to the end of the current line.
+        if let Some(nl) = source[pos..].find('\n') {
+            pos += nl + 1;
+        } else {
+            return format!("{source}\n{bullet}");
+        }
+    }
+    splice(source, pos..pos, &format!("{bullet}\n"))
+}
+
 #[cfg(test)]
 mod splice {
     //! The surgical-splice contract — the #1-risk round-trip on the **edit** side
@@ -1200,5 +1600,445 @@ mod splice_prop_tests {
             value_text(&Value::List(vec!["a".into(), "b".into()])),
             "[a, b]"
         );
+    }
+}
+
+#[cfg(test)]
+mod generate {
+    //! The generation-and-insert contract — the write path for **absent** structural
+    //! homes (`parsing.md` → The write pipeline → "Absent structural homes generate at
+    //! their schema-ordered position"). Goldens (insta) pin the exact generated +
+    //! inserted bytes: a `set-slot` into an absent optional section materializes its
+    //! `##` home in schema document-order; an `add-item` mints a `{#id}` from the
+    //! id-source via [`crate::slug`] and inserts the item block; a first `set-field`
+    //! into a fieldless section emits the sentinel + bullet once.
+
+    use super::*;
+    use crate::field_block::Value;
+    use crate::parse::parse_sections;
+    use crate::schema::{Schema, load_schema};
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    fn spec_schema() -> Schema {
+        let yaml = b"\
+type: spec
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"x\" } }
+        - { id: maps-to-test, type: code-anchor }
+";
+        load_schema(yaml).expect("spec schema loads")
+    }
+
+    /// A schema with a body section (`detail`) that declares both a slot and a typed
+    /// field — the fixture for the "first set-field into a fieldless section" case
+    /// (the MVP `adr`/`commit` body sections declare no body fields).
+    fn fielded_schema() -> Schema {
+        let yaml = b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: detail
+    slot: { hint: \"x\" }
+    fields:
+      - { id: owner, type: string }
+";
+        load_schema(yaml).expect("fielded schema loads")
+    }
+
+    fn scalar(key: &str, value: &str) -> Field {
+        Field {
+            key: key.to_string(),
+            value: Value::Scalar(value.to_string()),
+        }
+    }
+
+    /// Golden: a `set-slot` into an **absent** optional ADR section (`decision`
+    /// missing from the file) materializes the `## Decision` home at its
+    /// schema-document-order position — between the present `## Context` and
+    /// `## Consequences` — and writes the slot prose. The present sections stay in
+    /// schema order; the snapshot pins the exact inserted bytes (canonical spacing).
+    #[test]
+    fn set_slot_into_absent_section_materializes_home_in_schema_order() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Consequences
+
+Each service drops its local limiter.
+";
+        let out = generate_section(
+            &adr_schema(),
+            src,
+            "decision",
+            Some("Adopt a token bucket per client."),
+            &[],
+        )
+        .expect("decision section is absent ⇒ generated");
+        insta::assert_snapshot!("set_slot_absent_section", out);
+
+        // The result is conformant and the sections are in schema document-order.
+        let doc = parse_sections(&adr_schema(), &out).expect("generated result conforms");
+        let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["status", "context", "decision", "consequences"]);
+    }
+
+    /// Golden: a `set-slot` into an absent section that is the **last** in schema
+    /// order appends its `##` home at EOF (no following present section to insert
+    /// before). Pins the EOF-append spacing (one blank line before, one trailing LF).
+    #[test]
+    fn set_slot_into_absent_trailing_section_appends_at_eof() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# A decision
+
+## Context
+
+Forces at play.
+
+## Decision
+
+We centralize.
+";
+        let out = generate_section(
+            &adr_schema(),
+            src,
+            "consequences",
+            Some("Local limiters retired."),
+            &[],
+        )
+        .expect("consequences absent ⇒ generated");
+        insta::assert_snapshot!("set_slot_absent_trailing", out);
+        let doc = parse_sections(&adr_schema(), &out).expect("conforms");
+        let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["status", "context", "decision", "consequences"]);
+    }
+
+    /// A section already present is **not** a generation — it routes to the surgical
+    /// `set_slot` edit path via [`GenerateError::AlreadyPresent`].
+    #[test]
+    fn set_slot_into_present_section_is_already_present() {
+        let src = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# A decision
+
+## Context
+
+Forces.
+
+## Decision
+
+We decided.
+
+## Consequences
+
+Fine.
+";
+        let err = generate_section(&adr_schema(), src, "context", Some("x"), &[])
+            .expect_err("context is present");
+        assert!(matches!(err, GenerateError::AlreadyPresent { .. }));
+    }
+
+    /// Golden: `add-item` mints a `{#id}` from the id-source title via slugify and
+    /// inserts the generated `### <title>  {#id}` item block (two-space anchor gap),
+    /// with its slot prose and a sentinelled per-item field, appended after the
+    /// section's existing item. The snapshot pins the slugified anchor
+    /// (`Add a rate limiter` → `add-a-rate-limiter`) and the exact item bytes.
+    #[test]
+    fn add_item_mints_anchor_and_inserts_block() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.
+";
+        let out = add_item(
+            &spec_schema(),
+            src,
+            "criteria",
+            "Add a rate limiter",
+            Some("The gateway rejects the 101st request."),
+            &[scalar("maps-to-test", "`test/rate_limit_spec.rb#burst`")],
+        )
+        .expect("item generated");
+        insta::assert_snapshot!("add_item_block", out);
+
+        // The minted anchor is the slugified title, and the result parses to two items.
+        assert!(out.contains("### Add a rate limiter  {#add-a-rate-limiter}"));
+        let doc = parse_sections(&spec_schema(), &out).expect("result conforms");
+        let criteria = doc.sections.iter().find(|s| s.id == "criteria").unwrap();
+        let ids: Vec<&str> = criteria.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["burst-allowance", "add-a-rate-limiter"]);
+    }
+
+    /// `add-item` whose minted id collides with a present item is
+    /// [`GenerateError::AlreadyPresent`] — serial collisions reject (MVP;
+    /// `write-commands.md`), the numeric suffix is the post-MVP parallel case.
+    #[test]
+    fn add_item_colliding_anchor_is_already_present() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit  {#rate-limit}
+
+Holds at 100/min.
+";
+        let err = add_item(
+            &spec_schema(),
+            src,
+            "criteria",
+            "Rate limit",
+            Some("x"),
+            &[],
+        )
+        .expect_err("rate-limit anchor collides");
+        assert!(matches!(err, GenerateError::AlreadyPresent { .. }));
+    }
+
+    /// Golden: a first `set-field` into a **fieldless** section (a `detail` section
+    /// whose declared `owner` field has no value on disk yet) materializes the
+    /// `<!-- fields -->` sentinel **once** plus the first `- owner: …` bullet, at the
+    /// end of the section's slot prose. The snapshot pins the exact sentinel + bullet
+    /// bytes (one blank line before the sentinel, the bullet contiguous beneath it).
+    #[test]
+    fn first_set_field_emits_sentinel_and_bullet_once() {
+        let src = "\
+---
+title: A note
+---
+
+# A note
+
+## Detail
+
+Some opaque prose here.
+";
+        let out = insert_field(
+            &fielded_schema(),
+            src,
+            "detail",
+            &scalar("owner", "platform-team"),
+        )
+        .expect("owner field absent ⇒ generated");
+        insta::assert_snapshot!("first_set_field", out);
+
+        // Exactly one sentinel, and the result parses with the field present.
+        assert_eq!(out.matches(FIELD_SENTINEL).count(), 1);
+        let doc = parse_sections(&fielded_schema(), &out).expect("result conforms");
+        let detail = doc.sections.iter().find(|s| s.id == "detail").unwrap();
+        assert_eq!(detail.fields.len(), 1);
+        assert_eq!(detail.fields[0].key, "owner");
+    }
+
+    /// A `set-field` of an absent field into a section that **already has a field
+    /// group** appends a new bullet beneath the present ones (the sentinel is reused,
+    /// not re-emitted), so the contiguous bullet block grows by one line.
+    #[test]
+    fn set_field_absent_into_existing_group_appends_a_bullet() {
+        // A `note` schema whose `detail` section declares two fields; only `owner`
+        // is present on disk, so adding `area` appends a second bullet.
+        let yaml = b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: detail
+    slot: { hint: \"x\" }
+    fields:
+      - { id: owner, type: string }
+      - { id: area, type: string }
+";
+        let schema = load_schema(yaml).expect("schema loads");
+        let src = "\
+---
+title: A note
+---
+
+# A note
+
+## Detail
+
+Prose.
+
+<!-- fields -->
+- owner: platform-team
+";
+        let out = insert_field(&schema, src, "detail", &scalar("area", "gateway"))
+            .expect("area field absent ⇒ generated");
+        // The sentinel is reused (still exactly one) and both bullets are present,
+        // contiguous beneath it.
+        assert_eq!(out.matches(FIELD_SENTINEL).count(), 1);
+        assert!(out.contains("- owner: platform-team\n- area: gateway"));
+        let doc = parse_sections(&schema, &out).expect("result conforms");
+        let detail = doc.sections.iter().find(|s| s.id == "detail").unwrap();
+        let keys: Vec<&str> = detail.fields.iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(keys, ["owner", "area"]);
+    }
+
+    /// A `set-field` whose key is already present is **not** a generation — it routes
+    /// to the surgical `set_field` edit path via [`GenerateError::AlreadyPresent`].
+    #[test]
+    fn set_field_already_present_routes_to_splice() {
+        let src = "\
+---
+title: A note
+---
+
+# A note
+
+## Detail
+
+Prose.
+
+<!-- fields -->
+- owner: platform-team
+";
+        let err = insert_field(
+            &fielded_schema(),
+            src,
+            "detail",
+            &scalar("owner", "other-team"),
+        )
+        .expect_err("owner already present");
+        assert!(matches!(err, GenerateError::AlreadyPresent { .. }));
+    }
+}
+
+#[cfg(test)]
+mod generate_prop_tests {
+    //! The #1-risk property on the generation path: inserting an absent section's home
+    //! then parsing always yields a document whose **present sections are in schema
+    //! document-order** — regardless of which subset of sections was already present
+    //! and which one was generated.
+
+    use super::*;
+    use crate::parse::parse_sections;
+    use crate::schema::{Schema, load_schema};
+    use proptest::prelude::*;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    /// Build a conformant ADR containing exactly the body sections in `present` (a
+    /// subset of `[context, decision, consequences]`, kept in schema order), each with
+    /// a one-line opaque slot prose.
+    fn build_partial_adr(present: &[&str]) -> String {
+        let mut out =
+            String::from("---\nstatus: proposed\ndate: 2026-05-31\n---\n\n# A decision\n");
+        for id in present {
+            let heading = match *id {
+                "context" => "Context",
+                "decision" => "Decision",
+                "consequences" => "Consequences",
+                _ => unreachable!(),
+            };
+            out.push_str(&format!("\n## {heading}\n\n{id} prose.\n"));
+        }
+        out
+    }
+
+    proptest! {
+        /// Insert-then-parse keeps present sections in schema document-order: for an
+        /// arbitrary subset of the three ADR body sections present, generating one of
+        /// the absent ones yields a document whose section ids are a subsequence of the
+        /// schema order (so the generated `##` landed in its schema-ordered slot).
+        #[test]
+        fn generated_section_lands_in_schema_order(
+            mask in prop::collection::vec(any::<bool>(), 3..=3)
+                .prop_filter("at least one absent", |m| !m.iter().all(|&b| b)),
+            target_pick in 0usize..3,
+        ) {
+            let body = ["context", "decision", "consequences"];
+            let present: Vec<&str> = body.iter().enumerate()
+                .filter(|(i, _)| mask[*i]).map(|(_, s)| *s).collect();
+            // Pick a target among the *absent* sections.
+            let absent: Vec<&str> = body.iter().enumerate()
+                .filter(|(i, _)| !mask[*i]).map(|(_, s)| *s).collect();
+            let target = absent[target_pick % absent.len()];
+
+            let src = build_partial_adr(&present);
+            let schema = adr_schema();
+            let out = generate_section(&schema, &src, target, Some("generated prose."), &[])
+                .expect("absent section generates");
+
+            // Generation materializes only the *one* leaf's structural home; other
+            // required-but-absent sections stay a `finalize` concern (parsing.md → Absent
+            // structural homes), so the result need not fully parse. The contract is:
+            // the **present** sections, in source order, are in schema document-order.
+            // We read present `##` homes directly (not a conformant parse).
+            let got_in_source_order: Vec<String> = present_body_sections(&schema, &out)
+                .into_iter().map(|(id, _)| id).collect();
+            let schema_order: Vec<&str> = body.to_vec();
+            let mut last: isize = -1;
+            for id in &got_in_source_order {
+                let pos = schema_order.iter().position(|s| s == id).unwrap() as isize;
+                prop_assert!(pos > last, "section {id} out of schema order in {got_in_source_order:?}");
+                last = pos;
+            }
+            // And the generated target is now present.
+            prop_assert!(
+                got_in_source_order.iter().any(|s| s == target),
+                "target {target} present after generation"
+            );
+            // The fully-generated case (all three now present) must also conform.
+            if got_in_source_order.len() == 3 {
+                parse_sections(&schema, &out)
+                    .map_err(|f| TestCaseError::fail(format!("complete doc must conform: {f:?}")))?;
+            }
+        }
     }
 }
