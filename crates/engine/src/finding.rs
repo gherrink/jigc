@@ -130,6 +130,25 @@ impl Finding {
             route: None,
         }
     }
+
+    /// A hard block: a [`Severity::Blocking`] finding carrying a `route` (the
+    /// next action) and no source location. The settled block-payload envelope
+    /// (`DECISIONS.md` 2026-05-31 → a hard block is a blocking finding with a
+    /// route, not a new type) — used by operations whose failure points at a
+    /// human action rather than a source coordinate (e.g. `jigc setup`).
+    pub fn block(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        route: impl Into<String>,
+    ) -> Self {
+        Self {
+            severity: Severity::Blocking,
+            code: code.into(),
+            message: message.into(),
+            location: None,
+            route: Some(route.into()),
+        }
+    }
 }
 
 #[cfg(test)]

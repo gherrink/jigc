@@ -10,6 +10,7 @@
 //! resilience and `design/workflow-dialect.md` → Routing footer.
 
 use crate::cli::Format;
+use crate::setup::SetupSummary;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
 use engine::result::{Orientation, OrientationView, ValidationReport};
@@ -166,6 +167,49 @@ fn finding_line(finding: &Finding) -> String {
         line.push('\n');
     }
     line
+}
+
+/// Render a successful `jigc setup` install to the surface `format` selects:
+/// `agent` / `human` emit a one-line-per-target summary of what was installed,
+/// followed by the routing footer; `json` emits a generic object naming the two
+/// host targets, with no footer (tooling-consumed). The agent-text summary tells
+/// the agent the install is done and where it landed.
+pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({
+            "installed": true,
+            "line_file": summary.line_file,
+            "allowlist_file": summary.allowlist_file,
+        })),
+        Format::Agent | Format::Human => {
+            let mut out = String::from("jigc setup — adapter installed\n\n");
+            out.push_str("  - bootstrap line → ");
+            out.push_str(&summary.line_file);
+            out.push('\n');
+            out.push_str("  - jigc allowlist → ");
+            out.push_str(&summary.allowlist_file);
+            out.push('\n');
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// Render a `jigc setup` failure to the surface `format` selects: `agent` /
+/// `human` emit the blocking finding line (`severity · code — message` + the
+/// indented `route:` line) followed by the routing footer; `json` emits the
+/// **generic** finding projection (the stable block-payload envelope) with no
+/// footer. A hard block is a blocking finding carrying a route (`DECISIONS.md`
+/// 2026-05-31), so this is the same envelope `validate` blocks surface through.
+pub fn setup_block(format: Format, finding: &Finding) -> String {
+    match format {
+        Format::Json => json(finding),
+        Format::Agent | Format::Human => {
+            let mut out = finding_line(finding);
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
 }
 
 /// Render the **unset project** orientation (`design/bootstrap.md` → Orientation

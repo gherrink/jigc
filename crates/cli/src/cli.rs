@@ -10,6 +10,7 @@
 use crate::doc::DocCommand;
 use crate::orient;
 use crate::render;
+use crate::setup;
 use crate::start;
 use crate::task::TaskCommand;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -75,6 +76,13 @@ pub enum Command {
         #[command(subcommand)]
         verb: TaskCommand,
     },
+
+    /// The adapter install. Generates the Claude Code adapter from the embedded
+    /// profile: injects the bootstrap line into `CLAUDE.md` and allowlists
+    /// `jigc *` in `.claude/settings.json` (`design/assistant-adapter.md` →
+    /// Generated, minimal, regenerated). Idempotent; the install the
+    /// unset-project orientation routes the agent to.
+    Setup,
 }
 
 impl Cli {
@@ -104,6 +112,34 @@ impl Cli {
             } => unreachable!("clap rejects `<intent>` together with `--task`"),
             Command::Doc { verb } => run_doc(verb),
             Command::Task { verb } => run_task(self.format, verb),
+            Command::Setup => run_setup(self.format),
+        }
+    }
+}
+
+/// Run `jigc setup` (the adapter install) against the current working directory:
+/// locate the repo root, install the Claude Code adapter (bootstrap line +
+/// `jigc *` allowlist), render the outcome through the selected `format`, and map
+/// it to the exit code. Success prints a summary on stdout and exits 0; a write
+/// failure prints a blocking `setup.*` finding (with its route) on stderr and
+/// exits non-zero (`design/assistant-adapter.md` → Generated, minimal,
+/// regenerated; the block-payload envelope, `DECISIONS.md` 2026-05-31).
+fn run_setup(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match setup::run(&cwd) {
+        Ok(summary) => {
+            println!("{}", render::setup_success(format, &summary));
+            ExitCode::SUCCESS
+        }
+        Err(finding) => {
+            eprintln!("{}", render::setup_block(format, &finding));
+            ExitCode::FAILURE
         }
     }
 }
@@ -282,6 +318,12 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "start", "--format", "xml"])
             .expect_err("unknown format must be rejected");
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+
+    #[test]
+    fn setup_parses() {
+        let cli = Cli::try_parse_from(["jigc", "setup"]).expect("`jigc setup` parses");
+        assert_eq!(cli.command, Command::Setup);
     }
 
     #[test]

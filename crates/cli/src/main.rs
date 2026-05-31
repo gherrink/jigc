@@ -4,11 +4,8 @@
 //! and cascade-layer *location* (CLI locates, engine resolves). See
 //! `implementation/module-layout.md` → The I/O boundary.
 
-// `adapter` ships the embedded profiles + the typed profile model/loader; its
-// generation surface (`jigc setup` host-file injection) wires in a later inc-6
-// task, so the model/loader is `#[allow(dead_code)]` until then (the
-// established pre-wire pattern).
-#[allow(dead_code)]
+// `adapter` ships the embedded profiles + the typed profile model/loader and the
+// host-file injectors; `setup` orchestrates them into the `jigc setup` install.
 mod adapter;
 mod cli;
 mod doc;
@@ -16,6 +13,7 @@ mod locate;
 mod orient;
 mod pack;
 mod render;
+mod setup;
 mod start;
 mod task;
 
