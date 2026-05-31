@@ -8,6 +8,7 @@
 //! `design/write-commands.md` → Task origination (bare `jigc start`).
 
 use crate::orient;
+use crate::render;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::process::ExitCode;
 
@@ -53,7 +54,7 @@ impl Cli {
     /// composition, which lands in increment 3.
     pub fn dispatch(self) -> ExitCode {
         match self.command {
-            Command::Start { intent: None } => run_orient(),
+            Command::Start { intent: None } => run_orient(self.format),
             Command::Start { intent: Some(_) } => {
                 // Composition (`jigc start "<intent>"`) lands in increment 3.
                 eprintln!("composition is not yet implemented (increment 3)");
@@ -63,9 +64,10 @@ impl Cli {
     }
 }
 
-/// Run the bare-`start` orientation against the current working directory and
-/// print it, mapping success/failure to the process exit code.
-fn run_orient() -> ExitCode {
+/// Run the bare-`start` orientation against the current working directory,
+/// render the structured result through the selected `format`, and print it —
+/// mapping success/failure to the process exit code.
+fn run_orient(format: Format) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -74,8 +76,8 @@ fn run_orient() -> ExitCode {
         }
     };
     match orient::orient(&cwd) {
-        Ok(text) => {
-            println!("{text}");
+        Ok(view) => {
+            println!("{}", render::orientation(format, &view));
             ExitCode::SUCCESS
         }
         Err(err) => {

@@ -15,12 +15,11 @@
 
 use crate::locate::{self, RunContext};
 use crate::pack::EmbeddedPack;
-use crate::render;
 use anyhow::Result;
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::catalog::build_catalog;
 use engine::packsource::{PackResourceKind, PackSource};
-use engine::result::Orientation;
+use engine::result::OrientationView;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -29,23 +28,25 @@ use std::path::Path;
 /// (increment 6), so the CLI names it here; the version comes from the pack.
 const DEV_PACK_ID: &str = "dev";
 
-/// Produce the bare-`start` orientation text for the repo `start` is run from.
+/// Produce the structured bare-`start` orientation result for the repo `start`
+/// is run from.
 ///
 /// Locates the cascade layers, then branches on whether the project layer is
-/// present: absent → the unset-project orientation; present → resolve the
-/// cascade over the embedded pack and render the clean-no-task orientation.
-pub fn orient(start: &Path) -> Result<String> {
+/// present: absent → the unset-project view; present → resolve the cascade over
+/// the embedded pack and build the clean-no-task view. Presentation-free — the
+/// CLI maps the returned [`OrientationView`] to a surface via `Format → render`.
+pub fn orient(start: &Path) -> Result<OrientationView> {
     let ctx = locate::locate(start)?;
     let pack = EmbeddedPack::new();
     orient_with(&ctx, &pack)
 }
 
-/// The testable core of [`orient`]: render orientation from an already-located
-/// [`RunContext`] and a [`PackSource`].
-fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<String> {
+/// The testable core of [`orient`]: build the orientation view from an
+/// already-located [`RunContext`] and a [`PackSource`].
+fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationView> {
     let Some(project_config) = &ctx.project_config else {
         // State 1 — unset project: no project cascade layer is present.
-        return Ok(render::orientation_unset());
+        return Ok(OrientationView::unset_project());
     };
 
     // State 2 — clean, no active task: resolve the cascade and build the catalog.
@@ -64,11 +65,10 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<String> {
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
 
     let catalog = build_catalog(pack)?;
-    let orientation = Orientation::new(catalog);
 
-    Ok(render::orientation_clean(
-        &resolved.provenance().header(),
-        &orientation,
+    Ok(OrientationView::clean(
+        resolved.provenance().header(),
+        catalog,
     ))
 }
 
@@ -114,29 +114,30 @@ mod tests {
     }
 
     #[test]
-    fn absent_project_layer_renders_unset_project_orientation() {
-        let text = orient_with(&ctx(None), &FakePack).expect("orient succeeds");
-        assert!(text.contains("isn't set up"), "got:\n{text}");
-        assert!(text.contains("Run: `jigc setup`"), "got:\n{text}");
+    fn absent_project_layer_yields_unset_project_view() {
+        let view = orient_with(&ctx(None), &FakePack).expect("orient succeeds");
+        assert_eq!(view, OrientationView::unset_project());
     }
 
     #[test]
-    fn present_project_layer_renders_header_catalog_and_footer() {
-        let text = orient_with(&ctx(Some(PathBuf::from("/repo/.jigc/config"))), &FakePack)
+    fn present_project_layer_yields_clean_view_with_header_and_catalog() {
+        let view = orient_with(&ctx(Some(PathBuf::from("/repo/.jigc/config"))), &FakePack)
             .expect("orient succeeds");
+        let OrientationView::Clean {
+            header, workflows, ..
+        } = &view
+        else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
         // Provenance header: pack segment + the located project config path.
-        assert!(text.contains("Pack: dev/v0.3.0"), "got:\n{text}");
+        assert!(header.contains("Pack: dev/v0.3.0"), "got:\n{header}");
         assert!(
-            text.contains("Project config: /repo/.jigc/config"),
-            "got:\n{text}",
+            header.contains("Project config: /repo/.jigc/config"),
+            "got:\n{header}",
         );
         // Catalog entry with its `when` hint.
-        assert!(text.contains("single-task"), "got:\n{text}");
-        assert!(
-            text.contains("implement one scoped change end-to-end"),
-            "got:\n{text}",
-        );
-        // Routing footer.
-        assert!(text.ends_with(render::ROUTING_FOOTER), "got:\n{text}");
+        let entry = &workflows.entries()[0];
+        assert_eq!(entry.id, "single-task");
+        assert_eq!(entry.when, "implement one scoped change end-to-end");
     }
 }

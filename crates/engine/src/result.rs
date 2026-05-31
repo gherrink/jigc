@@ -80,6 +80,57 @@ impl Orientation {
     }
 }
 
+/// The full orientation result of bare `jigc start` — the versioned contract a
+/// renderer maps over. A `state`-tagged sum of the two increment-1 orientation
+/// states (`design/bootstrap.md` → Orientation output examples): `unset-project`
+/// (no project cascade layer) and `clean` (cascade resolved, no active task).
+///
+/// Presentation-free by construction: it carries the *data* each state renders
+/// from (the clean state's provenance `header` + workflow catalog), never the
+/// rendered text — text formatting lives in `cli::render`, the engine stays
+/// presentation-free. The `state` discriminator + explicit serde attributes pin
+/// the JSON projection as the stable surface the renderers and JSON consumers
+/// bind to (the `Orientation`/`Catalog` stance, applied to the whole result).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "kebab-case")]
+pub enum OrientationView {
+    /// No project cascade layer is present — route the agent to `jigc setup`.
+    UnsetProject {
+        /// The result-contract schema version (see [`SCHEMA_VERSION`]).
+        schema_version: u32,
+    },
+    /// Cascade resolved, no active task — carry the provenance `header` and the
+    /// workflow catalog the clean-state renderer prints.
+    Clean {
+        /// The result-contract schema version (see [`SCHEMA_VERSION`]).
+        schema_version: u32,
+        /// The cascade/provenance header line (`Pack: … · Project config: …`).
+        header: String,
+        /// Available workflows, in display order.
+        workflows: Catalog,
+    },
+}
+
+impl OrientationView {
+    /// The **unset-project** orientation view, stamping the current
+    /// [`SCHEMA_VERSION`].
+    pub fn unset_project() -> Self {
+        Self::UnsetProject {
+            schema_version: SCHEMA_VERSION,
+        }
+    }
+
+    /// The **clean, no active task** orientation view over its provenance header
+    /// and workflow catalog, stamping the current [`SCHEMA_VERSION`].
+    pub fn clean(header: impl Into<String>, workflows: Catalog) -> Self {
+        Self::Clean {
+            schema_version: SCHEMA_VERSION,
+            header: header.into(),
+            workflows,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +174,39 @@ mod tests {
                 "workflows": [
                     { "id": "single-task", "when": "Implement one well-scoped change." },
                     { "id": "project-setup", "when": "Set up the development pack on a fresh repo." }
+                ]
+            })
+        );
+    }
+
+    /// The two `OrientationView` states project to a `state`-tagged JSON shape:
+    /// `unset-project` carries only the version marker; `clean` carries the
+    /// provenance header + the catalog under `workflows`. The discriminator and
+    /// keys are the stable contract a renderer / JSON consumer binds to.
+    #[test]
+    fn orientation_view_state_tagged_projection_is_the_stable_contract() {
+        let unset = serde_json::to_value(OrientationView::unset_project()).expect("serializes");
+        assert_eq!(
+            unset,
+            serde_json::json!({ "state": "unset-project", "schema_version": 1 })
+        );
+
+        let clean = serde_json::to_value(OrientationView::clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            Catalog::new(vec![CatalogEntry::new(
+                "single-task",
+                "Implement one well-scoped change.",
+            )]),
+        ))
+        .expect("serializes");
+        assert_eq!(
+            clean,
+            serde_json::json!({
+                "state": "clean",
+                "schema_version": 1,
+                "header": "Pack: dev/v0.3.0 · Project config: .jigc/config",
+                "workflows": [
+                    { "id": "single-task", "when": "Implement one well-scoped change." }
                 ]
             })
         );

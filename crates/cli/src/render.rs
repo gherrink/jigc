@@ -9,7 +9,8 @@
 //! the agent's reading flow). See `design/bootstrap.md` → Context compaction
 //! resilience and `design/workflow-dialect.md` → Routing footer.
 
-use engine::result::Orientation;
+use crate::cli::Format;
+use engine::result::{Orientation, OrientationView};
 use serde::Serialize;
 
 /// The one-line routing footer appended to every agent-text / human CLI output.
@@ -20,14 +21,27 @@ use serde::Serialize;
 pub const ROUTING_FOOTER: &str =
     "— jigc · run `jigc start` for orientation; all writes through `jigc`.";
 
+/// Render an orientation result to the surface `format` selects: `agent` /
+/// `human` map to the per-state agent-text (with the routing footer); `json`
+/// maps to the **generic** JSON renderer (no footer). This is the one
+/// `Format → renderer` mapping for orientation (`implementation/module-layout.md`
+/// → Renderers / Format selection). MVP human-pretty is agent-text + light
+/// styling, so it currently renders identically to agent (the TUI is post-MVP).
+pub fn orientation(format: Format, view: &OrientationView) -> String {
+    match format {
+        Format::Json => json(view),
+        Format::Agent | Format::Human => match view {
+            OrientationView::UnsetProject { .. } => orientation_unset(),
+            OrientationView::Clean {
+                header, workflows, ..
+            } => orientation_clean(header, &Orientation::new(workflows.clone())),
+        },
+    }
+}
+
 /// Render any `Serialize` result type to pretty JSON — the **generic** JSON
 /// renderer. Carries no routing footer (JSON is consumed by tooling, not the
 /// agent's reading flow).
-///
-/// Not yet reached from dispatch: `--format` selection (the `Format → renderer`
-/// mapping) is wired in a later task; until then bare `start` always renders
-/// agent-text, so this is exercised only by its own test.
-#[allow(dead_code)]
 pub fn json<T: Serialize>(value: &T) -> String {
     serde_json::to_string_pretty(value).expect("engine result types serialize")
 }
