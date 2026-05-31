@@ -605,3 +605,7 @@ Direction locked: a self-contained, on-demand **prose self-description** of jigc
 ### MVP roadmap — one milestone, six increments, risk-first
 
 Build order locked in [implementation/roadmap.md](implementation/roadmap.md): the `single-task execution loop` milestone decomposes into six increments — foundations/orientation, the round-trip parser/writer (risk spike), compose, write+commit-only finalize, persisted ADR + edge index (the differentiator), adapter+ship. Ordered **risk-first** (spine → #1 risk in isolation → loop → differentiator → ship), strictly linear. Increment size deliberately uneven; the priority is a clean logical build order with focused, single-concern groupings. Tasks are cut per-increment at pickup, not enumerated up front. Pack content rides along where first needed, not as its own increment.
+
+### Dev workflow (TDD) defined for the build
+
+The implementation loop is captured in [implementation/dev-workflow.md](implementation/dev-workflow.md): a six-step test-first loop (scope → red → green → refactor → gate → commit) run per task within an increment, distinct from the design-collaboration loop. Written as prose-steps now; shaped as named ordered steps so it promotes into the jigc workflow dialect (`step:` files + `workflow:dev-task`) once jigc can compose. The loop deliberately mirrors jigc in miniature (gate≈validate, commit≈finalize) so dogfooding informs the real `single-task` workflow.
