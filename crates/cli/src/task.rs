@@ -32,7 +32,7 @@ use crate::pack::EmbeddedPack;
 use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::file_state::{self, FileStateRecord};
-use engine::finalize::plan_finalize;
+use engine::finalize::{Promotion, plan_finalize};
 use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::{Schema, load_schema};
 use engine::state::BasePin;
@@ -309,6 +309,7 @@ impl TaskArea {
             has_diff,
             commit_schema,
             id,
+            &schemas,
         ) {
             Ok(plan) => plan,
             Err(findings) => {
@@ -321,18 +322,24 @@ impl TaskArea {
             }
         };
 
-        // Phase 5–6: stage + commit. Write the rendered message to a temp file, stage
-        // the working-tree code changes (everything differing from base —
-        // `design/finalize.md` → Dirty-tree policy), and `git commit -F <tmp>` (never
-        // `--no-verify`). A hook/git rejection surfaces git's stderr verbatim, no commit.
+        // Phase 4–6: promote + stage + commit. Write the rendered message to a temp
+        // file, copy each promoted managed doc to its canonical path (`design/finalize.md`
+        // → 4. Promote managed docs — copy, not move), stage the working-tree code
+        // changes + the promoted docs (everything differing from base —
+        // `design/finalize.md` → Dirty-tree policy / 5. Stage), and `git commit -F <tmp>`
+        // (never `--no-verify`). A hook/git rejection surfaces git's stderr verbatim,
+        // rolls back the promoted copies, and lands no commit.
         let msg_path = self.dir.join("finalize-message.tmp");
         std::fs::write(&msg_path, &plan.message)
             .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
         let commit_result = (|| -> Result<()> {
+            // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
+            self.promote(&plan.promotions)?;
             // The transient `.jigc/` subdirs (`tasks/`/`index/`/`state/`) are gitignored
             // via `.jigc/.gitignore` — the working area is never committed
             // (`design/storage.md` → repository layout). Ensure it exists so the
-            // `git add --all` stage below picks up only `config/` + the code changes.
+            // `git add --all` stage below picks up `config/` + the promoted docs + the
+            // code changes.
             self.ensure_jigc_gitignore()?;
             git_run(&self.repo_root, &["add", "--all"])?;
             git_commit(&self.repo_root, &msg_path)?;
@@ -340,6 +347,10 @@ impl TaskArea {
         })();
         let _ = std::fs::remove_file(&msg_path);
         if let Err(err) = commit_result {
+            // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore
+            // HEAD content for the promoted paths and delete the promoted copies. The
+            // working area is untouched; the agent re-runs after fixing.
+            self.rollback_promotions(&plan.promotions);
             eprintln!("{err:#}");
             return Ok(ExitCode::FAILURE);
         }
@@ -350,6 +361,48 @@ impl TaskArea {
         self.post_commit(&plan.hash_updates);
 
         Ok(ExitCode::SUCCESS)
+    }
+
+    /// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged
+    /// managed doc from its working-area source to its canonical repo path
+    /// (`<repo_root>/<destination>`) — **copy, not move**, so rollback is a removal of
+    /// the copies and the working area stays intact. Creates the destination's parent
+    /// directory (e.g. `decisions/`) when absent.
+    fn promote(&self, promotions: &[Promotion]) -> Result<()> {
+        for promotion in promotions {
+            let dest = self.repo_root.join(&promotion.destination);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("could not create {parent:?} to promote into"))?;
+            }
+            std::fs::copy(&promotion.source, &dest).with_context(|| {
+                format!(
+                    "could not promote {:?} to {dest:?}",
+                    promotion.source.display()
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback
+    /// discipline / 6. Commit). For each promoted path, restore HEAD's content in the
+    /// index + worktree (undoing the stage) and delete the promoted copy. Best-effort:
+    /// a failure is logged, never raised — the commit did not land, so the worst case is
+    /// a stray copy the next `finalize`/`discard` overwrites.
+    fn rollback_promotions(&self, promotions: &[Promotion]) {
+        for promotion in promotions {
+            let _ = git_run(
+                &self.repo_root,
+                &["restore", "--staged", "--worktree", &promotion.destination],
+            );
+            let dest = self.repo_root.join(&promotion.destination);
+            // `git restore` recreates the path only if it existed at HEAD; a freshly
+            // promoted (new) doc has no HEAD content, so remove the copy outright.
+            if !path_at_head(&self.repo_root, &promotion.destination) {
+                let _ = std::fs::remove_file(&dest);
+            }
+        }
     }
 
     /// Ensure `.jigc/.gitignore` ignores the transient subdirs (`tasks/`/`index/`/
@@ -525,6 +578,20 @@ fn git_commit_files(repo_root: &Path) -> Result<Vec<String>> {
         .filter(|l| !l.is_empty())
         .map(str::to_owned)
         .collect())
+}
+
+/// Whether `path` (repo-relative) exists at `HEAD` (`git cat-file -e HEAD:<path>`).
+/// Used by rollback to tell a newly promoted doc (no HEAD content — delete the copy)
+/// from an overwrite of an existing committed doc (`git restore` already reverted it).
+fn path_at_head(repo_root: &Path, path: &str) -> bool {
+    Command::new("git")
+        .arg("cat-file")
+        .arg("-e")
+        .arg(format!("HEAD:{path}"))
+        .current_dir(repo_root)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
 }
 
 /// Read a file's committed bytes at `HEAD` (`git show HEAD:<path>`). Returns an error

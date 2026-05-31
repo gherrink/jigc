@@ -241,6 +241,119 @@ fn finalize_makes_one_commit_with_the_rendered_message_and_cleans_up() {
     );
 }
 
+/// Flow #5 [4 promote] (`design/worked-examples.md` → Superseding decision, setup):
+/// a task creates an ADR via the create-gate, then `finalize` **promotes** it to
+/// `decisions/<slug>.md` and commits it — the persisted managed doc the MVP's
+/// differentiators ride on. Asserts the committed canonical bytes equal the staged
+/// ADR (the byte-stable copy) and that finalize advanced the `file-state` hash for
+/// the promoted path (`design/finalize.md` → 4. Promote / 7. Post-commit).
+#[test]
+fn finalize_promotes_a_created_adr_to_decisions() {
+    let (repo, home) = started_repo("cache sessions in a single in-memory node");
+    let task = "cache-sessions-in-a-single-in-memory-node";
+
+    // The agent creates the ADR in-task (the create-gate binds it to task.decision).
+    let create = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Single-node cache"],
+        None,
+    );
+    assert!(
+        create.status.success(),
+        "`jigc doc create adr` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+    let adr_addr = String::from_utf8(create.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    assert_eq!(adr_addr, "adr:single-node-cache");
+
+    // Fill the ADR's author-required slots so validate is clean.
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = run_doc(
+            repo.path(),
+            home.path(),
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert!(
+            out.status.success(),
+            "set-slot {addr} must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    set_slot(
+        "adr:single-node-cache#context",
+        b"Session lookups must stay sub-millisecond.\n",
+    );
+    set_slot(
+        "adr:single-node-cache#decision",
+        b"A single in-memory node keeps session lookups sub-millisecond.\n",
+    );
+    set_slot(
+        "adr:single-node-cache#consequences",
+        b"A cold node loses its sessions; clients re-authenticate.\n",
+    );
+
+    // Fill the commit doc so the whole task validates clean.
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    // The staged ADR's canonical bytes (the byte-stable source the copy must match).
+    let staged_adr = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("adr:single-node-cache.md");
+    let staged_bytes = fs::read(&staged_adr).expect("read the staged ADR");
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert!(
+        out.status.success(),
+        "`jigc task finalize` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The ADR is committed at its canonical path with the byte-stable promoted bytes.
+    let committed = Command::new("git")
+        .args(["show", "HEAD:decisions/single-node-cache.md"])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git show");
+    assert!(
+        committed.status.success(),
+        "`git show HEAD:decisions/single-node-cache.md` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&committed.stderr)
+    );
+    assert_eq!(
+        committed.stdout, staged_bytes,
+        "the promoted ADR's committed bytes must equal the staged source (copy is byte-stable)"
+    );
+
+    // Phase 7: the file-state record carries the promoted doc's hash.
+    let record = repo
+        .path()
+        .join(".jigc")
+        .join("state")
+        .join("file-state.json");
+    let record_json = fs::read_to_string(&record).expect("read the file-state record");
+    assert!(
+        record_json.contains("decisions/single-node-cache.md"),
+        "finalize must record the promoted ADR's file-state hash; got:\n{record_json}"
+    );
+
+    // The working area is gone (phase 7).
+    let area = repo.path().join(".jigc").join("tasks").join(task);
+    assert!(
+        !area.exists(),
+        "finalize must remove `.jigc/tasks/<id>/`; it still exists at {area:?}"
+    );
+}
+
 #[test]
 fn finalize_aborts_with_no_commit_when_head_moved() {
     let (repo, home) = started_repo("add rate limiter");

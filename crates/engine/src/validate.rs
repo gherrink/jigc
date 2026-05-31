@@ -36,7 +36,7 @@ use crate::file_state::{FileStateRecord, file_state};
 use crate::finding::{Finding, Location, Severity};
 use crate::parse::{Document, ParsedSection, parse_sections};
 use crate::result::ValidationReport;
-use crate::schema::{Field as SchemaField, Schema, Section, SectionBody};
+use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -268,11 +268,27 @@ fn check_field_value(
     }
 }
 
-/// A field is author-required iff the author must supply it — no `default:` and no
-/// `set:` (CLI-derived). Cardinality-based optionality (`ref` `card: "0..1"`) is an
-/// inc-5 edge-index concern (`ref-resolves`), not adjudicated here.
+/// A field is author-required iff the author must supply it — no `default:`, no
+/// `set:` (CLI-derived), and not an **optional `ref`** (forward `card:` with a minimum
+/// of 0, e.g. the ADR `supersedes` relation's `0..1`). An optional ref carries no
+/// author obligation: its presence is the agent's choice and its *resolution*, not its
+/// presence, is what `ref-resolves` adjudicates at finalize (`design/validation.md` →
+/// the synthetic `ref-resolves` check; `document-type-schema.md` → `ref` cardinality).
 fn is_author_required(field: &SchemaField) -> bool {
+    if field.ty == FieldType::Ref && ref_min_cardinality_zero(field) {
+        return false;
+    }
     field.default.is_none() && field.set.is_none()
+}
+
+/// Whether a `ref` field's forward cardinality has a minimum of 0 (it is optional).
+/// `card:` defaults to `"0..1"` when omitted (`schema.rs` → `SchemaField::card`); an
+/// explicit form is optional iff it starts with `"0"` (`"0..1"` / `"0..*"`).
+fn ref_min_cardinality_zero(field: &SchemaField) -> bool {
+    match field.card.as_deref() {
+        None => true,
+        Some(card) => card.trim_start().starts_with('0'),
+    }
 }
 
 /// The located coordinate for a slot finding: the slot span's start line when known.
