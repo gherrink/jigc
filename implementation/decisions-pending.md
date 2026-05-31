@@ -26,7 +26,6 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 5 — persisted ADR + edge index
 
-- **(D) Edge-index storage format + stamp/rebuild** — on-disk shape of the rebuildable edge index and its HEAD/doc-set stamp. [storage.md](../design/storage.md) describes the lifecycle; the concrete format is ours to pick.
 - **(I) Reconciliation state machine + rename detection** — specified in [reconciliation.md](../design/reconciliation.md); reuses the `blake3` hash choice.
 
 ## Increment 6 — adapter & ship
