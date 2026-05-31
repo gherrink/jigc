@@ -12,3 +12,4 @@ path = "src/main.rs"
 [dependencies]
 engine = { workspace = true }
 include_dir = { workspace = true }
+anyhow = { workspace = true }
