@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 5c0a74c2c7d2a413e62abcb5c5fa2247c4a142db929a919ef283791e31302060 # shrinks to mask = [false, false, false], target_pick = 0
+cc ad5885fdee8de94de2316939c89d882c357207a93e28667d38424801900b777f # shrinks to doc = GenDoc { ty: "adr", canonical_lf: "---\nstatus: accepted\ndate: 2026-05-31\n---\n\n# Aa\n\n## Context\n\na\n\n## Decision\n\na\n\n## Consequences\n\nA\n", eol: "\n", edit: Some(("status", "accepted")) }

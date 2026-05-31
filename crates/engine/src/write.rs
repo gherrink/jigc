@@ -253,6 +253,43 @@ fn ensure_single_trailing_newline(out: &mut String) {
     out.push('\n');
 }
 
+/// First-touch canonicalization — the **no-op write** of the round-trip contract.
+///
+/// When the CLI first touches an existing on-disk doc (copies it into the task
+/// working area), it applies the *only* permitted first-touch canonicalizations and
+/// leaves every other byte intact (`parsing.md` → Round-trip guarantees;
+/// `DECISIONS.md` 2026-05-31 → Round-trip canonicalization ledger):
+///
+/// - **BOM** — a leading `\u{feff}` is stripped (it breaks front-matter detection;
+///   never re-emitted).
+/// - **Trailing newline** — normalized to exactly one, **EOL-preserving** (a CRLF
+///   file ends in one `\r\n`, an LF file in one `\n`).
+/// - **Everything else preserved byte-for-byte** — EOL is *not* normalized (matched
+///   locally, never globally rewritten); interior whitespace and prose are never
+///   reflowed.
+///
+/// This is the oracle the no-op-write fuzz asserts against: `canonicalize(doc)` is
+/// `doc` modulo exactly these two changes — nothing line-spanning is rewritten.
+pub fn first_touch_canonicalize(source: &str) -> String {
+    // BOM: strip a single leading byte-order mark.
+    let body = source.strip_prefix('\u{feff}').unwrap_or(source);
+
+    // EOL: preserve the file's existing ending. A file containing any `\r\n` is a
+    // CRLF file; otherwise LF (and a new/empty file defaults to LF).
+    let eol = if body.contains("\r\n") { "\r\n" } else { "\n" };
+
+    // Trailing newline: strip all trailing `\r`/`\n`, then re-append exactly one EOL
+    // unit — EOL-preserving, no global normalization. An empty body stays empty.
+    let trimmed = body.trim_end_matches(['\r', '\n']);
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut out = String::with_capacity(trimmed.len() + eol.len());
+    out.push_str(trimmed);
+    out.push_str(eol);
+    out
+}
+
 #[cfg(test)]
 mod canonical {
     //! The canonical writer's round-trip contract: golden (exact bytes) + property
@@ -2555,5 +2592,340 @@ mod generate_prop_tests {
                     .map_err(|f| TestCaseError::fail(format!("complete doc must conform: {f:?}")))?;
             }
         }
+    }
+}
+
+// ============================================================================
+// Round-trip risk-spike capstone — the #1-technical-risk property/fuzz suite.
+//
+// This is the artifact that *retires* the risk: it proves the full round-trip
+// contract end-to-end over **generated arbitrary conformant documents** for both
+// MVP doc-types (`commit`, `adr`), with the edge cases real LLM/human prose carries
+// (fenced `##`, trailing `- x:` lines, `####` headings, extra interior blank lines,
+// BOM, CRLF-vs-LF). The two clauses (`parsing.md` → Round-trip guarantees):
+//
+//   1. **No-op write is idempotent modulo the canonicalization ledger** — parse an
+//      arbitrary conformant doc → `first_touch_canonicalize` (the no-op write) →
+//      byte-identical to the input *modulo* exactly BOM-strip + single-trailing-
+//      newline (EOL preserved, prose never reflowed).
+//   2. **Surgical on edits** — a single `set_field` → only that field's value bytes
+//      differ; the EOL and every other byte survive intact.
+//
+// Plus a small insta golden pinning one tricky fixture (BOM + CRLF + fenced `##` +
+// a `- x:` prose line + interior blank lines) for regression.
+// ============================================================================
+#[cfg(test)]
+mod roundtrip {
+    //! The dedicated #1-risk property/fuzz suite (done-criterion `cargo test -p
+    //! engine roundtrip`). A generator for arbitrary conformant `commit`/`adr` docs
+    //! drives both round-trip clauses; the canonicalization ledger is the only
+    //! permitted modulo.
+
+    use super::*;
+    use crate::parse::parse_sections;
+    use crate::schema::{Schema, load_schema};
+    use proptest::prelude::*;
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn commit_schema() -> Schema {
+        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+    }
+    fn adr_schema() -> Schema {
+        load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    /// One generated arbitrary conformant document plus its known-canonical LF form
+    /// and the metadata the surgical-edit clause needs.
+    #[derive(Clone, Debug)]
+    struct GenDoc {
+        /// `"commit"` or `"adr"` — selects the schema.
+        ty: String,
+        /// The canonical LF document text (no BOM, exactly one trailing `\n`).
+        canonical_lf: String,
+        /// The EOL the perturbed variant uses (`"\n"` or `"\r\n"`).
+        eol: String,
+        /// A present front-matter field key + a fresh canonical value to set it to
+        /// (drives clause 2). `None` only if the schema had no settable field.
+        edit: Option<(String, String)>,
+    }
+
+    /// Opaque slot prose with the edge cases real prose carries — each piece is
+    /// heading-free at `##`/`###` depth (the ceiling) but stresses the parser:
+    /// a fenced code block whose body is `## not a heading`, a `- x:` line that is
+    /// prose (no sentinel), a `#### deeper` heading, and extra interior blank lines.
+    /// The pieces are joined so the result is conformant slot prose.
+    fn edgy_prose() -> impl Strategy<Value = String> {
+        // A plain paragraph line (no markers that would end the slot).
+        let para = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        // A grab-bag of edge fragments; each is conformant *inside* a slot span.
+        let fragment = prop_oneof![
+            para,
+            Just("```\n## not a heading\n```".to_string()),
+            Just("- x: this is prose, not a field".to_string()),
+            Just("#### a deeper heading is allowed".to_string()),
+            "[a-zA-Z][a-zA-Z0-9 .,]{0,30}".prop_map(|s: String| format!("{s}\n\n\n{s}")), // extra interior blanks
+        ];
+        prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
+    }
+
+    /// A canonical front-matter scalar value (trimmed, single-line, not list-shaped).
+    fn scalar_value() -> impl Strategy<Value = String> {
+        "[a-zA-Z0-9][a-zA-Z0-9 ._/-]{0,18}[a-zA-Z0-9]|[a-zA-Z0-9]"
+            .prop_filter("not list-shaped", |s: &String| {
+                !(s.starts_with('[') && s.ends_with(']'))
+            })
+    }
+
+    /// Build a canonical-LF `commit` document from generated parts.
+    fn build_commit(subject: &str, body: &str) -> String {
+        format!(
+            "---\nsubject: {subject}\n---\n\n# {subject}\n\n## Body\n\n{body}\n",
+            subject = subject,
+            body = body.trim_end(),
+        )
+    }
+
+    /// Build a canonical-LF `adr` document from generated parts.
+    fn build_adr(
+        title: &str,
+        status: &str,
+        date: &str,
+        supersedes: Option<&str>,
+        context: &str,
+        decision: &str,
+        consequences: &str,
+    ) -> String {
+        let mut fm = format!("status: {status}\ndate: {date}\n");
+        if let Some(target) = supersedes {
+            fm.push_str(&format!("supersedes: adr:{target}\n"));
+        }
+        format!(
+            "---\n{fm}---\n\n# {title}\n\n## Context\n\n{context}\n\n## Decision\n\n{decision}\n\n## Consequences\n\n{consequences}\n",
+            context = context.trim_end(),
+            decision = decision.trim_end(),
+            consequences = consequences.trim_end(),
+        )
+    }
+
+    /// The generator: an arbitrary conformant `commit` or `adr` doc, with a chosen
+    /// EOL, returning the canonical-LF text + the EOL + a settable front-matter field.
+    fn arb_doc() -> impl Strategy<Value = GenDoc> {
+        let eol = prop_oneof![Just("\n".to_string()), Just("\r\n".to_string())];
+
+        let commit = (scalar_value(), edgy_prose()).prop_map(|(subject, body)| {
+            (
+                "commit".to_string(),
+                build_commit(&subject, &body),
+                Some(("subject".to_string(), "a-new-subject".to_string())),
+            )
+        });
+
+        let adr = (
+            scalar_value(),
+            prop::sample::select(vec!["proposed", "accepted", "superseded"]),
+            proptest::option::of("[a-z][a-z0-9-]{0,18}"),
+            edgy_prose(),
+            edgy_prose(),
+            edgy_prose(),
+        )
+            .prop_map(|(title, status, supersedes, ctx, dec, con)| {
+                // Re-set `status` to a *different* enum member so the edit always
+                // changes a byte (clause 2 asserts exactly one line differs).
+                let new_status = if status == "proposed" {
+                    "accepted"
+                } else {
+                    "proposed"
+                };
+                (
+                    "adr".to_string(),
+                    build_adr(
+                        &title,
+                        status,
+                        "2026-05-31",
+                        supersedes.as_deref(),
+                        &ctx,
+                        &dec,
+                        &con,
+                    ),
+                    Some(("status".to_string(), new_status.to_string())),
+                )
+            });
+
+        (prop_oneof![commit, adr], eol).prop_map(|((ty, canonical_lf, edit), eol)| GenDoc {
+            ty,
+            canonical_lf,
+            eol,
+            edit,
+        })
+    }
+
+    fn schema_for(ty: &str) -> Schema {
+        match ty {
+            "commit" => commit_schema(),
+            _ => adr_schema(),
+        }
+    }
+
+    /// Project a canonical-LF doc onto the generated EOL (EOL is preserved through
+    /// the round-trip, never normalized).
+    fn with_eol(canonical_lf: &str, eol: &str) -> String {
+        if eol == "\n" {
+            canonical_lf.to_string()
+        } else {
+            canonical_lf.replace('\n', "\r\n")
+        }
+    }
+
+    proptest! {
+        /// Clause 1 — **no-op write idempotent modulo the canonicalization ledger.**
+        /// An arbitrary conformant doc (with a chosen EOL) is first confirmed to
+        /// parse; then a BOM and extra trailing newlines are added; the no-op write
+        /// (`first_touch_canonicalize`) must reproduce the canonical EOL doc exactly —
+        /// byte-identical modulo *only* BOM-strip + single-trailing-newline. EOL is
+        /// preserved; interior prose is never reflowed.
+        #[test]
+        fn no_op_write_is_byte_identical_modulo_ledger(doc in arb_doc()) {
+            let schema = schema_for(&doc.ty);
+            let canonical = with_eol(&doc.canonical_lf, &doc.eol);
+
+            // The generated doc must be conformant in the first place (the generator's
+            // own invariant — a non-conformant fixture would be a generator bug).
+            prop_assert!(
+                parse_sections(&schema, &canonical).is_ok(),
+                "generated {} doc must parse: {:?}",
+                doc.ty,
+                parse_sections(&schema, &canonical).err()
+            );
+
+            // The no-op write of the already-canonical doc is byte-identical (the
+            // idempotent-on-canonical clause).
+            prop_assert_eq!(first_touch_canonicalize(&canonical), canonical.clone());
+
+            // Perturb with the two ledger-covered deviations: a leading BOM and extra
+            // trailing newlines (EOL units). The no-op write must canonicalize *only*
+            // those back to the canonical form — nothing line-spanning touched.
+            let perturbed = format!("\u{feff}{canonical}{eol}{eol}", eol = doc.eol);
+            prop_assert_eq!(first_touch_canonicalize(&perturbed), canonical.clone());
+
+            // EOL is preserved: a CRLF doc canonicalizes to CRLF, never LF.
+            if doc.eol == "\r\n" {
+                prop_assert!(
+                    first_touch_canonicalize(&perturbed).contains("\r\n"),
+                    "CRLF must be preserved, never normalized to LF"
+                );
+            }
+            // And the canonicalized form still parses (re-parse stability).
+            let canon = first_touch_canonicalize(&perturbed);
+            prop_assert!(
+                parse_sections(&schema, &canon).is_ok(),
+                "canonicalized doc must still parse"
+            );
+        }
+
+        /// Clause 2 — **surgical on edits.** Over an arbitrary conformant doc, a single
+        /// `set_field` of a present front-matter field changes *only* that field's
+        /// value bytes: the prefix before the value and the suffix after it survive
+        /// byte-identical, the EOL is preserved, and the new value is in place.
+        #[test]
+        fn single_field_edit_changes_only_that_field(doc in arb_doc()) {
+            let Some((key, new_value)) = doc.edit.clone() else { return Ok(()); };
+            let schema = schema_for(&doc.ty);
+            let source = with_eol(&doc.canonical_lf, &doc.eol);
+            // The header is the front-matter section: "header" (commit) / "status" (adr).
+            let section_id = if doc.ty == "commit" { "header" } else { "status" };
+            // Skip the no-op edit case (new value equals the existing one): there is
+            // no byte to change, so "exactly one line differs" would not hold. This is
+            // the surgical clause over a *real* change, the case worth proving.
+            if source.contains(&format!("{key}: {new_value}")) {
+                return Ok(());
+            }
+
+            let edited = set_field(&schema, &source, section_id, &key, &new_value)
+                .expect("present front-matter field is settable");
+
+            // EOL preserved.
+            if doc.eol == "\r\n" {
+                prop_assert!(edited.contains("\r\n"), "EOL must survive the edit");
+            }
+
+            // Only the target field's value line differs: every *other* line is
+            // byte-identical and in the same position. We compare line-by-line on the
+            // raw EOL-split so the surgical-on-edit clause is checked at field
+            // granularity (`parsing.md` → Round-trip guarantees clause 2).
+            let src_lines: Vec<&str> = source.split(doc.eol.as_str()).collect();
+            let edt_lines: Vec<&str> = edited.split(doc.eol.as_str()).collect();
+            prop_assert_eq!(src_lines.len(), edt_lines.len(), "no lines added/removed");
+            let mut differing = Vec::new();
+            for (i, (a, b)) in src_lines.iter().zip(edt_lines.iter()).enumerate() {
+                if a != b {
+                    differing.push(i);
+                }
+            }
+            prop_assert_eq!(differing.len(), 1, "exactly one line differs");
+            let changed = edt_lines[differing[0]];
+            prop_assert!(
+                changed.starts_with(&format!("{key}: ")),
+                "the differing line is the target field {key:?}: {changed:?}"
+            );
+            prop_assert_eq!(changed, format!("{key}: {new_value}"));
+        }
+    }
+
+    /// Golden — one tricky fixture pinning the no-op-write canonicalization end to
+    /// end: a CRLF ADR with a leading BOM, a fenced ` ``` ` block whose body is
+    /// `## not a heading`, a `- x:` prose line (no sentinel → stays prose), a `####`
+    /// deeper heading, extra interior blank lines, and a doubled trailing CRLF. The
+    /// no-op write strips the BOM, collapses the trailing newlines to one CRLF, and
+    /// preserves *everything else* byte-for-byte (EOL, the fenced `##`, the `- x:`
+    /// line, the interior blanks). Pins the exact canonical bytes for regression.
+    #[test]
+    fn golden_tricky_fixture_no_op_write() {
+        let body = "\
+---
+status: accepted
+date: 2026-05-31
+---
+
+# A tricky decision
+
+## Context
+
+Some context here.
+
+```
+## not a heading
+```
+
+## Decision
+
+- x: this looks like a field but has no sentinel, so it is prose
+
+#### a deeper heading is fine
+
+
+An interior blank-line gap above is preserved.
+
+## Consequences
+
+Done.
+";
+        // Build the on-disk variant: BOM + CRLF + doubled trailing newline.
+        let on_disk = format!("\u{feff}{}\r\n\r\n", body.replace('\n', "\r\n"));
+        let canon = first_touch_canonicalize(&on_disk);
+
+        // It still parses (the canonicalization didn't break structure).
+        let schema = adr_schema();
+        assert!(
+            parse_sections(&schema, &canon).is_ok(),
+            "canonicalized tricky fixture must parse: {:?}",
+            parse_sections(&schema, &canon).err()
+        );
+        // No BOM, single trailing CRLF, everything else intact.
+        assert!(!canon.starts_with('\u{feff}'), "BOM stripped");
+        assert!(canon.ends_with("\r\n"), "single trailing CRLF");
+        assert!(!canon.ends_with("\r\n\r\n"), "exactly one trailing CRLF");
+        insta::assert_snapshot!("roundtrip_tricky_fixture", canon);
     }
 }
