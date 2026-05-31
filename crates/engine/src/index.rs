@@ -102,6 +102,25 @@ impl EdgeIndex {
         let path = Self::path_in(jigc_root);
         crate::state::persist(&path, self.to_bytes().as_bytes())
     }
+
+    /// **Incrementally update** the committed index for one doc's edges — the
+    /// OOB-absorb site (lifecycle site 3, `storage.md` → Edge index lifecycle: "the
+    /// clean-absorb path incrementally updates the committed index for the absorbed
+    /// doc's edges; atomic, in-place").
+    ///
+    /// Drops every edge whose `from == from` and re-inserts the freshly-parsed
+    /// forward edges the absorbed `doc` now contributes (`schema`'s present `ref`
+    /// fields), keeping the set sorted+deduped — so an edit that added, removed, or
+    /// changed a cross-ref is reflected exactly, without a full store rebuild. The
+    /// `stamp` is left untouched: absorb shifts one doc's edges in place, it does not
+    /// re-baseline the whole index against a new HEAD (that is the finalize-commit
+    /// site).
+    pub fn absorb_doc(&mut self, schema: &Schema, from: &str, doc: &crate::parse::Document) {
+        self.edges.retain(|e| e.from != from);
+        self.edges.extend(doc_edges(schema, doc, from));
+        self.edges.sort();
+        self.edges.dedup();
+    }
 }
 
 /// Invalidate the persisted committed edge index — the `finalize` post-commit step

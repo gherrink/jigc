@@ -1,10 +1,13 @@
-//! The `file-state` hash record — the raw-byte drift hash and the
-//! `.jigc/state/file-state.json` `path → hex-hash` map (load/save).
+//! The `file-state` hash record — the raw-byte drift hash, the
+//! `.jigc/state/file-state.json` `path → hex-hash` map (load/save), the engine-native
+//! `file-state` probe, and the full OOB reconciliation classifier.
 //!
-//! This is the *store* layer only: a raw-byte [`blake3`] hash and byte-stable
-//! JSON I/O over the record. No classifier, no probe, no drift logic — those
-//! consume this store and land in inc-5 (`reconciliation.md` → the committed-state
-//! axis; `validation.md` → the `file-state` probe).
+//! The store layer is a raw-byte [`blake3`] hash and byte-stable JSON I/O over the
+//! record. Built atop it: [`file_state`], the inc-4 working-area/commit-only probe
+//! (baseline-adopt + hash-matches); and [`reconcile_committed`], the inc-5 OOB
+//! reconciliation state machine over a *committed* managed doc — absorb /
+//! conformance-block / conflict-block (`reconciliation.md` → The state machine;
+//! `validation.md` → the `file-state` probe).
 //!
 //! - **Raw-byte hash** (`parsing.md` → Round-trip guarantees → Drift hash): the
 //!   `file ↔ CLI-state` check hashes the file's *raw bytes*, so a conformant
@@ -139,6 +142,138 @@ pub fn file_state(record: &mut FileStateRecord, files: &[(&str, &[u8])]) -> Vec<
     findings
 }
 
+/// The full **OOB reconciliation classifier** for a single *committed* managed doc —
+/// the state machine [`file_state`] only baseline-adopted in inc-4
+/// (`reconciliation.md` → The state machine; `DECISIONS.md` 2026-05-31 → inc-5
+/// Reconciliation OOB classifier; `storage.md` → Edge index lifecycle, site 3).
+///
+/// Reads the `(committed-state, task-state)` pair for the doc at `path` (its
+/// file-state key and `<type>:<slug>` identity `from`) and routes deterministically:
+///
+/// - **`UNKNOWN`** (no recorded hash) → **baseline-adopt**: record the current hash,
+///   emit the advisory `file-state.baseline-adopt` finding (absent-hash is not drift).
+/// - **`IN_SYNC`** (recorded hash matches) → no finding (clean / task-only change —
+///   the working-area writes are reconciled elsewhere, not here).
+/// - **`DRIFTED + TOUCHED`** (`task_touched`) → **conflict-block**: both sides moved.
+///   A blocking `reconciliation.conflict-block` finding carrying the explicit-discard
+///   route; no silent merge, the hash and edge index are left untouched.
+/// - **`DRIFTED + UNTOUCHED`** → the **parse classifier**: re-parse + schema-validate
+///   the on-disk bytes against `schema`.
+///   - clean → **absorb**: re-hash the recorded baseline forward, incrementally
+///     update the committed `index` for the doc's edges (lifecycle site 3), and emit
+///     the advisory `reconciliation.absorb` "external edit absorbed" finding.
+///   - parse/schema fail → **conformance-block**: a blocking
+///     `reconciliation.conformance-block` finding naming the file + the first precise
+///     conformance error; the hash is **not** advanced and the index is **not**
+///     touched (no auto-repair).
+///
+/// Mutating: re-hash advances `record` on baseline-adopt and absorb; absorb mutates
+/// `index` in place. No I/O of its own — the caller supplies the on-disk `bytes` and
+/// persists the advanced record / index after the run.
+#[allow(clippy::too_many_arguments)]
+pub fn reconcile_committed(
+    record: &mut FileStateRecord,
+    index: &mut crate::index::EdgeIndex,
+    schema: &crate::schema::Schema,
+    path: &str,
+    from: &str,
+    bytes: &[u8],
+    task_touched: bool,
+) -> Vec<Finding> {
+    let current = hash_bytes(bytes);
+    match record.get(path) {
+        // UNKNOWN → baseline-adopt (absent-hash is not drift).
+        None => {
+            record.record(path, current);
+            vec![baseline_adopt_finding(path)]
+        }
+        // IN_SYNC → clean / task-only change: nothing to reconcile here.
+        Some(recorded) if recorded == current => Vec::new(),
+        // DRIFTED + TOUCHED → conflict-block (both sides moved; no silent merge).
+        Some(_) if task_touched => vec![conflict_block_finding(path)],
+        // DRIFTED + UNTOUCHED → the parse classifier.
+        Some(_) => {
+            let source = String::from_utf8_lossy(bytes);
+            match crate::parse::parse_sections(schema, &source) {
+                Ok(doc) => {
+                    let conformance = crate::validate::schema_conformance(schema, &source, &doc);
+                    if conformance.iter().any(|f| f.severity == Severity::Blocking) {
+                        // Schema-invalid → conformance-block, naming the first error.
+                        vec![conformance_block_finding(
+                            path,
+                            conformance.into_iter().next(),
+                        )]
+                    } else {
+                        // Clean → absorb: re-hash + incrementally update the index.
+                        record.record(path, current);
+                        index.absorb_doc(schema, from, &doc);
+                        vec![absorb_finding(path)]
+                    }
+                }
+                // Parse fail → conformance-block, naming the first parse error.
+                Err(parse_findings) => {
+                    vec![conformance_block_finding(
+                        path,
+                        parse_findings.into_iter().next(),
+                    )]
+                }
+            }
+        }
+    }
+}
+
+/// The advisory **absorb** finding (`reconciliation.md` → OOB edit → absorb: "external
+/// edit absorbed: `<doc>`"). Informational, no route — a clean external edit is honored,
+/// not a problem to repair; the absorb already re-hashed + updated the edge index.
+fn absorb_finding(path: &str) -> Finding {
+    Finding {
+        severity: Severity::Advisory,
+        code: "reconciliation.absorb".to_string(),
+        message: format!("external edit absorbed: `{path}`"),
+        location: Some(Location::addressed(path, 1, 1)),
+        route: None,
+    }
+}
+
+/// The blocking **conformance-block** finding (`reconciliation.md` → OOB edit →
+/// conformance-block: "a precise conformance error — file, line, expected shape"). The
+/// underlying parse/schema `cause` (re-located onto the file) names exactly what is
+/// wrong; the MVP never auto-repairs (`reconciliation.md` → Auto-repair scope).
+fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
+    let (detail, line) = match &cause {
+        Some(f) => (
+            f.message.clone(),
+            f.location.as_ref().map(|l| l.line).unwrap_or(1),
+        ),
+        None => ("the edit is not schema-conformant".to_string(), 1),
+    };
+    Finding {
+        severity: Severity::Blocking,
+        code: "reconciliation.conformance-block".to_string(),
+        message: format!("nonconformant edit on `{path}`: {detail}"),
+        location: Some(Location::addressed(path, line, 1)),
+        route: Some("fix the file to restore conformance, or revert the edit".to_string()),
+    }
+}
+
+/// The blocking **conflict-block** finding (`reconciliation.md` → Conflict — block at
+/// file level): both the on-disk file and the task's working area moved. File
+/// granularity, explicit-discard route, never a silent merge (three-way merge is
+/// deferred).
+fn conflict_block_finding(path: &str) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "reconciliation.conflict-block".to_string(),
+        message: format!(
+            "conflict on `{path}`: an external edit and this task's staged writes both changed it"
+        ),
+        location: Some(Location::addressed(path, 1, 1)),
+        route: Some(format!(
+            "discard the task's writes (`jigc task discard-write {path}`) or revert the file on disk"
+        )),
+    }
+}
+
 /// The informational baseline-adopt finding (`reconciliation.md` → Baseline
 /// adoption: "baseline adopted: `<doc>`"). Advisory, no route — first encounter
 /// is the normal case, not a problem to repair.
@@ -169,6 +304,242 @@ fn drift_finding(path: &str) -> Finding {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::index::{Edge, EdgeIndex};
+    use crate::schema::Schema;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads")
+    }
+
+    /// A committed ADR `B` (superseding nothing) — the recorded baseline before any
+    /// out-of-band edit.
+    const ADR_B_BASE: &str = "\
+---
+status: accepted
+date: 2026-05-30
+---
+
+# Distributed session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+";
+
+    /// The same ADR `B`, edited out-of-band to *add* a `supersedes` ref — a clean,
+    /// schema-conformant edit (the absorb case).
+    const ADR_B_EDITED_SUPERSEDES: &str = "\
+---
+status: accepted
+date: 2026-05-30
+supersedes: adr:single-node-cache
+---
+
+# Distributed session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+";
+
+    /// ADR `B`, edited out-of-band to *malform* the `date` field value — a
+    /// non-conformant edit (the conformance-block case).
+    const ADR_B_EDITED_BAD_DATE: &str = "\
+---
+status: accepted
+date: 2026/13/01
+---
+
+# Distributed session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+";
+
+    const ADR_B_PATH: &str = "decisions/distributed-cache.md";
+    const ADR_B_FROM: &str = "adr:distributed-cache";
+
+    /// The DRIFTED+UNTOUCHED clean-reparse branch: a committed ADR with a recorded
+    /// baseline hash, edited on disk to add a `supersedes`, reconciles to **absorb** —
+    /// the recorded hash advances to the new content's hash, the committed edge index
+    /// gains the new forward edge, and the finding is an **advisory**
+    /// `reconciliation.absorb` carrying the "external edit absorbed" message.
+    #[test]
+    fn oob_clean_edit_absorbs_and_updates_index() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        // Baseline: the committed bytes before the OOB edit.
+        record.record(ADR_B_PATH, hash_bytes(ADR_B_BASE.as_bytes()));
+
+        // The committed index has no edge for B yet (it superseded nothing).
+        let mut index = EdgeIndex::default();
+
+        let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            edited,
+            /* task_touched */ false,
+        );
+
+        // Exactly one advisory absorb finding carrying the message.
+        assert_eq!(findings.len(), 1, "absorb emits exactly one finding");
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.absorb");
+        assert_eq!(f.severity, Severity::Advisory, "absorb is informational");
+        assert!(
+            f.message.contains("external edit absorbed") && f.message.contains(ADR_B_PATH),
+            "absorb names the absorbed doc: {f:?}"
+        );
+
+        // Re-hash: the recorded baseline advanced to the new content's hash.
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(hash_bytes(edited).as_str()),
+            "absorb re-hashes the recorded baseline to the edited content"
+        );
+
+        // The committed edge index gained the new forward edge (incremental update).
+        assert_eq!(
+            index.edges,
+            vec![Edge {
+                from: ADR_B_FROM.to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }],
+            "absorb incrementally adds the edited doc's new forward edge"
+        );
+    }
+
+    /// The DRIFTED+UNTOUCHED parse/schema-fail branch: an edit malforming the `date`
+    /// value **conformance-blocks** — a blocking `reconciliation.conformance-block`
+    /// finding naming the file (and an expected-shape hint), the recorded hash is
+    /// **not** advanced (no re-baseline on a block), and the edge index is **not**
+    /// touched (no auto-repair).
+    #[test]
+    fn oob_nonconformant_edit_blocks() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let baseline = hash_bytes(ADR_B_BASE.as_bytes());
+        record.record(ADR_B_PATH, baseline.clone());
+
+        let mut index = EdgeIndex::default();
+        let edges_before = index.edges.clone();
+
+        let edited = ADR_B_EDITED_BAD_DATE.as_bytes();
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            edited,
+            /* task_touched */ false,
+        );
+
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "reconciliation.conformance-block"
+                    && f.severity == Severity::Blocking),
+            "a nonconformant edit conformance-blocks: {findings:?}"
+        );
+        let block = findings
+            .iter()
+            .find(|f| f.code == "reconciliation.conformance-block")
+            .expect("a conformance-block finding");
+        assert!(
+            block.message.contains(ADR_B_PATH),
+            "the block names the offending file: {block:?}"
+        );
+        assert!(
+            block.route.is_some(),
+            "the conformance-block carries a route"
+        );
+
+        // The recorded hash is NOT advanced — a block is not a re-baseline site.
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(baseline.as_str()),
+            "conformance-block does not advance the recorded hash (no auto-repair)"
+        );
+        // The edge index is untouched.
+        assert_eq!(
+            index.edges, edges_before,
+            "conformance-block does not update the edge index"
+        );
+    }
+
+    /// The DRIFTED+TOUCHED branch: the same committed doc both drifted on disk **and**
+    /// staged by the active task **conflict-blocks** — a blocking
+    /// `reconciliation.conflict-block` finding carrying the explicit-discard route, no
+    /// silent merge, the recorded hash unadvanced and the edge index untouched.
+    #[test]
+    fn oob_conflict_blocks() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let baseline = hash_bytes(ADR_B_BASE.as_bytes());
+        record.record(ADR_B_PATH, baseline.clone());
+
+        let mut index = EdgeIndex::default();
+
+        // The on-disk content drifted (a clean edit, even) — but the task also touched it.
+        let edited = ADR_B_EDITED_SUPERSEDES.as_bytes();
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            edited,
+            /* task_touched */ true,
+        );
+
+        assert_eq!(findings.len(), 1, "conflict emits exactly one finding");
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.conflict-block");
+        assert_eq!(f.severity, Severity::Blocking);
+        let route = f
+            .route
+            .as_deref()
+            .expect("conflict carries a discard route");
+        assert!(
+            route.contains("discard") || route.contains("revert"),
+            "the conflict route names the explicit-discard / revert paths: {route:?}"
+        );
+
+        // No silent merge: neither the recorded hash nor the edge index moved.
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(baseline.as_str()),
+            "conflict-block does not advance the recorded hash (no silent merge)"
+        );
+        assert!(
+            index.edges.is_empty(),
+            "conflict-block does not update the edge index"
+        );
+    }
 
     /// A throwaway directory that removes itself on drop.
     struct TempRoot(PathBuf);

@@ -26,7 +26,7 @@ Made up front because they shape many signatures; recorded in [DECISIONS.md](../
 
 ## Increment 5 — persisted ADR + edge index
 
-- **(I) Reconciliation state machine + rename detection** — specified in [reconciliation.md](../design/reconciliation.md); reuses the `blake3` hash choice.
+- *(reconciliation OOB state machine **settled 2026-05-31** — `engine::file_state::reconcile_committed`: absorb / conformance-block / conflict-block over a committed doc; see [DECISIONS.md](../DECISIONS.md). **Rename detection** remains the open inc-5 reconciliation item: strong/weak signal classifier routed to git-revert, per [reconciliation.md](../design/reconciliation.md) → Rename detection.)*
 
 ## Increment 6 — adapter & ship
 
