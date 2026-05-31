@@ -18,6 +18,7 @@
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::Path;
 
 /// The built-in adapter profiles, embedded at compile time from
 /// `crates/cli/adapters/`. Mirrors `pack::PACK` (`include_dir`, decided
@@ -142,6 +143,70 @@ pub fn bootstrap_block() -> String {
     format!("{BOOTSTRAP_START_MARKER}\n{BOOTSTRAP_SENTENCE}\n{BOOTSTRAP_END_MARKER}\n")
 }
 
+/// Idempotently write the marker-fenced bootstrap block ([`bootstrap_block`])
+/// into the host project's always-loaded file (`<repo_root>/CLAUDE.md`).
+///
+/// `jigc setup`'s static-line floor ([`assistant-adapter.md`] → Inject the
+/// bootstrap; [`bootstrap.md`] → Placement is the adapter). Idempotent by the
+/// marker fence: a missing file is created with just the block; a file without
+/// the markers gets the block **appended** (surrounding content untouched); a
+/// file already carrying the markers has only the fenced region **replaced**,
+/// leaving every byte outside the markers identical. Run twice ⇒ byte-identical
+/// file. Regenerated on upgrade, so the integration can't rot.
+pub fn inject_line(repo_root: &Path) -> std::io::Result<()> {
+    let target = repo_root.join("CLAUDE.md");
+    let block = bootstrap_block();
+
+    let next = match std::fs::read_to_string(&target) {
+        // No file yet: it is exactly the block.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => block,
+        Err(e) => return Err(e),
+        Ok(existing) => match marker_span(&existing) {
+            // Already has our fence: replace only the fenced region, leaving
+            // every byte outside it identical. `block` ends in one `\n`; the
+            // byte after the end marker (a `\n` or EOF) lives in `suffix`, so
+            // splice the block *without* its trailing newline to avoid doubling.
+            Some((start, end)) => {
+                let mut out = String::with_capacity(existing.len() + block.len());
+                out.push_str(&existing[..start]);
+                out.push_str(block.trim_end_matches('\n'));
+                out.push_str(&existing[end..]);
+                out
+            }
+            // No fence: append the block, separated from existing content by a
+            // blank line. An empty file degenerates to just the block.
+            None => {
+                if existing.is_empty() {
+                    block
+                } else {
+                    let mut out = String::with_capacity(existing.len() + block.len() + 2);
+                    out.push_str(&existing);
+                    if !out.ends_with('\n') {
+                        out.push('\n');
+                    }
+                    out.push('\n');
+                    out.push_str(&block);
+                    out
+                }
+            }
+        },
+    };
+
+    std::fs::write(&target, next)
+}
+
+/// Locate the byte span of the marker-fenced bootstrap block in `content`, from
+/// the start of the start marker to the end of the end marker (exclusive of any
+/// following newline). Returns `None` when either marker is absent. The first
+/// occurrence of each marker is used; on a re-run we wrote exactly one fence, so
+/// a conformant file has exactly one.
+fn marker_span(content: &str) -> Option<(usize, usize)> {
+    let start = content.find(BOOTSTRAP_START_MARKER)?;
+    let end_marker = content[start..].find(BOOTSTRAP_END_MARKER)?;
+    let end = start + end_marker + BOOTSTRAP_END_MARKER.len();
+    Some((start, end))
+}
+
 /// Opening idempotency marker for the bootstrap block (decided 2026-05-31). An
 /// HTML comment so it is invisible in rendered markdown; the `jigc:` namespace
 /// keeps it unambiguous against any other tool's markers.
@@ -243,6 +308,162 @@ mod tests {
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
         <!-- jigc:bootstrap:end -->
         "###);
+    }
+
+    /// A throwaway directory that removes itself on drop — keeps the injection
+    /// tests off the developer's repo (the project's hand-rolled temp-dir
+    /// pattern; no `tempfile` dep).
+    struct TempDir(std::path::PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            let mut path = std::env::temp_dir();
+            let unique = format!(
+                "jigc-inject-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            );
+            path.push(unique);
+            std::fs::create_dir_all(&path).expect("create temp dir");
+            TempDir(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// First inject into a project with **no** `CLAUDE.md` creates the file with
+    /// just the block; a second inject is a no-op at the byte level (run twice ⇒
+    /// byte-identical). The created-file form is golden-locked: exactly the
+    /// fenced block, nothing else.
+    #[test]
+    fn inject_creates_then_is_idempotent() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+
+        inject_line(dir.path()).expect("first inject");
+        assert!(claude_md.exists(), "inject creates CLAUDE.md when absent");
+        let after_first = std::fs::read_to_string(&claude_md).expect("read after first");
+
+        inject_line(dir.path()).expect("second inject");
+        let after_second = std::fs::read_to_string(&claude_md).expect("read after second");
+
+        assert_eq!(
+            after_first, after_second,
+            "inject is idempotent: a second run leaves the file byte-identical",
+        );
+
+        insta::assert_snapshot!(after_first, @r###"
+        <!-- jigc:bootstrap:start -->
+        `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
+        <!-- jigc:bootstrap:end -->
+        "###);
+    }
+
+    /// Inject into a `CLAUDE.md` that already has user prose **and** a stale
+    /// block replaces only the fenced region: the user content above and below
+    /// the markers stays byte-identical, only the block's interior is refreshed.
+    /// A re-run is then idempotent.
+    #[test]
+    fn inject_replaces_only_between_markers() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+
+        // A file with user prose around a *stale* block (a marker fence whose
+        // interior differs from the current bootstrap sentence).
+        let preexisting = "\
+# My Project
+
+Some project rules a human wrote.
+
+<!-- jigc:bootstrap:start -->
+STALE sentence from an older jigc version.
+<!-- jigc:bootstrap:end -->
+
+More rules below, also human-authored.
+";
+        std::fs::write(&claude_md, preexisting).expect("seed CLAUDE.md");
+
+        inject_line(dir.path()).expect("inject over a stale block");
+        let after = std::fs::read_to_string(&claude_md).expect("read after inject");
+
+        assert!(
+            after.starts_with("# My Project\n\nSome project rules a human wrote.\n"),
+            "user prose above the block is preserved byte-for-byte, got:\n{after}",
+        );
+        assert!(
+            after.ends_with("More rules below, also human-authored.\n"),
+            "user prose below the block is preserved byte-for-byte, got:\n{after}",
+        );
+        assert!(
+            !after.contains("STALE sentence"),
+            "the stale block interior is replaced, got:\n{after}",
+        );
+        assert_eq!(
+            after.matches(BOOTSTRAP_START_MARKER).count(),
+            1,
+            "exactly one block — no duplicate appended, got:\n{after}",
+        );
+        assert!(
+            after.contains("never read or edit managed docs directly"),
+            "the current bootstrap sentence is present, got:\n{after}",
+        );
+
+        // Idempotent: a second inject over the now-current block is a no-op.
+        inject_line(dir.path()).expect("second inject");
+        let after_second = std::fs::read_to_string(&claude_md).expect("read after second");
+        assert_eq!(after, after_second, "re-inject is byte-identical");
+
+        insta::assert_snapshot!(after, @r###"
+        # My Project
+
+        Some project rules a human wrote.
+
+        <!-- jigc:bootstrap:start -->
+        `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
+        <!-- jigc:bootstrap:end -->
+
+        More rules below, also human-authored.
+        "###);
+    }
+
+    /// Append into a `CLAUDE.md` that has user prose but **no** block adds the
+    /// fenced block at the end, preserving the existing content, and re-running
+    /// does not duplicate it.
+    #[test]
+    fn inject_appends_when_no_marker_present() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+        std::fs::write(&claude_md, "# My Project\n\nHuman rules.\n").expect("seed CLAUDE.md");
+
+        inject_line(dir.path()).expect("first inject");
+        let after_first = std::fs::read_to_string(&claude_md).expect("read after first");
+        assert!(
+            after_first.starts_with("# My Project\n\nHuman rules.\n"),
+            "existing content is preserved, got:\n{after_first}",
+        );
+        assert_eq!(
+            after_first.matches(BOOTSTRAP_START_MARKER).count(),
+            1,
+            "the block is appended once, got:\n{after_first}",
+        );
+
+        inject_line(dir.path()).expect("second inject");
+        let after_second = std::fs::read_to_string(&claude_md).expect("read after second");
+        assert_eq!(
+            after_first, after_second,
+            "appending is idempotent: run twice ⇒ byte-identical",
+        );
     }
 
     /// An unknown assistant name is a clear not-found error, never a panic.
