@@ -136,6 +136,43 @@ impl PathJoin for Path {
 }
 
 #[test]
+fn set_field_block_renders_as_json_under_format_json() {
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+
+    // An invalid enum value for `type` is a blocking finding. Under `--format json`
+    // the block must render as a JSON finding envelope, not plain text (an agent
+    // running `--format json` expects a parseable error, not prose).
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "notatype",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "an invalid enum value must block (non-zero exit)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let trimmed = stderr.trim();
+    assert!(
+        trimmed.starts_with('{') || trimmed.starts_with('['),
+        "the block renders as JSON under --format json; got:\n{stderr}"
+    );
+    assert!(
+        trimmed.contains("\"findings\"") || trimmed.contains("\"message\""),
+        "the JSON carries the finding envelope; got:\n{stderr}"
+    );
+}
+
+#[test]
 fn set_field_inline_stages_the_field_value() {
     let (repo, home) = started_repo("add rate limiter");
     let task = "add-rate-limiter";

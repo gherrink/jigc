@@ -110,7 +110,7 @@ impl Cli {
                 intent: Some(_),
                 task: Some(_),
             } => unreachable!("clap rejects `<intent>` together with `--task`"),
-            Command::Doc { verb } => run_doc(verb),
+            Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
             Command::Setup => run_setup(self.format),
         }
@@ -160,9 +160,10 @@ fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
 
 /// Dispatch a `jigc doc <verb>` write against the active task in the current
 /// working directory. The `doc` surface is agent-facing structured I/O (the
-/// staged buffer + the route on a block); it does not render through the global
-/// `--format` view path (`design/write-commands.md` → The verbs).
-fn run_doc(verb: DocCommand) -> ExitCode {
+/// staged buffer + the route on a block); a **blocking finding** renders through
+/// the global `--format` (a JSON envelope under `--format json`), so an agent on
+/// `--format json` gets a parseable block (`design/write-commands.md` → The verbs).
+fn run_doc(format: Format, verb: DocCommand) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -170,7 +171,7 @@ fn run_doc(verb: DocCommand) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    verb.dispatch(&cwd)
+    verb.dispatch(&cwd, format)
 }
 
 /// Mint a task from `intent` and compose the cascade's default workflow against

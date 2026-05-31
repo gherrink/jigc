@@ -13,7 +13,9 @@
 //! and the canonical byte form; the CLI owns I/O and presentation (the route the
 //! agent acts on next, surfaced per the settled block-payload envelope).
 
+use crate::cli::Format;
 use crate::pack::EmbeddedPack;
+use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::address::{Address, Fragment};
 use engine::compose::{WorkflowDef, load_workflow_def};
@@ -60,11 +62,28 @@ pub enum DocCommand {
     },
 }
 
+/// A `doc` verb's failure: a write-time **block** (a structured [`Finding`],
+/// rendered through `--format` so an agent on `--format json` gets a parseable
+/// envelope), or an **orchestration** error (git/IO/usage — plain text). The
+/// blocking finding is the same envelope the rest of the CLI uses; only the
+/// happy-path *output* of `doc` stays plain (the staged buffer / new address).
+enum DocFailure {
+    Block(Finding),
+    Orchestration(anyhow::Error),
+}
+
+impl From<anyhow::Error> for DocFailure {
+    fn from(err: anyhow::Error) -> Self {
+        DocFailure::Orchestration(err)
+    }
+}
+
 impl DocCommand {
     /// Dispatch the parsed `doc` verb against the active task in `cwd`, mapping a
-    /// blocking [`Finding`] (or an orchestration error) to a non-zero exit with
-    /// the route on stderr.
-    pub fn dispatch(self, cwd: &Path) -> ExitCode {
+    /// blocking [`Finding`] to a non-zero exit — rendered through `--format` (JSON
+    /// envelope under `--format json`, the located message + route otherwise) — and
+    /// an orchestration error to plain stderr.
+    pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
         let result = match self {
             DocCommand::Create { r#type, title } => run_create(cwd, &r#type, &title),
             DocCommand::SetField { addr, value } => run_set_field(cwd, &addr, &value),
@@ -72,7 +91,15 @@ impl DocCommand {
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
-            Err(err) => {
+            Err(DocFailure::Block(finding)) => {
+                let report = engine::result::ValidationReport::new(vec![finding]);
+                eprint!("{}", render::validation(format, &report));
+                if format != Format::Json {
+                    eprintln!();
+                }
+                ExitCode::FAILURE
+            }
+            Err(DocFailure::Orchestration(err)) => {
                 eprintln!("{err:#}");
                 ExitCode::FAILURE
             }
@@ -81,7 +108,7 @@ impl DocCommand {
 }
 
 /// `jigc doc set-field <addr> --value <v>` — adjudicate + splice a field value.
-fn run_set_field(cwd: &Path, addr: &str, value: &str) -> Result<()> {
+fn run_set_field(cwd: &Path, addr: &str, value: &str) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -100,11 +127,12 @@ fn run_set_field(cwd: &Path, addr: &str, value: &str) -> Result<()> {
     )
     .map_err(|f| block(&f, "set-field", addr))?;
 
-    persist(&path, &edited)
+    persist(&path, &edited)?;
+    Ok(())
 }
 
 /// `jigc doc set-slot <addr> --from-file <path|->` — splice slot prose (stdin/file).
-fn run_set_slot(cwd: &Path, addr: &str, from_file: &str) -> Result<()> {
+fn run_set_slot(cwd: &Path, addr: &str, from_file: &str) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -119,11 +147,12 @@ fn run_set_slot(cwd: &Path, addr: &str, from_file: &str) -> Result<()> {
     let edited = set_slot_validated(&schema, &source, &section_id, &prose)
         .map_err(|f| block(&f, "set-slot", addr))?;
 
-    persist(&path, &edited)
+    persist(&path, &edited)?;
+    Ok(())
 }
 
 /// `jigc doc create <type> --title <…>` — agent-initiated, create-gated mint.
-fn run_create(cwd: &Path, type_name: &str, title: &str) -> Result<()> {
+fn run_create(cwd: &Path, type_name: &str, title: &str) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
@@ -291,18 +320,21 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<String> {
     })
 }
 
-/// Render a blocking [`Finding`] to an `anyhow` error carrying its message + a
+/// Wrap a blocking [`Finding`] as a [`DocFailure::Block`], ensuring it carries a
 /// route. A hard block is a blocking-severity finding carrying a route
 /// (`DECISIONS.md` 2026-05-31 → blocked/error payload). Where a write-time
 /// adjudication finding carries none (the engine's `write.malformed-value` is
 /// routeless), the CLI supplies the actionable retry route — presentation the CLI
-/// owns, the determinism boundary unaffected.
-fn block(finding: &Finding, verb: &str, addr: &str) -> anyhow::Error {
-    let route = finding
-        .route
-        .clone()
-        .unwrap_or_else(|| format!("retry `jigc doc {verb} {addr}` with a conforming value"));
-    anyhow::anyhow!("{}\n  route: {route}", finding.message)
+/// owns, the determinism boundary unaffected. `dispatch` renders it through
+/// `--format` (JSON envelope under `--format json`).
+fn block(finding: &Finding, verb: &str, addr: &str) -> DocFailure {
+    let mut finding = finding.clone();
+    if finding.route.is_none() {
+        finding.route = Some(format!(
+            "retry `jigc doc {verb} {addr}` with a conforming value"
+        ));
+    }
+    DocFailure::Block(finding)
 }
 
 /// Map an engine [`Finding`] to an `anyhow` error carrying its message + route —
