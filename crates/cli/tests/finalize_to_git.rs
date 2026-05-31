@@ -354,6 +354,127 @@ fn finalize_promotes_a_created_adr_to_decisions() {
     );
 }
 
+/// Flow #5 → The dangling variant (`design/worked-examples.md` → The dangling variant
+/// — finalize blocks): a task creates an ADR whose `supersedes` points at a target that
+/// exists in **neither** the committed store nor this task's working area. The
+/// `schema-conformance.ref-resolves` forward-ref integrity check (now part of the
+/// `validate_task` sweep `finalize` gates on) blocks the commit non-zero, surfacing the
+/// three routing options (fix / create-in-task / drop) and creating NO commit.
+#[test]
+fn finalize_blocks_on_a_dangling_supersedes_ref() {
+    let (repo, home) = started_repo("supersede the cache decision");
+    let task = "supersede-the-cache-decision";
+
+    // Create the ADR in-task and fill its author-required slots.
+    let create = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Shared redis session cache"],
+        None,
+    );
+    assert!(
+        create.status.success(),
+        "`jigc doc create adr` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = run_doc(
+            repo.path(),
+            home.path(),
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert!(
+            out.status.success(),
+            "set-slot {addr} must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    set_slot(
+        "adr:shared-redis-session-cache#context",
+        b"A single node is a single point of failure.\n",
+    );
+    set_slot(
+        "adr:shared-redis-session-cache#decision",
+        b"Replicate the session cache across nodes.\n",
+    );
+    set_slot(
+        "adr:shared-redis-session-cache#consequences",
+        b"Slightly higher write latency for resilience.\n",
+    );
+
+    // Point `supersedes` at a target that exists nowhere reachable — the dangling ref.
+    // The optional `supersedes` ref is absent from the created skeleton; inject it into
+    // the staged ADR's front-matter directly (generating an absent optional field line
+    // through `set-field` is a separate write-path concern — this test's concern is the
+    // finalize forward-ref gate). The injected line is the canonical `key: value` form.
+    let staged_adr = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("adr:shared-redis-session-cache.md");
+    let body = fs::read_to_string(&staged_adr).expect("read the staged ADR");
+    let with_supersedes = body.replacen(
+        "---\n---\n",
+        "---\nsupersedes: adr:typo-nonexistent\n---\n",
+        1,
+    );
+    assert_ne!(
+        body, with_supersedes,
+        "the staged ADR carries an empty front-matter block to inject the ref into"
+    );
+    fs::write(&staged_adr, &with_supersedes).expect("inject the dangling supersedes ref");
+
+    // Fill the commit doc so the *only* possible block is the dangling forward-ref.
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert!(
+        !out.status.success(),
+        "a dangling forward-ref must make finalize exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        rendered.contains("adr:typo-nonexistent"),
+        "the block names the dangling target; got:\n{rendered}"
+    );
+    // The three routing options (fix / create-in-task / drop).
+    assert!(
+        rendered.contains("fix")
+            && rendered.contains("create the target in this task")
+            && rendered.contains("drop"),
+        "the block surfaces the three routing options; got:\n{rendered}"
+    );
+
+    // No commit was created.
+    let log_after = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+    assert_eq!(
+        log_before, log_after,
+        "a dangling-ref block must create no commit"
+    );
+
+    // The ADR was NOT promoted to decisions/ (the transaction aborted before commit).
+    assert!(
+        !repo
+            .path()
+            .join("decisions")
+            .join("shared-redis-session-cache.md")
+            .exists(),
+        "a blocked finalize promotes nothing"
+    );
+}
+
 #[test]
 fn finalize_aborts_with_no_commit_when_head_moved() {
     let (repo, home) = started_repo("add rate limiter");

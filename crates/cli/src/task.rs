@@ -266,16 +266,31 @@ impl TaskArea {
     /// baseline-adopts fresh (advisory) each run rather than drifting against a stale
     /// staged hash — clean validate stays clean as the agent fills it. Absorb of
     /// clean OOB drift on a *committed* doc is inc-5.
+    ///
+    /// The sweep also runs `schema-conformance.ref-resolves` (forward-ref / edge-index
+    /// integrity), so it needs the committed-store root, the `.jigc/` home (where the
+    /// edge index caches), and the current HEAD (the stamp the committed index is built
+    /// against — read via `git`, keeping the engine shell-free). The two reachable
+    /// surfaces (committed store + this task's working area) make `validate` preview
+    /// exactly the forward-ref block `finalize` gates on.
     fn validate(&self) -> Result<engine::result::ValidationReport> {
         let schemas = self.schemas()?;
+        let head = git_head(&self.repo_root)?;
         let mut record = FileStateRecord::load(&self.jigc_root).with_context(|| {
             format!(
                 "could not load the file-state record under {:?}",
                 self.jigc_root
             )
         })?;
-        validate_task(&self.dir, &schemas, &mut record)
-            .with_context(|| format!("validating task at {:?}", self.dir))
+        validate_task(
+            &self.dir,
+            &schemas,
+            &mut record,
+            &self.repo_root,
+            &self.jigc_root,
+            &head,
+        )
+        .with_context(|| format!("validating task at {:?}", self.dir))
     }
 
     /// Execute the `finalize` transaction (`design/finalize.md` → 5–7). Returns the
@@ -422,15 +437,22 @@ impl TaskArea {
         Ok(())
     }
 
-    /// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Advance the
-    /// `file-state` record for every committed file (the plan's managed-doc hash set
-    /// plus the committed working-tree files), then remove the working area. Each step
-    /// self-heals on failure — a stale `.jigc/tasks/<id>/` is cleaned by the next
-    /// `discard`/`finalize`, and a stale hash re-baselines on the next probe — so a
-    /// failure is logged to stderr, never raised.
+    /// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Three updates, none
+    /// of which can affect commit truth, all self-healing: advance the `file-state`
+    /// record for every committed file (the plan's managed-doc hash set plus the
+    /// committed working-tree files), **invalidate the edge-index stamp** (lifecycle
+    /// site 5, `design/storage.md` → Edge index lifecycle — remove the persisted index
+    /// so the next read rebuilds against the new HEAD), then remove the working area.
+    /// Each step self-heals on failure — a stale `.jigc/tasks/<id>/` is cleaned by the
+    /// next `discard`/`finalize`, a stale hash re-baselines on the next probe, and the
+    /// edge index re-derives from the committed `.md`s — so a failure is logged to
+    /// stderr, never raised (the commit is already truth).
     fn post_commit(&self, hash_updates: &BTreeMap<String, String>) {
         if let Err(err) = self.advance_file_state(hash_updates) {
             eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
+        }
+        if let Err(err) = engine::index::invalidate(&self.jigc_root) {
+            eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
         }
         if let Err(err) = std::fs::remove_dir_all(&self.dir) {
             eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");

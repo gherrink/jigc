@@ -104,6 +104,25 @@ impl EdgeIndex {
     }
 }
 
+/// Invalidate the persisted committed edge index — the `finalize` post-commit step
+/// (lifecycle site 5, `storage.md` → Edge index lifecycle: "phase 7 invalidates the
+/// stamp; next read rebuilds against the new HEAD").
+///
+/// Removes `<jigc_root>/index/edges.json` outright: a missing file is the strongest
+/// invalidation — the next [`load_committed`] rebuilds against the current HEAD and
+/// re-stamps (an absent file can never match a stamp). Best-effort by contract: a
+/// failure self-heals (the stale on-disk stamp ≠ the new HEAD, so the next read rebuilds
+/// regardless), so a not-found is success and any other error is returned for the caller
+/// to log, never raise (`finalize.md` → 7. Post-commit: logged, not raised).
+pub fn invalidate(jigc_root: &Path) -> std::io::Result<()> {
+    let path = EdgeIndex::path_in(jigc_root);
+    match std::fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(err),
+    }
+}
+
 /// Walk the committed managed docs and emit the sorted forward edge set, stamped
 /// with `head` — the committed-rebuild (lifecycle site 1).
 ///
@@ -599,6 +618,61 @@ Slightly higher write latency for resilience.
         )
         .expect("persisted index parses");
         assert_eq!(on_disk.stamp, "v2");
+    }
+
+    /// `finalize` post-commit invalidation (lifecycle site 5): after a commit lands at a
+    /// new HEAD, [`invalidate`] leaves the on-disk index **stale** so the next
+    /// [`load_committed`] against the new HEAD rebuilds + re-stamps rather than serving a
+    /// pre-commit edge set. Asserts the persisted stamp ≠ the new HEAD post-invalidate,
+    /// and that the next load returns the new stamp.
+    #[test]
+    fn post_commit_invalidates_edge_stamp() {
+        let repo = TempRoot::new("invalidate-repo");
+        let jigc = TempRoot::new("invalidate-jigc");
+        write_committed_adrs(repo.path());
+        let schemas = schemas();
+
+        // Pre-commit: the index is built + persisted against the old HEAD "before".
+        let before = load_committed(repo.path(), jigc.path(), &schemas, "before");
+        assert_eq!(before.stamp, "before");
+        assert!(
+            EdgeIndex::path_in(jigc.path()).exists(),
+            "the index is persisted pre-commit"
+        );
+
+        // Post-commit: HEAD is now "after". Invalidation removes the persisted index.
+        invalidate(jigc.path()).expect("invalidation succeeds");
+        assert!(
+            !EdgeIndex::path_in(jigc.path()).exists(),
+            "invalidation removes the persisted index so the next read rebuilds"
+        );
+
+        // The next load against the new HEAD rebuilds and re-stamps with "after" — it
+        // cannot serve the stale pre-commit stamp.
+        let after = load_committed(repo.path(), jigc.path(), &schemas, "after");
+        assert_eq!(
+            after.stamp, "after",
+            "the next read rebuilds against the new HEAD"
+        );
+        let on_disk: EdgeIndex = serde_json::from_slice(
+            &std::fs::read(EdgeIndex::path_in(jigc.path())).expect("read re-stamped index"),
+        )
+        .expect("persisted index parses");
+        assert_ne!(
+            on_disk.stamp, "before",
+            "the persisted stamp is no longer the pre-commit HEAD"
+        );
+
+        // Invalidation is idempotent / best-effort: a second call on an absent file is Ok.
+        invalidate(jigc.path()).expect("invalidate is idempotent");
+
+        // Re-invalidate so the post-commit contract holds even after the re-stamp above:
+        // the on-disk index is gone, the next read rebuilds against whatever HEAD it gets.
+        invalidate(jigc.path()).expect("invalidation succeeds");
+        assert!(
+            !EdgeIndex::path_in(jigc.path()).exists(),
+            "the index is gone after invalidation"
+        );
     }
 }
 

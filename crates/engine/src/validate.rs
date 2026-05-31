@@ -9,9 +9,9 @@
 //! `schema-conformance` is a **synthetic** validate category (`validation.md` →
 //! Synthetic categories): not a literal `check(target, ctx)` probe, but a namespace
 //! for schema-driven integrity checks the engine runs over an already-parsed
-//! instance. Inc-4 ships three of the four (`DECISIONS.md` 2026-05-31 → inc-4
-//! planning pins → schema-conformance scope); **`ref-resolves` (forward-ref / edge
-//! index) is explicitly inc-5** and is *not* run here.
+//! instance. All four ship: inc-4 added the three per-instance checks below;
+//! inc-5 adds the cross-doc `ref-resolves` (forward-ref / edge-index integrity),
+//! which [`validate_task`] now runs once over the whole task (the `finalize` gate).
 //!
 //! - **`required-slot-present`** — every declared body slot must hold non-empty
 //!   prose. The parser already requires the section *heading* (a missing heading is
@@ -25,6 +25,11 @@
 //! - **`field-value-conformant`** — every present field's value must pass its
 //!   declared type, reusing [`crate::write::check_value`] (the same write-time
 //!   adjudicator). A malformed date / non-member enum / empty string blocks.
+//! - **`ref-resolves`** — every task-touched forward edge (a schema `ref` field) must
+//!   resolve in one of the two reachable surfaces (committed store or this task's
+//!   working area). Walked over the overlaid edge index ([`crate::index`]); a dangling
+//!   target blocks. Unlike the three above, this is a *cross-doc* check run once over
+//!   the whole task, not per parsed instance.
 //!
 //! Each violation is one intrinsic **blocking** `schema-conformance.*` [`Finding`]
 //! (the inventory default severity; cascade tuning is not wired into engine probes
@@ -70,12 +75,27 @@ const DOCS_DIR: &str = "docs";
 /// finding (the working area references a type the resolved cascade does not define).
 ///
 /// Findings aggregate in a stable sweep order: docs by path-sorted filename, and
-/// within each doc `file-state` before `schema-conformance`. `ref-resolves`
-/// (forward-ref / edge index) is **not** run — it is inc-5 (no edge index yet).
+/// within each doc `file-state` before `schema-conformance`, then the cross-doc
+/// `schema-conformance.ref-resolves` (forward-ref / edge-index integrity) sweep over
+/// the whole task once.
+///
+/// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
+/// edge index caches), and `head` is the opaque HEAD stamp the committed index is
+/// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
+/// feed the `ref-resolves` walk: [`crate::index::load_committed`] builds/loads the
+/// committed edge index, [`crate::index::overlay_working`] layers this task's staged
+/// edges over it, and [`crate::index::ref_resolves`] walks every task-touched forward
+/// edge — a dangling target (in neither the committed store nor this task's working
+/// area) is a blocking finding (`validation.md` → Forward-ref resolution). So `finalize`
+/// — which gates on exactly what `validate` reports — blocks on a dangling `supersedes`
+/// and passes on a resolvable one (`worked-examples.md` → Superseding decision).
 pub fn validate_task(
     dir: &Path,
     schemas: &BTreeMap<String, Schema>,
     record: &mut FileStateRecord,
+    repo_root: &Path,
+    jigc_root: &Path,
+    head: &str,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for entry in staged_instances(dir)? {
@@ -91,6 +111,18 @@ pub fn validate_task(
         let source = String::from_utf8_lossy(&bytes);
         findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
     }
+
+    // `schema-conformance.ref-resolves` — the cross-doc forward-ref / edge-index
+    // integrity sweep, run once over the whole task (`validation.md` → Forward-ref
+    // resolution). The committed edge index (rebuilt/loaded against `head`) is overlaid
+    // with this task's staged edges; every task-touched forward edge must resolve in
+    // one of the two reachable surfaces (committed store or this task's working area).
+    let committed = crate::index::load_committed(repo_root, jigc_root, schemas, head);
+    let overlay = crate::index::overlay_working(&committed, dir, schemas);
+    findings.extend(crate::index::ref_resolves(
+        &overlay, repo_root, dir, schemas,
+    ));
+
     Ok(ValidationReport::new(findings))
 }
 
@@ -166,9 +198,9 @@ fn conformance_for(
 /// type-conformant (`field-value-conformant`). Returns one blocking [`Finding`] per
 /// violation, in section-document order; a conformant instance yields an empty `Vec`.
 ///
-/// `ref-resolves` (forward-ref / edge-index integrity) is **not** run here — it is
-/// inc-5 (no edge index exists yet). `source` is needed to slice the opaque slot
-/// spans the parser recorded.
+/// `ref-resolves` (forward-ref / edge-index integrity) is **not** run here — it is a
+/// *cross-doc* check [`validate_task`] runs once over the whole task, not a per-instance
+/// check. `source` is needed to slice the opaque slot spans the parser recorded.
 pub fn schema_conformance(schema: &Schema, source: &str, doc: &Document) -> Vec<Finding> {
     let mut findings = Vec::new();
     for section in &schema.sections {
@@ -571,7 +603,15 @@ kind: memo
         // advisory) whose slot is empty → schema-conformance blocks.
         area.stage("note:broken.md", BROKEN.as_bytes());
 
-        let report = validate_task(area.dir(), &schemas(), &mut record).expect("sweep runs");
+        let report = validate_task(
+            area.dir(),
+            &schemas(),
+            &mut record,
+            area.dir(),
+            area.dir(),
+            "HEAD",
+        )
+        .expect("sweep runs");
 
         // Both blocking findings are present in the aggregate.
         let codes: Vec<&str> = report.findings.iter().map(|f| f.code.as_str()).collect();
@@ -594,8 +634,15 @@ kind: memo
         clean.stage("note:ok.md", CONFORMANT.as_bytes());
         let mut clean_record = FileStateRecord::new();
 
-        let clean_report =
-            validate_task(clean.dir(), &schemas(), &mut clean_record).expect("clean sweep runs");
+        let clean_report = validate_task(
+            clean.dir(),
+            &schemas(),
+            &mut clean_record,
+            clean.dir(),
+            clean.dir(),
+            "HEAD",
+        )
+        .expect("clean sweep runs");
 
         // A fresh file baselines (advisory, non-blocking) and conforms → no blocker.
         assert!(
@@ -610,6 +657,213 @@ kind: memo
                 .all(|f| f.severity != Severity::Blocking),
             "no blocking findings over a clean area, got {:?}",
             clean_report.findings
+        );
+    }
+}
+
+#[cfg(test)]
+mod ref_resolves_in_sweep_tests {
+    //! The `schema-conformance.ref-resolves` forward-ref / edge-index integrity check
+    //! is now part of the `validate_task` sweep, so `finalize` (which gates on exactly
+    //! what `validate` reports) blocks on a dangling `supersedes` and passes on a
+    //! resolvable one (`validation.md` → Forward-ref resolution; `worked-examples.md` →
+    //! Superseding decision, the `[2 validate]` line and its dangling variant).
+
+    use super::*;
+    use crate::schema::load_schema;
+    use std::path::PathBuf;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    /// A throwaway directory that removes itself on drop.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-validate-refresolves-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp root");
+            TempRoot(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "adr".to_string(),
+            load_schema(ADR_YAML).expect("adr.yaml loads"),
+        );
+        m
+    }
+
+    /// A committed ADR `A` (the supersede target), with no outgoing ref. Its required
+    /// slots are filled so the committed file parses cleanly.
+    const ADR_A: &str = "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Single-node session cache
+
+## Context
+Session lookups must stay sub-millisecond.
+
+## Decision
+A single in-memory node keeps session lookups sub-millisecond.
+
+## Consequences
+A cold node loses its sessions; clients re-authenticate.
+";
+
+    /// A working-area ADR `B` whose `supersedes` points at `to`. Its required slots are
+    /// filled so the *only* possible blocking finding is the ref-resolves one.
+    fn adr_b_superseding(to: &str) -> String {
+        format!(
+            "\
+---
+status: accepted
+date: 2026-05-30
+supersedes: {to}
+---
+
+# Shared redis session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+"
+        )
+    }
+
+    /// Commit ADR `A` at its canonical `decisions/single-node-cache.md`.
+    fn commit_adr_a(repo_root: &Path) {
+        let dir = repo_root.join("decisions");
+        std::fs::create_dir_all(&dir).expect("mk decisions/");
+        std::fs::write(dir.join("single-node-cache.md"), ADR_A).expect("write A");
+    }
+
+    /// Stage a working-area ADR `B` at `<task_dir>/docs/adr:<slug>.md`.
+    fn stage_adr_b(task_dir: &Path, slug: &str, supersedes: &str) {
+        let docs = task_dir.join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(
+            docs.join(format!("adr:{slug}.md")),
+            adr_b_superseding(supersedes),
+        )
+        .expect("stage B");
+    }
+
+    /// The dangling variant (`worked-examples.md` → The dangling variant): a staged ADR
+    /// supersedes `adr:typo-nonexistent`, which exists in neither the committed store
+    /// nor this task's working area. `validate_task` must aggregate the
+    /// `schema-conformance.ref-resolves` blocking finding so `finalize` blocks.
+    #[test]
+    fn validate_task_blocks_on_dangling_supersedes() {
+        let repo = TempRoot::new("dangle-repo");
+        let jigc = repo.path().join(".jigc");
+        let task_dir = jigc.join("tasks").join("supersede-cache");
+        commit_adr_a(repo.path());
+        stage_adr_b(
+            &task_dir,
+            "shared-redis-session-cache",
+            "adr:typo-nonexistent",
+        );
+
+        let mut record = FileStateRecord::new();
+        let report = validate_task(
+            &task_dir,
+            &schemas(),
+            &mut record,
+            repo.path(),
+            &jigc,
+            "HEAD",
+        )
+        .expect("sweep runs");
+
+        let refresolves: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.ref-resolves")
+            .collect();
+        assert_eq!(
+            refresolves.len(),
+            1,
+            "exactly one ref-resolves finding for the dangling supersedes, got {:?}",
+            report.findings
+        );
+        assert!(
+            refresolves[0].message.contains("adr:typo-nonexistent"),
+            "the finding names the dangling target: {}",
+            refresolves[0].message
+        );
+        assert!(
+            report.has_blocking(),
+            "a dangling forward-ref must make the task block, got {:?}",
+            report.findings
+        );
+    }
+
+    /// The resolvable case (`worked-examples.md` → `[2 validate] forward-ref … ✓
+    /// (committed store)`): a staged ADR supersedes a committed target, so the
+    /// ref-resolves walk finds it in the committed store — `validate_task` surfaces no
+    /// `ref-resolves` finding and does not block on it.
+    #[test]
+    fn validate_task_passes_on_resolvable_supersedes() {
+        let repo = TempRoot::new("resolve-repo");
+        let jigc = repo.path().join(".jigc");
+        let task_dir = jigc.join("tasks").join("supersede-cache");
+        commit_adr_a(repo.path());
+        stage_adr_b(
+            &task_dir,
+            "shared-redis-session-cache",
+            "adr:single-node-cache",
+        );
+
+        let mut record = FileStateRecord::new();
+        let report = validate_task(
+            &task_dir,
+            &schemas(),
+            &mut record,
+            repo.path(),
+            &jigc,
+            "HEAD",
+        )
+        .expect("sweep runs");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "schema-conformance.ref-resolves"),
+            "a resolvable supersedes yields no ref-resolves finding, got {:?}",
+            report.findings
+        );
+        assert!(
+            !report.has_blocking(),
+            "a clean task with a resolvable supersedes must not block, got {:?}",
+            report.findings
         );
     }
 }
