@@ -944,6 +944,15 @@ pub fn value_text(value: &Value) -> String {
 // no disk side effects. See `design/finalize.md` → Commit-doc rendering.
 // ============================================================================
 
+/// The `commit` doctype's well-known section/field ids — the Conventional-Commits
+/// vocabulary [`render_commit_message`] encodes by design. Centralized + named so
+/// the one engine↔pack coupling is explicit, not scattered string literals.
+const COMMIT_FIELD_TYPE: &str = "type";
+const COMMIT_FIELD_SCOPE: &str = "scope";
+const COMMIT_SECTION_SUMMARY: &str = "summary";
+const COMMIT_SECTION_BODY: &str = "body";
+const COMMIT_SECTION_TRAILERS: &str = "trailers";
+
 /// Render a `commit` [`Instance`] against its `schema` into a git-message string.
 ///
 /// The mapping (`design/finalize.md` → Commit-doc rendering, the pack-default
@@ -957,12 +966,16 @@ pub fn value_text(value: &Value) -> String {
 /// - the `trailers` repeatable section → footer `key: value` lines, preceded by
 ///   one blank line, skipped when empty.
 ///
-/// Schema-driven: the section roles are read from `schema` by their well-known
-/// ids (the pack-default commit schema declares `header`/`summary`/`body`/
-/// `trailers`); the renderer reads only sections the schema declares. Returns a
-/// string with no trailing whitespace and no trailing newline (the git-message
-/// is consumed via `-F`, not appended to a file). Deterministic — same
-/// `(schema, instance)` in → identical string out.
+/// This is the **engine-adjacent projection of the one doctype whose sink is the
+/// VCS message** (`CLAUDE.md` → MVP scope): it necessarily encodes the
+/// Conventional-Commits shape, so it references the commit doctype's well-known
+/// ids by name (the `COMMIT_*` constants above) — a deliberate, documented
+/// coupling for the single VCS-sink type, *not* generic schema-driven rendering
+/// (`DECISIONS.md` 2026-05-31 → commit-message projection; generalizing to a
+/// schema-declared message template is post-MVP). The header section is still
+/// located via the schema's `header` flag, never by id. Returns a string with no
+/// trailing whitespace and no trailing newline (consumed via `-F`, not appended
+/// to a file). Deterministic — same `(schema, instance)` in → identical string out.
 pub fn render_commit_message(schema: &Schema, instance: &Instance) -> String {
     let header_id = schema
         .sections
@@ -972,12 +985,12 @@ pub fn render_commit_message(schema: &Schema, instance: &Instance) -> String {
     let header = header_id.and_then(|id| section_content(instance, id));
 
     let type_text = header
-        .and_then(|c| commit_field(c, "type"))
+        .and_then(|c| commit_field(c, COMMIT_FIELD_TYPE))
         .unwrap_or_default();
     let scope_text = header
-        .and_then(|c| commit_field(c, "scope"))
+        .and_then(|c| commit_field(c, COMMIT_FIELD_SCOPE))
         .unwrap_or_default();
-    let summary_text = section_content(instance, "summary")
+    let summary_text = section_content(instance, COMMIT_SECTION_SUMMARY)
         .and_then(|c| c.slot.as_deref())
         .unwrap_or("")
         .trim();
@@ -991,7 +1004,9 @@ pub fn render_commit_message(schema: &Schema, instance: &Instance) -> String {
     let _ = write!(out, ": {summary_text}");
 
     // Body: one blank-line gap, skipped when empty.
-    if let Some(body) = section_content(instance, "body").and_then(|c| c.slot.as_deref()) {
+    if let Some(body) =
+        section_content(instance, COMMIT_SECTION_BODY).and_then(|c| c.slot.as_deref())
+    {
         let body = body.trim();
         if !body.is_empty() {
             let _ = write!(out, "\n\n{body}");
@@ -1022,7 +1037,7 @@ fn commit_field(content: &SectionContent, key: &str) -> Option<String> {
 /// Each repeatable `trailers` item carries `key` and `value` fields; an item
 /// missing either contributes nothing.
 fn trailer_lines(instance: &Instance) -> Vec<String> {
-    let Some(section) = section_content(instance, "trailers") else {
+    let Some(section) = section_content(instance, COMMIT_SECTION_TRAILERS) else {
         return Vec::new();
     };
     section
