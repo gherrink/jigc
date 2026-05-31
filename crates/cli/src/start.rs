@@ -21,12 +21,14 @@ use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::compose::{
-    self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, WorkflowDef, load_command_catalog,
-    load_step_def, load_workflow_def,
+    self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, StoreContext, WorkflowDef,
+    load_command_catalog, load_step_def, load_workflow_def,
 };
 use engine::data_value::{ComposeContext, TaskRoot};
 use engine::finding::{Finding, Severity};
+use engine::index;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::schema::{Schema, load_schema};
 use engine::state::{self, BasePin, MintedTask, RolesRecord};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -252,7 +254,36 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
         return Err(finding_to_err(finding));
     }
 
-    compose::compose(&def, &source, &catalog, &ctx).map_err(finding_to_err)
+    // Wire the committed store + edge overlay so a context-slice over a persisted ADR
+    // (`{{@task.decision.supersedes#decision}}`) dereferences to the prior decision's
+    // prose — the superseding-decision read path (`worked-examples.md` → Task 2). The
+    // CLI locates the layers (committed-store root + the `.jigc/` index home), the
+    // engine resolves through the `ContentStore` trait (`VISION.md` principle #4).
+    let jigc_root = repo_root.join(".jigc");
+    let schemas = all_schemas(&pack)?;
+    let committed = index::load_committed(&repo_root, &jigc_root, &schemas, &head.sha);
+    let overlay = index::overlay_working(&committed, &task_dir, &schemas);
+    let store = StoreContext {
+        repo_root: &repo_root,
+        schemas: &schemas,
+        overlay: &overlay,
+    };
+
+    compose::compose_with_store(&def, &source, &catalog, &ctx, Some(&store)).map_err(finding_to_err)
+}
+
+/// Load every shipped schema from the embedded pack, keyed by doctype — the
+/// cascade-resolved schema set the committed store + edge overlay resolve `<type>`
+/// prefixes against (`crate::task` loads the same set for the finalize sweep).
+fn all_schemas(pack: &EmbeddedPack) -> Result<BTreeMap<String, Schema>> {
+    let mut out = BTreeMap::new();
+    for id in pack.list(PackResourceKind::Schemas) {
+        let bytes = read_pack(pack, PackResourceKind::Schemas, id.as_str())?;
+        let schema = load_schema(&bytes)
+            .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+        out.insert(schema.ty.clone(), schema);
+    }
+    Ok(out)
 }
 
 /// Build the [`ComposeContext`] for the composed workflow.

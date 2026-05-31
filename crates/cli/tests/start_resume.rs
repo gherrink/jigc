@@ -4,12 +4,17 @@
 //! re-composes to pick up context now that the ADR is bound to `task.decision`).
 //!
 //! Drives the built `jigc` binary against a throwaway temp git repo: an intent
-//! mints a task and composes (the `superseded-context` step's
-//! `{{@task.decision.supersedes#decision}}` is **empty** — `task.decision` is
-//! declared-but-unbound). `jigc doc create adr --title "…"` binds the created
+//! mints a task and composes. `jigc doc create adr --title "…"` binds the created
 //! ADR to `task.decision` (records `.jigc/tasks/<id>/roles.json`). On resume,
-//! `jigc start --task <id>` reads that binding back, so the same placeholder now
-//! resolves to the bound ADR's address — observably no longer absent.
+//! `jigc start --task <id>` reads that binding back — the observable proof being
+//! the persisted `roles.json` mapping `decision -> adr:<slug>`.
+//!
+//! The `superseded-context` step's `{{@task.decision.supersedes#decision}}` resolves
+//! over the committed store + edge overlay: with no `supersedes` edge set on the
+//! created ADR, that placeholder is **empty** (the absent-value contract —
+//! `worked-examples.md` → Task 2: "in any task that creates no superseding edge…
+//! the placeholder resolved to empty text"). The full slice-of-a-prior-committed-ADR
+//! path is proven end-to-end in `superseding_decision.rs`.
 //!
 //! No external test crates: the binary path comes from Cargo's
 //! `CARGO_BIN_EXE_jigc`, the temp repo is a real `git init`, and a self-cleaning
@@ -146,9 +151,12 @@ fn resume_re_composes_with_the_created_adr_bound_to_task_decision() {
         "roles.json must bind decision -> the created ADR; got:\n{roles}",
     );
 
-    // 3. Resume: `jigc start --task <id>` reads roles.json back, so the same
-    //    superseded-context placeholder now resolves to the bound ADR — no
-    //    longer Absent.
+    // 3. Resume: `jigc start --task <id>` reads roles.json back. The created ADR is
+    //    bound to `task.decision`, but it supersedes nothing — so the
+    //    `superseded-context` slice (which dereferences `.supersedes`, not the bound
+    //    role itself) resolves to empty text over the committed store + edge overlay.
+    //    No `> adr:` blockquote: the bind is real (roles.json above), the edge is not.
+    //    The full slice-of-a-committed-ADR path is proven in `superseding_decision.rs`.
     let resume = run(repo.path(), home.path(), &["start", "--task", slug]);
     assert!(
         resume.status.success(),
@@ -157,8 +165,8 @@ fn resume_re_composes_with_the_created_adr_bound_to_task_decision() {
     );
     let resume_out = String::from_utf8(resume.stdout).expect("utf-8 stdout");
     assert!(
-        resume_out.contains("> adr:shared-redis-session-cache#decision"),
-        "on resume, task.decision is bound — the superseded-context slice resolves \
-         to the created ADR's address; got:\n{resume_out}",
+        !resume_out.contains("> adr:"),
+        "the bound ADR supersedes nothing — the superseded-context slice is empty (the \
+         absent-value contract), not the bound role's own address; got:\n{resume_out}",
     );
 }
