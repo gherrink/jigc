@@ -10,6 +10,7 @@
 //! resilience and `design/workflow-dialect.md` → Routing footer.
 
 use crate::cli::Format;
+use engine::compose::ComposedWorkflow;
 use engine::result::{Orientation, OrientationView};
 use serde::Serialize;
 
@@ -89,6 +90,38 @@ pub fn orientation_clean(header: &str, orientation: &Orientation) -> String {
     );
     out.push_str(ROUTING_FOOTER);
     out
+}
+
+/// Render a composed workflow to the surface `format` selects: `agent` / `human`
+/// emit the engine's four-class composed text followed by the routing footer
+/// (`design/workflow-dialect.md` → Routing footer — every composed workflow
+/// output in agent-text and human-pretty ends with the one-line footer); `json`
+/// emits the **generic** JSON projection of the [`ComposedWorkflow`] with **no**
+/// footer (consumed by tooling, not the agent's reading flow).
+///
+/// The footer is appended here, in the frontend — never by the engine, which
+/// stays presentation-free (the engine view carries the footerless text). The
+/// composed text already ends with a trailing newline; the footer follows it on
+/// its own line.
+///
+/// Not yet wired into `main`: the `jigc start "<intent>"` dispatch that mints a
+/// task and emits this view lands in a later increment-3 task. Retained behind
+/// `#[allow(dead_code)]` (the established pattern for ahead-of-dispatch render
+/// fns here, alongside `json` / `orientation_agent_text`).
+#[allow(dead_code)]
+pub fn composed(format: Format, view: &ComposedWorkflow) -> String {
+    match format {
+        Format::Json => json(view),
+        Format::Agent | Format::Human => {
+            let mut out = String::with_capacity(view.text.len() + ROUTING_FOOTER.len() + 1);
+            out.push_str(&view.text);
+            if !view.text.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
 }
 
 /// Render the **unset project** orientation (`design/bootstrap.md` → Orientation
@@ -181,6 +214,30 @@ mod tests {
         ");
 
         assert!(text.ends_with(ROUTING_FOOTER));
+    }
+
+    /// A composed workflow rendered to agent-text ends with the routing footer
+    /// (`design/workflow-dialect.md` → Routing footer), appended in the frontend
+    /// after the engine's footerless four-class text. JSON carries none.
+    #[test]
+    fn render_composed_agent_text_ends_with_routing_footer() {
+        let view = ComposedWorkflow {
+            text: "Reason about the change.\nRun: `jigc task finalize add-rate-limiter`\n"
+                .to_string(),
+        };
+
+        let agent = composed(Format::Agent, &view);
+        assert!(agent.ends_with(ROUTING_FOOTER));
+        assert!(agent.contains("Run: `jigc task finalize add-rate-limiter`"));
+
+        // Human renders identically to agent in the MVP (TUI is post-MVP).
+        assert_eq!(composed(Format::Human, &view), agent);
+
+        // JSON is the generic projection of the result type — no footer.
+        let json_out = composed(Format::Json, &view);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, view);
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and

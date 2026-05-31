@@ -469,6 +469,18 @@ fn emit_line(
         return emit_content(&path, ctx);
     }
 
+    // Reason (resolved data-value): a lone bare `{{<path>}}` data-value — the
+    // **scalar** form (`{{task.intent}}` → the scalar string) or a bare path's
+    // **address** (`workflow-dialect.md` → Leaves: bare path = the reference).
+    // It carries no `> ` marker (that is the `@`-Content class); the resolved
+    // text replaces the placeholder inline, emitted as Reason prose. A lone
+    // `{{include: …}}` never reaches here — includes are expanded in phase 7 and
+    // split out of step bodies before emission.
+    if let Some(inner) = parse_lone_placeholder(trimmed) {
+        let path = parse_data_value(inner)?;
+        return emit_bare_data_value(&path, ctx);
+    }
+
     // Reason: bare prose, verbatim.
     Ok(line.to_owned())
 }
@@ -486,6 +498,27 @@ fn emit_content(
             Ok(format!("> {address}"))
         }
         Resolution::Scalar { value } => Ok(format!("> {value}")),
+        Resolution::Absent => Ok(String::new()),
+    }
+}
+
+/// Emit a resolved bare `{{<path>}}` data-value as inline Reason text: a
+/// [`Resolution::Scalar`]'s string (`{{task.intent}}`), or a bare path's
+/// resolved **address** (`workflow-dialect.md` → Leaves: bare path = the
+/// reference). An [`Resolution::Absent`] (declared-but-unbound role) emits an
+/// **empty line** (empty-not-finding). Unlike [`emit_content`] there is no `> `
+/// blockquote — the bare class is the reference/scalar, not the dereferenced
+/// content.
+fn emit_bare_data_value(
+    path: &crate::data_value::Path,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    use crate::data_value::Resolution;
+    match path.resolve(ctx)? {
+        Resolution::Scalar { value } => Ok(value),
+        Resolution::Address { address } | Resolution::Content { address } => {
+            Ok(address.to_string())
+        }
         Resolution::Absent => Ok(String::new()),
     }
 }
@@ -875,6 +908,65 @@ fn split_nested_includes(body: &str) -> (String, Vec<String>) {
         }
     }
     (kept, nested)
+}
+
+/// A fully composed workflow: the ordered, four-class **emitted text** of every
+/// step, placeholders resolved, ready for the agent to read.
+///
+/// This is the phase-9 output (`overrides.md` → Resolution algorithm) — the
+/// *view* a `jigc start "<intent>"` / `jigc workflow <x> --task <id>` call emits
+/// (`workflow-dialect.md` → The composed output is a view: ephemeral, derived,
+/// never persisted). It carries the **footerless** body: the routing footer is a
+/// presentation concern appended by the agent-text / human renderer in `cli`,
+/// never by the engine (the engine stays presentation-free; JSON output carries
+/// no footer — `workflow-dialect.md` → Routing footer). As an engine result
+/// type it is `Serialize`/`Deserialize` (the renderer / JSON contract).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ComposedWorkflow {
+    /// The full ordered four-class emitted text, every placeholder resolved.
+    pub text: String,
+}
+
+/// Compose a workflow end-to-end — phases 7 (include expansion), 8 (placeholder
+/// resolution), and 9 (emit) of `overrides.md` → Resolution algorithm, wired
+/// into one deterministic step (`workflow-dialect.md` → The composed output is a
+/// view).
+///
+/// Expands `def`'s includes against `source` into a flat [`Composition`]
+/// ([`expand_includes`]), then emits each step body to the four-class format
+/// ([`emit_step_body`]) against `ctx` (the live-state feed) and `catalog` (the
+/// command-refs), joining the emitted step texts in include order with a blank
+/// line between steps. The result is the [`ComposedWorkflow`] view — the
+/// footerless emitted text; the agent-text renderer appends the routing footer.
+///
+/// Composition is a **pure function** of `(def, source, catalog, ctx)` — same
+/// resolved cascade in → same workflow out (the determinism boundary; no I/O, no
+/// clock, no LLM). A dangling/cyclic include, an unresolved command-ref, or a
+/// malformed/structurally-invalid data-value surfaces as a blocking [`Finding`].
+pub fn compose(
+    def: &WorkflowDef,
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<ComposedWorkflow, Finding> {
+    let composition = expand_includes(def, source)?;
+    let mut emitted_steps = Vec::with_capacity(composition.steps.len());
+    for step in &composition.steps {
+        emitted_steps.push(emit_step_body(&step.body, ctx, catalog)?);
+    }
+    // Join the per-step emitted texts with a single blank line between steps, so
+    // the composed view reads as one ordered document. Each step body already
+    // carries its own internal newlines; we trim a step's trailing newline before
+    // the separator so the separator is exactly one blank line, not two.
+    let mut text = String::new();
+    for (i, emitted) in emitted_steps.iter().enumerate() {
+        if i > 0 {
+            text.push('\n');
+        }
+        text.push_str(emitted.trim_end_matches('\n'));
+        text.push('\n');
+    }
+    Ok(ComposedWorkflow { text })
 }
 
 #[cfg(test)]
@@ -1324,7 +1416,7 @@ allows-create: [{type: adr, as: decision}]
     /// `crates/cli/pack/steps/locate.yaml` (a plain, front-matter-less step).
     const STEP_LOCATE: &str = "\
 Reason about the change. The intent is:
-{{ @task.intent }}
+{{ task.intent }}
 
 The relevant code paths are not yet known. Inspect the codebase to confirm
 scope before implementing.
@@ -1351,7 +1443,7 @@ reference — make your consequences explain what changes:
         assert_eq!(locate.body, STEP_LOCATE);
         insta::assert_snapshot!(locate.body, @r###"
         Reason about the change. The intent is:
-        {{ @task.intent }}
+        {{ task.intent }}
 
         The relevant code paths are not yet known. Inspect the codebase to confirm
         scope before implementing.
@@ -1644,7 +1736,7 @@ reference — make your consequences explain what changes:
         let locate = &composition.steps[0];
         assert_eq!(locate.id, "locate");
         assert_eq!(locate.body, STEP_LOCATE);
-        assert!(locate.body.contains("{{ @task.intent }}"));
+        assert!(locate.body.contains("{{ task.intent }}"));
 
         // A dangling include id (no step file in the cascade) → typed error.
         let dangling = WorkflowDef {
@@ -1763,6 +1855,127 @@ reference — make your consequences explain what changes:
             let composition = expand_includes(&def, &source).expect("acyclic forest expands");
             let flattened: Vec<String> = composition.steps.iter().map(|s| s.id.clone()).collect();
             proptest::prop_assert_eq!(flattened, ids);
+        }
+    }
+
+    /// The full `single-task` compose context: intent `add rate limiter`, the
+    /// `commit` role bound to the task's own slug (`creates-task` workflow), and
+    /// `decision` **declared but unbound** (no ADR created in this task — so the
+    /// `superseded-context` step's `{{@task.decision.supersedes#decision}}`
+    /// resolves to empty text).
+    fn compose_ctx() -> ComposeContext {
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
+            "commit".to_owned(),
+            Some(crate::address::Address::parse("commit:add-rate-limiter").expect("valid")),
+        );
+        roles.insert("decision".to_owned(), None);
+        ComposeContext {
+            task: TaskRoot {
+                id: "add-rate-limiter".to_owned(),
+                intent: "add rate limiter".to_owned(),
+                roles,
+            },
+        }
+    }
+
+    /// Core done-criterion (`compose_single_task_emits_resolved_view`): composing
+    /// the shipped `single-task` with intent `add rate limiter` yields the full
+    /// four-class emitted text — the four steps (`locate`, `implement`,
+    /// `superseded-context`, `finalize`) in include order, with `{{task.intent}}`
+    /// resolved inline to its scalar, the `{{cli.…}}` command-refs rendered to
+    /// `` Run: `…` `` lines, the `<<author: {{…}}>>` directive's embedded
+    /// placeholder resolved (wrapper preserved), and the unbound
+    /// `{{@task.decision.supersedes#decision}}` line emitted **empty** (no ADR
+    /// bound). The golden pins the whole composed view; the routing footer is the
+    /// renderer's job and is absent from the engine view.
+    #[test]
+    fn compose_single_task_emits_resolved_view() {
+        let def = load_workflow_def(SINGLE_TASK.as_bytes()).expect("loads");
+        let source = single_task_source();
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+
+        // The resolved intent appears inline (scalar, no `> ` blockquote).
+        assert!(
+            composed.text.contains("add rate limiter"),
+            "the resolved intent must appear in the composed view"
+        );
+        // The four steps' content appears in include order.
+        let intent_at = composed
+            .text
+            .find("add rate limiter")
+            .expect("intent present");
+        let author_at = composed
+            .text
+            .find("<<author: commit:add-rate-limiter#summary>>")
+            .expect("implement step present");
+        let finalize_at = composed
+            .text
+            .find("jigc task finalize add-rate-limiter")
+            .expect("finalize step present");
+        assert!(
+            intent_at < author_at && author_at < finalize_at,
+            "steps must compose in include order: locate < implement < finalize"
+        );
+        // The unbound supersedes line is empty (empty-not-finding), never a `> `.
+        assert!(
+            !composed.text.contains("> commit:")
+                && !composed.text.contains("@task.decision.supersedes"),
+            "the unbound supersedes slice must emit empty text, not a finding/blockquote"
+        );
+        // The engine view carries no routing footer (that is the renderer's job).
+        assert!(
+            !composed.text.contains("— jigc ·"),
+            "the engine view must not carry the routing footer"
+        );
+
+        insta::assert_snapshot!(composed.text, @r#"
+        Reason about the change. The intent is:
+        add rate limiter
+
+        The relevant code paths are not yet known. Inspect the codebase to confirm
+        scope before implementing.
+
+        Implement the change directly in the working tree. When done, stage the
+        commit prose:
+
+        Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+        <<author: commit:add-rate-limiter#summary>>
+
+        If a decision is warranted, create an ADR and author its slots:
+
+        Run: `jigc doc create adr --title <TITLE>`
+
+        If your decision supersedes an earlier one, here is that decision for
+        reference — make your consequences explain what changes:
+
+        Validate and commit the task as one logical commit:
+
+        Run: `jigc task finalize add-rate-limiter`
+        "#);
+    }
+
+    proptest::proptest! {
+        /// Determinism (the load-bearing invariant): composing twice with the same
+        /// resolved cascade (`def` + `source` + `catalog`) and the same `ctx` is
+        /// byte-identical — same resolved cascade in → same workflow out. The
+        /// generator varies the intent scalar; the structure is fixed.
+        #[test]
+        fn compose_is_deterministic_for_fixed_cascade_and_ctx(
+            intent in "[a-z][a-z0-9 ]{0,40}"
+        ) {
+            let def = load_workflow_def(SINGLE_TASK.as_bytes()).expect("loads");
+            let source = single_task_source();
+            let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+            let mut ctx = compose_ctx();
+            ctx.task.intent = intent;
+
+            let first = compose(&def, &source, &catalog, &ctx);
+            let second = compose(&def, &source, &catalog, &ctx);
+            proptest::prop_assert_eq!(first, second);
         }
     }
 }

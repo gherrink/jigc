@@ -173,7 +173,7 @@ mod tests {
         let body = read_text(&pack, PackResourceKind::Steps, "locate");
         insta::assert_snapshot!(body, @r###"
         Reason about the change. The intent is:
-        {{ @task.intent }}
+        {{ task.intent }}
 
         The relevant code paths are not yet known. Inspect the codebase to confirm
         scope before implementing.
