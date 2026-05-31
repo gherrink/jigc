@@ -3,8 +3,10 @@
 //!
 //! See `design/workflow-dialect.md` and `design/command-catalog.md`.
 //!
-//! This module currently lands the **first** composition input: parsing one
-//! workflow definition file into an in-memory [`WorkflowDef`]. A definition is a
+//! This module lands the composition **inputs**: parsing one workflow definition
+//! file into a [`WorkflowDef`] and one step definition file into a [`StepDef`]
+//! (`workflow-dialect.md` → On-disk definition format — a step is a file, its id
+//! is the filename, its body is the verbatim prompt). A workflow definition is a
 //! Markdown body under a `---`-fenced front-matter block (`workflow-dialect.md`
 //! → On-disk definition format), where the front-matter is **config-family YAML**
 //! (`when`, `creates-task` default `true`, `allows-create`) and the body is
@@ -68,6 +70,66 @@ struct WorkflowFrontMatter {
 
 fn default_creates_task() -> bool {
     true
+}
+
+/// A parsed step definition: its frozen id (the resource id the pack assigns from
+/// the filename stem) and its verbatim prompt body.
+///
+/// A step is **one file** reusing the document-instance shape — a Markdown body
+/// under an optional `---`-fenced front-matter block (`workflow-dialect.md` →
+/// On-disk definition format). The **id is the filename**, never a front-matter
+/// field; the **body is the prompt** (instruction prose with `{{placeholders}}`,
+/// resolved later in composition). A *plain* step needs no front-matter at all —
+/// it is just a prompt body. The body is carried **byte-for-byte verbatim** (the
+/// post-fence remainder when a front-matter block is present, else the whole
+/// file); placeholder resolution runs over it later, never at load time.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StepDef {
+    /// The frozen step id — the resource id the pack assigns (the filename stem).
+    pub id: String,
+    /// The verbatim prompt body (post-front-matter remainder, byte-for-byte).
+    pub body: String,
+}
+
+/// Parse one step definition's raw bytes into a [`StepDef`] under `id`.
+///
+/// The `id` is the resource id the caller already holds (the pack's filename stem,
+/// per `packsource.rs` → `PackResourceKind::Steps`) — never read from the file.
+/// The body is the prompt, carried **verbatim**: if the file opens with a
+/// `---`-fenced front-matter block (config-family YAML — a step's optional config,
+/// e.g. a `fan-out` marker), the body is the **post-fence remainder, byte-for-byte**;
+/// otherwise the body is the **whole file, byte-for-byte** (a plain step needs no
+/// front-matter). The only failure is non-UTF-8 bytes — a blocking conformance
+/// [`Finding`] (the settled block envelope, `DECISIONS.md` 2026-05-31). The
+/// front-matter is *not* parsed here: this task's single concern is the verbatim
+/// id+body split; consuming a step's config lands when a step kind needs it.
+pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Finding> {
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        Finding::blocking(
+            "workflow-refs.not-utf8",
+            "step definition is not valid UTF-8",
+            Location::at(1, 1),
+        )
+    })?;
+    let body = strip_optional_front_matter(text);
+    Ok(StepDef {
+        id: id.into(),
+        body: body.to_owned(),
+    })
+}
+
+/// Return the step's verbatim body: the post-front-matter remainder when `text`
+/// opens with a `---`-fenced block, else `text` unchanged.
+///
+/// Reuses the one fence recognizer ([`crate::catalog::front_matter`]); the body is
+/// the bytes after the closing `---` fence line's terminating newline (or after a
+/// closing `---` at end-of-file). A file that does not open with a fence has no
+/// front-matter, so its whole content is the body — byte-for-byte.
+fn strip_optional_front_matter(text: &str) -> &str {
+    match split_front_matter(text) {
+        Some((_front, body)) => body,
+        None => text,
+    }
 }
 
 /// Parse one workflow definition's raw bytes into a [`WorkflowDef`].
@@ -308,6 +370,99 @@ allows-create: [{type: adr, as: decision}]
     fn missing_front_matter_is_a_blocking_finding() {
         let err = load_workflow_def(b"{{ include: step:a }}\n").expect_err("no front-matter");
         assert_eq!(err.code, "workflow-refs.missing-front-matter");
+    }
+
+    /// The shipped `locate` step body — kept in sync with
+    /// `crates/cli/pack/steps/locate.yaml` (a plain, front-matter-less step).
+    const STEP_LOCATE: &str = "\
+Reason about the change. The intent is:
+{{ @task.intent }}
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.
+";
+
+    /// The shipped `superseded-context` step body — kept in sync with
+    /// `crates/cli/pack/steps/superseded-context.yaml` (also front-matter-less).
+    const STEP_SUPERSEDED: &str = "\
+If your decision supersedes an earlier one, here is that decision for
+reference — make your consequences explain what changes:
+{{ @task.decision.supersedes#decision }}
+";
+
+    /// Core done-criterion: a front-matter-less step loads with its full body as
+    /// prose, verbatim; a step preceded by a `---`-fenced front-matter block splits
+    /// cleanly, with the body preserved byte-for-byte (the post-fence remainder).
+    /// Goldens over the two shipped plain step bodies pin the canonical bytes.
+    #[test]
+    fn step_def_loads_body_verbatim_with_optional_front_matter() {
+        // A plain step (no leading `---` fence): id is the resource id, body is the
+        // whole input verbatim.
+        let locate = load_step_def("locate", STEP_LOCATE.as_bytes()).expect("loads");
+        assert_eq!(locate.id, "locate");
+        assert_eq!(locate.body, STEP_LOCATE);
+        insta::assert_snapshot!(locate.body, @r###"
+        Reason about the change. The intent is:
+        {{ @task.intent }}
+
+        The relevant code paths are not yet known. Inspect the codebase to confirm
+        scope before implementing.
+        "###);
+
+        let superseded =
+            load_step_def("superseded-context", STEP_SUPERSEDED.as_bytes()).expect("loads");
+        assert_eq!(superseded.id, "superseded-context");
+        assert_eq!(superseded.body, STEP_SUPERSEDED);
+        insta::assert_snapshot!(superseded.body, @r###"
+        If your decision supersedes an earlier one, here is that decision for
+        reference — make your consequences explain what changes:
+        {{ @task.decision.supersedes#decision }}
+        "###);
+
+        // A step *with* front-matter: the body is exactly the post-fence remainder,
+        // byte-for-byte — the front-matter (config-family YAML) is stripped, the
+        // prose preserved verbatim including its internal blank lines.
+        let fenced = load_step_def(
+            "fan-out-step",
+            b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n---\nSpawn a sub-task per item.\n\nEach runs the sub-workflow.\n",
+        )
+        .expect("loads");
+        assert_eq!(fenced.id, "fan-out-step");
+        assert_eq!(
+            fenced.body,
+            "Spawn a sub-task per item.\n\nEach runs the sub-workflow.\n"
+        );
+    }
+
+    proptest::proptest! {
+        /// Body bytes survive load unchanged: for arbitrary UTF-8 prose with no
+        /// leading `---\n` fence, `StepDef.body` equals the input verbatim.
+        #[test]
+        fn front_matter_less_body_survives_load_verbatim(
+            prose in "[^\\x00]{0,200}"
+        ) {
+            // Exclude inputs that happen to open with a front-matter fence — those
+            // are the *with-front-matter* case, exercised separately below.
+            proptest::prop_assume!(!prose.starts_with("---\n"));
+            let def = load_step_def("s", prose.as_bytes()).expect("loads");
+            proptest::prop_assert_eq!(def.body, prose);
+        }
+
+        /// Body bytes survive load unchanged for the *with-front-matter* case: for
+        /// arbitrary prose preceded by a fenced front-matter block, `StepDef.body`
+        /// equals the post-fence remainder verbatim.
+        #[test]
+        fn fenced_body_is_post_fence_remainder_verbatim(
+            body in "[^\\x00]{0,200}"
+        ) {
+            // A body that itself opens with a `---` line would be ambiguous with
+            // the front-matter's closing fence, so skip those; they cannot occur as
+            // the first body content after a real closing fence anyway.
+            proptest::prop_assume!(!body.starts_with("---"));
+            let input = format!("---\nkey: value\n---\n{body}");
+            let def = load_step_def("s", input.as_bytes()).expect("loads");
+            proptest::prop_assert_eq!(def.body, body);
+        }
     }
 
     proptest::proptest! {
