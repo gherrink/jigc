@@ -72,6 +72,214 @@ fn default_creates_task() -> bool {
     true
 }
 
+/// One argument of a catalog command-ref — the three arg kinds of
+/// `command-catalog.md` → The three arg kinds.
+///
+/// - [`CommandArg::Literal`] — a plain YAML string: a fixed token, rendered as
+///   itself (shell-quoted if needed).
+/// - [`CommandArg::From`] — `{ from: <data-value-path> }`: resolved at
+///   compose-time against the workflow's data-value context. The path text is
+///   carried **verbatim** here (the workflow-dialect grammar string); parsing /
+///   resolution is composition's job, not the loader's — this task is load-only.
+/// - [`CommandArg::Agent`] — `{ agent: <name>, hint: <string> }`: left for the
+///   agent to fill at run-time, rendered as an `<NAME>` marker. The `hint` is
+///   **required and non-empty** (the agent needs to know what to substitute —
+///   `command-catalog.md` → Validation).
+///
+/// Any other map shape (an unknown key, a `from` that is not a string, an
+/// `agent` missing or with an empty `hint`) is a malformed entry rejected at
+/// load time. The serde projection is internally tagged so the loaded catalog's
+/// golden distinguishes the three kinds unambiguously.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum CommandArg {
+    /// A fixed literal token.
+    Literal { literal: String },
+    /// A `from:` data-value path, carried verbatim (resolved in composition).
+    From { from: String },
+    /// An `agent:` run-time substitution with a required non-empty hint.
+    Agent { agent: String, hint: String },
+}
+
+/// One catalog command-ref: the `{{cli.<id>}}` entry the workflow's steps
+/// resolve against (`command-catalog.md` → Catalog format).
+///
+/// The `id` is the map key in the [`CommandCatalog`], not a field here. `stdin`
+/// documents what stdin carries (the renderer ignores it); `hint` is the
+/// one-line documentation surfaced via tooling.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CommandRef {
+    /// The executable (typically `jigc`).
+    pub command: String,
+    /// The ordered argument list — literals, `from:`, and `agent:` args.
+    pub args: Vec<CommandArg>,
+    /// Optional documentation of what stdin carries (renderer ignores it).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stdin: Option<String>,
+    /// One-line documentation of the command-ref.
+    pub hint: String,
+}
+
+/// The workflow command catalog: command-refs keyed by `id`.
+///
+/// A [`BTreeMap`] so the serde projection (and any iteration) is deterministic
+/// in id order — the composition-is-deterministic invariant applies to the
+/// loaded catalog too. Built by [`load_command_catalog`] from the pack's
+/// `commands.yaml`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CommandCatalog {
+    /// The command-refs keyed by their `{{cli.<id>}}` id.
+    pub commands: std::collections::BTreeMap<String, CommandRef>,
+}
+
+impl CommandCatalog {
+    /// Look up a command-ref by its `{{cli.<id>}}` id.
+    pub fn get(&self, id: &str) -> Option<&CommandRef> {
+        self.commands.get(id)
+    }
+}
+
+/// Parse `commands.yaml` raw bytes into a [`CommandCatalog`] keyed by id.
+///
+/// The file is the config-family YAML of `command-catalog.md` → Catalog format:
+/// a top-level `commands:` list, each entry `{ id, command, args, stdin?, hint }`.
+/// Each arg is one of the three kinds (`command-catalog.md` → The three arg
+/// kinds); an unknown arg map shape — an unrecognized key, an `agent:` with an
+/// empty `hint` — is a blocking conformance [`Finding`] (the settled block
+/// envelope, `DECISIONS.md` 2026-05-31). A duplicate `id` is likewise rejected:
+/// the catalog is keyed by id, so two entries under one key is a definition bug.
+/// Load-only: `from:` paths are carried verbatim and resolved later in
+/// composition.
+pub fn load_command_catalog(bytes: &[u8]) -> Result<CommandCatalog, Finding> {
+    let text = std::str::from_utf8(bytes).map_err(|_| {
+        Finding::blocking(
+            "workflow-refs.not-utf8",
+            "command catalog is not valid UTF-8",
+            Location::at(1, 1),
+        )
+    })?;
+    let raw: RawCatalog = serde_yaml_ng::from_str(text).map_err(|source| {
+        Finding::blocking(
+            "workflow-refs.malformed-command-catalog",
+            format!("command catalog is malformed: {source}"),
+            Location::at(1, 1),
+        )
+    })?;
+
+    let mut commands = std::collections::BTreeMap::new();
+    for entry in raw.commands {
+        let args = entry
+            .args
+            .into_iter()
+            .map(parse_command_arg)
+            .collect::<Result<Vec<_>, _>>()?;
+        let command_ref = CommandRef {
+            command: entry.command,
+            args,
+            stdin: entry.stdin,
+            hint: entry.hint,
+        };
+        if commands.insert(entry.id.clone(), command_ref).is_some() {
+            return Err(Finding::blocking(
+                "workflow-refs.duplicate-command-id",
+                format!("command catalog has two entries under id `{}`", entry.id),
+                Location::at(1, 1),
+            ));
+        }
+    }
+    Ok(CommandCatalog { commands })
+}
+
+/// Convert one raw YAML arg value into a typed [`CommandArg`], rejecting any
+/// unknown map shape.
+fn parse_command_arg(raw: serde_yaml_ng::Value) -> Result<CommandArg, Finding> {
+    use serde_yaml_ng::Value;
+    match raw {
+        Value::String(literal) => Ok(CommandArg::Literal { literal }),
+        Value::Mapping(map) => parse_arg_mapping(map),
+        other => Err(malformed_arg(format!(
+            "command arg must be a string literal or a `from:`/`agent:` map, got {other:?}"
+        ))),
+    }
+}
+
+/// Convert one `from:`/`agent:` arg mapping into a typed [`CommandArg`].
+///
+/// Exactly one recognized shape is admitted: `{ from: <string> }` or
+/// `{ agent: <string>, hint: <non-empty string> }`. Any other key, a wrong
+/// value type, a missing `hint`, or an empty `hint` is a malformed arg.
+fn parse_arg_mapping(map: serde_yaml_ng::Mapping) -> Result<CommandArg, Finding> {
+    use serde_yaml_ng::Value;
+    let str_at = |map: &serde_yaml_ng::Mapping, key: &str| -> Option<String> {
+        match map.get(Value::from(key)) {
+            Some(Value::String(s)) => Some(s.clone()),
+            _ => None,
+        }
+    };
+
+    if map.contains_key(Value::from("from")) {
+        if map.len() != 1 {
+            return Err(malformed_arg(
+                "a `from:` arg takes only the `from` key".to_owned(),
+            ));
+        }
+        let from = str_at(&map, "from")
+            .ok_or_else(|| malformed_arg("`from:` must be a data-value-path string".to_owned()))?;
+        return Ok(CommandArg::From { from });
+    }
+
+    if map.contains_key(Value::from("agent")) {
+        let unknown = map
+            .keys()
+            .any(|k| !matches!(k, Value::String(s) if s == "agent" || s == "hint"));
+        if unknown {
+            return Err(malformed_arg(
+                "an `agent:` arg takes only the `agent` and `hint` keys".to_owned(),
+            ));
+        }
+        let agent = str_at(&map, "agent")
+            .ok_or_else(|| malformed_arg("`agent:` must be a name string".to_owned()))?;
+        let hint = str_at(&map, "hint").filter(|h| !h.trim().is_empty()).ok_or_else(|| {
+            malformed_arg(format!(
+                "`agent:` arg `{agent}` needs a non-empty `hint` (the agent must know what to substitute)"
+            ))
+        })?;
+        return Ok(CommandArg::Agent { agent, hint });
+    }
+
+    Err(malformed_arg(
+        "command arg map has no recognized `from:` or `agent:` key".to_owned(),
+    ))
+}
+
+/// A blocking conformance finding for a malformed catalog arg.
+fn malformed_arg(message: String) -> Finding {
+    Finding::blocking(
+        "workflow-refs.malformed-command-arg",
+        message,
+        Location::at(1, 1),
+    )
+}
+
+/// The raw `commands:`-list shape of `commands.yaml`, deserialized before arg
+/// kinds are typed. Args land as untyped [`serde_yaml_ng::Value`] so
+/// [`parse_command_arg`] can reject unknown map shapes (serde's derive would
+/// silently mis-route them).
+#[derive(Deserialize)]
+struct RawCatalog {
+    commands: Vec<RawCommandRef>,
+}
+
+#[derive(Deserialize)]
+struct RawCommandRef {
+    id: String,
+    command: String,
+    args: Vec<serde_yaml_ng::Value>,
+    #[serde(default)]
+    stdin: Option<String>,
+    hint: String,
+}
+
 /// A parsed step definition: its frozen id (the resource id the pack assigns from
 /// the filename stem) and its verbatim prompt body.
 ///
@@ -244,6 +452,197 @@ fn parse_include_line(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shipped command catalog bytes — kept in sync with
+    /// `crates/cli/pack/config/commands.yaml` (asserted byte-identical below).
+    const COMMANDS_YAML: &[u8] = include_bytes!("../../cli/pack/config/commands.yaml");
+
+    /// Core done-criterion: the shipped `commands.yaml` loads with all four
+    /// command-refs present and each of the three arg kinds carried correctly —
+    /// a `from:` arg carries its data-value-path string, an `agent:` arg carries
+    /// a non-empty hint, a literal stays a string. The golden pins the full serde
+    /// projection of the loaded catalog (id-keyed, deterministic), so a field
+    /// rename, a reorder, or an arg-kind mis-route breaks it.
+    #[test]
+    fn command_catalog_loads_three_arg_kinds() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // All four shipped command-refs are present under their ids.
+        for id in [
+            "set-commit-summary",
+            "validate-task",
+            "finalize-task",
+            "create-adr",
+        ] {
+            assert!(catalog.get(id).is_some(), "missing command-ref `{id}`");
+        }
+
+        // A `from:` arg carries a data-value path (verbatim string).
+        let set_commit = catalog.get("set-commit-summary").expect("present");
+        assert!(set_commit.args.contains(&CommandArg::From {
+            from: "task.commit#summary".to_owned(),
+        }));
+
+        // An `agent:` arg carries a non-empty hint.
+        let create_adr = catalog.get("create-adr").expect("present");
+        let agent_arg = create_adr
+            .args
+            .iter()
+            .find_map(|a| match a {
+                CommandArg::Agent { agent, hint } => Some((agent, hint)),
+                _ => None,
+            })
+            .expect("create-adr has an agent arg");
+        assert_eq!(agent_arg.0, "title");
+        assert!(!agent_arg.1.trim().is_empty());
+
+        // A literal stays a string.
+        assert!(set_commit.args.contains(&CommandArg::Literal {
+            literal: "doc".to_owned(),
+        }));
+
+        let json = serde_json::to_string_pretty(&catalog).expect("serializes");
+        insta::assert_snapshot!(json, @r#"
+        {
+          "commands": {
+            "create-adr": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "create"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "adr"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--title"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "title",
+                  "hint": "short declarative sentence describing the decision"
+                }
+              ],
+              "hint": "Create a new ADR in the current task."
+            },
+            "finalize-task": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "task"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "finalize"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
+                }
+              ],
+              "hint": "Run validate + commit. One task → one commit."
+            },
+            "set-commit-summary": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "set-slot"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.commit#summary"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--from-file"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "-"
+                }
+              ],
+              "stdin": "the slot prose",
+              "hint": "Stage the commit summary slot from stdin."
+            },
+            "validate-task": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "task"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "validate"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
+                }
+              ],
+              "hint": "Preview validation findings without committing."
+            }
+          }
+        }
+        "#);
+    }
+
+    /// An `agent:` arg with an empty `hint` is a typed malformed-arg error — the
+    /// agent must know what to substitute (`command-catalog.md` → Validation).
+    #[test]
+    fn command_catalog_rejects_agent_arg_with_empty_hint() {
+        let yaml = "\
+commands:
+  - id: bad
+    command: jigc
+    args:
+      - { agent: title, hint: \"   \" }
+    hint: a hint
+";
+        let err = load_command_catalog(yaml.as_bytes()).expect_err("empty hint rejected");
+        assert_eq!(err.code, "workflow-refs.malformed-command-arg");
+        assert_eq!(err.severity, crate::finding::Severity::Blocking);
+    }
+
+    /// An arg map with an unknown key (neither `from:` nor `agent:`) is a typed
+    /// malformed-arg error.
+    #[test]
+    fn command_catalog_rejects_unknown_arg_key() {
+        let yaml = "\
+commands:
+  - id: bad
+    command: jigc
+    args:
+      - { wat: nonsense }
+    hint: a hint
+";
+        let err = load_command_catalog(yaml.as_bytes()).expect_err("unknown arg key rejected");
+        assert_eq!(err.code, "workflow-refs.malformed-command-arg");
+    }
+
+    /// The in-test catalog const stays byte-identical to the shipped pack file.
+    #[test]
+    fn shipped_commands_yaml_is_byte_identical() {
+        let shipped = std::fs::read(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../cli/pack/config/commands.yaml"
+        ))
+        .expect("shipped commands.yaml reads");
+        assert_eq!(COMMANDS_YAML, shipped.as_slice());
+    }
 
     /// The shipped single-task definition bytes — the embedded pack file this
     /// composer loads. Kept in sync with `crates/cli/pack/workflows/single-task.yaml`.
