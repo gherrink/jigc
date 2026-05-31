@@ -259,6 +259,142 @@ fn collision_finding(id: &str) -> Finding {
     }
 }
 
+/// A freshly created doc instance: its minted `address` (`<type>:<slug>`) and the
+/// on-disk `path` of the staged instance in the working area.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CreatedDoc {
+    /// The minted address — `<type>:<slug>` (no fragment; the whole container).
+    pub address: String,
+    /// The staged instance path, `<task_dir>/docs/<type>:<slug>.md`.
+    pub path: PathBuf,
+}
+
+/// **The `create`/provisioning verb** against the task working area — the
+/// structural act the CLI always owns (`design/write-commands.md` → Instance
+/// provisioning: "mint the id … and place it at the schema-defined location";
+/// `design/structural-grammar.md` → IDs: provenance and minting). This is the
+/// **workflow-provisioned** path (the gate is bypassed; see [`create_gated`] for
+/// the agent-initiated path that consults `allows-create`):
+///
+/// 1. **Unknown doctype** — `type_name` not in the cascade-resolved `schemas` set
+///    → reject with a blocking `create.unknown-doctype` [`Finding`]
+///    (`write-commands.md` → The create-gate, enforcement step 3: "fires before the
+///    gate check"). Nothing is created.
+/// 2. **Mint** the frozen content-slug from `id_source` (empty → the type-name
+///    fallback, the same [`mint_id`] discipline as a task), yielding the address
+///    `<type>:<slug>`.
+/// 3. **Serial collision** — an instance of that id already exists in the working
+///    area → reject with a blocking `create.serial-collision` [`Finding`] carrying a
+///    route, never silently suffixed (`structural-grammar.md` → minting: the numeric
+///    suffix is the post-MVP `fan-out`/`join` case only; serial mints reject).
+/// 4. **Provision** the empty instance at `docs/<type>:<slug>.md` via
+///    [`provision_doc`] and return its [`CreatedDoc`] address + path.
+pub fn create(
+    task_dir: &Path,
+    schemas: &std::collections::BTreeMap<String, Schema>,
+    type_name: &str,
+    id_source: &str,
+) -> Result<CreatedDoc, Finding> {
+    // 1. Unknown doctype → reject before anything is minted or placed.
+    let Some(schema) = schemas.get(type_name) else {
+        return Err(unknown_doctype_finding(type_name));
+    };
+
+    // 2. Mint the frozen content-slug (empty id-source → the type-name fallback).
+    let slug = mint_id(id_source, type_name);
+    let address = format!("{type_name}:{slug}");
+    let path = instance_path(task_dir, type_name, &slug);
+
+    // 3. Serial collision → reject, never suffixed, nothing created.
+    if path.exists() {
+        return Err(instance_collision_finding(&address));
+    }
+
+    // 4. Provision the empty instance and return its address + path.
+    let path = provision_doc(task_dir, schema, &slug)
+        .map_err(|err| io_finding(&address, "provision the instance", &err))?;
+    Ok(CreatedDoc { address, path })
+}
+
+/// **The agent-initiated `create`** — [`create`] gated by the workflow's resolved
+/// `allows-create` set (`design/write-commands.md` → The create-gate, enforcement
+/// steps 3 then 5). Ordering matches the design: an **unknown** doctype rejects
+/// *before* the gate (step 3); a **disallowed** doctype (known, but not in `gate`)
+/// rejects with the structured `create.gate-blocked` [`Finding`] (step 5) carrying a
+/// loosen route; an **admitted** doctype proceeds to [`create`].
+///
+/// Commit-only inc-4 scope drives the workflow-provisioned [`create`] path; the
+/// `as:` role binding of an admitted instance to `task.<role>` is inc-5.
+pub fn create_gated(
+    task_dir: &Path,
+    schemas: &std::collections::BTreeMap<String, Schema>,
+    gate: &[crate::compose::AllowsCreate],
+    type_name: &str,
+    id_source: &str,
+) -> Result<CreatedDoc, Finding> {
+    // Step 3: unknown doctype rejects before the gate is consulted.
+    if !schemas.contains_key(type_name) {
+        return Err(unknown_doctype_finding(type_name));
+    }
+    // Step 5: a known-but-disallowed doctype is gate-blocked.
+    if !gate.iter().any(|e| e.doc_type == type_name) {
+        return Err(gate_blocked_finding(type_name, gate));
+    }
+    // Step 4: admitted → mint + provision (the `as:` role bind is inc-5).
+    create(task_dir, schemas, type_name, id_source)
+}
+
+/// The unknown-doctype block: a blocking finding naming the unrecognized type,
+/// routing the agent to list the known types (`write-commands.md` → The create-gate,
+/// step 3). Route-bearing per the settled block-payload shape.
+fn unknown_doctype_finding(type_name: &str) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "create.unknown-doctype".to_string(),
+        message: format!("unknown doctype `{type_name}`"),
+        location: None,
+        route: Some("list the available doctypes with `jigc doc types`".to_string()),
+    }
+}
+
+/// The serial-collision block for an existing instance id: a blocking finding naming
+/// the colliding address, routing the agent to edit the existing instance instead
+/// (`structural-grammar.md` → minting: serial mints reject, never silently reused).
+fn instance_collision_finding(address: &str) -> Finding {
+    Finding {
+        severity: Severity::Blocking,
+        code: "create.serial-collision".to_string(),
+        message: format!("instance `{address}` already exists in the working area"),
+        location: Some(Location {
+            address: Some(address.to_string()),
+            line: 1,
+            col: 1,
+        }),
+        route: Some(format!(
+            "edit the existing `{address}` instead of re-creating it"
+        )),
+    }
+}
+
+/// The structured create-gate block (`write-commands.md` → The create-gate, step 5):
+/// a blocking finding naming the disallowed type + the allowed set, carrying the
+/// loosen `run-command` route (the cascade-set config delta the agent can act on).
+fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) -> Finding {
+    let allowed: Vec<&str> = gate.iter().map(|e| e.doc_type.as_str()).collect();
+    Finding {
+        severity: Severity::Blocking,
+        code: "create.gate-blocked".to_string(),
+        message: format!(
+            "the workflow does not allow `jigc doc create {type_name}` in-task; allowed doctypes: [{}]",
+            allowed.join(", ")
+        ),
+        location: None,
+        route: Some(format!(
+            "to loosen, add `{type_name}` to `allows-create` in project config"
+        )),
+    }
+}
+
 /// A blocking finding for a working-area I/O failure during minting.
 fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
     Finding {
@@ -478,5 +614,127 @@ mod tests {
             write::first_touch_canonicalize(source),
             "copy-in IS first_touch_canonicalize of the source"
         );
+    }
+
+    /// A schema-set keyed type → `Schema`, the engine-domain-empty contract the
+    /// CLI feeds in (mirrors `validate.rs` tests). Only `commit` is known here.
+    fn schemas() -> std::collections::BTreeMap<String, Schema> {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("commit".to_string(), commit_schema());
+        m
+    }
+
+    /// The done-criterion: the `create`/provisioning verb against the working area.
+    /// Creating a **known** type (`commit`) mints `commit:<slug>` and lands the
+    /// empty instance at `docs/commit:<slug>.md`; an **unknown** doctype returns the
+    /// `create.unknown-doctype` blocking finding (message `"unknown doctype \`…\`"`)
+    /// and creates nothing; a **serial collision** on an existing instance id rejects
+    /// per the minting discipline (`write-commands.md` → Instance provisioning / The
+    /// create-gate; `structural-grammar.md` → IDs: provenance and minting).
+    #[test]
+    fn create_provisions_and_rejects_unknown_type() {
+        let root = TempRoot::new("create-verb");
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        let schemas = schemas();
+
+        // Known type → mint `commit:<slug>` + land the empty instance on disk.
+        let created = create(&task_dir, &schemas, "commit", "Add rate limiter")
+            .expect("create of a known type succeeds");
+        assert_eq!(
+            created.address, "commit:add-rate-limiter",
+            "minted address is `<type>:<slug>`"
+        );
+        assert_eq!(
+            created.path,
+            task_dir.join("docs").join("commit:add-rate-limiter.md"),
+            "instance placed at the `:`-joined address slug under docs/"
+        );
+        assert!(created.path.is_file(), "the instance file appears on disk");
+        // The provisioned bytes are the empty commit template (provision_doc's contract).
+        let on_disk = std::fs::read_to_string(&created.path).expect("read created");
+        let expected = write::render(
+            &schemas["commit"],
+            &empty_instance(&schemas["commit"], "add-rate-limiter"),
+        );
+        assert_eq!(on_disk, expected, "created instance is the empty template");
+
+        // Unknown doctype → blocking `create.unknown-doctype`, nothing created.
+        let docs_before = std::fs::read_dir(task_dir.join("docs"))
+            .expect("docs dir")
+            .count();
+        let err =
+            create(&task_dir, &schemas, "spec", "whatever").expect_err("unknown doctype rejects");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(err.code, "create.unknown-doctype");
+        assert!(
+            err.message.contains("unknown doctype") && err.message.contains("spec"),
+            "block names the unknown type: {err:?}"
+        );
+        let docs_after = std::fs::read_dir(task_dir.join("docs"))
+            .expect("docs dir")
+            .count();
+        assert_eq!(
+            docs_before, docs_after,
+            "an unknown-type reject creates no instance"
+        );
+
+        // Serial collision: a second create of the same id rejects, nothing new.
+        let collide = create(&task_dir, &schemas, "commit", "Add rate limiter")
+            .expect_err("a serial collision on an existing instance id rejects");
+        assert_eq!(collide.severity, Severity::Blocking);
+        assert_eq!(collide.code, "create.serial-collision");
+        assert!(
+            collide.message.contains("commit:add-rate-limiter"),
+            "block names the existing instance: {collide:?}"
+        );
+        assert!(
+            collide.route.is_some(),
+            "a serial collision carries a route"
+        );
+    }
+
+    /// The agent-initiated `create` consults the workflow's `allows-create` gate:
+    /// a type **in** the gate proceeds; a type **not** in it is rejected with the
+    /// structured gate-block finding carrying the loosen route; an **unknown** type
+    /// is rejected *before* the gate (`write-commands.md` → The create-gate,
+    /// enforcement steps 3 then 5). Commit-only scope drives the workflow-provisioned
+    /// path above; this pins the gate edge the agent-initiated path consults.
+    #[test]
+    fn create_gated_enforces_the_allows_create_gate() {
+        use crate::compose::AllowsCreate;
+
+        let root = TempRoot::new("create-gated");
+        let task_dir = root.path().join("tasks").join("g");
+        // Pretend both `commit` and `adr` are known; the gate admits only `adr`.
+        let mut all = schemas();
+        all.insert("adr".to_string(), commit_schema()); // shape-irrelevant for the gate edge
+        let gate = [AllowsCreate {
+            doc_type: "adr".to_string(),
+            as_role: "decision".to_string(),
+        }];
+
+        // In the gate → proceeds (mints + provisions).
+        let ok = create_gated(&task_dir, &all, &gate, "adr", "Some Decision")
+            .expect("a gate-admitted type proceeds");
+        assert_eq!(ok.address, "adr:some-decision");
+
+        // Not in the gate → structured gate-block with the loosen route.
+        let blocked = create_gated(&task_dir, &all, &gate, "commit", "x")
+            .expect_err("a disallowed type is gate-blocked");
+        assert_eq!(blocked.severity, Severity::Blocking);
+        assert_eq!(blocked.code, "create.gate-blocked");
+        assert!(
+            blocked.message.contains("commit") && blocked.message.contains("adr"),
+            "the block names the disallowed type and the allowed set: {blocked:?}"
+        );
+        assert!(
+            blocked.route.is_some(),
+            "the gate-block carries a loosen run-command route"
+        );
+
+        // Unknown type → unknown-doctype reject fires *before* the gate.
+        let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x")
+            .expect_err("an unknown type rejects before the gate");
+        assert_eq!(unknown.code, "create.unknown-doctype");
     }
 }
