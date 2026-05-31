@@ -1,0 +1,8 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+feat(gateway): add a per-client rate limiter
+
+Centralize rate limiting at the gateway so each service
+drops its local limiter.

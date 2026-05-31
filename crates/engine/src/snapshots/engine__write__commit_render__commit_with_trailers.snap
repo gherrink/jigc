@@ -1,0 +1,10 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+fix(api): reject the 101st request in a 60s window
+
+The burst allowance was off by one.
+
+Refs: #1242
+Co-Authored-By: Ada <ada@example.com>

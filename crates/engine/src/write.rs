@@ -937,6 +937,115 @@ pub fn value_text(value: &Value) -> String {
 }
 
 // ============================================================================
+// The commit string sink — render a `commit` instance to a git-message string.
+// The canonical writer's sixth caller (`parsing.md` → The write pipeline): not a
+// file, a git-commit message. Schema-driven (the commit schema's section roles
+// drive the mapping) and deterministic — a pure function of `(schema, instance)`,
+// no disk side effects. See `design/finalize.md` → Commit-doc rendering.
+// ============================================================================
+
+/// Render a `commit` [`Instance`] against its `schema` into a git-message string.
+///
+/// The mapping (`design/finalize.md` → Commit-doc rendering, the pack-default
+/// Conventional-Commits shape):
+///
+/// - header `type` field → subject `<type>`; header `scope` field →
+///   subject `(<scope>)`, **omitted entirely when empty** (no empty parens);
+/// - the `summary` slot → the subject text after `: `;
+/// - the `body` slot → body paragraph(s), preceded by one blank line, skipped
+///   when empty;
+/// - the `trailers` repeatable section → footer `key: value` lines, preceded by
+///   one blank line, skipped when empty.
+///
+/// Schema-driven: the section roles are read from `schema` by their well-known
+/// ids (the pack-default commit schema declares `header`/`summary`/`body`/
+/// `trailers`); the renderer reads only sections the schema declares. Returns a
+/// string with no trailing whitespace and no trailing newline (the git-message
+/// is consumed via `-F`, not appended to a file). Deterministic — same
+/// `(schema, instance)` in → identical string out.
+pub fn render_commit_message(schema: &Schema, instance: &Instance) -> String {
+    let header_id = schema
+        .sections
+        .iter()
+        .find(|s| s.header)
+        .map(|s| s.id.as_str());
+    let header = header_id.and_then(|id| section_content(instance, id));
+
+    let type_text = header
+        .and_then(|c| commit_field(c, "type"))
+        .unwrap_or_default();
+    let scope_text = header
+        .and_then(|c| commit_field(c, "scope"))
+        .unwrap_or_default();
+    let summary_text = section_content(instance, "summary")
+        .and_then(|c| c.slot.as_deref())
+        .unwrap_or("")
+        .trim();
+
+    // Subject: `<type>(<scope>): <summary>`, scope-parens omitted when empty.
+    let mut out = String::new();
+    out.push_str(&type_text);
+    if !scope_text.is_empty() {
+        let _ = write!(out, "({scope_text})");
+    }
+    let _ = write!(out, ": {summary_text}");
+
+    // Body: one blank-line gap, skipped when empty.
+    if let Some(body) = section_content(instance, "body").and_then(|c| c.slot.as_deref()) {
+        let body = body.trim();
+        if !body.is_empty() {
+            let _ = write!(out, "\n\n{body}");
+        }
+    }
+
+    // Trailers footer: one blank-line gap, `key: value` per item, skipped when empty.
+    let trailers = trailer_lines(instance);
+    if !trailers.is_empty() {
+        let _ = write!(out, "\n\n{}", trailers.join("\n"));
+    }
+
+    out
+}
+
+/// The scalar text of the named header field of a commit instance, if present and
+/// non-empty after trimming.
+fn commit_field(content: &SectionContent, key: &str) -> Option<String> {
+    content
+        .fields
+        .iter()
+        .find(|f| f.key == key)
+        .map(|f| value_text(&f.value).trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// The trailer footer lines (`key: value`) of a commit instance, in item order.
+/// Each repeatable `trailers` item carries `key` and `value` fields; an item
+/// missing either contributes nothing.
+fn trailer_lines(instance: &Instance) -> Vec<String> {
+    let Some(section) = section_content(instance, "trailers") else {
+        return Vec::new();
+    };
+    section
+        .items
+        .iter()
+        .filter_map(|item| {
+            let key = item_field(item, "key")?;
+            let value = item_field(item, "value")?;
+            Some(format!("{key}: {value}"))
+        })
+        .collect()
+}
+
+/// The scalar text of a repeatable item's named field, if present and non-empty.
+fn item_field(item: &ItemContent, key: &str) -> Option<String> {
+    item.fields
+        .iter()
+        .find(|f| f.key == key)
+        .map(|f| value_text(&f.value).trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+// ============================================================================
 // Generation-and-insert — the other half of the write path. When the structural
 // home a write targets is **absent** (an optional section not yet in the file, an
 // item being added, the first field of a fieldless section), there is no span to
@@ -3187,5 +3296,195 @@ Done.
         assert!(canon.ends_with("\r\n"), "single trailing CRLF");
         assert!(!canon.ends_with("\r\n\r\n"), "exactly one trailing CRLF");
         insta::assert_snapshot!("roundtrip_tricky_fixture", canon);
+    }
+}
+
+#[cfg(test)]
+mod commit_render {
+    //! The commit string sink (`design/finalize.md` → Commit-doc rendering): a
+    //! `commit` instance → a git-message string. Golden (insta) over each rendered
+    //! variant pins the subject/body/trailer shape — empty-scope omits the parens,
+    //! sections are blank-line-separated, no trailing whitespace. A proptest asserts
+    //! the renderer is a pure function of `(schema, instance)`.
+
+    use super::*;
+    use crate::field_block::Value;
+    use crate::schema::{Schema, load_schema};
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+
+    fn commit_schema() -> Schema {
+        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+    }
+
+    fn scalar(key: &str, value: &str) -> Field {
+        Field {
+            key: key.to_string(),
+            value: Value::Scalar(value.to_string()),
+        }
+    }
+
+    /// Build a commit instance from its parts: a `type`, an optional `scope`, a
+    /// `summary`, an optional `body`, and an ordered list of `(key, value)` trailers.
+    fn commit_instance(
+        ty: &str,
+        scope: Option<&str>,
+        summary: &str,
+        body: Option<&str>,
+        trailers: &[(&str, &str)],
+    ) -> Instance {
+        let mut header_fields = vec![scalar("type", ty)];
+        if let Some(scope) = scope {
+            header_fields.push(scalar("scope", scope));
+        }
+        let items: Vec<ItemContent> = trailers
+            .iter()
+            .map(|(k, v)| ItemContent {
+                id: crate::slug::slugify(k),
+                title: (*k).to_string(),
+                slot: None,
+                fields: vec![scalar("key", k), scalar("value", v)],
+            })
+            .collect();
+        Instance {
+            title: summary.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "header".to_string(),
+                    fields: header_fields,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "summary".to_string(),
+                    slot: Some(summary.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "body".to_string(),
+                    slot: body.map(str::to_string),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "trailers".to_string(),
+                    items,
+                    ..Default::default()
+                },
+            ],
+        }
+    }
+
+    /// (a) type + summary only: the subject line `<type>: <summary>` with **no**
+    /// scope parens, no body, no trailers — and no trailing whitespace/newline.
+    #[test]
+    fn commit_renders_type_and_summary() {
+        let instance = commit_instance("feat", None, "add a per-client rate limiter", None, &[]);
+        let out = render_commit_message(&commit_schema(), &instance);
+        assert_eq!(out, "feat: add a per-client rate limiter");
+        insta::assert_snapshot!("commit_type_summary", out);
+    }
+
+    /// (b) type + scope + summary + body: subject carries `(<scope>)`, the body
+    /// follows after exactly one blank line.
+    #[test]
+    fn commit_renders_type_scope_summary_body() {
+        let instance = commit_instance(
+            "feat",
+            Some("gateway"),
+            "add a per-client rate limiter",
+            Some(
+                "Centralize rate limiting at the gateway so each service\ndrops its local limiter.",
+            ),
+            &[],
+        );
+        let out = render_commit_message(&commit_schema(), &instance);
+        assert_eq!(
+            out,
+            "feat(gateway): add a per-client rate limiter\n\n\
+             Centralize rate limiting at the gateway so each service\n\
+             drops its local limiter."
+        );
+        insta::assert_snapshot!("commit_type_scope_summary_body", out);
+    }
+
+    /// (c) + trailers: the footer follows the body after one blank line, one
+    /// `key: value` line per trailer in item order.
+    #[test]
+    fn commit_renders_with_trailers() {
+        let instance = commit_instance(
+            "fix",
+            Some("api"),
+            "reject the 101st request in a 60s window",
+            Some("The burst allowance was off by one."),
+            &[
+                ("Refs", "#1242"),
+                ("Co-Authored-By", "Ada <ada@example.com>"),
+            ],
+        );
+        let out = render_commit_message(&commit_schema(), &instance);
+        assert_eq!(
+            out,
+            "fix(api): reject the 101st request in a 60s window\n\n\
+             The burst allowance was off by one.\n\n\
+             Refs: #1242\n\
+             Co-Authored-By: Ada <ada@example.com>"
+        );
+        insta::assert_snapshot!("commit_with_trailers", out);
+    }
+
+    /// The done-criterion test name: the three variants share one assertion that
+    /// empty-scope omits parens, sections are blank-line-separated, and nothing
+    /// trails. Each rendered message has no trailing whitespace and no `()`.
+    #[test]
+    fn commit_renders_to_git_message() {
+        let no_scope = commit_instance("docs", None, "update the readme", None, &[]);
+        let rendered_no_scope = render_commit_message(&commit_schema(), &no_scope);
+        assert!(
+            !rendered_no_scope.contains('('),
+            "empty scope must omit the parens entirely"
+        );
+
+        let full = commit_instance(
+            "feat",
+            Some("gateway"),
+            "rate-limit",
+            Some("Body."),
+            &[("Refs", "#1")],
+        );
+        let rendered_full = render_commit_message(&commit_schema(), &full);
+        // Blank-line separation between subject, body, and footer.
+        assert!(rendered_full.contains("rate-limit\n\nBody."));
+        assert!(rendered_full.contains("Body.\n\nRefs: #1"));
+
+        for rendered in [&rendered_no_scope, &rendered_full] {
+            assert_eq!(
+                rendered.as_str(),
+                rendered.trim_end(),
+                "no trailing whitespace/newline"
+            );
+            for line in rendered.lines() {
+                assert_eq!(line, line.trim_end(), "no trailing whitespace on any line");
+            }
+        }
+    }
+
+    use proptest::prelude::*;
+
+    proptest! {
+        /// The renderer is a **pure function of (schema, instance)**: the same
+        /// instance rendered twice yields an identical string (no hidden state, no
+        /// nondeterminism). The determinism contract of the string sink.
+        #[test]
+        fn render_is_pure(
+            ty in prop::sample::select(vec!["feat", "fix", "docs", "chore"]),
+            scope in proptest::option::of("[a-z][a-z0-9-]{0,10}"),
+            summary in "[a-zA-Z][a-zA-Z0-9 ]{0,40}",
+            body in proptest::option::of("[a-zA-Z][a-zA-Z0-9 .]{0,40}"),
+        ) {
+            let instance = commit_instance(ty, scope.as_deref(), &summary, body.as_deref(), &[]);
+            let schema = commit_schema();
+            let first = render_commit_message(&schema, &instance);
+            let second = render_commit_message(&schema, &instance);
+            prop_assert_eq!(first, second);
+        }
     }
 }
