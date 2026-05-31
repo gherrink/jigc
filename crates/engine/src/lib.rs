@@ -24,6 +24,7 @@ pub mod registry;
 pub mod schema;
 pub mod slug;
 pub mod state;
+pub mod store;
 pub mod validate;
 pub mod write;
 
