@@ -386,6 +386,172 @@ fn is_bare_char(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || "._:#/=@+-".contains(ch)
 }
 
+/// Emit one composed step body into the four-class emitted format — phases 8
+/// (placeholder resolution) and 9 (line emission) of `overrides.md` →
+/// Resolution algorithm, for one step body.
+///
+/// The body is walked line-by-line; each line maps to exactly one of the four
+/// classes (`workflow-dialect.md` → Emitted format — the four classes, the four
+/// rules):
+///
+/// - **Run** — a line that is a lone `{{cli.<id>}}` placeholder resolves the
+///   command-ref in `catalog` via [`render_command`] and emits
+///   `` Run: `<cmd>` `` (the command in backticks, machine-extractable by
+///   `` ^Run: `(.+)`$ ``).
+/// - **Content** — a line that is a lone `{{@<path>}}` data-value resolves via
+///   the seq-5 resolver; a bound resolution ([`Resolution::Content`] /
+///   [`Resolution::Address`]) emits a `> ` Markdown blockquote of the resolved
+///   address; an [`Resolution::Absent`] (a declared-but-unbound role) emits an
+///   **empty line** — empty-not-finding (`workflow-dialect.md` → Empty vs
+///   unresolvable).
+/// - **Author** — a line carrying `<<author: {{<path>}}>>` keeps the `<<…>>`
+///   wrapper unchanged and resolves only the **embedded** `{{<path>}}` to its
+///   address, emitting `<<author: <address>>` (rule 3: the wrapper survives
+///   composition; only the placeholder resolves).
+/// - **Reason** — everything else is bare prose, emitted verbatim (rule 4: the
+///   default, no marker, no overhead).
+///
+/// Emission is a **pure function** of `(body, ctx, catalog)` — same inputs always
+/// yield the same text (the determinism boundary; no I/O, clock, or LLM). A
+/// command-ref id absent from `catalog`, a `{{cli.…}}`/`{{@…}}`/`<<author:>>`
+/// whose data-value fails to resolve, surfaces the resolver/catalog's blocking
+/// [`Finding`].
+pub fn emit_step_body(
+    body: &str,
+    ctx: &crate::data_value::ComposeContext,
+    catalog: &CommandCatalog,
+) -> Result<String, Finding> {
+    let trailing_newline = body.ends_with('\n');
+    let mut out_lines = Vec::new();
+    for line in body.lines() {
+        out_lines.push(emit_line(line, ctx, catalog)?);
+    }
+    let mut emitted = out_lines.join("\n");
+    if trailing_newline {
+        emitted.push('\n');
+    }
+    Ok(emitted)
+}
+
+/// Emit one body line into its four-class form.
+fn emit_line(
+    line: &str,
+    ctx: &crate::data_value::ComposeContext,
+    catalog: &CommandCatalog,
+) -> Result<String, Finding> {
+    let trimmed = line.trim();
+
+    // Run: a lone `{{cli.<id>}}` placeholder.
+    if let Some(id) = parse_cli_placeholder(trimmed) {
+        let cmd = catalog.get(id).ok_or_else(|| {
+            Finding::blocking(
+                "workflow-refs.command-ref-resolves",
+                format!("command-ref `{{{{cli.{id}}}}}` resolves to no catalog entry"),
+                Location::at(1, 1),
+            )
+        })?;
+        let rendered = render_command(cmd, ctx)?;
+        return Ok(format!("Run: `{rendered}`"));
+    }
+
+    // Author: a `<<author: {{<path>}}>>` directive — wrapper preserved, only the
+    // embedded `{{<path>}}` resolved to its address.
+    if let Some(emitted) = emit_author_line(trimmed, ctx)? {
+        return Ok(emitted);
+    }
+
+    // Content: a lone `{{@<path>}}` data-value placeholder.
+    if let Some(inner) = parse_lone_placeholder(trimmed)
+        && let Some(path_text) = inner.strip_prefix('@')
+    {
+        // Re-attach the `@` the resolver expects.
+        let path = parse_data_value(&format!("@{path_text}"))?;
+        return emit_content(&path, ctx);
+    }
+
+    // Reason: bare prose, verbatim.
+    Ok(line.to_owned())
+}
+
+/// Emit a resolved `{{@<path>}}` content line: a `> ` blockquote of the resolved
+/// address, or an **empty line** when the path resolves to
+/// [`Resolution::Absent`] (a declared-but-unbound role; empty-not-finding).
+fn emit_content(
+    path: &crate::data_value::Path,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    use crate::data_value::Resolution;
+    match path.resolve(ctx)? {
+        Resolution::Content { address } | Resolution::Address { address } => {
+            Ok(format!("> {address}"))
+        }
+        Resolution::Scalar { value } => Ok(format!("> {value}")),
+        Resolution::Absent => Ok(String::new()),
+    }
+}
+
+/// If `trimmed` is a `<<author: {{<path>}}>>` directive, resolve the embedded
+/// `{{<path>}}` to its address and return `<<author: <address>>` — the `<<…>>`
+/// wrapper preserved, only the placeholder resolved (rule 3). Returns `Ok(None)`
+/// when the line is not an author directive (so the caller falls through).
+fn emit_author_line(
+    trimmed: &str,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<Option<String>, Finding> {
+    use crate::data_value::Resolution;
+    let Some(inner) = trimmed
+        .strip_prefix("<<author:")
+        .and_then(|s| s.strip_suffix(">>"))
+    else {
+        return Ok(None);
+    };
+    let inner = inner.trim();
+    let Some(placeholder) = parse_lone_placeholder(inner) else {
+        return Ok(None);
+    };
+    let path = parse_data_value(placeholder)?;
+    let address = match path.resolve(ctx)? {
+        Resolution::Address { address } | Resolution::Content { address } => address.to_string(),
+        Resolution::Scalar { value } => value,
+        Resolution::Absent => String::new(),
+    };
+    Ok(Some(format!("<<author: {address}>>")))
+}
+
+/// Parse a data-value path string into a [`Path`](crate::data_value::Path),
+/// mapping a parse failure to a blocking `workflow-refs.malformed-data-value`
+/// [`Finding`].
+fn parse_data_value(text: &str) -> Result<crate::data_value::Path, Finding> {
+    crate::data_value::Path::parse(text).map_err(|source| {
+        Finding::blocking(
+            "workflow-refs.malformed-data-value",
+            format!("data-value path `{text}` is malformed: {source}"),
+            Location::at(1, 1),
+        )
+    })
+}
+
+/// If `trimmed` is a lone `{{ … }}` placeholder, return its inner (trimmed)
+/// text; else `None`. A "lone" placeholder is the whole (trimmed) line — an
+/// inline `{{…}}` inside prose is not a class line.
+fn parse_lone_placeholder(trimmed: &str) -> Option<&str> {
+    trimmed
+        .strip_prefix("{{")?
+        .strip_suffix("}}")
+        .map(str::trim)
+}
+
+/// If `trimmed` is a lone `{{ cli.<id> }}` placeholder, return `<id>`; else
+/// `None`. The id is the bare command-ref id (no further dots/whitespace).
+fn parse_cli_placeholder(trimmed: &str) -> Option<&str> {
+    let inner = parse_lone_placeholder(trimmed)?;
+    let id = inner.strip_prefix("cli.")?.trim();
+    if id.is_empty() || id.contains(char::is_whitespace) {
+        return None;
+    }
+    Some(id)
+}
+
 /// A parsed step definition: its frozen id (the resource id the pack assigns from
 /// the filename stem) and its verbatim prompt body.
 ///
@@ -714,6 +880,127 @@ fn split_nested_includes(body: &str) -> (String, Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `ComposeContext` for emitter tests: `task.intent` bound, `commit` bound
+    /// (a `creates-task` workflow's commit doc is the task's own slug), and
+    /// `decision` **declared but unbound** (the agent has not yet created the ADR).
+    fn emit_ctx() -> crate::data_value::ComposeContext {
+        let mut roles = std::collections::BTreeMap::new();
+        roles.insert(
+            "commit".to_owned(),
+            Some(crate::address::Address::parse("commit:emit-four-classes").expect("valid")),
+        );
+        roles.insert("decision".to_owned(), None);
+        crate::data_value::ComposeContext {
+            task: crate::data_value::TaskRoot {
+                id: "emit-four-classes".to_owned(),
+                intent: "emit a composed step body to the four-class format".to_owned(),
+                roles,
+            },
+        }
+    }
+
+    /// Core done-criterion (`emit_four_classes`): a fixture step body carrying one
+    /// `{{cli.…}}`, one bound `{{@…}}`, one unbound `{{@…}}`, one
+    /// `<<author: {{…}}>>`, and plain prose emits exactly the four conventions —
+    /// a `` Run: `<cmd>` `` line, a `> ` blockquote, an empty line (the unbound
+    /// `@` → empty-not-finding), an `<<author: <address>>` directive (wrapper
+    /// preserved, embedded `{{…}}` resolved), and bare Reason prose. The golden
+    /// pins the emitted bytes.
+    #[test]
+    fn emit_four_classes() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = emit_ctx();
+        let body = "\
+Implement the change directly. When done, stage the commit prose:
+{{ cli.set-commit-summary }}
+<<author: {{ task.commit#summary }}>>
+
+Here is the bound commit content:
+{{ @task.commit#summary }}
+
+If your decision supersedes an earlier one, here is that decision:
+{{ @task.decision.supersedes#decision }}
+";
+        let emitted = emit_step_body(body, &ctx, &catalog).expect("emits");
+
+        // The Run line matches the strict line-pattern `^Run: ` + backticked cmd.
+        let run_line = emitted
+            .lines()
+            .find(|l| l.starts_with("Run: "))
+            .expect("a Run line is emitted");
+        assert!(
+            run_line.starts_with("Run: `") && run_line.ends_with('`'),
+            "Run line must be `^Run: `(.+)`$`, got {run_line:?}"
+        );
+        assert_eq!(
+            run_line,
+            "Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file -`"
+        );
+
+        // The `<<author:>>` wrapper survives; only the embedded `{{…}}` resolves.
+        assert!(emitted.contains("<<author: commit:emit-four-classes#summary>>"));
+
+        insta::assert_snapshot!(emitted, @r#"
+        Implement the change directly. When done, stage the commit prose:
+        Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file -`
+        <<author: commit:emit-four-classes#summary>>
+
+        Here is the bound commit content:
+        > commit:emit-four-classes#summary
+
+        If your decision supersedes an earlier one, here is that decision:
+
+        "#);
+    }
+
+    /// The unbound-`@` → empty-line case in isolation (empty-not-finding): a
+    /// declared-but-unbound `@`-path resolves to [`Resolution::Absent`], which the
+    /// emitter writes as an empty line — never a `> ` blockquote, never a finding.
+    #[test]
+    fn emit_unbound_at_is_empty_line() {
+        let ctx = emit_ctx();
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let emitted = emit_step_body(
+            "before\n{{ @task.decision.supersedes#decision }}\nafter\n",
+            &ctx,
+            &catalog,
+        )
+        .expect("emits");
+        insta::assert_snapshot!(emitted, @r###"
+        before
+
+        after
+        "###);
+    }
+
+    proptest::proptest! {
+        /// Emission is a **pure function** of `(body, ctx, catalog)`: emitting the
+        /// same inputs twice yields identical text (the determinism boundary). The
+        /// generator interleaves the four line classes in arbitrary order.
+        #[test]
+        fn emit_is_pure(
+            lines in proptest::collection::vec(
+                proptest::sample::select(vec![
+                    "plain reason prose",
+                    "{{ cli.finalize-task }}",
+                    "{{ @task.commit#summary }}",
+                    "{{ @task.decision.supersedes#decision }}",
+                    "<<author: {{ task.commit#summary }}>>",
+                ]),
+                0..12,
+            )
+        ) {
+            let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+            let ctx = emit_ctx();
+            let body = lines.join("\n");
+            let first = emit_step_body(&body, &ctx, &catalog);
+            let second = emit_step_body(&body, &ctx, &catalog);
+            proptest::prop_assert_eq!(first, second);
+        }
+    }
 
     /// The shipped command catalog bytes — kept in sync with
     /// `crates/cli/pack/config/commands.yaml` (asserted byte-identical below).
