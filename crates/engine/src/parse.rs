@@ -551,7 +551,11 @@ fn is_near(a: &str, b: &str) -> bool {
         return true;
     }
     let (long, short) = if a.len() >= b.len() { (a, b) } else { (b, a) };
-    long.len() - short.len() <= 1 && long.starts_with(&short[..short.len().min(3)])
+    // Char-boundary-safe prefix: slicing `short[..3]` would panic mid-codepoint on
+    // a non-ASCII key (the OOB-edit input class this parser must turn into findings,
+    // never a panic). Take up to 3 *chars*.
+    let prefix: String = short.chars().take(3).collect();
+    long.len() - short.len() <= 1 && long.starts_with(&prefix)
 }
 
 /// Read a trailing field group in `[from, end)`, if present: a `<!-- fields -->`
@@ -1257,6 +1261,49 @@ Fine.
             .find(|f| f.code == "conformance.unknown-field")
             .expect("an unknown-field finding");
         insta::assert_debug_snapshot!("unknown_field_key", f);
+    }
+
+    /// Regression: the typo-hint prefix must never slice through a multi-byte UTF-8
+    /// char. `"stéu"` (5 bytes) is the shorter operand and its 2-byte `é` straddles
+    /// byte index 3 — the exact input that panicked the old `short[..3]` slice.
+    #[test]
+    fn is_near_tolerates_non_ascii_keys() {
+        assert!(!is_near("stéu", "status"));
+        assert!(!is_near("status", "stéu"));
+        // ASCII typo hints still resolve.
+        assert!(is_near("statuss", "status"));
+    }
+
+    /// Regression (end-to-end): an out-of-band edit introducing a non-ASCII unknown
+    /// field key re-parses to a located finding, never a panic — the parser's
+    /// "every mismatch is a finding, never a panic" contract over OOB human edits.
+    #[test]
+    fn non_ascii_unknown_field_key_yields_finding_not_panic() {
+        let src = "\
+---
+status: accepted
+stéu: oops
+---
+
+# A decision
+
+## Context
+Forces.
+
+## Decision
+We decided.
+
+## Consequences
+Fine.
+";
+        let findings = parse_sections(&adr_schema(), src)
+            .expect_err("non-ASCII unknown field key blocks, not panics");
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "conformance.unknown-field"),
+            "expected an unknown-field finding, got: {findings:?}"
+        );
     }
 
     /// Conformance golden: a repeatable `###` item with no `{#id}` anchor → a
