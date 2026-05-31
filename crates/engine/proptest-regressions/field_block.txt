@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 03b65319cdbdc0e9544d9d903d8616e162d45382a92662662f87294951221d30 # shrinks to fields = [Field { key: "A", value: Scalar("0a") }]
