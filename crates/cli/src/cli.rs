@@ -7,6 +7,7 @@
 //! `implementation/module-layout.md` → Renderers (format selection) and
 //! `design/write-commands.md` → Task origination (bare `jigc start`).
 
+use crate::doc::DocCommand;
 use crate::orient;
 use crate::render;
 use crate::start;
@@ -47,6 +48,13 @@ pub enum Command {
         /// compose the default workflow with `{{task.intent}}` = `<intent>`.
         intent: Option<String>,
     },
+
+    /// The write-path surface — `jigc doc <verb> <addr>` over the active task's
+    /// working area (`design/write-commands.md` → The verbs).
+    Doc {
+        #[command(subcommand)]
+        verb: DocCommand,
+    },
 }
 
 impl Cli {
@@ -60,8 +68,24 @@ impl Cli {
             Command::Start {
                 intent: Some(intent),
             } => run_compose(self.format, &intent),
+            Command::Doc { verb } => run_doc(verb),
         }
     }
+}
+
+/// Dispatch a `jigc doc <verb>` write against the active task in the current
+/// working directory. The `doc` surface is agent-facing structured I/O (the
+/// staged buffer + the route on a block); it does not render through the global
+/// `--format` view path (`design/write-commands.md` → The verbs).
+fn run_doc(verb: DocCommand) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    verb.dispatch(&cwd)
 }
 
 /// Mint a task from `intent` and compose the cascade's default workflow against

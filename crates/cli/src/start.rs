@@ -54,6 +54,72 @@ pub fn mint_in_repo(start: &Path, intent: &str) -> Result<MintedTask> {
     state::mint_task(&jigc_root, intent, FALLBACK_TYPE, base).map_err(finding_to_err)
 }
 
+/// Provision the task's workflow-provisioned **commit** doc into the working
+/// area as a **fillable form**: the empty skeleton with every schema header field
+/// pre-stamped as an empty `key:` line, materialized at
+/// `<task_dir>/docs/commit:<id>.md`. This is the deterministic structural act the
+/// workflow owns — the agent then fills the `summary`/`body` slots (`set-slot`)
+/// and splices the `type`/`scope` fields (`set-field`) into the present lines.
+///
+/// The header-field lines are pre-stamped because the engine's `set-field` is a
+/// **surgical splice** of a present value line ([`engine::write::set_field`]):
+/// front-matter has no generate-a-new-line path (the header is not a generatable
+/// body section), so the form must carry the line for the agent to fill. (Body
+/// slots provision empty and `set-slot` generates the section's home on demand —
+/// `write-commands.md` → Instance provisioning; `DECISIONS.md` 2026-05-31 → inc-4
+/// fillable-form provisioning.)
+fn provision_commit_doc(pack: &EmbeddedPack, minted: &MintedTask) -> Result<()> {
+    let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
+    let schema = engine::schema::load_schema(&bytes)
+        .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))?;
+    let instance = fillable_form(&schema, &minted.id);
+    let path = state::instance_path(&minted.dir, &schema.ty, &minted.id);
+    let rendered = engine::write::render(&schema, &instance);
+    state::persist(&path, rendered.as_bytes())
+        .with_context(|| format!("could not provision the commit doc for `{}`", minted.id))?;
+    Ok(())
+}
+
+/// Build the **fillable** empty instance for `schema`: the H1 title is the task id,
+/// every body section is content-free, and the header section's declared fields are
+/// pre-stamped as empty `key:` lines (the surface `set-field` splices). The empty
+/// value is `Value::Scalar("")`, which renders the canonical `key:` line.
+fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::Instance {
+    use engine::field_block::{Field, Value};
+    use engine::schema::SectionBody;
+    use engine::write::SectionContent;
+
+    let sections = schema
+        .sections
+        .iter()
+        .map(|section| {
+            let fields = if section.header {
+                match &section.body {
+                    SectionBody::Simple { fields, .. } => fields
+                        .iter()
+                        .map(|f| Field {
+                            key: f.id.clone(),
+                            value: Value::Scalar(String::new()),
+                        })
+                        .collect(),
+                    SectionBody::Repeatable { .. } => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
+            SectionContent {
+                id: section.id.clone(),
+                fields,
+                ..Default::default()
+            }
+        })
+        .collect();
+    engine::write::Instance {
+        title: slug.to_string(),
+        sections,
+    }
+}
+
 /// The cascade knob the default-workflow id is read from
 /// (`design/overrides.md`; `design/write-commands.md` → Task origination: the
 /// `default-workflow: <id>` cascade knob the front door composes). The MVP pack
@@ -92,6 +158,13 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     // so the front door mints in one call. Minting after the definition loads so
     // a malformed pack never leaves a task dir behind.
     let minted = mint_in_repo(&repo_root, intent)?;
+
+    // Workflow-provisioned instance — a `creates-task` work-workflow provisions
+    // the task's commit doc (the sink of its `<<author: {{task.commit#summary}}>>`
+    // slot), so the agent only fills slots (`write-commands.md` → Instance
+    // provisioning → Workflow-provisioned). The empty skeleton stages here, ready
+    // for the `jigc doc set-field`/`set-slot` write loop.
+    provision_commit_doc(&pack, &minted)?;
 
     let ctx = build_context(&minted.id, intent, &def);
     let source = PackStepSource { pack: &pack };

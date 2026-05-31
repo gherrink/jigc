@@ -8,6 +8,7 @@
 // in increment 6; it is a `//!`-only stub until then.
 mod adapter;
 mod cli;
+mod doc;
 mod locate;
 mod orient;
 mod pack;
