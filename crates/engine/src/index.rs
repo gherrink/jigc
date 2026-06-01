@@ -937,6 +937,219 @@ Slightly higher write latency for resilience.
 }
 
 #[cfg(test)]
+mod commit_overlay_tests {
+    //! The **first transient-source edge** (`DECISIONS.md` 2026-06-01 → M3 Increment 1
+    //! T4): a working-area `commit` instance whose `implements` ref points at a
+    //! `spec:<slug>` emits a forward edge into the overlay, and `ref_resolves` walks the
+    //! committed ∪ working surfaces exactly as the `supersedes` overlay tests do — the
+    //! only new surface is a `commit`-typed `from`. PASSES when the committed
+    //! `specs/<slug>.md` exists; BLOCKS when the target dangles.
+
+    use super::*;
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+
+    /// A throwaway directory that removes itself on drop.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-commit-overlay-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp root");
+            TempRoot(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// `commit` (transient source) + `spec` (committed target type) — the two schemas
+    /// this transient-source edge spans.
+    fn schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "commit".to_string(),
+            crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads"),
+        );
+        m.insert(
+            "spec".to_string(),
+            crate::schema::load_schema(SPEC_YAML).expect("spec.yaml loads"),
+        );
+        m
+    }
+
+    /// A working-area `commit` instance whose `header` carries `implements: <to>` —
+    /// front matter (`type` + the `implements` ref), the `# H1`, then the slot
+    /// sections. Mirrors the canonical commit render shape.
+    fn commit_implementing(to: &str) -> String {
+        format!(
+            "\
+---
+type: feat
+implements: {to}
+---
+
+# Add the rate limiter
+
+## Summary
+
+Add a per-client rate limit at the gateway.
+
+## Body
+
+Centralize limiting at the gateway.
+
+## Trailers
+"
+        )
+    }
+
+    /// A committed `spec` instance (the `implements` target). It carries no outgoing
+    /// ref, so it contributes no edges; only its existence at the canonical path matters
+    /// for `ref_resolves` surface a.
+    const SPEC_BODY: &str = "\
+---
+---
+
+# Rate limiting
+
+## Goal
+
+Bound per-client request rate at the gateway.
+
+## Context
+
+Unbounded clients exhaust gateway capacity.
+
+## Criteria
+";
+
+    /// Commit a `spec` at its canonical `specs/<slug>.md`.
+    fn commit_spec(repo_root: &Path, slug: &str) {
+        let dir = repo_root.join("specs");
+        std::fs::create_dir_all(&dir).expect("mk specs/");
+        std::fs::write(dir.join(format!("{slug}.md")), SPEC_BODY).expect("write spec");
+    }
+
+    /// Stage the working-area `commit` at `<task_dir>/docs/commit:<id>.md`.
+    fn stage_commit(task_dir: &Path, id: &str, implements: &str) {
+        let docs = task_dir.join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(
+            docs.join(format!("commit:{id}.md")),
+            commit_implementing(implements),
+        )
+        .expect("stage commit");
+    }
+
+    /// PASSES (surface a): the transient `commit` source's `implements` edge points at
+    /// a committed `spec:rate-limiting`; the overlay layers the edge over the (empty)
+    /// committed index and `ref_resolves` returns no findings.
+    #[test]
+    fn ref_resolves_passes_when_spec_target_committed() {
+        let repo = TempRoot::new("pass-repo");
+        let task = TempRoot::new("pass-task");
+        commit_spec(repo.path(), "rate-limiting");
+        stage_commit(task.path(), "t-001", "spec:rate-limiting");
+
+        // The committed index has no edges (the spec carries no outgoing ref).
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        assert!(committed.edges.is_empty(), "the spec has no outgoing ref");
+
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+        assert_eq!(
+            overlay.task_edges,
+            vec![Edge {
+                from: "commit:t-001".to_string(),
+                relation: "implements".to_string(),
+                to: "spec:rate-limiting".to_string(),
+            }],
+            "the overlay layers the transient commit's implements edge"
+        );
+
+        let findings = ref_resolves(&overlay, repo.path(), task.path(), &schemas());
+        assert!(
+            findings.is_empty(),
+            "the implements target is committed → no findings, got {findings:?}"
+        );
+
+        // The overlay was NOT persisted under the task area.
+        assert!(
+            !task.path().join("index").join("edges.json").exists(),
+            "the working overlay is never persisted"
+        );
+    }
+
+    /// BLOCKS: the transient `commit` source's `implements` points at a non-existent
+    /// `spec:typo-nonexistent` — resolves in neither surface → exactly one blocking
+    /// `schema-conformance.ref-resolves` finding naming the three routing options.
+    #[test]
+    fn ref_resolves_blocks_when_spec_target_dangles() {
+        let repo = TempRoot::new("dangle-repo");
+        let task = TempRoot::new("dangle-task");
+        commit_spec(repo.path(), "rate-limiting");
+        stage_commit(task.path(), "t-001", "spec:typo-nonexistent");
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+
+        let findings = ref_resolves(&overlay, repo.path(), task.path(), &schemas());
+        assert_eq!(
+            findings.len(),
+            1,
+            "a dangling transient-source forward-ref yields exactly one finding, got {findings:?}"
+        );
+        let f = &findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.code, "schema-conformance.ref-resolves");
+        assert!(
+            f.message.contains("spec:typo-nonexistent"),
+            "names the unresolved target: {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("fix"),
+            "names the fix option: {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("create the target in this task"),
+            "names the create-in-task option: {}",
+            f.message
+        );
+        assert!(
+            f.message.contains("drop"),
+            "names the drop option: {}",
+            f.message
+        );
+        assert!(
+            f.location.is_some(),
+            "the block is located at the source commit doc"
+        );
+
+        assert!(
+            !task.path().join("index").join("edges.json").exists(),
+            "the working overlay is never persisted"
+        );
+    }
+}
+
+#[cfg(test)]
 mod prop_tests {
     use super::*;
     use crate::write::{self, Instance, SectionContent};
