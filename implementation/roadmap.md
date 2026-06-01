@@ -14,7 +14,7 @@ Each entry is milestone-level only — its increments are cut by the [milestone-
 The core loop (discover → compose → execute → validate → finalize), proving it beats a plain `CLAUDE.md` via the superseding-decision flow. VISION: `single task execution`. **Decomposition below.**
 
 ### M2 · router + second work-workflow
-A second work-workflow ships and the cascade's `default-workflow` flips from `single-task` to a **router** (`creates-task: false`), so `jigc start "<intent>"` routes to a model-free selection among ≥2 work-workflows. **Proves:** the orthogonal `creates-task` / `default-workflow` knobs (designed in [write-commands.md](../design/write-commands.md), unexercised in M1) hold — the selection path activates with **no engine change**. Cheapest next beat; ~no new doctype.
+A second work-workflow (`quick-fix` — commit-only, `allows-create: []`) ships and the cascade's `default-workflow` flips from `single-task` to a **router** (`creates-task: false`), so `jigc start "<intent>"` routes to a model-free selection among the work-workflows. **Proves:** the orthogonal `creates-task` / `default-workflow` knobs (designed in [write-commands.md](../design/write-commands.md), unexercised in M1) hold, and the model-free selection path. No new doctype. *Engine cost (corrected from the first-draft "no engine change" after the planning review — see [DECISIONS.md](../DECISIONS.md)):* a **minimal engine-native `catalog` data-value root** exposing the live work-workflow list to composition, plus the **`creates-task: false` compose contract** (no task minted, intent threaded by agent-substitution). Form D (`jigc start --workflow <X>`) was designed but never built in M1.
 
 ### M3 · spec-driven planning
 The `spec` doctype + the flow that creates it, so `single-task` reads `{{@task.spec#…}}` (the MVP was deliberately spec-less). **Proves:** the doc-creation differentiator beyond `adr`, and the intent → spec → implementation arc — `spec` earns its schema from its real creator and consumer, not up front. VISION: `project planning` / `milestone planning`.
@@ -106,6 +106,48 @@ The six-increment decomposition of M1, kept as the shipped record and the worked
 
 **Proves:** the deliverable is real — the bootstrap's *path of least resistance* exists on a real machine.
 
-## Status
+### Status
 
 All six increments (1–6) complete as of 2026-05-31 — the single-task execution loop is built end-to-end (the [superseding-decision](../design/worked-examples.md) acceptance path passes). Tasks were cut per-increment at pickup via the [increment workflow](increment-workflow.md); the milestone was then audited and remediated via the [milestone-completion workflow](milestone-completion-workflow.md) (external code review + end-to-end tests → triage → fixes).
+
+## Milestone 2 — router + second work-workflow: decomposition
+
+Cut 2026-06-01 via the [milestone-planning workflow](milestone-planning-workflow.md) (scope → detect gaps → settle → review → decompose); the independent review reshaped the scope (the `catalog` root + the `creates-task: false` compose contract are real engine work — see [DECISIONS.md](../DECISIONS.md)). Risk-first, linear: the novel engine spine first, the explicit front door next, the pack + flip + acceptance last. **Status: planned, not yet built.**
+
+### Increment 1 — `catalog` root + `creates-task: false` compose contract (the engine spine)
+
+**Deliverable:** composition resolves the engine-native `{{catalog}}` root to the live selectable-work-workflow list (ids + `when` hints), and `compose_in_repo` composes a `creates-task: false` workflow with **no task context** — proven on fixtures (a test `creates-task: false` workflow interpolating the catalog), not yet the live front door.
+
+**Grouped scope:**
+- The `catalog` engine-native data-value root: enumerate `creates-task: true` work-workflows + `when` hints from the resolved cascade, deterministic, wired into `ComposeContext` ([workflow-dialect.md](../design/workflow-dialect.md) → data-value roots).
+- `compose_in_repo`: gate mint / commit-doc provision / `commit`-role binding on `def.creates_task`; build a no-task compose context for the false case ([write-commands.md](../design/write-commands.md) → Task origination, the `creates-task: false` compose contract).
+- `workflow-refs`: a `task.*` placeholder inside a `creates-task: false` workflow is a conformance error ([validation.md](../design/validation.md)).
+- The latent-bug retirement the review flagged: a `creates-task: false` compose unit test (the path M1 never exercised).
+
+**Proves:** the two blocking gaps the planning review surfaced (catalog exposure, no-task compose) are retired in isolation before the front door depends on them.
+
+### Increment 2 — Form D front door (`jigc start --workflow <X>`)
+
+**Deliverable:** `jigc start --workflow <X> "<intent>"` composes `X` explicitly and mints iff `X` is `creates-task: true`; unknown `<X>` rejected with a routed finding; `--workflow` combines with the intent positional and is mutually exclusive with `--task`.
+
+**Grouped scope:**
+- clap: add `--workflow`, conflicting with `--task`, combining with the `<intent>` positional (`cli.rs`).
+- dispatch arm composing `X` via the existing path; unknown-id → routed finding ([write-commands.md](../design/write-commands.md) → Task origination, Form D).
+- tests: Form-D mint, unknown-workflow rejection, arg-exclusivity.
+
+**Proves:** the explicit-selection front door — the target the router's output names — works (the never-built fourth `start` form from M1).
+
+### Increment 3 — router + quick-fix + the flip (the acceptance path)
+
+**Deliverable:** the full routing loop — `jigc start "<intent>"` composes the **router** (no mint), which lists `single-task` + `quick-fix` with `when` hints and instructs the agent to re-run `jigc start --workflow <chosen> "<intent>"` → mint → loop. `quick-fix` composes to materially different output than `single-task`.
+
+**Grouped scope:**
+- Pack: the `router` workflow (`creates-task: false`, `when` hint) + its `present-catalog` / `route-to-workflow` steps over `{{catalog}}` + the agent-substitution re-run; the `quick-fix` work-workflow (`allows-create: []`, shorter step list, an `implement` variant without the `create-adr` line); flip `pack/config/defaults.yaml` → `default-workflow: router` ([workflow-dialect.md](../design/workflow-dialect.md) → Workflow selection, On-disk definition format).
+- Orientation footer copy post-flip — bare `jigc start` advice now leads to the router ([bootstrap.md](../design/bootstrap.md)).
+- e2e acceptance in a throwaway repo: the routing path end-to-end; assert `quick-fix` ≠ `single-task` composed output (no ADR affordance, no supersedes line) with non-overlapping `when`; update M1 tests that asserted bare-intent mints `single-task` (backward-compat of the default flip).
+
+**Proves:** M2's headline — model-free selection among ≥2 work-workflows, with a *real* (not hollow) router.
+
+### Status
+
+Planned 2026-06-01; not yet built. The first increment begins through the [increment workflow](increment-workflow.md) when picked up.
