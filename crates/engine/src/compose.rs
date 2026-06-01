@@ -1628,6 +1628,223 @@ Slightly higher write latency for resilience.
         );
     }
 
+    // -- The `reads` cross-task binding spine (inc-2 T4 acceptance) ----------
+    //
+    // A `reads: [{role: spec, type: spec}]`-declaring workflow makes `task.spec`
+    // a declared `workflow-refs` root; `jigc task bind spec spec:<slug>` records
+    // the binding in `roles.json`; on resume re-compose `{{@task.spec#criteria}}`
+    // dereferences the bound role straight to the committed spec's `#criteria`
+    // slice (zero relation hops — the role *is* the target), emitted as a `> `
+    // Content blockquote (`worked-examples.md` → flows 5/6; `write-commands.md` →
+    // Binding a context role / Resolution timing). Declared-but-unbound → empty.
+
+    /// A stub `reads`-declaring workflow def: `reads: [{role: spec, type: spec}]`,
+    /// one include of the (in-test) `read-the-spec` step. The composition order
+    /// is the include list — the step body is supplied by [`ReadsStepSource`].
+    fn reads_spec_def() -> WorkflowDef {
+        WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: Vec::new(),
+            reads: vec![Reads {
+                role: "spec".to_owned(),
+                doc_type: "spec".to_owned(),
+            }],
+            includes: vec!["read-the-spec".to_owned()],
+        }
+    }
+
+    /// The stub pack's step source: the lone `read-the-spec` step whose body is the
+    /// bound-role context-slice placeholder.
+    struct ReadsStepSource;
+
+    impl StepSource for ReadsStepSource {
+        fn step(&self, id: &str) -> Option<StepDef> {
+            (id == "read-the-spec").then(|| StepDef {
+                id: id.to_owned(),
+                body: "Here are the acceptance criteria you must satisfy:\n\
+                       {{ @task.spec#criteria }}\n"
+                    .to_owned(),
+            })
+        }
+    }
+
+    /// A stub `spec` schema with a `header` section and a `criteria` **slot**
+    /// section (so the committed `#criteria` slice is store-readable — `read_slice`
+    /// slices slot sections). Persisted to `specs/`, the doctype-map location. This
+    /// is the test pack's spec, NOT the shipped `spec.yaml` (whose `criteria` is
+    /// repeatable) — the acceptance proves the binding spine, fixtures over pack.
+    const STUB_SPEC_YAML: &[u8] = b"\
+type: spec
+location: specs/
+id-from: title
+
+sections:
+  - id: header
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    slot: { hint: \"The acceptance criteria, testably phrased.\" }
+";
+
+    fn spec_schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "spec".to_string(),
+            crate::schema::load_schema(STUB_SPEC_YAML).expect("stub spec schema loads"),
+        );
+        m
+    }
+
+    /// The committed spec the `reads` role binds to (`specs/payment-retry.md`),
+    /// carrying the `#criteria` prose the slice must surface.
+    const COMMITTED_SPEC: &str = "\
+---
+---
+
+# Payment retry
+
+## Criteria
+A failed charge retries with exponential backoff, capped at five attempts.
+";
+
+    /// Commit the spec at `specs/payment-retry.md` under `repo_root`.
+    fn commit_spec(repo_root: &Path) {
+        let dir = repo_root.join("specs");
+        std::fs::create_dir_all(&dir).expect("mk specs/");
+        std::fs::write(dir.join("payment-retry.md"), COMMITTED_SPEC).expect("write spec");
+    }
+
+    /// Build the resume `ComposeContext` for a task whose workflow `reads` `def`,
+    /// declaring each `reads` role and binding it iff `roles.json` recorded a
+    /// `jigc task bind` — the engine-seam mirror of the CLI's `build_context`
+    /// (`start.rs`), so the test exercises the same declared-vs-bound logic at
+    /// the `compose_with_store` seam.
+    fn reads_ctx(
+        def: &WorkflowDef,
+        bound: &crate::state::RolesRecord,
+    ) -> crate::data_value::ComposeContext {
+        let mut roles = BTreeMap::new();
+        for entry in &def.reads {
+            let binding = bound.get(&entry.role).and_then(|a| Address::parse(a).ok());
+            roles.insert(entry.role.clone(), binding);
+        }
+        crate::data_value::ComposeContext {
+            task: Some(crate::data_value::TaskRoot {
+                id: "implement-payment-retry".to_owned(),
+                intent: "implement the payment retry policy".to_owned(),
+                roles,
+            }),
+            catalog: Vec::new(),
+        }
+    }
+
+    /// HEADLINE (inc-2 T4): a `reads: [{role: spec, type: spec}]` workflow + a
+    /// committed `specs/payment-retry.md`; `jigc task bind` recorded
+    /// `spec -> spec:payment-retry` in `roles.json`; on resume re-compose,
+    /// `{{@task.spec#criteria}}` dereferences the bound role straight to the
+    /// committed spec's `#criteria` slice — emitted as a `> ` Content blockquote
+    /// of the committed prose (NOT the bare `spec:payment-retry#criteria` handle).
+    #[test]
+    fn bound_reads_role_slice_resolves_on_resume() {
+        let repo = TempRoot::new("reads-repo");
+        let task = TempRoot::new("reads-task");
+        commit_spec(repo.path());
+
+        // The `jigc task bind spec spec:payment-retry` binding, persisted in the
+        // task's `roles.json` (read back on resume).
+        let mut bound = crate::state::RolesRecord::new();
+        bound.bind("spec", "spec:payment-retry");
+        bound.save(task.path()).expect("save roles.json");
+        let bound = crate::state::RolesRecord::load(task.path()).expect("roles.json loads");
+
+        let def = reads_spec_def();
+        let schemas = spec_schemas();
+        let committed = index::rebuild_committed(repo.path(), &schemas, "HEAD");
+        let overlay = index::overlay_working(&committed, task.path(), &schemas);
+        let store = store_ctx(repo.path(), &schemas, &overlay);
+        let catalog = CommandCatalog {
+            commands: BTreeMap::new(),
+        };
+
+        let composed = compose_with_store(
+            &def,
+            &ReadsStepSource,
+            &catalog,
+            &reads_ctx(&def, &bound),
+            Some(&store),
+        )
+        .expect("composes");
+
+        // The committed `#criteria` prose is sliced and emitted as a `> ` blockquote.
+        assert!(
+            composed.text.contains(
+                "> A failed charge retries with exponential backoff, capped at five attempts."
+            ),
+            "the bound `reads` role must slice the committed spec's `#criteria` prose \
+             as a `> ` blockquote; got:\n{}",
+            composed.text
+        );
+        // NOT the bare address handle — the slice dereferences to prose.
+        assert!(
+            !composed.text.contains("> spec:payment-retry#criteria"),
+            "the slice must dereference to prose, NOT emit the bare address handle; got:\n{}",
+            composed.text
+        );
+    }
+
+    /// The declared-but-unbound case: the same `reads: [{role: spec, type: spec}]`
+    /// workflow with **no** `roles.json` binding resolves `{{@task.spec#criteria}}`
+    /// to an **empty line** — no `> ` blockquote, zero findings (the
+    /// empty-vs-unresolvable contract; `workflow-dialect.md` → `reads`).
+    #[test]
+    fn unbound_reads_role_resolves_empty() {
+        let repo = TempRoot::new("reads-empty-repo");
+        let task = TempRoot::new("reads-empty-task");
+        commit_spec(repo.path());
+
+        let def = reads_spec_def();
+        let schemas = spec_schemas();
+        let committed = index::rebuild_committed(repo.path(), &schemas, "HEAD");
+        let overlay = index::overlay_working(&committed, task.path(), &schemas);
+        let store = store_ctx(repo.path(), &schemas, &overlay);
+        let catalog = CommandCatalog {
+            commands: BTreeMap::new(),
+        };
+
+        // No `jigc task bind` ran → `roles.json` records nothing for `spec`.
+        let bound = crate::state::RolesRecord::new();
+        let composed = compose_with_store(
+            &def,
+            &ReadsStepSource,
+            &catalog,
+            &reads_ctx(&def, &bound),
+            Some(&store),
+        )
+        .expect("composes");
+
+        assert!(
+            !composed.text.contains('>'),
+            "a declared-but-unbound `reads` role emits no blockquote; got:\n{}",
+            composed.text
+        );
+        // The `@`-slice resolves to nothing — none of the committed prose surfaces.
+        assert!(
+            !composed.text.contains("exponential backoff"),
+            "an unbound `reads` role surfaces NO committed prose; got:\n{}",
+            composed.text
+        );
+        // The surrounding instruction prose is still emitted; only the slice is empty.
+        assert!(
+            composed
+                .text
+                .contains("Here are the acceptance criteria you must satisfy:"),
+            "the step's instruction prose survives the empty slice; got:\n{}",
+            composed.text
+        );
+    }
+
     proptest::proptest! {
         /// Emission is a **pure function** of `(body, ctx, catalog)`: emitting the
         /// same inputs twice yields identical text (the determinism boundary). The
