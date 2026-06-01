@@ -28,6 +28,7 @@ use engine::data_value::{ComposeContext, TaskRoot};
 use engine::finding::{Finding, Severity};
 use engine::index;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::result::CatalogEntry;
 use engine::schema::{Schema, load_schema};
 use engine::state::{self, BasePin, MintedTask, RolesRecord};
 use std::collections::BTreeMap;
@@ -70,7 +71,7 @@ pub fn mint_in_repo(start: &Path, intent: &str) -> Result<MintedTask> {
 /// slots provision empty and `set-slot` generates the section's home on demand —
 /// `write-commands.md` → Instance provisioning; `DECISIONS.md` 2026-05-31 → inc-4
 /// fillable-form provisioning.)
-fn provision_commit_doc(pack: &EmbeddedPack, minted: &MintedTask) -> Result<()> {
+fn provision_commit_doc(pack: &dyn PackSource, minted: &MintedTask) -> Result<()> {
     let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
     let schema = engine::schema::load_schema(&bytes)
         .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))?;
@@ -151,32 +152,65 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     }
 
     let pack = EmbeddedPack::new();
-    let workflow_id = default_workflow_id(&pack)?;
-    let workflow_bytes = read_pack(&pack, PackResourceKind::Workflows, &workflow_id)?;
+    compose_core(&repo_root, intent, &pack)
+}
+
+/// Compose the cascade's default workflow from `intent`, branching on the
+/// workflow's `creates-task` flag — the engine spine the front door drives, with
+/// the pack injected so the no-task arm is reachable under test.
+///
+/// A `creates-task: true` work-workflow (e.g. `single-task`) **mints**: it opens
+/// the task working area (reads HEAD), provisions the task's commit doc, and
+/// binds the `task` context root, then composes with `{{task.intent}}` bound. A
+/// `creates-task: false` workflow (the router and its kind) composes with **no
+/// task context** — no mint, no working area, no commit doc, no commit-role bind:
+/// it carries `task = None` and feeds only the selectable-workflow `catalog` to
+/// composition (`write-commands.md` → Task origination, the `creates-task: false`
+/// compose contract; `workflow-dialect.md` → Workflow selection). Either arm feeds
+/// the cascade catalog **filtered to the selectable (`creates-task: true`) work-
+/// workflows** into the context, so `{{catalog}}` resolves the same list the
+/// router lists and never names itself.
+fn compose_core(repo_root: &Path, intent: &str, pack: &dyn PackSource) -> Result<ComposedWorkflow> {
+    let workflow_id = default_workflow_id(pack)?;
+    let workflow_bytes = read_pack(pack, PackResourceKind::Workflows, &workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
-    let catalog = load_catalog(&pack)?;
+    let commands = load_catalog(pack)?;
+    // The selectable-workflow list both arms feed to composition — the router's
+    // `{{catalog}}` input, filtered to `creates-task: true` so it never lists
+    // itself or any other `creates-task: false` workflow.
+    let selectable = selectable_workflows(pack)?;
 
-    // Mint the task (reads HEAD) — `single-task` declares `creates-task: true`,
-    // so the front door mints in one call. Minting after the definition loads so
-    // a malformed pack never leaves a task dir behind.
-    let minted = mint_in_repo(&repo_root, intent)?;
-
-    // Workflow-provisioned instance — a `creates-task` work-workflow provisions
-    // the task's commit doc (the sink of its `<<author: {{task.commit#summary}}>>`
-    // slot), so the agent only fills slots (`write-commands.md` → Instance
-    // provisioning → Workflow-provisioned). The empty skeleton stages here, ready
-    // for the `jigc doc set-field`/`set-slot` write loop.
-    provision_commit_doc(&pack, &minted)?;
-
-    // At mint there are no bound context roles yet (the agent binds them in-task,
-    // e.g. an ADR via the create-gate); resume re-reads them from roles.json.
-    let ctx = build_context(&minted.id, intent, &def, &RolesRecord::new());
-    let source = PackStepSource { pack: &pack };
+    let ctx = if def.creates_task {
+        // Mint the task (reads HEAD). Minting after the definition loads so a
+        // malformed pack never leaves a task dir behind.
+        let minted = mint_in_repo(repo_root, intent)?;
+        // Workflow-provisioned instance — a `creates-task` work-workflow
+        // provisions the task's commit doc (the sink of its
+        // `<<author: {{task.commit#summary}}>>` slot), so the agent only fills
+        // slots (`write-commands.md` → Instance provisioning → Workflow-
+        // provisioned). The empty skeleton stages here, ready for the
+        // `jigc doc set-field`/`set-slot` write loop.
+        provision_commit_doc(pack, &minted)?;
+        // At mint there are no bound context roles yet (the agent binds them
+        // in-task, e.g. an ADR via the create-gate); resume re-reads them.
+        build_context(&minted.id, intent, &def, &RolesRecord::new(), selectable)
+    } else {
+        // The `creates-task: false` compose contract: no mint, no working area,
+        // no commit doc, no role binding — `task = None`. Intent threads forward
+        // only via the re-run command's agent marker, never a resolved data-value;
+        // any `task.*` reference here is the blocking
+        // `workflow-refs.task-ref-in-no-task-workflow` conformance error.
+        ComposeContext {
+            task: None,
+            catalog: selectable,
+        }
+    };
+    let source = PackStepSource { pack };
 
     // Compose-time `workflow-refs` gate: validate every placeholder / include /
     // command-ref / marker before any output reaches the agent. A blocking
     // finding short-circuits.
-    let findings = compose::workflow_refs(&workflow_bytes, &source, &catalog, &ctx);
+    let findings = compose::workflow_refs(&workflow_bytes, &source, &commands, &ctx);
     if let Some(finding) = findings
         .into_iter()
         .find(|f| f.severity == Severity::Blocking)
@@ -184,7 +218,31 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
         return Err(finding_to_err(finding));
     }
 
-    compose::compose(&def, &source, &catalog, &ctx).map_err(finding_to_err)
+    compose::compose(&def, &source, &commands, &ctx).map_err(finding_to_err)
+}
+
+/// Build the selectable-workflow catalog from `pack`: every workflow the pack
+/// provides, parsed for its front-matter, **filtered to `creates-task: true`**
+/// (the work-workflows a router selects among), each paired with its `when`
+/// selection hint, in the pack's `list` order — the deterministic `catalog`
+/// data-value root (`workflow-dialect.md` → data-value roots / Workflow
+/// selection). A `creates-task: false` workflow (the router itself) is never a
+/// selectable entry, so the router never lists itself. A selectable workflow that
+/// declares no `when` is a definition bug, surfaced as a clear, id-bearing error.
+fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogEntry>> {
+    let mut entries = Vec::new();
+    for id in pack.list(PackResourceKind::Workflows) {
+        let bytes = read_pack(pack, PackResourceKind::Workflows, id.as_str())?;
+        let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
+        if !def.creates_task {
+            continue;
+        }
+        let when = def.when.filter(|w| !w.trim().is_empty()).with_context(|| {
+            format!("selectable workflow `{id}` is missing the required `when` selection hint")
+        })?;
+        entries.push(CatalogEntry::new(id.as_str(), when));
+    }
+    Ok(entries)
 }
 
 /// Resume an existing task by `id` and re-compose its default workflow — the
@@ -241,12 +299,13 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     let workflow_id = default_workflow_id(&pack)?;
     let workflow_bytes = read_pack(&pack, PackResourceKind::Workflows, &workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
-    let catalog = load_catalog(&pack)?;
+    let commands = load_catalog(&pack)?;
+    let selectable = selectable_workflows(&pack)?;
 
-    let ctx = build_context(id, &intent, &def, &bound);
+    let ctx = build_context(id, &intent, &def, &bound, selectable);
     let source = PackStepSource { pack: &pack };
 
-    let findings = compose::workflow_refs(&workflow_bytes, &source, &catalog, &ctx);
+    let findings = compose::workflow_refs(&workflow_bytes, &source, &commands, &ctx);
     if let Some(finding) = findings
         .into_iter()
         .find(|f| f.severity == Severity::Blocking)
@@ -269,13 +328,14 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
         overlay: &overlay,
     };
 
-    compose::compose_with_store(&def, &source, &catalog, &ctx, Some(&store)).map_err(finding_to_err)
+    compose::compose_with_store(&def, &source, &commands, &ctx, Some(&store))
+        .map_err(finding_to_err)
 }
 
 /// Load every shipped schema from the embedded pack, keyed by doctype — the
 /// cascade-resolved schema set the committed store + edge overlay resolve `<type>`
 /// prefixes against (`crate::task` loads the same set for the finalize sweep).
-fn all_schemas(pack: &EmbeddedPack) -> Result<BTreeMap<String, Schema>> {
+fn all_schemas(pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
     let mut out = BTreeMap::new();
     for id in pack.list(PackResourceKind::Schemas) {
         let bytes = read_pack(pack, PackResourceKind::Schemas, id.as_str())?;
@@ -299,7 +359,13 @@ fn all_schemas(pack: &EmbeddedPack) -> Result<BTreeMap<String, Schema>> {
 /// `roles` is empty (nothing is bound yet); on `--task <id>` resume it carries
 /// the binds recorded since (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding
 /// at create).
-fn build_context(id: &str, intent: &str, def: &WorkflowDef, bound: &RolesRecord) -> ComposeContext {
+fn build_context(
+    id: &str,
+    intent: &str,
+    def: &WorkflowDef,
+    bound: &RolesRecord,
+    catalog: Vec<CatalogEntry>,
+) -> ComposeContext {
     let mut roles: BTreeMap<String, Option<Address>> = BTreeMap::new();
     // The task's commit doc — the engine-native sink, bound to `commit:<id>`.
     let commit =
@@ -318,9 +384,11 @@ fn build_context(id: &str, intent: &str, def: &WorkflowDef, bound: &RolesRecord)
             intent: intent.to_owned(),
             roles,
         }),
-        // The `catalog` root feeds only `creates-task: false` (router) compositions
-        // (T4); a task composition carries no selectable-workflow list.
-        catalog: Vec::new(),
+        // The selectable-workflow catalog, fed identically to the no-task arm so a
+        // `creates-task: true` workflow that interpolates `{{catalog}}` resolves
+        // the same list (it never lists itself — the filter excludes it only when
+        // it is `creates-task: false`).
+        catalog,
     }
 }
 
@@ -328,7 +396,7 @@ fn build_context(id: &str, intent: &str, def: &WorkflowDef, bound: &RolesRecord)
 /// cascade has no project step overrides, so the pack-default layer owns every
 /// step — the engine consumes this mapping and stays a pure function of it.
 struct PackStepSource<'a> {
-    pack: &'a EmbeddedPack,
+    pack: &'a dyn PackSource,
 }
 
 impl StepSource for PackStepSource<'_> {
@@ -342,7 +410,7 @@ impl StepSource for PackStepSource<'_> {
 }
 
 /// Read the `default-workflow` id from the pack's `config/defaults` resource.
-fn default_workflow_id(pack: &EmbeddedPack) -> Result<String> {
+fn default_workflow_id(pack: &dyn PackSource) -> Result<String> {
     let bytes = read_pack(pack, PackResourceKind::Config, "defaults")?;
     let text = String::from_utf8(bytes).context("`config/defaults` is not UTF-8")?;
     let value: serde_yaml_ng::Value =
@@ -355,13 +423,13 @@ fn default_workflow_id(pack: &EmbeddedPack) -> Result<String> {
 }
 
 /// Load and parse the pack's command catalog (`config/commands`).
-fn load_catalog(pack: &EmbeddedPack) -> Result<CommandCatalog> {
+fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
     let bytes = read_pack(pack, PackResourceKind::Config, "commands")?;
     load_command_catalog(&bytes).map_err(finding_to_err)
 }
 
 /// Read a pack resource by kind + id, mapping a missing resource to an error.
-fn read_pack(pack: &EmbeddedPack, kind: PackResourceKind, id: &str) -> Result<Vec<u8>> {
+fn read_pack(pack: &dyn PackSource, kind: PackResourceKind, id: &str) -> Result<Vec<u8>> {
     pack.read(kind, &ResourceId::from(id))
         .with_context(|| format!("the embedded pack is missing `{id}`"))
 }
@@ -511,6 +579,120 @@ mod tests {
         assert!(
             msg.contains("add-rate-limiter") && msg.contains("route:"),
             "serial collision must name the task and carry a route; got: {msg}"
+        );
+    }
+
+    /// An in-memory [`PackSource`] seeded from `(kind, id, bytes)` triples — lets a
+    /// unit test drive [`compose_core`] over a fixture cascade with no embedded
+    /// pack and no filesystem.
+    struct FixturePack(std::collections::HashMap<(PackResourceKind, ResourceId), Vec<u8>>);
+
+    impl FixturePack {
+        fn with(triples: Vec<(PackResourceKind, &str, &str)>) -> Self {
+            let map = triples
+                .into_iter()
+                .map(|(kind, id, body)| ((kind, ResourceId::from(id)), body.as_bytes().to_vec()))
+                .collect();
+            FixturePack(map)
+        }
+    }
+
+    impl PackSource for FixturePack {
+        fn pack_version(&self) -> String {
+            "0.0.0".to_owned()
+        }
+
+        fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+            let mut ids: Vec<ResourceId> = self
+                .0
+                .keys()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, id)| id.clone())
+                .collect();
+            ids.sort();
+            ids
+        }
+
+        fn read(
+            &self,
+            kind: PackResourceKind,
+            id: &ResourceId,
+        ) -> Result<Vec<u8>, engine::packsource::PackError> {
+            self.0.get(&(kind, id.clone())).cloned().ok_or_else(|| {
+                engine::packsource::PackError::NotFound {
+                    kind,
+                    id: id.clone(),
+                }
+            })
+        }
+    }
+
+    /// The T4 done-criterion: composing a `creates-task: false` default workflow
+    /// (a router whose body interpolates `{{catalog}}`) mints **nothing** — no
+    /// `.jigc/tasks/<id>/` working area appears — and its output lists exactly the
+    /// **selectable** (`creates-task: true`) work-workflows, never the router
+    /// itself. The `repo_root` is an empty temp dir: the no-task arm never reads
+    /// HEAD, so no git is needed (proof the arm carries no task context).
+    #[test]
+    fn no_task_workflow_composes_the_catalog_without_minting() {
+        let repo = TempDir::new("no-task");
+
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: router\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "router",
+                "---\nwhen: help me pick a workflow\ncreates-task: false\n---\n{{ include: step:route }}\n",
+            ),
+            (
+                PackResourceKind::Workflows,
+                "single-task",
+                "---\nwhen: implement one scoped change\ncreates-task: true\n---\n{{ include: step:noop }}\n",
+            ),
+            (
+                PackResourceKind::Workflows,
+                "quick-fix",
+                "---\nwhen: a small focused fix\ncreates-task: true\n---\n{{ include: step:noop }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "route",
+                "Pick one of the work-workflows below:\n\n{{ catalog }}\n",
+            ),
+            (PackResourceKind::Steps, "noop", "no-op body\n"),
+        ]);
+
+        let composed = compose_core(repo.path(), "anything", &pack).expect("no-task compose");
+
+        // (a) The no-task arm mints nothing: no working area is opened.
+        assert!(
+            !repo.path().join(".jigc").join("tasks").exists(),
+            "a `creates-task: false` compose must not open any `.jigc/tasks/` dir",
+        );
+
+        // (b) `{{catalog}}` resolves to the selectable work-workflows, each as a
+        // `- <id> — <when>` option line — and the router never lists itself.
+        assert!(
+            composed
+                .text
+                .contains("- single-task — implement one scoped change"),
+            "the catalog must list single-task; got:\n{}",
+            composed.text,
+        );
+        assert!(
+            composed.text.contains("- quick-fix — a small focused fix"),
+            "the catalog must list quick-fix; got:\n{}",
+            composed.text,
+        );
+        assert!(
+            !composed.text.contains("- router —"),
+            "the router must not list itself (creates-task: false is filtered); got:\n{}",
+            composed.text,
         );
     }
 }
