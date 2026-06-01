@@ -1,5 +1,5 @@
 ---
-when: implement work whose criteria a committed spec already defines
+when: build from a committed spec whose acceptance criteria already exist
 creates-task: true
 reads: [{role: spec, type: spec}]
 allows-create: [{type: adr, as: decision}]

@@ -115,6 +115,8 @@ fn streams(out: &std::process::Output) -> String {
 const SINGLE_TASK_WHEN: &str = "implement one scoped change end-to-end";
 const QUICK_FIX_WHEN: &str = "apply a small commit-only fix with no decision to record";
 const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
+const IMPLEMENT_FROM_SPEC_WHEN: &str =
+    "build from a committed spec whose acceptance criteria already exist";
 
 // ─────────────────── the routing-loop acceptance path ───────────────────
 
@@ -152,6 +154,15 @@ fn step_1_bare_intent_composes_the_router_listing_both_workflows_without_minting
     assert!(
         stdout.contains(&format!("- plan — {PLAN_WHEN}")),
         "the router must list plan with its `when` hint; got:\n{stdout}",
+    );
+    // `implement-from-spec` is `creates-task: true`, so it too joins the selectable
+    // catalog automatically (Increment 4 T4 — `workflow-dialect.md` → Workflow
+    // selection). With it the router lists all FOUR work-workflows.
+    assert!(
+        stdout.contains(&format!(
+            "- implement-from-spec — {IMPLEMENT_FROM_SPEC_WHEN}"
+        )),
+        "the router must list implement-from-spec with its `when` hint; got:\n{stdout}",
     );
 
     // It carries the literal agent-substitution re-run prose.
@@ -247,9 +258,9 @@ fn step_2_chosen_quick_fix_mints_and_composes_materially_differently_from_single
 fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
     // The router routes model-free only if its option lines distinguish the
     // workflows: the `when` hints must share no word longer than a stop-word, so
-    // the agent has a real signal to pick on. With `plan` joining the catalog
-    // (Increment 3 T2) the property must hold pairwise across all three
-    // selectables.
+    // the agent has a real signal to pick on. With `plan` (Increment 3 T2) and
+    // `implement-from-spec` (Increment 4 T4) joining the catalog the property must
+    // hold pairwise across all FOUR selectables.
     let lower = |s: &str| s.to_lowercase();
     let words = |s: &str| -> std::collections::HashSet<String> {
         lower(s)
@@ -262,6 +273,7 @@ fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
         ("single-task", words(SINGLE_TASK_WHEN)),
         ("quick-fix", words(QUICK_FIX_WHEN)),
         ("plan", words(PLAN_WHEN)),
+        ("implement-from-spec", words(IMPLEMENT_FROM_SPEC_WHEN)),
     ];
     for (i, (a_id, a)) in selectables.iter().enumerate() {
         for (b_id, b) in &selectables[i + 1..] {
