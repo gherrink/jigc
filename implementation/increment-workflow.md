@@ -54,6 +54,8 @@ Run by hand, the phases above are steps one person walks. Run as an orchestrated
 
 Halts (above) surface to the human; nothing is auto-resolved past a fork.
 
+This mapping is **runnable, not just descriptive**: `.claude/workflows/milestone-build.js` drives the whole loop for a milestone (read its roadmap decomposition → per increment plan/execute/validate/fix → the milestone-completion audit), one agent per phase with the role prompts in `.claude/agents/`. Invoke it as `Workflow({name: "milestone-build", args: {milestone, base}})` — so a milestone build *runs* this loop rather than re-interpreting this doc each time. The agents still read the canonical docs (this file, [dev-workflow.md](dev-workflow.md), `CLAUDE.md`, the milestone's `DECISIONS.md`/roadmap entries) for the specifics; only the orchestration is fixed.
+
 ## Why this shape
 
 Framing notes, not extra phases:
