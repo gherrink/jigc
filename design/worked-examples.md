@@ -305,7 +305,7 @@ read its criteria:
 > committed specs:
 > • spec:gateway-rate-limiting — "Gateway rate limiting"
 > • spec:auth-token-rotation — "Auth token rotation"
-Run: `jigc task bind spec <SPEC_ID>`         # ← agent fills <SPEC_ID> = spec:gateway-rate-limiting
+Run: `jigc task bind spec <SPEC_ID> implement-gateway-rate-limiting`   # ← agent fills <SPEC_ID> = spec:gateway-rate-limiting; the task id is CLI-resolved
 Run: `jigc start --task implement-gateway-rate-limiting`   # re-compose to pick up the bound slice
 {{ @task.spec#criteria }}                     # empty on this first compose — nothing bound yet
 ```
@@ -313,7 +313,7 @@ Run: `jigc start --task implement-gateway-rate-limiting`   # re-compose to pick 
 The bindable-spec menu is `{{store.specs}}` — the `store` root enumerating the committed `spec` instances as a collection ([workflow-dialect.md](workflow-dialect.md) → data-value roots), emitted as a readable Content list. The agent picks an id, binds, then runs the emitted re-compose directive — the same deferred-bind-then-resume path flow 5 uses, except here the step **emits** the `Run: jigc start --task <id>` so an agent following only the machine markers can't bind-then-forget-to-reread:
 
 ```text
-$ jigc task bind spec spec:gateway-rate-limiting
+$ jigc task bind spec spec:gateway-rate-limiting implement-gateway-rate-limiting
 > bound: task.spec → spec:gateway-rate-limiting
 
 $ jigc start --task implement-gateway-rate-limiting

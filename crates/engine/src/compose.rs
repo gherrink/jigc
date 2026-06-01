@@ -1976,6 +1976,10 @@ A failed charge retries with exponential backoff, capped at five attempts.
                   "kind": "agent",
                   "agent": "spec_id",
                   "hint": "the spec:<slug> id picked from the committed specs above"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
                 }
               ],
               "hint": "Bind the spec this work implements to the task's spec role."

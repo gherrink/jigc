@@ -140,17 +140,17 @@ A worked payoff: the **commit message is just a doc type.** Its format — a `ty
 
 ### Binding a context role
 
-`jigc task bind <role> <addr>` binds an **already-committed** document to one of the active task's declared context roles ([workflow-dialect.md](workflow-dialect.md) → `reads`), so `task.<role>` resolves to it. It is the counterpart to the create-gate's `as:` form: the gate binds a doc the task *creates*; `bind` binds a doc a *prior* task already committed — the only way a managed doc crosses a task boundary into a later task's context.
+`jigc task bind <role> <addr> <id>` binds an **already-committed** document (`<addr>`) to one of task `<id>`'s declared context roles ([workflow-dialect.md](workflow-dialect.md) → `reads`), so `task.<role>` resolves to it. The `<id>` is the task positional, consistent with the `jigc task <verb> <id>` family (`validate`/`finalize`/`discard`). It is the counterpart to the create-gate's `as:` form: the gate binds a doc the task *creates*; `bind` binds a doc a *prior* task already committed — the only way a managed doc crosses a task boundary into a later task's context.
 
-This is the **spec → implementation seam**: a `plan` task authors and commits a `spec`; a later `implement-from-spec` task runs `jigc task bind spec <spec-id>`, and its `locate` step's `{{@task.spec#criteria}}` then resolves over that committed file.
+This is the **spec → implementation seam**: a `plan` task authors and commits a `spec`; a later `implement-from-spec` task runs `jigc task bind spec <spec-id> <task-id>`, and its `locate` step's `{{@task.spec#criteria}}` then resolves over that committed file.
 
-**Why a verb, not a `start` flag.** Binding is a per-task write like any other, kept *off* `jigc start` so origination stays the single simple sentence the agent learns from the bootstrap. The composed workflow routes the agent to it — a `locate` step emits `` Run: `jigc task bind spec <SPEC_ID>` `` (a `<NAME>` agent-substitution marker, [command-catalog.md](command-catalog.md)) — exactly as it routes every other structural op back to the CLI.
+**Why a verb, not a `start` flag.** Binding is a per-task write like any other, kept *off* `jigc start` so origination stays the single simple sentence the agent learns from the bootstrap. The composed workflow routes the agent to it — a `locate` step emits `` Run: `jigc task bind spec <SPEC_ID> <task-id>` `` (the `<SPEC_ID>` is a `<NAME>` agent-substitution marker, the trailing task id is CLI-resolved from `{{task.id}}` so the emitted line is runnable as-is, [command-catalog.md](command-catalog.md)) — exactly as it routes every other structural op back to the CLI.
 
 **Resolution timing.** Binding happens *after* compose, so the bound slice is empty on the first composition and resolves on the **resume re-compose** (`jigc start --task <id>`) — the same deferred-bind-then-resume path the superseding-decision flow already uses for `{{@task.decision.supersedes#decision}}` ([worked-examples.md](worked-examples.md) → Superseding decision).
 
-**Enforcement at every `jigc task bind <role> <addr>`:**
+**Enforcement at every `jigc task bind <role> <addr> <id>`:**
 
-1. Identify the active task (cwd, or `--task <id>`). **No active task** → reject: `"no active task — start one with \`jigc start\`"`.
+1. Resolve task `<id>`. **No such task** → reject: `"no task \`<id>\` — start one with \`jigc start\`"`.
 2. `<role>` ∉ the workflow's declared read-roles → reject, listing the declared roles.
 3. `<addr>` does not resolve in the **committed store** → reject: `"no such doc \`<addr>\`"`. `bind` targets committed docs only — a doc the *same* task creates uses the create-gate's `as:` form instead.
 4. The target's doctype ≠ the role's declared `type` → reject with the mismatch.

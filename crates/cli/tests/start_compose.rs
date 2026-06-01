@@ -336,10 +336,12 @@ fn form_d_implement_from_spec_mints_and_composes_the_locate_from_spec_step() {
         stdout.contains("> spec:gateway-rate-limiting"),
         "the locate-from-spec step must surface the committed spec via {{store.specs}}; got:\n{stdout}",
     );
-    // ... the bind `Run:` line (the agent fills <SPEC_ID>) ...
+    // ... the bind `Run:` line — runnable as emitted: the agent fills <SPEC_ID> and
+    // the trailing task id is resolved (the `jigc task bind <role> <addr> <id>` clap
+    // surface needs all three positionals, so the emitted form must carry the id) ...
     assert!(
-        stdout.contains("Run: `jigc task bind spec <SPEC_ID>`"),
-        "the locate-from-spec step must emit the `jigc task bind spec` line; got:\n{stdout}",
+        stdout.contains("Run: `jigc task bind spec <SPEC_ID> implement-gateway-rate-limiting`"),
+        "the locate-from-spec step must emit a runnable `jigc task bind spec <SPEC_ID> <id>` line carrying the resolved task id; got:\n{stdout}",
     );
     // ... and the re-compose `Run:` line carrying the resolved task id.
     assert!(
