@@ -1,6 +1,6 @@
 //! The committed-store reader — resolve a `<type>:<slug>` address to its canonical
 //! path, parse the committed `.md` against its schema, and slice a `#fragment` to
-//! its slot prose.
+//! its content (a section slot's prose, or a repeatable section's rendered items).
 //!
 //! This is the byte-read the compose-path [`Resolution::Content`](crate::data_value::Resolution::Content)
 //! handle deferred and the superseding-decision flow mandates
@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 
 use crate::address::{Address, Fragment};
 use crate::finding::{Finding, Location, Severity};
-use crate::parse::{self, Document};
+use crate::parse::{self, Document, ParsedSection};
 use crate::schema::Schema;
 
 /// The canonical on-disk path a committed `<type>:<slug>` instance lives at, when
@@ -50,14 +50,14 @@ pub fn canonical_path(repo_root: &Path, schema: &Schema, slug: &str) -> Option<P
 ///
 /// Resolves the address's `type` to a [`Schema`] in `schemas`, computes the
 /// canonical path under `repo_root`, reads and parses the committed file against the
-/// schema, and slices the `#unit` fragment to that section's opaque slot prose
-/// (byte-exact over the committed source). The address **must** carry a `#unit`
-/// fragment naming a slot section (the MVP store-read target — flow #5's
-/// `#decision`).
+/// schema, and slices the `#unit` fragment to that section's content — a slot's
+/// opaque prose (byte-exact over the committed source), or a repeatable section's
+/// rendered items. The address **must** carry a `#unit` fragment naming a slot
+/// section (flow #5's `#decision`) or a repeatable section (the spec's `#criteria`).
 ///
 /// Every failure is a blocking [`Finding`] carrying a `route`: an unknown type, a
-/// transient (location-less) type, a missing file, an unparseable file, a missing or
-/// non-slot fragment.
+/// transient (location-less) type, a missing file, an unparseable file, or a missing
+/// or unsliceable fragment.
 pub fn read_slice(
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
@@ -151,14 +151,19 @@ fn block(code: &str, message: String, address: &str, route: String) -> Finding {
     }
 }
 
-/// Slice the `#unit` fragment of a parsed `doc` to its section slot prose over
-/// `source`, or a blocking finding when the fragment names no slot section.
+/// Slice the `#unit` fragment of a parsed `doc` to its section content over
+/// `source`, or a blocking finding when the fragment names no sliceable section.
 ///
-/// The MVP store-read target is a `#section` slot (flow #5's `#decision`); deeper
-/// fragment shapes (`#unit/leaf`, `#unit/item[/leaf]`) are not store-read targets at
-/// this scope and surface as a located block rather than a panic. The slice re-reads
-/// the source over the recorded opaque [`Span`](crate::parse::Span), so the returned
-/// prose is byte-for-byte the committed slot bytes.
+/// Two section shapes slice. A **slot** section (flow #5's `#decision`) returns its
+/// slot prose byte-for-byte over the recorded opaque [`Span`](crate::parse::Span). A
+/// **repeatable** section (no slot — e.g. the spec's `#criteria`) returns its items
+/// rendered as a Content list: each item's `### <title>` followed by its statement
+/// slot prose (see [`render_repeatable_items`]), so `{{@task.spec#criteria}}` resolves
+/// to the criteria the implementer reads (`worked-examples.md` → flow 6). Zero items
+/// yields empty content (the absent-value case, not an error).
+///
+/// Deeper fragment shapes (`#unit/leaf`, `#unit/item[/leaf]`) are not store-read
+/// targets at this scope and surface as a located block rather than a panic.
 fn slice_fragment(
     doc: &Document,
     source: &str,
@@ -183,16 +188,30 @@ fn slice_fragment(
         ));
     };
 
-    let Some(span) = &section.slot else {
-        return Err(block(
-            "store.section-has-no-slot",
-            format!("section `{unit}` of `{address}` has no slot to slice"),
-            address,
-            "slice a section whose body is a slot".to_string(),
-        ));
-    };
+    // A slot section slices to its prose span; a repeatable section (no slot) slices
+    // to its rendered items — the read-path inverse for each non-deref shape.
+    match &section.slot {
+        Some(span) => Ok(span.slice(source).to_string()),
+        None => Ok(render_repeatable_items(section, source)),
+    }
+}
 
-    Ok(span.slice(source).to_string())
+/// Render a repeatable section's items as a Content list for the store-read path:
+/// each item is its `### <title>` heading and, when the item block carries a slot
+/// (e.g. the spec criterion's `statement`), the slot prose beneath it. Items are
+/// joined by a blank line, mirroring their on-disk order. The composer wraps the
+/// whole string as a `> ` Content blockquote, so `{{@task.spec#criteria}}` reads as
+/// the titled, prose-carrying criteria list the implementer needs.
+fn render_repeatable_items(section: &ParsedSection, source: &str) -> String {
+    section
+        .items
+        .iter()
+        .map(|item| match &item.slot {
+            Some(span) => format!("### {}\n\n{}", item.title.trim(), span.slice(source).trim()),
+            None => format!("### {}", item.title.trim()),
+        })
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 #[cfg(test)]
@@ -201,6 +220,7 @@ mod tests {
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
 
     /// A throwaway directory that removes itself on drop — keeps store-read tests
     /// off any real repo tree.
@@ -242,8 +262,37 @@ mod tests {
             "commit".to_string(),
             crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads"),
         );
+        m.insert(
+            "spec".to_string(),
+            crate::schema::load_schema(SPEC_YAML).expect("spec.yaml loads"),
+        );
         m
     }
+
+    /// A committed `spec` whose `criteria` is a **repeatable** section (the shipped
+    /// shape) — the read target `implement-from-spec`'s `locate-from-spec` step reads
+    /// via `{{@task.spec#criteria}}`. Human-editable, conformant bytes.
+    const COMMITTED_SPEC: &str = "\
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Rejects the 101st request  {#rejects-burst}
+
+The gateway rejects the 101st request in a rolling 60s window.
+
+### Recovers after the window  {#recovers}
+
+The next window admits requests again.
+";
 
     /// The canonical committed-ADR fixture flow #5 re-reads
     /// (`decisions/single-node-cache.md`). Human-editable, conformant bytes.
@@ -289,6 +338,34 @@ A cold node loses its sessions; clients re-authenticate.
         insta::assert_snapshot!(prose, @r"
         A single in-memory node keeps session lookups sub-millisecond and avoids a
         network hop; acceptable because sessions are cheap to reconstruct on a cold node.
+        ");
+    }
+
+    /// GOLDEN: a committed `spec`'s **repeatable** `criteria` section is sliced via
+    /// `spec:gateway-rate-limiting#criteria` — the section has no slot, so the slice
+    /// renders its items (each `### <title>` + its `statement` slot prose) as the
+    /// Content list `{{@task.spec#criteria}}` reads (`worked-examples.md` → flow 6).
+    /// This is the read path the shipped repeatable `criteria` needs; the slot-only
+    /// path (flow #5's `#decision`) never exercised it.
+    #[test]
+    fn store_slices_a_committed_spec_repeatable_criteria_section() {
+        let root = TempRoot::new("spec-criteria");
+        let path = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, COMMITTED_SPEC).expect("write committed spec");
+
+        let address = Address::parse("spec:gateway-rate-limiting#criteria").expect("valid address");
+        let rendered = read_slice(root.path(), &schemas(), &address)
+            .expect("committed spec criteria slice resolves");
+
+        insta::assert_snapshot!(rendered, @r"
+        ### Rejects the 101st request
+
+        The gateway rejects the 101st request in a rolling 60s window.
+
+        ### Recovers after the window
+
+        The next window admits requests again.
         ");
     }
 
