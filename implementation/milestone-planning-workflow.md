@@ -39,6 +39,10 @@ This is also where the **doctype contract gets set at the right moment**: a doct
 
 The milestone is **planned** when its blocking gaps are settled (or consciously deferred), the decisions/docs/doctypes it needs are in place and have survived an independent review, and its increments are cut and ordered in the roadmap — ready for the [increment workflow](increment-workflow.md) to build the first one.
 
+## Orchestration
+
+Run as the **`/milestone-plan <id>`** command — the runnable overlay of this loop. Unlike the build loops (the `milestone-build` *workflow*, which runs autonomously and halts on the rare fork), planning is **human-led**, so it is driven from the **main session** as a conversation: the autonomous bursts delegate to subagents (`gap-detector` ×4 in parallel for *Detect gaps*; `design-reviewer` for *Review*), while **Settle** and **Decompose** stay inline with the human. A background workflow is the wrong vehicle here — its center of gravity is settling forks, which is irreducibly the human's. The vehicle matches the work: a *workflow* for autonomous loops, a *command* for human-led planning.
+
 ## Why this shape
 
 - **Gaps before increments.** Decomposing over an unsettled decision or a missing doc produces a plan that halts mid-build. Finding the holes first is what lets the increment loop run unattended — a settled gate is implemented, an undiscovered one is a stop.
