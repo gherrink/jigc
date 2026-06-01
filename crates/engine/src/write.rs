@@ -1244,6 +1244,99 @@ pub fn add_item(
     }
 }
 
+/// `set-field` (header field **absent**): materialize the front-matter `key: value`
+/// line for `field` at its **schema-ordered position** inside the `---` fence (after
+/// the nearest preceding present header field, before the nearest following one), so
+/// the present front-matter fields stay in schema order (`parsing.md` → Absent
+/// structural homes generate at their schema-ordered position). The optional ref the
+/// fillable form omits (`commit#header/implements`) is the driving case. A header
+/// field already present → [`GenerateError::AlreadyPresent`] (route to [`set_field`]);
+/// a section that is not the header, or a key the schema does not declare for it →
+/// [`GenerateError::WrongShape`] / [`GenerateError::UnknownSection`].
+pub fn insert_front_matter_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    field: &Field,
+) -> Result<String, GenerateError> {
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    if !section.header {
+        return Err(GenerateError::WrongShape {
+            what: format!("section {section_id:?} is not the header (front-matter)"),
+        });
+    }
+
+    // The header's declared field order — the schema-ordered key sequence the inserted
+    // line slots into.
+    let schema_keys: Vec<&str> = match &section.body {
+        SectionBody::Simple { fields, .. } => fields.iter().map(|f| f.id.as_str()).collect(),
+        SectionBody::Repeatable { .. } => {
+            return Err(GenerateError::WrongShape {
+                what: format!("section {section_id:?} is repeatable, not a header"),
+            });
+        }
+    };
+
+    // The front-matter content range (between the `---` fences) and the present keys
+    // in physical order, located from the same block parse the reader uses.
+    let content = front_matter_content(source).ok_or_else(|| GenerateError::WrongShape {
+        what: format!("section {section_id:?} has no front-matter block to insert into"),
+    })?;
+    if field_value_in_lines(source, content.clone(), &field.key, false).is_some() {
+        return Err(GenerateError::AlreadyPresent {
+            what: format!("field {:?} in section {section_id:?}", field.key),
+        });
+    }
+
+    let line = format!("{}\n", emit_one_field(field));
+    let at = front_matter_insertion_offset(source, content, &schema_keys, &field.key);
+    Ok(insert_at(source, at, &line))
+}
+
+/// The inner content range of the front-matter `---` block, if present.
+fn front_matter_content(source: &str) -> Option<Range<usize>> {
+    parse::scan_blocks(source)
+        .into_iter()
+        .find_map(|b| match b {
+            Block::Metadata { content } => Some(content),
+            _ => None,
+        })
+}
+
+/// The byte offset at which to insert a new front-matter field line so the present
+/// header fields stay in **schema order**: the line-start of the nearest *following*
+/// present field (the first present field whose schema index exceeds the target's),
+/// else the end of the front-matter content (just before the closing `---`).
+fn front_matter_insertion_offset(
+    source: &str,
+    content: Range<usize>,
+    schema_keys: &[&str],
+    target_key: &str,
+) -> usize {
+    let order = |key: &str| schema_keys.iter().position(|k| *k == key);
+    let target_idx = order(target_key);
+    let text = &source[content.clone()];
+    let mut line_start = content.start;
+    for line in text.split_inclusive('\n') {
+        let bare = line.trim_end_matches('\n').trim_start();
+        if let Some((key, _)) = bare.split_once(':')
+            && order(key.trim()) > target_idx
+        {
+            return line_start;
+        }
+        line_start += line.len();
+    }
+    // No following present field: append at the content's end (the metadata content
+    // range ends just before the closing `---` fence line).
+    content.end
+}
+
 /// `set-field` (field **absent**, section present): insert the field bullet for
 /// `field` into `section_id`'s trailing field group, materializing the
 /// `<!-- fields -->` sentinel **once** if the section has no field group yet (the
@@ -2362,28 +2455,59 @@ pub fn set_field_validated(
         ));
     }
 
-    // Locate the target span (the field's value bytes) before the splice, so the
-    // validate-after diff-confinement check has the intended target to assert against.
-    let target = locate_field_value(source, field_key).ok_or_else(|| {
-        Finding::blocking(
-            "write.not-present",
-            format!("field {field_key:?} value line is not present in section {section_id:?}"),
-            Location::at(1, 1),
-        )
-    })?;
-
-    let edited = set_field(
-        schema,
-        source,
-        section_id,
-        field_key,
-        &value_text(new_value),
-    )
-    .map_err(|e| splice_error_finding(&e))?;
-
-    // (a) + (b): re-parse and only-target-changed. Abort (no buffer) on any anomaly.
-    validate_after(schema, source, &edited, target)?;
-    Ok(edited)
+    // Present field ⇒ surgical splice of the located value span; absent optional field
+    // ⇒ generate-or-insert the field line at its schema-ordered position (the absent
+    // half of the write path; `parsing.md` → Absent structural homes). The driving
+    // case is an optional header ref the fillable form omits (`commit#header/implements`).
+    match locate_field_value(source, field_key) {
+        Some(target) => {
+            let edited = set_field(
+                schema,
+                source,
+                section_id,
+                field_key,
+                &value_text(new_value),
+            )
+            .map_err(|e| splice_error_finding(&e))?;
+            // (a) + (b): re-parse and only-target-changed. Abort on any anomaly.
+            validate_after(schema, source, &edited, target)?;
+            Ok(edited)
+        }
+        None => {
+            // The field's home is absent: materialize its line in schema order. The
+            // header (front-matter) is the in-scope case; a body field group reuses
+            // [`insert_field`]. Generation is not a single-span splice, so the only
+            // post-write gate is re-parse (the surgical-span check does not apply).
+            let new_field = Field {
+                key: field_key.to_string(),
+                value: new_value.clone(),
+            };
+            let is_header = schema
+                .sections
+                .iter()
+                .find(|s| s.id == section_id)
+                .is_some_and(|s| s.header);
+            let edited = if is_header {
+                insert_front_matter_field(schema, source, section_id, &new_field)
+            } else {
+                insert_field(schema, source, section_id, &new_field)
+            }
+            .map_err(|e| generate_error_finding(&e))?;
+            if let Err(findings) = parse::parse_sections(schema, &edited) {
+                let detail = findings
+                    .into_iter()
+                    .next()
+                    .map(|f| f.message)
+                    .unwrap_or_else(|| "the generated buffer no longer conforms".to_string());
+                return Err(Finding::blocking(
+                    "write.non-reparseable",
+                    format!("write rejected: result does not re-parse ({detail})"),
+                    Location::at(1, 1),
+                ));
+            }
+            Ok(edited)
+        }
+    }
 }
 
 /// The gated `set-slot`: the full write-time local adjudication for a slot prose
@@ -2758,6 +2882,98 @@ Each service drops its local limiter.
             .expect_err("a non-reparseable result ⇒ abort");
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
         assert_eq!(finding.code, "write.non-reparseable");
+    }
+}
+
+#[cfg(test)]
+mod set_field_generate {
+    //! The gated `set-field` over an **absent optional front-matter ref** — the
+    //! generate-or-insert half of the write path lifted to the header section
+    //! (`parsing.md` → Absent structural homes generate at their schema-ordered
+    //! position; `worked-examples.md` flow 6 → `commit#header/implements`). A `commit`
+    //! whose fillable form omits the optional `implements` ref must have the
+    //! `implements:` line **materialized** at its schema-ordered position; a commit that
+    //! already carries `implements` still routes to the surgical splice.
+
+    use super::*;
+    use crate::field_block::Value;
+    use crate::schema::{Schema, load_schema};
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+
+    fn commit_schema() -> Schema {
+        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+    }
+
+    /// A staged `commit` whose fillable form OMITS the optional `implements` ref — only
+    /// the required `type` is in the front matter.
+    const COMMIT_NO_IMPLEMENTS: &str = "\
+---
+type: feat
+---
+
+# Implement gateway rate limiting
+
+## Summary
+
+Add a per-client rate limit at the gateway.
+
+## Body
+
+Centralize limiting at the gateway.
+
+## Trailers
+";
+
+    fn scalar(v: &str) -> Value {
+        Value::Scalar(v.to_string())
+    }
+
+    /// Absent optional ref: `set-field` on `commit#header/implements` materializes the
+    /// `implements:` line at its schema-ordered front-matter position (after the present
+    /// `type:`), the buffer re-parses, and the diff is confined to the inserted line.
+    #[test]
+    fn absent_front_matter_ref_materializes_in_schema_order() {
+        let out = set_field_validated(
+            &commit_schema(),
+            COMMIT_NO_IMPLEMENTS,
+            "header",
+            "implements",
+            &scalar("spec:gateway-rate-limiting"),
+        )
+        .expect("an absent optional ref materializes its line");
+
+        // The line landed in schema order: after `type:`, still inside the `---` fence.
+        assert!(out.contains("type: feat\nimplements: spec:gateway-rate-limiting\n---"));
+        // The buffer re-parses against the schema.
+        parse::parse_sections(&commit_schema(), &out).expect("the materialized buffer re-parses");
+        // The diff is confined to the one inserted line: every other byte is verbatim,
+        // so removing exactly the new line restores the original.
+        assert_eq!(
+            out.replace("implements: spec:gateway-rate-limiting\n", ""),
+            COMMIT_NO_IMPLEMENTS,
+            "only the implements line was inserted"
+        );
+    }
+
+    /// A `commit` that already carries `implements` routes to the **surgical splice**:
+    /// the value bytes change in place, no second `implements:` line is generated.
+    #[test]
+    fn present_front_matter_ref_routes_to_splice() {
+        let with_field = COMMIT_NO_IMPLEMENTS
+            .replace("type: feat\n", "type: feat\nimplements: spec:old-target\n");
+        let out = set_field_validated(
+            &commit_schema(),
+            &with_field,
+            "header",
+            "implements",
+            &scalar("spec:new-target"),
+        )
+        .expect("a present ref edits surgically");
+        assert!(out.contains("implements: spec:new-target"));
+        assert!(!out.contains("spec:old-target"));
+        // Exactly one `implements:` line — the splice did not generate a second.
+        assert_eq!(out.matches("implements:").count(), 1);
     }
 }
 
