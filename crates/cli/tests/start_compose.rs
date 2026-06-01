@@ -267,6 +267,56 @@ fn form_d_quick_fix_mints_and_composes_without_adr_or_supersedes() {
 }
 
 #[test]
+fn form_d_router_lists_selectable_workflows_and_re_run_without_minting() {
+    let repo = TempDir::new("form-d-router");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `--workflow router <intent>`: the selection workflow. It is
+    // `creates-task: false`, so Form D composes it with no task context — no mint
+    // — interpolating `{{catalog}}` to the selectable (`creates-task: true`)
+    // work-workflows and emitting the literal agent-substitution re-run.
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "router", "add rate limiter"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow router \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The router mints nothing — `creates-task: false` composes with no task
+    // context, so no `.jigc/tasks/` dir may be opened.
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "a `creates-task: false` router must mint nothing — no .jigc/tasks/ dir may be created",
+    );
+
+    // The catalog interpolated to one `- <id> — <when>` line per selectable
+    // work-workflow: both `single-task` and `quick-fix`, with their `when` hints.
+    assert!(
+        stdout.contains("- single-task — implement one scoped change end-to-end"),
+        "the router must list single-task as a `- <id> — <when>` option; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("- quick-fix — apply a small commit-only fix with no decision to record"),
+        "the router must list quick-fix as a `- <id> — <when>` option; got:\n{stdout}",
+    );
+
+    // The route-to-workflow step carries the literal agent-substitution re-run —
+    // angle-bracket markers the agent fills, not placeholders or slots.
+    assert!(
+        stdout.contains("jigc start --workflow <chosen> \"<intent>\""),
+        "the router must carry the literal agent-substitution re-run prose; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn form_d_unknown_workflow_rejects_before_minting() {
     let repo = TempDir::new("form-d-unknown");
     init_repo(repo.path());

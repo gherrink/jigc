@@ -1,0 +1,6 @@
+---
+when: pick a work-workflow for an intent
+creates-task: false
+---
+{{ include: step:present-catalog }}
+{{ include: step:route-to-workflow }}
