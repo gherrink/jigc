@@ -152,12 +152,20 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     }
 
     let pack = EmbeddedPack::new();
-    compose_core(&repo_root, intent, &pack)
+    let workflow_id = default_workflow_id(&pack)?;
+    compose_core(&repo_root, intent, &pack, &workflow_id)
 }
 
-/// Compose the cascade's default workflow from `intent`, branching on the
-/// workflow's `creates-task` flag — the engine spine the front door drives, with
-/// the pack injected so the no-task arm is reachable under test.
+/// Compose the workflow named by `workflow_id` from `intent`, branching on the
+/// workflow's `creates-task` flag — the engine spine both front-door forms drive
+/// (the cascade-default `jigc start "<intent>"` passes [`default_workflow_id`];
+/// the explicit `--workflow <X>` form passes `X`), with the pack injected so the
+/// no-task arm is reachable under test.
+///
+/// An unknown `workflow_id` — one the pack does not provide — is **rejected with a
+/// routed finding before any mint** (`write-commands.md` → Form D): the membership
+/// check is the pack read, a `PackError::NotFound` mapped to a routed
+/// `workflow-refs.unknown-workflow` block, so a typo'd id never strands a task dir.
 ///
 /// A `creates-task: true` work-workflow (e.g. `single-task`) **mints**: it opens
 /// the task working area (reads HEAD), provisions the task's commit doc, and
@@ -170,9 +178,13 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
 /// the cascade catalog **filtered to the selectable (`creates-task: true`) work-
 /// workflows** into the context, so `{{catalog}}` resolves the same list the
 /// router lists and never names itself.
-fn compose_core(repo_root: &Path, intent: &str, pack: &dyn PackSource) -> Result<ComposedWorkflow> {
-    let workflow_id = default_workflow_id(pack)?;
-    let workflow_bytes = read_pack(pack, PackResourceKind::Workflows, &workflow_id)?;
+fn compose_core(
+    repo_root: &Path,
+    intent: &str,
+    pack: &dyn PackSource,
+    workflow_id: &str,
+) -> Result<ComposedWorkflow> {
+    let workflow_bytes = read_workflow(pack, workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     let commands = load_catalog(pack)?;
     // The selectable-workflow list both arms feed to composition — the router's
@@ -428,6 +440,22 @@ fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
     load_command_catalog(&bytes).map_err(finding_to_err)
 }
 
+/// Read a named workflow's bytes, mapping a **missing** workflow to a routed
+/// blocking finding — the Form-D unknown-`<X>` rejection (`write-commands.md`: an
+/// unknown `<X>` is rejected with a routed finding). Membership is the pack read:
+/// a `PackError::NotFound` is the "not in the catalog" rejection. Fires before any
+/// mint, so a typo'd id strands no task dir.
+fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> {
+    pack.read(PackResourceKind::Workflows, &ResourceId::from(id))
+        .map_err(|_| {
+            finding_to_err(Finding::block(
+                "workflow-refs.unknown-workflow",
+                format!("no workflow `{id}` — list the selectable work-workflows with `jigc start`"),
+                "run `jigc start` to see the selectable work-workflows, then re-run `jigc start --workflow <id> \"<intent>\"`",
+            ))
+        })
+}
+
 /// Read a pack resource by kind + id, mapping a missing resource to an error.
 fn read_pack(pack: &dyn PackSource, kind: PackResourceKind, id: &str) -> Result<Vec<u8>> {
     pack.read(kind, &ResourceId::from(id))
@@ -667,7 +695,9 @@ mod tests {
             (PackResourceKind::Steps, "noop", "no-op body\n"),
         ]);
 
-        let composed = compose_core(repo.path(), "anything", &pack).expect("no-task compose");
+        let workflow_id = default_workflow_id(&pack).expect("defaults declare a default-workflow");
+        let composed =
+            compose_core(repo.path(), "anything", &pack, &workflow_id).expect("no-task compose");
 
         // (a) The no-task arm mints nothing: no working area is opened.
         assert!(
@@ -693,6 +723,96 @@ mod tests {
             !composed.text.contains("- router —"),
             "the router must not list itself (creates-task: false is filtered); got:\n{}",
             composed.text,
+        );
+    }
+
+    /// A minimal but valid `commit` schema (`type: commit`, a header section + a
+    /// `summary` slot) — enough for `provision_commit_doc` to render a fillable
+    /// form when a `creates-task: true` workflow mints under Form D.
+    const COMMIT_SCHEMA: &str = "type: commit\nsections:\n  - id: header\n    header: true\n    fields:\n      - { id: type, type: string }\n  - id: summary\n    slot: {}\n";
+
+    /// The pack a Form-D test composes over: a `creates-task: true` `single-task`,
+    /// a `creates-task: false` `router`, the `commit` schema minting provisions,
+    /// and the no-op step both workflow bodies include. `default-workflow` points
+    /// at the router so a stray cascade-default read would be observably wrong —
+    /// Form D must compose the *named* workflow, not the default.
+    fn form_d_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: router\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (PackResourceKind::Schemas, "commit", COMMIT_SCHEMA),
+            (
+                PackResourceKind::Workflows,
+                "router",
+                "---\nwhen: help me pick a workflow\ncreates-task: false\n---\n{{ include: step:route }}\n",
+            ),
+            (
+                PackResourceKind::Workflows,
+                "single-task",
+                "---\nwhen: implement one scoped change\ncreates-task: true\n---\n{{ include: step:noop }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "route",
+                "Pick one of the work-workflows below:\n\n{{ catalog }}\n",
+            ),
+            (PackResourceKind::Steps, "noop", "no-op body\n"),
+        ])
+    }
+
+    /// The T2 done-criterion (a): Form D over a **`creates-task: true`** named
+    /// workflow opens `.jigc/tasks/<slug>/` and composes its body. The named
+    /// workflow is `single-task` while `default-workflow` is the router, so a
+    /// successful mint proves the *named* workflow composed, not the default.
+    #[test]
+    fn form_d_over_a_creates_task_workflow_mints_and_composes() {
+        let repo = TempDir::new("form-d-mint");
+        init_repo_with_commit(repo.path());
+
+        let pack = form_d_pack();
+        let composed = compose_core(repo.path(), "Add rate limiter", &pack, "single-task")
+            .expect("Form-D compose of a creates-task workflow");
+
+        let dir = repo
+            .path()
+            .join(".jigc")
+            .join("tasks")
+            .join("add-rate-limiter");
+        assert!(
+            dir.is_dir(),
+            "a creates-task: true Form-D workflow must open .jigc/tasks/<slug>/",
+        );
+        assert!(
+            composed.text.contains("no-op body"),
+            "the named workflow's body must compose; got:\n{}",
+            composed.text,
+        );
+    }
+
+    /// The T2 done-criterion (b): a `<X>` the pack does not provide rejects with a
+    /// routed finding, and **no** `.jigc/tasks/` dir is created — the rejection
+    /// precedes minting. The repo is a bare temp dir: rejection fires before HEAD
+    /// is ever read.
+    #[test]
+    fn form_d_unknown_workflow_rejects_before_minting() {
+        let repo = TempDir::new("form-d-unknown");
+
+        let pack = form_d_pack();
+        let err = compose_core(repo.path(), "Add rate limiter", &pack, "does-not-exist")
+            .expect_err("an unknown --workflow id must reject");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("does-not-exist") && msg.contains("route:"),
+            "the rejection must name the unknown id and carry a route; got: {msg}",
+        );
+        assert!(
+            !repo.path().join(".jigc").join("tasks").exists(),
+            "rejection must precede minting — no .jigc/tasks/ dir may be created",
         );
     }
 }
