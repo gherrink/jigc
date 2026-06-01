@@ -10,7 +10,7 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 |---|---|---|---|---|
 | `commit` | the change description for one task | transient → git commit message | M1 | ✅ shipped |
 | `adr` | one architecture decision | persisted → `decisions/` | M1 | ✅ shipped |
-| `spec` | the "what" a task implements | persisted (location TBD) | M3 | planned |
+| `spec` | the "what" a task implements | persisted → `specs/` | M3 | planned |
 | `prd` | product requirements above specs | persisted | driver TBD | named, unscheduled |
 | `arch-doc` | living architecture documentation | persisted | driver TBD | named, unscheduled |
 
@@ -21,8 +21,8 @@ VISION's starting set is commit · arch-doc · prd · adr · spec ([VISION.md](.
 Direction reads source → target; cardinality is the rough *intent*, not a locked schema constraint.
 
 - `adr` —**supersedes**→ `adr` (0..1 → 0..1) — **locked, shipped** (M1). The one logic-free task→committed-doc handle the MVP proves ([worked-examples.md](../design/worked-examples.md) → Superseding decision).
-- `commit` —**implements**→ `spec` (1 → 0..1) — a task's commit references the spec it satisfies (the MVP commit is spec-less; this edge activates with M3).
-- `spec` —**decided-by**→ `adr` (n → n) — a spec points at the decisions that shaped it.
+- `commit` —**implements**→ `spec` (**0..1** → 0..1) — **activates with M3.** A task's commit references the spec it satisfies; the M3 `spec` worked example walks this edge at finalize. Cardinality is `0..1` on the commit side (not the `1` of first-draft intent), because spec-less tasks (`single-task`, `quick-fix`) still produce a valid `commit` — the edge is optional, set only by the spec-driven workflow.
+- `spec` —**decided-by**→ `adr` (n → n) — a spec points at the decisions that shaped it. **Deferred past M3** — nothing in the M3 two-task arc writes or reads it, so it stays named-unscheduled intent until a workflow drives it (a one-line schema delta when it does).
 - `prd` —**decomposes-into**→ `spec` (1 → n) — a PRD's requirements fan out into specs.
 - `arch-doc` —**cites**→ `adr` (n → n) — architecture docs reference the decisions behind them.
 

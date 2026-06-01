@@ -28,7 +28,7 @@ The guarantee that makes this safe: **the agent addresses content by name; the C
 | `remove-item <item-addr>` | an item | — |
 | `reorder <section-addr> --order …` | the item ordering list | deterministic edit of the ordered list |
 
-**Lifecycle** — a task is born at `jigc start` (see [Task origination](#task-origination)) and then managed with `jigc task <verb> <id>`: `diff` (see the working changeset) · `validate` (check it) · `finalize` (validate + commit) · `discard` (abandon).
+**Lifecycle** — a task is born at `jigc start` (see [Task origination](#task-origination)) and then managed with `jigc task <verb> <id>`: `bind` (bind an existing committed doc to a context role — see [Binding a context role](#binding-a-context-role)) · `diff` (see the working changeset) · `validate` (check it) · `finalize` (validate + commit) · `discard` (abandon).
 
 A **fillable form** — `jigc doc edit` emits the whole instance with slots marked, the agent fills in place, the CLI extracts-by-marker and places — is **deferred sugar** that compiles to a transactional batch of these primitives. It pays off only for multi-slot docs and carries the real risk (form corruption, handled like an out-of-band edit), so it lands when multi-slot flows do. The primitives are the MVP surface.
 
@@ -71,7 +71,12 @@ Minting is **structure declared by the workflow**, never inferred — the CLI re
 
 The principle: **suffix only in the deterministic parallel case** (where both works are legitimate and the join needs to disambiguate); **reject in the serial case** (where it's almost certainly a forgotten resume the agent should see).
 
-A task carries **context roles** its workflow declares (e.g. `spec`); the agent **binds** them explicitly (at `start`, via a `locate` step, or — for an agent-created doc — at `create` through the gate's `as:` form, see [The create-gate](#the-create-gate)), and `task.<role>` ([workflow-dialect.md](workflow-dialect.md)) navigates the bound doc. The CLI never infers a binding.
+A task carries **context roles** its workflow declares; `task.<role>` ([workflow-dialect.md](workflow-dialect.md)) navigates the bound doc, and **the CLI never infers a binding** — the agent binds explicitly, by one of two routes depending on where the doc comes from:
+
+- **agent-created, same task** — `jigc doc create <type>` under a create-gate entry whose object form declares `as: <role>` binds the new instance in one step ([The create-gate](#the-create-gate)).
+- **an existing committed doc** — `jigc task bind <role> <addr>` ([Binding a context role](#binding-a-context-role)) binds a doc a *prior* task committed; this is how the spec → implementation arc threads a `spec` written by one task into the task that implements it.
+
+A role the workflow declares but the agent has not yet bound resolves to **empty** (the slice is absent, not an error); a `task.<role>` whose role the workflow does **not** declare is a `workflow-refs` conformance error ([validation.md](validation.md)).
 
 ## Staging and the transaction model
 
@@ -132,6 +137,26 @@ Resolves through the [9-phase algorithm](overrides.md#resolution-algorithm) — 
 **`fan-out` sub-agents.** Each sub-agent runs its own sub-workflow, and *that* sub-workflow's `allows-create` applies. A sub-agent inherits no permissions from the parent. (Revisit if a real `fan-out` pattern demands parent → child gate inheritance.)
 
 A worked payoff: the **commit message is just a doc type.** Its format — a `type` enum, a `scope` field, a `summary` slot, a `body` slot, a repeatable `trailers` section, a mandated issue-ref — is the commit type's schema plus cascade overrides. A project gets *any* commit convention it requires (conventional commits, custom trailers, …) with no special-casing; the same machinery that structures an ADR structures the commit. The agent writes the prose; the CLI guarantees the required format.
+
+### Binding a context role
+
+`jigc task bind <role> <addr>` binds an **already-committed** document to one of the active task's declared context roles ([workflow-dialect.md](workflow-dialect.md) → `reads`), so `task.<role>` resolves to it. It is the counterpart to the create-gate's `as:` form: the gate binds a doc the task *creates*; `bind` binds a doc a *prior* task already committed — the only way a managed doc crosses a task boundary into a later task's context.
+
+This is the **spec → implementation seam**: a `plan` task authors and commits a `spec`; a later `implement-from-spec` task runs `jigc task bind spec <spec-id>`, and its `locate` step's `{{@task.spec#criteria}}` then resolves over that committed file.
+
+**Why a verb, not a `start` flag.** Binding is a per-task write like any other, kept *off* `jigc start` so origination stays the single simple sentence the agent learns from the bootstrap. The composed workflow routes the agent to it — a `locate` step emits `` Run: `jigc task bind spec <SPEC_ID>` `` (a `<NAME>` agent-substitution marker, [command-catalog.md](command-catalog.md)) — exactly as it routes every other structural op back to the CLI.
+
+**Resolution timing.** Binding happens *after* compose, so the bound slice is empty on the first composition and resolves on the **resume re-compose** (`jigc start --task <id>`) — the same deferred-bind-then-resume path the superseding-decision flow already uses for `{{@task.decision.supersedes#decision}}` ([worked-examples.md](worked-examples.md) → Superseding decision).
+
+**Enforcement at every `jigc task bind <role> <addr>`:**
+
+1. Identify the active task (cwd, or `--task <id>`). **No active task** → reject: `"no active task — start one with \`jigc start\`"`.
+2. `<role>` ∉ the workflow's declared read-roles → reject, listing the declared roles.
+3. `<addr>` does not resolve in the **committed store** → reject: `"no such doc \`<addr>\`"`. `bind` targets committed docs only — a doc the *same* task creates uses the create-gate's `as:` form instead.
+4. The target's doctype ≠ the role's declared `type` → reject with the mismatch.
+5. Otherwise record the binding in the task's `roles` and return the bound address. Re-binding a role overwrites (last-write-wins, surfaced in `task diff`).
+
+The agent supplies only the *which-doc* choice; recording the binding and resolving it stay the CLI's — the determinism boundary holds.
 
 ## Out-of-band reconciliation
 

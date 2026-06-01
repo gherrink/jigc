@@ -2,13 +2,14 @@
 
 End-to-end walkthroughs of four MVP-critical flows, with cross-refs to the canonical spec for every surface they touch. This doc is **last in the reading order**; each example references prior part-docs without re-stating their content. Notation is **illustrative** — the docs cited are the source of truth for shape, error format, and edge cases.
 
-The five flows:
+The flows:
 
 1. [Spec-less single-task with optional ADR create](#1-spec-less-single-task-with-optional-adr-create) — the MVP write loop
 2. [OOB edit reconciliation](#2-oob-edit-reconciliation) — absorb, conformance-block, conflict-block
 3. [Override application at compose time](#3-override-application-at-compose-time) — a project-level delta shifting the composed output
 4. [Finalize-to-git](#4-finalize-to-git) — the seven phases producing one commit
 5. [Superseding decision](#5-superseding-decision--context-slice--edge-integrity) — context-slice over a persisted ADR + forward-ref integrity
+6. [Spec-driven planning](#6-spec-driven-planning--the-two-task-arc) — the M3 arc: a `plan` task authors a spec, a later task binds and implements it
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -258,3 +259,96 @@ $ jigc task finalize shared-redis-session-cache
 ```
 
 Blocking integrity error at finalize ([validation.md](validation.md) → Forward-ref resolution); the task fixes it and re-runs. Cross-task forward-refs (the target is a *different* task's planned ADR) are not supported in MVP — same policy, same three routing options (Pass 3 #6, [DECISIONS.md](../DECISIONS.md)).
+
+## 6. Spec-driven planning — the two-task arc
+
+The M3 flow that proves the doc-creation differentiator *beyond* `adr` and the **intent → spec → implementation** arc. Two tasks: a `plan` task authors and commits a `spec`; a later `implement-from-spec` task **binds** that committed spec and implements against it, reading `{{@task.spec#criteria}}` over the persisted file and recording `commit —implements→ spec` at finalize. The new surface over flow 5 is **cross-task binding** — task B reading a doc task A committed, via `jigc task bind` rather than an in-task create ([write-commands.md](write-commands.md) → Binding a context role). Everything else (the persisted-slice read, the resume re-compose, the finalize edge-walk) reuses the flow-5 machinery.
+
+### Task 1 — `plan` authors and commits the spec
+
+```text
+$ jigc start "<intent: define what the rate-limiter must do>"
+> the router lists single-task · quick-fix · plan · implement-from-spec with their `when` hints
+> (the agent picks `plan` — the intent is "define the what", not "implement")
+
+$ jigc start --workflow plan "rate-limit the gateway per client"
+> task: spec-rate-limit-gateway · workflow: plan · base: a3f9c2
+
+# plan's create-gate (`allows-create: [{type: spec, as: spec}]`) lets the agent author the spec
+$ jigc doc create spec --title "Gateway rate limiting"        # → spec:gateway-rate-limiting, bound to task.spec
+$ jigc doc set-slot  spec:gateway-rate-limiting#goal    --from-file -
+$ jigc doc add-item  spec:gateway-rate-limiting#criteria --title "per-client limit"
+$ jigc doc set-slot  spec:gateway-rate-limiting#criteria/per-client-limit#statement --from-file -
+   (... more criteria ...)
+
+$ jigc task finalize spec-rate-limit-gateway
+[4 promote]    spec:gateway-rate-limiting → specs/gateway-rate-limiting.md
+[5 stage]      git add specs/gateway-rate-limiting.md
+[6 commit]     → d4f1a0 "docs: spec gateway rate limiting"
+```
+
+- `plan` is a `creates-task: true` work-workflow; it provisions a `commit` doc like any task, so the spec-authoring task still produces one git commit. Its commit `type` is `docs` (a spec-only change — no code).
+- The promoted spec is a non-empty diff, so the [empty-commit guard](finalize.md) ([finalize.md](finalize.md)) is satisfied even though no code changed.
+- `specs/gateway-rate-limiting.md` is now committed; its `file-state` baseline is recorded.
+
+### Task 2 — `implement-from-spec` binds the committed spec and implements it
+
+`implement-from-spec`'s body is `[locate-from-spec, implement, finalize]` — note it includes a **distinct** `step:locate-from-spec`, *not* the spec-less `step:locate` that `single-task`/`quick-fix` share (a step id resolves to one file pack-wide, so the spec-driven locate must be its own step).
+
+```text
+$ jigc start --workflow implement-from-spec "implement gateway rate limiting"
+> task: implement-gateway-rate-limiting · workflow: implement-from-spec · base: d4f1a0
+
+## locate-from-spec
+Pick the spec this work implements from the committed specs, bind it, then re-run to
+read its criteria:
+> committed specs:
+> • spec:gateway-rate-limiting — "Gateway rate limiting"
+> • spec:auth-token-rotation — "Auth token rotation"
+Run: `jigc task bind spec <SPEC_ID>`         # ← agent fills <SPEC_ID> = spec:gateway-rate-limiting
+Run: `jigc start --task implement-gateway-rate-limiting`   # re-compose to pick up the bound slice
+{{ @task.spec#criteria }}                     # empty on this first compose — nothing bound yet
+```
+
+The bindable-spec menu is `{{store.specs}}` — the `store` root enumerating the committed `spec` instances as a collection ([workflow-dialect.md](workflow-dialect.md) → data-value roots), emitted as a readable Content list. The agent picks an id, binds, then runs the emitted re-compose directive — the same deferred-bind-then-resume path flow 5 uses, except here the step **emits** the `Run: jigc start --task <id>` so an agent following only the machine markers can't bind-then-forget-to-reread:
+
+```text
+$ jigc task bind spec spec:gateway-rate-limiting
+> bound: task.spec → spec:gateway-rate-limiting
+
+$ jigc start --task implement-gateway-rate-limiting
+## locate-from-spec
+Pick the spec this work implements from the committed specs, bind it, then re-run to
+read its criteria:
+> committed specs: ...
+> SPEC gateway-rate-limiting — criteria
+> • per-client limit — holds at 100 req/min per client key, burst 20
+> • ... (the criteria slice, re-read from the committed specs/ file)
+
+## implement
+Implement the change directly in the working tree. When done, stage the commit prose
+and record which spec it implements:
+Run: `jigc doc set-field commit:implement-gateway-rate-limiting#implements --value spec:gateway-rate-limiting`
+Run: `jigc doc set-field commit:implement-gateway-rate-limiting#type --value feat`
+Run: `jigc doc set-slot  commit:implement-gateway-rate-limiting#summary --from-file -`
+<<author: commit:implement-gateway-rate-limiting#summary>>
+
+## finalize
+Run: `jigc task finalize implement-gateway-rate-limiting`
+```
+
+- `jigc task bind spec <addr>` is gated by `implement-from-spec`'s `reads: [{role: spec, type: spec}]` declaration ([write-commands.md](write-commands.md) → Binding a context role); an unknown role, a non-spec target, or a target absent from the committed store all reject.
+- `{{@task.spec#criteria}}` resolves over the **committed** `specs/gateway-rate-limiting.md` — the persisted-slice read flow 5 already proves, now reached through a *directly-bound* role rather than a relation hop.
+- The `implements` field is a `ref` on the (transient) `commit` doc, `card: "0..1"` — set here, absent on spec-less tasks.
+- **If the agent never binds** (the role is optional), `{{@task.spec#criteria}}` stays empty and the task finalizes as a degenerate spec-less implementation — intended graceful degradation for M3, no gate (the "did you mean `single-task`?" advisory is deferred).
+
+### Finalize — the `implements` edge walk
+
+```text
+$ jigc task finalize implement-gateway-rate-limiting
+[2 validate]   forward-ref: commit:implement-gateway-rate-limiting#implements → spec:gateway-rate-limiting ✓ (committed store)
+...
+> e7c3b9 "feat: implement gateway rate limiting"
+```
+
+Forward-ref resolution walks the overlaid edge index: the `implements` edge originates on the **transient commit doc** in the task's working area (the first edge whose *source* is transient) and its target resolves in the committed store — passing exactly as flow 5's `supersedes` does ([validation.md](validation.md) → Forward-ref resolution; [storage.md](storage.md) → Edge-index lifecycle). The edge is validated at finalize but not persisted past it (the commit doc is the git message, never a repo file). Had `implements` pointed at a non-existent spec, finalize would block with the same three routing options as flow 5's dangling variant.

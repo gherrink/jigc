@@ -151,3 +151,51 @@ Cut 2026-06-01 via the [milestone-planning workflow](milestone-planning-workflow
 ### Status
 
 All three increments (1–3) complete as of 2026-06-01 — the routing loop is built end-to-end: bare `jigc start "<intent>"` composes the **router** (no mint), which lists `single-task` + `quick-fix` over `{{catalog}}` and routes the agent to an explicit `jigc start --workflow <chosen>` mint; `quick-fix` composes materially differently from `single-task`. Tasks were cut per-increment at pickup via the [increment workflow](increment-workflow.md); the execute phase surfaced one genuine fork (resume must compose the task's *own* minted workflow across the default flip — see [DECISIONS.md](../DECISIONS.md) 2026-06-01) which was resolved before the flip landed. The milestone was then audited and remediated via the [milestone-completion workflow](milestone-completion-workflow.md) (external code review + end-to-end tests → triage → one fix: an orphaned `build_catalog` removed).
+
+## Milestone 3 — spec-driven planning: decomposition
+
+Cut 2026-06-01 via the [`/milestone-plan`](../.claude/commands/milestone-plan.md) command (scope → detect gaps → settle → review → decompose; its first live use). Four `gap-detector` agents + an independent `design-reviewer` reshaped the design: M3's real cost is the **cross-task binding** surface — the `jigc task bind` verb + a `reads:` role declaration — not the "trivial pack addition" the spec-less MVP decision assumed; the read path, persisted-slice read, edge-walk, router N-enumeration, and four-class emit are all already built ([DECISIONS.md](../DECISIONS.md) 2026-06-01). Risk-first, linear: the schema foundation first, the cross-task binding spine (M3's #1 new risk) in isolation next, then the two halves of the arc — spec authoring, then spec-consuming implementation + the acceptance path. **Status: planned, not yet built.**
+
+### Increment 1 — `spec` doctype + `commit.implements` edge (schema foundation)
+
+**Deliverable:** the `spec` schema ships and round-trips; the `commit` schema gains the `implements` ref; both proven on fixtures over the byte-stable parser/writer + the edge / `ref-resolves` machinery — not yet any workflow.
+
+**Grouped scope:**
+- `crates/cli/pack/schemas/spec.yaml`: `goal` (slot), `context` (slot), `criteria` (repeatable, `id-from: title`, item = title + `statement` slot); `location: specs/`, `id-from: title`; **no** `status`/`date`, **no** `decided-by` ([document-type-schema.md](../design/document-type-schema.md), [doctype-map.md](doctype-map.md)).
+- `commit.yaml`: add the `implements` ref (`type: ref, to: spec, card: "0..1", inverse: implemented-by`) as a section field mirroring `adr`'s `supersedes`; pin its address fragment against the canonical grammar (resolving the flow-1-flat vs flow-5-section-qualified inconsistency — review #7) ([document-type-schema.md](../design/document-type-schema.md), [structural-grammar.md](../design/structural-grammar.md) → Addressing).
+- Golden + round-trip tests: a `spec` instance parses → canonical-writes idempotently; the transient-source `commit.implements` edge emits into the working overlay and `ref-resolves` against a committed-store spec ([parsing.md](parsing.md) → Round-trip, [validation.md](../design/validation.md) → Forward-ref).
+
+**Proves:** the new doctype + the first transient-source edge parse/write/validate cleanly on the proven substrate, before the workflows depend on them.
+
+### Increment 2 — `jigc task bind` + `reads:` declaration (the cross-task binding spine)
+
+**Deliverable:** a workflow declaring `reads: [{role: spec, type: spec}]` makes `task.spec` a valid `workflow-refs` root; `jigc task bind spec <addr>` binds a committed spec into the task's roles; on resume re-compose `{{@task.spec#criteria}}` resolves over that committed file — proven on fixtures (a test `reads`-declaring workflow + a committed spec fixture), not yet the pack workflows.
+
+**Grouped scope:**
+- `reads:` front-matter parse + seed the declared role into the task's role map (distinct from `allows-create`); undeclared `task.<role>` stays a `workflow-refs` conformance error, declared-but-unbound resolves to empty ([workflow-dialect.md](../design/workflow-dialect.md) → `reads`, [validation.md](../design/validation.md)).
+- `jigc task bind <role> <addr>` verb (clap + dispatch): the five-step enforcement — active task; role declared; target resolves in committed store; doctype matches; record binding (last-write-wins) ([write-commands.md](../design/write-commands.md) → Binding a context role).
+- The bound role persists in the task working area and is re-read on `resume_in_repo`, so the resume re-compose resolves the slice — reusing the M1 deferred-bind-then-resume path proven by `superseded-context` ([storage.md](../design/storage.md), [worked-examples.md](../design/worked-examples.md) → flows 5/6).
+
+**Proves:** M3's one genuinely new surface — binding an existing committed doc into a later task — in isolation, retired before the pack workflows ride on it. The #1 new risk.
+
+### Increment 3 — the `plan` workflow (spec authoring + code-less finalize)
+
+**Deliverable:** `jigc start --workflow plan "<intent>"` mints a task, the agent authors a spec via the create-gate, and `finalize` promotes it to `specs/` and commits a code-less, doc-only commit — end-to-end.
+
+**Grouped scope:**
+- Pack: the `plan` workflow (`creates-task: true`, `allows-create: [{type: spec, as: spec}]`, a `when` hint) + its steps (author-spec + finalize); spec born **only** in `plan` ([workflow-dialect.md](../design/workflow-dialect.md), [write-commands.md](../design/write-commands.md) → The create-gate).
+- Finalize for a code-less task: the promoted spec is a non-empty diff (empty-commit guard satisfied), commit `type: docs`; a golden/e2e proving a spec-only finalize lands one commit ([finalize.md](../design/finalize.md) → Promote, empty-commit guard).
+
+**Proves:** the doc-creation differentiator *beyond* `adr` — agent-authored, persisted `spec` via the create-gate — and that a doc-only task finalizes cleanly.
+
+### Increment 4 — `implement-from-spec` + spec discovery + the two-task acceptance
+
+**Deliverable:** the full M3 arc — a `plan` task authors a spec, then `jigc start --workflow implement-from-spec "<intent>"` surfaces the committed specs, the agent binds one, re-composes to read `{{@task.spec#criteria}}`, implements, and finalize records + walks `commit —implements→ spec`. The router lists four work-workflows.
+
+**Grouped scope:**
+- Engine: `store.<doctype-id>` enumerates committed instances as a collection, and a collection in a plain step emits as a readable Content list (`{{store.specs}}`) ([workflow-dialect.md](../design/workflow-dialect.md) → data-value roots).
+- Pack: the `implement-from-spec` workflow (`creates-task: true`, `reads: [{role: spec, type: spec}]`, `allows-create: [{type: adr, as: decision}]`, a `when` hint) + the new `step:locate-from-spec` (surfaces `{{store.specs}}`, emits the `bind` + the `Run: jigc start --task <id>` re-compose, reads `{{@task.spec#criteria}}`) — distinct from the shared `step:locate` ([workflow-dialect.md](../design/workflow-dialect.md), [worked-examples.md](../design/worked-examples.md) → flow 6).
+- The router now lists single-task / quick-fix / plan / implement-from-spec; write **non-overlapping** `when` hints; orientation surfaces them automatically ([workflow-dialect.md](../design/workflow-dialect.md) → Workflow selection, [bootstrap.md](../design/bootstrap.md)).
+- e2e acceptance in a throwaway repo: the two-task arc end-to-end (plan → implement-from-spec), asserting the spec slice resolves on resume, the `implements` edge walks at finalize (passes when the spec exists, blocks when it dangles), and the four `when` hints are non-overlapping ([worked-examples.md](../design/worked-examples.md) → flow 6, [validation.md](../design/validation.md)).
+
+**Proves:** M3's headline — the intent → spec → implementation arc end-to-end, with cross-task binding and `implements` edge integrity — the mandated acceptance path.
