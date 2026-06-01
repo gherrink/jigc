@@ -31,11 +31,15 @@ use crate::cli::Format;
 use crate::pack::EmbeddedPack;
 use crate::render;
 use anyhow::{Context, Result, bail};
+use engine::address::Address;
+use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{Promotion, plan_finalize};
-use engine::packsource::{PackResourceKind, PackSource};
+use engine::finding::Finding;
+use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{Schema, load_schema};
-use engine::state::BasePin;
+use engine::state::{self, BasePin, RolesRecord};
+use engine::store::canonical_path;
 use engine::validate::validate_task;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -65,6 +69,17 @@ pub enum TaskCommand {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,
     },
+    /// Bind an already-committed doc to one of the task's declared context roles,
+    /// so `task.<role>` resolves to it on the resume re-compose
+    /// (`design/write-commands.md` → Binding a context role).
+    Bind {
+        /// The context role to bind — one of the workflow's declared `reads` roles.
+        role: String,
+        /// The `<type>:<slug>` address of the committed doc to bind.
+        addr: String,
+        /// The task id (the working-area slug under `.jigc/tasks/`).
+        id: String,
+    },
 }
 
 impl TaskCommand {
@@ -78,6 +93,7 @@ impl TaskCommand {
             TaskCommand::Validate { id } => return run_validate(cwd, &id, format),
             TaskCommand::Discard { id } => run_discard(cwd, &id),
             TaskCommand::Finalize { id } => return run_finalize(cwd, &id, format),
+            TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -163,6 +179,24 @@ fn run_discard(cwd: &Path, id: &str) -> Result<()> {
             .with_context(|| format!("could not discard task `{id}` at {:?}", task.dir))?;
     }
     Ok(())
+}
+
+/// `jigc task bind <role> <addr> <id>` — bind an already-committed doc to one of the
+/// task's declared context roles (`design/write-commands.md` → Binding a context
+/// role: the five-step enforcement; `workflow-dialect.md` → `reads`).
+///
+/// Five-step enforcement: (1) the task `<id>` resolves to a live working area
+/// (`TaskArea::resolve` bails with the start-a-task route otherwise); (2) `<role>`
+/// is one of the task's workflow-declared `reads` roles, else reject listing the
+/// declared roles; (3) `<addr>` resolves in the committed store — its canonical
+/// `<location>/<slug>.md` exists at HEAD — else `no such doc <addr>`; (4) the
+/// target's doctype (the address's `<type>`) equals the role's declared `type`,
+/// else reject with the mismatch; (5) record the binding in the task's
+/// `roles.json` (last-write-wins). The agent supplies only the which-doc choice;
+/// recording the binding stays the CLI's (the determinism boundary holds).
+fn run_bind(cwd: &Path, role: &str, addr: &str, id: &str) -> Result<()> {
+    let task = TaskArea::resolve(cwd, id)?;
+    task.bind(role, addr)
 }
 
 /// The commit doctype name — the task's workflow-provisioned doc whose sink is the
@@ -486,6 +520,87 @@ impl TaskArea {
         Ok(())
     }
 
+    /// Steps 2–5 of the bind enforcement (`design/write-commands.md` → Binding a
+    /// context role). Step 1 (active task) is `TaskArea::resolve`, run by the caller.
+    ///
+    /// Loads the task's own minting workflow def (the `reads` declaration lives on
+    /// its front-matter, the same source the resume re-compose reads), then:
+    /// 2. `role` ∈ `def.reads` else reject, listing the declared roles;
+    /// 3. `<addr>` parses + its canonical committed path exists else `no such doc <addr>`;
+    /// 4. the address's `<type>` equals the role's declared `type` else the mismatch;
+    /// 5. record `role -> <addr>` in `roles.json` (last-write-wins).
+    fn bind(&self, role: &str, addr: &str) -> Result<()> {
+        let def = self.workflow_def()?;
+
+        // Step 2 — the role must be one the workflow declares as a `reads` role.
+        let Some(reads) = def.reads.iter().find(|r| r.role == role) else {
+            let declared: Vec<&str> = def.reads.iter().map(|r| r.role.as_str()).collect();
+            let declared = if declared.is_empty() {
+                "none".to_string()
+            } else {
+                declared.join(", ")
+            };
+            bail!("role `{role}` is not a declared read-role of this task (declared: {declared})");
+        };
+
+        // Parse the address (it must name a `<type>:<slug>`).
+        let address = Address::parse(addr)
+            .map_err(|err| anyhow::anyhow!("malformed address `{addr}`: {err}"))?;
+
+        // Step 3 — the addr must resolve in the committed store: its canonical
+        // `<location>/<slug>.md` must exist (identity is the path). An unknown type
+        // or a transient (location-less) type has no committed path → unresolved.
+        let schemas = self.schemas()?;
+        let resolves = schemas
+            .get(address.r#type.as_str())
+            .and_then(|schema| canonical_path(&self.repo_root, schema, address.slug.as_str()))
+            .is_some_and(|path| path.is_file());
+        if !resolves {
+            bail!("no such doc `{addr}`");
+        }
+
+        // Step 4 — the target's doctype must equal the role's declared `type`.
+        if address.r#type.as_str() != reads.doc_type {
+            bail!(
+                "doctype mismatch: `{addr}` is a `{}` but role `{role}` declares type `{}`",
+                address.r#type.as_str(),
+                reads.doc_type,
+            );
+        }
+
+        // Step 5 — record the binding (last-write-wins) and persist it.
+        let mut roles = RolesRecord::load(&self.dir)
+            .with_context(|| format!("could not read roles for task at {:?}", self.dir))?;
+        roles.bind(role, addr);
+        roles
+            .save(&self.dir)
+            .with_context(|| format!("could not record the binding for task at {:?}", self.dir))?;
+        Ok(())
+    }
+
+    /// Load the task's own minting workflow definition — the source the `reads`
+    /// declaration lives on, read back the same way the resume re-compose does
+    /// (`crate::start::resume_in_repo`). A working area with no recorded workflow id
+    /// is a clear fault, never a silent fall-through to the cascade default.
+    fn workflow_def(&self) -> Result<WorkflowDef> {
+        let workflow_id = state::read_workflow_id(&self.dir)
+            .with_context(|| format!("could not read the recorded workflow for {:?}", self.dir))?
+            .with_context(|| {
+                format!(
+                    "task at {:?} has no recorded workflow — discard it and re-start with `jigc start`",
+                    self.dir
+                )
+            })?;
+        let bytes = self
+            .pack
+            .read(
+                PackResourceKind::Workflows,
+                &ResourceId::from(workflow_id.as_str()),
+            )
+            .with_context(|| format!("the recorded workflow `{workflow_id}` reads back"))?;
+        load_workflow_def(&bytes).map_err(finding_to_err)
+    }
+
     /// The staged managed-doc instances under the working area's `docs/`, in
     /// path-sorted filename order, as `(filename, body)` pairs. An absent `docs/`
     /// yields an empty list (nothing staged yet).
@@ -671,6 +786,16 @@ fn git_capture(repo_root: &Path, args: &[&str]) -> Result<String> {
     String::from_utf8(out.stdout)
         .context("`git` produced non-UTF-8 output")
         .map(|s| s.trim().to_string())
+}
+
+/// Map an engine [`Finding`] (a malformed workflow def) to an `anyhow` error
+/// carrying its message + route — the same envelope `crate::doc` / `crate::start`
+/// use for a load-time block.
+fn finding_to_err(finding: Finding) -> anyhow::Error {
+    match finding.route {
+        Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
+        None => anyhow::anyhow!("{}", finding.message),
+    }
 }
 
 /// Walk up from `start` to the directory holding `.git` (the repo root) — the same

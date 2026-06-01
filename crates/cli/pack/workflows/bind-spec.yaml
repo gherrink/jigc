@@ -1,0 +1,8 @@
+---
+when: TEST FIXTURE — implement from a bound committed spec
+creates-task: true
+reads: [{role: spec, type: spec}]
+---
+{{ include: step:locate }}
+{{ include: step:implement-quick }}
+{{ include: step:finalize }}
