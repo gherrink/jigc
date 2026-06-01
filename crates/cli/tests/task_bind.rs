@@ -3,16 +3,12 @@
 //! the five-step enforcement; `workflow-dialect.md` → `reads`).
 //!
 //! Drives the built `jigc` binary against a throwaway temp git repo. A task is
-//! minted over the `bind-spec` fixture workflow (which declares
+//! minted over the `implement-from-spec` workflow (which declares
 //! `reads: [{role: spec, type: spec}]`), a committed `spec` fixture lives at
 //! `specs/<slug>.md`, and `jigc task bind` is exercised across every rejection of
 //! the five-step enforcement plus the success + re-bind (last-write-wins) path.
 //! The observable proof is the persisted `.jigc/tasks/<id>/roles.json` mapping
 //! `spec -> spec:<slug>`.
-//!
-//! The fixture pack workflow (`bind-spec`) is a test surface only — the real pack
-//! workflows do not yet declare `reads` (this increment retires the binding
-//! mechanism in isolation before they ride on it).
 //!
 //! No external test crates: the binary path comes from Cargo's
 //! `CARGO_BIN_EXE_jigc`, the temp repo is a real `git init`, and a self-cleaning
@@ -128,16 +124,21 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     let home = TempDir::new("home");
     let slug = "cache-the-session-store";
 
-    // Mint a task over the `bind-spec` fixture workflow (declares
+    // Mint a task over the `implement-from-spec` workflow (declares
     // `reads: [{role: spec, type: spec}]`).
     let mint = run(
         repo.path(),
         home.path(),
-        &["start", "--workflow", "bind-spec", "implement the spec"],
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "implement the spec",
+        ],
     );
     assert!(
         mint.status.success(),
-        "the bind-spec mint must succeed; stderr:\n{}",
+        "the implement-from-spec mint must succeed; stderr:\n{}",
         stderr_of(&mint),
     );
     let task_id = "implement-the-spec";
@@ -224,7 +225,12 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     let remint = run(
         repo.path(),
         home.path(),
-        &["start", "--workflow", "bind-spec", "implement the spec"],
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "implement the spec",
+        ],
     );
     assert!(
         remint.status.success(),
@@ -289,7 +295,12 @@ fn task_bind_enforces_the_five_steps_and_records_the_binding() {
     run(
         repo.path(),
         home.path(),
-        &["start", "--workflow", "bind-spec", "implement the spec"],
+        &[
+            "start",
+            "--workflow",
+            "implement-from-spec",
+            "implement the spec",
+        ],
     );
     // First bind to spec A, then re-bind to spec B.
     let first = run(

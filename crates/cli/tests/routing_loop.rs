@@ -287,6 +287,73 @@ fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
     }
 }
 
+/// Parse the router's `- <id> — <when>` option lines straight from the LIVE
+/// binary's composed router view, returning `(id, when)` pairs. Each option line
+/// is `- <id> — <when>` (em-dash separated).
+fn live_catalog(repo: &Path, home: &Path) -> Vec<(String, String)> {
+    let out = run_start(repo, home, &["add a thing"]);
+    assert!(
+        out.status.success(),
+        "bare `jigc start` must compose the router; streams:\n{}",
+        streams(&out),
+    );
+    stdout_of(&out)
+        .lines()
+        .filter_map(|line| line.strip_prefix("- "))
+        .filter_map(|rest| rest.split_once(" — "))
+        .map(|(id, when)| (id.trim().to_string(), when.trim().to_string()))
+        .collect()
+}
+
+#[test]
+fn step_5_the_live_router_catalog_lists_exactly_the_four_real_work_workflows() {
+    // The deliverable: "The router lists four work-workflows." A TEST-FIXTURE
+    // workflow shipped in the embedded pack (`creates-task: true`) would leak into
+    // this production orientation surface — invisible to the hand-listed sweeps
+    // above, which never iterate the live catalog. Drive the REAL binary and assert
+    // the catalog the agent actually sees is exactly the four real workflows, with
+    // pairwise non-overlapping `when` hints over the LIVE list.
+    let repo = TempDir::new("live-catalog");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let catalog = live_catalog(repo.path(), home.path());
+
+    let ids: Vec<&str> = catalog.iter().map(|(id, _)| id.as_str()).collect();
+    let mut sorted_ids = ids.clone();
+    sorted_ids.sort_unstable();
+    assert_eq!(
+        sorted_ids,
+        ["implement-from-spec", "plan", "quick-fix", "single-task"],
+        "the live router must list EXACTLY the four real work-workflows — no TEST-FIXTURE \
+         leak; got:\n{ids:?}",
+    );
+
+    // The non-overlap property must hold over the LIVE catalog, not a hand-picked
+    // list — a fixture sharing content words with a real workflow would break it.
+    let words = |s: &str| -> std::collections::HashSet<String> {
+        s.to_lowercase()
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|w| w.len() > 4)
+            .map(|w| w.to_string())
+            .collect()
+    };
+    let bagged: Vec<(&str, std::collections::HashSet<String>)> = catalog
+        .iter()
+        .map(|(id, when)| (id.as_str(), words(when)))
+        .collect();
+    for (i, (a_id, a)) in bagged.iter().enumerate() {
+        for (b_id, b) in &bagged[i + 1..] {
+            let overlap: Vec<_> = a.intersection(b).collect();
+            assert!(
+                overlap.is_empty(),
+                "live catalog `{a_id}` and `{b_id}` `when` hints must be non-overlapping; \
+                 shared content words: {overlap:?}",
+            );
+        }
+    }
+}
+
 #[test]
 fn step_4_unknown_chosen_workflow_rejects_cleanly_without_minting() {
     let repo = TempDir::new("unknown");
