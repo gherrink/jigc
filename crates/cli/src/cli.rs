@@ -108,9 +108,14 @@ impl Cli {
             } => run_orient(self.format),
             Command::Start {
                 intent: Some(intent),
-                workflow: _,
+                workflow: None,
                 task: None,
             } => run_compose(self.format, &intent),
+            Command::Start {
+                intent: Some(intent),
+                workflow: Some(workflow),
+                task: None,
+            } => run_compose_named(self.format, &intent, &workflow),
             Command::Start {
                 intent: None,
                 workflow: _,
@@ -202,6 +207,35 @@ fn run_compose(format: Format, intent: &str) -> ExitCode {
         }
     };
     match start::compose_in_repo(&cwd, intent) {
+        Ok(view) => {
+            println!("{}", render::composed(format, &view));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Compose the explicitly-named `workflow` from `intent` against the current
+/// working directory — the `jigc start --workflow <X> "<intent>"` front door
+/// (Form D, `design/write-commands.md` → Task origination). Bypasses the cascade
+/// default and composes the *named* workflow, minting iff it declares
+/// `creates-task: true`. Renders the composed view through the selected `format`
+/// and maps success/failure to the exit code: a clean compose prints on stdout
+/// and exits 0; an unknown `<X>` or a blocking gate finding surfaces on stderr
+/// (with its route) and exits non-zero — nothing is emitted past a block, and an
+/// unknown id is rejected before any mint.
+fn run_compose_named(format: Format, intent: &str, workflow: &str) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match start::compose_named_in_repo(&cwd, intent, workflow) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
             ExitCode::SUCCESS

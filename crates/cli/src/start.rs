@@ -156,6 +156,31 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     compose_core(&repo_root, intent, &pack, &workflow_id)
 }
 
+/// Compose the workflow named by `workflow_id` from `intent` — the explicit
+/// `jigc start --workflow <X> "<intent>"` front door (Form D, `write-commands.md`
+/// → Task origination). Unlike [`compose_in_repo`] it bypasses the cascade
+/// `default-workflow` knob and composes the *named* workflow, minting iff `X`
+/// declares `creates-task: true`; an unknown `<X>` is rejected with a routed
+/// finding before any mint. The cascade-presence guard (a missing project layer
+/// routes to `jigc setup`) is identical to the default front door.
+pub fn compose_named_in_repo(
+    start: &Path,
+    intent: &str,
+    workflow_id: &str,
+) -> Result<ComposedWorkflow> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let pack = EmbeddedPack::new();
+    compose_core(&repo_root, intent, &pack, workflow_id)
+}
+
 /// Compose the workflow named by `workflow_id` from `intent`, branching on the
 /// workflow's `creates-task` flag — the engine spine both front-door forms drive
 /// (the cascade-default `jigc start "<intent>"` passes [`default_workflow_id`];

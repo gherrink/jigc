@@ -167,6 +167,80 @@ fn start_with_intent_json_format_carries_no_footer() {
 }
 
 #[test]
+fn form_d_named_workflow_mints_and_composes_through_dispatch() {
+    let repo = TempDir::new("form-d");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `--workflow single-task <intent>`: the explicit-selection front door. The
+    // embedded pack's `single-task` is `creates-task: true`, so Form D mints and
+    // composes it end-to-end through the dispatch arm.
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "single-task", "add rate limiter"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow single-task \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The named creates-task workflow minted under .jigc/tasks/<slug>/.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("add-rate-limiter");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "Form D over a creates-task workflow must open .jigc/tasks/add-rate-limiter/ with a base pin",
+    );
+
+    // The named workflow composed end-to-end, embedding the resolved intent and
+    // ending with the routing footer (the same composed view `--format` renders).
+    assert!(
+        stdout.contains("add rate limiter"),
+        "the composed view must embed the resolved intent; got:\n{stdout}",
+    );
+    assert!(
+        stdout.trim_end().ends_with(ROUTING_FOOTER),
+        "Form-D agent-text composition must end with the routing footer; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn form_d_unknown_workflow_rejects_before_minting() {
+    let repo = TempDir::new("form-d-unknown");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "does-not-exist", "add rate limiter"],
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+
+    assert!(
+        !out.status.success(),
+        "an unknown `--workflow` id must exit non-zero; got {:?}",
+        out.status,
+    );
+    assert!(
+        stderr.contains("does-not-exist") && stderr.contains("route:"),
+        "the rejection must name the unknown id and carry a route; got:\n{stderr}",
+    );
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "the rejection must precede minting — no .jigc/tasks/ dir may be created",
+    );
+}
+
+#[test]
 fn serial_re_run_of_the_same_intent_blocks() {
     let repo = TempDir::new("compose-collision");
     init_repo(repo.path());
