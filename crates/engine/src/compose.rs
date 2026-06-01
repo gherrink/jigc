@@ -34,6 +34,22 @@ pub struct AllowsCreate {
     pub as_role: String,
 }
 
+/// One `reads` entry: a context role bound from an existing committed doc via
+/// `jigc task bind <role> <addr>` (`{role: spec, type: spec}` →
+/// `Reads { role: "spec", doc_type: "spec" }`). The dual of [`AllowsCreate`] —
+/// `allows-create` declares a role bound to a doc the task *creates*; `reads`
+/// declares a role bound to a doc a *prior* task committed. Both make
+/// `task.<role>` a declared `workflow-refs` root. See `workflow-dialect.md` →
+/// On-disk definition format and `write-commands.md` → Binding a context role.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reads {
+    /// The context role the bound instance fills (e.g. `spec`).
+    pub role: String,
+    /// The doctype id the bound instance must match (e.g. `spec`).
+    #[serde(rename = "type")]
+    pub doc_type: String,
+}
+
 /// A parsed workflow definition: its metadata front-matter plus the ordered
 /// include id list lifted from the include-only body.
 ///
@@ -50,6 +66,8 @@ pub struct WorkflowDef {
     pub creates_task: bool,
     /// The doctypes the agent may create during the task (default empty).
     pub allows_create: Vec<AllowsCreate>,
+    /// The context roles bound from existing committed docs (default empty).
+    pub reads: Vec<Reads>,
     /// The ordered step ids from the include-only body — the composition order.
     pub includes: Vec<String>,
 }
@@ -66,6 +84,8 @@ struct WorkflowFrontMatter {
     creates_task: bool,
     #[serde(rename = "allows-create", default)]
     allows_create: Vec<AllowsCreate>,
+    #[serde(default)]
+    reads: Vec<Reads>,
 }
 
 fn default_creates_task() -> bool {
@@ -881,6 +901,7 @@ pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
         when: meta.when.filter(|w| !w.trim().is_empty()),
         creates_task: meta.creates_task,
         allows_create: meta.allows_create,
+        reads: meta.reads,
         includes,
     })
 }
@@ -1870,6 +1891,7 @@ allows-create: [{type: adr, as: decision}]
               "as": "decision"
             }
           ],
+          "reads": [],
           "includes": [
             "locate",
             "implement",
@@ -1878,6 +1900,34 @@ allows-create: [{type: adr, as: decision}]
           ]
         }
         "#);
+    }
+
+    /// A `reads: [{role: spec, type: spec}]`-declaring workflow front-matter
+    /// yields `WorkflowDef.reads == [Reads{role:"spec", type:"spec"}]` — the dual
+    /// of `allows-create` (`workflow-dialect.md` → On-disk definition format).
+    #[test]
+    fn reads_declaration_parses() {
+        let def = load_workflow_def(
+            b"---\nwhen: implement from a spec\nreads: [{role: spec, type: spec}]\n---\n{{ include: step:locate-from-spec }}\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.reads,
+            vec![Reads {
+                role: "spec".to_owned(),
+                doc_type: "spec".to_owned(),
+            }]
+        );
+    }
+
+    /// An omitted `reads:` key defaults to an empty list (`workflow-dialect.md` →
+    /// On-disk definition format: default empty).
+    #[test]
+    fn reads_defaults_empty_when_omitted() {
+        let def =
+            load_workflow_def(b"---\nwhen: pick a workflow\n---\n{{ include: step:present }}\n")
+                .expect("loads");
+        assert!(def.reads.is_empty());
     }
 
     /// `creates-task` defaults to `true` when the front-matter omits the key
@@ -2283,6 +2333,7 @@ reference — make your consequences explain what changes:
             when: None,
             creates_task: true,
             allows_create: vec![],
+            reads: vec![],
             includes: vec!["locate".to_owned(), "not-a-step".to_owned()],
         };
         let err = expand_includes(&dangling, &source).expect_err("dangling include rejects");
@@ -2298,6 +2349,7 @@ reference — make your consequences explain what changes:
             when: None,
             creates_task: true,
             allows_create: vec![],
+            reads: vec![],
             includes: vec!["a".to_owned()],
         };
         let err = expand_includes(&cyclic, &cyclic_source).expect_err("cycle rejects");
@@ -2319,6 +2371,7 @@ reference — make your consequences explain what changes:
             when: None,
             creates_task: true,
             allows_create: vec![],
+            reads: vec![],
             includes: vec!["parent".to_owned()],
         };
 
@@ -2338,6 +2391,7 @@ reference — make your consequences explain what changes:
             when: None,
             creates_task: true,
             allows_create: vec![],
+            reads: vec![],
             includes: vec!["a".to_owned()],
         };
         let err = expand_includes(&def, &source).expect_err("self-cycle rejects");
@@ -2360,6 +2414,7 @@ reference — make your consequences explain what changes:
             when: None,
             creates_task: true,
             allows_create: vec![],
+            reads: vec![],
             includes: vec!["a".to_owned()],
         };
         let composition = expand_includes(&def, &source).expect("diamond expands");
@@ -2389,6 +2444,7 @@ reference — make your consequences explain what changes:
                 when: None,
                 creates_task: true,
                 allows_create: vec![],
+                reads: vec![],
                 includes: ids.clone(),
             };
 
