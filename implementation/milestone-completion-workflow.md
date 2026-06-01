@@ -36,3 +36,4 @@ The milestone is **done** when every confirmed finding is closed (or consciously
 - **The human owns triage.** Scope ("now or later") and judgment ("is this fix over-engineering?") are decisions, not mechanics — they surface, never get silently picked.
 - **It is the dev workflow's customer.** Every fix is a dev-workflow task; this doc owns only the audit, the triage, and the loop around them. Cross-reference, never restate.
 - **Loop to clean, don't one-shot.** Re-verification against the audit *and* the gate is what makes "milestone complete" a verifiable claim rather than a hopeful one.
+- **Orchestration.** Run as a workflow, the two audit passes are two parallel agents and each confirmed fix is its own agent (a dev-workflow task) — the agent-per-phase mapping the [increment workflow](increment-workflow.md) → Orchestration states.

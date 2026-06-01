@@ -23,3 +23,4 @@ Two framing notes, not extra steps:
 
 - **One task, one concern.** The unit of work is a single focused thing — the smallest change with its own observable done-criteria. Keeping tasks small is what keeps the loop honest (a vague "make it work" task has no red step).
 - **The loop is jigc in miniature.** Scope ≈ `jigc start` / compose, Gate ≈ `jigc task validate`, Commit ≈ `jigc task finalize` (one task → one commit, [finalize.md](../design/finalize.md)). Running it by hand is deliberate dogfooding — the friction we hit informs the real `single-task` workflow we're building.
+- **One agent when orchestrated.** Run as a workflow, a single agent carries this whole per-task loop (scope → commit) and yields the one commit — the [increment workflow](increment-workflow.md) → Orchestration spawns one such agent per task.

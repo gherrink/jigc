@@ -43,6 +43,17 @@ These turn the scope-honesty check from "grep for dead-code markers" into "prove
 
 The loop **stops and surfaces to the human** at exactly three points: a **new fork** at Plan, a **blocked task** at Execute, **still-blocking after 3 rounds** at Validate. A halt returns a structured report — which increment, which phase, the precise reason — and is **resumable**: prior committed work stands, completed steps replay from cache, and the run continues once the human clears the blocker. Nothing is guessed past a point the design says is the human's.
 
+## Orchestration
+
+Run by hand, the phases above are steps one person walks. Run as an orchestrated workflow, **each phase is its own agent**, so the loop's independence is structural rather than self-policed:
+
+- **Plan** — one planning agent per increment (just-in-time, after the prior increment lands), emitting the ordered task list.
+- **Execute** — one agent **per task**, each running the whole [dev workflow](dev-workflow.md) loop to a single commit; tasks run serially over the shared working tree.
+- **Validate** — one **independent, read-only** agent (it cannot edit or commit).
+- **Fix** — one agent **per blocking finding**, each a dev-workflow fix task, then re-validate; bounded to 3 rounds.
+
+Halts (above) surface to the human; nothing is auto-resolved past a fork.
+
 ## Why this shape
 
 Framing notes, not extra phases:
