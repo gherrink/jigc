@@ -243,6 +243,11 @@ fn compose_core(
     // `{{catalog}}` input, filtered to `creates-task: true` so it never lists
     // itself or any other `creates-task: false` workflow.
     let selectable = selectable_workflows(pack)?;
+    // The committed managed store both arms feed — the `{{store.<doctype>}}` input,
+    // enumerated from the committed `<location>/<slug>.md` instances (CLI locates,
+    // engine resolves).
+    let schemas = all_schemas(pack)?;
+    let store = committed_store(repo_root, &schemas);
 
     let ctx = if def.creates_task {
         // Mint the task (reads HEAD). Minting after the definition loads so a
@@ -257,7 +262,14 @@ fn compose_core(
         provision_commit_doc(pack, &minted)?;
         // At mint there are no bound context roles yet (the agent binds them
         // in-task, e.g. an ADR via the create-gate); resume re-reads them.
-        build_context(&minted.id, intent, &def, &RolesRecord::new(), selectable)
+        build_context(
+            &minted.id,
+            intent,
+            &def,
+            &RolesRecord::new(),
+            selectable,
+            store,
+        )
     } else {
         // The `creates-task: false` compose contract: no mint, no working area,
         // no commit doc, no role binding — `task = None`. Intent threads forward
@@ -267,6 +279,7 @@ fn compose_core(
         ComposeContext {
             task: None,
             catalog: selectable,
+            store,
         }
     };
     let source = PackStepSource { pack };
@@ -381,8 +394,13 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     let commands = load_catalog(&pack)?;
     let selectable = selectable_workflows(&pack)?;
+    // The committed store feed (`{{store.<doctype>}}`), enumerated from the committed
+    // `<location>/<slug>.md` instances; the same `schemas` set the edge overlay below
+    // resolves `<type>` prefixes against.
+    let schemas = all_schemas(&pack)?;
+    let store_feed = committed_store(&repo_root, &schemas);
 
-    let ctx = build_context(id, &intent, &def, &bound, selectable);
+    let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
     let source = PackStepSource { pack: &pack };
 
     let findings = compose::workflow_refs(&workflow_bytes, &source, &commands, &ctx);
@@ -399,7 +417,6 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     // CLI locates the layers (committed-store root + the `.jigc/` index home), the
     // engine resolves through the `ContentStore` trait (`VISION.md` principle #4).
     let jigc_root = repo_root.join(".jigc");
-    let schemas = all_schemas(&pack)?;
     let committed = index::load_committed(&repo_root, &jigc_root, &schemas, &head.sha);
     let overlay = index::overlay_working(&committed, &task_dir, &schemas);
     let store = StoreContext {
@@ -410,6 +427,57 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
 
     compose::compose_with_store(&def, &source, &commands, &ctx, Some(&store))
         .map_err(finding_to_err)
+}
+
+/// Enumerate the committed managed store into the `store` data-value feed: for every
+/// schema that declares a `location:`, list its committed `<location>/<slug>.md`
+/// instances and key them by the location's path-facing **collection name** (the
+/// location stem, `specs/` → `specs`) — exactly the `store.specs` the
+/// `locate-from-spec` step interpolates (`workflow-dialect.md` → data-value roots;
+/// `DECISIONS.md` 2026-06-01 → the `store` root is keyed by the location stem). Each
+/// value is the committed instances as `<type>:<slug>` addresses, in sorted (stable)
+/// order.
+///
+/// This is the **CLI-locates** half of the determinism split (`VISION.md` principle
+/// #4): the CLI walks the committed working tree (the same `<location>/<slug>.md`
+/// surface `index::rebuild_committed` walks); the engine resolver consumes the fed
+/// map and does no committed-store I/O. A transient (location-less) doctype — e.g.
+/// `commit` — contributes nothing (it is never persisted as a repo file).
+fn committed_store(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> BTreeMap<String, Vec<Address>> {
+    let mut store: BTreeMap<String, Vec<Address>> = BTreeMap::new();
+    for schema in schemas.values() {
+        let Some(location) = schema.location.as_deref() else {
+            continue; // a transient (location-less) type has no committed instances.
+        };
+        // The location's path-facing collection name — the trimmed final path
+        // component (`specs/` → `specs`), the key authors write as `store.<name>`.
+        let key = location.trim_matches('/');
+        if key.is_empty() {
+            continue;
+        }
+        let dir = repo_root.join(location);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue; // no committed instances of this type yet.
+        };
+        let mut slugs: Vec<String> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+            .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
+            .collect();
+        slugs.sort();
+        let addresses: Vec<Address> = slugs
+            .iter()
+            .filter_map(|slug| Address::parse(&format!("{}:{slug}", schema.ty)).ok())
+            .collect();
+        if !addresses.is_empty() {
+            store.insert(key.to_owned(), addresses);
+        }
+    }
+    store
 }
 
 /// Load every shipped schema from the embedded pack, keyed by doctype — the
@@ -446,6 +514,7 @@ fn build_context(
     def: &WorkflowDef,
     bound: &RolesRecord,
     catalog: Vec<CatalogEntry>,
+    store: BTreeMap<String, Vec<Address>>,
 ) -> ComposeContext {
     let mut roles: BTreeMap<String, Option<Address>> = BTreeMap::new();
     // The task's commit doc — the engine-native sink, bound to `commit:<id>`.
@@ -480,6 +549,10 @@ fn build_context(
         // the same list (it never lists itself — the filter excludes it only when
         // it is `creates-task: false`).
         catalog,
+        // The committed managed store, fed by the CLI so `{{store.<doctype>}}`
+        // resolves to the committed instances (the determinism boundary; the
+        // engine resolver does no committed-store I/O).
+        store,
     }
 }
 
@@ -925,6 +998,7 @@ mod tests {
             &def,
             &RolesRecord::new(),
             Vec::new(),
+            BTreeMap::new(),
         );
 
         // The declared-but-unbound `reads` role resolves to absent/empty text — no
@@ -948,6 +1022,51 @@ mod tests {
             undeclared.code, "workflow-refs.undeclared-role",
             "an undeclared `task.<role>` must stay a conformance error; got {}",
             undeclared.code,
+        );
+    }
+
+    /// `committed_store` enumerates the committed `<location>/<slug>.md` instances
+    /// into the `store` feed, keyed by the location stem (`specs/` → `specs`) — the
+    /// `store.specs` collection the `locate-from-spec` step interpolates. A transient
+    /// (location-less) doctype (`commit`) contributes nothing; a doctype with a
+    /// declared location but no committed files is omitted (the empty-store stance).
+    #[test]
+    fn committed_store_enumerates_by_location_stem() {
+        let repo = TempDir::new("committed-store");
+        let specs = repo.path().join("specs");
+        fs::create_dir_all(&specs).expect("mk specs/");
+        fs::write(specs.join("gateway-rate-limiting.md"), "# Gateway\n").expect("w");
+        fs::write(specs.join("auth-token-rotation.md"), "# Auth\n").expect("w");
+        // A non-`.md` file is ignored.
+        fs::write(specs.join("notes.txt"), "ignore me").expect("w");
+
+        // The real pack schemas: `spec` (location `specs/`), `adr` (`decisions/`,
+        // no committed files here), `commit` (transient — no location).
+        let pack = crate::pack::EmbeddedPack::new();
+        let schemas = all_schemas(&pack).expect("schemas load");
+
+        let store = committed_store(repo.path(), &schemas);
+
+        assert_eq!(
+            store.get("specs").map(Vec::as_slice),
+            Some(
+                [
+                    Address::parse("spec:auth-token-rotation").expect("valid"),
+                    Address::parse("spec:gateway-rate-limiting").expect("valid"),
+                ]
+                .as_slice()
+            ),
+            "`store.specs` lists the committed spec instances (sorted, `<type>:<slug>`)",
+        );
+        // A declared-location doctype with no committed files is absent (empty store).
+        assert!(
+            !store.contains_key("decisions"),
+            "a doctype with no committed instances must be omitted; got {store:?}",
+        );
+        // The transient `commit` type (no `location:`) never appears.
+        assert!(
+            !store.keys().any(|k| k == "commit"),
+            "a transient (location-less) doctype contributes nothing; got {store:?}",
         );
     }
 

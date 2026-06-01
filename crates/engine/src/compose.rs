@@ -363,7 +363,9 @@ fn render_arg(
                     address.to_string()
                 }
                 Resolution::Absent => String::new(),
-                Resolution::Catalog { .. } => return Err(catalog_not_lone()),
+                Resolution::Catalog { .. } | Resolution::Store { .. } => {
+                    return Err(collection_not_lone());
+                }
             }
         }
     };
@@ -522,11 +524,17 @@ fn emit_line(
     // split out of step bodies before emission. A lone `{{catalog}}` resolves to
     // the collection and renders as the router's option list (one `- <id> —
     // <when>` line per entry, fed order; an empty catalog → empty text, the
-    // empty-not-finding stance — `workflow-dialect.md` → Workflow selection).
+    // empty-not-finding stance — `workflow-dialect.md` → Workflow selection). A lone
+    // `{{store.<doctype>}}` resolves to the committed-instance collection and renders
+    // as a `> ` Content list (one address per line, fed order; an empty store →
+    // empty text — `workflow-dialect.md` → data-value roots).
     if let Some(inner) = parse_lone_placeholder(trimmed) {
+        use crate::data_value::Resolution;
         let path = parse_data_value(inner)?;
-        if let crate::data_value::Resolution::Catalog { entries } = path.resolve(ctx)? {
-            return Ok(render_catalog_options(&entries));
+        match path.resolve(ctx)? {
+            Resolution::Catalog { entries } => return Ok(render_catalog_options(&entries)),
+            Resolution::Store { entries } => return Ok(render_store_list(&entries)),
+            _ => {}
         }
         return emit_bare_data_value(&path, ctx);
     }
@@ -616,7 +624,7 @@ fn emit_content(
         Resolution::Address { address } => Ok(format!("> {address}")),
         Resolution::Scalar { value } => Ok(format!("> {value}")),
         Resolution::Absent => Ok(String::new()),
-        Resolution::Catalog { .. } => Err(catalog_not_lone()),
+        Resolution::Catalog { .. } | Resolution::Store { .. } => Err(collection_not_lone()),
     }
 }
 
@@ -703,7 +711,7 @@ fn emit_bare_data_value(
             Ok(address.to_string())
         }
         Resolution::Absent => Ok(String::new()),
-        Resolution::Catalog { .. } => Err(catalog_not_lone()),
+        Resolution::Catalog { .. } | Resolution::Store { .. } => Err(collection_not_lone()),
     }
 }
 
@@ -716,6 +724,22 @@ fn render_catalog_options(entries: &[crate::result::CatalogEntry]) -> String {
     entries
         .iter()
         .map(|entry| format!("- {} — {}", entry.id, entry.when))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Render the resolved `store.<doctype>` collection as a readable **Content list**:
+/// one `> <address>` blockquote line per committed instance, in fed order, joined by
+/// newlines (`workflow-dialect.md` → data-value roots: "a collection interpolated in
+/// an ordinary step emits as a readable Content list"; `worked-examples.md` → flow 6
+/// `locate-from-spec`). The element is the bare `<type>:<slug>` address (the title
+/// hint flow 6 shows is a deferred elaboration — `DECISIONS.md` 2026-06-01). An
+/// **empty** store renders the empty string — emitted as empty text, never a finding
+/// (the empty-vs-unresolvable contract, same stance as an empty `catalog`).
+fn render_store_list(entries: &[crate::address::Address]) -> String {
+    entries
+        .iter()
+        .map(|address| format!("> {address}"))
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -744,7 +768,9 @@ fn emit_author_line(
         Resolution::Address { address } | Resolution::Content { address } => address.to_string(),
         Resolution::Scalar { value } => value,
         Resolution::Absent => String::new(),
-        Resolution::Catalog { .. } => return Err(catalog_not_lone()),
+        Resolution::Catalog { .. } | Resolution::Store { .. } => {
+            return Err(collection_not_lone());
+        }
     };
     Ok(Some(format!("<<author: {address}>>")))
 }
@@ -762,16 +788,17 @@ fn parse_data_value(text: &str) -> Result<crate::data_value::Path, Finding> {
     })
 }
 
-/// The blocking finding for a `{{catalog}}` data-value used anywhere other than as
-/// a lone-placeholder option list — as a command-ref arg, inside a `> ` Content /
-/// `<<author: …>>` directive, or inline. The `catalog` collection only renders as
-/// the router's lone option list (handled before these emitters in
-/// [`emit_line`]); any other position is a structural misuse, not a value.
-fn catalog_not_lone() -> Finding {
+/// The blocking finding for a collection data-value (`{{catalog}}` /
+/// `{{store.<doctype>}}`) used anywhere other than as a lone-placeholder list — as a
+/// command-ref arg, inside a `> ` Content / `<<author: …>>` directive, or inline. A
+/// collection only renders as a lone placeholder (handled before these emitters in
+/// [`emit_line`]: `catalog` → the router's option list, `store` → a Content list);
+/// any other position is a structural misuse, not a value.
+fn collection_not_lone() -> Finding {
     Finding::blocking(
-        "workflow-refs.catalog-not-lone",
-        "the `catalog` collection renders only as a lone `{{catalog}}` option \
-         list — it cannot be used as a command arg, content, or inline value"
+        "workflow-refs.collection-not-lone",
+        "a `{{catalog}}` / `{{store.<doctype>}}` collection renders only as a lone \
+         placeholder list — it cannot be used as a command arg, content, or inline value"
             .to_owned(),
         Location::at(1, 1),
     )
@@ -1314,6 +1341,7 @@ mod tests {
                 roles,
             }),
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1530,6 +1558,7 @@ Slightly higher write latency for resilience.
                 roles,
             }),
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         }
     }
 
@@ -1615,6 +1644,7 @@ Slightly higher write latency for resilience.
                 roles,
             }),
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         };
         let emitted_unbound =
             emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
@@ -1737,6 +1767,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 roles,
             }),
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         }
     }
 
@@ -2380,6 +2411,7 @@ reference — make your consequences explain what changes:
                 roles,
             }),
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         }
     }
 
@@ -2718,6 +2750,7 @@ reference — make your consequences explain what changes:
                 roles,
             }),
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         }
     }
 
@@ -2823,6 +2856,7 @@ reference — make your consequences explain what changes:
                     "Implement one well-scoped change.",
                 ),
             ],
+            store: std::collections::BTreeMap::new(),
         };
 
         let emitted = emit_step_body("{{ catalog }}\n", &ctx, &empty_catalog).expect("emits");
@@ -2836,9 +2870,54 @@ reference — make your consequences explain what changes:
         let empty_ctx = ComposeContext {
             task: None,
             catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
         };
         let emitted_empty =
             emit_step_body("{{ catalog }}\n", &empty_ctx, &empty_catalog).expect("emits");
+        assert_eq!(emitted_empty, "\n");
+    }
+
+    /// Core done-criterion (the compose half): a lone `{{store.specs}}` renders a
+    /// `> ` **Content list** — one `> <type>:<slug>` line per committed instance, in
+    /// fed order (`workflow-dialect.md` → data-value roots; `worked-examples.md` →
+    /// flow 6 `locate-from-spec`). An **empty** store emits empty text — no finding
+    /// (empty-not-error, the same stance as an empty catalog).
+    #[test]
+    fn emit_store_collection_as_content_list() {
+        let empty_catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let mut store = std::collections::BTreeMap::new();
+        // Keyed by the path-facing collection name (`store.specs`); see the
+        // resolver test for the keying rationale.
+        store.insert(
+            "specs".to_owned(),
+            vec![
+                crate::address::Address::parse("spec:gateway-rate-limiting").expect("valid"),
+                crate::address::Address::parse("spec:auth-token-rotation").expect("valid"),
+            ],
+        );
+        let ctx = crate::data_value::ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+            store,
+        };
+
+        // A two-spec store renders one `> <address>` line per instance, fed order.
+        let emitted = emit_step_body("{{ store.specs }}\n", &ctx, &empty_catalog).expect("emits");
+        assert_eq!(
+            emitted,
+            "> spec:gateway-rate-limiting\n> spec:auth-token-rotation\n",
+        );
+
+        // An unfed doctype (no committed instances) emits empty text — no finding.
+        let empty_ctx = crate::data_value::ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
+        };
+        let emitted_empty =
+            emit_step_body("{{ store.specs }}\n", &empty_ctx, &empty_catalog).expect("emits");
         assert_eq!(emitted_empty, "\n");
     }
 

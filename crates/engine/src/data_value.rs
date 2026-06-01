@@ -213,6 +213,17 @@ pub struct ComposeContext {
     /// selection). Engine-native machinery that enumerates whatever work-workflows
     /// the cascade supplies, so "engine ships empty" holds; empty when unfed.
     pub catalog: Vec<CatalogEntry>,
+    /// The engine-native `store` root — the committed managed store, keyed by
+    /// doctype id. `store.<doctype-id>` enumerates every committed instance of
+    /// that doctype as a **collection** of addresses (e.g. `store.specs` → every
+    /// committed `spec` — pure navigation, no filtering;
+    /// [workflow-dialect.md](../../../design/workflow-dialect.md) → data-value
+    /// roots). The CLI feeds this list (it enumerates the committed
+    /// `<location>/<slug>.md`); the resolver does **no** committed-store I/O (the
+    /// determinism boundary), mirroring how `catalog` is fed. A doctype absent
+    /// from the map (no committed instances) resolves to the empty collection —
+    /// empty text, not a finding.
+    pub store: BTreeMap<String, Vec<Address>>,
 }
 
 /// What a data-value [`Path`] resolves to against a [`ComposeContext`] — the
@@ -258,6 +269,18 @@ pub enum Resolution {
         /// The selectable work-workflows, in cascade order, each with its `when`.
         entries: Vec<CatalogEntry>,
     },
+    /// The live **collection** of committed instances the engine-native `store`
+    /// root resolves to (`store.<doctype-id>`; `workflow-dialect.md` → data-value
+    /// roots — "`store.<doctype-id>` enumerates the committed instances of that
+    /// doctype as a collection of addresses"). A collection leaf like
+    /// [`Catalog`](Resolution::Catalog): it carries the instance addresses but is
+    /// not navigable — a `.relation` hop, `#fragment`, or `@` past it is a
+    /// structural error. A doctype with no committed instances resolves to the
+    /// empty collection (empty text, not a finding).
+    Store {
+        /// The committed instance addresses of one doctype, in fed order.
+        entries: Vec<Address>,
+    },
 }
 
 impl Path {
@@ -282,6 +305,10 @@ impl Path {
     /// - an **undeclared** root, or an undeclared role under `task`, is a
     ///   blocking `workflow-refs.undeclared-*` [`Finding`] — a *structural* error,
     ///   not an absent value.
+    /// - `store.<doctype-id>` (one bare doctype hop) → [`Resolution::Store`], the
+    ///   committed instances of that doctype (empty when none); a `.relation` hop,
+    ///   `#fragment`, or `@` past it is the `workflow-refs.store-not-navigable`
+    ///   structural error (a collection root, like `catalog`).
     ///
     /// A literal `type:name` [`Head::Doc`] head is a committed-store read that
     /// needs the wired store/edge-index; it is out of MVP resolution scope and
@@ -313,6 +340,33 @@ impl Path {
             }
             return Ok(Resolution::Catalog {
                 entries: ctx.catalog.clone(),
+            });
+        }
+
+        // The engine-native `store` root is a **collection root**: `store.<doctype>`
+        // (exactly one `.relation` hop = the doctype id, no `#fragment`, no `@`
+        // marker) resolves to the committed instances of that doctype as a
+        // collection. The doctype id is the lone hop, so `store` alone, a `@`
+        // marker, a `#fragment`, or any hop past the doctype is a structural error
+        // — there is nothing to navigate into, slice, or dereference past the
+        // collection (workflow-dialect.md → data-value roots). A doctype with no
+        // committed instances resolves to the **empty** collection (empty text,
+        // not a finding).
+        if root == "store" {
+            let is_bare_doctype = self.hops.len() == 1 && self.fragment.is_none() && !self.marker;
+            if !is_bare_doctype {
+                return Err(Finding::blocking(
+                    "workflow-refs.store-not-navigable",
+                    "`store.<doctype-id>` is a collection root — it takes exactly one \
+                     doctype-id hop and no further `.relation` hop, `#fragment`, or \
+                     `@` content marker"
+                        .to_owned(),
+                    Location::at(1, 1),
+                ));
+            }
+            let doctype = self.hops[0].as_str();
+            return Ok(Resolution::Store {
+                entries: ctx.store.get(doctype).cloned().unwrap_or_default(),
             });
         }
 
@@ -588,6 +642,7 @@ mod tests {
                 roles,
             }),
             catalog: Vec::new(),
+            store: BTreeMap::new(),
         }
     }
 
@@ -601,7 +656,7 @@ mod tests {
     /// - `task.intent` → `Scalar(the intent)`.
     /// - `task.commit#summary` (bare) → `Address` (`commit:<slug>#summary`).
     /// - an unbound `task.decision…` path → `Absent` (empty), distinct from
-    /// - a structurally-invalid undeclared root (`store.x`) → structural `Err`.
+    /// - a structurally-invalid undeclared root (`milestone.x`) → structural `Err`.
     /// - `@task.intent` → `at-marker-on-non-scalar` structural `Err`.
     #[test]
     fn data_value_resolution_cases() {
@@ -631,7 +686,7 @@ mod tests {
         );
 
         // Structural error: an undeclared root is *not* absent — it is a finding.
-        let undeclared = resolve("store.x", &ctx).expect_err("undeclared root is structural");
+        let undeclared = resolve("milestone.x", &ctx).expect_err("undeclared root is structural");
         assert_eq!(undeclared.code, "workflow-refs.undeclared-root");
         assert_eq!(undeclared.severity, crate::finding::Severity::Blocking);
 
@@ -672,6 +727,7 @@ mod tests {
         let ctx = ComposeContext {
             task: None,
             catalog: Vec::new(),
+            store: BTreeMap::new(),
         };
 
         for path in [
@@ -721,6 +777,7 @@ mod tests {
                 CatalogEntry::new("single-task", "Implement one well-scoped change."),
                 CatalogEntry::new("quick-fix", "A small, localized fix."),
             ],
+            store: BTreeMap::new(),
         }
     }
 
@@ -758,6 +815,79 @@ mod tests {
             assert_eq!(
                 err.code, "workflow-refs.catalog-not-navigable",
                 "`{path}` should be the catalog-not-navigable conformance code"
+            );
+            assert_eq!(err.severity, crate::finding::Severity::Blocking);
+        }
+    }
+
+    /// A composition context fed a committed `store` of two `spec` instances — the
+    /// `store` root the `implement-from-spec` `locate-from-spec` step interpolates
+    /// (`{{store.specs}}`; [workflow-dialect.md](../../../design/workflow-dialect.md)
+    /// → data-value roots). The CLI feeds this list; the resolver never reads the
+    /// committed store itself (the determinism boundary).
+    fn two_spec_store_ctx() -> ComposeContext {
+        // The `store` root is keyed by the doctype's path-facing collection name —
+        // the schema location stem (`specs/` → `specs`), exactly the `store.specs`
+        // the design uses (`DECISIONS.md` 2026-06-01). The resolver is agnostic: it
+        // looks up whatever string follows `store.`; the CLI owns the keying.
+        let mut store = BTreeMap::new();
+        store.insert(
+            "specs".to_owned(),
+            vec![
+                Address::parse("spec:gateway-rate-limiting").expect("valid address"),
+                Address::parse("spec:auth-token-rotation").expect("valid address"),
+            ],
+        );
+        ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+            store,
+        }
+    }
+
+    /// Core done-criterion: a **bare** `store.<doctype-id>` (one doctype hop, no
+    /// `#fragment`, no `@` marker) resolves to [`Resolution::Store`] carrying the
+    /// fed committed instances verbatim — the collection the `locate-from-spec`
+    /// step renders as a Content list. An unfed doctype resolves to the **empty**
+    /// collection (empty text, not a finding).
+    #[test]
+    fn bare_store_doctype_resolves_to_store_collection() {
+        let ctx = two_spec_store_ctx();
+
+        assert_eq!(
+            resolve("store.specs", &ctx).expect("bare `store.specs` resolves"),
+            Resolution::Store {
+                entries: vec![
+                    Address::parse("spec:gateway-rate-limiting").expect("valid"),
+                    Address::parse("spec:auth-token-rotation").expect("valid"),
+                ],
+            }
+        );
+
+        // A doctype with no committed instances → the empty collection, not a finding.
+        assert_eq!(
+            resolve("store.adrs", &ctx).expect("an unfed doctype resolves to empty"),
+            Resolution::Store {
+                entries: Vec::new()
+            }
+        );
+    }
+
+    /// `store.<doctype-id>` is a **collection root**, not a navigable one: a further
+    /// `.relation` hop, a `#fragment`, and the `@` content marker are *each* a
+    /// blocking `workflow-refs.store-not-navigable` conformance error — there is
+    /// nothing to hop into, slice, or dereference past the collection (mirroring the
+    /// `catalog` collection leaf).
+    #[test]
+    fn navigated_store_is_blocking() {
+        let ctx = two_spec_store_ctx();
+
+        for path in ["store.specs.x", "store.specs#goal", "@store.specs", "store"] {
+            let err =
+                resolve(path, &ctx).expect_err(&format!("`{path}` navigates the collection root"));
+            assert_eq!(
+                err.code, "workflow-refs.store-not-navigable",
+                "`{path}` should be the store-not-navigable conformance code"
             );
             assert_eq!(err.severity, crate::finding::Severity::Blocking);
         }
