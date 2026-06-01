@@ -1,14 +1,36 @@
-# MVP roadmap
+# Roadmap
 
-The build order for the MVP — **one milestone, decomposed into increments**, each a coherent group of tasks delivering one runnable slice of the loop. This is sequencing, not design: every increment cross-references the design doc that specifies *what* it builds; this doc owns only the *order* and the *grouping*. For scope (what's in the MVP vs deferred) see [CLAUDE.md](../CLAUDE.md) → MVP scope; for the *why* of the ordering, [DECISIONS.md](../DECISIONS.md).
+The full-product build order — **the milestone spine**, risk-first, each milestone a runnable slice that *proves* one thing. This is sequencing, not design: each entry names what it proves and the [VISION](../VISION.md) workflow(s) it lands; the milestone-level *what* and *why* live in the design docs. For scope and the determinism boundary see [CLAUDE.md](../CLAUDE.md); for the *why* of the ordering, [DECISIONS.md](../DECISIONS.md).
 
-Work-unit terms are `milestone > increment > task` ([structural-grammar.md](../design/structural-grammar.md) → Work-units). **Tasks are intentionally not enumerated here yet** — they're cut per-increment when that increment is picked up, so the list stays honest against what the prior increments actually produced. *How* an increment is taken from "not started" to "validated and committed" — the plan → execute → validate → fix loop that cuts and runs those tasks — is the [increment workflow](increment-workflow.md).
+This doc owns the **milestone spine** plus the increment decomposition of milestones *already planned*. A milestone is turned into ordered increments by the [milestone-planning workflow](milestone-planning-workflow.md) **when it is picked up** — never all milestones up front — so M2–M6 below stay milestone-only until then, while M1 (shipped) carries its full decomposition. Work-unit terms are `milestone > increment > task` ([structural-grammar.md](../design/structural-grammar.md) → Work-units); **tasks are not enumerated** — they're cut per-increment at pickup, so the list stays honest against what prior increments produced. *How* an increment goes from "not started" to "validated and committed" is the [increment workflow](increment-workflow.md); how a milestone *opens* and *closes* are the [planning](milestone-planning-workflow.md) and [completion](milestone-completion-workflow.md) workflows.
 
-The ordering principle is **risk-first**: stand up the spine, retire the #1 technical risk in isolation, build the loop, prove the differentiator, then ship. The spine is strictly linear — each increment builds on the one before.
+The ordering principle is **risk-first**: stand up the spine, retire the #1 technical risk in isolation, build the loop, prove the differentiators, then widen. The spine is strictly linear — each milestone builds on the one before.
 
-## Milestone: single-task execution loop
+## The milestone spine
 
-A usable `jigc` an agent is pointed at, proving the core loop (discover → compose → execute → validate → finalize) beats a plain `CLAUDE.md`. The **superseding-decision** flow ([worked-examples.md](../design/worked-examples.md) → Superseding decision) is the headline acceptance test — it's what converts the differentiators from *supported* to *proven*. Once all the increments below are built, the milestone is finished through the [milestone-completion workflow](milestone-completion-workflow.md) (independent audit → triage → fix → re-verify) — the acceptance gate before it ships.
+Each entry is milestone-level only — its increments are cut by the [milestone-planning workflow](milestone-planning-workflow.md) when the milestone is picked up. M1 is shipped; its decomposition follows below.
+
+### M1 · single-task execution loop — ✅ shipped (2026-05-31)
+The core loop (discover → compose → execute → validate → finalize), proving it beats a plain `CLAUDE.md` via the superseding-decision flow. VISION: `single task execution`. **Decomposition below.**
+
+### M2 · router + second work-workflow
+A second work-workflow ships and the cascade's `default-workflow` flips from `single-task` to a **router** (`creates-task: false`), so `jigc start "<intent>"` routes to a model-free selection among ≥2 work-workflows. **Proves:** the orthogonal `creates-task` / `default-workflow` knobs (designed in [write-commands.md](../design/write-commands.md), unexercised in M1) hold — the selection path activates with **no engine change**. Cheapest next beat; ~no new doctype.
+
+### M3 · spec-driven planning
+The `spec` doctype + the flow that creates it, so `single-task` reads `{{@task.spec#…}}` (the MVP was deliberately spec-less). **Proves:** the doc-creation differentiator beyond `adr`, and the intent → spec → implementation arc — `spec` earns its schema from its real creator and consumer, not up front. VISION: `project planning` / `milestone planning`.
+
+### M4 · override machinery
+Recorded **deltas** (scalar override · structural ops by id · slot-fills · tracked fork) and the **upgrade reconciliation** that re-applies them and reports clean / conflict / orphaned ([overrides.md](../design/overrides.md)). **Proves:** principle #5 — *individualize and still inherit every upstream improvement; every divergence surfaces at a known moment* — entirely unproven in code today. **Sequenced before fan-out** because customization is core to the adoption story and touches far more of the system than the bounded concurrency primitive does.
+
+### M5 · milestone execution (fan-out / join)
+The single bounded concurrency primitive — `fan-out`/`join` steps, isolated per-task working areas, a deterministic join **by task id, not completion order** — and the `milestone-execution` workflow that drives it. **Proves:** parallel sub-agent work stays reproducible under the blackboard model. The **highest architectural risk**, but an isolated add-on that rides on the proven read/write/spec/override substrate — hence after M4. VISION: `milestone execution`.
+
+### M6 · project setup (new & existing)
+The setup workflows: bootstrap a **new** project (with idea development) and **ingest an existing** one. **Proves:** jigc wires into a real project from zero. **Last** because it is the broadest and least-defined — legacy ingestion is flagged research-grade in [VISION.md](../VISION.md) → Open questions. VISION: `project setup (existing)` + `project setup (new + idea development)`.
+
+## Milestone 1 — single-task execution loop (shipped): decomposition
+
+The six-increment decomposition of M1, kept as the shipped record and the worked example of what a milestone-planning cut produces. A usable `jigc` an agent is pointed at, proving the core loop (discover → compose → execute → validate → finalize) beats a plain `CLAUDE.md`. The **superseding-decision** flow ([worked-examples.md](../design/worked-examples.md) → Superseding decision) is the headline acceptance test — it's what converts the differentiators from *supported* to *proven*. Once all the increments below are built, the milestone is finished through the [milestone-completion workflow](milestone-completion-workflow.md) (independent audit → triage → fix → re-verify) — the acceptance gate before it ships.
 
 **Pack content rides along, not as its own increment.** The embedded dev pack accretes where each increment first needs it: the `commit` schema in increment 2, `single-task` + its steps in 3, the `adr` schema in 5, pack-default config (`default-workflow: single-task`, the `allows-create` create-gate) across 3–5, and the whole pack finalized in 6.
 

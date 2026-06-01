@@ -1,8 +1,8 @@
 # Milestone completion workflow (audit → plan → fix → re-verify)
 
-The loop for **finishing a milestone** — the *completion* half of the milestone lifecycle, not the whole of it. **Planning** a milestone (decomposing it into ordered increments) is the [roadmap](roadmap.md); building those increments is the [increment workflow](increment-workflow.md). This doc owns only what comes *after* the last increment lands: once a milestone's increments are all built and individually validated, independently **audit the whole assembled milestone** and remediate before calling it shipped.
+The loop for **finishing a milestone** — the *completion* half of the milestone lifecycle, the bookend to [milestone planning](milestone-planning-workflow.md). **Planning** a milestone (detecting gaps, then decomposing it into ordered increments) is the [milestone planning workflow](milestone-planning-workflow.md); building those increments is the [increment workflow](increment-workflow.md). This doc owns only what comes *after* the last increment lands: once a milestone's increments are all built and individually validated, independently **audit the whole assembled milestone** and remediate before calling it shipped.
 
-It is the outermost *execution* loop, completing the set: [design](design-workflow.md) governs a *decision*, [dev](dev-workflow.md) a *task*, [increment](increment-workflow.md) an *increment*, and this one the *finishing of a milestone* — the `milestone > increment > task` hierarchy ([structural-grammar.md](../design/structural-grammar.md) → Work-units), end to end.
+It is the outermost *execution* loop, completing the set: [design](design-workflow.md) governs a *decision*, [dev](dev-workflow.md) a *task*, [milestone planning](milestone-planning-workflow.md) the *opening of a milestone*, [increment](increment-workflow.md) an *increment*, and this one a milestone's *close* — the `milestone > increment > task` hierarchy ([structural-grammar.md](../design/structural-grammar.md) → Work-units), bracketed end to end.
 
 ## Why a separate audit (the per-increment validate isn't enough)
 
