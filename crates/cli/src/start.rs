@@ -313,11 +313,11 @@ fn build_context(id: &str, intent: &str, def: &WorkflowDef, bound: &RolesRecord)
         roles.entry(entry.as_role.clone()).or_insert(binding);
     }
     ComposeContext {
-        task: TaskRoot {
+        task: Some(TaskRoot {
             id: id.to_owned(),
             intent: intent.to_owned(),
             roles,
-        },
+        }),
     }
 }
 

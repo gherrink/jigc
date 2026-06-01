@@ -1249,11 +1249,11 @@ mod tests {
         );
         roles.insert("decision".to_owned(), None);
         crate::data_value::ComposeContext {
-            task: crate::data_value::TaskRoot {
+            task: Some(crate::data_value::TaskRoot {
                 id: "emit-four-classes".to_owned(),
                 intent: "emit a composed step body to the four-class format".to_owned(),
                 roles,
-            },
+            }),
         }
     }
 
@@ -1464,11 +1464,11 @@ Slightly higher write latency for resilience.
             Some(Address::parse("adr:shared-redis-session-cache").expect("valid")),
         );
         crate::data_value::ComposeContext {
-            task: crate::data_value::TaskRoot {
+            task: Some(crate::data_value::TaskRoot {
                 id: "shared-redis-session-cache".to_owned(),
                 intent: "move the session cache to a shared redis cluster".to_owned(),
                 roles,
-            },
+            }),
         }
     }
 
@@ -1548,11 +1548,11 @@ Slightly higher write latency for resilience.
         let mut roles = BTreeMap::new();
         roles.insert("decision".to_owned(), None); // declared, unbound.
         let ctx_unbound = crate::data_value::ComposeContext {
-            task: crate::data_value::TaskRoot {
+            task: Some(crate::data_value::TaskRoot {
                 id: "t".to_owned(),
                 intent: "i".to_owned(),
                 roles,
-            },
+            }),
         };
         let emitted_unbound =
             emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
@@ -2038,11 +2038,11 @@ reference — make your consequences explain what changes:
             Some(crate::address::Address::parse("commit:add-rate-limiter").expect("valid address")),
         );
         ComposeContext {
-            task: TaskRoot {
+            task: Some(TaskRoot {
                 id: "add-rate-limiter".to_owned(),
                 intent: "add a rate limiter to the API".to_owned(),
                 roles,
-            },
+            }),
         }
     }
 
@@ -2369,11 +2369,11 @@ reference — make your consequences explain what changes:
         );
         roles.insert("decision".to_owned(), None);
         ComposeContext {
-            task: TaskRoot {
+            task: Some(TaskRoot {
                 id: "add-rate-limiter".to_owned(),
                 intent: "add rate limiter".to_owned(),
                 roles,
-            },
+            }),
         }
     }
 
@@ -2469,7 +2469,7 @@ reference — make your consequences explain what changes:
             let source = single_task_source();
             let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
             let mut ctx = compose_ctx();
-            ctx.task.intent = intent;
+            ctx.task.as_mut().expect("compose_ctx binds a task").intent = intent;
 
             let first = compose(&def, &source, &catalog, &ctx);
             let second = compose(&def, &source, &catalog, &ctx);

@@ -195,10 +195,17 @@ pub struct TaskRoot {
 /// `milestone`) join as fields here without changing the resolver's contract.
 /// Resolution is a **pure function of `(path, ctx)`** — no I/O, no clock, no LLM
 /// (the determinism boundary; same resolved cascade in → same workflow out).
+///
+/// `task` is `Some` for a `creates-task: true` workflow and `None` for a
+/// `creates-task: false` one (the router and its kind), which composes with **no
+/// task context** — any `task.*` reference against a `None` task is the blocking
+/// `workflow-refs.task-ref-in-no-task-workflow` conformance error
+/// ([write-commands.md](../../../design/write-commands.md) → Task origination).
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComposeContext {
-    /// The engine-native `task` root binding.
-    pub task: TaskRoot,
+    /// The engine-native `task` root binding — `None` in a `creates-task: false`
+    /// (no-task) composition.
+    pub task: Option<TaskRoot>,
 }
 
 /// What a data-value [`Path`] resolves to against a [`ComposeContext`] — the
@@ -282,6 +289,22 @@ impl Path {
             ));
         }
 
+        // A `creates-task: false` workflow composes with no task context, so any
+        // `task.*` reference is a conformance error — not an absent value — *before*
+        // any per-hop classification (write-commands.md → Task origination).
+        let task = match &ctx.task {
+            Some(task) => task,
+            None => {
+                return Err(Finding::blocking(
+                    "workflow-refs.task-ref-in-no-task-workflow",
+                    "`task.*` cannot be referenced by a `creates-task: false` workflow \
+                     (it composes with no task context)"
+                        .to_owned(),
+                    Location::at(1, 1),
+                ));
+            }
+        };
+
         // `task` alone (no hop) is not an addressable value — there is nothing to
         // emit. The MVP data-values all name `intent` or a role.
         let Some(first) = self.hops.first() else {
@@ -296,8 +319,8 @@ impl Path {
         // distinction, so `@` is an error (`command-catalog.md` → `task.id` is a
         // scalar; `workflow-dialect.md` → Leaves).
         if let Some(scalar) = match first.as_str() {
-            "id" => Some(ctx.task.id.clone()),
-            "intent" => Some(ctx.task.intent.clone()),
+            "id" => Some(task.id.clone()),
+            "intent" => Some(task.intent.clone()),
             _ => None,
         } {
             if self.marker {
@@ -314,7 +337,7 @@ impl Path {
         }
 
         // A context role: declared (present in the map) vs undeclared.
-        match ctx.task.roles.get(first.as_str()) {
+        match task.roles.get(first.as_str()) {
             None => Err(Finding::blocking(
                 "workflow-refs.undeclared-role",
                 format!("`task.{}` is not a declared context role", first.as_str()),
@@ -524,11 +547,11 @@ mod tests {
         );
         roles.insert("decision".to_owned(), None);
         ComposeContext {
-            task: TaskRoot {
+            task: Some(TaskRoot {
                 id: "resolve-the-data-value".to_owned(),
                 intent: "resolve the data-value path against live state".to_owned(),
                 roles,
-            },
+            }),
         }
     }
 
@@ -599,6 +622,34 @@ mod tests {
 
         let err = resolve("task.spec#criteria", &ctx).expect_err("undeclared role is structural");
         assert_eq!(err.code, "workflow-refs.undeclared-role");
+    }
+
+    /// A `creates-task: false` workflow composes with **no task context**
+    /// (`ctx.task == None`), so any `task.*` reference is a conformance error, not
+    /// an absent value ([write-commands.md](../../../design/write-commands.md) →
+    /// Task origination; [validation.md](../../../design/validation.md) →
+    /// workflow-refs). The finding is blocking and coded
+    /// `workflow-refs.task-ref-in-no-task-workflow`, and the branch fires *before*
+    /// any per-hop classification (scalar / role) so even `task.intent` blocks.
+    #[test]
+    fn task_ref_in_no_task_workflow_is_blocking() {
+        let ctx = ComposeContext { task: None };
+
+        for path in [
+            "task.intent",
+            "task.id",
+            "task.commit#summary",
+            "task.decision.supersedes#decision",
+            "@task.intent",
+        ] {
+            let err = resolve(path, &ctx)
+                .expect_err(&format!("`{path}` against a no-task ctx must be a finding"));
+            assert_eq!(
+                err.code, "workflow-refs.task-ref-in-no-task-workflow",
+                "`{path}` should be the no-task conformance code"
+            );
+            assert_eq!(err.severity, crate::finding::Severity::Blocking);
+        }
     }
 
     /// The `@` content marker dereferences a bound role to `Content`; the bare path
