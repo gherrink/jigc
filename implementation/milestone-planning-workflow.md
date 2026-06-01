@@ -26,7 +26,7 @@ This is also where the **doctype contract gets set at the right moment**: a doct
 2. **Detect gaps** — a forward-looking, **adversarial** pass over the milestone's done-picture against the assembled product: what is *missing or unfit* to build it cleanly. Categories:
    - **Decisions** — the forward look in [decisions-pending.md](decisions-pending.md): each `(D)` this milestone forces, plus any cross-cutting one due before it.
    - **Docs** — design part-docs the milestone needs that don't exist, or that drifted as earlier milestones changed reality.
-   - **Doctypes** — types this milestone's workflows will create or read, whose schema is not yet defined (consult the doctype/relation map for what's coming and how it connects).
+   - **Doctypes** — types this milestone's workflows will create or read, whose schema is not yet defined (consult the [doctype map](doctype-map.md) for what's coming and how it connects).
    - **Capabilities & open questions** — engine/CLI surface the milestone assumes, and any part-doc `## Open questions` that block planning.
 
    Output: a ranked gap list, each gap concrete enough to act on.
