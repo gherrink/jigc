@@ -53,8 +53,9 @@ impl Drop for TempDir {
 }
 
 /// Initialize a real git repo with one commit and the `.jigc/config/` project layer
-/// so the cascade resolves, then `jigc start "<intent>"` to mint a task and provision
-/// its commit doc. Returns the repo + a `$HOME` temp dir.
+/// so the cascade resolves, then `jigc start --workflow single-task "<intent>"` to
+/// mint a task and provision its commit doc (post-flip the cascade default is the
+/// `router`, so minting goes through Form D). Returns the repo + a `$HOME` temp dir.
 fn started_repo(intent: &str) -> (TempDir, TempDir) {
     let repo = TempDir::new("repo");
     let home = TempDir::new("home");
@@ -79,7 +80,7 @@ fn started_repo(intent: &str) -> (TempDir, TempDir) {
     fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("create project layer");
 
     let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .args(["start", intent])
+        .args(["start", "--workflow", "single-task", intent])
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()

@@ -100,7 +100,12 @@ fn resume_re_composes_with_the_created_adr_bound_to_task_decision() {
     let first = run(
         repo.path(),
         home.path(),
-        &["start", "move the cache to redis"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "move the cache to redis",
+        ],
     );
     assert!(
         first.status.success(),
@@ -173,11 +178,11 @@ fn resume_re_composes_with_the_created_adr_bound_to_task_decision() {
 
 /// The T3a done-criterion (`DECISIONS.md` 2026-06-01 → M2 Increment 3 re-cut):
 /// resume composes the task's **own** minting workflow, not the cascade default.
-/// A task minted via Form D `--workflow quick-fix` (while `default-workflow` is
-/// still `single-task`) must re-compose **quick-fix** on `jigc start --task <id>`
-/// — proven by the absence of single-task's ADR/create affordance and supersedes
-/// line in the resumed view. A working area whose recorded workflow id is gone
-/// errors clearly rather than silently composing the default.
+/// A task minted via Form D `--workflow quick-fix` must re-compose **quick-fix**
+/// on `jigc start --task <id>` — even though the cascade default is now the
+/// `router` — proven by the absence of single-task's ADR/create affordance and
+/// supersedes line in the resumed view. A working area whose recorded workflow id
+/// is gone errors clearly rather than silently composing the default.
 #[test]
 fn resume_composes_the_tasks_own_minting_workflow_not_the_default() {
     let repo = TempDir::new("own-workflow");

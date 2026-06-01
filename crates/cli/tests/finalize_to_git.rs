@@ -76,7 +76,8 @@ fn git(repo: &Path, args: &[&str]) -> String {
 }
 
 /// Initialize a real git repo with one commit and the `.jigc/config/` project layer,
-/// then `jigc start "<intent>"`. Returns the repo + `$HOME` temp dirs.
+/// then `jigc start --workflow single-task "<intent>"` (post-flip the cascade default
+/// is the `router`, so minting goes through Form D). Returns the repo + `$HOME` temp dirs.
 fn started_repo(intent: &str) -> (TempDir, TempDir) {
     let repo = TempDir::new("repo");
     let home = TempDir::new("home");
@@ -89,7 +90,7 @@ fn started_repo(intent: &str) -> (TempDir, TempDir) {
     fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("create project layer");
 
     let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .args(["start", intent])
+        .args(["start", "--workflow", "single-task", intent])
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()

@@ -325,9 +325,14 @@ fn scenario_3_single_task_happy_path_one_commit() {
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    // Mint + compose.
-    let start = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
-    assert_ok(&start, "`jigc start \"<intent>\"`");
+    // Mint + compose (post-flip the cascade default is the `router`, so minting
+    // goes through Form D `--workflow single-task`).
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
+    assert_ok(&start, "`jigc start --workflow single-task \"<intent>\"`");
     let composed = String::from_utf8(start.stdout).expect("utf-8");
     let task = "add-rate-limiter";
 
@@ -383,7 +388,12 @@ fn commit_prior_adr(repo: &Path, home: &Path, decision: &str) {
     let out = jigc(
         repo,
         home,
-        &["start", "cache sessions in a single in-memory node"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "cache sessions in a single in-memory node",
+        ],
     );
     assert_ok(&out, "`jigc start` (prior-ADR task)");
     let task = "cache-sessions-in-a-single-in-memory-node";
@@ -433,7 +443,12 @@ fn scenario_4_superseding_decision_resolves_slice_and_passes_edge_walk() {
     let start = jigc(
         repo.path(),
         home.path(),
-        &["start", "move the session cache to a shared redis cluster"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "move the session cache to a shared redis cluster",
+        ],
     );
     assert_ok(&start, "`jigc start` (task 2)");
     let create = jigc_doc(
@@ -511,7 +526,12 @@ fn scenario_4_dangling_supersedes_blocks_finalize() {
     let start = jigc(
         repo.path(),
         home.path(),
-        &["start", "supersede the cache decision"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "supersede the cache decision",
+        ],
     );
     assert_ok(&start, "`jigc start` (dangling task)");
     let create = jigc_doc(
@@ -578,7 +598,11 @@ fn scenario_5a_validate_and_finalize_block_on_missing_required_field() {
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    let start = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
     assert_ok(&start, "`jigc start`");
     let task = "add-rate-limiter";
 
@@ -617,7 +641,11 @@ fn scenario_5b_finalize_aborts_on_base_mismatch() {
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    let start = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
     assert_ok(&start, "`jigc start`");
     let task = "add-rate-limiter";
     fs::write(repo.path().join("limiter.rs"), "// x\n").expect("write code");
@@ -654,7 +682,11 @@ fn scenario_5c_discard_cleans_the_working_area() {
     let home = TempDir::new("home");
     init_repo(repo.path());
 
-    let start = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
     assert_ok(&start, "`jigc start`");
     let task = "add-rate-limiter";
     let area = repo.path().join(".jigc").join("tasks").join(task);
@@ -697,7 +729,11 @@ fn scenario_6_conformant_oob_edit_to_committed_adr_absorbs() {
     // A fresh second task; `task validate` runs the full sweep, which now reaches the
     // committed store (reconciliation.md → Detection timing: the `task validate` full
     // sweep). The conformant drift absorbs.
-    let start = jigc(repo.path(), home.path(), &["start", "a fresh second task"]);
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "a fresh second task"],
+    );
     assert_ok(&start, "`jigc start` after an OOB edit");
     let task = "a-fresh-second-task";
     fill_commit(repo.path(), home.path(), task);
@@ -738,7 +774,11 @@ fn scenario_6_nonconformant_oob_edit_to_committed_adr_blocks_finalize() {
 
     // A fresh task that touches nothing about the ADR; finalize must still block on the
     // un-reconciled committed-doc drift (the full sweep reaches the committed store).
-    let start = jigc(repo.path(), home.path(), &["start", "unrelated change"]);
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "unrelated change"],
+    );
     assert_ok(&start, "`jigc start`");
     let task = "unrelated-change";
     fs::write(repo.path().join("code.rs"), "// x\n").expect("write code");

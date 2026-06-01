@@ -1,10 +1,13 @@
 //! End-to-end integration test for `jigc start "<intent>"` composition.
 //!
 //! Drives the built `jigc` binary against a throwaway temp git repo and asserts
-//! the Increment-3 deliverable (`implementation/roadmap.md` → Increment 3): an
-//! intent-bearing `jigc start` mints the task, runs the `workflow-refs` gate,
-//! composes `single-task` with `{{task.intent}}` = the intent, and prints the
-//! composed four-class view through the selected format.
+//! the Increment-3 deliverable (`implementation/roadmap.md` → Increment 3).
+//! Post-flip (`DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to
+//! `router`), a bare intent-bearing `jigc start` composes the cascade default —
+//! the `creates-task: false` router — listing the selectable work-workflows
+//! without minting; the explicit `--workflow <X>` (Form D) front door mints + runs
+//! the `workflow-refs` gate + composes `<X>` with `{{task.intent}}` = the intent,
+//! printing the composed four-class view through the selected format.
 //!
 //! No external test crates: the binary path comes from Cargo's
 //! `CARGO_BIN_EXE_jigc`, the temp repo is a real `git init` (composition mints,
@@ -86,7 +89,11 @@ fn run_start(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
-fn start_with_intent_mints_and_composes_the_resolved_view() {
+fn bare_intent_composes_the_router_without_minting() {
+    // Post-flip (`DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to
+    // `router`): a bare `jigc start "<intent>"` composes the cascade default — now
+    // the `creates-task: false` router — so it lists the selectable work-workflows
+    // and mints NOTHING. Minting happens only via Form D (`--workflow <X>`).
     let repo = TempDir::new("compose");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -101,31 +108,25 @@ fn start_with_intent_mints_and_composes_the_resolved_view() {
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // The task minted under .jigc/tasks/<slug>/ with its base pin.
-    let task_dir = repo
-        .path()
-        .join(".jigc")
-        .join("tasks")
-        .join("add-rate-limiter");
+    // The router is `creates-task: false`: no `.jigc/tasks/` working area appears.
     assert!(
-        task_dir.join("base.json").is_file(),
-        "minting must open .jigc/tasks/add-rate-limiter/ with a base pin",
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "bare `jigc start` now composes the router — no .jigc/tasks/ dir may be minted",
     );
 
-    // The composed view embeds the resolved intent (the locate step's
-    // {{task.intent}}), a Run: command line, the <<author:>> directive, and the
-    // routing footer.
+    // The router lists the selectable (`creates-task: true`) work-workflows, each as
+    // a `- <id> — <when>` option line, and carries the agent-substitution re-run.
     assert!(
-        stdout.contains("add rate limiter"),
-        "the composed view must embed the resolved intent; got:\n{stdout}",
+        stdout.contains("- single-task — implement one scoped change end-to-end"),
+        "the router must list single-task as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
-        stdout.lines().any(|l| l.starts_with("Run: ")),
-        "the composed view must carry a `Run:` command line; got:\n{stdout}",
+        stdout.contains("- quick-fix — apply a small commit-only fix with no decision to record"),
+        "the router must list quick-fix as a `- <id> — <when>` option; got:\n{stdout}",
     );
     assert!(
-        stdout.contains("<<author:"),
-        "the composed view must carry the `<<author:` directive; got:\n{stdout}",
+        stdout.contains("jigc start --workflow <chosen> \"<intent>\""),
+        "the router must carry the literal agent-substitution re-run prose; got:\n{stdout}",
     );
     assert!(
         stdout.trim_end().ends_with(ROUTING_FOOTER),
@@ -134,7 +135,7 @@ fn start_with_intent_mints_and_composes_the_resolved_view() {
 }
 
 #[test]
-fn start_with_intent_json_format_carries_no_footer() {
+fn bare_intent_router_json_format_carries_no_footer() {
     let repo = TempDir::new("compose-json");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -161,8 +162,8 @@ fn start_with_intent_json_format_carries_no_footer() {
     assert!(
         value["text"]
             .as_str()
-            .is_some_and(|t| t.contains("add rate limiter")),
-        "the JSON view's `text` must carry the composed workflow; got:\n{stdout}",
+            .is_some_and(|t| t.contains("- single-task —")),
+        "the JSON view's `text` must carry the composed router catalog; got:\n{stdout}",
     );
 }
 
@@ -350,13 +351,23 @@ fn serial_re_run_of_the_same_intent_blocks() {
     init_repo(repo.path());
     let home = TempDir::new("home");
 
-    let first = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    // Post-flip, minting goes through Form D — bare intent composes the router and
+    // mints nothing, so the collision is provoked via `--workflow single-task`.
+    let first = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "single-task", "add rate limiter"],
+    );
     assert!(
         first.status.success(),
         "the first mint+compose must succeed"
     );
 
-    let second = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let second = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "single-task", "add rate limiter"],
+    );
     assert!(
         !second.status.success(),
         "a serial re-run of the same intent must exit non-zero (serial collision)",

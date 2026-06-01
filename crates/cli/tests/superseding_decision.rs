@@ -210,7 +210,12 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
     let out = jigc(
         repo,
         home,
-        &["start", "cache sessions in a single in-memory node"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "cache sessions in a single in-memory node",
+        ],
     );
     assert_ok(&out, "`jigc start` (task 1)");
     let task = "cache-sessions-in-a-single-in-memory-node";
@@ -267,7 +272,12 @@ fn superseding_decision_slices_the_prior_committed_adr_and_passes_the_edge_walk(
     let out = jigc(
         repo.path(),
         home.path(),
-        &["start", "move the session cache to a shared redis cluster"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "move the session cache to a shared redis cluster",
+        ],
     );
     assert_ok(&out, "`jigc start` (task 2)");
 
@@ -367,7 +377,12 @@ fn dangling_supersedes_blocks_finalize_with_the_three_routing_options() {
     let out = jigc(
         repo.path(),
         home.path(),
-        &["start", "supersede the cache decision"],
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "supersede the cache decision",
+        ],
     );
     assert_ok(&out, "`jigc start` (dangling task)");
 

@@ -225,8 +225,9 @@ mod tests {
     }
 
     /// list(Config) carries the `defaults` resource whose `default-workflow`
-    /// points at `single-task` (the MVP cascade knob — CLAUDE.md → MVP scope),
-    /// plus the `commands` catalog. The composer reads both.
+    /// points at `router` (the cascade knob, flipped from `single-task` once the
+    /// router shipped — `DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to
+    /// `router`), plus the `commands` catalog. The composer reads both.
     #[test]
     fn embedded_pack_config_carries_defaults_and_commands() {
         let pack = EmbeddedPack::new();
@@ -243,7 +244,7 @@ mod tests {
         let defaults = read_text(&pack, PackResourceKind::Config, "defaults");
         insta::assert_snapshot!(defaults, @r###"
         pack-id: dev
-        default-workflow: single-task
+        default-workflow: router
         "###);
 
         // The commands catalog is present and readable (its parser arrives with

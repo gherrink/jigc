@@ -9,7 +9,8 @@
 //! inputs.
 //!
 //! After minting, [`compose_in_repo`] composes the cascade's default workflow
-//! (`single-task`) with `{{task.intent}}` = the intent — locating the cascade
+//! (post-flip, the `creates-task: false` `router`; `DECISIONS.md` 2026-06-01)
+//! with `{{task.intent}}` = the intent — locating the cascade
 //! (CLI locates, engine resolves), running the `workflow-refs` gate at
 //! compose-time, then emitting the four-class composed view
 //! ([write-commands.md](../../../design/write-commands.md) → Task origination;
@@ -125,8 +126,9 @@ fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::
 
 /// The cascade knob the default-workflow id is read from
 /// (`design/overrides.md`; `design/write-commands.md` → Task origination: the
-/// `default-workflow: <id>` cascade knob the front door composes). The MVP pack
-/// ships `default-workflow: single-task` in its `config/defaults` resource.
+/// `default-workflow: <id>` cascade knob the front door composes). Post-flip the
+/// pack ships `default-workflow: router` in its `config/defaults` resource
+/// (`DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to `router`).
 const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
 
 /// Mint a task from `intent`, then compose the cascade's default workflow over

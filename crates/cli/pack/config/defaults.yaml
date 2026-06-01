@@ -1,2 +1,2 @@
 pack-id: dev
-default-workflow: single-task
+default-workflow: router
