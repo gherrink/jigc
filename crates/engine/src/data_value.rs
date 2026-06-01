@@ -27,6 +27,7 @@ use thiserror::Error;
 
 use crate::address::{self, Address, Fragment, Slug, Type};
 use crate::finding::{Finding, Location};
+use crate::result::CatalogEntry;
 
 /// One `.relation` hop — an author-named relation edge crossed during navigation.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -206,11 +207,17 @@ pub struct ComposeContext {
     /// The engine-native `task` root binding — `None` in a `creates-task: false`
     /// (no-task) composition.
     pub task: Option<TaskRoot>,
+    /// The engine-native `catalog` root — the live list of **selectable** work-
+    /// workflows (`creates-task: true`) with their `when` hints, the router's
+    /// input ([workflow-dialect.md](../../../design/workflow-dialect.md) → Workflow
+    /// selection). Engine-native machinery that enumerates whatever work-workflows
+    /// the cascade supplies, so "engine ships empty" holds; empty when unfed.
+    pub catalog: Vec<CatalogEntry>,
 }
 
 /// What a data-value [`Path`] resolves to against a [`ComposeContext`] — the
-/// four emitted classes ([workflow-dialect.md](../../../design/workflow-dialect.md)
-/// → Leaves: Address vs content; Empty vs unresolvable).
+/// emitted classes ([workflow-dialect.md](../../../design/workflow-dialect.md)
+/// → Leaves: Address vs content; Empty vs unresolvable; the `catalog` collection).
 ///
 /// - [`Scalar`](Resolution::Scalar) — a bare scalar string (`task.intent`); has
 ///   no address/content distinction, so `@` on it is a structural error.
@@ -243,6 +250,14 @@ pub enum Resolution {
     },
     /// A structurally-valid path that currently resolves to nothing (empty text).
     Absent,
+    /// The live **collection** of selectable work-workflows the engine-native
+    /// `catalog` root resolves to (`workflow-dialect.md` → data-value roots /
+    /// Workflow selection). A collection leaf: it carries the entries but is not
+    /// navigable — a hop / `#fragment` / `@` past it is a structural error.
+    Catalog {
+        /// The selectable work-workflows, in cascade order, each with its `when`.
+        entries: Vec<CatalogEntry>,
+    },
 }
 
 impl Path {
@@ -280,6 +295,26 @@ impl Path {
                 )));
             }
         };
+
+        // The engine-native `catalog` root is a **collection leaf**: a bare
+        // `catalog` resolves to the fed entries; any `.relation` hop, `#fragment`,
+        // or `@` content marker is a structural error — there is nothing to
+        // navigate into, slice, or dereference past the collection
+        // (workflow-dialect.md → Workflow selection).
+        if root == "catalog" {
+            if !self.hops.is_empty() || self.fragment.is_some() || self.marker {
+                return Err(Finding::blocking(
+                    "workflow-refs.catalog-not-navigable",
+                    "`catalog` is a collection leaf — it takes no `.relation` hop, \
+                     `#fragment`, or `@` content marker"
+                        .to_owned(),
+                    Location::at(1, 1),
+                ));
+            }
+            return Ok(Resolution::Catalog {
+                entries: ctx.catalog.clone(),
+            });
+        }
 
         if root != "task" {
             return Err(Finding::blocking(
@@ -552,6 +587,7 @@ mod tests {
                 intent: "resolve the data-value path against live state".to_owned(),
                 roles,
             }),
+            catalog: Vec::new(),
         }
     }
 
@@ -633,7 +669,10 @@ mod tests {
     /// any per-hop classification (scalar / role) so even `task.intent` blocks.
     #[test]
     fn task_ref_in_no_task_workflow_is_blocking() {
-        let ctx = ComposeContext { task: None };
+        let ctx = ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+        };
 
         for path in [
             "task.intent",
@@ -669,6 +708,59 @@ mod tests {
             resolve("@task.commit#summary", &ctx).expect("@ → content"),
             Resolution::Content { address: addr }
         );
+    }
+
+    /// A no-task composition (`creates-task: false`, the router) carrying the live
+    /// selectable-work-workflow catalog — the engine-native `catalog` root the
+    /// router interpolates ([workflow-dialect.md](../../../design/workflow-dialect.md)
+    /// → Workflow selection).
+    fn router_ctx() -> ComposeContext {
+        ComposeContext {
+            task: None,
+            catalog: vec![
+                CatalogEntry::new("single-task", "Implement one well-scoped change."),
+                CatalogEntry::new("quick-fix", "A small, localized fix."),
+            ],
+        }
+    }
+
+    /// Core done-criterion: a **bare** `catalog` head (no `.` hops, no `#fragment`,
+    /// no `@` marker) resolves to [`Resolution::Catalog`] carrying the fed entries
+    /// verbatim — the collection leaf the router's option list renders from
+    /// ([workflow-dialect.md](../../../design/workflow-dialect.md) → data-value roots:
+    /// the engine-native `catalog` root).
+    #[test]
+    fn bare_catalog_resolves_to_catalog_collection() {
+        let ctx = router_ctx();
+
+        assert_eq!(
+            resolve("catalog", &ctx).expect("bare `catalog` resolves"),
+            Resolution::Catalog {
+                entries: vec![
+                    CatalogEntry::new("single-task", "Implement one well-scoped change."),
+                    CatalogEntry::new("quick-fix", "A small, localized fix."),
+                ],
+            }
+        );
+    }
+
+    /// The catalog is a **collection leaf**, not a navigable root: a `.relation`
+    /// hop, a `#fragment`, and the `@` content marker are *each* a blocking
+    /// `workflow-refs.catalog-not-navigable` conformance error — there is nothing to
+    /// hop into, slice, or dereference past the collection.
+    #[test]
+    fn navigated_catalog_is_blocking() {
+        let ctx = router_ctx();
+
+        for path in ["catalog.tasks", "catalog#summary", "@catalog"] {
+            let err =
+                resolve(path, &ctx).expect_err(&format!("`{path}` navigates the collection leaf"));
+            assert_eq!(
+                err.code, "workflow-refs.catalog-not-navigable",
+                "`{path}` should be the catalog-not-navigable conformance code"
+            );
+            assert_eq!(err.severity, crate::finding::Severity::Blocking);
+        }
     }
 
     /// Golden over the resolution variants: a table of `(path → Resolution)` pins

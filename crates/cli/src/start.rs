@@ -318,6 +318,9 @@ fn build_context(id: &str, intent: &str, def: &WorkflowDef, bound: &RolesRecord)
             intent: intent.to_owned(),
             roles,
         }),
+        // The `catalog` root feeds only `creates-task: false` (router) compositions
+        // (T4); a task composition carries no selectable-workflow list.
+        catalog: Vec::new(),
     }
 }
 

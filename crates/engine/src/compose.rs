@@ -343,6 +343,7 @@ fn render_arg(
                     address.to_string()
                 }
                 Resolution::Absent => String::new(),
+                Resolution::Catalog { .. } => return Err(catalog_not_lone()),
             }
         }
     };
@@ -589,6 +590,7 @@ fn emit_content(
         Resolution::Address { address } => Ok(format!("> {address}")),
         Resolution::Scalar { value } => Ok(format!("> {value}")),
         Resolution::Absent => Ok(String::new()),
+        Resolution::Catalog { .. } => Err(catalog_not_lone()),
     }
 }
 
@@ -675,6 +677,7 @@ fn emit_bare_data_value(
             Ok(address.to_string())
         }
         Resolution::Absent => Ok(String::new()),
+        Resolution::Catalog { .. } => Err(catalog_not_lone()),
     }
 }
 
@@ -702,6 +705,7 @@ fn emit_author_line(
         Resolution::Address { address } | Resolution::Content { address } => address.to_string(),
         Resolution::Scalar { value } => value,
         Resolution::Absent => String::new(),
+        Resolution::Catalog { .. } => return Err(catalog_not_lone()),
     };
     Ok(Some(format!("<<author: {address}>>")))
 }
@@ -717,6 +721,21 @@ fn parse_data_value(text: &str) -> Result<crate::data_value::Path, Finding> {
             Location::at(1, 1),
         )
     })
+}
+
+/// The blocking finding for a `{{catalog}}` data-value used anywhere other than as
+/// a lone-placeholder option list — as a command-ref arg, inside a `> ` Content /
+/// `<<author: …>>` directive, or inline. The `catalog` collection only renders as
+/// the router's lone option list (handled before these emitters in
+/// [`emit_line`]); any other position is a structural misuse, not a value.
+fn catalog_not_lone() -> Finding {
+    Finding::blocking(
+        "workflow-refs.catalog-not-lone",
+        "the `catalog` collection renders only as a lone `{{catalog}}` option \
+         list — it cannot be used as a command arg, content, or inline value"
+            .to_owned(),
+        Location::at(1, 1),
+    )
 }
 
 /// If `trimmed` is a lone `{{ … }}` placeholder, return its inner (trimmed)
@@ -1254,6 +1273,7 @@ mod tests {
                 intent: "emit a composed step body to the four-class format".to_owned(),
                 roles,
             }),
+            catalog: Vec::new(),
         }
     }
 
@@ -1469,6 +1489,7 @@ Slightly higher write latency for resilience.
                 intent: "move the session cache to a shared redis cluster".to_owned(),
                 roles,
             }),
+            catalog: Vec::new(),
         }
     }
 
@@ -1553,6 +1574,7 @@ Slightly higher write latency for resilience.
                 intent: "i".to_owned(),
                 roles,
             }),
+            catalog: Vec::new(),
         };
         let emitted_unbound =
             emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
@@ -2043,6 +2065,7 @@ reference — make your consequences explain what changes:
                 intent: "add a rate limiter to the API".to_owned(),
                 roles,
             }),
+            catalog: Vec::new(),
         }
     }
 
@@ -2374,6 +2397,7 @@ reference — make your consequences explain what changes:
                 intent: "add rate limiter".to_owned(),
                 roles,
             }),
+            catalog: Vec::new(),
         }
     }
 
