@@ -29,6 +29,13 @@ expression: json
         {
           "id": "scope",
           "type": "string"
+        },
+        {
+          "id": "implements",
+          "type": "ref",
+          "to": "spec",
+          "card": "0..1",
+          "inverse": "implemented-by"
         }
       ]
     },

@@ -88,6 +88,17 @@ fn provision_commit_doc(pack: &dyn PackSource, minted: &MintedTask) -> Result<()
 /// every body section is content-free, and the header section's declared fields are
 /// pre-stamped as empty `key:` lines (the surface `set-field` splices). The empty
 /// value is `Value::Scalar("")`, which renders the canonical `key:` line.
+///
+/// **Exception — an optional `ref` is not pre-stamped.** An optional ref (forward
+/// `card:` minimum 0, e.g. `commit.implements`'s `0..1`) carries no author
+/// obligation: a spec-less task leaves it unset, so a pre-stamped empty `key:` line
+/// would survive to finalize as a malformed-empty value + a dangling edge (both
+/// blocking) — yet the design mandates a spec-less `commit` finalizes cleanly
+/// without it (`implementation/doctype-map.md` → `commit —implements→ spec`, `0..1`).
+/// So an optional ref is **absent** in the fillable form, exactly as `validate.rs`'s
+/// `required-field-present` exempts it (the two views agree on the same cardinality
+/// predicate). The spec-driven workflow that *does* set it materializes the line
+/// when it lands (a later M3 increment), not here.
 fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::Instance {
     use engine::field_block::{Field, Value};
     use engine::schema::SectionBody;
@@ -101,6 +112,7 @@ fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::
                 match &section.body {
                     SectionBody::Simple { fields, .. } => fields
                         .iter()
+                        .filter(|f| !is_optional_ref(f))
                         .map(|f| Field {
                             key: f.id.clone(),
                             value: Value::Scalar(String::new()),
@@ -122,6 +134,19 @@ fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::
         title: slug.to_string(),
         sections,
     }
+}
+
+/// Whether `field` is an **optional `ref`** — a `ref` whose forward cardinality has a
+/// minimum of 0 (`card:` absent ⇒ the `"0..1"` default, or an explicit form starting
+/// with `0`). Such a ref carries no author obligation, so the fillable form omits its
+/// line. Mirrors `engine::validate`'s `required-field-present` optional-ref exemption
+/// so provisioning and validation agree on the same predicate.
+fn is_optional_ref(field: &engine::schema::Field) -> bool {
+    field.ty == engine::schema::FieldType::Ref
+        && field
+            .card
+            .as_deref()
+            .is_none_or(|card| card.trim_start().starts_with('0'))
 }
 
 /// The cascade knob the default-workflow id is read from
@@ -859,5 +884,64 @@ mod tests {
             !repo.path().join(".jigc").join("tasks").exists(),
             "rejection must precede minting — no .jigc/tasks/ dir may be created",
         );
+    }
+
+    /// The fillable form pre-stamps required header fields but **omits** an optional
+    /// `ref` (`card: 0..1`): a spec-less `commit` is provisioned without an empty
+    /// `implements:` line, so it finalizes cleanly (no malformed-empty value, no
+    /// dangling edge). Pins the provisioning side of the `commit.implements` optional
+    /// ref against the shipped `commit.yaml`.
+    #[test]
+    fn fillable_form_omits_an_optional_ref_but_keeps_required_fields() {
+        use engine::field_block::Value;
+        use engine::schema::SectionBody;
+
+        let schema = engine::schema::load_schema(
+            crate::pack::EmbeddedPack::new()
+                .read(PackResourceKind::Schemas, &ResourceId::from("commit"))
+                .expect("commit schema")
+                .as_slice(),
+        )
+        .expect("commit.yaml loads");
+
+        let instance = fillable_form(&schema, "add-rate-limiter");
+        let header = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "header")
+            .expect("header section");
+        let keys: Vec<&str> = header.fields.iter().map(|f| f.key.as_str()).collect();
+
+        assert!(
+            keys.contains(&"type") && keys.contains(&"scope"),
+            "required header fields stay pre-stamped; got {keys:?}",
+        );
+        assert!(
+            !keys.contains(&"implements"),
+            "the optional `implements` ref must not be pre-stamped; got {keys:?}",
+        );
+
+        // The omission survives the render → no `implements:` front-matter line.
+        let rendered = engine::write::render(&schema, &instance);
+        assert!(
+            !rendered.contains("implements:"),
+            "the provisioned form must carry no empty `implements:` line; got:\n{rendered}",
+        );
+
+        // Sanity: the schema *does* declare `implements` as an optional ref, so the
+        // test would catch a regression that pre-stamps it again.
+        let SectionBody::Simple { fields, .. } = &schema
+            .sections
+            .iter()
+            .find(|s| s.id == "header")
+            .unwrap()
+            .body
+        else {
+            panic!("header is a simple section");
+        };
+        let implements = fields.iter().find(|f| f.id == "implements").unwrap();
+        assert!(is_optional_ref(implements));
+        // The pre-stamped required fields carry an empty scalar (the fillable line).
+        assert_eq!(header.fields[0].value, Value::Scalar(String::new()));
     }
 }

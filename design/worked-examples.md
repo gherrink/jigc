@@ -35,7 +35,7 @@ codebase to confirm scope before implementing.
 ## implement
 Implement the change directly in the working tree. When done, stage the commit prose:
 
-Run: `jigc doc set-field commit:add-rate-limiter#type --value feat`
+Run: `jigc doc set-field commit:add-rate-limiter#header/type --value feat`
 Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
 <<author: commit:add-rate-limiter#summary>>
 
@@ -328,8 +328,8 @@ read its criteria:
 ## implement
 Implement the change directly in the working tree. When done, stage the commit prose
 and record which spec it implements:
-Run: `jigc doc set-field commit:implement-gateway-rate-limiting#implements --value spec:gateway-rate-limiting`
-Run: `jigc doc set-field commit:implement-gateway-rate-limiting#type --value feat`
+Run: `jigc doc set-field commit:implement-gateway-rate-limiting#header/implements --value spec:gateway-rate-limiting`
+Run: `jigc doc set-field commit:implement-gateway-rate-limiting#header/type --value feat`
 Run: `jigc doc set-slot  commit:implement-gateway-rate-limiting#summary --from-file -`
 <<author: commit:implement-gateway-rate-limiting#summary>>
 

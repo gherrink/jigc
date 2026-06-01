@@ -355,3 +355,34 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
         .find(|dir| dir.join(".git").exists())
         .map(PathBuf::from)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The shipped `commit` schema, loaded from the embedded pack source tree.
+    const COMMIT_YAML: &[u8] = include_bytes!("../pack/schemas/commit.yaml");
+
+    /// The `implements` ref on `commit` resolves through `field_target` by both
+    /// addressing forms: the canonical section-qualified `commit:<slug>#header/implements`
+    /// and the flat single-hop alias `commit:<slug>#implements` map identically to
+    /// `(header, implements)` (DECISIONS.md 2026-06-01 → M3 Increment 1 T3, review #7).
+    #[test]
+    fn implements_resolves_section_qualified_and_flat_alias() {
+        let schema = load_schema(COMMIT_YAML).expect("commit.yaml loads");
+
+        let canonical = parse_addr("commit:add-rate-limiter#header/implements").expect("valid");
+        assert_eq!(
+            field_target(&schema, &canonical),
+            Some(("header".to_string(), "implements".to_string())),
+            "the canonical section-qualified fragment resolves to (header, implements)",
+        );
+
+        let alias = parse_addr("commit:add-rate-limiter#implements").expect("valid");
+        assert_eq!(
+            field_target(&schema, &alias),
+            Some(("header".to_string(), "implements".to_string())),
+            "the flat single-hop alias resolves identically",
+        );
+    }
+}
