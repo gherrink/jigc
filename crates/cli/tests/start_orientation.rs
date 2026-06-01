@@ -97,13 +97,12 @@ fn clean_no_task_json_is_valid_state_tagged_and_carries_no_footer() {
     let workflows = value["workflows"]
         .as_array()
         .unwrap_or_else(|| panic!("workflows must be an array; got:\n{stdout}"));
+    let single_task = workflows
+        .iter()
+        .find(|w| w["id"] == serde_json::json!("single-task"))
+        .unwrap_or_else(|| panic!("the catalog must list single-task; got:\n{stdout}"));
     assert_eq!(
-        workflows[0]["id"],
-        serde_json::json!("single-task"),
-        "got:\n{stdout}"
-    );
-    assert_eq!(
-        workflows[0]["when"],
+        single_task["when"],
         serde_json::json!("implement one scoped change end-to-end"),
         "got:\n{stdout}",
     );

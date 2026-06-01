@@ -150,10 +150,12 @@ mod tests {
         "###);
     }
 
-    /// list(Steps) yields the four MVP step ids, sorted (the pack lists in stem
-    /// order). The composer's includes resolve against exactly these.
+    /// list(Steps) yields the MVP step ids, sorted (the pack lists in stem
+    /// order). The composer's includes resolve against exactly these — the four
+    /// `single-task` steps plus `implement-quick`, the ADR-free variant `quick-fix`
+    /// includes.
     #[test]
-    fn embedded_pack_lists_the_four_single_task_steps() {
+    fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
         let steps = pack.list(PackResourceKind::Steps);
         assert_eq!(
@@ -161,6 +163,7 @@ mod tests {
             vec![
                 ResourceId::from("finalize"),
                 ResourceId::from("implement"),
+                ResourceId::from("implement-quick"),
                 ResourceId::from("locate"),
                 ResourceId::from("superseded-context"),
             ],

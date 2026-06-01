@@ -1,0 +1,5 @@
+Implement the change directly in the working tree. When done, stage the
+commit prose:
+
+{{ cli.set-commit-summary }}
+<<author: {{ task.commit#summary }}>>

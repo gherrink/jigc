@@ -1,0 +1,8 @@
+---
+when: apply a small commit-only fix with no decision to record
+creates-task: true
+allows-create: []
+---
+{{ include: step:locate }}
+{{ include: step:implement-quick }}
+{{ include: step:finalize }}

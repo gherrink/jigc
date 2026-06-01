@@ -213,6 +213,60 @@ fn form_d_named_workflow_mints_and_composes_through_dispatch() {
 }
 
 #[test]
+fn form_d_quick_fix_mints_and_composes_without_adr_or_supersedes() {
+    let repo = TempDir::new("form-d-quick-fix");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `--workflow quick-fix <intent>`: the second selectable work-workflow. It is
+    // `creates-task: true`, so Form D mints + composes it — but it is commit-only
+    // (`allows-create: []`), so its composed text must carry no ADR/create
+    // affordance and no superseded-context line, materially differing from
+    // `single-task`.
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "quick-fix", "fix typo in readme"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow quick-fix \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The work-workflow minted under .jigc/tasks/<slug>/.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("fix-typo-in-readme");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "quick-fix is creates-task: true, so it must open .jigc/tasks/fix-typo-in-readme/ with a base pin",
+    );
+
+    // It composed end-to-end, embedding the resolved intent.
+    assert!(
+        stdout.contains("fix typo in readme"),
+        "the composed view must embed the resolved intent; got:\n{stdout}",
+    );
+
+    // Materially different from single-task: no ADR/create affordance ...
+    assert!(
+        !stdout.contains("create-adr") && !stdout.to_lowercase().contains("adr"),
+        "quick-fix is commit-only — its composed view must carry no ADR/create affordance; got:\n{stdout}",
+    );
+    // ... and no superseded-context line.
+    assert!(
+        !stdout.to_lowercase().contains("supersede"),
+        "quick-fix must carry no superseded-context line; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn form_d_unknown_workflow_rejects_before_minting() {
     let repo = TempDir::new("form-d-unknown");
     init_repo(repo.path());
