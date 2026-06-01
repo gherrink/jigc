@@ -56,12 +56,22 @@ const INCREMENTS_SCHEMA = {
     note: { type: 'string' },
   },
 }
+const HALT = {
+  type: 'object',
+  description: 'the halt report — fill every field so triage needs nothing from your transcript (which is never read back)',
+  properties: {
+    root_cause: { type: 'string', description: 'the precise fork/blocker: what is undecided and why it is not resolvable from the locked docs or the milestone settled decisions' },
+    evidence: { type: 'string', description: 'concrete proof: failing tests/commands, file:line, or the specific design gap' },
+    tree_state: { type: 'string', description: 'the working-tree + commit state you leave: which commits landed; confirm the tree is CLEAN (you reverted your uncommitted changes)' },
+    recommendation: { type: 'string', description: 'the suggested resolution — e.g. a task to insert before this one, or the decision the human must make' },
+  },
+}
 const PLAN_SCHEMA = {
   type: 'object',
   required: ['status', 'tasks'],
   properties: {
     status: { type: 'string', enum: ['planned', 'halted'] },
-    halt_reason: { type: 'string' },
+    halt: HALT,
     tasks: {
       type: 'array',
       items: {
@@ -84,9 +94,9 @@ const EXEC_TASK_SCHEMA = {
   required: ['status', 'notes'],
   properties: {
     status: { type: 'string', enum: ['completed', 'halted'] },
-    halt_reason: { type: 'string' },
-    commit: { type: 'string' },
-    notes: { type: 'string' },
+    halt: HALT,
+    commit: { type: 'string', description: 'the conventional commit subject you committed (empty if halted)' },
+    notes: { type: 'string', description: '1-2 lines: what shipped + any DECISIONS pin id logged. No essay.' },
   },
 }
 const VALIDATION_SCHEMA = {
@@ -95,31 +105,31 @@ const VALIDATION_SCHEMA = {
   properties: {
     gate_green: { type: 'boolean' },
     deliverable_holds: { type: 'boolean' },
-    blocking: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string' }, fix_hint: { type: 'string' } } } },
-    advisory: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string' } } } },
-    verdict: { type: 'string' },
+    blocking: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the exact command and its observed output that proves the finding' }, fix_hint: { type: 'string' } } } },
+    advisory: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the proof' } } } },
+    verdict: { type: 'string', description: '1-2 sentences: does the increment genuinely hold, and the decisive reason' },
   },
 }
 const FIX_SCHEMA = {
   type: 'object',
   required: ['status', 'notes'],
-  properties: { status: { type: 'string', enum: ['fixed', 'could-not-fix'] }, commit: { type: 'string' }, notes: { type: 'string' } },
+  properties: { status: { type: 'string', enum: ['fixed', 'could-not-fix'] }, commit: { type: 'string', description: 'the fix commit subject (empty if could-not-fix)' }, notes: { type: 'string', description: '1-2 lines; on could-not-fix, the trace showing the finding is not real' } },
 }
 const REVIEW_SCHEMA = {
   type: 'object',
   required: ['findings', 'summary'],
   properties: {
-    findings: { type: 'array', items: { type: 'object', required: ['severity', 'title', 'location', 'evidence'], properties: { severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] }, title: { type: 'string' }, location: { type: 'string' }, evidence: { type: 'string' }, confidence: { type: 'string' } } } },
-    summary: { type: 'string' },
+    findings: { type: 'array', items: { type: 'object', required: ['severity', 'title', 'location', 'evidence'], properties: { severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] }, title: { type: 'string' }, location: { type: 'string', description: 'file:line' }, evidence: { type: 'string', description: 'the trace proving it is real — verify before reporting (the audit is a hypothesis generator, not an oracle)' }, confidence: { type: 'string' } } } },
+    summary: { type: 'string', description: '2-4 sentences: the verdict on whether the milestone deliverable holds + the headline concern, if any' },
   },
 }
 const E2E_SCHEMA = {
   type: 'object',
   required: ['scenarios', 'overall_pass', 'summary'],
   properties: {
-    scenarios: { type: 'array', items: { type: 'object', required: ['name', 'passed', 'detail'], properties: { name: { type: 'string' }, passed: { type: 'boolean' }, detail: { type: 'string' } } } },
+    scenarios: { type: 'array', items: { type: 'object', required: ['name', 'passed', 'detail'], properties: { name: { type: 'string' }, passed: { type: 'boolean' }, detail: { type: 'string', description: 'the exact repro command(s) + observed output; required on failure' } } } },
     overall_pass: { type: 'boolean' },
-    summary: { type: 'string' },
+    summary: { type: 'string', description: '2-4 sentences: overall pass/fail + any failure headline' },
   },
 }
 
@@ -187,7 +197,7 @@ for (const inc of increments) {
   log('Increment ' + inc.n + ' — planning (' + inc.title + ')')
   const plan = await agent(planPrompt(inc), { label: 'plan:inc' + inc.n, phase: 'Build increments', agentType: 'build-planner', schema: PLAN_SCHEMA })
   if (!plan || plan.status === 'halted' || !plan.tasks || plan.tasks.length === 0) {
-    halted = { increment: inc.n, phase: 'plan', reason: plan ? (plan.halt_reason || 'planner produced no tasks') : 'planner returned no result' }
+    halted = { increment: inc.n, phase: 'plan', halt: plan && plan.halt ? plan.halt : { root_cause: plan ? 'planner produced no tasks' : 'planner returned no result', tree_state: 'clean (planner writes only the DECISIONS entry, nothing on halt)' } }
     incrementReports.push({ increment: inc.n, plan })
     break
   }
@@ -199,7 +209,7 @@ for (const inc of increments) {
     const r = await agent(execPrompt(inc, task, plan.tasks), { label: 'exec:inc' + inc.n + ':' + task.id, phase: 'Build increments', agentType: 'build-executor', schema: EXEC_TASK_SCHEMA })
     execResults.push({ task: task.id, result: r })
     if (!r || r.status === 'halted') {
-      halted = { increment: inc.n, phase: 'execute', task: task.id, reason: r ? (r.halt_reason || 'executor halted') : 'executor returned no result' }
+      halted = { increment: inc.n, phase: 'execute', task: task.id, halt: r && r.halt ? r.halt : { root_cause: r ? 'executor halted without detail' : 'executor returned no result' } }
       break
     }
   }

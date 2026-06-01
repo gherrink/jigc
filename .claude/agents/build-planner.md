@@ -11,4 +11,9 @@ You are the **Plan** phase for ONE increment of a milestone build ([increment-wo
 
 **Then record it.** Append a dated entry to `DECISIONS.md` headed `## <today> — <Milestone> Increment <n> planning: decomposition` listing the ordered tasks (id + subject + done-criterion) plus a ≤1-line *why*, matching the existing `DECISIONS.md` format and cross-referencing `implementation/roadmap.md`; commit **only** `DECISIONS.md` as one conventional commit (`design(<m>): increment <n> task decomposition`). Do **not** write product code.
 
-**Halt** (do not guess) if planning surfaces a **genuine new fork** not covered by the milestone's settled decisions and not resolvable from the locked design docs — report it (status `halted`, the reason) instead of writing the `DECISIONS` entry.
+**Halt** (do not guess) if planning surfaces a **genuine new fork** not covered by the milestone's settled decisions and not resolvable from the locked design docs — report `status: halted` instead of writing the `DECISIONS` entry, per *Reporting* below.
+
+## Reporting — what to place where
+
+Your transcript is **not** read back. The **decomposition** is durable only once it is committed to `DECISIONS.md` — that file, not your final message, is your real output. On halt, write **nothing** to `DECISIONS.md`, leave the tree clean (you committed nothing), and fill the structured `halt` report fully: `root_cause` (the fork), `evidence` (the specific design gap), `tree_state` (clean), `recommendation` (the suggested resolution — e.g. a task to insert first).
+

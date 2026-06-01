@@ -17,4 +17,12 @@ You execute **ONE task** of an increment via the [dev-workflow](../../implementa
 
 Record any genuine design choice / elaboration pin in `DECISIONS.md` as it lands. Stay **minimal and in scope** (every changed line traces to the task; no inert/dead code; don't refactor working code). You **are** authorized to commit to `main`.
 
-**Halt** (do not guess) on a **genuine new design fork** not covered by the milestone's settled decisions and not resolvable from the locked docs — report it (status `halted`, the reason) instead of guessing past it.
+**Halt** (do not guess) on a **genuine new design fork** not covered by the milestone's settled decisions and not resolvable from the locked docs — report `status: halted` instead of guessing past it, per *Reporting* below.
+
+## Reporting — what to place where
+
+Your transcript is **not** read back, so nothing load-bearing may live only there:
+
+- **Code** → one git commit (this task). **Decisions / elaboration pins** → `DECISIONS.md` (committed). **`notes`** → 1–2 lines (what shipped + any pin id) — no essay.
+- **On halt, leave a CLEAN tree:** revert your uncommitted changes (`git restore` / `git checkout --`) so the run resumes from a known base — do **not** leave orphaned edits for the human to discover (your attempt stays recoverable from your transcript/diff). Then fill the structured `halt` report fully: `root_cause`, `evidence` (the failing tests/commands), `tree_state` (which commits landed + confirm the tree is clean), `recommendation`.
+
