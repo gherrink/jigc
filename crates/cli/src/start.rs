@@ -431,11 +431,12 @@ fn all_schemas(pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
 /// Binds the engine-native `task.id`/`task.intent` scalars, the task's **commit**
 /// role to `commit:<id>` (the always-present sink of a `creates-task` work-
 /// workflow — its `<<author: {{task.commit#summary}}>>` slot must resolve to that
-/// address), and declares each `allows-create` role from the workflow gate. A
-/// role **bound** in `roles` (persisted in the task's `roles.json` once the agent
-/// created the doc through the create-gate) binds to its recorded address; an
-/// **unbound** gate role declares as `None`, so `{{@task.<role>.…}}` resolves to
-/// absent/empty (`design/workflow-dialect.md` → Empty vs unresolvable). At mint
+/// address), and declares each `allows-create` **and** `reads` role from the
+/// workflow front-matter. A role **bound** in `roles` (persisted in the task's
+/// `roles.json` once the agent created the doc through the create-gate or ran
+/// `jigc task bind` for a `reads` role) binds to its recorded address; an
+/// **unbound** declared role declares as `None`, so `{{@task.<role>.…}}` resolves
+/// to absent/empty (`design/workflow-dialect.md` → Empty vs unresolvable). At mint
 /// `roles` is empty (nothing is bound yet); on `--task <id>` resume it carries
 /// the binds recorded since (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding
 /// at create).
@@ -457,6 +458,16 @@ fn build_context(
             .get(&entry.as_role)
             .and_then(|addr| Address::parse(addr).ok());
         roles.entry(entry.as_role.clone()).or_insert(binding);
+    }
+    // Each `reads` role — the dual of `allows-create` — is declared the same way:
+    // bound iff `roles.json` recorded a `jigc task bind` for it, else `None` so
+    // `{{@task.<role>.…}}` resolves to absent/empty until bound
+    // (`workflow-dialect.md` → `reads`: declared-but-unbound resolves to empty).
+    for entry in &def.reads {
+        let binding = bound
+            .get(&entry.role)
+            .and_then(|addr| Address::parse(addr).ok());
+        roles.entry(entry.role.clone()).or_insert(binding);
     }
     ComposeContext {
         task: Some(TaskRoot {
@@ -883,6 +894,60 @@ mod tests {
         assert!(
             !repo.path().join(".jigc").join("tasks").exists(),
             "rejection must precede minting — no .jigc/tasks/ dir may be created",
+        );
+    }
+
+    /// The T2 done-criterion: a `reads`-declared role is **seeded into the compose
+    /// role map** so `task.<role>` is a valid `workflow-refs` root that resolves to
+    /// [`Resolution::Absent`] (empty text) when **unbound**, while an **undeclared**
+    /// `task.<other>` still raises `workflow-refs.undeclared-role`
+    /// (`workflow-dialect.md` → `reads`: declared-but-unbound resolves to empty,
+    /// undeclared is a conformance error).
+    #[test]
+    fn reads_role_seeds_the_compose_map_and_resolves_empty_when_unbound() {
+        use engine::compose::Reads;
+        use engine::data_value::{Path, Resolution};
+
+        let def = WorkflowDef {
+            when: Some("implement from a spec".to_owned()),
+            creates_task: true,
+            allows_create: vec![],
+            reads: vec![Reads {
+                role: "spec".to_owned(),
+                doc_type: "spec".to_owned(),
+            }],
+            includes: vec![],
+        };
+        // No role is bound yet — the task carries the declaration only.
+        let ctx = build_context(
+            "add-rate-limiter",
+            "Add rate limiter",
+            &def,
+            &RolesRecord::new(),
+            Vec::new(),
+        );
+
+        // The declared-but-unbound `reads` role resolves to absent/empty text — no
+        // `undeclared-role` finding.
+        let resolved = Path::parse("task.spec")
+            .expect("valid path")
+            .resolve(&ctx)
+            .expect("a declared role must not raise a finding");
+        assert_eq!(
+            resolved,
+            Resolution::Absent,
+            "an unbound declared `reads` role must resolve to Absent (empty text)",
+        );
+
+        // An undeclared role under the same task still raises the conformance error.
+        let undeclared = Path::parse("task.other")
+            .expect("valid path")
+            .resolve(&ctx)
+            .expect_err("an undeclared role must raise a finding");
+        assert_eq!(
+            undeclared.code, "workflow-refs.undeclared-role",
+            "an undeclared `task.<role>` must stay a conformance error; got {}",
+            undeclared.code,
         );
     }
 
