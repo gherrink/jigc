@@ -248,6 +248,7 @@ mod tests {
     /// the test pins exactly the bytes that ship.
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
 
     /// Golden: the parsed `commit` schema projection. Pins section ids in
     /// document order, the header flag, the `subject` string field, and the
@@ -305,6 +306,66 @@ mod tests {
         assert_eq!(supersedes.to.as_deref(), Some("adr"));
         assert_eq!(supersedes.card.as_deref(), Some("0..1"));
         assert_eq!(supersedes.inverse.as_deref(), Some("superseded-by"));
+    }
+
+    /// Golden: the parsed `spec` schema projection. Pins `location: specs/`,
+    /// `id-from: title`, the `header` section's `title` string field (the
+    /// id-source), the `goal`/`context` prose slots in order, and the repeatable
+    /// `criteria` section (`id-from: title`, block = `title` field + `statement`
+    /// slot). No `status`/`date`/`decided-by` — those are cut from the MVP spec.
+    #[test]
+    fn schema_spec_golden() {
+        let schema = load_schema(SPEC_YAML).expect("spec.yaml loads");
+        let json = serde_json::to_string_pretty(&schema).expect("serializes");
+        insta::assert_snapshot!("schema_spec", json);
+    }
+
+    /// The shipped `spec` schema's structure is reachable through the model: the
+    /// `criteria` repeatable block carries `statement` as a `Leaf::Slot`, and the
+    /// cut fields (`status`/`date`/`decided-by`) are genuinely absent.
+    #[test]
+    fn spec_criteria_block_carries_statement_as_a_slot() {
+        let schema = load_schema(SPEC_YAML).expect("spec.yaml loads");
+        assert_eq!(schema.ty, "spec");
+        assert_eq!(schema.location.as_deref(), Some("specs/"));
+        assert_eq!(schema.id_from.as_deref(), Some("title"));
+
+        // The header section is the title id-source, not a status/date carrier.
+        let header = &schema.sections[0];
+        assert_eq!(header.id, "header");
+        assert!(header.header);
+        let SectionBody::Simple { slot, fields } = &header.body else {
+            panic!("header is a simple section");
+        };
+        assert!(slot.is_none());
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].id, "title");
+        assert_eq!(fields[0].ty, FieldType::String);
+
+        // No status/date/decided-by fields ship anywhere in the schema.
+        let all_field_ids: Vec<&str> = schema
+            .sections
+            .iter()
+            .filter_map(|s| match &s.body {
+                SectionBody::Simple { fields, .. } => Some(fields),
+                SectionBody::Repeatable { .. } => None,
+            })
+            .flatten()
+            .map(|f| f.id.as_str())
+            .collect();
+        assert!(!all_field_ids.contains(&"status"));
+        assert!(!all_field_ids.contains(&"date"));
+        assert!(!all_field_ids.contains(&"decided-by"));
+
+        // The criteria repeatable block carries `statement` as a prose slot.
+        let criteria = &schema.sections[3];
+        assert_eq!(criteria.id, "criteria");
+        let SectionBody::Repeatable { repeatable } = &criteria.body else {
+            panic!("criteria is repeatable");
+        };
+        assert_eq!(repeatable.id_from, "title");
+        assert!(matches!(&repeatable.block[0], Leaf::Field(f) if f.id == "title"));
+        assert!(matches!(&repeatable.block[1], Leaf::Slot { id, .. } if id == "statement"));
     }
 
     /// A repeatable section round-trips through the model: id-source field +

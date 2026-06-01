@@ -1,0 +1,28 @@
+# spec — the M3 persisted doc-type: the "what" a task implements. Persisted to
+# specs/; a `header` section carrying the title id-source, the `goal`/`context`
+# prose slots, and a repeatable `criteria` section (each a testably-phrased
+# record addressed `spec:<slug>#criteria/<id>/statement`).
+# No `status`/`date` and no `decided-by → adr` relation: nothing in the M3 arc
+# reads them, so they stay one-line additions when a flow earns them.
+# See document-type-schema.md → On-disk definition format + Sections and
+# repetition; implementation/doctype-map.md (spec location);
+# DECISIONS.md 2026-06-01 → M3 Increment 1 elaboration pin T1.
+type: spec
+location: specs/
+id-from: title
+
+sections:
+  - id: header
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: goal
+    slot: { hint: "What this spec delivers — the outcome, in a sentence or two." }
+  - id: context
+    slot: { hint: "Why it is needed and the constraints that shape it." }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: "The criterion, testably phrased." } }

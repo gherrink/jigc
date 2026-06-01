@@ -1,0 +1,51 @@
+---
+source: crates/engine/src/schema.rs
+expression: json
+---
+{
+  "type": "spec",
+  "location": "specs/",
+  "id-from": "title",
+  "sections": [
+    {
+      "id": "header",
+      "header": true,
+      "fields": [
+        {
+          "id": "title",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "id": "goal",
+      "slot": {
+        "hint": "What this spec delivers — the outcome, in a sentence or two."
+      }
+    },
+    {
+      "id": "context",
+      "slot": {
+        "hint": "Why it is needed and the constraints that shape it."
+      }
+    },
+    {
+      "id": "criteria",
+      "repeatable": {
+        "id-from": "title",
+        "block": [
+          {
+            "id": "title",
+            "type": "string"
+          },
+          {
+            "id": "statement",
+            "slot": {
+              "hint": "The criterion, testably phrased."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
