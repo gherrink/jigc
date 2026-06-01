@@ -499,9 +499,15 @@ fn emit_line(
     // It carries no `> ` marker (that is the `@`-Content class); the resolved
     // text replaces the placeholder inline, emitted as Reason prose. A lone
     // `{{include: …}}` never reaches here — includes are expanded in phase 7 and
-    // split out of step bodies before emission.
+    // split out of step bodies before emission. A lone `{{catalog}}` resolves to
+    // the collection and renders as the router's option list (one `- <id> —
+    // <when>` line per entry, fed order; an empty catalog → empty text, the
+    // empty-not-finding stance — `workflow-dialect.md` → Workflow selection).
     if let Some(inner) = parse_lone_placeholder(trimmed) {
         let path = parse_data_value(inner)?;
+        if let crate::data_value::Resolution::Catalog { entries } = path.resolve(ctx)? {
+            return Ok(render_catalog_options(&entries));
+        }
         return emit_bare_data_value(&path, ctx);
     }
 
@@ -679,6 +685,19 @@ fn emit_bare_data_value(
         Resolution::Absent => Ok(String::new()),
         Resolution::Catalog { .. } => Err(catalog_not_lone()),
     }
+}
+
+/// Render the resolved `catalog` collection as the router's option list: one
+/// `- <id> — <when>` line per entry, in fed order, joined by newlines (the T3
+/// line shape, `workflow-dialect.md` → Workflow selection / Emitted format). An
+/// **empty** catalog renders the empty string — emitted as empty text, never a
+/// finding (the empty-vs-unresolvable contract, same stance as an unbound role).
+fn render_catalog_options(entries: &[crate::result::CatalogEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| format!("- {} — {}", entry.id, entry.when))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// If `trimmed` is a `<<author: {{<path>}}>>` directive, resolve the embedded
@@ -2478,6 +2497,48 @@ reference — make your consequences explain what changes:
 
         Run: `jigc task finalize add-rate-limiter`
         "#);
+    }
+
+    /// T3 done-criterion (`catalog_placeholder_emits_option_lines`): a lone
+    /// `{{catalog}}` in a step body emits one `- <id> — <when>` option line per
+    /// fed entry, **in fed order**, em-dash separator (`workflow-dialect.md` →
+    /// Workflow selection / Emitted format; the T3 pin). An **empty** catalog
+    /// emits empty text — no finding (the empty-vs-unresolvable contract, same
+    /// stance as an unbound role).
+    #[test]
+    fn catalog_placeholder_emits_option_lines() {
+        let empty_catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+
+        // Two entries, fed order quick-fix-then-single-task (deliberately not the
+        // single-task-first order to prove fed order, not sorted order, wins).
+        let ctx = ComposeContext {
+            task: None,
+            catalog: vec![
+                crate::result::CatalogEntry::new("quick-fix", "A small, localized fix."),
+                crate::result::CatalogEntry::new(
+                    "single-task",
+                    "Implement one well-scoped change.",
+                ),
+            ],
+        };
+
+        let emitted = emit_step_body("{{ catalog }}\n", &ctx, &empty_catalog).expect("emits");
+        assert_eq!(
+            emitted,
+            "- quick-fix — A small, localized fix.\n\
+             - single-task — Implement one well-scoped change.\n",
+        );
+
+        // An empty catalog emits empty text — no finding (empty-not-error).
+        let empty_ctx = ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+        };
+        let emitted_empty =
+            emit_step_body("{{ catalog }}\n", &empty_ctx, &empty_catalog).expect("emits");
+        assert_eq!(emitted_empty, "\n");
     }
 
     proptest::proptest! {

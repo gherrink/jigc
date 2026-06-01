@@ -1167,3 +1167,7 @@ Cut [roadmap.md](implementation/roadmap.md) → M2 Increment 1 ("`catalog` root 
 ## 2026-06-01 — M2 Increment 1 T2: catalog-root finding codes
 
 Landed T2. Two new blocking `workflow-refs.*` codes name the catalog misuses the pin left as `workflow-refs.*`: `catalog-not-navigable` (a hop / `#fragment` / `@`-marker on the `catalog` collection leaf, in `Path::resolve`) and `catalog-not-lone` (a `Resolution::Catalog` reaching a non-lone emitter — command arg / `> ` content / `<<author>>` / inline). *Why two:* they fail at different surfaces (resolver vs the lone-placeholder emitters T3 routes around), so a reader sees which misuse fired.
+
+## 2026-06-01 — M2 Increment 1 T3: catalog option-line emission
+
+Landed T3. `emit_line` resolves a lone `{{catalog}}` to `Resolution::Catalog` *before* the bare-data-value dispatch and renders it via a new `render_catalog_options` helper — one `- <id> — <when>` line per entry, fed order, joined by newlines; an empty catalog → empty string (empty-not-finding). *Why this placement:* the catalog is the only lone placeholder that resolves to a collection, so it shares the bare-placeholder line-shape but needs its own emitter — short-circuiting in `emit_line` keeps the other three emitters (`emit_bare_data_value`/`emit_content`/author) returning the `catalog-not-lone` block for every non-lone position.
