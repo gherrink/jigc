@@ -52,6 +52,14 @@ pub enum Command {
         /// compose the default workflow with `{{task.intent}}` = `<intent>`.
         intent: Option<String>,
 
+        /// Compose a named workflow explicitly, bypassing the cascade default
+        /// (`design/write-commands.md` → Task origination, `jigc start
+        /// --workflow <X>`). Mints iff the workflow declares `creates-task:
+        /// true`. Combines with the `<intent>` positional; mutually exclusive
+        /// with `--task`.
+        #[arg(long, conflicts_with = "task")]
+        workflow: Option<String>,
+
         /// Resume an existing task by id: re-compose its default workflow over
         /// the task's persisted state (its base + bound context roles), so the
         /// agent picks up context bound since the task was minted (e.g. an ADR
@@ -95,20 +103,24 @@ impl Cli {
         match self.command {
             Command::Start {
                 intent: None,
+                workflow: _,
                 task: None,
             } => run_orient(self.format),
             Command::Start {
                 intent: Some(intent),
+                workflow: _,
                 task: None,
             } => run_compose(self.format, &intent),
             Command::Start {
                 intent: None,
+                workflow: _,
                 task: Some(id),
             } => run_resume(self.format, &id),
             // `conflicts_with` makes clap reject `<intent>` + `--task` together,
             // so this arm is unreachable in practice.
             Command::Start {
                 intent: Some(_),
+                workflow: _,
                 task: Some(_),
             } => unreachable!("clap rejects `<intent>` together with `--task`"),
             Command::Doc { verb } => run_doc(self.format, verb),
@@ -264,6 +276,7 @@ mod cli_parse {
             cli.command,
             Command::Start {
                 intent: None,
+                workflow: None,
                 task: None,
             }
         );
@@ -277,6 +290,7 @@ mod cli_parse {
             cli.command,
             Command::Start {
                 intent: Some("add rate limiter".to_string()),
+                workflow: None,
                 task: None,
             }
         );
@@ -290,9 +304,32 @@ mod cli_parse {
             cli.command,
             Command::Start {
                 intent: None,
+                workflow: None,
                 task: Some("add-rate-limiter".to_string()),
             }
         );
+    }
+
+    #[test]
+    fn start_workflow_combines_with_the_intent_positional() {
+        let cli = Cli::try_parse_from(["jigc", "start", "--workflow", "single-task", "an intent"])
+            .expect("`--workflow <X> <intent>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Start {
+                intent: Some("an intent".to_string()),
+                workflow: Some("single-task".to_string()),
+                task: None,
+            }
+        );
+    }
+
+    #[test]
+    fn start_rejects_workflow_and_task_together() {
+        let err =
+            Cli::try_parse_from(["jigc", "start", "--workflow", "single-task", "--task", "id"])
+                .expect_err("`--workflow` together with `--task` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]
