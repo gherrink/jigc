@@ -33,3 +33,13 @@ commands:
       - "--title"
       - { agent: title, hint: "short declarative sentence describing the decision" }
     hint: "Create a new ADR in the current task."
+
+  - id: create-spec
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "spec"
+      - "--title"
+      - { agent: title, hint: "short declarative title naming what the spec delivers" }
+    hint: "Create a new spec in the current task."

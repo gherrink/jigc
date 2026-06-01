@@ -1,0 +1,8 @@
+Draft the spec for this change. The intent is:
+{{ task.intent }}
+
+Create the spec, then author its slots:
+
+{{ cli.create-spec }}
+<<author: {{ task.spec#goal }}>>
+<<author: {{ task.spec#context }}>>

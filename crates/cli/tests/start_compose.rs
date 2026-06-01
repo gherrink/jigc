@@ -214,6 +214,61 @@ fn form_d_named_workflow_mints_and_composes_through_dispatch() {
 }
 
 #[test]
+fn form_d_plan_mints_on_workflow_plan_and_emits_the_create_spec_gate() {
+    let repo = TempDir::new("form-d-plan");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `--workflow plan <intent>`: the spec-authoring work-workflow (Increment 3).
+    // It is `creates-task: true` with `allows-create: [{type: spec, as: spec}]`,
+    // so Form D mints + composes it end-to-end; its `author-spec` step carries the
+    // create-gate, which the composer emits as a `Run: jigc doc create spec` line.
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "plan", "draft the rate-limiter spec"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow plan \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The work-workflow minted under .jigc/tasks/<slug>/, recording `workflow: plan`
+    // (resume composes the task's own minting workflow — `state::read_workflow_id`).
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("draft-the-rate-limiter-spec");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "plan is creates-task: true, so it must open .jigc/tasks/draft-the-rate-limiter-spec/ with a base pin",
+    );
+    let recorded =
+        fs::read_to_string(task_dir.join("workflow")).expect("read recorded workflow id");
+    assert_eq!(
+        recorded.trim(),
+        "plan",
+        "the minted task must record `workflow: plan`",
+    );
+
+    // The composed view embeds the resolved `{{task.intent}}` ...
+    assert!(
+        stdout.contains("draft the rate-limiter spec"),
+        "the composed view must embed the resolved intent; got:\n{stdout}",
+    );
+    // ... and carries the create-gate as a machine-extractable `Run:` line.
+    assert!(
+        stdout.contains("Run: `jigc doc create spec"),
+        "the plan workflow's author-spec step must emit the `jigc doc create spec` create-gate; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn form_d_quick_fix_mints_and_composes_without_adr_or_supersedes() {
     let repo = TempDir::new("form-d-quick-fix");
     init_repo(repo.path());

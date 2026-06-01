@@ -1891,6 +1891,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             "validate-task",
             "finalize-task",
             "create-adr",
+            "create-spec",
         ] {
             assert!(catalog.get(id).is_some(), "missing command-ref `{id}`");
         }
@@ -1949,6 +1950,33 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 }
               ],
               "hint": "Create a new ADR in the current task."
+            },
+            "create-spec": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "create"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "spec"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--title"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "title",
+                  "hint": "short declarative title naming what the spec delivers"
+                }
+              ],
+              "hint": "Create a new spec in the current task."
             },
             "finalize-task": {
               "command": "jigc",

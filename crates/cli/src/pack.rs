@@ -153,7 +153,8 @@ mod tests {
     /// list(Steps) yields the MVP step ids, sorted (the pack lists in stem
     /// order). The composer's includes resolve against exactly these — the four
     /// `single-task` steps, `implement-quick` (the ADR-free variant `quick-fix`
-    /// includes), plus the router's `present-catalog` / `route-to-workflow`.
+    /// includes), the router's `present-catalog` / `route-to-workflow`, plus
+    /// `author-spec` (the `plan` workflow's create-gated spec-authoring step).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -161,6 +162,7 @@ mod tests {
         assert_eq!(
             steps,
             vec![
+                ResourceId::from("author-spec"),
                 ResourceId::from("finalize"),
                 ResourceId::from("implement"),
                 ResourceId::from("implement-quick"),

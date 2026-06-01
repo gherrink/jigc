@@ -1,0 +1,7 @@
+---
+when: draft the spec for a change before any code is written
+creates-task: true
+allows-create: [{type: spec, as: spec}]
+---
+{{ include: step:author-spec }}
+{{ include: step:finalize }}
