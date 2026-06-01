@@ -268,7 +268,7 @@ fn compose_core(
 /// selection). A `creates-task: false` workflow (the router itself) is never a
 /// selectable entry, so the router never lists itself. A selectable workflow that
 /// declares no `when` is a definition bug, surfaced as a clear, id-bearing error.
-fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogEntry>> {
+pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogEntry>> {
     let mut entries = Vec::new();
     for id in pack.list(PackResourceKind::Workflows) {
         let bytes = read_pack(pack, PackResourceKind::Workflows, id.as_str())?;

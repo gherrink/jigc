@@ -88,7 +88,7 @@ pub fn orientation_clean(header: &str, orientation: &Orientation) -> String {
         out.push('\n');
     }
     out.push_str(
-        "\nRun: `jigc start \"<intent>\"`   — composes the default workflow (single-task)\n",
+        "\nRun: `jigc start \"<intent>\"`   — routes among the workflows above; pick one, then re-run with `--workflow <chosen>`\n",
     );
     out.push_str(ROUTING_FOOTER);
     out
@@ -260,7 +260,10 @@ mod tests {
 
     /// The clean-no-task orientation (state 2) prints the provenance header, the
     /// available-workflows catalog with each `when` hint, the `jigc start`
-    /// next-step directive, and ends with the routing footer.
+    /// next-step directive, and ends with the routing footer. Post-flip the
+    /// next-step leads to the **routing** flow (`jigc start "<intent>"` composes
+    /// the router, which routes among the workflows above), not a direct
+    /// single-task mint (`workflow-dialect.md` → Workflow selection).
     #[test]
     fn render_orientation_clean_has_header_catalog_and_footer() {
         let text = orientation_clean(
@@ -277,10 +280,19 @@ mod tests {
           - single-task — Implement one well-scoped change.
           - project-setup — Set up the development pack on a fresh repo.
 
-        Run: `jigc start "<intent>"`   — composes the default workflow (single-task)
+        Run: `jigc start "<intent>"`   — routes among the workflows above; pick one, then re-run with `--workflow <chosen>`
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         "#);
 
+        // The next-step leads to the routing flow, not a direct single-task mint.
+        assert!(
+            text.contains("routes among the workflows above"),
+            "got:\n{text}",
+        );
+        assert!(
+            !text.contains("default workflow (single-task)"),
+            "post-flip orientation must not claim a direct single-task mint; got:\n{text}",
+        );
         assert!(text.ends_with(ROUTING_FOOTER));
     }
 

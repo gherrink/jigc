@@ -15,11 +15,11 @@
 
 use crate::locate::{self, RunContext};
 use crate::pack::EmbeddedPack;
+use crate::start::selectable_workflows;
 use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
-use engine::catalog::build_catalog;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::result::OrientationView;
+use engine::result::{Catalog, OrientationView};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -62,7 +62,11 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
     let project = OverrideLayer::empty().config_path(project_config.display().to_string());
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
 
-    let catalog = build_catalog(pack)?;
+    // Orientation lists only the **selectable** (`creates-task: true`) work-
+    // workflows — the same increment-1 filter the front door feeds the router's
+    // `{{catalog}}` — so a bare-`start` reader sees the workflows a router selects
+    // among, never the router itself (`workflow-dialect.md` → Workflow selection).
+    let catalog = Catalog::new(selectable_workflows(pack)?);
 
     Ok(OrientationView::clean(
         resolved.provenance().header(),
@@ -118,7 +122,14 @@ mod tests {
 
         fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
             match kind {
-                PackResourceKind::Workflows => vec![ResourceId::from("single-task")],
+                // Post-flip shape: the `creates-task: false` router alongside the
+                // two selectable (`creates-task: true`) work-workflows, in list
+                // order, so the orientation filter can be exercised.
+                PackResourceKind::Workflows => vec![
+                    ResourceId::from("router"),
+                    ResourceId::from("single-task"),
+                    ResourceId::from("quick-fix"),
+                ],
                 PackResourceKind::Config => vec![ResourceId::from("defaults")],
                 _ => Vec::new(),
             }
@@ -126,11 +137,18 @@ mod tests {
 
         fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
             match (kind, id.as_str()) {
-                (PackResourceKind::Workflows, "single-task") => {
-                    Ok(b"---\nwhen: implement one scoped change end-to-end\n---\n".to_vec())
+                (PackResourceKind::Workflows, "router") => {
+                    Ok(b"---\nwhen: help me pick a workflow\ncreates-task: false\n---\n".to_vec())
+                }
+                (PackResourceKind::Workflows, "single-task") => Ok(
+                    b"---\nwhen: implement one scoped change end-to-end\ncreates-task: true\n---\n"
+                        .to_vec(),
+                ),
+                (PackResourceKind::Workflows, "quick-fix") => {
+                    Ok(b"---\nwhen: a small focused fix\ncreates-task: true\n---\n".to_vec())
                 }
                 (PackResourceKind::Config, "defaults") => Ok(format!(
-                    "pack-id: {}\ndefault-workflow: single-task\n",
+                    "pack-id: {}\ndefault-workflow: router\n",
                     self.pack_id
                 )
                 .into_bytes()),
@@ -179,6 +197,30 @@ mod tests {
         let entry = &workflows.entries()[0];
         assert_eq!(entry.id, "single-task");
         assert_eq!(entry.when, "implement one scoped change end-to-end");
+    }
+
+    /// Post-flip orientation lists only the **selectable** (`creates-task: true`)
+    /// work-workflows — `single-task` + `quick-fix` — and **not** the router
+    /// (`creates-task: false`), so a bare-`start` reader is pointed at the
+    /// workflows a router selects among, never at the router itself. Reuses the
+    /// increment-1 `creates-task: true` filter rather than re-deriving it
+    /// (`workflow-dialect.md` → Workflow selection: the router never lists itself).
+    #[test]
+    fn orientation_catalog_lists_only_selectable_work_workflows() {
+        let view = orient_with(
+            &ctx(Some(PathBuf::from("/repo/.jigc/config"))),
+            &FakePack::new(),
+        )
+        .expect("orient succeeds");
+        let OrientationView::Clean { workflows, .. } = &view else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
+        let ids: Vec<&str> = workflows.entries().iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            vec!["single-task", "quick-fix"],
+            "orientation must list the selectable work-workflows and not the router",
+        );
     }
 
     /// The provenance header's pack segment is sourced from the pack's own
