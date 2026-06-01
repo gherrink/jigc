@@ -1,0 +1,9 @@
+---
+when: implement work whose criteria a committed spec already defines
+creates-task: true
+reads: [{role: spec, type: spec}]
+allows-create: [{type: adr, as: decision}]
+---
+{{ include: step:locate-from-spec }}
+{{ include: step:implement }}
+{{ include: step:finalize }}

@@ -269,6 +269,98 @@ fn form_d_plan_mints_on_workflow_plan_and_emits_the_create_spec_gate() {
 }
 
 #[test]
+fn form_d_implement_from_spec_mints_and_composes_the_locate_from_spec_step() {
+    let repo = TempDir::new("form-d-impl-from-spec");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // A committed spec instance so `{{store.specs}}` renders a non-empty Content
+    // list (`committed_store` enumerates `specs/<slug>.md` by filename). The file
+    // content is irrelevant to enumeration; only the slug is read.
+    fs::create_dir_all(repo.path().join("specs")).expect("create specs dir");
+    fs::write(
+        repo.path().join("specs").join("gateway-rate-limiting.md"),
+        "# Gateway rate limiting\n",
+    )
+    .expect("write committed spec");
+
+    // `--workflow implement-from-spec <intent>`: the spec-driven work-workflow
+    // (Increment 4). It is `creates-task: true` with `reads: [{role: spec,
+    // type: spec}]`; its `step:locate-from-spec` surfaces `{{store.specs}}`, emits
+    // the bind + re-compose `Run:` lines, and reads `{{@task.spec#criteria}}` —
+    // which resolves empty on this first compose (nothing bound yet).
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &[
+            "--workflow",
+            "implement-from-spec",
+            "implement gateway rate limiting",
+        ],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow implement-from-spec \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The work-workflow minted under .jigc/tasks/<slug>/, recording its own id.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("implement-gateway-rate-limiting");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "implement-from-spec is creates-task: true, so it must open .jigc/tasks/implement-gateway-rate-limiting/ with a base pin",
+    );
+    let recorded =
+        fs::read_to_string(task_dir.join("workflow")).expect("read recorded workflow id");
+    assert_eq!(
+        recorded.trim(),
+        "implement-from-spec",
+        "the minted task must record `workflow: implement-from-spec`",
+    );
+
+    // The composed view embeds the resolved `{{task.intent}}` ...
+    assert!(
+        stdout.contains("implement gateway rate limiting"),
+        "the composed view must embed the resolved intent; got:\n{stdout}",
+    );
+    // ... carries the `{{store.specs}}` Content list (the committed spec, as a
+    // `> <type>:<slug>` blockquote line) ...
+    assert!(
+        stdout.contains("> spec:gateway-rate-limiting"),
+        "the locate-from-spec step must surface the committed spec via {{store.specs}}; got:\n{stdout}",
+    );
+    // ... the bind `Run:` line (the agent fills <SPEC_ID>) ...
+    assert!(
+        stdout.contains("Run: `jigc task bind spec <SPEC_ID>`"),
+        "the locate-from-spec step must emit the `jigc task bind spec` line; got:\n{stdout}",
+    );
+    // ... and the re-compose `Run:` line carrying the resolved task id.
+    assert!(
+        stdout.contains("Run: `jigc start --task implement-gateway-rate-limiting`"),
+        "the locate-from-spec step must emit the `jigc start --task <id>` re-compose line with the resolved task id; got:\n{stdout}",
+    );
+
+    // `{{@task.spec#criteria}}` resolves empty on the first compose — nothing is
+    // bound yet, so it emits no `> spec:...#criteria` content line.
+    assert!(
+        !stdout.contains("#criteria"),
+        "on the first compose the spec role is unbound, so {{@task.spec#criteria}} must resolve empty; got:\n{stdout}",
+    );
+
+    assert!(
+        stdout.trim_end().ends_with(ROUTING_FOOTER),
+        "Form-D agent-text composition must end with the routing footer; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn form_d_quick_fix_mints_and_composes_without_adr_or_supersedes() {
     let repo = TempDir::new("form-d-quick-fix");
     init_repo(repo.path());

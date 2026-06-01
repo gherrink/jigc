@@ -1,0 +1,14 @@
+Implement from a committed spec. The intent is:
+{{ task.intent }}
+
+Pick the spec this work implements from the committed specs below, bind it, then
+re-run to read its criteria:
+
+{{ store.specs }}
+
+{{ cli.bind-spec }}
+{{ cli.recompose-task }}
+
+The spec's criteria — empty until you bind a spec and re-compose:
+
+{{ @task.spec#criteria }}

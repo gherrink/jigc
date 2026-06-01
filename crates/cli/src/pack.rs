@@ -153,8 +153,10 @@ mod tests {
     /// list(Steps) yields the MVP step ids, sorted (the pack lists in stem
     /// order). The composer's includes resolve against exactly these — the four
     /// `single-task` steps, `implement-quick` (the ADR-free variant `quick-fix`
-    /// includes), the router's `present-catalog` / `route-to-workflow`, plus
-    /// `author-spec` (the `plan` workflow's create-gated spec-authoring step).
+    /// includes), the router's `present-catalog` / `route-to-workflow`,
+    /// `author-spec` (the `plan` workflow's create-gated spec-authoring step), plus
+    /// `locate-from-spec` (the `implement-from-spec` workflow's spec-driven locate,
+    /// distinct from the shared `locate`).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -167,6 +169,7 @@ mod tests {
                 ResourceId::from("implement"),
                 ResourceId::from("implement-quick"),
                 ResourceId::from("locate"),
+                ResourceId::from("locate-from-spec"),
                 ResourceId::from("present-catalog"),
                 ResourceId::from("route-to-workflow"),
                 ResourceId::from("superseded-context"),

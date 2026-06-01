@@ -1916,13 +1916,15 @@ A failed charge retries with exponential backoff, capped at five attempts.
     fn command_catalog_loads_three_arg_kinds() {
         let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
 
-        // All four shipped command-refs are present under their ids.
+        // Every shipped command-ref is present under its id.
         for id in [
             "set-commit-summary",
             "validate-task",
             "finalize-task",
             "create-adr",
             "create-spec",
+            "bind-spec",
+            "recompose-task",
         ] {
             assert!(catalog.get(id).is_some(), "missing command-ref `{id}`");
         }
@@ -1955,6 +1957,29 @@ A failed charge retries with exponential backoff, capped at five attempts.
         insta::assert_snapshot!(json, @r#"
         {
           "commands": {
+            "bind-spec": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "task"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "bind"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "spec"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "spec_id",
+                  "hint": "the spec:<slug> id picked from the committed specs above"
+                }
+              ],
+              "hint": "Bind the spec this work implements to the task's spec role."
+            },
             "create-adr": {
               "command": "jigc",
               "args": [
@@ -2026,6 +2051,24 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 }
               ],
               "hint": "Run validate + commit. One task → one commit."
+            },
+            "recompose-task": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "start"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
+                }
+              ],
+              "hint": "Re-compose the task to pick up the freshly bound slice."
             },
             "set-commit-summary": {
               "command": "jigc",

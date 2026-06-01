@@ -43,3 +43,20 @@ commands:
       - "--title"
       - { agent: title, hint: "short declarative title naming what the spec delivers" }
     hint: "Create a new spec in the current task."
+
+  - id: bind-spec
+    command: jigc
+    args:
+      - "task"
+      - "bind"
+      - "spec"
+      - { agent: spec_id, hint: "the spec:<slug> id picked from the committed specs above" }
+    hint: "Bind the spec this work implements to the task's spec role."
+
+  - id: recompose-task
+    command: jigc
+    args:
+      - "start"
+      - "--task"
+      - { from: "task.id" }
+    hint: "Re-compose the task to pick up the freshly bound slice."
