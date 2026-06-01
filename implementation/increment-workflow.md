@@ -47,7 +47,7 @@ The loop **stops and surfaces to the human** at exactly three points: a **new fo
 
 Run by hand, the phases above are steps one person walks. Run as an orchestrated workflow, **each phase is its own agent**, so the loop's independence is structural rather than self-policed:
 
-- **Plan** — one planning agent per increment (just-in-time, after the prior increment lands), emitting the ordered task list.
+- **Plan** — one planning agent per increment (just-in-time, after the prior increment lands), emitting the ordered task list **and recording the decomposition in [DECISIONS.md](../DECISIONS.md)** as its own commit before the tasks run (as the first milestone's increments did).
 - **Execute** — one agent **per task**, each running the whole [dev workflow](dev-workflow.md) loop to a single commit; tasks run serially over the shared working tree.
 - **Validate** — one **independent, read-only** agent (it cannot edit or commit).
 - **Fix** — one agent **per blocking finding**, each a dev-workflow fix task, then re-validate; bounded to 3 rounds.
