@@ -48,13 +48,13 @@ const FALLBACK_TYPE: &str = "commit";
 /// ([`crate::locate`]). A serial collision (an active task of the slugged id
 /// already exists) surfaces as the engine's routed blocking finding, mapped here
 /// to an `anyhow` error carrying that route.
-pub fn mint_in_repo(start: &Path, intent: &str) -> Result<MintedTask> {
+pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<MintedTask> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(&repo_root)?;
 
-    state::mint_task(&jigc_root, intent, FALLBACK_TYPE, base).map_err(finding_to_err)
+    state::mint_task(&jigc_root, intent, FALLBACK_TYPE, workflow_id, base).map_err(finding_to_err)
 }
 
 /// Provision the task's workflow-provisioned **commit** doc into the working
@@ -220,7 +220,7 @@ fn compose_core(
     let ctx = if def.creates_task {
         // Mint the task (reads HEAD). Minting after the definition loads so a
         // malformed pack never leaves a task dir behind.
-        let minted = mint_in_repo(repo_root, intent)?;
+        let minted = mint_in_repo(repo_root, intent, workflow_id)?;
         // Workflow-provisioned instance — a `creates-task` work-workflow
         // provisions the task's commit doc (the sink of its
         // `<<author: {{task.commit#summary}}>>` slot), so the agent only fills
@@ -282,13 +282,18 @@ fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogEntry>> {
     Ok(entries)
 }
 
-/// Resume an existing task by `id` and re-compose its default workflow — the
-/// `jigc start --task <id>` form (`design/write-commands.md` → Task-id collision &
-/// resume; `DECISIONS.md` 2026-05-31 → Four `jigc start` forms).
+/// Resume an existing task by `id` and re-compose its **own** minting workflow —
+/// the `jigc start --task <id>` form (`design/write-commands.md` → Task-id
+/// collision & resume: `--task` "resumes an existing task … where it is in *its*
+/// workflow"; `DECISIONS.md` 2026-05-31 → Four `jigc start` forms; `DECISIONS.md`
+/// 2026-06-01 → M2 Increment 3 re-cut: resume composes the persisted minting
+/// workflow id, not the cascade default — so a `single-task` task still composes
+/// `single-task` after the default flips to `router`).
 ///
 /// Unlike [`compose_in_repo`] this **mints nothing**: it resolves the existing
 /// `.jigc/tasks/<id>/` working area, reads its persisted state (base pin, the
-/// original intent, the bound context roles in `roles.json`), verifies the task's
+/// original intent, the recorded minting workflow id, the bound context roles in
+/// `roles.json`), verifies the task's
 /// base still matches the current checkout (the CLI never operates a task off its
 /// pinned base — `storage.md` → A task is pinned to its base), then re-composes
 /// with the bound roles in scope. A role bound since the task was minted (e.g. an
@@ -332,8 +337,19 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     let bound =
         RolesRecord::load(&task_dir).with_context(|| format!("could not read roles for `{id}`"))?;
 
+    // Resume composes the task's **own** minting workflow, never the cascade
+    // default (`DECISIONS.md` 2026-06-01 → M2 Increment 3 re-cut): a `single-task`
+    // task resumed after the default flips to `router` must still compose
+    // `single-task`. A working area with no recorded workflow id is a clear fault,
+    // not a silent fall-through to the default.
     let pack = EmbeddedPack::new();
-    let workflow_id = default_workflow_id(&pack)?;
+    let workflow_id = state::read_workflow_id(&task_dir)
+        .with_context(|| format!("could not read the recorded workflow for `{id}`"))?
+        .with_context(|| {
+            format!(
+                "task `{id}` has no recorded workflow — discard it with `jigc task discard {id}` and re-start with `jigc start`"
+            )
+        })?;
     let workflow_bytes = read_pack(&pack, PackResourceKind::Workflows, &workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     let commands = load_catalog(&pack)?;
@@ -610,7 +626,8 @@ mod tests {
         let repo = TempDir::new("repo");
         let (sha, short) = init_repo_with_commit(repo.path());
 
-        let minted = mint_in_repo(repo.path(), "Add rate limiter").expect("mint succeeds");
+        let minted =
+            mint_in_repo(repo.path(), "Add rate limiter", "single-task").expect("mint succeeds");
 
         assert_eq!(minted.id, "add-rate-limiter");
         let dir = repo
@@ -627,7 +644,8 @@ mod tests {
         assert_eq!(base.short, short, "base pin records HEAD's short SHA");
 
         // A serial re-mint of the same intent rejects, surfacing the route.
-        let err = mint_in_repo(repo.path(), "Add rate limiter").expect_err("re-mint rejects");
+        let err = mint_in_repo(repo.path(), "Add rate limiter", "single-task")
+            .expect_err("re-mint rejects");
         let msg = err.to_string();
         assert!(
             msg.contains("add-rate-limiter") && msg.contains("route:"),

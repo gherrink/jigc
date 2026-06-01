@@ -170,3 +170,72 @@ fn resume_re_composes_with_the_created_adr_bound_to_task_decision() {
          absent-value contract), not the bound role's own address; got:\n{resume_out}",
     );
 }
+
+/// The T3a done-criterion (`DECISIONS.md` 2026-06-01 → M2 Increment 3 re-cut):
+/// resume composes the task's **own** minting workflow, not the cascade default.
+/// A task minted via Form D `--workflow quick-fix` (while `default-workflow` is
+/// still `single-task`) must re-compose **quick-fix** on `jigc start --task <id>`
+/// — proven by the absence of single-task's ADR/create affordance and supersedes
+/// line in the resumed view. A working area whose recorded workflow id is gone
+/// errors clearly rather than silently composing the default.
+#[test]
+fn resume_composes_the_tasks_own_minting_workflow_not_the_default() {
+    let repo = TempDir::new("own-workflow");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Mint via Form D over quick-fix — NOT the cascade default (single-task).
+    let mint = run(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "quick-fix", "fix the typo"],
+    );
+    assert!(
+        mint.status.success(),
+        "the Form-D quick-fix mint must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&mint.stderr),
+    );
+    let slug = "fix-the-typo";
+
+    // Resume: it must re-compose quick-fix (the task's own workflow), so the view
+    // carries neither single-task's `jigc doc create adr` affordance nor its
+    // supersedes line — both of which a single-task default would emit.
+    let resume = run(repo.path(), home.path(), &["start", "--task", slug]);
+    assert!(
+        resume.status.success(),
+        "resume of a quick-fix task must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&resume.stderr),
+    );
+    let resume_out = String::from_utf8(resume.stdout).expect("utf-8 stdout");
+    assert!(
+        !resume_out.contains("jigc doc create adr"),
+        "resume must compose quick-fix (no ADR create affordance), not the single-task \
+         default; got:\n{resume_out}",
+    );
+    assert!(
+        !resume_out.contains("supersedes"),
+        "resume must compose quick-fix (no supersedes line), not the single-task default; \
+         got:\n{resume_out}",
+    );
+
+    // A working area whose recorded workflow id is gone errors clearly — never a
+    // silent fall-through to the cascade default.
+    fs::remove_file(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(slug)
+            .join("workflow"),
+    )
+    .expect("remove the recorded workflow id");
+    let orphan = run(repo.path(), home.path(), &["start", "--task", slug]);
+    assert!(
+        !orphan.status.success(),
+        "a task with no recorded workflow id must fail, not compose the default",
+    );
+    let orphan_err = String::from_utf8_lossy(&orphan.stderr);
+    assert!(
+        orphan_err.contains("workflow") && orphan_err.contains(slug),
+        "the error must name the task and its missing workflow; got:\n{orphan_err}",
+    );
+}

@@ -19,7 +19,8 @@
 //! The base SHA is supplied by the caller (the CLI reads HEAD via `git rev-parse`
 //! — "CLI orchestrates, git executes"); the engine performs no I/O beyond the
 //! working-area filesystem and never shells out, so minting is a pure function of
-//! (jigc-root, intent, type-name, base) → on-disk effect, golden-testable.
+//! (jigc-root, intent, type-name, workflow-id, base) → on-disk effect,
+//! golden-testable.
 
 use crate::finding::{Finding, Location, Severity};
 use crate::schema::Schema;
@@ -43,6 +44,15 @@ const ROLES_FILE: &str = "roles.json";
 /// sessions, so work resumes"). Plain text, no trailing-newline normalization
 /// (read back byte-for-byte).
 const INTENT_FILE: &str = "intent";
+
+/// The minting-workflow filename inside a task's working area — the id of the
+/// workflow the task was minted from (`single-task`, `quick-fix`, …), persisted
+/// verbatim so `jigc start --task <id>` resume composes the task's **own**
+/// workflow, never the cascade default (`DECISIONS.md` 2026-06-01 → M2 Increment 3
+/// re-cut: persist the minting workflow id at mint; resume composes that; a
+/// missing id is a clear error). Plain text, the same diff-friendly style as
+/// `intent` (read back byte-for-byte).
+const WORKFLOW_FILE: &str = "workflow";
 
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
@@ -200,7 +210,9 @@ pub struct MintedTask {
 
 /// Mint a task: slug the `intent` (empty → `type_name`), reject on a serial
 /// collision with an existing active task, else open `<jigc_root>/tasks/<id>/`
-/// and write the base-pin file capturing `base`.
+/// and write the base-pin file capturing `base`, the verbatim `intent`, and the
+/// `workflow_id` the task was minted from (so resume composes the task's *own*
+/// workflow — [`read_workflow_id`]).
 ///
 /// `jigc_root` is the project's `.jigc/` home (a temp root under test). On
 /// success the working-area directory and its `base.json` exist on disk. On a
@@ -211,6 +223,7 @@ pub fn mint_task(
     jigc_root: &Path,
     intent: &str,
     type_name: &str,
+    workflow_id: &str,
     base: BasePin,
 ) -> Result<MintedTask, Finding> {
     let id = mint_id(intent, type_name);
@@ -233,6 +246,11 @@ pub fn mint_task(
     std::fs::write(dir.join(INTENT_FILE), intent)
         .map_err(|err| io_finding(&id, "write the task intent", &err))?;
 
+    // Persist the minting workflow id so resume composes the task's *own* workflow,
+    // not the cascade default (`DECISIONS.md` 2026-06-01 → M2 Increment 3 re-cut).
+    std::fs::write(dir.join(WORKFLOW_FILE), workflow_id)
+        .map_err(|err| io_finding(&id, "write the task workflow id", &err))?;
+
     Ok(MintedTask { id, dir, base })
 }
 
@@ -245,6 +263,20 @@ pub fn read_intent(task_dir: &Path) -> std::io::Result<String> {
     match std::fs::read_to_string(task_dir.join(INTENT_FILE)) {
         Ok(intent) => Ok(intent),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(err) => Err(err),
+    }
+}
+
+/// Read the persisted **minting workflow id** of a task from its working area
+/// (`<task_dir>/workflow`) — the companion of the [`mint_task`] write, read back
+/// on resume to compose the task's *own* workflow rather than the cascade default
+/// (`DECISIONS.md` 2026-06-01 → M2 Increment 3 re-cut). A missing file yields
+/// [`None`] (the clear absent case the CLI resume site maps to a routed "no
+/// recorded workflow" error — never a silent fall-through to the default).
+pub fn read_workflow_id(task_dir: &Path) -> std::io::Result<Option<String>> {
+    match std::fs::read_to_string(task_dir.join(WORKFLOW_FILE)) {
+        Ok(id) => Ok(Some(id)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
     }
 }
@@ -580,8 +612,14 @@ mod tests {
         let root = TempRoot::new("create");
         let base = BasePin::new("0123456789abcdef0123456789abcdef01234567", "0123456");
 
-        let minted = mint_task(root.path(), "Add rate limiter", "commit", base.clone())
-            .expect("first mint succeeds");
+        let minted = mint_task(
+            root.path(),
+            "Add rate limiter",
+            "commit",
+            "single-task",
+            base.clone(),
+        )
+        .expect("first mint succeeds");
 
         assert_eq!(minted.id, "add-rate-limiter");
         let dir = root.path().join("tasks").join("add-rate-limiter");
@@ -604,8 +642,14 @@ mod tests {
         let before = std::fs::read_dir(root.path().join("tasks"))
             .expect("tasks dir")
             .count();
-        let err = mint_task(root.path(), "Add rate limiter", "commit", base.clone())
-            .expect_err("re-mint of the same slug rejects");
+        let err = mint_task(
+            root.path(),
+            "Add rate limiter",
+            "commit",
+            "single-task",
+            base.clone(),
+        )
+        .expect_err("re-mint of the same slug rejects");
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "task.serial-collision");
         assert!(
@@ -622,14 +666,50 @@ mod tests {
         assert_eq!(before, after, "no second dir created on collision");
     }
 
+    /// The done-criterion for T3a (`DECISIONS.md` 2026-06-01 → M2 Increment 3
+    /// re-cut): minting persists the **minting workflow id** alongside the intent,
+    /// in the same plain-text style, so resume composes the task's *own* workflow,
+    /// not the cascade default. The field round-trips through [`read_workflow_id`];
+    /// a task working area without the file yields the clear absent case (`None`).
+    #[test]
+    fn mint_persists_the_workflow_id_read_back_verbatim() {
+        let root = TempRoot::new("workflow-id");
+        let base = BasePin::new("b".repeat(40), "bbbbbbb");
+
+        let minted = mint_task(root.path(), "Add rate limiter", "commit", "quick-fix", base)
+            .expect("mint succeeds");
+
+        // Persisted verbatim as a plain file next to `intent` (golden over the bytes).
+        let on_disk = std::fs::read_to_string(minted.dir.join(WORKFLOW_FILE))
+            .expect("workflow id file written");
+        insta::assert_snapshot!(on_disk, @"quick-fix");
+
+        // Read back through the reader — the resume-path companion of the write.
+        assert_eq!(
+            read_workflow_id(&minted.dir).expect("read succeeds"),
+            Some("quick-fix".to_string()),
+            "the persisted workflow id round-trips through the reader",
+        );
+
+        // A working area with no workflow file is the clear absent case (`None`),
+        // which the CLI resume site maps to a routed error.
+        let bare = root.path().join("tasks").join("bare");
+        std::fs::create_dir_all(&bare).expect("create bare task dir");
+        assert_eq!(
+            read_workflow_id(&bare).expect("read succeeds"),
+            None,
+            "a task with no recorded workflow id reads as absent, never an error",
+        );
+    }
+
     /// An intent that normalizes to nothing falls back to the type name.
     #[test]
     fn empty_intent_falls_back_to_type_name() {
         let root = TempRoot::new("fallback");
         let base = BasePin::new("a".repeat(40), "aaaaaaa");
 
-        let minted =
-            mint_task(root.path(), "!!!___---", "adr", base).expect("fallback mint succeeds");
+        let minted = mint_task(root.path(), "!!!___---", "adr", "single-task", base)
+            .expect("fallback mint succeeds");
         assert_eq!(
             minted.id, "adr",
             "stripped-to-empty intent uses the type name"
