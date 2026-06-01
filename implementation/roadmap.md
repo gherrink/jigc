@@ -13,7 +13,7 @@ Each entry is milestone-level only — its increments are cut by the [milestone-
 ### M1 · single-task execution loop — ✅ shipped (2026-05-31)
 The core loop (discover → compose → execute → validate → finalize), proving it beats a plain `CLAUDE.md` via the superseding-decision flow. VISION: `single task execution`. **Decomposition below.**
 
-### M2 · router + second work-workflow
+### M2 · router + second work-workflow — ✅ shipped (2026-06-01)
 A second work-workflow (`quick-fix` — commit-only, `allows-create: []`) ships and the cascade's `default-workflow` flips from `single-task` to a **router** (`creates-task: false`), so `jigc start "<intent>"` routes to a model-free selection among the work-workflows. **Proves:** the orthogonal `creates-task` / `default-workflow` knobs (designed in [write-commands.md](../design/write-commands.md), unexercised in M1) hold, and the model-free selection path. No new doctype. *Engine cost (corrected from the first-draft "no engine change" after the planning review — see [DECISIONS.md](../DECISIONS.md)):* a **minimal engine-native `catalog` data-value root** exposing the live work-workflow list to composition, plus the **`creates-task: false` compose contract** (no task minted, intent threaded by agent-substitution). Form D (`jigc start --workflow <X>`) was designed but never built in M1.
 
 ### M3 · spec-driven planning
@@ -150,4 +150,4 @@ Cut 2026-06-01 via the [milestone-planning workflow](milestone-planning-workflow
 
 ### Status
 
-Planned 2026-06-01; not yet built. The first increment begins through the [increment workflow](increment-workflow.md) when picked up.
+All three increments (1–3) complete as of 2026-06-01 — the routing loop is built end-to-end: bare `jigc start "<intent>"` composes the **router** (no mint), which lists `single-task` + `quick-fix` over `{{catalog}}` and routes the agent to an explicit `jigc start --workflow <chosen>` mint; `quick-fix` composes materially differently from `single-task`. Tasks were cut per-increment at pickup via the [increment workflow](increment-workflow.md); the execute phase surfaced one genuine fork (resume must compose the task's *own* minted workflow across the default flip — see [DECISIONS.md](../DECISIONS.md) 2026-06-01) which was resolved before the flip landed. The milestone was then audited and remediated via the [milestone-completion workflow](milestone-completion-workflow.md) (external code review + end-to-end tests → triage → one fix: an orphaned `build_catalog` removed).
