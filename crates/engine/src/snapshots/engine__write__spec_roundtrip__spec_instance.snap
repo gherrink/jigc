@@ -1,0 +1,27 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+title: Gateway rate limiting
+---
+
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Rejects the 101st request  {#rejects-burst}
+
+The gateway rejects the 101st request in a rolling 60s window.
+
+### Recovers after the window  {#recovers}
+
+The next window admits requests again.

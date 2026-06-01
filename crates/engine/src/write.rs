@@ -3381,6 +3381,114 @@ Done.
 }
 
 #[cfg(test)]
+mod spec_roundtrip {
+    //! The shipped `spec` doctype round-trips byte-stably (M3 Increment 1, T2).
+    //!
+    //! Unlike the in-test `spec`-shaped fixtures elsewhere in this crate, this suite
+    //! loads the **shipped** `crates/cli/pack/schemas/spec.yaml` bytes and proves the
+    //! #1-risk round-trip over the new doctype's highest-risk shape — the repeatable
+    //! `criteria` items, each carrying a frozen `{#id}` anchor and a `statement`
+    //! slot. Both round-trip clauses (`parsing.md` → Round-trip guarantees):
+    //! (a) `render(parse(src)) == src` golden bytes (idempotent on canonical
+    //! content), and (b) `write → parse → write` byte-identical.
+
+    use super::*;
+    use crate::schema::{Schema, load_schema};
+
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+
+    fn spec_schema() -> Schema {
+        load_schema(SPEC_YAML).expect("spec.yaml loads")
+    }
+
+    /// A canonical `spec` instance over the shipped schema: a `title` header field,
+    /// `goal` + `context` prose slots, and two `criteria` items each with a frozen
+    /// `{#id}` anchor and a `statement` slot. Authored in the exact frozen byte form
+    /// the canonical writer emits (front-matter, `# H1`, `## …` slots, `### …  {#id}`
+    /// items with the two-space anchor gap).
+    fn canonical_spec_source() -> &'static str {
+        "\
+---
+title: Gateway rate limiting
+---
+
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Rejects the 101st request  {#rejects-burst}
+
+The gateway rejects the 101st request in a rolling 60s window.
+
+### Recovers after the window  {#recovers}
+
+The next window admits requests again.
+"
+    }
+
+    /// Re-derive an [`Instance`] from a parsed [`crate::parse::Document`] over
+    /// `source`, owning the slot prose (re-slicing the spans). Mirrors the canonical
+    /// module's bridge so this suite asserts `write → parse → write`.
+    fn reparse_to_instance(schema: &Schema, source: &str) -> Instance {
+        instance_from_source(schema, source).expect("rendered spec parses")
+    }
+
+    /// Clause (a): `render(parse(src)) == src` golden bytes — the shipped spec schema
+    /// parses the canonical fixture (header title, `goal`/`context` slots, ≥2
+    /// `criteria` items each with a frozen `{#id}` + `statement` slot) and the writer
+    /// reproduces the source byte-for-byte. The golden pins the canonical bytes.
+    #[test]
+    fn spec_render_parse_render_equals_source() {
+        let schema = spec_schema();
+        let src = canonical_spec_source();
+
+        let instance = reparse_to_instance(&schema, src);
+        // The two frozen criteria anchors survive the parse, in order.
+        let criteria = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "criteria")
+            .expect("criteria section present");
+        let ids: Vec<&str> = criteria.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["rejects-burst", "recovers"],
+            "frozen anchors preserved"
+        );
+
+        let rendered = render(&schema, &instance);
+        assert_eq!(
+            rendered, src,
+            "render(parse(src)) must equal the source bytes"
+        );
+        insta::assert_snapshot!("spec_instance", rendered);
+    }
+
+    /// Clause (b): `write → parse → write` is byte-identical (idempotent on canonical
+    /// content) over the shipped spec schema — the repeatable-item path included.
+    #[test]
+    fn spec_write_parse_write_is_byte_identical() {
+        let schema = spec_schema();
+        let src = canonical_spec_source();
+
+        let first = render(&schema, &reparse_to_instance(&schema, src));
+        let second = render(&schema, &reparse_to_instance(&schema, &first));
+        assert_eq!(
+            first, second,
+            "write → parse → write must be byte-identical"
+        );
+    }
+}
+
+#[cfg(test)]
 mod commit_render {
     //! The commit string sink (`design/finalize.md` → Commit-doc rendering): a
     //! `commit` instance → a git-message string. Golden (insta) over each rendered
