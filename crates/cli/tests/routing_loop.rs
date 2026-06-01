@@ -114,6 +114,7 @@ fn streams(out: &std::process::Output) -> String {
 // `- <id> — <when>` option line per selectable workflow.
 const SINGLE_TASK_WHEN: &str = "implement one scoped change end-to-end";
 const QUICK_FIX_WHEN: &str = "apply a small commit-only fix with no decision to record";
+const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
 
 // ─────────────────── the routing-loop acceptance path ───────────────────
 
@@ -145,6 +146,12 @@ fn step_1_bare_intent_composes_the_router_listing_both_workflows_without_minting
     assert!(
         stdout.contains(&format!("- quick-fix — {QUICK_FIX_WHEN}")),
         "the router must list quick-fix with its `when` hint; got:\n{stdout}",
+    );
+    // `plan` is `creates-task: true`, so it joins the selectable catalog
+    // automatically (Increment 3 T2 — `workflow-dialect.md` → Workflow selection).
+    assert!(
+        stdout.contains(&format!("- plan — {PLAN_WHEN}")),
+        "the router must list plan with its `when` hint; got:\n{stdout}",
     );
 
     // It carries the literal agent-substitution re-run prose.
@@ -237,10 +244,12 @@ fn step_2_chosen_quick_fix_mints_and_composes_materially_differently_from_single
 }
 
 #[test]
-fn step_3_the_two_work_workflow_when_hints_are_non_overlapping() {
+fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
     // The router routes model-free only if its option lines distinguish the
     // workflows: the `when` hints must share no word longer than a stop-word, so
-    // the agent has a real signal to pick on.
+    // the agent has a real signal to pick on. With `plan` joining the catalog
+    // (Increment 3 T2) the property must hold pairwise across all three
+    // selectables.
     let lower = |s: &str| s.to_lowercase();
     let words = |s: &str| -> std::collections::HashSet<String> {
         lower(s)
@@ -249,14 +258,21 @@ fn step_3_the_two_work_workflow_when_hints_are_non_overlapping() {
             .map(|w| w.to_string())
             .collect()
     };
-    let single = words(SINGLE_TASK_WHEN);
-    let quick = words(QUICK_FIX_WHEN);
-    let overlap: Vec<_> = single.intersection(&quick).collect();
-    assert!(
-        overlap.is_empty(),
-        "the two work-workflows' `when` hints must be non-overlapping for model-free \
-         routing; shared content words: {overlap:?}",
-    );
+    let selectables = [
+        ("single-task", words(SINGLE_TASK_WHEN)),
+        ("quick-fix", words(QUICK_FIX_WHEN)),
+        ("plan", words(PLAN_WHEN)),
+    ];
+    for (i, (a_id, a)) in selectables.iter().enumerate() {
+        for (b_id, b) in &selectables[i + 1..] {
+            let overlap: Vec<_> = a.intersection(b).collect();
+            assert!(
+                overlap.is_empty(),
+                "`{a_id}` and `{b_id}` `when` hints must be non-overlapping for model-free \
+                 routing; shared content words: {overlap:?}",
+            );
+        }
+    }
 }
 
 #[test]

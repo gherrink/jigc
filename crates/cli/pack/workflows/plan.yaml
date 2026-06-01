@@ -1,5 +1,5 @@
 ---
-when: draft the spec for a change before any code is written
+when: draft the specification for upcoming work before writing any code
 creates-task: true
 allows-create: [{type: spec, as: spec}]
 ---
