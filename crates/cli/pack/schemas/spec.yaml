@@ -1,7 +1,9 @@
 # spec — the M3 persisted doc-type: the "what" a task implements. Persisted to
-# specs/; a `header` section carrying the title id-source, the `goal`/`context`
-# prose slots, and a repeatable `criteria` section (each a testably-phrased
-# record addressed `spec:<slug>#criteria/<id>/statement`).
+# specs/; the `goal`/`context` prose slots and a repeatable `criteria` section
+# (each a testably-phrased record addressed `spec:<slug>#criteria/<id>/statement`).
+# `id-from: title` derives the slug from the document title (the H1, supplied at
+# `jigc doc create spec --title "…"`) — exactly like `adr`, which carries NO title
+# field; the title is the document's H1, never a declared schema field.
 # No `status`/`date` and no `decided-by → adr` relation: nothing in the M3 arc
 # reads them, so they stay one-line additions when a flow earns them.
 # See document-type-schema.md → On-disk definition format + Sections and
@@ -12,10 +14,6 @@ location: specs/
 id-from: title
 
 sections:
-  - id: header
-    header: true
-    fields:
-      - { id: title, type: string }
   - id: goal
     slot: { hint: "What this spec delivers — the outcome, in a sentence or two." }
   - id: context

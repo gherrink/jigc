@@ -8,16 +8,6 @@ expression: json
   "id-from": "title",
   "sections": [
     {
-      "id": "header",
-      "header": true,
-      "fields": [
-        {
-          "id": "title",
-          "type": "string"
-        }
-      ]
-    },
-    {
       "id": "goal",
       "slot": {
         "hint": "What this spec delivers — the outcome, in a sentence or two."

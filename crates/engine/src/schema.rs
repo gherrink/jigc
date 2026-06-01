@@ -309,10 +309,11 @@ mod tests {
     }
 
     /// Golden: the parsed `spec` schema projection. Pins `location: specs/`,
-    /// `id-from: title`, the `header` section's `title` string field (the
-    /// id-source), the `goal`/`context` prose slots in order, and the repeatable
-    /// `criteria` section (`id-from: title`, block = `title` field + `statement`
-    /// slot). No `status`/`date`/`decided-by` — those are cut from the MVP spec.
+    /// `id-from: title` (the slug derives from the document H1 — the spec carries
+    /// NO `title` field, exactly like `adr`), the `goal`/`context` prose slots in
+    /// order, and the repeatable `criteria` section (`id-from: title`, block =
+    /// `title` field + `statement` slot). No `status`/`date`/`decided-by` — those
+    /// are cut from the MVP spec.
     #[test]
     fn schema_spec_golden() {
         let schema = load_schema(SPEC_YAML).expect("spec.yaml loads");
@@ -321,8 +322,10 @@ mod tests {
     }
 
     /// The shipped `spec` schema's structure is reachable through the model: the
-    /// `criteria` repeatable block carries `statement` as a `Leaf::Slot`, and the
-    /// cut fields (`status`/`date`/`decided-by`) are genuinely absent.
+    /// `criteria` repeatable block carries `statement` as a `Leaf::Slot`, the spec
+    /// carries NO document-level `title` field (the slug derives from the H1, like
+    /// `adr`), and the cut fields (`status`/`date`/`decided-by`) are genuinely
+    /// absent.
     #[test]
     fn spec_criteria_block_carries_statement_as_a_slot() {
         let schema = load_schema(SPEC_YAML).expect("spec.yaml loads");
@@ -330,19 +333,19 @@ mod tests {
         assert_eq!(schema.location.as_deref(), Some("specs/"));
         assert_eq!(schema.id_from.as_deref(), Some("title"));
 
-        // The header section is the title id-source, not a status/date carrier.
-        let header = &schema.sections[0];
-        assert_eq!(header.id, "header");
-        assert!(header.header);
-        let SectionBody::Simple { slot, fields } = &header.body else {
-            panic!("header is a simple section");
+        // `goal` is the first section — a prose slot, no fields (the spec has no
+        // header/field section; its title is the document H1).
+        let goal = &schema.sections[0];
+        assert_eq!(goal.id, "goal");
+        let SectionBody::Simple { slot, fields } = &goal.body else {
+            panic!("goal is a simple slot section");
         };
-        assert!(slot.is_none());
-        assert_eq!(fields.len(), 1);
-        assert_eq!(fields[0].id, "title");
-        assert_eq!(fields[0].ty, FieldType::String);
+        assert!(slot.is_some());
+        assert!(fields.is_empty());
 
-        // No status/date/decided-by fields ship anywhere in the schema.
+        // No document-level title field, and no status/date/decided-by, ship
+        // anywhere in the simple sections (the criteria block's own `title`
+        // id-source field is a repeatable-block leaf, not a document field).
         let all_field_ids: Vec<&str> = schema
             .sections
             .iter()
@@ -353,12 +356,13 @@ mod tests {
             .flatten()
             .map(|f| f.id.as_str())
             .collect();
+        assert!(!all_field_ids.contains(&"title"));
         assert!(!all_field_ids.contains(&"status"));
         assert!(!all_field_ids.contains(&"date"));
         assert!(!all_field_ids.contains(&"decided-by"));
 
         // The criteria repeatable block carries `statement` as a prose slot.
-        let criteria = &schema.sections[3];
+        let criteria = &schema.sections[2];
         assert_eq!(criteria.id, "criteria");
         let SectionBody::Repeatable { repeatable } = &criteria.body else {
             panic!("criteria is repeatable");

@@ -2,10 +2,6 @@
 source: crates/engine/src/write.rs
 expression: rendered
 ---
----
-title: Gateway rate limiting
----
-
 # Gateway rate limiting
 
 ## Goal

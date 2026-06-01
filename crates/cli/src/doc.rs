@@ -223,17 +223,24 @@ impl ActiveTask {
         Ok(out)
     }
 
-    /// Load the task's workflow definition — the create-gate's `allows-create`
-    /// lives on its front-matter. MVP: the single shipped work-workflow,
-    /// `single-task` (the cascade has no project workflow override yet).
+    /// Load the task's **bound** workflow definition — the create-gate's
+    /// `allows-create` lives on its front-matter. The workflow is the one the task
+    /// was minted on (recorded at `.jigc/tasks/<id>/workflow`), never a hardcoded
+    /// default: a `plan` task's gate must read `plan`'s `allows-create`, not
+    /// `single-task`'s. Mirrors `start::resume_in_repo`'s bound-workflow read.
     fn workflow_gate(&self) -> Result<WorkflowDef> {
+        let workflow_id = state::read_workflow_id(&self.dir)
+            .context("could not read the task's recorded workflow")?
+            .context(
+                "the active task has no recorded workflow — discard it with `jigc task discard <id>` and re-start with `jigc start`",
+            )?;
         let bytes = self
             .pack
             .read(
                 PackResourceKind::Workflows,
-                &ResourceId::from("single-task"),
+                &ResourceId::from(workflow_id.as_str()),
             )
-            .context("the embedded pack is missing `single-task`")?;
+            .with_context(|| format!("the embedded pack is missing `{workflow_id}`"))?;
         load_workflow_def(&bytes).map_err(finding_to_err)
     }
 }

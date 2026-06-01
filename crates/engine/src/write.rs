@@ -3401,17 +3401,14 @@ mod spec_roundtrip {
         load_schema(SPEC_YAML).expect("spec.yaml loads")
     }
 
-    /// A canonical `spec` instance over the shipped schema: a `title` header field,
-    /// `goal` + `context` prose slots, and two `criteria` items each with a frozen
-    /// `{#id}` anchor and a `statement` slot. Authored in the exact frozen byte form
-    /// the canonical writer emits (front-matter, `# H1`, `## …` slots, `### …  {#id}`
-    /// items with the two-space anchor gap).
+    /// A canonical `spec` instance over the shipped schema: the `# H1` title (the
+    /// id-source — `spec` carries NO `title` field and NO header section, like
+    /// `adr`, so it renders no front-matter block), `goal` + `context` prose slots,
+    /// and two `criteria` items each with a frozen `{#id}` anchor and a `statement`
+    /// slot. Authored in the exact frozen byte form the canonical writer emits
+    /// (`# H1`, `## …` slots, `### …  {#id}` items with the two-space anchor gap).
     fn canonical_spec_source() -> &'static str {
         "\
----
-title: Gateway rate limiting
----
-
 # Gateway rate limiting
 
 ## Goal
@@ -3442,7 +3439,7 @@ The next window admits requests again.
     }
 
     /// Clause (a): `render(parse(src)) == src` golden bytes — the shipped spec schema
-    /// parses the canonical fixture (header title, `goal`/`context` slots, ≥2
+    /// parses the canonical fixture (`# H1` title, `goal`/`context` slots, ≥2
     /// `criteria` items each with a frozen `{#id}` + `statement` slot) and the writer
     /// reproduces the source byte-for-byte. The golden pins the canonical bytes.
     #[test]
