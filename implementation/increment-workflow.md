@@ -44,6 +44,8 @@ These turn the scope-honesty check from "grep for dead-code markers" into "prove
 
 The loop **stops and surfaces to the human** at exactly three points: a **new fork** at Plan, a **blocked task** at Execute, **still-blocking after 3 rounds** at Validate. A halt returns a structured report — which increment, which phase, the precise reason — and is **resumable**: prior committed work stands, completed steps replay from cache, and the run continues once the human clears the blocker. Nothing is guessed past a point the design says is the human's.
 
+**Clearing a halt: the orchestrator decides, a subagent codes.** The orchestrator (with the human) owns only the *judgment* — diagnose, decide the fork. *Executing* the fix (edit → gate → commit on `main`) is delegated to a **`build-fixer` subagent**, never done in the orchestrator's own session: coding inline bloats the orchestrator's context window and can exhaust it before the milestone finishes, defeating the whole reason each phase is a subagent. The fixer commits to `main` and reports the commit sha + gate evidence; the orchestrator then cache-busts the halted call and resumes from that report — its window holding summaries and shas, not file bodies.
+
 ## Orchestration
 
 Run by hand, the phases above are steps one person walks. Run as an orchestrated workflow, **each phase is its own agent**, so the loop's independence is structural rather than self-policed:

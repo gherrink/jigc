@@ -17,9 +17,19 @@
 // committed work stands.
 //
 // RESUMING AFTER A HALT (read this before re-invoking — there is a sharp edge):
-//   1. The human resolves the blocker ON MAIN, outside the workflow: diagnose,
-//      decide any fork, apply the fix, get the full gate green, and COMMIT it.
-//      (The halted agent left a clean tree, so you start from a known base.)
+//   1. Resolve the blocker ON MAIN, outside the workflow, but DELEGATE — the
+//      orchestrator decides, it does not code. The orchestrator (with the human)
+//      owns only the JUDGMENT: diagnose the fork, pick the approach. Executing it
+//      — edit, full gate green, COMMIT — goes to a `build-fixer` SUBAGENT (Agent
+//      tool, agentType 'build-fixer'), a sibling of the workflow; for a genuine
+//      fork, surface its options to the human first, then have it apply the choice.
+//      The fixer's report carries the commit sha + gate/emitted-command evidence,
+//      so the orchestrator resumes from the report WITHOUT re-reading code — keeping
+//      the main-session window holding summaries + shas, not file bodies. (Even the
+//      diagnosis can be a subagent that returns a tight root-cause summary.) Coding
+//      inline here is the mistake to avoid: it bloats the orchestrator's context and
+//      can exhaust it before the milestone finishes. (The halted agent left a clean
+//      tree, so the fixer starts from a known base.)
 //   2. A naive resume REPLAYS THE CACHED HALT. resumeFromRunId returns each prior
 //      agent() call's cached result for an unchanged (prompt, opts) — and the
 //      halted executor's cached result *is* the halt, so it re-halts immediately
