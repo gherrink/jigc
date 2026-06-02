@@ -16,6 +16,34 @@
 // rounds at validate) stop the run and surface a structured reason — prior
 // committed work stands.
 //
+// RESUMING AFTER A HALT (read this before re-invoking — there is a sharp edge):
+//   1. The human resolves the blocker ON MAIN, outside the workflow: diagnose,
+//      decide any fork, apply the fix, get the full gate green, and COMMIT it.
+//      (The halted agent left a clean tree, so you start from a known base.)
+//   2. A naive resume REPLAYS THE CACHED HALT. resumeFromRunId returns each prior
+//      agent() call's cached result for an unchanged (prompt, opts) — and the
+//      halted executor's cached result *is* the halt, so it re-halts immediately
+//      at the same spot. You must make that ONE call a cache miss so it re-runs
+//      live against the now-fixed tree.
+//   3. Do it surgically: in the run's SCRIPT SNAPSHOT (the path the Workflow tool
+//      printed at launch, under the session dir — NOT this canonical file), append
+//      a short RESUME note to ONLY the halted call's prompt, via a condition keyed
+//      on its increment+task, e.g.:
+//        const resumeNote = (inc.n === 4 && task.id === 'T5')
+//          ? '\n\nRESUME — <what was fixed on main, with commit sha>; <verified how>; '
+//            + 'write the test for this proven path and commit; do NOT re-diagnose.'
+//          : ''
+//        await agent(execPrompt(inc, task, plan.tasks) + resumeNote, { ... })
+//      The changed call (and everything after, which never ran) goes live; the
+//      unchanged prefix (every prior increment/task) replays instantly from cache.
+//   4. KEEP ANY EARLIER RESUME NOTE BYTE-IDENTICAL across re-invocations — a prior
+//      halt's note must stay unchanged or that call cache-misses too and re-runs
+//      (risking re-doing already-committed work). Add the new condition; never edit
+//      the old one. Then: Workflow({ scriptPath: <snapshot>, resumeFromRunId: <id> }).
+//   5. The RESUME note must state what was fixed (with the commit sha), how it was
+//      verified, and "do NOT re-diagnose" — so the re-run executor writes the test
+//      for the now-working path instead of re-halting on the same diagnosis.
+//
 // Usage:  Workflow({ name: 'milestone-build', args: { milestone: 'M3', base: '<sha>' } })
 //   milestone — the roadmap milestone id whose decomposition to build (e.g. 'M3').
 //   base      — the commit immediately before this milestone's first increment,

@@ -9,7 +9,7 @@ You execute **ONE task** of an increment via the [dev-workflow](../../implementa
 
 **Run the full dev-workflow for your one task only:**
 - **Scope** — restate the task + its observable done-criterion; read the design section.
-- **Red** — write the failing test(s) **first**; confirm they fail for the **right reason** (not a compile error standing in for the assertion). Parser / serialization / state-persistence work uses **golden** tests.
+- **Red** — write the failing test(s) **first**; confirm they fail for the **right reason** (not a compile error standing in for the assertion). Parser / serialization / state-persistence work uses **golden** tests. **When the deliverable is an agent- or user-facing emitted artifact** (a composed `Run:` line, an emitted command string, a rendered view), the test must drive the **emitted artifact itself** — extract the composed line and run it verbatim — **never** a reconstructed/hand-built equivalent. A test that rebuilds the command in test code can pass while the emitted bytes an agent would actually run are broken (a *masking test*); the emitted bytes are the contract, so assert on and execute the emitted bytes.
 - **Green** — the **minimal** implementation.
 - **Refactor** — only what this task touches.
 - **Gate** — all four pass: `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test` · `cargo build`. (Bash output is filtered by `lacon`; prefix a command with `!!` or set `LACON_DISABLE=1` for full output.)
