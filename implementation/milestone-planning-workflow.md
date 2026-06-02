@@ -41,7 +41,7 @@ The milestone is **planned** when its blocking gaps are settled (or consciously 
 
 ## Orchestration
 
-Run as the **`/milestone-plan <id>`** command — the runnable overlay of this loop. Unlike the build loops (the `milestone-build` *workflow*, which runs autonomously and halts on the rare fork), planning is **human-led**, so it is driven from the **main session** as a conversation: the autonomous bursts delegate to subagents (a fanned-out baseline-ledger recon in *Scope*; `gap-detector` ×4 in parallel for *Detect gaps*; `design-reviewer` for *Review*), while **Settle** and **Decompose** stay inline with the human. A background workflow is the wrong vehicle here — its center of gravity is settling forks, which is irreducibly the human's. The vehicle matches the work: a *workflow* for autonomous loops, a *command* for human-led planning.
+Run as the **`/milestone-plan <id>`** command — the runnable overlay of this loop. Unlike the build loops (the `milestone-build` *workflow*, which runs autonomously and halts on the rare fork), planning is **human-led**, so it is driven from the **main session** as a conversation: the autonomous bursts delegate to subagents (a fanned-out baseline-ledger recon (`capability-auditor` ×N over the built surface) in *Scope*; `gap-detector` ×4 in parallel for *Detect gaps*; `design-reviewer` for *Review*), while **Settle** and **Decompose** stay inline with the human. A background workflow is the wrong vehicle here — its center of gravity is settling forks, which is irreducibly the human's. The vehicle matches the work: a *workflow* for autonomous loops, a *command* for human-led planning.
 
 ## Why this shape
 
