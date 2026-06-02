@@ -21,7 +21,7 @@ This is also where the **doctype contract gets set at the right moment**: a doct
 
 ## The loop (one milestone)
 
-1. **Scope** — restate, from the full-product [roadmap](roadmap.md), what this milestone *proves* and its risk-first place in the sequence. Establish the done-picture: the runnable slice it must deliver and the worked-example flow(s) that will demonstrate it. This is the bar everything below is measured against.
+1. **Scope** — restate, from the full-product [roadmap](roadmap.md), what this milestone *proves* and its risk-first place in the sequence. Establish the done-picture: the runnable slice it must deliver and the worked-example flow(s) that will demonstrate it. This is the bar everything below is measured against. **And verify the baseline it builds on:** the done-picture is the target, but the milestone also has a *starting point* — what prior milestones actually shipped — and the roadmap's "shipped" prose is a claim, not proof (trusting it is what cost M3 three build halts). So Scope also produces a **verified capability ledger** — what is genuinely built *proven by exercising it*, plus the known stubbed / deferred / latent gaps — established by delegated recon (subagents that exercise the real binary, not the orchestrator reading code). The ledger is the factual ground *Detect gaps* measures against; it is a verified-at-this-sha map, not gospel, so the gap pass still spikes each new shape. Doing this once per milestone, at its start, is cheaper than discovering a hollow baseline mid-build.
 
 2. **Detect gaps** — a forward-looking, **adversarial** pass over the milestone's done-picture against the assembled product: what is *missing or unfit* to build it cleanly. Categories:
    - **Decisions** — the forward look in [decisions-pending.md](decisions-pending.md): each `(D)` this milestone forces, plus any cross-cutting one due before it.
@@ -41,7 +41,7 @@ The milestone is **planned** when its blocking gaps are settled (or consciously 
 
 ## Orchestration
 
-Run as the **`/milestone-plan <id>`** command — the runnable overlay of this loop. Unlike the build loops (the `milestone-build` *workflow*, which runs autonomously and halts on the rare fork), planning is **human-led**, so it is driven from the **main session** as a conversation: the autonomous bursts delegate to subagents (`gap-detector` ×4 in parallel for *Detect gaps*; `design-reviewer` for *Review*), while **Settle** and **Decompose** stay inline with the human. A background workflow is the wrong vehicle here — its center of gravity is settling forks, which is irreducibly the human's. The vehicle matches the work: a *workflow* for autonomous loops, a *command* for human-led planning.
+Run as the **`/milestone-plan <id>`** command — the runnable overlay of this loop. Unlike the build loops (the `milestone-build` *workflow*, which runs autonomously and halts on the rare fork), planning is **human-led**, so it is driven from the **main session** as a conversation: the autonomous bursts delegate to subagents (a fanned-out baseline-ledger recon in *Scope*; `gap-detector` ×4 in parallel for *Detect gaps*; `design-reviewer` for *Review*), while **Settle** and **Decompose** stay inline with the human. A background workflow is the wrong vehicle here — its center of gravity is settling forks, which is irreducibly the human's. The vehicle matches the work: a *workflow* for autonomous loops, a *command* for human-led planning.
 
 ## Why this shape
 
