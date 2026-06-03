@@ -590,6 +590,12 @@ impl Provenance {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Resolved {
     scalars: BTreeMap<String, String>,
+    /// Per-overridden-key winning layer: the layer that last applied a
+    /// `scalar-set` for the key. Keys left at the pack-default base are absent —
+    /// this surface holds *only* the overrides, feeding `--explain` layer 1
+    /// (`overrides applied: N`, the winning layer per key). Additive: the
+    /// resolved values in [`Resolved::scalars`] are unchanged by its presence.
+    scalar_provenance: BTreeMap<String, LayerKind>,
     file_owners: BTreeMap<String, LayerKind>,
     provenance: Provenance,
 }
@@ -610,6 +616,20 @@ impl Resolved {
             .ok_or_else(|| CascadeError::UndeclaredComposeRead {
                 key: key.to_owned(),
             })
+    }
+
+    /// The layer that won a scalar key by applying a `scalar-set` for it, or
+    /// `None` if the key resolved from the pack-default base (no override). This
+    /// is the `--explain` layer-1 per-key provenance — distinct from
+    /// [`Resolved::scalar`], which always returns the resolved *value*.
+    pub fn scalar_provenance(&self, key: &str) -> Option<LayerKind> {
+        self.scalar_provenance.get(key).copied()
+    }
+
+    /// How many scalar keys an override layer set (the `overrides applied: N`
+    /// count in the `--explain` tree). Zero on the no-override path.
+    pub fn scalar_override_count(&self) -> usize {
+        self.scalar_provenance.len()
     }
 
     /// Which layer owns the file with this id after shadowing, or `None` if no
@@ -639,7 +659,11 @@ pub fn resolve(
     project: Option<&OverrideLayer>,
 ) -> Result<Resolved, CascadeError> {
     // Phase 3 — scalar deltas: base, then team, then project (project last).
+    // Record the winning layer per overridden key as we fold, so `--explain`
+    // can show provenance; a later layer re-setting a key wins both the value
+    // and its provenance. Keys left at the base never enter this map.
     let mut scalars = pack.scalars.clone();
+    let mut scalar_provenance: BTreeMap<String, LayerKind> = BTreeMap::new();
     for (layer_kind, layer) in [(LayerKind::Team, team), (LayerKind::Project, project)] {
         let Some(layer) = layer else { continue };
         for (key, value) in &layer.scalar_sets {
@@ -650,6 +674,7 @@ pub fn resolve(
                 });
             }
             scalars.insert(key.clone(), value.clone());
+            scalar_provenance.insert(key.clone(), layer_kind);
         }
     }
 
@@ -675,6 +700,7 @@ pub fn resolve(
 
     Ok(Resolved {
         scalars,
+        scalar_provenance,
         file_owners,
         provenance,
     })
@@ -1042,6 +1068,84 @@ mod tests {
 
         assert_eq!(resolved.file_owner("single-task"), Some(LayerKind::Project));
         assert_eq!(resolved.file_owner("absent"), None);
+    }
+
+    /// No override layer: every key resolves from the base, so no key carries a
+    /// winning-layer provenance and the override-key count is zero — the
+    /// `--explain` tree renders `overrides applied: none`
+    /// (`design/workflow-dialect.md` → `--explain` output contract, layer 1).
+    #[test]
+    fn no_override_layer_has_empty_scalar_provenance() {
+        let pack = pack_default();
+
+        let resolved = resolve(&pack, None, None).expect("resolves");
+
+        assert_eq!(resolved.scalar_override_count(), 0);
+        assert_eq!(resolved.scalar_provenance("default-workflow"), None);
+        assert_eq!(
+            resolved.scalar_provenance("validation.doc-code.severity"),
+            None,
+        );
+    }
+
+    /// A project `scalar-set` records the winning layer for that key
+    /// (`default-workflow` → `Project`) and bumps the override-key count to one;
+    /// keys left at the base carry no provenance
+    /// (`design/worked-examples.md` → 3b).
+    #[test]
+    fn project_scalar_set_records_project_as_winning_layer() {
+        let pack = pack_default();
+        let project = OverrideLayer::empty().scalar_set("default-workflow", "single-task");
+
+        let resolved = resolve(&pack, None, Some(&project)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar_provenance("default-workflow"),
+            Some(LayerKind::Project),
+        );
+        assert_eq!(resolved.scalar_override_count(), 1);
+        assert_eq!(
+            resolved.scalar_provenance("validation.doc-code.severity"),
+            None,
+        );
+    }
+
+    /// A team key the project does not re-set keeps `Team` as its winning layer —
+    /// provenance records the *last* layer that set the key, project only when it
+    /// actually applies a delta (`design/overrides.md` → Resolution algorithm
+    /// phase 3).
+    #[test]
+    fn team_set_not_reset_by_project_records_team() {
+        let pack = pack_default();
+        let team = OverrideLayer::empty().scalar_set("default-workflow", "team-choice");
+        let project = OverrideLayer::empty();
+
+        let resolved = resolve(&pack, Some(&team), Some(&project)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar_provenance("default-workflow"),
+            Some(LayerKind::Team),
+        );
+        assert_eq!(resolved.scalar_override_count(), 1);
+    }
+
+    /// Byte-safe-read guard: adding the provenance surface does not perturb the
+    /// resolved values — `scalar` / `scalar_required` return identical results
+    /// before and after a delta is applied, so the no-override compose path stays
+    /// byte-identical (`design/overrides.md` → Read-side determinism invariant).
+    #[test]
+    fn provenance_surface_leaves_scalar_reads_unchanged() {
+        let pack = pack_default();
+        let project = OverrideLayer::empty().scalar_set("default-workflow", "router");
+
+        let base = resolve(&pack, None, None).expect("resolves");
+        let overridden = resolve(&pack, None, Some(&project)).expect("resolves");
+
+        // The read accessors return exactly the resolved value, provenance or not.
+        assert_eq!(base.scalar("default-workflow"), Some("single-task"));
+        assert_eq!(base.scalar_required("default-workflow"), Ok("single-task"));
+        assert_eq!(overridden.scalar("default-workflow"), Some("router"));
+        assert_eq!(overridden.scalar_required("default-workflow"), Ok("router"));
     }
 
     /// Populated external layers add `Project config:` / `Team config:` segments
