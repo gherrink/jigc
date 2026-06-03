@@ -23,7 +23,7 @@ use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::cascade::{
     self, AnchorSpec, OverrideLayer, PackDefaultLayer, SlotFillDelta, SlotFillTarget,
-    StructuralDelta, StructuralTarget,
+    StructuralDelta, StructuralTarget, TrackedForkDelta,
 };
 use engine::compose::{
     self, CommandCatalog, ComposedWorkflow, ResolvedFills, StepDef, StepSource, StoreContext,
@@ -455,7 +455,10 @@ fn resolve_cascade(
         knobs.base_scalars(),
         Vec::new(),
     );
-    let (project, deltas, slot_fills) = load_project_layer(project_config)?;
+    // The `tracked-fork` deltas are recording surface only — read by the (M5)
+    // reconciliation, never by compose — so they are dropped here (a fork applies
+    // as its phase-2 shadowed step file, no new resolution logic).
+    let (project, deltas, slot_fills, _forks) = load_project_layer(project_config)?;
     let fills = load_fills(project_config, &slot_fills)?;
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
     Ok((
@@ -946,9 +949,22 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
         .context("`config/defaults` declares no `pack-id`")
 }
 
+/// The project cascade layer plus the three delta surfaces a manifest's `deltas:`
+/// list carries: the [`OverrideLayer`], the phase-4 `structural-op`
+/// [`StructuralDelta`]s, the phase-5 `slot-fill` [`SlotFillDelta`]s, and the
+/// `tracked-fork` [`TrackedForkDelta`]s (recording surface, read only by the (M5)
+/// reconciliation — never fed to compose).
+type ProjectLayer = (
+    OverrideLayer,
+    Vec<StructuralDelta>,
+    Vec<SlotFillDelta>,
+    Vec<TrackedForkDelta>,
+);
+
 /// Load the project cascade layer from `<project_config>/manifest.yaml` plus the
 /// project's native `steps/` dir, returning the [`OverrideLayer`] paired with the
-/// manifest's phase-4 `structural-op` deltas and phase-5 `slot-fill` deltas.
+/// manifest's phase-4 `structural-op` deltas, phase-5 `slot-fill` deltas, and
+/// `tracked-fork` recording deltas (see [`ProjectLayer`]).
 ///
 /// The layer carries three surfaces:
 /// - **`scalar:`** — each entry becomes one [`OverrideLayer::scalar_set`], recorded
@@ -962,9 +978,14 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
 /// - **`deltas:`** — one entry per delta, split by `kind:`: the `structural-op`
 ///   kinds (`insert-step` / `replace-step` / `remove-step`) parse into
 ///   [`StructuralDelta`]s for the phase-4 pass; a `slot-fill` kind parses into a
-///   [`SlotFillDelta`] for the phase-5 fill pass + the orphan check. Both ride the
-///   one `deltas:` list (`storage.md` → Config layout) and are returned separately
-///   because they mutate different surfaces at different phases.
+///   [`SlotFillDelta`] for the phase-5 fill pass + the orphan check; a
+///   `tracked-fork` kind parses into a [`TrackedForkDelta`] — **recording surface
+///   only**, not fed to compose (at compose time a fork is just the shadowed step
+///   file phase 2 already applies; the recorded `base-version` + `base-hash` are
+///   read solely by the (M5) reconciliation — `overrides.md` → `tracked-fork` hash
+///   basis). All three ride the one `deltas:` list (`storage.md` → Config layout)
+///   and are returned separately because they mutate different surfaces at
+///   different phases.
 ///
 /// A **missing** manifest file (the dir may still hold `steps/` shadows), or a
 /// present manifest with a **missing or blank** `scalar:` / `deltas:` block, yields
@@ -974,9 +995,7 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
 /// The closed-surface check (an undeclared scalar key is an error) is **not** done
 /// here: it is the resolver's job, so a hand-edited manifest and a `config set`
 /// write are adjudicated by the one path.
-pub(crate) fn load_project_layer(
-    project_config: &Path,
-) -> Result<(OverrideLayer, Vec<StructuralDelta>, Vec<SlotFillDelta>)> {
+pub(crate) fn load_project_layer(project_config: &Path) -> Result<ProjectLayer> {
     let manifest = project_config.join("manifest.yaml");
     // Every native `steps/<id>.yaml` basename shadows the pack step by id (phase 2),
     // independent of the manifest — the `steps/` dir is the project's step layer.
@@ -994,7 +1013,12 @@ pub(crate) fn load_project_layer(
         Ok(text) => text,
         // No manifest file → no scalar/delta override (the `steps/` shadows still apply).
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok((with_files(OverrideLayer::empty()), Vec::new(), Vec::new()));
+            return Ok((
+                with_files(OverrideLayer::empty()),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ));
         }
         Err(e) => {
             return Err(e).with_context(|| format!("could not read {}", manifest.display()));
@@ -1024,14 +1048,15 @@ pub(crate) fn load_project_layer(
         }
     }
 
-    // The `deltas:` block — one list carrying both the phase-4 `structural-op` and
-    // the phase-5 `slot-fill` kinds (blank/absent → none of either).
-    let (deltas, slot_fills) = match doc.get("deltas") {
-        None | Some(serde_yaml_ng::Value::Null) => (Vec::new(), Vec::new()),
+    // The `deltas:` block — one list carrying the phase-4 `structural-op`, the
+    // phase-5 `slot-fill`, and the (M5-read) `tracked-fork` recording kinds
+    // (blank/absent → none of any).
+    let (deltas, slot_fills, forks) = match doc.get("deltas") {
+        None | Some(serde_yaml_ng::Value::Null) => (Vec::new(), Vec::new(), Vec::new()),
         Some(seq) => parse_deltas(seq, &manifest)?,
     };
 
-    Ok((with_files(layer), deltas, slot_fills))
+    Ok((with_files(layer), deltas, slot_fills, forks))
 }
 
 /// Resolve one step's body **through the cascade** — the phase-2 file-owner read a
@@ -1059,7 +1084,7 @@ pub(crate) fn resolve_step_body(
         knobs.base_scalars(),
         Vec::new(),
     );
-    let (project, _deltas, _slot_fills) = load_project_layer(project_config)?;
+    let (project, _deltas, _slot_fills, _forks) = load_project_layer(project_config)?;
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
 
     match resolved.file_owner(step_id) {
@@ -1114,30 +1139,41 @@ pub(crate) fn project_step_ids(project_config: &Path) -> Vec<String> {
 /// entry carries a `kind` (`insert-step` / `replace-step` / `remove-step`), a
 /// `target`, and — for insert/replace — a `with:` step reference; a `slot-fill`
 /// entry carries `kind: slot-fill`, a `target: step:<id>#<fill-id>`, and a
-/// `content: fills/<id>.md`. A malformed entry surfaces as its located finding.
+/// `content: fills/<id>.md`; a `tracked-fork` entry carries `kind: tracked-fork`, a
+/// `target: workflow:<id>#<step-id>`, a `base-version:`, and a `base-hash:`. A
+/// malformed entry surfaces as its located finding.
 fn parse_deltas(
     seq: &serde_yaml_ng::Value,
     manifest: &Path,
-) -> Result<(Vec<StructuralDelta>, Vec<SlotFillDelta>)> {
+) -> Result<(
+    Vec<StructuralDelta>,
+    Vec<SlotFillDelta>,
+    Vec<TrackedForkDelta>,
+)> {
     let items = seq
         .as_sequence()
         .with_context(|| format!("{}: `deltas:` must be a list of deltas", manifest.display()))?;
     let mut structural = Vec::new();
     let mut slot_fills = Vec::new();
+    let mut forks = Vec::new();
     for item in items {
         match parse_one_delta(item, manifest)? {
             ParsedDelta::Structural(delta) => structural.push(delta),
             ParsedDelta::SlotFill(delta) => slot_fills.push(delta),
+            ParsedDelta::TrackedFork(delta) => forks.push(delta),
         }
     }
-    Ok((structural, slot_fills))
+    Ok((structural, slot_fills, forks))
 }
 
-/// One parsed `deltas:` entry, partitioned by kind — a phase-4 structural-op or a
-/// phase-5 slot-fill (`overrides.md` → The ladder: distinct kinds, distinct phases).
+/// One parsed `deltas:` entry, partitioned by kind — a phase-4 structural-op, a
+/// phase-5 slot-fill, or a `tracked-fork` recording (`overrides.md` → The ladder:
+/// distinct kinds, distinct phases). The fork is recording-only — not fed to
+/// compose; its basis is read solely by the (M5) reconciliation.
 enum ParsedDelta {
     Structural(StructuralDelta),
     SlotFill(SlotFillDelta),
+    TrackedFork(TrackedForkDelta),
 }
 
 /// Parse one `deltas:` entry into a [`ParsedDelta`], branching on `kind:`. A
@@ -1191,8 +1227,23 @@ fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<Parse
             let content_id = content_id(at("content"), manifest)?;
             Ok(ParsedDelta::SlotFill(SlotFillDelta { target, content_id }))
         }
+        "tracked-fork" => {
+            // `workflow:<id>#<step-id>` → an `Anchor::At` target naming the forked
+            // unit (the native step file shadowed whole at phase 2). The recorded
+            // basis (`base-version` + the blake3 `base-hash`) is M4's pinned
+            // ancestor — read only by the (M5) compare; both are required, so a
+            // missing field is a clear, located error here, never a panic.
+            let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
+            let base_version = required_field(at("base-version"), "base-version", kind, manifest)?;
+            let base_hash = required_field(at("base-hash"), "base-hash", kind, manifest)?;
+            Ok(ParsedDelta::TrackedFork(TrackedForkDelta {
+                target,
+                base_version,
+                base_hash,
+            }))
+        }
         other => bail!(
-            "{}: unknown delta kind `{other}` (expected insert-step / replace-step / remove-step / slot-fill)",
+            "{}: unknown delta kind `{other}` (expected insert-step / replace-step / remove-step / slot-fill / tracked-fork)",
             manifest.display()
         ),
     }
@@ -1220,6 +1271,16 @@ fn content_id(raw: Option<&str>, manifest: &Path) -> Result<String> {
             )
         })?;
     Ok(basename.to_owned())
+}
+
+/// A required string `field` off a `deltas:` entry (`tracked-fork`'s `base-version`
+/// / `base-hash`) — a missing field is a clear, located error naming the field and
+/// the entry's `kind`, never a panic (`overrides.md` → `tracked-fork` hash basis:
+/// the recorded basis must be present to round-trip).
+fn required_field(raw: Option<&str>, field: &str, kind: &str, manifest: &Path) -> Result<String> {
+    let raw =
+        raw.with_context(|| format!("{}: a `{kind}` needs a `{field}`", manifest.display()))?;
+    Ok(raw.to_owned())
 }
 
 /// The bare step id from a `with:` reference, stripping the manifest's optional
@@ -1333,6 +1394,7 @@ fn discover_repo_root(start: &Path) -> Option<std::path::PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::cascade::Anchor;
     use std::fs;
     use std::path::PathBuf;
 
@@ -2037,7 +2099,8 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills, _forks) =
+            load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -2059,7 +2122,8 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills, _forks) =
+            load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -2078,7 +2142,8 @@ mod tests {
         let cfg = TempDir::new("manifest-blank-scalar");
         fs::write(cfg.path().join("manifest.yaml"), "scalar:\n").expect("write manifest");
 
-        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills, _forks) =
+            load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -2097,7 +2162,7 @@ mod tests {
         let cfg = TempDir::new("manifest-missing");
         // No manifest.yaml written.
 
-        let (layer, _deltas, _slot_fills) =
+        let (layer, _deltas, _slot_fills, _forks) =
             load_project_layer(cfg.path()).expect("missing manifest is not an error");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
@@ -2130,7 +2195,8 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills, _forks) =
+            load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
         assert_eq!(resolved.scalar("default-workflow"), Some("router"));
@@ -2294,13 +2360,158 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills, _forks) =
+            load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
         assert_eq!(
             resolved.scalar("some-flag"),
             Some("true"),
             "a bool scalar must record as its YAML string form",
+        );
+    }
+
+    /// A manifest carrying a hand-authored `tracked-fork` entry **alongside** a
+    /// `scalar:` block and a `slot-fill` delta round-trips: the loader parses the
+    /// fork back to the T1 [`TrackedForkDelta`] (target + `base-version` +
+    /// `base-hash`) without erroring, and the other blocks survive its presence —
+    /// the `scalar:` flips the resolved value and the `slot-fill` delta is still
+    /// returned (`overrides.md` → Delta representation; `storage.md` → Config
+    /// layout: one `deltas:` list, every kind).
+    #[test]
+    fn manifest_tracked_fork_entry_round_trips_alongside_scalar_and_slot_fill() {
+        let cfg = TempDir::new("manifest-tracked-fork");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "scalar:\n  \
+             default-workflow: router\n\
+             deltas:\n  \
+             - kind: slot-fill\n    \
+             target: step:implement#extra-guidance\n    \
+             content: fills/extra-guidance.md\n  \
+             - kind: tracked-fork\n    \
+             target: workflow:single-task#implement\n    \
+             base-version: v1\n    \
+             base-hash: a3f9deadbeef\n",
+        )
+        .expect("write manifest");
+
+        let (layer, deltas, slot_fills, forks) =
+            load_project_layer(cfg.path()).expect("a tracked-fork entry must not error the load");
+
+        // The fork round-trips to the T1 delta.
+        assert_eq!(
+            forks,
+            vec![TrackedForkDelta {
+                target: StructuralTarget {
+                    workflow_id: "single-task".to_owned(),
+                    anchor: Anchor::At("implement".to_owned()),
+                },
+                base_version: "v1".to_owned(),
+                base_hash: "a3f9deadbeef".to_owned(),
+            }],
+            "the `tracked-fork` entry must parse back to the recorded T1 delta",
+        );
+
+        // The other blocks survive the fork entry's presence.
+        let resolved =
+            engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
+        assert_eq!(
+            resolved.scalar("default-workflow"),
+            Some("router"),
+            "the `scalar:` block must still flip the resolved value",
+        );
+        assert_eq!(
+            slot_fills,
+            vec![SlotFillDelta {
+                target: SlotFillTarget::parse("step:implement#extra-guidance")
+                    .expect("valid slot-fill target"),
+                content_id: "extra-guidance".to_owned(),
+            }],
+            "the `slot-fill` delta must survive the fork entry's presence",
+        );
+        assert!(
+            deltas.is_empty(),
+            "the fork is not a structural-op, so no structural delta is recorded",
+        );
+    }
+
+    /// The determinism guard: the structural-op and slot-fill vectors are
+    /// **byte-identical** whether or not a `tracked-fork` entry sits in the same
+    /// `deltas:` list — the fork is recording surface, never fed to compose, so it
+    /// must not perturb the phase-4 / phase-5 inputs.
+    #[test]
+    fn tracked_fork_entry_does_not_perturb_structural_or_slot_fill_vectors() {
+        let without = "deltas:\n  \
+             - kind: insert-step\n    \
+             target: workflow:single-task\n    \
+             after: implement\n    \
+             with: step:project-implement\n  \
+             - kind: slot-fill\n    \
+             target: step:implement#extra-guidance\n    \
+             content: fills/extra-guidance.md\n";
+        let with = format!(
+            "{without}  \
+             - kind: tracked-fork\n    \
+             target: workflow:single-task#implement\n    \
+             base-version: v1\n    \
+             base-hash: a3f9deadbeef\n"
+        );
+
+        let cfg_without = TempDir::new("fork-guard-without");
+        fs::write(cfg_without.path().join("manifest.yaml"), without).expect("write manifest");
+        let cfg_with = TempDir::new("fork-guard-with");
+        fs::write(cfg_with.path().join("manifest.yaml"), with).expect("write manifest");
+
+        let (_l0, deltas0, slot_fills0, forks0) =
+            load_project_layer(cfg_without.path()).expect("loads");
+        let (_l1, deltas1, slot_fills1, forks1) =
+            load_project_layer(cfg_with.path()).expect("loads");
+
+        assert_eq!(
+            deltas0, deltas1,
+            "the structural-op vector must be identical with or without the fork entry",
+        );
+        assert_eq!(
+            slot_fills0, slot_fills1,
+            "the slot-fill vector must be identical with or without the fork entry",
+        );
+        assert!(
+            forks0.is_empty(),
+            "the fork-free manifest records no fork delta",
+        );
+        assert_eq!(
+            forks1.len(),
+            1,
+            "the fork-bearing manifest records exactly its one fork delta",
+        );
+    }
+
+    /// A malformed `tracked-fork` entry — `base-hash` missing — is a **clear,
+    /// located error**, not a panic: the recorded basis is the pinned ancestor the
+    /// (M5) compare reads, so an entry that omits it cannot round-trip (`overrides.md`
+    /// → `tracked-fork` hash basis).
+    #[test]
+    fn tracked_fork_missing_base_hash_is_a_clear_error_not_a_panic() {
+        let cfg = TempDir::new("fork-no-hash");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "deltas:\n  \
+             - kind: tracked-fork\n    \
+             target: workflow:single-task#implement\n    \
+             base-version: v1\n",
+        )
+        .expect("write manifest");
+
+        // The 4-tuple's `OverrideLayer` is not `Debug`, so match the error out
+        // rather than `expect_err` the whole `Ok` value.
+        let msg = match load_project_layer(cfg.path()) {
+            Ok(_) => panic!("a `tracked-fork` missing `base-hash` must be an error"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            msg.contains("base-hash"),
+            "the error must name the missing `base-hash` field; got: {msg}",
         );
     }
 }

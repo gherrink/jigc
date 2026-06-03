@@ -238,7 +238,8 @@ fn run_insert_step(
 
     // Both write-time checks run before any write — a rejection touches nothing.
     let pack = EmbeddedPack::new();
-    let (_layer, existing_deltas, _slot_fills) = crate::start::load_project_layer(&project_config)?;
+    let (_layer, existing_deltas, _slot_fills, _forks) =
+        crate::start::load_project_layer(&project_config)?;
     check_basename_collision(&pack, &project_config, &basename).map_err(finding_to_err)?;
     check_anchor_present(&pack, workflow, &existing_deltas, anchor_id).map_err(finding_to_err)?;
 
@@ -289,7 +290,8 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
 
     // Both write-time checks run before any write — a rejection touches nothing.
     let pack = EmbeddedPack::new();
-    let (_layer, existing_deltas, _slot_fills) = crate::start::load_project_layer(&project_config)?;
+    let (_layer, existing_deltas, _slot_fills, _forks) =
+        crate::start::load_project_layer(&project_config)?;
     check_basename_collision(&pack, &project_config, &basename).map_err(finding_to_err)?;
     check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
@@ -322,7 +324,8 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
     let step_id = at_step(&parsed);
 
     let pack = EmbeddedPack::new();
-    let (_layer, existing_deltas, _slot_fills) = crate::start::load_project_layer(&project_config)?;
+    let (_layer, existing_deltas, _slot_fills, _forks) =
+        crate::start::load_project_layer(&project_config)?;
     check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
 
@@ -863,7 +866,7 @@ mod tests {
         assert_eq!(count, 2, "both delta entries must be present\n{text}");
 
         // The loader parses the written manifest back to the two deltas, in order.
-        let (_layer, deltas, _slot_fills) =
+        let (_layer, deltas, _slot_fills, _forks) =
             crate::start::load_project_layer(project_config).expect("loader parses the manifest");
         assert_eq!(
             deltas,
