@@ -51,6 +51,27 @@ impl Drop for TempDir {
 const ROUTING_FOOTER: &str =
     "— jigc · run `jigc start` for orientation; all writes through `jigc`.";
 
+/// The **no-override** bare-`jigc start "<intent>"` agent-text composition, byte
+/// for byte — the cascade default (`router`) resolved with no project `scalar:`
+/// delta. This is the determinism gate for wiring the resolved cascade live into
+/// compose (M4 Increment 1, T5): the no-delta read path must stay byte-identical
+/// to before the cascade was wired in. The router lists the selectable
+/// work-workflows and carries no `{{task.intent}}`, so the golden is intent-stable.
+const NO_OVERRIDE_ROUTER_GOLDEN: &str = "\
+These are the selectable work-workflows, each with the situation it fits:
+
+- implement-from-spec — build from a committed spec whose acceptance criteria already exist
+- plan — draft the specification for upcoming work before writing any code
+- quick-fix — apply a small commit-only fix with no decision to record
+- single-task — implement one scoped change end-to-end
+
+Pick the workflow whose situation best fits the intent, then re-run with that
+choice and the original intent:
+
+jigc start --workflow <chosen> \"<intent>\"
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
 /// Initialize a real git repo with one commit (composition mints, which reads
 /// HEAD via `git rev-parse`), and create the `.jigc/config/` project layer so the
 /// cascade resolves.
@@ -131,6 +152,83 @@ fn bare_intent_composes_the_router_without_minting() {
     assert!(
         stdout.trim_end().ends_with(ROUTING_FOOTER),
         "agent-text composition must end with the routing footer; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn no_override_bare_intent_compose_is_byte_identical_to_the_golden() {
+    // The determinism gate for T5 (M4 Increment 1): wiring the resolved cascade
+    // live into compose must leave the **no-override** read path byte-identical.
+    // `init_repo` creates `.jigc/config/` but writes no `manifest.yaml`, so the
+    // project layer carries no `scalar:` delta — the cascade resolves the pack
+    // default (`router`) and the composed bytes must equal the golden exactly.
+    let repo = TempDir::new("byte-identical");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "the no-override bare compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        stdout, NO_OVERRIDE_ROUTER_GOLDEN,
+        "the no-override compose output must stay byte-identical to today's golden",
+    );
+}
+
+#[test]
+fn project_scalar_set_flips_the_bare_intent_workflow() {
+    // The cascade *applies* a delta: a project-layer `scalar: default-workflow:
+    // single-task` resolved over the pack default (`router`) flips which workflow
+    // a bare `jigc start "<intent>"` composes — from the no-mint router to the
+    // `creates-task: true` `single-task`, which mints under `.jigc/tasks/<slug>/`.
+    let repo = TempDir::new("flip");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    fs::write(
+        repo.path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n",
+    )
+    .expect("write project manifest");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "the flipped bare compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // `single-task` is `creates-task: true`: bare `jigc start` now mints.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("add-rate-limiter");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "the project scalar-set must flip the default to single-task, which mints under .jigc/tasks/<slug>/; got:\n{stdout}",
+    );
+    // The composed view is the single-task body (embedding the resolved intent),
+    // not the router's selectable-workflow catalog.
+    assert!(
+        stdout.contains("add rate limiter"),
+        "the flipped compose must embed the resolved intent (single-task body); got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("These are the selectable work-workflows"),
+        "the flipped compose must not be the router catalog; got:\n{stdout}",
     );
 }
 

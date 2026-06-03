@@ -21,7 +21,7 @@
 use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
-use engine::cascade::OverrideLayer;
+use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::compose::{
     self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, StoreContext, WorkflowDef,
     load_command_catalog, load_step_def, load_workflow_def,
@@ -160,8 +160,9 @@ const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
 /// Mint a task from `intent`, then compose the cascade's default workflow over
 /// it — the `jigc start "<intent>"` front door.
 ///
-/// Locates the cascade (a missing project layer routes to `jigc setup`), reads
-/// `default-workflow` from the pack's `config/defaults`, mints the task (seq 12),
+/// Locates the cascade (a missing project layer routes to `jigc setup`), resolves
+/// `default-workflow` **through the cascade** (so a project `scalar:` delta
+/// flips it — [`resolve_default_workflow`]), mints the task (seq 12),
 /// builds the [`ComposeContext`] binding `{{task.intent}}`/`{{task.id}}` and
 /// declaring the workflow's `allows-create` roles unbound, runs the
 /// `workflow-refs` gate at compose-time, and on a clean gate emits the
@@ -180,7 +181,7 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     }
 
     let pack = EmbeddedPack::new();
-    let workflow_id = default_workflow_id(&pack)?;
+    let workflow_id = resolve_default_workflow(&pack, &project_config)?;
     compose_core(&repo_root, intent, &pack, &workflow_id)
 }
 
@@ -211,9 +212,9 @@ pub fn compose_named_in_repo(
 
 /// Compose the workflow named by `workflow_id` from `intent`, branching on the
 /// workflow's `creates-task` flag — the engine spine both front-door forms drive
-/// (the cascade-default `jigc start "<intent>"` passes [`default_workflow_id`];
-/// the explicit `--workflow <X>` form passes `X`), with the pack injected so the
-/// no-task arm is reachable under test.
+/// (the cascade-default `jigc start "<intent>"` passes the cascade-resolved
+/// [`resolve_default_workflow`]; the explicit `--workflow <X>` form passes `X`),
+/// with the pack injected so the no-task arm is reachable under test.
 ///
 /// An unknown `workflow_id` — one the pack does not provide — is **rejected with a
 /// routed finding before any mint** (`write-commands.md` → Form D): the membership
@@ -574,17 +575,49 @@ impl StepSource for PackStepSource<'_> {
     }
 }
 
-/// Read the `default-workflow` id from the pack's `config/defaults` resource.
-fn default_workflow_id(pack: &dyn PackSource) -> Result<String> {
+/// Resolve the `default-workflow` id **through the cascade** — the live read the
+/// bare front door composes (`overrides.md` → Scalar knobs / Resolution
+/// algorithm). Seeds the [`PackDefaultLayer`] scalar surface from the pack's
+/// `config/knobs` (closed key set + materialized defaults), loads the project
+/// [`OverrideLayer`] from `<project_config>/manifest.yaml`, resolves the cascade,
+/// and reads the key via [`cascade::Resolved::scalar_required`] — so a project
+/// `scalar: default-workflow: …` delta *flips* which workflow mints, while a
+/// no-override cascade reads the pack default unchanged.
+///
+/// The read goes through `scalar_required`, not [`cascade::Resolved::scalar`]:
+/// the compose path is byte-safe only over the declared, seeded surface, so an
+/// undeclared read-key is a hard [`cascade::CascadeError::UndeclaredComposeRead`]
+/// here, never a silent `None`/raw fallback (the read-side determinism invariant).
+fn resolve_default_workflow(pack: &dyn PackSource, project_config: &Path) -> Result<String> {
+    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
+    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    let pack_default = PackDefaultLayer::new(
+        pack_id_from_config(pack)?,
+        pack.pack_version(),
+        knobs.base_scalars(),
+        Vec::new(),
+    );
+    let project = load_project_layer(project_config)?;
+    let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
+    resolved
+        .scalar_required(DEFAULT_WORKFLOW_KEY)
+        .map(str::to_owned)
+        .map_err(anyhow::Error::from)
+}
+
+/// Read the pack's own cascade id from its `config/defaults` `pack-id` field —
+/// the identity the [`PackDefaultLayer`] carries (`overrides.md`: the pack-default
+/// layer names itself; `pack-id` is identity, never a knob).
+fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
     let bytes = read_pack(pack, PackResourceKind::Config, "defaults")?;
     let text = String::from_utf8(bytes).context("`config/defaults` is not UTF-8")?;
     let value: serde_yaml_ng::Value =
         serde_yaml_ng::from_str(&text).context("`config/defaults` is not valid YAML")?;
     value
-        .get(DEFAULT_WORKFLOW_KEY)
+        .get("pack-id")
         .and_then(serde_yaml_ng::Value::as_str)
         .map(str::to_owned)
-        .with_context(|| format!("`config/defaults` declares no `{DEFAULT_WORKFLOW_KEY}`"))
+        .context("`config/defaults` declares no `pack-id`")
 }
 
 /// Load the project cascade layer from `<project_config>/manifest.yaml`, reading
@@ -607,7 +640,6 @@ fn default_workflow_id(pack: &dyn PackSource) -> Result<String> {
 /// it is the resolver's job (`cascade::resolve` rejects an undeclared
 /// `scalar-set`), so a hand-edited manifest and a `config set` write are
 /// adjudicated by the one path.
-#[allow(dead_code)] // wired live into compose by T5; until then exercised by tests.
 pub(crate) fn load_project_layer(project_config: &Path) -> Result<OverrideLayer> {
     let manifest = project_config.join("manifest.yaml");
     // Always stamp the committed-config path (the provenance-header segment, the
@@ -930,9 +962,11 @@ mod tests {
             (PackResourceKind::Steps, "noop", "no-op body\n"),
         ]);
 
-        let workflow_id = default_workflow_id(&pack).expect("defaults declare a default-workflow");
+        // `compose_core` is driven with the workflow id directly here — the
+        // cascade read (`resolve_default_workflow`) is exercised by the binary-
+        // driven flip + byte-identical goldens (`tests/start_compose.rs`).
         let composed =
-            compose_core(repo.path(), "anything", &pack, &workflow_id).expect("no-task compose");
+            compose_core(repo.path(), "anything", &pack, "router").expect("no-task compose");
 
         // (a) The no-task arm mints nothing: no working area is opened.
         assert!(
@@ -1330,6 +1364,37 @@ mod tests {
             resolved.scalar("validation.file-state.severity"),
             Some("warning"),
             "every `scalar:` entry must be recorded, not just the first",
+        );
+    }
+
+    /// The read-side determinism invariant, end-to-end through the compose read:
+    /// `resolve_default_workflow` reads `default-workflow` via `scalar_required`,
+    /// so a pack whose `config/knobs` **does not declare** `default-workflow`
+    /// fails **loudly** (the `UndeclaredComposeRead` hard error) rather than
+    /// silently composing nothing. Pins that the wired compose read never falls
+    /// back to a raw `None` for an undeclared key.
+    #[test]
+    fn undeclared_compose_read_key_fails_loudly() {
+        let cfg = TempDir::new("undeclared-read");
+        fs::create_dir_all(cfg.path()).expect("mk config dir");
+
+        // A pack whose knob surface omits `default-workflow` entirely — so the
+        // cascade-resolved surface never carries it.
+        let pack = FixturePack::with(vec![
+            (PackResourceKind::Config, "defaults", "pack-id: dev\n"),
+            (
+                PackResourceKind::Config,
+                "knobs",
+                "some-other-knob:\n  type: string\n  default: x\n",
+            ),
+        ]);
+
+        let err = resolve_default_workflow(&pack, cfg.path())
+            .expect_err("an undeclared compose-read key must fail loudly");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("default-workflow") && msg.contains("undeclared"),
+            "the read of an undeclared key must name it and the closed-surface rule; got: {msg}",
         );
     }
 
