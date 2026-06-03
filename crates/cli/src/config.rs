@@ -1,13 +1,15 @@
 //! `jigc config <verb>` — authoring cascade deltas into the project layer
 //! (`design/overrides.md` → Authoring deltas — the `jigc config` verbs).
 //!
-//! `config set <key> <value>` (the `scalar-set` rung) + the three `structural-op`
-//! verbs `insert-step` / `replace-step` / `remove-step` land here; `fill` / `fork`
-//! are later increments. `set` writes **only** the project layer's
-//! `.jigc/config/manifest.yaml` `scalar:` block; `insert-step` / `replace-step`
-//! append to its `deltas:` list + write a native `steps/<basename>.yaml`, and
-//! `remove-step` appends a delta with no native file — never a base definition,
-//! never a fork.
+//! `config set <key> <value>` (the `scalar-set` rung), the three `structural-op`
+//! verbs `insert-step` / `replace-step` / `remove-step`, the `slot-fill` verb `fill`,
+//! and the `tracked-fork` verb `fork` all land here. `set` writes **only** the project
+//! layer's `.jigc/config/manifest.yaml` `scalar:` block; `insert-step` / `replace-step`
+//! append to its `deltas:` list + write a native `steps/<basename>.yaml`, `remove-step`
+//! appends a delta with no native file, `fill` appends a `slot-fill` delta + writes a
+//! native `fills/<id>.md`, and `fork` appends a `tracked-fork` delta (with its pinned
+//! `base-version` + `base-hash`) + copies the resolved unit to `steps/<id>.yaml` — each
+//! a delta against the project layer, never a base definition.
 //!
 //! **Write-time adjudication** (`overrides.md` → Write-time vs resolve-time
 //! split): the cheap, local checks run here so the human gets an immediate error
@@ -20,15 +22,18 @@
 
 use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
-use engine::cascade::{Anchor, SlotFillTarget, StructuralDelta, StructuralTarget};
+use engine::cascade::{
+    Anchor, SlotFillTarget, StructuralDelta, StructuralTarget, TrackedForkDelta,
+};
 use engine::field_block::Value;
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// The `jigc config <verb>` subcommand tree — `set` (a `scalar-set`) plus the
-/// three `structural-op` verbs `insert-step` / `replace-step` / `remove-step`
+/// The `jigc config <verb>` subcommand tree — `set` (a `scalar-set`), the three
+/// `structural-op` verbs `insert-step` / `replace-step` / `remove-step`, the
+/// `slot-fill` verb `fill`, and the `tracked-fork` verb `fork`
 /// (`design/overrides.md` → Authoring deltas).
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum ConfigCommand {
@@ -109,6 +114,22 @@ pub enum ConfigCommand {
         #[arg(long)]
         from_file: String,
     },
+
+    /// Record a `tracked-fork` delta — copy the resolved unit's body into a native
+    /// file that shadows it, recording the pinned ancestor (`base-version` + the
+    /// **blake3** `base-hash` of the copied bytes), addressed `workflow:<id>#<step-id>`
+    /// (`design/overrides.md` → Authoring deltas, the `config fork` row; `tracked-fork`
+    /// hash basis). The forked unit is the **step** the `#<step-id>` names; its resolved
+    /// body bytes are copied verbatim to `.jigc/config/steps/<step-id>.yaml` (id =
+    /// step-id), so at compose time the fork is just a phase-2 file shadow (no new
+    /// resolution). Write-time adjudicated *before any write* (a rejection touches
+    /// nothing): the target step-id must resolve as of this edit, and a unit already
+    /// forked (its native file present) is a collision — each is rejected non-zero with
+    /// a routed finding. M4 records the basis; only the (M5) reconciliation reads it.
+    Fork {
+        /// The `workflow:<id>#<step-id>` unit to fork.
+        target: String,
+    },
 }
 
 impl ConfigCommand {
@@ -127,6 +148,7 @@ impl ConfigCommand {
             ConfigCommand::ReplaceStep { target, file } => run_replace_step(cwd, &target, &file),
             ConfigCommand::RemoveStep { target } => run_remove_step(cwd, &target),
             ConfigCommand::Fill { target, from_file } => run_fill(cwd, &target, &from_file),
+            ConfigCommand::Fork { target } => run_fork(cwd, &target),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -367,6 +389,140 @@ fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
     std::fs::write(&native, content.as_bytes())
         .with_context(|| format!("could not write {}", native.display()))?;
     append_slot_fill(&project_config, &parsed)
+}
+
+/// `jigc config fork <workflow:id#step-id>` — record a `tracked-fork` delta + copy
+/// the resolved unit's body into a native step file that shadows it
+/// (`design/overrides.md` → Authoring deltas, the `config fork` row; `tracked-fork`
+/// hash basis).
+///
+/// The forked unit is the **step** the `#<step-id>` names ([`Anchor::At`]); its
+/// resolved body bytes are the **post-shadow, pre-expansion** bytes phase 2 would
+/// load. All write-time checks run *before any write* so a rejection leaves the tree
+/// untouched (`overrides.md` → Write-time vs resolve-time split):
+/// 1. parse the `workflow:<id>#<step-id>` target ([`Anchor::At`]) → the step id;
+/// 2. `check_basename_collision` — the step id must not already be project-shadowed
+///    (a unit already forked is a collision) else reject;
+/// 3. `check_anchor_present` — the target step-id must resolve in the workflow's
+///    include list *as of this edit* else reject (an unknown step id);
+/// 4. resolve the step's body bytes (the pack-default owner after the collision guard);
+/// 5. write `steps/<step-id>.yaml` (the copied bytes) + append the `tracked-fork`
+///    delta recording `base-version` = the pack version and `base-hash` = the blake3
+///    of the **copied** bytes (the pinned basis M5 reads).
+fn run_fork(cwd: &Path, target: &str) -> Result<()> {
+    let project_config = require_project_layer(cwd)?;
+    let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
+    let step_id = at_step(&parsed);
+
+    // Both write-time checks run before any write — a rejection touches nothing. The
+    // already-forked guard (the step id is already project-shadowed) runs before the
+    // anchor check, and both before any byte resolution. Unlike insert/replace, the
+    // forked id *is* a pack step id by design (a fork copies a pack unit), so the
+    // collision is only with an existing **project** shadow — not the pack id.
+    let pack = EmbeddedPack::new();
+    let (_layer, existing_deltas, _slot_fills, _forks) =
+        crate::start::load_project_layer(&project_config)?;
+    check_not_already_forked(&project_config, &step_id).map_err(finding_to_err)?;
+    check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
+        .map_err(finding_to_err)?;
+
+    // The resolved unit is the step the `#<step-id>` names. After the collision guard,
+    // no project file shadows this id, so the resolved owner is the pack — its body
+    // bytes are the post-shadow, pre-expansion bytes phase 2 would load.
+    let bytes = resolve_fork_bytes(&pack, &step_id)?;
+
+    // Write the native step file (id = step-id), then append the `tracked-fork` delta.
+    // The recorded `base-hash` is the blake3 of the **copied** bytes (not a re-read).
+    let steps_dir = project_config.join("steps");
+    std::fs::create_dir_all(&steps_dir)
+        .with_context(|| format!("could not create {}", steps_dir.display()))?;
+    let native = steps_dir.join(format!("{step_id}.yaml"));
+    std::fs::write(&native, &bytes)
+        .with_context(|| format!("could not write {}", native.display()))?;
+    let delta = TrackedForkDelta {
+        target: parsed,
+        base_version: pack.pack_version(),
+        base_hash: engine::file_state::hash_bytes(&bytes),
+    };
+    append_fork(&project_config, &delta)
+}
+
+/// Reject a `config fork` of a unit the project layer **already shadows** — the
+/// already-forked write-time guard (`design/overrides.md` → the `jigc config` verbs:
+/// "target resolves as of this edit"; a re-fork would re-shadow what is already a
+/// native file).
+///
+/// Unlike [`check_basename_collision`] (insert/replace, where the new basename must be
+/// a *fresh* id), a fork's id is a **pack** step id by design — a fork copies a pack
+/// unit — so only an existing **project** shadow (`<project_config>/steps/<id>.yaml`,
+/// [`crate::start::project_step_ids`]) is a collision: the unit was already forked. A
+/// clash is a routed blocking `config.step-id-collision` [`Finding`]; an un-forked id
+/// passes.
+fn check_not_already_forked(project_config: &Path, step_id: &str) -> Result<(), Finding> {
+    if crate::start::project_step_ids(project_config)
+        .iter()
+        .any(|id| id == step_id)
+    {
+        return Err(Finding::block(
+            "config.step-id-collision",
+            format!(
+                "`{step_id}` is already forked — the project layer shadows it; re-forking would re-shadow an existing native file"
+            ),
+            "edit the existing native file (or remove it first) instead of re-forking, then re-run",
+        ));
+    }
+    Ok(())
+}
+
+/// Read the resolved body bytes of the step `step_id` to fork — the pack-default
+/// owner's bytes after [`run_fork`]'s collision guard has ruled out a project shadow
+/// of this id (`design/overrides.md` → `tracked-fork` hash basis: the resolved native
+/// step file bytes). A step id the pack does not own is a routed `config.anchor-absent`
+/// [`Finding`] (symmetric with the anchor check that precedes this read).
+fn resolve_fork_bytes(pack: &dyn PackSource, step_id: &str) -> Result<Vec<u8>> {
+    pack.read(PackResourceKind::Steps, &ResourceId::from(step_id))
+        .map_err(|_| {
+            finding_to_err(Finding::block(
+                "config.anchor-absent",
+                format!("no step `{step_id}` body to fork"),
+                "name a step id present in the workflow's resolved include list, then re-run",
+            ))
+        })
+}
+
+/// Append one `tracked-fork` delta to `<project_config>/manifest.yaml`'s `deltas:`
+/// list, preserving any existing top-level keys (the `scalar:` map) and prior entries
+/// — the fork sibling of [`append_delta`] (`design/overrides.md` → Delta
+/// representation; `design/storage.md` → Config layout: one `deltas:` list, every
+/// kind).
+///
+/// The on-disk spelling mirrors what [`crate::start::load_project_layer`]'s
+/// `parse_one_delta` reads back for a `tracked-fork` kind:
+/// - `kind: tracked-fork`;
+/// - `target: workflow:<id>#<step-id>` (the [`Anchor::At`] [`StructuralTarget`]);
+/// - `base-version:` — the pack version the fork was taken from;
+/// - `base-hash:` — the blake3 of the copied unit bytes (the pinned basis M5 reads).
+fn append_fork(project_config: &Path, delta: &TrackedForkDelta) -> Result<()> {
+    let entry = {
+        use serde_yaml_ng::Value as Yaml;
+        let mut map = serde_yaml_ng::Mapping::new();
+        let mut put = |k: &str, v: String| {
+            map.insert(Yaml::String(k.to_owned()), Yaml::String(v));
+        };
+        put("kind", "tracked-fork".to_owned());
+        put(
+            "target",
+            format!(
+                "workflow:{}#{}",
+                delta.target.workflow_id,
+                at_step(&delta.target)
+            ),
+        );
+        put("base-version", delta.base_version.clone());
+        put("base-hash", delta.base_hash.clone());
+        Yaml::Mapping(map)
+    };
+    append_delta_entry(project_config, entry)
 }
 
 /// Reject fill content that itself declares a `{{fill:}}` point — the no-nested

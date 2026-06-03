@@ -559,6 +559,27 @@ mod cli_parse {
     }
 
     #[test]
+    fn config_fork_parses_the_target() {
+        let cli = Cli::try_parse_from(["jigc", "config", "fork", "workflow:single-task#implement"])
+            .expect("`jigc config fork <target>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Config {
+                verb: ConfigCommand::Fork {
+                    target: "workflow:single-task#implement".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn config_fork_requires_a_target() {
+        let err = Cli::try_parse_from(["jigc", "config", "fork"])
+            .expect_err("`config fork` with no target must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
     fn config_replace_step_requires_a_file() {
         let err = Cli::try_parse_from(["jigc", "config", "replace-step", "workflow:single-task#x"])
             .expect_err("`replace-step` with no file must be rejected");
