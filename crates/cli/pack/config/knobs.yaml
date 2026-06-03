@@ -1,0 +1,21 @@
+# pack/config/knobs.yaml — the closed, typed knob surface the cascade
+# resolves. One entry per settable key, reusing the document-type
+# `FieldType` vocabulary (`type` + optional `of`) so a `scalar-set` is
+# adjudicated by the same `check_value` the doc write path uses. The
+# loader seeds the PackDefaultLayer scalar surface from this file: the
+# closed key set (what `scalar-set` may target) + each knob's
+# materialized default. `pack-id` is NOT a knob — it is pack identity,
+# not a project-overridable value, so it stays in defaults.yaml.
+# See overrides.md → Scalar knobs; storage.md → Config layout.
+default-workflow:
+  type: enum
+  of: [router, single-task, quick-fix, plan, implement-from-spec]
+  default: router
+validation.workflow-refs.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+validation.file-state.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking

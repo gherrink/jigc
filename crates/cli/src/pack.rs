@@ -261,7 +261,64 @@ mod tests {
         );
     }
 
-    /// The pack-default config layer declares the pack's own identity: its
+    /// The pack-default layer ships its closed, typed knob *declaration* as the
+    /// `knobs` Config resource (`{key, type, of?, default}`, reusing the
+    /// document-type `FieldType` vocabulary). The loader (later in this
+    /// increment) seeds the `PackDefaultLayer` scalar surface from it: the
+    /// closed key set + each knob's materialized default. Golden over the bytes
+    /// pins the canonical declared surface — `default-workflow` (enum, default
+    /// `router`) + the `validation.*.severity` keys for the two engine-native
+    /// MVP probes. `pack-id` is **not** a knob (it is pack identity, read for
+    /// the provenance header) — it stays in `defaults.yaml`, asserted absent
+    /// here. See overrides.md → Scalar knobs (On-disk declaration —
+    /// config/knobs.yaml); storage.md → Config layout.
+    #[test]
+    fn embedded_pack_config_declares_the_knob_surface() {
+        let pack = EmbeddedPack::new();
+        let config = pack.list(PackResourceKind::Config);
+        assert!(
+            config.contains(&ResourceId::from("knobs")),
+            "the pack-default layer must ship a `knobs` declaration resource; got {config:?}",
+        );
+
+        let knobs = read_text(&pack, PackResourceKind::Config, "knobs");
+        insta::assert_snapshot!(knobs, @r###"
+        # pack/config/knobs.yaml — the closed, typed knob surface the cascade
+        # resolves. One entry per settable key, reusing the document-type
+        # `FieldType` vocabulary (`type` + optional `of`) so a `scalar-set` is
+        # adjudicated by the same `check_value` the doc write path uses. The
+        # loader seeds the PackDefaultLayer scalar surface from this file: the
+        # closed key set (what `scalar-set` may target) + each knob's
+        # materialized default. `pack-id` is NOT a knob — it is pack identity,
+        # not a project-overridable value, so it stays in defaults.yaml.
+        # See overrides.md → Scalar knobs; storage.md → Config layout.
+        default-workflow:
+          type: enum
+          of: [router, single-task, quick-fix, plan, implement-from-spec]
+          default: router
+        validation.workflow-refs.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.file-state.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        "###);
+
+        // `pack-id` is a non-knob identity field — it lives in defaults.yaml,
+        // never the knob surface (overrides.md → "pack-id is not a knob"). A
+        // top-level YAML key is a non-indented `<key>:` line; assert no such
+        // line declares `pack-id` (comment mentions don't count).
+        assert!(
+            !knobs
+                .lines()
+                .any(|l| l.starts_with("pack-id:") || l.starts_with("pack-id ")),
+            "`pack-id` is pack identity, not a settable knob; it must not be declared in knobs.yaml",
+        );
+    }
+
+    /// The pack-default layer declares the pack's own identity: its
     /// `pack-id` is `dev`. This is what makes the `Pack: dev/<version>`
     /// provenance segment cascade-sourced rather than a CLI constant — the pack
     /// names itself. See overrides.md → pack-default layer carries pack id.
