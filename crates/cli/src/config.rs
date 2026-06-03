@@ -6,7 +6,9 @@
 //! and the `tracked-fork` verb `fork` all land here. `set` writes **only** the project
 //! layer's `.jigc/config/manifest.yaml` `scalar:` block; `insert-step` / `replace-step`
 //! append to its `deltas:` list + write a native `steps/<basename>.yaml`, `remove-step`
-//! appends a delta with no native file, `fill` appends a `slot-fill` delta + writes a
+//! appends a delta with no native file (`replace-step` / `remove-step` also record the
+//! **displaced** pack unit's `base-version` + `base-hash` — the M5 basis), `fill`
+//! appends a `slot-fill` delta + writes a
 //! native `fills/<id>.md`, and `fork` appends a `tracked-fork` delta (with its pinned
 //! `base-version` + `base-hash`) + copies the resolved unit to `steps/<id>.yaml` — each
 //! a delta against the project layer, never a base definition.
@@ -318,7 +320,14 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
     check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
 
-    // Write the native step file, then append the `replace-step` delta.
+    // The base-hash basis is the **displaced** pack unit — the target step `step_id`
+    // being swapped out — read pack-direct (the same `pack.read(Steps, …)` basis
+    // `config fork` records), never the replacement file (`overrides.md` → Per-kind
+    // base-hash basis; the replace row). Resolved before any write.
+    let displaced = resolve_fork_bytes(&pack, &step_id)?;
+
+    // Write the native step file, then append the `replace-step` delta carrying the
+    // displaced unit's recorded basis (`base-version` + `base-hash`).
     let steps_dir = project_config.join("steps");
     std::fs::create_dir_all(&steps_dir)
         .with_context(|| format!("could not create {}", steps_dir.display()))?;
@@ -329,7 +338,10 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
         target: parsed,
         step: basename,
     };
-    append_delta(&project_config, &delta)
+    append_delta_entry(
+        &project_config,
+        with_basis(delta_to_yaml(&delta), &pack.pack_version(), &displaced),
+    )
 }
 
 /// `jigc config remove-step <workflow:id#step-id>` — record a `remove`
@@ -351,8 +363,17 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
     check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
 
+    // The base-hash basis is the **removed** pack unit — the target step `step_id`
+    // being dropped — read pack-direct (the same `pack.read(Steps, …)` basis
+    // `config fork`/`replace-step` record) (`overrides.md` → Per-kind base-hash
+    // basis; the remove row). Resolved before the append.
+    let removed = resolve_fork_bytes(&pack, &step_id)?;
+
     let delta = StructuralDelta::Remove { target: parsed };
-    append_delta(&project_config, &delta)
+    append_delta_entry(
+        &project_config,
+        with_basis(delta_to_yaml(&delta), &pack.pack_version(), &removed),
+    )
 }
 
 /// `jigc config fill <step:id#fill-id> --from-file <path|->` — record a `slot-fill`
@@ -898,6 +919,36 @@ fn delta_to_yaml(delta: &StructuralDelta) -> serde_yaml_ng::Value {
     Yaml::Mapping(entry)
 }
 
+/// Add the M5 base-hash basis to a `replace-step` / `remove-step` manifest entry —
+/// the `base-version:` (the pack version) + `base-hash:` (the blake3 of the
+/// **displaced pack unit's** bytes) keys, written onto the *same* entry
+/// [`delta_to_yaml`] rendered, the same pack-direct basis `config fork` records
+/// (`design/overrides.md` → Per-kind base-hash basis; On-disk representation).
+///
+/// The basis rides as net-new keys on the entry (not on the compose-facing
+/// [`StructuralDelta`], whose `delta_to_yaml` spelling is untouched), so phase-4
+/// compose and its byte-identical goldens never see it; T1's loader reads the pair
+/// back **Optional** into a separate target-keyed [`engine::cascade::StructuralBasis`].
+fn with_basis(
+    entry: serde_yaml_ng::Value,
+    base_version: &str,
+    displaced: &[u8],
+) -> serde_yaml_ng::Value {
+    use serde_yaml_ng::Value as Yaml;
+    let mut entry = entry;
+    if let Yaml::Mapping(map) = &mut entry {
+        map.insert(
+            Yaml::String("base-version".to_owned()),
+            Yaml::String(base_version.to_owned()),
+        );
+        map.insert(
+            Yaml::String("base-hash".to_owned()),
+            Yaml::String(engine::file_state::hash_bytes(displaced)),
+        );
+    }
+    entry
+}
+
 /// The `#<step-id>` step a replace/remove target names (`Anchor::At`). Insert
 /// targets never reach here; an `After`/`Before` on a replace/remove is a writer
 /// bug, so the id is still emitted rather than silently dropped.
@@ -1165,5 +1216,95 @@ mod tests {
         let other = vec![remove_at("other", "implement")];
         check_anchor_present(&pack, "single-task", &other, "implement")
             .expect("a delta scoped to another workflow must not drop this anchor");
+    }
+
+    /// T2 — `run_replace_step` / `run_remove_step` record the **displaced pack
+    /// unit's** pack-direct basis on the appended manifest entry: `base-version` =
+    /// the pack version, `base-hash` = an independently computed
+    /// `hash_bytes(pack.read(Steps, "implement"))` — the same pack-direct way
+    /// `config fork` records (`overrides.md` → Per-kind base-hash basis; the
+    /// replace/remove rows). The entry round-trips back through T1's loader to a
+    /// [`engine::cascade::StructuralBasis`] keyed by that `#<step-id>` target, leaving
+    /// the compose-facing [`StructuralDelta`] untouched.
+    #[test]
+    fn replace_remove_record_displaced_pack_unit_basis_and_round_trip() {
+        // The displaced pack unit is the target step `implement`; its basis is the
+        // blake3 of its pack-default bytes, read pack-direct (independent of any
+        // replacement file basename).
+        let pack = EmbeddedPack::new();
+        let displaced = pack
+            .read(PackResourceKind::Steps, &ResourceId::from("implement"))
+            .expect("pack ships an `implement` step");
+        let expected_hash = engine::file_state::hash_bytes(&displaced);
+        let expected_version = pack.pack_version();
+
+        for verb in ["replace", "remove"] {
+            // A repo root (`.git`) + the `.jigc/config/` project layer, since the
+            // run_* helpers discover the repo and require the layer.
+            let repo = TempDir::new(&format!("rr-basis-{verb}"));
+            fs::create_dir_all(repo.path().join(".git")).expect("mk .git");
+            let project_config = repo.path().join(".jigc").join("config");
+            fs::create_dir_all(&project_config).expect("mk project layer");
+            fs::write(
+                project_config.join("manifest.yaml"),
+                "scalar:\n  default-workflow: single-task\n",
+            )
+            .expect("seed manifest");
+
+            let target = "workflow:single-task#implement";
+            if verb == "replace" {
+                // The replacement file's basename (`project-implement`) is a fresh
+                // step id and re-includes the displaced step — the basis must still be
+                // the *displaced* unit's bytes, not the replacement's.
+                let source = repo.path().join("project-implement.yaml");
+                fs::write(&source, "{{ include: step:implement }}\n").expect("write source");
+                run_replace_step(repo.path(), target, &source).expect("replace-step records");
+            } else {
+                run_remove_step(repo.path(), target).expect("remove-step records");
+            }
+
+            // The appended entry carries the displaced pack unit's pack-direct basis.
+            let text =
+                fs::read_to_string(project_config.join("manifest.yaml")).expect("read manifest");
+            let doc: serde_yaml_ng::Value =
+                serde_yaml_ng::from_str(&text).expect("manifest is YAML");
+            let entry = doc
+                .get("deltas")
+                .and_then(serde_yaml_ng::Value::as_sequence)
+                .and_then(|s| s.first())
+                .unwrap_or_else(|| panic!("{verb}: one delta entry\n{text}"));
+            assert_eq!(
+                entry
+                    .get("base-version")
+                    .and_then(serde_yaml_ng::Value::as_str),
+                Some(expected_version.as_str()),
+                "{verb}: base-version must equal the pack version\n{text}",
+            );
+            assert_eq!(
+                entry
+                    .get("base-hash")
+                    .and_then(serde_yaml_ng::Value::as_str),
+                Some(expected_hash.as_str()),
+                "{verb}: base-hash must equal an independent pack-direct hash of the displaced unit\n{text}",
+            );
+
+            // The entry round-trips through T1's loader to a `StructuralBasis` for
+            // that `#<step-id>` target — the structural delta itself unchanged.
+            let (_layer, _deltas, _slot_fills, _forks, bases) =
+                crate::start::load_project_layer(&project_config)
+                    .expect("loader parses the recorded basis");
+            assert_eq!(
+                bases,
+                vec![engine::cascade::StructuralBasis {
+                    target: StructuralTarget {
+                        workflow_id: "single-task".to_owned(),
+                        anchor: Anchor::At("implement".to_owned()),
+                    },
+                    base_version: expected_version.clone(),
+                    base_hash: expected_hash.clone(),
+                }],
+                "{verb}: the recorded basis must round-trip keyed by the target\n{text}",
+            );
+        }
     }
 }
