@@ -4,7 +4,7 @@ How a project customizes the pack without forking it into bit-rot. This is [VISI
 
 Builds on [structural-grammar.md](structural-grammar.md) (override operates on skeleton units by address), [document-type-schema.md](document-type-schema.md) (knobs reuse the field model), [write-commands.md](write-commands.md) (the propose/confirm loop; the workflow create-gate is a cascade scalar at `workflows.<id>.allows-create`), [storage.md](storage.md) (config locations, base-hash, derived caches), [validation.md](validation.md) (`override-default` is a probe; findings + routes), [workflow-dialect.md](workflow-dialect.md) (definitions resolve through the cascade), and [command-catalog.md](command-catalog.md) (command-ref entries resolve through the same cascade — `insert`/`replace`/`remove` deltas apply uniformly). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
 
-> **Build-scope split — M4 (apply) vs M5 (reconcile).** This doc describes one system, but it ships in two milestones ([roadmap.md](../implementation/roadmap.md), [DECISIONS.md](../DECISIONS.md) 2026-06-03). **M4 · override application** builds the *apply* path: the cascade wired **live** into compose, the four delta kinds (`scalar-set` · `structural-op` · `slot-fill` · `tracked-fork`) authored via the `jigc config` verbs (or by hand in delta form), the typed knob surface, and the `{{fill:<id>}}` extension point — so a project composes differently from the pack default. **M5 · upgrade reconciliation** builds the *inherit-upstream* path: the [`override-default` probe + `jigc upgrade`](#upgrade-reconciliation--override-default-m5), the stateless `base-hash` **compare**, the 3-way-merge proposal, and the **demotion-lock floor enforcement**. The split rule for content below: M4 *records* every content-bearing delta's `base-version`+`base-hash` (so the data is there); M5 is the only consumer that *reads* them. Sections that are M5-only are marked **(M5)**.
+> **Build-scope split — M4 (apply) vs M5 (reconcile).** This doc describes one system, but it ships in two milestones ([roadmap.md](../implementation/roadmap.md), [DECISIONS.md](../DECISIONS.md) 2026-06-03). **M4 · override application** builds the *apply* path: the cascade wired **live** into compose, the four delta kinds (`scalar-set` · `structural-op` · `slot-fill` · `tracked-fork`) authored via the `jigc config` verbs (or by hand in delta form), the typed knob surface, and the `{{fill:<id>}}` extension point — so a project composes differently from the pack default. **M5 · upgrade reconciliation** builds the *inherit-upstream* path: the [`override-default` probe + `jigc upgrade`](#upgrade-reconciliation--override-default-m5), the stateless `base-hash` **compare**, and a `conflict` that **blocks with a review route** (keep / re-target / drop). **M6 · severity tuning** then adds cascade-assigned severities (`override-default` ships blocking-by-default in M5) + the **demotion-lock floor enforcement**. The true **3-way-merge authoring** on `conflict` is **deferred past both** (the stateless design keeps only the base-*hash*, not the base-*content* a merge needs — [DECISIONS.md](../DECISIONS.md) 2026-06-03). The split rule for content below: M4 *records* every content-bearing delta's `base-version`+`base-hash` (so the data is there); M5 is the only consumer that *reads* them. Sections marked **(M5)** ship in M5; severity-floor material is **(M6)**.
 
 ## The cascade
 
@@ -46,7 +46,7 @@ A layer's deltas live in a **config-format manifest**; content lives in **native
 ```yaml
 # project config — deltas against pack-default v1
 scalar:
-  validation.doc-code.severity: advisory   # M4 accepts this; the demotion-lock floor is (M5)
+  validation.doc-code.severity: advisory   # M4 accepts this; the demotion-lock floor is (M6)
 
 deltas:
   - kind: insert-step
@@ -78,7 +78,7 @@ default-workflow:
 validation.doc-code.severity:
   type: enum
   of: [blocking, warning, advisory]
-  default: warning            # demotion-lock floor enforcement is (M5)
+  default: warning            # demotion-lock floor enforcement is (M6)
 ```
 
 The loader builds the pack-default layer's scalar surface from this file — both the **closed key set** (what `scalar-set` may target) and each knob's **default value**. A knob's default is **materialized by the resolver** seeding the resolved map from `knobs.yaml` before applying any delta; this is the knob's own mechanism and is *independent* of the doc-instance `Field.default` (which a created document does not yet materialize — an orthogonal write-path defect, [DECISIONS.md](../DECISIONS.md) 2026-06-03).
@@ -89,7 +89,7 @@ The loader builds the pack-default layer's scalar surface from this file — bot
 
 An open surface is rejected for the same reason untracked forks are: a silent, unvalidatable, unreconcilable typo'd key is exactly the failure mode the whole system exists to kill.
 
-**Locked keys (enforcement: M5).** Some scalar keys are declared but **demotion-locked** — their value can be set above a floor but not below it. The validation severity inventory ([validation.md](validation.md) → Severity inventory) names the intrinsic checks whose `validation.<probe>.<check>.severity` keys cannot be demoted below `blocking`. A `scalar-set` attempting to demote a locked key is rejected at cascade resolution as a config-conformance error (the `scalar-set` is logged, not applied; visible via `--explain`). Same delta machinery — just with a per-key floor declared by the pack. M4 ships the severity *knobs themselves* as ordinary `scalar-set`-able typed keys; the **floor enforcement** rides with M5, alongside its only consumer — the tunable `override-default` severities.
+**Locked keys (enforcement: M6).** Some scalar keys are declared but **demotion-locked** — their value can be set above a floor but not below it. The validation severity inventory ([validation.md](validation.md) → Severity inventory) names the intrinsic checks whose `validation.<probe>.<check>.severity` keys cannot be demoted below `blocking`. A `scalar-set` attempting to demote a locked key is rejected at cascade resolution as a config-conformance error (the `scalar-set` is logged, not applied; visible via `--explain`). Same delta machinery — just with a per-key floor declared by the pack. M4 ships the severity *knobs themselves* as ordinary `scalar-set`-able typed keys; the **cascade-assigned severities + floor enforcement** ride with **M6 · severity tuning**, alongside the first probe with tunable checks (`override-default`, which itself ships blocking-by-default in M5).
 
 ## The `{{fill:}}` placeholder — slot-fill targets
 
@@ -250,7 +250,9 @@ A delta conflicts *only when it depends on content that changed upstream*:
 
 Because every content-bearing delta carries its target's **base-hash**, change-detection is a pure compare (`v2 hash ≠ recorded base-hash`) — **stateless**, no old pack kept around.
 
-The probe emits validation findings with routes: `orphaned` → a `run-command` route to remove or re-target the delta; `conflict` → the merge path — **the agent drafts a 3-way-merge proposal through the CLI, the human confirms, the CLI never calls a model**. `orphaned`/`conflict` default to blocking (cascade-tunable). The upgrade is *guarded by the report*: re-apply, classify, resolve, complete — "no upstream change silently lost; no override silently broken."
+The probe emits validation findings with routes: `orphaned` → a route to remove or re-target the delta; `conflict` → **blocks with a review route** naming what changed and the options (keep your override / re-target / drop). Both ship **blocking-by-default** in M5 (cascade-tunability of these severities is M6 · severity tuning). The upgrade is *guarded by the report*: re-apply, classify, resolve, complete — "no upstream change silently lost; no override silently broken."
+
+**3-way-merge authoring is deferred (past M5 and M6).** The fuller story — *the agent drafts a 3-way-merge proposal through the CLI, the human confirms, the CLI never calls a model* — needs the base-*content* (the v1 ancestor) to merge against, but the stateless design keeps only the base-*hash*. So M5 **detects and surfaces** the conflict (the load-bearing value: every divergence surfaces at a known moment) and routes it to human review, exactly as `file_state` blocks an OOB conflict today without merging ([reconciliation.md](reconciliation.md)); building the diff3/merge surface (and whatever base-content retention it needs) is a separable later step, not part of proving the inherit-upstream half.
 
 ## Open questions
 
