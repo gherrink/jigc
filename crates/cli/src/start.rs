@@ -605,7 +605,22 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
     let source = PackStepSource { pack: &pack };
 
-    let findings = compose::workflow_refs(&workflow_bytes, &source, &commands, &ctx);
+    // Resume composes the task's pinned workflow, but still over the *live* cascade —
+    // a project `slot-fill` (or the pack's empty default for an unfilled
+    // `{{fill:<id>}}` point) applies at phase 5 on re-compose exactly as on the fresh
+    // front door, else a `{{fill:}}` point would survive resume to phase 8 unresolved.
+    // The fill-aware gate runs the same M4 orphan + survivor checks (`overrides.md` →
+    // The `{{fill:}}` placeholder); a no-fill cascade is the identity.
+    let (_resolved, overrides) = resolve_cascade(&pack, &project_config)?;
+    let findings = compose::workflow_refs_with_fills(
+        &workflow_bytes,
+        &[],
+        &overrides.slot_fills,
+        &overrides.fills,
+        &source,
+        &commands,
+        &ctx,
+    );
     if let Some(finding) = findings
         .into_iter()
         .find(|f| f.severity == Severity::Blocking)
@@ -627,7 +642,16 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
         overlay: &overlay,
     };
 
-    compose::compose_with_store(&def, &source, &commands, &ctx, Some(&store))
+    // Phase 5 — apply the cascade's slot-fills to each fetched step body before
+    // include expansion, identical to the fresh-compose path ([`compose_core`]): an
+    // unfilled `{{fill:<id>}}` collapses to its empty pack default, a filled one
+    // splices the project content. An empty `fills` is the identity, so the no-fill
+    // resume stays byte-identical to the pre-`{{fill:}}`-point baseline.
+    let filled = FillStepSource {
+        inner: &source,
+        fills: &overrides.fills,
+    };
+    compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
         .map_err(finding_to_err)
 }
 

@@ -204,6 +204,8 @@ mod tests {
         If a decision is warranted, create an ADR and author its slots:
 
         {{ cli.create-adr }}
+
+        {{fill: extra-guidance}}
         "###);
     }
 

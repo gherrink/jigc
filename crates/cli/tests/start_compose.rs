@@ -389,8 +389,9 @@ fn orphaned_slot_fill_blocks_compose_with_its_route() {
     // The T4 wiring also runs the M4 `workflow-refs` fill checks live in the gate: a
     // `slot-fill` targeting a `<fill-id>` no resolved step body declares is a blocking
     // `slot-fill-orphan` finding, surfaced non-zero with its repair route — proven
-    // through the binary (no project step declares `extra-guidance`, so the point is
-    // orphaned).
+    // through the binary. The target `nonesuch` is undeclared by any resolved body
+    // (the pack `implement` step declares only `extra-guidance` as of T6), so it is
+    // orphaned.
     let repo = TempDir::new("slot-fill-orphan");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -401,16 +402,13 @@ fn orphaned_slot_fill_blocks_compose_with_its_route() {
         "scalar:\n  default-workflow: single-task\n\
          deltas:\n\
          \x20 - kind: slot-fill\n\
-         \x20   target: step:implement#extra-guidance\n\
-         \x20   content: fills/extra-guidance.md\n",
+         \x20   target: step:implement#nonesuch\n\
+         \x20   content: fills/nonesuch.md\n",
     )
     .expect("write project manifest with an orphaned slot-fill delta");
     fs::create_dir_all(config.join("fills")).expect("mk fills/");
-    fs::write(
-        config.join("fills").join("extra-guidance.md"),
-        "Some guidance.\n",
-    )
-    .expect("write the native fill content");
+    fs::write(config.join("fills").join("nonesuch.md"), "Some guidance.\n")
+        .expect("write the native fill content");
 
     let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
     let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
@@ -421,7 +419,7 @@ fn orphaned_slot_fill_blocks_compose_with_its_route() {
         out.status,
     );
     assert!(
-        stderr.contains("extra-guidance") && stderr.contains("route:"),
+        stderr.contains("nonesuch") && stderr.contains("route:"),
         "the orphan block must name the fill point and carry a route; got:\n{stderr}",
     );
 }

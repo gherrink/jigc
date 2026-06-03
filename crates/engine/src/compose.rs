@@ -2975,15 +2975,24 @@ reference — make your consequences explain what changes:
         }
     }
 
-    /// The four shipped single-task step bodies, byte-identical to the pack files
-    /// (the plain ones are asserted equal to the in-module consts above).
+    /// The four shipped single-task step bodies as the **post-phase-5** compose path
+    /// feeds them — byte-identical to the pack files, except the pack `implement`
+    /// step's `{{fill: extra-guidance}}` extension point is resolved through phase 5
+    /// with an empty cascade (its empty pack default, the unfilled case), exactly as
+    /// the CLI's `FillStepSource` does before this engine `compose`/`workflow_refs`
+    /// runs. Without it the lone `{{fill:}}` point would reach phase 8 unresolved —
+    /// the fill checks are the fill-aware [`workflow_refs_with_fills`]'s job, not the
+    /// fill-blind compose these clean-body tests exercise.
     fn single_task_source() -> MapSource {
+        let implement = apply_slot_fills(
+            "implement",
+            include_str!("../../cli/pack/steps/implement.yaml"),
+            &ResolvedFills::new(),
+        )
+        .expect("empty-fill phase 5 over the pack implement body");
         MapSource::new(&[
             ("locate", STEP_LOCATE),
-            (
-                "implement",
-                include_str!("../../cli/pack/steps/implement.yaml"),
-            ),
+            ("implement", &implement),
             ("superseded-context", STEP_SUPERSEDED),
             (
                 "finalize",
@@ -3565,12 +3574,17 @@ reference — make your consequences explain what changes:
         let ctx = compose_ctx();
         // `project-implement` re-includes the pack `implement` (a different id), per
         // flow 3a — augmenting it, not forking. No cycle: implement does not loop back.
+        // The pack `implement` body is fed post-phase-5 (empty-fill default), as the
+        // live compose path does, so its `{{fill:}}` point does not reach phase 8.
+        let implement = apply_slot_fills(
+            "implement",
+            include_str!("../../cli/pack/steps/implement.yaml"),
+            &ResolvedFills::new(),
+        )
+        .expect("empty-fill phase 5 over the pack implement body");
         let src = MapSource::new(&[
             ("locate", STEP_LOCATE),
-            (
-                "implement",
-                include_str!("../../cli/pack/steps/implement.yaml"),
-            ),
+            ("implement", &implement),
             (
                 "project-implement",
                 "{{ include: step:implement }}\n\nRun the project lint probe before you finalize.\n",
