@@ -35,6 +35,13 @@ use crate::finding::{Finding, Location};
 /// share the grammar but are out of this increment's scope.
 const WORKFLOW_SCHEME: &str = "workflow";
 
+/// The scheme every `slot-fill` target carries — the literal `step` in
+/// `step:<id>#<fill-id>`. A slot-fill addresses a `{{fill:<id>}}` extension point
+/// in a *step body*, a namespace distinct from the `workflow:` include-list
+/// target and the content [`crate::address::Address`] (`design/overrides.md` →
+/// Delta targets).
+const STEP_SCHEME: &str = "step";
+
 /// Where a `structural-op` delta attaches in a workflow's include list — the
 /// **anchor**, distinct from the content [`crate::address::Address`] (which is
 /// instance-scoped, `type:slug#unit/...`). A definition-target names *"a list
@@ -268,6 +275,137 @@ impl StructuralDelta {
             | StructuralDelta::Remove { target } => target,
         }
     }
+}
+
+/// A parsed `slot-fill` target: which step's body, and which `{{fill:<id>}}`
+/// extension point in it. The load-bearing distinction from both the
+/// [`StructuralTarget`] (which names a `workflow:` *include-list entry*) and the
+/// content [`crate::address::Address`] (instance-scoped, `type:slug#unit/...`):
+/// `step:implement#extra-guidance` names *"the `{{fill: extra-guidance}}` point in
+/// the `implement` step body"* — `implement` is a **step id**, `extra-guidance` a
+/// **fill-id**, a namespace separate from include lists and document slices
+/// (`design/overrides.md` → Delta targets). Pure structure; no I/O, no cascade
+/// consulted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotFillTarget {
+    /// The step id whose body carries the `{{fill:<id>}}` point.
+    pub step_id: String,
+    /// The fill-id naming the `{{fill:<id>}}` extension point in that body.
+    pub fill_id: String,
+}
+
+/// Why a [`SlotFillTarget`] failed to parse. Every variant carries the text for a
+/// located, blocking [`Finding`]; hostile input is never a panic
+/// (`design/overrides.md` → The `{{fill:}}` placeholder).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlotFillTargetParseError {
+    /// The scheme before `:` was not `step` (e.g. a `workflow:` include-list
+    /// target or a `type:slug` content address is not a slot-fill target).
+    WrongScheme,
+    /// No `:` separating scheme from id.
+    MissingColon,
+    /// No `#` separating the step id from the fill-id — a bare `step:<id>` does
+    /// not name an extension point.
+    MissingHash,
+    /// The step id (before `#`) was empty.
+    EmptyStepId,
+    /// The fill-id (after `#`) was empty (a trailing `#`).
+    EmptyFillId,
+    /// A target id contained a non-ASCII byte (ids are ASCII).
+    NonAscii,
+}
+
+impl SlotFillTargetParseError {
+    /// The stable machine code for this error's [`Finding`].
+    fn code(self) -> &'static str {
+        match self {
+            SlotFillTargetParseError::WrongScheme => "slot-fill-target.wrong-scheme",
+            SlotFillTargetParseError::MissingColon => "slot-fill-target.missing-colon",
+            SlotFillTargetParseError::MissingHash => "slot-fill-target.missing-hash",
+            SlotFillTargetParseError::EmptyStepId => "slot-fill-target.empty-step-id",
+            SlotFillTargetParseError::EmptyFillId => "slot-fill-target.empty-fill-id",
+            SlotFillTargetParseError::NonAscii => "slot-fill-target.non-ascii",
+        }
+    }
+
+    /// The human-readable message for this error's [`Finding`].
+    fn message(self) -> &'static str {
+        match self {
+            SlotFillTargetParseError::WrongScheme => "slot-fill target scheme must be `step`",
+            SlotFillTargetParseError::MissingColon => "slot-fill target needs a `step:<id>` scheme",
+            SlotFillTargetParseError::MissingHash => {
+                "slot-fill target needs a `#<fill-id>` extension point"
+            }
+            SlotFillTargetParseError::EmptyStepId => "slot-fill target has an empty step id",
+            SlotFillTargetParseError::EmptyFillId => "slot-fill target `#<fill-id>` is empty",
+            SlotFillTargetParseError::NonAscii => "slot-fill target ids must be ASCII",
+        }
+    }
+
+    /// Project to a located, blocking [`Finding`] — these targets are short config
+    /// strings parsed positionally, so the location is the string head.
+    fn into_finding(self) -> Finding {
+        Finding::blocking(self.code(), self.message(), Location::at(1, 1))
+    }
+}
+
+impl SlotFillTarget {
+    /// Parse a slot-fill target from a `step:<id>#<fill-id>` string.
+    ///
+    /// Hostile input — empty step id, empty fill-id, a missing `#`, a
+    /// `workflow:` / content-address scheme, non-ASCII — returns a located,
+    /// blocking [`Finding`], never a panic. Pure: no I/O, no cascade consulted
+    /// (`design/overrides.md` → The `{{fill:}}` placeholder, Delta targets).
+    pub fn parse(target: &str) -> Result<Self, Finding> {
+        Self::parse_inner(target).map_err(SlotFillTargetParseError::into_finding)
+    }
+
+    fn parse_inner(target: &str) -> Result<Self, SlotFillTargetParseError> {
+        if !target.is_ascii() {
+            return Err(SlotFillTargetParseError::NonAscii);
+        }
+
+        let (reference, fill_id) = target
+            .split_once('#')
+            .ok_or(SlotFillTargetParseError::MissingHash)?;
+
+        let (scheme, step_id) = reference
+            .split_once(':')
+            .ok_or(SlotFillTargetParseError::MissingColon)?;
+        if scheme != STEP_SCHEME {
+            return Err(SlotFillTargetParseError::WrongScheme);
+        }
+        if step_id.is_empty() {
+            return Err(SlotFillTargetParseError::EmptyStepId);
+        }
+        if fill_id.is_empty() {
+            return Err(SlotFillTargetParseError::EmptyFillId);
+        }
+
+        Ok(SlotFillTarget {
+            step_id: step_id.to_owned(),
+            fill_id: fill_id.to_owned(),
+        })
+    }
+}
+
+/// One `slot-fill` delta: which `{{fill:<id>}}` extension point to fill, and the
+/// native fill file whose body supplies the content. A **separate delta kind**
+/// from [`StructuralDelta`] — slot-fill operates on a *step body* at phase 5, not
+/// on a workflow's include list at phase 4 (`design/overrides.md` → The ladder,
+/// Resolution algorithm).
+///
+/// `content_id` is the native fill file's id — its basename, the same
+/// "id = filename" rule (`.jigc/config/fills/<id>.md` → `content_id = <id>`;
+/// `design/overrides.md` → Authoring deltas). The bytes themselves are loaded by
+/// the phase-5 application pass (a later task), not held here. Pure data; no I/O,
+/// no cascade consulted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotFillDelta {
+    /// The `step:<id>#<fill-id>` extension point this delta fills.
+    pub target: SlotFillTarget,
+    /// The native fill file's id (basename) whose body supplies the content.
+    pub content_id: String,
 }
 
 /// Identifies one cascade layer by precedence. `Project` is most-specific and
@@ -620,6 +758,74 @@ mod tests {
         ] {
             let finding = StructuralTarget::parse(target, anchor.clone())
                 .expect_err("hostile input is a Finding");
+            assert_eq!(finding.severity, Severity::Blocking, "for {target:?}");
+            assert_eq!(finding.code, code, "for {target:?}");
+            assert_eq!(
+                finding.location,
+                Some(Location::at(1, 1)),
+                "hostile input is located, for {target:?}",
+            );
+        }
+    }
+
+    /// `step:<id>#<fill-id>` parses to its `{step_id, fill_id}` shape, carrying
+    /// the step id and fill-id from either side of the `#`.
+    #[test]
+    fn parses_slot_fill_target() {
+        let target =
+            SlotFillTarget::parse("step:implement#extra-guidance").expect("well-formed target");
+
+        assert_eq!(
+            target,
+            SlotFillTarget {
+                step_id: "implement".to_owned(),
+                fill_id: "extra-guidance".to_owned(),
+            },
+        );
+    }
+
+    /// A [`SlotFillDelta`] pairs a parsed target with the native fill file's
+    /// content id (its basename).
+    #[test]
+    fn slot_fill_delta_pairs_target_with_content_id() {
+        let delta = SlotFillDelta {
+            target: SlotFillTarget::parse("step:implement#extra-guidance").expect("parses"),
+            content_id: "extra-guidance".to_owned(),
+        };
+
+        assert_eq!(delta.target.step_id, "implement");
+        assert_eq!(delta.target.fill_id, "extra-guidance");
+        assert_eq!(delta.content_id, "extra-guidance");
+    }
+
+    /// Hostile slot-fill-target input is a located, blocking [`Finding`] (never a
+    /// panic), carrying the stable per-cause `code` at the string head.
+    #[test]
+    fn hostile_slot_fill_target_is_a_located_blocking_finding() {
+        for (target, code) in [
+            // empty step id
+            ("step:#extra-guidance", "slot-fill-target.empty-step-id"),
+            // empty fill-id (trailing hash)
+            ("step:implement#", "slot-fill-target.empty-fill-id"),
+            // missing `#` — a bare `step:<id>` names no extension point
+            ("step:implement", "slot-fill-target.missing-hash"),
+            // missing colon entirely (and no `#`)
+            ("implement", "slot-fill-target.missing-hash"),
+            // a `workflow:` include-list scheme is not a slot-fill target
+            (
+                "workflow:single-task#validate",
+                "slot-fill-target.wrong-scheme",
+            ),
+            // a `type:slug` content address is not a slot-fill target
+            ("adr:cache#decision", "slot-fill-target.wrong-scheme"),
+            // missing colon but present `#` — no scheme separator
+            ("implement#extra-guidance", "slot-fill-target.missing-colon"),
+            // non-ASCII in the step id
+            ("step:naïve#extra-guidance", "slot-fill-target.non-ascii"),
+            // non-ASCII in the fill-id
+            ("step:implement#naïve", "slot-fill-target.non-ascii"),
+        ] {
+            let finding = SlotFillTarget::parse(target).expect_err("hostile input is a Finding");
             assert_eq!(finding.severity, Severity::Blocking, "for {target:?}");
             assert_eq!(finding.code, code, "for {target:?}");
             assert_eq!(
