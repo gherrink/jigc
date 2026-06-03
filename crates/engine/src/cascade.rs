@@ -618,20 +618,6 @@ impl Resolved {
             })
     }
 
-    /// The layer that won a scalar key by applying a `scalar-set` for it, or
-    /// `None` if the key resolved from the pack-default base (no override). This
-    /// is the `--explain` layer-1 per-key provenance — distinct from
-    /// [`Resolved::scalar`], which always returns the resolved *value*.
-    pub fn scalar_provenance(&self, key: &str) -> Option<LayerKind> {
-        self.scalar_provenance.get(key).copied()
-    }
-
-    /// How many scalar keys an override layer set (the `overrides applied: N`
-    /// count in the `--explain` tree). Zero on the no-override path.
-    pub fn scalar_override_count(&self) -> usize {
-        self.scalar_provenance.len()
-    }
-
     /// Each overridden scalar key paired with its resolved value and the layer
     /// that won it — the per-knob provenance the `--explain` tree's layer-1 lines
     /// render (`design/workflow-dialect.md` → `--explain` output contract: "any
@@ -1093,12 +1079,7 @@ mod tests {
 
         let resolved = resolve(&pack, None, None).expect("resolves");
 
-        assert_eq!(resolved.scalar_override_count(), 0);
-        assert_eq!(resolved.scalar_provenance("default-workflow"), None);
-        assert_eq!(
-            resolved.scalar_provenance("validation.doc-code.severity"),
-            None,
-        );
+        assert_eq!(resolved.scalar_overrides().count(), 0);
     }
 
     /// A project `scalar-set` records the winning layer for that key
@@ -1112,14 +1093,10 @@ mod tests {
 
         let resolved = resolve(&pack, None, Some(&project)).expect("resolves");
 
+        let overrides: Vec<_> = resolved.scalar_overrides().collect();
         assert_eq!(
-            resolved.scalar_provenance("default-workflow"),
-            Some(LayerKind::Project),
-        );
-        assert_eq!(resolved.scalar_override_count(), 1);
-        assert_eq!(
-            resolved.scalar_provenance("validation.doc-code.severity"),
-            None,
+            overrides,
+            vec![("default-workflow", "single-task", LayerKind::Project)],
         );
     }
 
@@ -1135,11 +1112,11 @@ mod tests {
 
         let resolved = resolve(&pack, Some(&team), Some(&project)).expect("resolves");
 
+        let overrides: Vec<_> = resolved.scalar_overrides().collect();
         assert_eq!(
-            resolved.scalar_provenance("default-workflow"),
-            Some(LayerKind::Team),
+            overrides,
+            vec![("default-workflow", "team-choice", LayerKind::Team)],
         );
-        assert_eq!(resolved.scalar_override_count(), 1);
     }
 
     /// Byte-safe-read guard: adding the provenance surface does not perturb the
