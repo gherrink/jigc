@@ -18,6 +18,7 @@ use crate::pack::EmbeddedPack;
 use crate::start::selectable_workflows;
 use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
+use engine::knobs::load_knobs;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::result::{Catalog, OrientationView};
 use std::collections::BTreeMap;
@@ -57,8 +58,8 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
         .map(|id| id.as_str().to_owned())
         .collect();
     let pack_id = pack_id_from_config(pack)?;
-    let pack_default =
-        PackDefaultLayer::new(pack_id, pack.pack_version(), BTreeMap::new(), pack_files);
+    let scalars = pack_default_scalars(pack)?;
+    let pack_default = PackDefaultLayer::new(pack_id, pack.pack_version(), scalars, pack_files);
     let project = OverrideLayer::empty().config_path(project_config.display().to_string());
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
 
@@ -89,6 +90,20 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
         .and_then(serde_yaml_ng::Value::as_str)
         .map(str::to_owned)
         .with_context(|| format!("`config/defaults` declares no `{PACK_ID_KEY}`"))
+}
+
+/// Seed the pack-default layer's scalar surface from the pack's `config/knobs`
+/// declaration: the closed key set plus each knob's materialized default. This is
+/// the base map the cascade resolves over (`overrides.md` → Scalar knobs: the
+/// loader builds the pack-default layer's scalar surface). It replaces the empty
+/// feed orientation used before the knob surface existed, so a no-override
+/// `resolved.scalar(...)` returns the declared default rather than `None`.
+fn pack_default_scalars(pack: &dyn PackSource) -> Result<BTreeMap<String, String>> {
+    let bytes = pack
+        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+        .context("the pack must ship a `config/knobs` declaration")?;
+    let knobs = load_knobs(&bytes).context("`config/knobs` is malformed")?;
+    Ok(knobs.base_scalars())
 }
 
 #[cfg(test)]
@@ -130,7 +145,9 @@ mod tests {
                     ResourceId::from("single-task"),
                     ResourceId::from("quick-fix"),
                 ],
-                PackResourceKind::Config => vec![ResourceId::from("defaults")],
+                PackResourceKind::Config => {
+                    vec![ResourceId::from("defaults"), ResourceId::from("knobs")]
+                }
                 _ => Vec::new(),
             }
         }
@@ -152,6 +169,10 @@ mod tests {
                     self.pack_id
                 )
                 .into_bytes()),
+                (PackResourceKind::Config, "knobs") => Ok(
+                    b"default-workflow:\n  type: enum\n  of: [router, single-task, quick-fix]\n  default: router\n"
+                        .to_vec(),
+                ),
                 _ => Err(PackError::NotFound {
                     kind,
                     id: id.clone(),

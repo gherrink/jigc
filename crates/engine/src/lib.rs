@@ -19,6 +19,7 @@ pub mod file_state;
 pub mod finalize;
 pub mod finding;
 pub mod index;
+pub mod knobs;
 pub mod parse;
 pub mod registry;
 pub mod schema;

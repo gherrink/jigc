@@ -1,0 +1,199 @@
+//! The pack's closed, typed **scalar-knob surface** — loaded from `config/knobs.yaml`.
+//!
+//! A knob is a pack-declared, typed field (`design/overrides.md` → Scalar knobs
+//! are config-level fields). The on-disk declaration is one entry per settable
+//! key, reusing the document-type [`FieldType`](crate::schema) vocabulary so a
+//! `scalar-set` is adjudicated by the **same** [`crate::write::check_value`] the
+//! doc write path uses — no second type system.
+//!
+//! The loader builds the pack-default layer's scalar surface from this file: the
+//! **closed key set** (what `scalar-set` may target) plus each knob's
+//! **materialized default**. The default is materialized by *this loader* seeding
+//! the base scalar map — independent of the doc-instance `Field.default` (an
+//! orthogonal, still-unfixed write-path defect, `DECISIONS.md` 2026-06-03). A
+//! knob whose declaration carries no `default` cannot seed the closed surface
+//! deterministically, so it is rejected at load.
+
+use crate::schema::Field;
+use std::collections::BTreeMap;
+use thiserror::Error;
+
+/// The on-disk shape of one knob entry: the [`FieldType`](crate::schema)-reusing
+/// `{type, of?, default}` triple, keyed in the file by the knob's settable key.
+/// Deserialized then folded into a [`crate::schema::Field`] (id = the map key) so
+/// adjudication reuses `check_value`.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KnobDecl {
+    #[serde(rename = "type")]
+    ty: crate::schema::FieldType,
+    #[serde(default)]
+    of: Option<Vec<String>>,
+    #[serde(default)]
+    default: Option<String>,
+}
+
+/// The parsed knob surface: the declared knobs as `(key, Field)` in sorted key
+/// order, each carrying its materialized default. This is what seeds the
+/// pack-default layer (closed key set + base scalar values).
+#[derive(Debug)]
+pub struct KnobSet {
+    /// One [`Field`] per declared knob, id = the knob key, in sorted key order.
+    fields: Vec<Field>,
+    /// Each knob's materialized default value, keyed by knob key — the base
+    /// scalar map the resolver starts from.
+    defaults: BTreeMap<String, String>,
+}
+
+impl KnobSet {
+    /// The materialized base scalar map — each declared key → its default value.
+    /// This is fed verbatim to [`crate::cascade::PackDefaultLayer::new`] as the
+    /// closed, pre-seeded scalar surface.
+    pub fn base_scalars(&self) -> BTreeMap<String, String> {
+        self.defaults.clone()
+    }
+
+    /// The declared [`Field`] for `key`, or `None` if it is not a knob. The
+    /// write path adjudicates a `scalar-set` against this with `check_value`.
+    pub fn field(&self, key: &str) -> Option<&Field> {
+        self.fields.iter().find(|f| f.id == key)
+    }
+}
+
+/// Why loading the knob surface failed.
+#[derive(Debug, Error)]
+pub enum KnobError {
+    /// The bytes were not valid UTF-8 (declarations are text).
+    #[error("knobs.yaml is not valid UTF-8")]
+    NotUtf8,
+
+    /// The YAML did not match the knob-declaration model (unknown key, bad type).
+    #[error("malformed knobs.yaml: {0}")]
+    Malformed(#[from] serde_yaml_ng::Error),
+
+    /// A knob carried no `default` — it cannot seed the closed scalar surface.
+    #[error("knob `{0}` declares no `default` (a knob must materialize a base value)")]
+    MissingDefault(String),
+}
+
+/// Parse the closed knob surface from raw `config/knobs.yaml` bytes.
+///
+/// Each top-level key is a settable knob; its `{type, of?, default}` body folds
+/// into a [`Field`] (id = the key) reusing the document-type field model. Every
+/// knob must declare a `default` (the value the resolver seeds the base map with);
+/// an absent default is a [`KnobError::MissingDefault`].
+pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
+    let text = std::str::from_utf8(bytes).map_err(|_| KnobError::NotUtf8)?;
+    let decls: BTreeMap<String, KnobDecl> = serde_yaml_ng::from_str(text)?;
+
+    let mut fields = Vec::with_capacity(decls.len());
+    let mut defaults = BTreeMap::new();
+    for (key, decl) in decls {
+        let default = decl
+            .default
+            .ok_or_else(|| KnobError::MissingDefault(key.clone()))?;
+        defaults.insert(key.clone(), default);
+        fields.push(Field {
+            id: key,
+            ty: decl.ty,
+            of: decl.of,
+            default: None,
+            set: None,
+            to: None,
+            card: None,
+            inverse: None,
+            inverse_card: None,
+        });
+    }
+
+    Ok(KnobSet { fields, defaults })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cascade::{self, PackDefaultLayer};
+    use crate::schema::FieldType;
+    use crate::write::check_value;
+
+    /// The shipped pack knob surface, loaded from the embedded source tree so the
+    /// test pins exactly the bytes that ship.
+    const KNOBS_YAML: &[u8] = include_bytes!("../../cli/pack/config/knobs.yaml");
+
+    /// The T2 done-criterion: loading the embedded `knobs.yaml`, building the
+    /// pack-default layer from its base scalars, and resolving yields the declared
+    /// default for `default-workflow` — and the resolved key set is **exactly** the
+    /// declared knob keys (the closed surface). No team/project layer is present,
+    /// so resolution returns the materialized base values verbatim.
+    #[test]
+    fn loaded_knobs_seed_the_pack_default_scalar_surface() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        let pack = PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new());
+        let resolved = cascade::resolve(&pack, None, None).expect("resolves");
+
+        // The materialized default surfaces through the cascade read.
+        assert_eq!(resolved.scalar("default-workflow"), Some("router"));
+        assert_eq!(
+            resolved.scalar("validation.workflow-refs.severity"),
+            Some("blocking"),
+        );
+        assert_eq!(
+            resolved.scalar("validation.file-state.severity"),
+            Some("blocking"),
+        );
+
+        // The closed surface is exactly the declared keys — no more, no less.
+        let base = knobs.base_scalars();
+        let keys: Vec<&str> = base.keys().map(String::as_str).collect();
+        assert_eq!(
+            keys,
+            vec![
+                "default-workflow",
+                "validation.file-state.severity",
+                "validation.workflow-refs.severity",
+            ],
+        );
+        // `pack-id` is pack identity, never a knob — it is not in the surface.
+        assert!(knobs.field("pack-id").is_none());
+    }
+
+    /// Each declared knob folds into a [`Field`] adjudicated by the same
+    /// `check_value` the doc write path uses: a declared enum member passes, a
+    /// non-member is rejected — proving no second type system.
+    #[test]
+    fn knob_fields_adjudicate_via_check_value() {
+        use crate::field_block::Value;
+
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        let field = knobs.field("default-workflow").expect("declared knob");
+        assert_eq!(field.ty, FieldType::Enum);
+
+        check_value(field, &Value::Scalar("single-task".to_owned()))
+            .expect("a declared enum member passes");
+        check_value(field, &Value::Scalar("not-a-workflow".to_owned()))
+            .expect_err("a non-member is rejected");
+    }
+
+    /// A knob declaration with no `default` cannot seed the base surface, so it is
+    /// a typed load error (not a silent empty seed that would break the read-side
+    /// determinism invariant).
+    #[test]
+    fn knob_without_default_is_a_typed_error() {
+        let yaml = b"some-knob:\n  type: string\n";
+        let err = load_knobs(yaml).expect_err("a defaultless knob errors");
+        assert!(
+            matches!(err, KnobError::MissingDefault(ref k) if k == "some-knob"),
+            "expected MissingDefault, got {err:?}",
+        );
+    }
+
+    /// An unknown key in a knob body is rejected (the `deny_unknown_fields` guard),
+    /// so a typo'd declaration surfaces as a typed error, never a silent drop.
+    #[test]
+    fn unknown_knob_body_key_is_a_typed_error() {
+        let yaml = b"some-knob:\n  type: string\n  defualt: x\n";
+        let err = load_knobs(yaml).expect_err("unknown body key errors");
+        assert!(matches!(err, KnobError::Malformed(_)), "got {err:?}");
+    }
+}
