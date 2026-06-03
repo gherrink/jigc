@@ -8,6 +8,7 @@
 // host-file injectors; `setup` orchestrates them into the `jigc setup` install.
 mod adapter;
 mod cli;
+mod config;
 mod doc;
 mod locate;
 mod orient;

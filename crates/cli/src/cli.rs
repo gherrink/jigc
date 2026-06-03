@@ -7,6 +7,7 @@
 //! `implementation/module-layout.md` → Renderers (format selection) and
 //! `design/write-commands.md` → Task origination (bare `jigc start`).
 
+use crate::config::ConfigCommand;
 use crate::doc::DocCommand;
 use crate::orient;
 use crate::render;
@@ -85,6 +86,15 @@ pub enum Command {
         verb: TaskCommand,
     },
 
+    /// The cascade-authoring surface — `jigc config <verb>` records deltas into the
+    /// project layer's `.jigc/config/manifest.yaml` (`design/overrides.md` →
+    /// Authoring deltas). Only `set <key> <value>` (a `scalar-set`, write-time
+    /// `check_value`-adjudicated) exists this increment.
+    Config {
+        #[command(subcommand)]
+        verb: ConfigCommand,
+    },
+
     /// The adapter install. Generates the Claude Code adapter from the embedded
     /// profile: writes the managed `.jigc/AGENT.md` bootstrap and a bare
     /// `@.jigc/AGENT.md` reference into `CLAUDE.md`, initializes the project layer
@@ -130,6 +140,7 @@ impl Cli {
             } => unreachable!("clap rejects `<intent>` together with `--task`"),
             Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
+            Command::Config { verb } => run_config(verb),
             Command::Setup => run_setup(self.format),
         }
     }
@@ -175,6 +186,21 @@ fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
         }
     };
     verb.dispatch(&cwd, format)
+}
+
+/// Dispatch a `jigc config <verb>` cascade-authoring write against the current
+/// working directory. A `set` records a `scalar-set` into the project manifest,
+/// adjudicated at write time; a blocking adjudication finding surfaces on stderr
+/// (with its route) and exits non-zero (`design/overrides.md` → Authoring deltas).
+fn run_config(verb: ConfigCommand) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    verb.dispatch(&cwd)
 }
 
 /// Dispatch a `jigc doc <verb>` write against the active task in the current
@@ -398,6 +424,28 @@ mod cli_parse {
     fn setup_parses() {
         let cli = Cli::try_parse_from(["jigc", "setup"]).expect("`jigc setup` parses");
         assert_eq!(cli.command, Command::Setup);
+    }
+
+    #[test]
+    fn config_set_parses_the_key_and_value() {
+        let cli = Cli::try_parse_from(["jigc", "config", "set", "default-workflow", "single-task"])
+            .expect("`jigc config set <key> <value>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Config {
+                verb: ConfigCommand::Set {
+                    key: "default-workflow".to_string(),
+                    value: "single-task".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn config_set_requires_both_key_and_value() {
+        let err = Cli::try_parse_from(["jigc", "config", "set", "default-workflow"])
+            .expect_err("`config set` with no value must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

@@ -109,6 +109,18 @@ fn run_start(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .expect("run the jigc binary")
 }
 
+/// Run `jigc config <args>` with `cwd = repo` and `$HOME = home`.
+fn run_config(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command.arg("config");
+    command.args(args);
+    command
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
 #[test]
 fn bare_intent_composes_the_router_without_minting() {
     // Post-flip (`DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to
@@ -229,6 +241,128 @@ fn project_scalar_set_flips_the_bare_intent_workflow() {
     assert!(
         !stdout.contains("These are the selectable work-workflows"),
         "the flipped compose must not be the router catalog; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn config_set_writes_the_scalar_block_and_compose_reads_it() {
+    // The T6 done-criterion: `jigc config set default-workflow single-task` writes
+    // the project manifest's `scalar:` block (check_value-adjudicated), and a
+    // subsequent bare `jigc start "<intent>"` resolves the cascade through that
+    // delta — flipping the no-mint router to the `creates-task: true` single-task,
+    // which mints. The write path and the read path agree on the one manifest.
+    let repo = TempDir::new("config-set");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let set = run_config(
+        repo.path(),
+        home.path(),
+        &["set", "default-workflow", "single-task"],
+    );
+    assert!(
+        set.status.success(),
+        "`jigc config set default-workflow single-task` must exit 0; got {:?}\nstderr:\n{}",
+        set.status,
+        String::from_utf8_lossy(&set.stderr),
+    );
+
+    // The write landed in the project manifest's `scalar:` block.
+    let manifest = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml"),
+    )
+    .expect("manifest written");
+    assert!(
+        manifest.contains("default-workflow: single-task"),
+        "the manifest `scalar:` block must record the set value; got:\n{manifest}",
+    );
+
+    // Compose reads the just-written delta: bare `jigc start` now mints single-task.
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "compose after `config set` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join("add-rate-limiter")
+            .join("base.json")
+            .is_file(),
+        "after `config set default-workflow single-task` the bare compose must mint single-task; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn config_set_rejects_an_undeclared_key() {
+    // Write-time closed-surface adjudication: a key the pack does not declare is
+    // rejected non-zero with the routed finding — never silently recorded.
+    let repo = TempDir::new("config-undeclared");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let set = run_config(repo.path(), home.path(), &["set", "not-a-knob", "anything"]);
+    let stderr = String::from_utf8(set.stderr).expect("utf-8 stderr");
+    assert!(
+        !set.status.success(),
+        "an undeclared key must exit non-zero; got {:?}",
+        set.status,
+    );
+    assert!(
+        stderr.contains("not-a-knob") && stderr.contains("route:"),
+        "the rejection must name the undeclared key and carry a route; got:\n{stderr}",
+    );
+    // The rejection precedes any write — no manifest is created.
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml")
+            .exists(),
+        "an undeclared-key rejection must write no manifest",
+    );
+}
+
+#[test]
+fn config_set_rejects_a_wrong_type_value() {
+    // Write-time `check_value` adjudication: a value outside the knob's declared
+    // enum is rejected non-zero with the routed finding (the same adjudication the
+    // doc write path uses — no second type system).
+    let repo = TempDir::new("config-wrong-type");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let set = run_config(
+        repo.path(),
+        home.path(),
+        &["set", "default-workflow", "not-a-workflow"],
+    );
+    let stderr = String::from_utf8(set.stderr).expect("utf-8 stderr");
+    assert!(
+        !set.status.success(),
+        "a wrong-type value must exit non-zero; got {:?}",
+        set.status,
+    );
+    assert!(
+        stderr.contains("not-a-workflow") && stderr.contains("route:"),
+        "the rejection must name the rejected value and carry a route; got:\n{stderr}",
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml")
+            .exists(),
+        "a wrong-type rejection must write no manifest",
     );
 }
 
