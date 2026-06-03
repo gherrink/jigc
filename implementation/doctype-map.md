@@ -39,5 +39,5 @@ prd ──decomposes-into──▶ spec ──decided-by──▶ adr ◀──s
 
 ## Unsettled
 
-- **`prd` / `arch-doc` drivers.** Both are named in VISION but have no scheduled workflow; each earns its schema only when a workflow creates or reads it — plausibly the idea-development setup (M6) for `prd`, a yet-undesigned arch workflow for `arch-doc`. Until then they stay here as intent, in no pack.
+- **`prd` / `arch-doc` drivers.** Both are named in VISION but have no scheduled workflow; each earns its schema only when a workflow creates or reads it — plausibly the idea-development setup (M7) for `prd`, a yet-undesigned arch workflow for `arch-doc`. Until then they stay here as intent, in no pack.
 - **doc↔code edges** (`spec`/`arch-doc` → code) are pack-provided validation *probes*, not structural relations — they land after the docs they check exist (post-M3), per [VISION.md](../VISION.md) → principle #6.
