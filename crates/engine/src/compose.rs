@@ -1134,6 +1134,92 @@ fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
     })
 }
 
+/// The cascade-resolved slot-fill content for a composition, keyed by
+/// `(step_id, fill_id)` — the input to the **phase-5** fill-application pass
+/// ([`apply_slot_fills`]).
+///
+/// One entry per `{{fill:<id>}}` point a `slot-fill` delta fills, the value being
+/// the **higher-layer-wins** resolved content body (`overrides.md` → The
+/// `{{fill:}}` placeholder: "Higher layer wins for the same `<fill-id>`"). The
+/// frontend (CLI) reads each fill's native file bytes and folds the cascade into
+/// this map (project over team over pack); the engine consumes it as a pure input,
+/// so phase 5 stays a function of `(body, fills)` — fed-in / asserted-out. A
+/// `(step_id, fill_id)` absent from the map is an **unfilled** point: it resolves
+/// to the pack's default body (empty in M4), never a finding (an absent extension
+/// point is the common case).
+pub type ResolvedFills = std::collections::BTreeMap<(String, String), String>;
+
+/// Apply the cascade's `slot-fill` content to one step body — **phase 5** of
+/// `overrides.md` → Resolution algorithm, run *before* include expansion (phase 7)
+/// and placeholder resolution (phase 8).
+///
+/// Each lone `{{fill: <id>}}` line in `body` (recognized by [`fill_id_of`]) is
+/// replaced by the content `fills` carries for `(step_id, <id>)`, or — when no
+/// `slot-fill` fills that point — the pack's **default body** (empty in M4, never a
+/// finding: an unfilled extension point is the common case, `overrides.md` → The
+/// `{{fill:}}` placeholder). Non-fill lines pass through byte-for-byte.
+///
+/// The pass **does not re-run**: a `{{fill:}}` *inside* the applied content is left
+/// intact, surviving to phase 8 where `workflow-refs` flags it as a blocking
+/// survivor (the no-nested-fills rule — `overrides.md`: "phase 5 does not re-run").
+/// Likewise the applied content's own `{{include:}}` / `{{cli.…}}` / `{{@…}}` are
+/// left untouched, resolving in the later phases exactly as if the pack had written
+/// them inline.
+///
+/// A pure function of `(step_id, body, fills)` — same inputs always yield the same
+/// text (the determinism boundary; no I/O, clock, or LLM). The `Result` carries a
+/// [`Finding`] for symmetry with the other phase passes; M4's pass has no failure
+/// of its own (orphan/survivor detection is the `workflow-refs` probe's job, T3),
+/// so it is presently always `Ok`.
+pub fn apply_slot_fills(
+    step_id: &str,
+    body: &str,
+    fills: &ResolvedFills,
+) -> Result<String, Finding> {
+    let trailing_newline = body.ends_with('\n');
+    let mut out_lines = Vec::new();
+    for line in body.lines() {
+        match fill_id_of(line.trim()) {
+            // A lone `{{fill: <id>}}` line → the resolved content (or empty default).
+            Some(fill_id) => {
+                let content = fills
+                    .get(&(step_id.to_owned(), fill_id.to_owned()))
+                    .map(String::as_str)
+                    .unwrap_or("");
+                // Splice the content's lines in place of the fill line; an empty
+                // default collapses the line to nothing (no blank line left behind).
+                for content_line in content.lines() {
+                    out_lines.push(content_line.to_owned());
+                }
+            }
+            // Any other line passes through byte-for-byte (the applied content's own
+            // placeholders included — they resolve in later phases).
+            None => out_lines.push(line.to_owned()),
+        }
+    }
+    let mut applied = out_lines.join("\n");
+    if trailing_newline {
+        applied.push('\n');
+    }
+    Ok(applied)
+}
+
+/// If `trimmed` is a lone `{{ fill: <id> }}` placeholder, return `<id>`; else
+/// `None`. The id is the bare fill-id (no further whitespace) — the
+/// fourth read-path placeholder kind (`workflow-dialect.md` → Leaves).
+///
+/// Distinct from [`parse_cli_placeholder`] (`cli.<id>`) and [`parse_include_line`]
+/// (`include: step:<id>`): a `{{fill:}}` is its own leaf kind, recognized only as a
+/// **lone** line (an inline `{{fill:}}` inside prose is not an extension point).
+fn fill_id_of(trimmed: &str) -> Option<&str> {
+    let inner = parse_lone_placeholder(trimmed)?;
+    let id = inner.strip_prefix("fill:")?.trim();
+    if id.is_empty() || id.contains(char::is_whitespace) {
+        return None;
+    }
+    Some(id)
+}
+
 /// Expand a workflow's include list into a flat, ordered [`Composition`] —
 /// phases 6 (cycle detection) and 7 (include expansion) of `overrides.md` →
 /// Resolution algorithm, for the workflow-only path.
@@ -3556,5 +3642,116 @@ reference — make your consequences explain what changes:
     fn no_deltas_is_the_identity() {
         let out = apply_structural_deltas(&fixture_includes(), &[]).expect("no deltas");
         assert_eq!(out, fixture_includes());
+    }
+
+    // -- Phase 5: slot-fill application (`apply_slot_fills` / `fill_id_of`) --------
+
+    /// Build a [`ResolvedFills`] from `(step, fill, content)` triples.
+    fn fills(entries: &[(&str, &str, &str)]) -> ResolvedFills {
+        entries
+            .iter()
+            .map(|(step, fill, content)| {
+                ((step.to_string(), fill.to_string()), content.to_string())
+            })
+            .collect()
+    }
+
+    /// HEADLINE done-criterion: a body with two `{{fill:}}` points emits (a) the fed
+    /// content inline at the **filled** point's line, and (b) the **empty** pack
+    /// default at the unfilled point — and (c) the resolved content's own
+    /// `{{include:}}` / `{{@…}}` are left **intact** for later phases (phase 5 runs
+    /// before expansion + placeholder resolution). The golden pins the spliced bytes.
+    #[test]
+    fn fill_applies_filled_and_empty_default_leaving_nested_placeholders_intact() {
+        let body = "\
+Implement the change directly in the working tree.
+{{ fill: extra-guidance }}
+Then validate.
+{{ fill: house-style }}
+Done.
+";
+        // `extra-guidance` is filled with multi-line content that itself carries an
+        // `{{include:}}` and an `{{@…}}` — both must survive phase 5 untouched.
+        let filled = "\
+Follow the house rule.
+{{ include: step:team-lint }}
+{{ @task.spec#criteria }}";
+        let resolved = fills(&[("implement", "extra-guidance", filled)]);
+
+        let applied = apply_slot_fills("implement", body, &resolved).expect("applies");
+
+        // (c) the nested placeholders are carried through verbatim — not resolved,
+        // not stripped — so later phases see them.
+        assert!(applied.contains("{{ include: step:team-lint }}"));
+        assert!(applied.contains("{{ @task.spec#criteria }}"));
+
+        insta::assert_snapshot!(applied, @r"
+        Implement the change directly in the working tree.
+        Follow the house rule.
+        {{ include: step:team-lint }}
+        {{ @task.spec#criteria }}
+        Then validate.
+        Done.
+        ");
+    }
+
+    /// A single-line fill emits its content **inline at that line** (the simplest
+    /// (a) case — `x → "house rule"`), and a step body with no lone fill point at
+    /// all passes through byte-for-byte (the no-fill common path).
+    #[test]
+    fn fill_single_line_inline_and_no_fill_is_identity() {
+        let resolved = fills(&[("implement", "x", "house rule")]);
+
+        let one = apply_slot_fills("implement", "before\n{{ fill: x }}\nafter\n", &resolved)
+            .expect("applies");
+        assert_eq!(one, "before\nhouse rule\nafter\n");
+
+        // No lone `{{fill:}}` line → the body is returned unchanged.
+        let plain = "Just prose with a {{ fill: inline }} mid-line — not a lone point.\n";
+        let untouched = apply_slot_fills("implement", plain, &resolved).expect("applies");
+        assert_eq!(untouched, plain);
+    }
+
+    /// A `{{fill:}}` **inside applied content** is left intact — the pass does not
+    /// re-run, so the nested point survives to phase 8's `workflow-refs` survivor
+    /// check (`overrides.md` → no nested fills: "phase 5 does not re-run").
+    #[test]
+    fn fill_does_not_recurse_into_applied_content() {
+        let resolved = fills(&[("implement", "outer", "filled, but {{ fill: inner }} stays")]);
+        let applied =
+            apply_slot_fills("implement", "{{ fill: outer }}\n", &resolved).expect("applies");
+        assert_eq!(applied, "filled, but {{ fill: inner }} stays\n");
+    }
+
+    /// A fill for a **different step** does not apply — the pass keys on
+    /// `(step_id, fill_id)`, so an `other` step's `x` leaves `implement`'s `{{fill:
+    /// x}}` at its empty default.
+    #[test]
+    fn fill_keys_on_step_id() {
+        let resolved = fills(&[("other", "x", "wrong step")]);
+        let applied =
+            apply_slot_fills("implement", "a\n{{ fill: x }}\nb\n", &resolved).expect("applies");
+        assert_eq!(applied, "a\nb\n");
+    }
+
+    /// `fill_id_of` recognizes a lone `{{fill: <id>}}` (whitespace-tolerant inside
+    /// the braces) and rejects non-fill / malformed forms — distinct from the
+    /// `cli.` and `include:` recognizers.
+    #[test]
+    fn fill_id_of_recognizes_only_lone_fill_placeholders() {
+        assert_eq!(
+            fill_id_of("{{fill: extra-guidance}}"),
+            Some("extra-guidance")
+        );
+        assert_eq!(
+            fill_id_of("{{ fill: extra-guidance }}"),
+            Some("extra-guidance")
+        );
+        // Not a fill: other placeholder kinds, prose, malformed/empty ids.
+        assert_eq!(fill_id_of("{{ cli.set-commit }}"), None);
+        assert_eq!(fill_id_of("{{ include: step:x }}"), None);
+        assert_eq!(fill_id_of("{{ fill: }}"), None);
+        assert_eq!(fill_id_of("{{ fill: two words }}"), None);
+        assert_eq!(fill_id_of("plain prose"), None);
     }
 }
