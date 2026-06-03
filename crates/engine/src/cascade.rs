@@ -115,6 +115,15 @@ pub enum CascadeError {
     /// (`design/overrides.md` → Scalar knobs are config-level fields).
     #[error("layer `{layer}` sets undeclared scalar key `{key}` (the knob surface is closed)")]
     UndeclaredScalar { layer: &'static str, key: String },
+
+    /// A compose-path read targeted a key the resolved surface never carried.
+    /// Routing a compose read through the cascade is byte-safe only if the key
+    /// is declared (and so seeded into the base map); a missing value is a hard
+    /// error, never a silent `None`/raw fallback — the read-side half of the
+    /// closed-surface rule (`design/overrides.md` → Read-side determinism
+    /// invariant).
+    #[error("compose read of undeclared scalar key `{key}` (the knob surface is closed)")]
+    UndeclaredComposeRead { key: String },
 }
 
 /// The cascade-provenance header data — what every long-lived surface shows so
@@ -164,6 +173,18 @@ impl Resolved {
     /// The resolved value of a declared scalar key, or `None` if undeclared.
     pub fn scalar(&self, key: &str) -> Option<&str> {
         self.scalars.get(key).map(String::as_str)
+    }
+
+    /// The resolved value of a key a compose path reads — the read-side
+    /// determinism accessor. Unlike [`Resolved::scalar`], a missing key is a
+    /// hard [`CascadeError::UndeclaredComposeRead`], never a silent `None`: a
+    /// compose read is byte-safe only over the declared, seeded surface
+    /// (`design/overrides.md` → Read-side determinism invariant).
+    pub fn scalar_required(&self, key: &str) -> Result<&str, CascadeError> {
+        self.scalar(key)
+            .ok_or_else(|| CascadeError::UndeclaredComposeRead {
+                key: key.to_owned(),
+            })
     }
 
     /// Which layer owns the file with this id after shadowing, or `None` if no
@@ -303,6 +324,38 @@ mod tests {
         let resolved = resolve(&pack, Some(&team), Some(&project)).expect("resolves");
 
         assert_eq!(resolved.scalar("default-workflow"), Some("project-choice"));
+    }
+
+    /// Read-side determinism invariant: the compose-read accessor returns the
+    /// resolved value for a declared key (`design/overrides.md` → Read-side
+    /// determinism invariant).
+    #[test]
+    fn scalar_required_returns_value_for_declared_key() {
+        let pack = pack_default();
+
+        let resolved = resolve(&pack, None, None).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar_required("default-workflow"),
+            Ok("single-task"),
+        );
+    }
+
+    /// Read-side determinism invariant: a compose-read of a key the closed
+    /// surface never declared is a hard error, never a `None`/raw fallback — the
+    /// read-side half of the closed-surface rule.
+    #[test]
+    fn scalar_required_errors_for_undeclared_key() {
+        let pack = pack_default();
+
+        let resolved = resolve(&pack, None, None).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar_required("not-a-knob"),
+            Err(CascadeError::UndeclaredComposeRead {
+                key: "not-a-knob".to_owned(),
+            }),
+        );
     }
 
     /// The knob surface is closed: a `scalar-set` for a key the pack never
