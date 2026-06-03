@@ -1010,6 +1010,60 @@ pub(crate) fn load_project_layer(
     Ok((with_files(layer), deltas, slot_fills))
 }
 
+/// Resolve one step's body **through the cascade** — the phase-2 file-owner read a
+/// `CascadeStepSource` does, as a free function for the write-time `config fill`
+/// point-exists check (`overrides.md` → the `jigc config` verbs: "the
+/// `{{fill:<fill-id>}}` point exists in the resolved step body"). A project
+/// `steps/<id>.yaml` shadows the pack step (phase-2 by-id shadowing); else the pack
+/// body is read. A step id no layer owns yields `Ok(None)` (the caller routes it as
+/// an absent point); a project-owned file that is missing/malformed is a clear,
+/// path-bearing error (never a silent fall-through to the pack body).
+///
+/// This builds only the phase-2 [`cascade::Resolved`] (knobs + the project layer's
+/// `steps/` shadows), not the full [`ComposeOverrides`] — the check needs the file
+/// owner, not the resolved fills.
+pub(crate) fn resolve_step_body(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    step_id: &str,
+) -> Result<Option<engine::compose::StepDef>> {
+    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
+    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    let pack_default = PackDefaultLayer::new(
+        pack_id_from_config(pack)?,
+        pack.pack_version(),
+        knobs.base_scalars(),
+        Vec::new(),
+    );
+    let (project, _deltas, _slot_fills) = load_project_layer(project_config)?;
+    let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
+
+    match resolved.file_owner(step_id) {
+        // The project owns the id → read the project file (missing/malformed is a
+        // path-bearing error, never a fall-through to the pack body).
+        Some(cascade::LayerKind::Project) => {
+            let path = project_config.join("steps").join(format!("{step_id}.yaml"));
+            let bytes = std::fs::read(&path).with_context(|| {
+                format!(
+                    "project layer owns step `{step_id}` but its file {} is unreadable",
+                    path.display()
+                )
+            })?;
+            Ok(Some(
+                load_step_def(step_id, &bytes).map_err(finding_to_err)?,
+            ))
+        }
+        // Pack-default owns it, or no layer does — read the pack body. A pack-unknown
+        // id has no body to resolve (the caller routes the absent point).
+        _ => match pack.read(PackResourceKind::Steps, &ResourceId::from(step_id)) {
+            Ok(bytes) => Ok(Some(
+                load_step_def(step_id, &bytes).map_err(finding_to_err)?,
+            )),
+            Err(_) => Ok(None),
+        },
+    }
+}
+
 /// List the native step ids the project layer ships — every `<project_config>/
 /// steps/<id>.yaml` basename. These shadow the pack step of the same id at phase 2
 /// (`overrides.md` → Native-file id = filename basename). A missing `steps/` dir is

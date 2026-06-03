@@ -20,7 +20,7 @@
 
 use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
-use engine::cascade::{Anchor, StructuralDelta, StructuralTarget};
+use engine::cascade::{Anchor, SlotFillTarget, StructuralDelta, StructuralTarget};
 use engine::field_block::Value;
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
@@ -91,6 +91,24 @@ pub enum ConfigCommand {
         /// The `workflow:<id>#<step-id>` entry to remove.
         target: String,
     },
+
+    /// Record a `slot-fill` delta — inject content into a `{{fill:<fill-id>}}`
+    /// extension point a step body anticipates, addressed `step:<id>#<fill-id>`
+    /// (`design/overrides.md` → Authoring deltas, the `config fill` row;
+    /// `design/worked-examples.md` → 3c). The content arrives via stdin / `--from-file`
+    /// (prose, never inline) and is written to `.jigc/config/fills/<fill-id>.md` (id =
+    /// fill-id); the delta references `step:<id>#<fill-id>` + `content: fills/<fill-id>.md`.
+    /// Two write-time checks (both *before any write*, so a rejection touches nothing):
+    /// the `{{fill:<fill-id>}}` point must exist in the **resolved** step body, and the
+    /// content must contain no `{{fill:}}` (the no-nested rule — phase 5 does not re-run).
+    /// A rejection exits non-zero with a routed finding.
+    Fill {
+        /// The `step:<id>#<fill-id>` extension point to fill.
+        target: String,
+        /// The content source: a path, or `-` for stdin (prose never inline).
+        #[arg(long)]
+        from_file: String,
+    },
 }
 
 impl ConfigCommand {
@@ -108,6 +126,7 @@ impl ConfigCommand {
             } => run_insert_step(cwd, &workflow, after.as_deref(), before.as_deref(), &file),
             ConfigCommand::ReplaceStep { target, file } => run_replace_step(cwd, &target, &file),
             ConfigCommand::RemoveStep { target } => run_remove_step(cwd, &target),
+            ConfigCommand::Fill { target, from_file } => run_fill(cwd, &target, &from_file),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -311,6 +330,119 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
     append_delta(&project_config, &delta)
 }
 
+/// `jigc config fill <step:id#fill-id> --from-file <path|->` — record a `slot-fill`
+/// delta + write the native fill file (`design/overrides.md` → Authoring deltas, the
+/// `config fill` row; `design/worked-examples.md` → 3c).
+///
+/// The content arrives via stdin / `--from-file` (prose, never inline) and is written
+/// to `.jigc/config/fills/<fill-id>.md` (id = fill-id); the delta references
+/// `step:<id>#<fill-id>` + `content: fills/<fill-id>.md`. Both write-time checks run
+/// *before any write* so a rejection leaves the tree untouched (`overrides.md` →
+/// Write-time vs resolve-time split):
+/// 1. parse the `step:<id>#<fill-id>` target;
+/// 2. read the content handoff;
+/// 3. `check_content_no_nested` — the content must declare no `{{fill:}}` point (the
+///    no-nested rule: phase 5 does not re-run) else reject;
+/// 4. `check_fill_point_present` — the `{{fill:<fill-id>}}` point must exist in the
+///    **resolved** step body (project shadow included) else reject;
+/// 5. write `fills/<fill-id>.md` (the content bytes) + append the `slot-fill` delta.
+fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
+    let project_config = require_project_layer(cwd)?;
+    let parsed = SlotFillTarget::parse(target).map_err(finding_to_err)?;
+    let content = crate::doc::read_handoff(from_file)?;
+
+    // Both write-time checks run before any write — a rejection touches nothing.
+    let pack = EmbeddedPack::new();
+    check_content_no_nested(&content).map_err(finding_to_err)?;
+    check_fill_point_present(&pack, &project_config, &parsed).map_err(finding_to_err)?;
+
+    // Write the native fill file (id = fill-id), then append the `slot-fill` delta.
+    let fills_dir = project_config.join("fills");
+    std::fs::create_dir_all(&fills_dir)
+        .with_context(|| format!("could not create {}", fills_dir.display()))?;
+    let native = fills_dir.join(format!("{}.md", parsed.fill_id));
+    std::fs::write(&native, content.as_bytes())
+        .with_context(|| format!("could not write {}", native.display()))?;
+    append_slot_fill(&project_config, &parsed)
+}
+
+/// Reject fill content that itself declares a `{{fill:}}` point — the no-nested
+/// write-time check (`design/overrides.md` → The `{{fill:}}` placeholder: "The
+/// `config fill` verb rejects fill content containing `{{fill:}}` at write time").
+///
+/// Phase 5 ([`engine::compose::apply_slot_fills`]) does not re-run, so a `{{fill:}}`
+/// inside applied content would survive to phase 8 unresolved (the `fill-survivor`
+/// block). Catching it at write time gives the human an immediate error. The
+/// recognizer is the engine's own [`engine::compose::fill_ids_in`] — the same
+/// lone-`{{fill:}}` rule the phase-5 pass and the resolution-time checks use. A clean
+/// content body passes.
+fn check_content_no_nested(content: &str) -> Result<(), Finding> {
+    if let Some(fill_id) = engine::compose::fill_ids_in(content).first() {
+        return Err(Finding::block(
+            "config.nested-fill",
+            format!(
+                "fill content declares a nested `{{{{fill: {fill_id}}}}}` point — phase 5 does not re-run, so a nested fill would survive composition unresolved"
+            ),
+            "remove the nested `{{fill:}}` from the content (fill content may not contain another fill point), then re-run",
+        ));
+    }
+    Ok(())
+}
+
+/// Reject a `slot-fill` whose `{{fill:<fill-id>}}` point **no resolved step body
+/// declares** — the write-time point-presence check (`design/overrides.md` → the
+/// `jigc config` verbs: "the `{{fill:<fill-id>}}` point exists in the resolved step
+/// body").
+///
+/// The snapshot is the target step's **resolved** body
+/// ([`crate::start::resolve_step_body`] — project shadow included), scanned for the
+/// declared `{{fill:}}` points by the engine's [`engine::compose::fill_ids_in`]. A
+/// fill-id absent from that step's points — or a step no layer owns — is a routed
+/// blocking `config.fill-point-absent` [`Finding`] (symmetric with the resolution-time
+/// `slot-fill-orphan`, closing the closed-surface hole at write time); a declared
+/// point passes.
+///
+/// A pure write-time check (`overrides.md` → Write-time vs resolve-time split): it
+/// validates *this* edit's point against the current resolved body; whole-cascade
+/// consequences (a later structural delta that drops the step) stay at resolution time
+/// through `workflow-refs`.
+pub(crate) fn check_fill_point_present(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    target: &SlotFillTarget,
+) -> Result<(), Finding> {
+    let absent = || {
+        Finding::block(
+            "config.fill-point-absent",
+            format!(
+                "`step:{}#{}` is not a `{{{{fill:}}}}` point in the resolved `{}` step body",
+                target.step_id, target.fill_id, target.step_id
+            ),
+            "name a `{{fill:<fill-id>}}` point the step body declares (run `jigc start` to see the composed step bodies), then re-run",
+        )
+    };
+    let def = crate::start::resolve_step_body(pack, project_config, &target.step_id)
+        .map_err(|err| {
+            Finding::block(
+                "config.fill-point-absent",
+                format!(
+                    "could not resolve the `{}` step body to check its `{{{{fill:}}}}` points: {err:#}",
+                    target.step_id
+                ),
+                "name an existing step whose body declares the `{{fill:<fill-id>}}` point, then re-run",
+            )
+        })?
+        .ok_or_else(absent)?;
+    if engine::compose::fill_ids_in(&def.body)
+        .iter()
+        .any(|id| *id == target.fill_id)
+    {
+        Ok(())
+    } else {
+        Err(absent())
+    }
+}
+
 /// Locate the repo root and its `.jigc/config/` project layer, erroring with the
 /// same routed messages [`run_set`] / [`run_insert_step`] use when the repo or the
 /// project layer is absent. The shared preamble of every `config` verb.
@@ -397,6 +529,15 @@ fn write_scalar(project_config: &Path, key: &str, value: &str) -> Result<()> {
 /// reads back exactly the `deltas:` list this writes (the preserve discipline
 /// [`write_scalar`] uses for the `scalar:` sub-map, mirrored for `deltas:`).
 fn append_delta(project_config: &Path, delta: &StructuralDelta) -> Result<()> {
+    append_delta_entry(project_config, delta_to_yaml(delta))
+}
+
+/// Push one already-rendered `deltas:` entry mapping onto
+/// `<project_config>/manifest.yaml`'s `deltas:` list, preserving any existing
+/// top-level keys (the `scalar:` map) and prior entries — the manifest-preserving
+/// round-trip both [`append_delta`] (structural-op) and [`append_slot_fill`] share
+/// (the one `deltas:` list carries every delta kind, `storage.md` → Config layout).
+fn append_delta_entry(project_config: &Path, entry: serde_yaml_ng::Value) -> Result<()> {
     use serde_yaml_ng::Value as Yaml;
 
     let manifest = project_config.join("manifest.yaml");
@@ -433,13 +574,42 @@ fn append_delta(project_config: &Path, delta: &StructuralDelta) -> Result<()> {
     let Yaml::Sequence(list) = deltas else {
         unreachable!("just ensured a sequence")
     };
-    list.push(delta_to_yaml(delta));
+    list.push(entry);
 
     let rendered = serde_yaml_ng::to_string(&doc)
         .with_context(|| format!("could not serialize {}", manifest.display()))?;
     std::fs::write(&manifest, rendered)
         .with_context(|| format!("could not write {}", manifest.display()))?;
     Ok(())
+}
+
+/// Append one `slot-fill` delta to `<project_config>/manifest.yaml`'s `deltas:` list,
+/// preserving any existing top-level keys (the `scalar:` map) and prior `deltas:`
+/// entries — the slot-fill sibling of [`append_delta`] (`design/overrides.md` → Delta
+/// representation; `design/storage.md` → Config layout: one `deltas:` list, every
+/// kind).
+///
+/// The on-disk spelling mirrors what [`crate::start::load_project_layer`]'s
+/// `parse_one_delta` reads back for a `slot-fill` kind:
+/// - `kind: slot-fill`;
+/// - `target: step:<id>#<fill-id>` (the [`SlotFillTarget`]);
+/// - `content: fills/<fill-id>.md` (the native fill file, id = fill-id).
+fn append_slot_fill(project_config: &Path, target: &SlotFillTarget) -> Result<()> {
+    let entry = {
+        use serde_yaml_ng::Value as Yaml;
+        let mut map = serde_yaml_ng::Mapping::new();
+        let mut put = |k: &str, v: String| {
+            map.insert(Yaml::String(k.to_owned()), Yaml::String(v));
+        };
+        put("kind", "slot-fill".to_owned());
+        put(
+            "target",
+            format!("step:{}#{}", target.step_id, target.fill_id),
+        );
+        put("content", format!("fills/{}.md", target.fill_id));
+        Yaml::Mapping(map)
+    };
+    append_delta_entry(project_config, entry)
 }
 
 /// Reject a new native-step **basename** that collides with an existing step id —

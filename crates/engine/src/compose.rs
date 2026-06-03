@@ -1204,6 +1204,25 @@ pub fn apply_slot_fills(
     Ok(applied)
 }
 
+/// Every lone `{{fill: <id>}}` point a step `body` declares, in line order — the
+/// `{{fill:}}` recognizer ([`fill_id_of`]) applied line-by-line, exposed for the
+/// **write-time** `config fill` checks (`overrides.md` → the `jigc config` verbs:
+/// "the `{{fill:<fill-id>}}` point exists in the resolved step body"; The
+/// `{{fill:}}` placeholder: "rejects fill content containing `{{fill:}}` at write
+/// time").
+///
+/// Two uses, one recognizer: the verb checks the target fill-id is among the
+/// resolved step body's points (else the orphan would land at resolution), and
+/// rejects fill content whose own body declares any `{{fill:}}` (the no-nested
+/// rule, since phase 5 does not re-run). The same lone-line discipline the phase-5
+/// pass and the `slot-fill-orphan` / `fill-survivor` checks use, so all paths agree
+/// on what counts as a fill point. Pure: no I/O, no cascade consulted.
+pub fn fill_ids_in(body: &str) -> Vec<&str> {
+    body.lines()
+        .filter_map(|line| fill_id_of(line.trim()))
+        .collect()
+}
+
 /// If `trimmed` is a lone `{{ fill: <id> }}` placeholder, return `<id>`; else
 /// `None`. The id is the bare fill-id (no further whitespace) — the
 /// fourth read-path placeholder kind (`workflow-dialect.md` → Leaves).
@@ -4010,5 +4029,16 @@ Follow the house rule.
         assert_eq!(fill_id_of("{{ fill: }}"), None);
         assert_eq!(fill_id_of("{{ fill: two words }}"), None);
         assert_eq!(fill_id_of("plain prose"), None);
+    }
+
+    /// `fill_ids_in` enumerates every lone `{{fill:}}` point a body declares, in
+    /// line order, and is empty for a body with none — the write-time recognizer the
+    /// `config fill` checks drive (point-exists + no-nested).
+    #[test]
+    fn fill_ids_in_lists_declared_points_in_order() {
+        let body = "intro\n{{fill: extra-guidance}}\nmid\n{{ fill: more }}\nend\n";
+        assert_eq!(fill_ids_in(body), vec!["extra-guidance", "more"]);
+        // A body that declares no `{{fill:}}` point (inline / other kinds don't count).
+        assert!(fill_ids_in("plain\n{{ cli.x }}\n{{ include: step:y }}\n").is_empty());
     }
 }

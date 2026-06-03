@@ -271,8 +271,9 @@ fn persist(path: &Path, bytes: &str) -> Result<()> {
 }
 
 /// Read the slot handoff: `-` ⇒ stdin, else a file path (`design/write-commands.md`
-/// → Content handoff: slots via stdin / `--from-file`, never inline).
-fn read_handoff(from_file: &str) -> Result<String> {
+/// → Content handoff: slots via stdin / `--from-file`, never inline). Shared with
+/// `jigc config fill`, whose fill content arrives the same way.
+pub(crate) fn read_handoff(from_file: &str) -> Result<String> {
     if from_file == "-" {
         let mut buf = String::new();
         std::io::stdin()

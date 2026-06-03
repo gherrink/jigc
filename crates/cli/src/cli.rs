@@ -530,6 +530,35 @@ mod cli_parse {
     }
 
     #[test]
+    fn config_fill_parses_the_target_and_from_file() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "config",
+            "fill",
+            "step:implement#extra-guidance",
+            "--from-file",
+            "-",
+        ])
+        .expect("`jigc config fill <target> --from-file <f>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Config {
+                verb: ConfigCommand::Fill {
+                    target: "step:implement#extra-guidance".to_string(),
+                    from_file: "-".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn config_fill_requires_from_file() {
+        let err = Cli::try_parse_from(["jigc", "config", "fill", "step:implement#extra-guidance"])
+            .expect_err("`config fill` with no `--from-file` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
     fn config_replace_step_requires_a_file() {
         let err = Cli::try_parse_from(["jigc", "config", "replace-step", "workflow:single-task#x"])
             .expect_err("`replace-step` with no file must be rejected");
