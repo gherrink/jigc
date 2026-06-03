@@ -18,6 +18,7 @@
 
 use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
+use engine::cascade::{Anchor, StructuralDelta, StructuralTarget};
 use engine::field_block::Value;
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
@@ -157,6 +158,123 @@ fn write_scalar(project_config: &Path, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Append one `structural-op` delta to `<project_config>/manifest.yaml`'s
+/// `deltas:` list, preserving any existing top-level keys (the `scalar:` map) and
+/// prior `deltas:` entries. A missing manifest is created; a missing/blank
+/// `deltas:` block becomes a fresh list (`design/overrides.md` → Delta
+/// representation; `design/storage.md` → Config layout).
+///
+/// The on-disk spelling mirrors what [`crate::start::load_project_layer`] reads
+/// back (`design/overrides.md` → Delta targets / the `jigc config` verbs):
+/// - `kind:` — `insert-step` / `replace-step` / `remove-step`;
+/// - `target:` — `workflow:<id>` for an insert (the anchor rides `after:`/`before:`),
+///   `workflow:<id>#<step-id>` for a replace/remove ([`Anchor::At`]);
+/// - `after:`/`before:` — the insert anchor step id;
+/// - `with:` — `step:<basename>`, the native step file's id (insert/replace only).
+///
+/// The manifest is round-tripped through `serde_yaml_ng::Value` so the loader
+/// reads back exactly the `deltas:` list this writes (the preserve discipline
+/// [`write_scalar`] uses for the `scalar:` sub-map, mirrored for `deltas:`).
+// Consumed by the `insert-step` / `replace-step` / `remove-step` dispatch (this
+// increment's T3/T4) + the test below; `allow` covers the non-test build until
+// that wiring lands.
+#[allow(dead_code)]
+fn append_delta(project_config: &Path, delta: &StructuralDelta) -> Result<()> {
+    use serde_yaml_ng::Value as Yaml;
+
+    let manifest = project_config.join("manifest.yaml");
+    let mut doc: Yaml = match std::fs::read_to_string(&manifest) {
+        Ok(text) => serde_yaml_ng::from_str(&text)
+            .with_context(|| format!("{} is not valid YAML", manifest.display()))?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Yaml::Mapping(Default::default()),
+        Err(e) => {
+            return Err(e).with_context(|| format!("could not read {}", manifest.display()));
+        }
+    };
+
+    // A present-but-non-mapping (or null/empty) manifest becomes a fresh map so the
+    // `deltas:` list has a home.
+    let map = match &mut doc {
+        Yaml::Mapping(map) => map,
+        _ => {
+            doc = Yaml::Mapping(Default::default());
+            let Yaml::Mapping(map) = &mut doc else {
+                unreachable!("just set to a mapping")
+            };
+            map
+        }
+    };
+
+    // Locate or create the `deltas:` sequence, then push the new entry.
+    let deltas_key = Yaml::String("deltas".to_owned());
+    let deltas = map
+        .entry(deltas_key)
+        .or_insert_with(|| Yaml::Sequence(Vec::new()));
+    if !deltas.is_sequence() {
+        *deltas = Yaml::Sequence(Vec::new());
+    }
+    let Yaml::Sequence(list) = deltas else {
+        unreachable!("just ensured a sequence")
+    };
+    list.push(delta_to_yaml(delta));
+
+    let rendered = serde_yaml_ng::to_string(&doc)
+        .with_context(|| format!("could not serialize {}", manifest.display()))?;
+    std::fs::write(&manifest, rendered)
+        .with_context(|| format!("could not write {}", manifest.display()))?;
+    Ok(())
+}
+
+/// Render one [`StructuralDelta`] to its manifest-entry mapping — the inverse of
+/// [`crate::start::load_project_layer`]'s `parse_one_delta`. The `with:` step id
+/// is written with the `step:` prefix (the manifest spelling the loader strips).
+fn delta_to_yaml(delta: &StructuralDelta) -> serde_yaml_ng::Value {
+    use serde_yaml_ng::Value as Yaml;
+
+    let mut entry = serde_yaml_ng::Mapping::new();
+    let mut put = |k: &str, v: String| {
+        entry.insert(Yaml::String(k.to_owned()), Yaml::String(v));
+    };
+    let wf = |id: &str| format!("workflow:{id}");
+    match delta {
+        StructuralDelta::Insert { target, step } => {
+            put("kind", "insert-step".to_owned());
+            put("target", wf(&target.workflow_id));
+            match &target.anchor {
+                Anchor::After(id) => put("after", id.clone()),
+                Anchor::Before(id) => put("before", id.clone()),
+                Anchor::At(id) => put("after", id.clone()),
+            }
+            put("with", format!("step:{step}"));
+        }
+        StructuralDelta::Replace { target, step } => {
+            put("kind", "replace-step".to_owned());
+            put(
+                "target",
+                format!("{}#{}", wf(&target.workflow_id), at_step(target)),
+            );
+            put("with", format!("step:{step}"));
+        }
+        StructuralDelta::Remove { target } => {
+            put("kind", "remove-step".to_owned());
+            put(
+                "target",
+                format!("{}#{}", wf(&target.workflow_id), at_step(target)),
+            );
+        }
+    }
+    Yaml::Mapping(entry)
+}
+
+/// The `#<step-id>` step a replace/remove target names (`Anchor::At`). Insert
+/// targets never reach here; an `After`/`Before` on a replace/remove is a writer
+/// bug, so the id is still emitted rather than silently dropped.
+fn at_step(target: &StructuralTarget) -> String {
+    match &target.anchor {
+        Anchor::At(id) | Anchor::After(id) | Anchor::Before(id) => id.clone(),
+    }
+}
+
 /// Map an engine [`Finding`] to an `anyhow` error carrying its message + route —
 /// the same envelope `crate::start` / `crate::task` use for a blocking finding.
 fn finding_to_err(finding: Finding) -> anyhow::Error {
@@ -173,4 +291,111 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
         .ancestors()
         .find(|dir| dir.join(".git").exists())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    /// A throwaway directory that removes itself on drop.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-config-delta-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            fs::create_dir_all(&path).expect("create temp dir");
+            TempDir(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn insert_after(workflow: &str, anchor: &str, step: &str) -> StructuralDelta {
+        StructuralDelta::Insert {
+            target: StructuralTarget {
+                workflow_id: workflow.to_owned(),
+                anchor: Anchor::After(anchor.to_owned()),
+            },
+            step: step.to_owned(),
+        }
+    }
+
+    fn replace_at(workflow: &str, at: &str, step: &str) -> StructuralDelta {
+        StructuralDelta::Replace {
+            target: StructuralTarget {
+                workflow_id: workflow.to_owned(),
+                anchor: Anchor::At(at.to_owned()),
+            },
+            step: step.to_owned(),
+        }
+    }
+
+    /// T1 done-criterion: append an insert-step then a replace-step into a temp
+    /// manifest that already carries a `scalar:` entry; the round-tripped YAML
+    /// carries both delta entries **and** the original `scalar:` entry, and
+    /// `start::load_project_layer` parses the result back to the two expected
+    /// [`StructuralDelta`]s — preserve discipline over the `deltas:` block, the
+    /// inverse of the loader's `parse_one_delta` (`design/overrides.md` → Delta
+    /// representation; `design/storage.md` → Config layout).
+    #[test]
+    fn append_delta_preserves_scalar_and_prior_deltas_and_round_trips() {
+        let dir = TempDir::new("append");
+        let project_config = dir.path();
+        // Seed a manifest already carrying a `scalar:` entry (the writer must not
+        // clobber it when it grows the `deltas:` list).
+        fs::write(
+            project_config.join("manifest.yaml"),
+            "scalar:\n  default-workflow: single-task\n",
+        )
+        .expect("seed manifest");
+
+        let insert = insert_after("single-task", "implement", "project-validate");
+        let replace = replace_at("single-task", "validate", "project-validate");
+        append_delta(project_config, &insert).expect("append insert-step");
+        append_delta(project_config, &replace).expect("append replace-step");
+
+        // The original `scalar:` entry survives the two appends.
+        let text =
+            fs::read_to_string(project_config.join("manifest.yaml")).expect("read manifest back");
+        let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&text).expect("manifest is YAML");
+        assert_eq!(
+            doc.get("scalar")
+                .and_then(|s| s.get("default-workflow"))
+                .and_then(serde_yaml_ng::Value::as_str),
+            Some("single-task"),
+            "the original scalar: entry must survive the delta appends\n{text}"
+        );
+        let count = doc
+            .get("deltas")
+            .and_then(serde_yaml_ng::Value::as_sequence)
+            .map(Vec::len)
+            .unwrap_or(0);
+        assert_eq!(count, 2, "both delta entries must be present\n{text}");
+
+        // The loader parses the written manifest back to the two deltas, in order.
+        let (_layer, deltas) =
+            crate::start::load_project_layer(project_config).expect("loader parses the manifest");
+        assert_eq!(
+            deltas,
+            vec![insert, replace],
+            "load_project_layer must round-trip the two appended deltas in order\n{text}"
+        );
+    }
 }
