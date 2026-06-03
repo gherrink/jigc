@@ -89,8 +89,9 @@ pub enum Command {
     /// The cascade-authoring surface — `jigc config <verb>` records deltas into the
     /// project layer's `.jigc/config/manifest.yaml` (`design/overrides.md` →
     /// Authoring deltas): `set <key> <value>` (a `scalar-set`, write-time
-    /// `check_value`-adjudicated) + `insert-step` (a `structural-op` + native step
-    /// file, write-time collision/anchor-adjudicated).
+    /// `check_value`-adjudicated) + the `structural-op` trio `insert-step` /
+    /// `replace-step` / `remove-step` (a delta + — for insert/replace — a native
+    /// step file, write-time collision/anchor-adjudicated).
     Config {
         #[command(subcommand)]
         verb: ConfigCommand,
@@ -190,10 +191,11 @@ fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
 }
 
 /// Dispatch a `jigc config <verb>` cascade-authoring write against the current
-/// working directory. A `set` records a `scalar-set`, an `insert-step` records a
-/// `structural-op` + its native step file — each adjudicated at write time; a
-/// blocking adjudication finding surfaces on stderr (with its route) and exits
-/// non-zero (`design/overrides.md` → Authoring deltas).
+/// working directory. A `set` records a `scalar-set`; `insert-step` / `replace-step`
+/// / `remove-step` each record a `structural-op` (insert/replace also writing the
+/// native step file) — each adjudicated at write time; a blocking adjudication
+/// finding surfaces on stderr (with its route) and exits non-zero
+/// (`design/overrides.md` → Authoring deltas).
 fn run_config(verb: ConfigCommand) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
@@ -485,6 +487,53 @@ mod cli_parse {
         ])
         .expect_err("`--after` together with `--before` must be rejected");
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn config_replace_step_parses_the_target_and_file() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "config",
+            "replace-step",
+            "workflow:single-task#implement",
+            "./project-implement.yaml",
+        ])
+        .expect("`jigc config replace-step <target> <file>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Config {
+                verb: ConfigCommand::ReplaceStep {
+                    target: "workflow:single-task#implement".to_string(),
+                    file: "./project-implement.yaml".into(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn config_remove_step_parses_the_target() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "config",
+            "remove-step",
+            "workflow:single-task#superseded-context",
+        ])
+        .expect("`jigc config remove-step <target>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Config {
+                verb: ConfigCommand::RemoveStep {
+                    target: "workflow:single-task#superseded-context".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn config_replace_step_requires_a_file() {
+        let err = Cli::try_parse_from(["jigc", "config", "replace-step", "workflow:single-task#x"])
+            .expect_err("`replace-step` with no file must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

@@ -1,12 +1,13 @@
 //! `jigc config <verb>` — authoring cascade deltas into the project layer
 //! (`design/overrides.md` → Authoring deltas — the `jigc config` verbs).
 //!
-//! `config set <key> <value>` (the `scalar-set` rung) + `config insert-step`
-//! (the `structural-op` insert rung) land here; `replace-step`/`remove-step`/
-//! `fill`/`fork` are later increments. `set` writes **only** the project layer's
-//! `.jigc/config/manifest.yaml` `scalar:` block; `insert-step` appends to its
-//! `deltas:` list + writes a native `steps/<basename>.yaml` — never a base
-//! definition, never a fork.
+//! `config set <key> <value>` (the `scalar-set` rung) + the three `structural-op`
+//! verbs `insert-step` / `replace-step` / `remove-step` land here; `fill` / `fork`
+//! are later increments. `set` writes **only** the project layer's
+//! `.jigc/config/manifest.yaml` `scalar:` block; `insert-step` / `replace-step`
+//! append to its `deltas:` list + write a native `steps/<basename>.yaml`, and
+//! `remove-step` appends a delta with no native file — never a base definition,
+//! never a fork.
 //!
 //! **Write-time adjudication** (`overrides.md` → Write-time vs resolve-time
 //! split): the cheap, local checks run here so the human gets an immediate error
@@ -26,7 +27,8 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// The `jigc config <verb>` subcommand tree. Only `set` exists this increment
+/// The `jigc config <verb>` subcommand tree — `set` (a `scalar-set`) plus the
+/// three `structural-op` verbs `insert-step` / `replace-step` / `remove-step`
 /// (`design/overrides.md` → Authoring deltas).
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum ConfigCommand {
@@ -64,6 +66,31 @@ pub enum ConfigCommand {
         /// The source step file; its basename becomes the native step id.
         file: PathBuf,
     },
+
+    /// Record a `replace-step` `structural-op` — swap which step id appears at a
+    /// position in a workflow's include list, addressed `workflow:<id>#<step-id>`
+    /// (`design/overrides.md` → Authoring deltas; `design/worked-examples.md` → 3a).
+    /// The replacement is the native step the `<file>` registers (id = file
+    /// basename, written to `.jigc/config/steps/<basename>.yaml`); the delta
+    /// references `step:<basename>`. Write-time adjudicated: a basename colliding
+    /// with an existing step id, or a target step-id absent from the resolution as
+    /// of this edit, is rejected non-zero with a routed finding and **no** write.
+    ReplaceStep {
+        /// The `workflow:<id>#<step-id>` entry to replace.
+        target: String,
+        /// The source step file; its basename becomes the native step id.
+        file: PathBuf,
+    },
+
+    /// Record a `remove-step` `structural-op` — drop the step id at a position in a
+    /// workflow's include list, addressed `workflow:<id>#<step-id>`
+    /// (`design/overrides.md` → Authoring deltas). No native file (nothing to add).
+    /// Write-time adjudicated: a target step-id absent from the resolution as of
+    /// this edit is rejected non-zero with a routed finding and **no** write.
+    RemoveStep {
+        /// The `workflow:<id>#<step-id>` entry to remove.
+        target: String,
+    },
 }
 
 impl ConfigCommand {
@@ -79,6 +106,8 @@ impl ConfigCommand {
                 before,
                 file,
             } => run_insert_step(cwd, &workflow, after.as_deref(), before.as_deref(), &file),
+            ConfigCommand::ReplaceStep { target, file } => run_replace_step(cwd, &target, &file),
+            ConfigCommand::RemoveStep { target } => run_remove_step(cwd, &target),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -209,6 +238,92 @@ fn run_insert_step(
         step: basename,
     };
     append_delta(&project_config, &delta)
+}
+
+/// `jigc config replace-step <workflow:id#step-id> <file>` — record a `replace`
+/// `structural-op` + write the native step file (`design/overrides.md` → Authoring
+/// deltas; `design/worked-examples.md` → 3a).
+///
+/// The replacement step takes its **id from the source file's basename** and is
+/// written to `.jigc/config/steps/<basename>.yaml`; the delta references
+/// `step:<basename>`. Both write-time checks run *before any write* so a rejection
+/// leaves the tree untouched (`overrides.md` → Write-time vs resolve-time split):
+/// 1. parse the `workflow:<id>#<step-id>` target ([`Anchor::At`]);
+/// 2. read the source file + derive its basename;
+/// 3. `check_basename_collision` — the basename must be a fresh step id else reject;
+/// 4. `check_anchor_present` — the target step-id must be in the workflow's resolved
+///    include list *as of this edit* else reject;
+/// 5. write `steps/<basename>.yaml` (the source bytes) + append the `replace-step`
+///    delta to the project manifest.
+fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
+    let project_config = require_project_layer(cwd)?;
+    let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
+    let step_id = at_step(&parsed);
+
+    let basename = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .with_context(|| format!("source file {} has no basename", file.display()))?
+        .to_owned();
+    let source = std::fs::read(file)
+        .with_context(|| format!("could not read source step file {}", file.display()))?;
+
+    // Both write-time checks run before any write — a rejection touches nothing.
+    let pack = EmbeddedPack::new();
+    let (_layer, existing_deltas) = crate::start::load_project_layer(&project_config)?;
+    check_basename_collision(&pack, &project_config, &basename).map_err(finding_to_err)?;
+    check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
+        .map_err(finding_to_err)?;
+
+    // Write the native step file, then append the `replace-step` delta.
+    let steps_dir = project_config.join("steps");
+    std::fs::create_dir_all(&steps_dir)
+        .with_context(|| format!("could not create {}", steps_dir.display()))?;
+    let native = steps_dir.join(format!("{basename}.yaml"));
+    std::fs::write(&native, &source)
+        .with_context(|| format!("could not write {}", native.display()))?;
+    let delta = StructuralDelta::Replace {
+        target: parsed,
+        step: basename,
+    };
+    append_delta(&project_config, &delta)
+}
+
+/// `jigc config remove-step <workflow:id#step-id>` — record a `remove`
+/// `structural-op` (`design/overrides.md` → Authoring deltas). No native file —
+/// a remove adds nothing.
+///
+/// The single write-time check (`overrides.md` → Write-time vs resolve-time split):
+/// the target step-id must be in the workflow's resolved include list *as of this
+/// edit* else reject. On pass, append the `remove-step` delta to the project
+/// manifest.
+fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
+    let project_config = require_project_layer(cwd)?;
+    let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
+    let step_id = at_step(&parsed);
+
+    let pack = EmbeddedPack::new();
+    let (_layer, existing_deltas) = crate::start::load_project_layer(&project_config)?;
+    check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
+        .map_err(finding_to_err)?;
+
+    let delta = StructuralDelta::Remove { target: parsed };
+    append_delta(&project_config, &delta)
+}
+
+/// Locate the repo root and its `.jigc/config/` project layer, erroring with the
+/// same routed messages [`run_set`] / [`run_insert_step`] use when the repo or the
+/// project layer is absent. The shared preamble of every `config` verb.
+fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+    Ok(project_config)
 }
 
 /// Record `scalar.<key> = <value>` into `<project_config>/manifest.yaml`,
