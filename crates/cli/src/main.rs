@@ -17,6 +17,7 @@ mod render;
 mod setup;
 mod start;
 mod task;
+mod upgrade;
 
 use clap::Parser;
 use std::process::ExitCode;
