@@ -72,6 +72,42 @@ jigc start --workflow <chosen> \"<intent>\"
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 
+/// The **no-structural-delta** `single-task` agent-text composition, byte for
+/// byte — the pack-default include list `[locate, implement, superseded-context,
+/// finalize]` composed with the cascade carrying *only* a `scalar:` flip (no
+/// `deltas:` block, no project `steps/` dir). This is the determinism guard for
+/// wiring phases 2+4 live into compose (M4 Increment 2, T4): once the live step
+/// source consults `Resolved::file_owner` and `def.includes` flows through the
+/// phase-4 structural-delta pass, the **no-override** read path must stay
+/// byte-identical to the pre-increment baseline (`overrides.md` → Read-side
+/// determinism invariant; Resolution algorithm). Captured from the binary before
+/// the wiring landed.
+const NO_DELTA_SINGLE_TASK_GOLDEN: &str = "\
+Reason about the change. The intent is:
+add rate limiter
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.
+
+Implement the change directly in the working tree. When done, stage the
+commit prose:
+
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+<<author: commit:add-rate-limiter#summary>>
+
+If a decision is warranted, create an ADR and author its slots:
+
+Run: `jigc doc create adr --title <TITLE>`
+
+If your decision supersedes an earlier one, here is that decision for
+reference — make your consequences explain what changes:
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize add-rate-limiter`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
 /// Initialize a real git repo with one commit (composition mints, which reads
 /// HEAD via `git rev-parse`), and create the `.jigc/config/` project layer so the
 /// cascade resolves.
@@ -241,6 +277,112 @@ fn project_scalar_set_flips_the_bare_intent_workflow() {
     assert!(
         !stdout.contains("These are the selectable work-workflows"),
         "the flipped compose must not be the router catalog; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn no_structural_delta_single_task_compose_is_byte_identical_to_the_golden() {
+    // The T4 determinism guard (M4 Increment 2): wiring the layer-aware step source
+    // (phase 2) + the phase-4 structural-delta pass live into compose must leave the
+    // **no-override** read path byte-identical. The manifest carries only a `scalar:`
+    // flip to single-task — no `deltas:` block, no `.jigc/config/steps/` dir — so
+    // the cascade resolves the pack include list `[locate, implement,
+    // superseded-context, finalize]` and every step reads its pack body, unchanged.
+    let repo = TempDir::new("no-delta-byte-identical");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    fs::write(
+        repo.path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n",
+    )
+    .expect("write project manifest");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "the no-delta single-task compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        stdout, NO_DELTA_SINGLE_TASK_GOLDEN,
+        "the no-structural-delta compose must stay byte-identical to the pre-increment baseline",
+    );
+}
+
+#[test]
+fn replace_step_delta_flips_the_composed_include_list() {
+    // The T4 done-criterion (worked-examples.md → 3a): a hand-authored project
+    // manifest with a `replace-step workflow:single-task#implement → step:project-
+    // implement` delta, plus a native `.jigc/config/steps/project-implement.yaml`
+    // re-including the pack `step:implement` and appending a house rule, flips the
+    // composed include list to `[locate, project-implement(→implement + house rule),
+    // superseded-context, finalize]` — proven on the emitted bytes through the binary.
+    let repo = TempDir::new("replace-step");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let config = repo.path().join(".jigc").join("config");
+    // Flip to single-task *and* record the structural delta in the one manifest.
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n\
+         deltas:\n\
+         \x20 - kind: replace-step\n\
+         \x20   target: workflow:single-task#implement\n\
+         \x20   with: step:project-implement\n",
+    )
+    .expect("write project manifest with a replace-step delta");
+    // The native step file (id = filename basename) re-includes the pack step and
+    // adds the house rule — flow 3a's augment-without-fork shape.
+    fs::create_dir_all(config.join("steps")).expect("mk steps/");
+    fs::write(
+        config.join("steps").join("project-implement.yaml"),
+        "{{ include: step:implement }}\n\n\
+         Before you finalize, run the project lint probe and fix any findings.\n",
+    )
+    .expect("write the native project-implement step");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "the replace-step flipped compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The pack `implement` body still composes (the re-include pulled it in) ...
+    assert!(
+        stdout.contains("Implement the change directly in the working tree."),
+        "the re-included pack `implement` body must still compose; got:\n{stdout}",
+    );
+    // ... immediately followed by the project house rule the native step appends —
+    // proof the project step shadowed the include-list position and expanded.
+    assert!(
+        stdout.contains("Before you finalize, run the project lint probe and fix any findings."),
+        "the project-implement house rule must compose after the re-included pack body; got:\n{stdout}",
+    );
+    // The surrounding pack steps are untouched — locate before, finalize after.
+    let locate_at = stdout
+        .find("Reason about the change.")
+        .expect("locate step composes");
+    let house_at = stdout
+        .find("Before you finalize, run the project lint probe")
+        .expect("house rule composes");
+    let finalize_at = stdout
+        .find("Validate and commit the task as one logical commit:")
+        .expect("finalize step composes");
+    assert!(
+        locate_at < house_at && house_at < finalize_at,
+        "the include list must be [locate, project-implement(→implement + house rule), superseded-context, finalize]; got:\n{stdout}",
     );
 }
 

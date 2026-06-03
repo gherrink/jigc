@@ -21,10 +21,12 @@
 use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
-use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
+use engine::cascade::{
+    self, AnchorSpec, OverrideLayer, PackDefaultLayer, StructuralDelta, StructuralTarget,
+};
 use engine::compose::{
     self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, StoreContext, WorkflowDef,
-    load_command_catalog, load_step_def, load_workflow_def,
+    apply_structural_deltas, load_command_catalog, load_step_def, load_workflow_def,
 };
 use engine::data_value::{ComposeContext, TaskRoot};
 use engine::finding::{Finding, Severity};
@@ -162,7 +164,8 @@ const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
 ///
 /// Locates the cascade (a missing project layer routes to `jigc setup`), resolves
 /// `default-workflow` **through the cascade** (so a project `scalar:` delta
-/// flips it — [`resolve_default_workflow`]), mints the task (seq 12),
+/// flips it — [`resolve_cascade`] + [`cascade::Resolved::scalar_required`]), mints
+/// the task (seq 12),
 /// builds the [`ComposeContext`] binding `{{task.intent}}`/`{{task.id}}` and
 /// declaring the workflow's `allows-create` roles unbound, runs the
 /// `workflow-refs` gate at compose-time, and on a clean gate emits the
@@ -181,8 +184,17 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     }
 
     let pack = EmbeddedPack::new();
-    let workflow_id = resolve_default_workflow(&pack, &project_config)?;
-    compose_core(&repo_root, intent, &pack, &workflow_id)
+    // Resolve the cascade once: phase-3 scalars (the `default-workflow` read) +
+    // phase-2 file owners + the manifest's phase-4 structural deltas (`overrides.md`
+    // → Resolution algorithm). The same `Resolved` threads into the layer-aware
+    // step source so a project step shadows the pack's.
+    let (resolved, deltas) = resolve_cascade(&pack, &project_config)?;
+    let workflow_id = resolved
+        .scalar_required(DEFAULT_WORKFLOW_KEY)
+        .map(str::to_owned)
+        .map_err(anyhow::Error::from)?;
+    let source = CascadeStepSource::new(&pack, &resolved, &project_config);
+    compose_drained(&repo_root, intent, &pack, &workflow_id, &source, &deltas)
 }
 
 /// Compose the workflow named by `workflow_id` from `intent` — the explicit
@@ -207,13 +219,41 @@ pub fn compose_named_in_repo(
     }
 
     let pack = EmbeddedPack::new();
-    compose_core(&repo_root, intent, &pack, workflow_id)
+    // Form D bypasses the cascade `default-workflow` knob but still resolves the
+    // cascade for phase-2 file owners + the phase-4 structural deltas, so a project
+    // step override applies to a `--workflow <X>`-composed workflow too.
+    let (resolved, deltas) = resolve_cascade(&pack, &project_config)?;
+    let source = CascadeStepSource::new(&pack, &resolved, &project_config);
+    compose_drained(&repo_root, intent, &pack, workflow_id, &source, &deltas)
+}
+
+/// Run [`compose_core`] over the layer-aware [`CascadeStepSource`], then prefer the
+/// source's drained **located** fault over a generic compose error: a project step
+/// the cascade owns but whose file is missing/malformed records a located finding
+/// in the source's sink (the `Option<StepDef>` contract can't carry it), so a
+/// failed compose surfaces that precise fault rather than the engine's generic
+/// dangling-include message (`CascadeStepSource` doc → Located-error sink).
+fn compose_drained(
+    repo_root: &Path,
+    intent: &str,
+    pack: &dyn PackSource,
+    workflow_id: &str,
+    source: &CascadeStepSource<'_>,
+    deltas: &[StructuralDelta],
+) -> Result<ComposedWorkflow> {
+    let result = compose_core(repo_root, intent, pack, workflow_id, source, deltas);
+    if result.is_err()
+        && let Some(located) = source.take_error()
+    {
+        return Err(finding_to_err(located));
+    }
+    result
 }
 
 /// Compose the workflow named by `workflow_id` from `intent`, branching on the
 /// workflow's `creates-task` flag — the engine spine both front-door forms drive
 /// (the cascade-default `jigc start "<intent>"` passes the cascade-resolved
-/// [`resolve_default_workflow`]; the explicit `--workflow <X>` form passes `X`),
+/// `default-workflow`; the explicit `--workflow <X>` form passes `X`),
 /// with the pack injected so the no-task arm is reachable under test.
 ///
 /// An unknown `workflow_id` — one the pack does not provide — is **rejected with a
@@ -232,14 +272,31 @@ pub fn compose_named_in_repo(
 /// the cascade catalog **filtered to the selectable (`creates-task: true`) work-
 /// workflows** into the context, so `{{catalog}}` resolves the same list the
 /// router lists and never names itself.
+///
+/// The `source` is the layer-aware [`StepSource`] (phase-2 by-id shadowing live);
+/// `deltas` are the manifest's phase-4 `structural-op` deltas, applied to the
+/// workflow's include id list **before** include expansion (`overrides.md` →
+/// Resolution algorithm phase 4 / Why structural deltas precede expansion). The
+/// no-delta / no-shadow path resolves the pack include list unchanged and reads
+/// every step's pack body, so the composed bytes stay byte-identical to before
+/// the wiring landed (the read-side determinism guard).
 fn compose_core(
     repo_root: &Path,
     intent: &str,
     pack: &dyn PackSource,
     workflow_id: &str,
+    source: &dyn StepSource,
+    deltas: &[StructuralDelta],
 ) -> Result<ComposedWorkflow> {
     let workflow_bytes = read_workflow(pack, workflow_id)?;
-    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    // Phase 4 — apply the manifest's `structural-op` deltas to the include id list,
+    // before include expansion. The deltas targeting *this* workflow id mutate its
+    // `includes`; a `replace-step` swaps a pack step id for a project-shadowed one,
+    // so the layer-aware source resolves the new id to the project body. An
+    // orphaned anchor surfaces here as a blocking finding (T5 widens the gate over
+    // the post-phase-4 list; T4 applies the pass + composes the result).
+    def.includes = apply_phase4(&def.includes, workflow_id, deltas)?;
     let commands = load_catalog(pack)?;
     // The selectable-workflow list both arms feed to composition — the router's
     // `{{catalog}}` input, filtered to `creates-task: true` so it never lists
@@ -284,12 +341,10 @@ fn compose_core(
             store,
         }
     };
-    let source = PackStepSource { pack };
-
     // Compose-time `workflow-refs` gate: validate every placeholder / include /
     // command-ref / marker before any output reaches the agent. A blocking
     // finding short-circuits.
-    let findings = compose::workflow_refs(&workflow_bytes, &source, &commands, &ctx);
+    let findings = compose::workflow_refs(&workflow_bytes, source, &commands, &ctx);
     if let Some(finding) = findings
         .into_iter()
         .find(|f| f.severity == Severity::Blocking)
@@ -297,7 +352,55 @@ fn compose_core(
         return Err(finding_to_err(finding));
     }
 
-    compose::compose(&def, &source, &commands, &ctx).map_err(finding_to_err)
+    compose::compose(&def, source, &commands, &ctx).map_err(finding_to_err)
+}
+
+/// Apply the phase-4 `structural-op` deltas that target `workflow_id` to its
+/// `includes` id list — the cli-side wrapper around the engine's pure
+/// [`apply_structural_deltas`] (`overrides.md` → Resolution algorithm phase 4).
+///
+/// A `structural-op` names its workflow in the target (`workflow:<id>#…`), so a
+/// manifest may carry deltas for several workflows; only those targeting the
+/// composed `workflow_id` apply here. A no-delta cascade returns the include list
+/// unchanged (the byte-identity guard). An orphaned anchor is the engine's
+/// blocking `workflow-refs.structural-anchor-resolves` finding.
+fn apply_phase4(
+    includes: &[String],
+    workflow_id: &str,
+    deltas: &[StructuralDelta],
+) -> Result<Vec<String>> {
+    let scoped: Vec<StructuralDelta> = deltas
+        .iter()
+        .filter(|d| d.target().workflow_id == workflow_id)
+        .cloned()
+        .collect();
+    if scoped.is_empty() {
+        return Ok(includes.to_vec());
+    }
+    apply_structural_deltas(includes, &scoped).map_err(finding_to_err)
+}
+
+/// Resolve the cascade for a compose: seed the [`PackDefaultLayer`] scalar surface
+/// from `config/knobs`, load the project [`OverrideLayer`] + its `structural-op`
+/// deltas from `<project_config>/manifest.yaml`, and resolve — returning the
+/// [`cascade::Resolved`] (phase-2 file owners + phase-3 scalars) paired with the
+/// phase-4 deltas the compose applies. The one cascade build both front doors
+/// share (`overrides.md` → Resolution algorithm).
+fn resolve_cascade(
+    pack: &dyn PackSource,
+    project_config: &Path,
+) -> Result<(cascade::Resolved, Vec<StructuralDelta>)> {
+    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
+    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    let pack_default = PackDefaultLayer::new(
+        pack_id_from_config(pack)?,
+        pack.pack_version(),
+        knobs.base_scalars(),
+        Vec::new(),
+    );
+    let (project, deltas) = load_project_layer(project_config)?;
+    let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
+    Ok((resolved, deltas))
 }
 
 /// Build the selectable-workflow catalog from `pack`: every workflow the pack
@@ -589,12 +692,10 @@ impl StepSource for PackStepSource<'_> {
 /// fall-through to the pack body: `step()` records a clear located [`Finding`] into
 /// an interior sink and returns `None`. The compose caller drains it via
 /// [`CascadeStepSource::take_error`] after a `None` to surface the located fault.
-///
-// Unit-proven here; T4 replaces `PackStepSource` with it at the `compose_core` /
-// `resume_in_repo` call sites (populating `file_owner` from the project `steps/`
-// dir + applying the phase-4 structural deltas, with the no-override goldens
-// guarding byte-identity). The `allow` lifts when that wiring lands.
-#[allow(dead_code)]
+/// This is the live compose step source (T4): the two front doors build it over
+/// the resolved cascade + the project `steps/` dir and drain its sink after a
+/// failed compose, so a missing/malformed project step surfaces its located fault
+/// rather than the generic dangling-include message.
 struct CascadeStepSource<'a> {
     pack: &'a dyn PackSource,
     resolved: &'a cascade::Resolved,
@@ -605,7 +706,6 @@ struct CascadeStepSource<'a> {
     error: std::cell::RefCell<Option<Finding>>,
 }
 
-#[allow(dead_code)] // wired live by T4; see the type doc above.
 impl<'a> CascadeStepSource<'a> {
     /// Build the layer-aware source over the resolved cascade + the project config
     /// dir the `steps/<id>.yaml` files live under.
@@ -681,36 +781,6 @@ impl StepSource for CascadeStepSource<'_> {
     }
 }
 
-/// Resolve the `default-workflow` id **through the cascade** — the live read the
-/// bare front door composes (`overrides.md` → Scalar knobs / Resolution
-/// algorithm). Seeds the [`PackDefaultLayer`] scalar surface from the pack's
-/// `config/knobs` (closed key set + materialized defaults), loads the project
-/// [`OverrideLayer`] from `<project_config>/manifest.yaml`, resolves the cascade,
-/// and reads the key via [`cascade::Resolved::scalar_required`] — so a project
-/// `scalar: default-workflow: …` delta *flips* which workflow mints, while a
-/// no-override cascade reads the pack default unchanged.
-///
-/// The read goes through `scalar_required`, not [`cascade::Resolved::scalar`]:
-/// the compose path is byte-safe only over the declared, seeded surface, so an
-/// undeclared read-key is a hard [`cascade::CascadeError::UndeclaredComposeRead`]
-/// here, never a silent `None`/raw fallback (the read-side determinism invariant).
-fn resolve_default_workflow(pack: &dyn PackSource, project_config: &Path) -> Result<String> {
-    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
-    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
-    let pack_default = PackDefaultLayer::new(
-        pack_id_from_config(pack)?,
-        pack.pack_version(),
-        knobs.base_scalars(),
-        Vec::new(),
-    );
-    let project = load_project_layer(project_config)?;
-    let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
-    resolved
-        .scalar_required(DEFAULT_WORKFLOW_KEY)
-        .map(str::to_owned)
-        .map_err(anyhow::Error::from)
-}
-
 /// Read the pack's own cascade id from its `config/defaults` `pack-id` field —
 /// the identity the [`PackDefaultLayer`] carries (`overrides.md`: the pack-default
 /// layer names itself; `pack-id` is identity, never a knob).
@@ -726,37 +796,53 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
         .context("`config/defaults` declares no `pack-id`")
 }
 
-/// Load the project cascade layer from `<project_config>/manifest.yaml`, reading
-/// **only** its top-level `scalar:` block this increment (the `deltas:` list is
-/// increments 2–5). Each `scalar:` entry becomes one
-/// [`OverrideLayer::scalar_set`], recorded **in manifest order** so within-layer
-/// application order is preserved (`overrides.md` → Delta representation; phase 3
-/// / Within-layer manifest order). The resulting layer, resolved over the base,
-/// applies the project's `scalar-set` deltas — flipping a knob like
-/// `default-workflow` the cascade reads on the compose path.
+/// Load the project cascade layer from `<project_config>/manifest.yaml` plus the
+/// project's native `steps/` dir, returning the [`OverrideLayer`] paired with the
+/// manifest's phase-4 `structural-op` deltas.
 ///
-/// A **missing** manifest file, or a present manifest with a **missing or blank**
-/// `scalar:` block, yields [`OverrideLayer::empty()`] — present-but-empty is the
-/// no-override path the determinism invariant keeps byte-identical to today. A
-/// non-string scalar value (`true`, `3`) is recorded as its YAML scalar string;
-/// the engine treats scalar values as opaque strings here, with typed adjudication
-/// owned by the `jigc config set` write path's `check_value` (T6).
+/// The layer carries three surfaces:
+/// - **`scalar:`** — each entry becomes one [`OverrideLayer::scalar_set`], recorded
+///   **in manifest order** (`overrides.md` → phase 3 / Within-layer manifest order),
+///   flipping a knob like `default-workflow` the cascade reads on the compose path.
+/// - **shadowed files** — every `steps/<id>.yaml` basename is declared via
+///   [`OverrideLayer::shadow_file`], so [`cascade::Resolved::file_owner`] returns
+///   `Project` for an id the project ships (phase-2 by-id shadowing). A native step
+///   file shadows the pack step regardless of any delta (the `steps/` dir *is* the
+///   project's step layer).
+/// - **`deltas:`** — the `structural-op` deltas (`insert-step` / `replace-step` /
+///   `remove-step`), parsed into [`StructuralDelta`]s for the phase-4 pass; returned
+///   separately because they mutate a workflow's include list at compose, not the
+///   resolved scalar/file surface.
 ///
-/// The closed-surface check (an undeclared key is an error) is **not** done here:
-/// it is the resolver's job (`cascade::resolve` rejects an undeclared
-/// `scalar-set`), so a hand-edited manifest and a `config set` write are
-/// adjudicated by the one path.
-pub(crate) fn load_project_layer(project_config: &Path) -> Result<OverrideLayer> {
+/// A **missing** manifest file (the dir may still hold `steps/` shadows), or a
+/// present manifest with a **missing or blank** `scalar:` / `deltas:` block, yields
+/// the no-override path — present-but-empty, byte-identical to today. A non-string
+/// scalar value (`true`, `3`) is recorded as its YAML scalar string (opaque here).
+///
+/// The closed-surface check (an undeclared scalar key is an error) is **not** done
+/// here: it is the resolver's job, so a hand-edited manifest and a `config set`
+/// write are adjudicated by the one path.
+pub(crate) fn load_project_layer(
+    project_config: &Path,
+) -> Result<(OverrideLayer, Vec<StructuralDelta>)> {
     let manifest = project_config.join("manifest.yaml");
-    // Always stamp the committed-config path (the provenance-header segment, the
-    // same path the orient view shows), whichever arm builds the layer.
-    let with_path = |layer: OverrideLayer| layer.config_path(project_config.display().to_string());
+    // Every native `steps/<id>.yaml` basename shadows the pack step by id (phase 2),
+    // independent of the manifest — the `steps/` dir is the project's step layer.
+    let shadowed = project_step_ids(project_config);
+    // Stamp the committed-config path (provenance header) + the shadowed step ids.
+    let with_files = |mut layer: OverrideLayer| {
+        layer = layer.config_path(project_config.display().to_string());
+        for id in &shadowed {
+            layer = layer.shadow_file(id);
+        }
+        layer
+    };
 
     let text = match std::fs::read_to_string(&manifest) {
         Ok(text) => text,
-        // No manifest file → the no-override path (present-but-empty layer).
+        // No manifest file → no scalar/delta override (the `steps/` shadows still apply).
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok(with_path(OverrideLayer::empty()));
+            return Ok((with_files(OverrideLayer::empty()), Vec::new()));
         }
         Err(e) => {
             return Err(e).with_context(|| format!("could not read {}", manifest.display()));
@@ -766,9 +852,8 @@ pub(crate) fn load_project_layer(project_config: &Path) -> Result<OverrideLayer>
         .with_context(|| format!("{} is not valid YAML", manifest.display()))?;
 
     let mut layer = OverrideLayer::empty();
-    // Only the `scalar:` block this increment. A **blank** block (`scalar:` with no
-    // children, parsed as null) is the no-override path — not an error — so the key
-    // present-but-empty leaves the layer empty exactly like an absent block.
+    // The `scalar:` block. A **blank** block (parsed as null) is the no-override
+    // path — not an error — so present-but-empty leaves the layer empty.
     match doc.get("scalar") {
         None | Some(serde_yaml_ng::Value::Null) => {}
         Some(scalar) => {
@@ -786,7 +871,116 @@ pub(crate) fn load_project_layer(project_config: &Path) -> Result<OverrideLayer>
             }
         }
     }
-    Ok(with_path(layer))
+
+    // The `deltas:` block — the phase-4 `structural-op` list (blank/absent → none).
+    let deltas = match doc.get("deltas") {
+        None | Some(serde_yaml_ng::Value::Null) => Vec::new(),
+        Some(seq) => parse_structural_deltas(seq, &manifest)?,
+    };
+
+    Ok((with_files(layer), deltas))
+}
+
+/// List the native step ids the project layer ships — every `<project_config>/
+/// steps/<id>.yaml` basename. These shadow the pack step of the same id at phase 2
+/// (`overrides.md` → Native-file id = filename basename). A missing `steps/` dir is
+/// the empty list (no project shadows), never an error.
+fn project_step_ids(project_config: &Path) -> Vec<String> {
+    let dir = project_config.join("steps");
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<String> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("yaml"))
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
+        .collect();
+    ids.sort();
+    ids
+}
+
+/// Parse the manifest's `deltas:` sequence into [`StructuralDelta`]s — the phase-4
+/// `structural-op` list (`overrides.md` → Delta representation / Delta targets).
+/// Each entry carries a `kind` (`insert-step` / `replace-step` / `remove-step`), a
+/// `target` (`workflow:<id>#<step>` or `workflow:<id>` + `after:`/`before:`), and —
+/// for insert/replace — a `with:` step reference (`step:<id>`, the native step
+/// basename). The definition-target grammar + its hostile-input rejection live in
+/// [`StructuralTarget::parse`]; a malformed entry surfaces as its located finding.
+fn parse_structural_deltas(
+    seq: &serde_yaml_ng::Value,
+    manifest: &Path,
+) -> Result<Vec<StructuralDelta>> {
+    let items = seq.as_sequence().with_context(|| {
+        format!(
+            "{}: `deltas:` must be a list of structural ops",
+            manifest.display()
+        )
+    })?;
+    let mut deltas = Vec::with_capacity(items.len());
+    for item in items {
+        deltas.push(parse_one_delta(item, manifest)?);
+    }
+    Ok(deltas)
+}
+
+/// Parse one `deltas:` entry into a [`StructuralDelta`]. A `with:`/`target:` value
+/// may carry a `step:` prefix (the manifest spelling — flow 3a's
+/// `with: step:project-implement`); the bare step id is what the include list
+/// holds. A `target`'s `after:`/`before:` anchor is read from sibling keys.
+fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<StructuralDelta> {
+    let at = |key: &str| item.get(key).and_then(serde_yaml_ng::Value::as_str);
+    let kind = at("kind")
+        .with_context(|| format!("{}: a `deltas:` entry needs a `kind`", manifest.display()))?;
+    let target_str = at("target")
+        .with_context(|| format!("{}: a `deltas:` entry needs a `target`", manifest.display()))?;
+
+    match kind {
+        "replace-step" => {
+            let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
+            let step = with_step(at("with"), kind, manifest)?;
+            Ok(StructuralDelta::Replace { target, step })
+        }
+        "remove-step" => {
+            let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
+            Ok(StructuralDelta::Remove { target })
+        }
+        "insert-step" => {
+            let anchor = match (at("after"), at("before")) {
+                (Some(a), None) => AnchorSpec::After(a.to_owned()),
+                (None, Some(b)) => AnchorSpec::Before(b.to_owned()),
+                (Some(_), Some(_)) => bail!(
+                    "{}: an `insert-step` needs exactly one of `after:`/`before:`",
+                    manifest.display()
+                ),
+                (None, None) => bail!(
+                    "{}: an `insert-step` needs an `after:` or `before:` anchor",
+                    manifest.display()
+                ),
+            };
+            let target =
+                StructuralTarget::parse(target_str, Some(anchor)).map_err(finding_to_err)?;
+            let step = with_step(at("with"), kind, manifest)?;
+            Ok(StructuralDelta::Insert { target, step })
+        }
+        other => bail!(
+            "{}: unknown structural-op kind `{other}` (expected insert-step / replace-step / remove-step)",
+            manifest.display()
+        ),
+    }
+}
+
+/// The bare step id from a `with:` reference, stripping the manifest's optional
+/// `step:` prefix (`with: step:project-implement` → `project-implement`). A
+/// missing `with:` on an insert/replace is a clear error.
+fn with_step(raw: Option<&str>, kind: &str, manifest: &Path) -> Result<String> {
+    let raw = raw.with_context(|| {
+        format!(
+            "{}: a `{kind}` needs a `with:` step reference",
+            manifest.display()
+        )
+    })?;
+    Ok(raw.strip_prefix("step:").unwrap_or(raw).to_owned())
 }
 
 /// Render a YAML scalar `value` to the opaque string the cascade stores. A string
@@ -1069,10 +1263,13 @@ mod tests {
         ]);
 
         // `compose_core` is driven with the workflow id directly here — the
-        // cascade read (`resolve_default_workflow`) is exercised by the binary-
-        // driven flip + byte-identical goldens (`tests/start_compose.rs`).
-        let composed =
-            compose_core(repo.path(), "anything", &pack, "router").expect("no-task compose");
+        // cascade read (`resolve_cascade` + `scalar_required`) is exercised by the binary-
+        // driven flip + byte-identical goldens (`tests/start_compose.rs`). The
+        // no-override step source + empty phase-4 deltas read the fixture pack
+        // unchanged (the live `CascadeStepSource` path is the binary-driven tests').
+        let source = PackStepSource { pack: &pack };
+        let composed = compose_core(repo.path(), "anything", &pack, "router", &source, &[])
+            .expect("no-task compose");
 
         // (a) The no-task arm mints nothing: no working area is opened.
         assert!(
@@ -1149,8 +1346,16 @@ mod tests {
         init_repo_with_commit(repo.path());
 
         let pack = form_d_pack();
-        let composed = compose_core(repo.path(), "Add rate limiter", &pack, "single-task")
-            .expect("Form-D compose of a creates-task workflow");
+        let source = PackStepSource { pack: &pack };
+        let composed = compose_core(
+            repo.path(),
+            "Add rate limiter",
+            &pack,
+            "single-task",
+            &source,
+            &[],
+        )
+        .expect("Form-D compose of a creates-task workflow");
 
         let dir = repo
             .path()
@@ -1177,8 +1382,16 @@ mod tests {
         let repo = TempDir::new("form-d-unknown");
 
         let pack = form_d_pack();
-        let err = compose_core(repo.path(), "Add rate limiter", &pack, "does-not-exist")
-            .expect_err("an unknown --workflow id must reject");
+        let source = PackStepSource { pack: &pack };
+        let err = compose_core(
+            repo.path(),
+            "Add rate limiter",
+            &pack,
+            "does-not-exist",
+            &source,
+            &[],
+        )
+        .expect_err("an unknown --workflow id must reject");
 
         let msg = err.to_string();
         assert!(
@@ -1370,7 +1583,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1392,7 +1605,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1411,7 +1624,7 @@ mod tests {
         let cfg = TempDir::new("manifest-blank-scalar");
         fs::write(cfg.path().join("manifest.yaml"), "scalar:\n").expect("write manifest");
 
-        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1430,7 +1643,8 @@ mod tests {
         let cfg = TempDir::new("manifest-missing");
         // No manifest.yaml written.
 
-        let layer = load_project_layer(cfg.path()).expect("missing manifest is not an error");
+        let (layer, _deltas) =
+            load_project_layer(cfg.path()).expect("missing manifest is not an error");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1462,7 +1676,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
         assert_eq!(resolved.scalar("default-workflow"), Some("router"));
@@ -1474,11 +1688,11 @@ mod tests {
     }
 
     /// The read-side determinism invariant, end-to-end through the compose read:
-    /// `resolve_default_workflow` reads `default-workflow` via `scalar_required`,
-    /// so a pack whose `config/knobs` **does not declare** `default-workflow`
-    /// fails **loudly** (the `UndeclaredComposeRead` hard error) rather than
-    /// silently composing nothing. Pins that the wired compose read never falls
-    /// back to a raw `None` for an undeclared key.
+    /// the bare front door resolves the cascade then reads `default-workflow` via
+    /// `scalar_required`, so a pack whose `config/knobs` **does not declare**
+    /// `default-workflow` fails **loudly** (the `UndeclaredComposeRead` hard error)
+    /// rather than silently composing nothing. Pins that the wired compose read
+    /// never falls back to a raw `None` for an undeclared key.
     #[test]
     fn undeclared_compose_read_key_fails_loudly() {
         let cfg = TempDir::new("undeclared-read");
@@ -1495,7 +1709,13 @@ mod tests {
             ),
         ]);
 
-        let err = resolve_default_workflow(&pack, cfg.path())
+        // The live front-door read: resolve the cascade, then read the key through
+        // `scalar_required` (the exact two steps `compose_in_repo` runs).
+        let (resolved, _deltas) = resolve_cascade(&pack, cfg.path()).expect("cascade resolves");
+        let err = resolved
+            .scalar_required(DEFAULT_WORKFLOW_KEY)
+            .map(str::to_owned)
+            .map_err(anyhow::Error::from)
             .expect_err("an undeclared compose-read key must fail loudly");
         let msg = err.to_string();
         assert!(
@@ -1620,7 +1840,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
         assert_eq!(
