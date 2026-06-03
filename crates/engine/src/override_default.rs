@@ -7,9 +7,11 @@
 //! each recorded delta and asks up to three deterministic questions against v2
 //! ([overrides.md](../../../design/overrides.md) → Upgrade reconciliation):
 //!
-//! 1. **Does the target still exist?** No → **`orphaned`** (this task, T1).
-//! 2. *(T3)* a content-bearing delta with no recorded base-hash → **`needs-rebasing`**.
-//! 3. *(T2)* the target's content changed upstream → **`conflict`**, else **`clean`**.
+//! 1. **Does the target still exist?** No → **`orphaned`**.
+//! 2. A content-bearing `replace`/`remove` with no recorded base-hash (an M4-era
+//!    manifest) → **`needs-rebasing`** — distinct from `clean`, never re-derived from
+//!    the current pack.
+//! 3. The target's content changed upstream → **`conflict`**, else **`clean`**.
 //!
 //! **The probe re-reads the pack-default unit via [`PackSource::read`], never the
 //! cascade-resolved owner** — the tracked-fork shadow-bypass (`overrides.md` →
@@ -57,12 +59,15 @@ pub struct RecordedDeltas<'a> {
 ///    [`Anchor::At`]) must still resolve: a pack-direct `pack.read(Steps, <step-id>)`
 ///    that is `Ok` means the target exists; an `Err(NotFound)` orphans it (one blocking
 ///    `orphaned` [`Finding`] with the delta's target string + a remove/re-target route).
-/// 2. **Content (→ `conflict` / `clean`) — T2.** For a still-present target that carries
+/// 2. **No basis (→ `needs-rebasing`).** A still-present `replace`/`remove` with **no**
+///    recorded [`StructuralBasis`] (an M4-era manifest) raises one blocking
+///    `needs-rebasing` [`Finding`] routed to re-record — distinct from `clean` and never
+///    re-derived from the current pack. (Asked before the content compare.)
+/// 3. **Content (→ `conflict` / `clean`).** For a still-present target that carries
 ///    a recorded `base_hash` (a fork's `base_hash`, or a `replace`/`remove` with a
 ///    matching [`StructuralBasis`]), re-read the pack unit and compare: equal → `clean`
 ///    (no finding); differs → one blocking `conflict` [`Finding`] with a keep /
-///    re-target / drop route. A present `replace`/`remove` with **no** recorded basis
-///    raises nothing yet — T3 makes that the `needs-rebasing` branch.
+///    re-target / drop route.
 ///
 /// Every read is **pack-direct** (`PackSource::read`), never the cascade-resolved owner
 /// — the B3 shadow-bypass the fork case depends on: a shadow-aware read would compare a
@@ -82,12 +87,18 @@ pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Findin
             findings.push(finding);
             continue; // an absent target is orphaned; no content compare follows.
         }
-        // The target exists. A recorded basis (T3 supplies the basis-less branch)
-        // drives the content compare: equal → clean, differs → conflict.
-        if let Some(recorded) = recorded_basis(target, deltas.bases)
-            && let Some(finding) = conflict_if_changed(target, recorded, pack)
-        {
-            findings.push(finding);
+        // The target exists. Question 2 (asked before the content compare): a
+        // content-bearing `replace`/`remove` with **no** recorded basis is an
+        // M4-era manifest → `needs-rebasing`, distinct from `clean` and never
+        // silently re-derived from the v2 pack (`overrides.md` → Backward-compat).
+        match recorded_basis(target, deltas.bases) {
+            None => findings.push(needs_rebasing(target)),
+            // A recorded basis drives the content compare: equal → clean, differs → conflict.
+            Some(recorded) => {
+                if let Some(finding) = conflict_if_changed(target, recorded, pack) {
+                    findings.push(finding);
+                }
+            }
         }
     }
 
@@ -111,7 +122,7 @@ pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Findin
 /// The recorded [`StructuralBasis::base_hash`] for a `replace`/`remove` target, if one
 /// was recorded — keyed by the delta's [`StructuralTarget`] (a delta has no stable id;
 /// its target is its identity — `overrides.md` → On-disk vs in-memory representation).
-/// `None` is the basis-less legacy case T3 turns into `needs-rebasing`.
+/// `None` is the basis-less legacy case — the `needs-rebasing` branch in [`classify`].
 fn recorded_basis<'a>(target: &StructuralTarget, bases: &'a [StructuralBasis]) -> Option<&'a str> {
     bases
         .iter()
@@ -156,6 +167,25 @@ fn conflict(target: &StructuralTarget) -> Finding {
         format!("override target `{target_str}` changed in the current pack since it was recorded"),
         format!(
             "review the change on `{target_str}`: keep your override, re-target it, or drop it"
+        ),
+    )
+}
+
+/// One blocking `needs-rebasing` [`Finding`] (`overrides.md` → Upgrade reconciliation,
+/// question 2) for a content-bearing `replace`/`remove` whose target *exists* but
+/// carries **no** recorded [`StructuralBasis`] (an M4-era manifest). Routed to re-record
+/// the delta — which pins a basis against the now-current pack — and **distinct from
+/// `clean`**: a missing basis is never re-derived from the v2 pack (that would compare
+/// equal and silently mask every conflict — `overrides.md` → Backward-compat).
+fn needs_rebasing(target: &StructuralTarget) -> Finding {
+    let target_str = render_target(target);
+    Finding::block(
+        "override-default.needs-rebasing",
+        format!(
+            "override target `{target_str}` has no recorded base-hash (an older manifest); its basis cannot be compared"
+        ),
+        format!(
+            "re-record the delta on `{target_str}` (e.g. `jigc config replace-step …`) to pin a basis against the current pack"
         ),
     )
 }
@@ -351,18 +381,16 @@ mod tests {
         }
     }
 
-    /// A delta whose target the v2 pack **still carries** raises **no** orphaned
-    /// finding (the negative half of question 1). The basis-less `replace` raises
-    /// nothing here (T3 makes it `needs-rebasing`); the fork carries a basis that
-    /// *matches* the present bytes, so the content compare says clean — a present,
+    /// A delta whose target the v2 pack **still carries** *unchanged* raises **no**
+    /// finding (the negative half of question 1). The `replace` carries a basis that
+    /// matches the present `locate` bytes, and the fork carries a basis that matches
+    /// the present `implement` bytes, so the content compare says clean — a present,
     /// unchanged target raises nothing at all (no spurious `orphaned`/`conflict`).
     #[test]
     fn target_present_in_v2_yields_no_finding() {
+        let locate_v2 = "locate body v2\n";
         let implement_v2 = "implement body v2\n";
-        let v2 = FakePack::new(
-            "v2",
-            &[("locate", "locate body v2\n"), ("implement", implement_v2)],
-        );
+        let v2 = FakePack::new("v2", &[("locate", locate_v2), ("implement", implement_v2)]);
 
         let structural = vec![replace("single-task", "locate", "find")];
         let forks = vec![fork(
@@ -370,7 +398,11 @@ mod tests {
             "implement",
             &crate::file_state::hash_bytes(implement_v2.as_bytes()),
         )];
-        let bases = Vec::new();
+        let bases = vec![basis(
+            "single-task",
+            "locate",
+            &crate::file_state::hash_bytes(locate_v2.as_bytes()),
+        )];
         let deltas = RecordedDeltas {
             structural: &structural,
             forks: &forks,
@@ -582,5 +614,133 @@ mod tests {
             route.contains("keep") && route.contains("re-target") && route.contains("drop"),
             "the fork conflict route offers keep / re-target / drop: {route}"
         );
+    }
+
+    /// **`needs-rebasing` is distinct from `clean`.** Two `replace`/`remove` deltas
+    /// over *present* targets carrying byte-identical v2 bytes — one with a recorded
+    /// [`StructuralBasis`] equal to the present bytes, one with **no** basis (an
+    /// M4-era manifest). The basis-present-and-equal pair is `clean` (no finding); the
+    /// basis-less pair is **`needs-rebasing`** — a blocking [`Finding`] routed to
+    /// re-record. The two are **not confused**: a present-and-equal basis is never a
+    /// missing one (`overrides.md` → Backward-compat).
+    #[test]
+    fn basis_less_replace_remove_classify_needs_rebasing_distinct_from_clean() {
+        // Both the basis-bearing and the basis-less targets carry identical v2 bytes;
+        // only the *presence of a recorded basis* distinguishes clean from needs-rebasing.
+        let locate_v2 = "locate body v2\n";
+        let implement_v2 = "implement body v2\n";
+        let extra_v2 = "extra body v2\n";
+        let probe_v2 = "probe body v2\n";
+        let v2 = FakePack::new(
+            "v2",
+            &[
+                ("locate", locate_v2),
+                ("implement", implement_v2),
+                ("extra", extra_v2),
+                ("probe", probe_v2),
+            ],
+        );
+
+        // `locate` (replace) + `implement` (remove) have a basis EQUAL to the v2 bytes
+        // → clean. `extra` (replace) + `probe` (remove) have NO basis → needs-rebasing.
+        let structural = vec![
+            replace("single-task", "locate", "find"),
+            remove("single-task", "implement"),
+            replace("single-task", "extra", "more"),
+            remove("single-task", "probe"),
+        ];
+        let forks = Vec::new();
+        let bases = vec![
+            basis(
+                "single-task",
+                "locate",
+                &crate::file_state::hash_bytes(locate_v2.as_bytes()),
+            ),
+            basis(
+                "single-task",
+                "implement",
+                &crate::file_state::hash_bytes(implement_v2.as_bytes()),
+            ),
+        ];
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        // The two basis-bearing deltas are clean (silent); only the two basis-less
+        // deltas surface — needs-rebasing is never silently re-derived from the v2 pack.
+        assert_eq!(
+            findings.len(),
+            2,
+            "only the basis-less deltas surface; the equal-basis pair stays clean: {findings:?}"
+        );
+        for (finding, step) in findings.iter().zip(["extra", "probe"]) {
+            assert_eq!(finding.severity, Severity::Blocking);
+            assert_eq!(finding.code, "override-default.needs-rebasing");
+            let target_str = format!("workflow:single-task#{step}");
+            assert!(
+                finding.message.contains(&target_str),
+                "needs-rebasing identifies the delta by its target string: {}",
+                finding.message
+            );
+            let route = finding
+                .route
+                .as_deref()
+                .expect("needs-rebasing carries a re-record route");
+            assert!(
+                route.contains("re-record"),
+                "the route directs a re-record: {route}"
+            );
+            assert!(
+                route.contains(&target_str),
+                "the route names the target string: {route}"
+            );
+        }
+    }
+
+    /// **Validation hardening #5 — the omitting-context case.** A basis-less
+    /// `replace`/`remove` (the needs-rebasing input) classified against a pack that
+    /// **OMITS** the target must take the *absent-target* path — `orphaned`, the
+    /// existence question — never a panic and never a false `clean`/`needs-rebasing`.
+    /// Exercising the needs-rebasing branch only against a pack that *carries* the
+    /// target would hide the case where the target is gone: existence is asked first,
+    /// so a basis-less delta over a dropped step orphans, it does not reach the
+    /// no-basis branch.
+    #[test]
+    fn basis_less_delta_over_omitted_target_classifies_orphaned_not_clean() {
+        // v2 omits `locate` and `implement` entirely — only `implement2` survives.
+        let v2 = FakePack::new("v2", &[("implement2", "implement2 body v2\n")]);
+
+        // Basis-less replace + remove (would be needs-rebasing if present) over the
+        // *dropped* steps.
+        let structural = vec![
+            replace("single-task", "locate", "find"),
+            remove("single-task", "implement"),
+        ];
+        let forks = Vec::new();
+        let bases = Vec::new();
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(
+            findings.len(),
+            2,
+            "an omitted target orphans even a basis-less delta — never a false clean: {findings:?}"
+        );
+        for finding in &findings {
+            assert_eq!(finding.severity, Severity::Blocking);
+            assert_eq!(
+                finding.code, "override-default.target-exists",
+                "the absent-target path wins over the no-basis branch (existence is asked first)"
+            );
+        }
     }
 }
