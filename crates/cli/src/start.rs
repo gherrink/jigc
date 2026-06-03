@@ -21,6 +21,7 @@
 use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
+use engine::cascade::OverrideLayer;
 use engine::compose::{
     self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, StoreContext, WorkflowDef,
     load_command_catalog, load_step_def, load_workflow_def,
@@ -586,6 +587,86 @@ fn default_workflow_id(pack: &dyn PackSource) -> Result<String> {
         .with_context(|| format!("`config/defaults` declares no `{DEFAULT_WORKFLOW_KEY}`"))
 }
 
+/// Load the project cascade layer from `<project_config>/manifest.yaml`, reading
+/// **only** its top-level `scalar:` block this increment (the `deltas:` list is
+/// increments 2–5). Each `scalar:` entry becomes one
+/// [`OverrideLayer::scalar_set`], recorded **in manifest order** so within-layer
+/// application order is preserved (`overrides.md` → Delta representation; phase 3
+/// / Within-layer manifest order). The resulting layer, resolved over the base,
+/// applies the project's `scalar-set` deltas — flipping a knob like
+/// `default-workflow` the cascade reads on the compose path.
+///
+/// A **missing** manifest file, or a present manifest with a **missing or blank**
+/// `scalar:` block, yields [`OverrideLayer::empty()`] — present-but-empty is the
+/// no-override path the determinism invariant keeps byte-identical to today. A
+/// non-string scalar value (`true`, `3`) is recorded as its YAML scalar string;
+/// the engine treats scalar values as opaque strings here, with typed adjudication
+/// owned by the `jigc config set` write path's `check_value` (T6).
+///
+/// The closed-surface check (an undeclared key is an error) is **not** done here:
+/// it is the resolver's job (`cascade::resolve` rejects an undeclared
+/// `scalar-set`), so a hand-edited manifest and a `config set` write are
+/// adjudicated by the one path.
+#[allow(dead_code)] // wired live into compose by T5; until then exercised by tests.
+pub(crate) fn load_project_layer(project_config: &Path) -> Result<OverrideLayer> {
+    let manifest = project_config.join("manifest.yaml");
+    // Always stamp the committed-config path (the provenance-header segment, the
+    // same path the orient view shows), whichever arm builds the layer.
+    let with_path = |layer: OverrideLayer| layer.config_path(project_config.display().to_string());
+
+    let text = match std::fs::read_to_string(&manifest) {
+        Ok(text) => text,
+        // No manifest file → the no-override path (present-but-empty layer).
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(with_path(OverrideLayer::empty()));
+        }
+        Err(e) => {
+            return Err(e).with_context(|| format!("could not read {}", manifest.display()));
+        }
+    };
+    let doc: serde_yaml_ng::Value = serde_yaml_ng::from_str(&text)
+        .with_context(|| format!("{} is not valid YAML", manifest.display()))?;
+
+    let mut layer = OverrideLayer::empty();
+    // Only the `scalar:` block this increment. A **blank** block (`scalar:` with no
+    // children, parsed as null) is the no-override path — not an error — so the key
+    // present-but-empty leaves the layer empty exactly like an absent block.
+    match doc.get("scalar") {
+        None | Some(serde_yaml_ng::Value::Null) => {}
+        Some(scalar) => {
+            let map = scalar.as_mapping().with_context(|| {
+                format!(
+                    "{}: `scalar:` must be a map of knob keys",
+                    manifest.display()
+                )
+            })?;
+            for (key, value) in map {
+                let key = key.as_str().with_context(|| {
+                    format!("{}: `scalar:` keys must be strings", manifest.display())
+                })?;
+                layer = layer.scalar_set(key, scalar_to_string(value));
+            }
+        }
+    }
+    Ok(with_path(layer))
+}
+
+/// Render a YAML scalar `value` to the opaque string the cascade stores. A string
+/// scalar passes through verbatim; a bool / int / other scalar renders to its YAML
+/// text (`true`, `3`). A non-scalar (map / sequence) is not a valid knob value and
+/// renders to its YAML form, which the resolver / `check_value` then rejects.
+fn scalar_to_string(value: &serde_yaml_ng::Value) -> String {
+    match value {
+        serde_yaml_ng::Value::String(s) => s.clone(),
+        serde_yaml_ng::Value::Bool(b) => b.to_string(),
+        serde_yaml_ng::Value::Number(n) => n.to_string(),
+        other => serde_yaml_ng::to_string(other)
+            .unwrap_or_default()
+            .trim_end()
+            .to_owned(),
+    }
+}
+
 /// Load and parse the pack's command catalog (`config/commands`).
 fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
     let bytes = read_pack(pack, PackResourceKind::Config, "commands")?;
@@ -1127,5 +1208,154 @@ mod tests {
         assert!(is_optional_ref(implements));
         // The pre-stamped required fields carry an empty scalar (the fillable line).
         assert_eq!(header.fields[0].value, Value::Scalar(String::new()));
+    }
+
+    /// A pack-default base layer declaring `default-workflow: single-task` — the
+    /// base a project `scalar-set` resolves over to prove the delta *applies*.
+    fn base_layer() -> engine::cascade::PackDefaultLayer {
+        let mut scalars = BTreeMap::new();
+        scalars.insert("default-workflow".to_owned(), "single-task".to_owned());
+        engine::cascade::PackDefaultLayer::new("dev", "0.0.0", scalars, Vec::new())
+    }
+
+    /// The T3 done-criterion: a hand-authored manifest with a top-level `scalar:`
+    /// map loads into an `OverrideLayer` whose `scalar-set` delta, resolved over the
+    /// base, **flips** the resolved value (`single-task` → `router`).
+    #[test]
+    fn manifest_scalar_block_flips_the_resolved_value() {
+        let cfg = TempDir::new("manifest-flip");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "scalar:\n  default-workflow: router\n",
+        )
+        .expect("write manifest");
+
+        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let resolved =
+            engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("default-workflow"),
+            Some("router"),
+            "the project `scalar:` delta must flip the resolved value over the base",
+        );
+    }
+
+    /// A manifest with **no** `scalar:` block yields the no-override path: resolved
+    /// over the base, the base value is unchanged (`OverrideLayer::empty()`).
+    #[test]
+    fn manifest_without_scalar_block_yields_empty_layer() {
+        let cfg = TempDir::new("manifest-no-scalar");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "deltas: []\n", // a `deltas:`-only manifest carries no scalar block.
+        )
+        .expect("write manifest");
+
+        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let resolved =
+            engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("default-workflow"),
+            Some("single-task"),
+            "a manifest with no `scalar:` block must leave the base value untouched",
+        );
+    }
+
+    /// A **blank** `scalar:` block (the key present but empty) is the no-override
+    /// path too — `serde_yaml_ng` parses `scalar:` with no children as null, which
+    /// is not a mapping, so the layer stays empty and the base value survives.
+    #[test]
+    fn manifest_with_blank_scalar_block_yields_empty_layer() {
+        let cfg = TempDir::new("manifest-blank-scalar");
+        fs::write(cfg.path().join("manifest.yaml"), "scalar:\n").expect("write manifest");
+
+        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let resolved =
+            engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("default-workflow"),
+            Some("single-task"),
+            "a blank `scalar:` block must leave the base value untouched",
+        );
+    }
+
+    /// A **missing** manifest file (the project layer dir exists but holds no
+    /// `manifest.yaml`) yields the no-override path — present-but-empty, not an
+    /// error: the layer is the cascade's no-delta base reader.
+    #[test]
+    fn missing_manifest_file_yields_empty_layer() {
+        let cfg = TempDir::new("manifest-missing");
+        // No manifest.yaml written.
+
+        let layer = load_project_layer(cfg.path()).expect("missing manifest is not an error");
+        let resolved =
+            engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("default-workflow"),
+            Some("single-task"),
+            "a missing manifest must resolve to the base value (no-override path)",
+        );
+    }
+
+    /// Every `scalar:` entry is recorded as a `scalar-set` delta: a manifest setting
+    /// two declared knobs resolves both over the base. Pins that the loader walks the
+    /// whole `scalar:` map (in manifest order, the iteration order `serde_yaml_ng`'s
+    /// mapping preserves), not just the first entry.
+    #[test]
+    fn manifest_records_every_scalar_entry() {
+        let mut scalars = BTreeMap::new();
+        scalars.insert("default-workflow".to_owned(), "single-task".to_owned());
+        scalars.insert(
+            "validation.file-state.severity".to_owned(),
+            "blocking".to_owned(),
+        );
+        let base = engine::cascade::PackDefaultLayer::new("dev", "0.0.0", scalars, Vec::new());
+
+        let cfg = TempDir::new("manifest-multi");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "scalar:\n  default-workflow: router\n  validation.file-state.severity: warning\n",
+        )
+        .expect("write manifest");
+
+        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
+
+        assert_eq!(resolved.scalar("default-workflow"), Some("router"));
+        assert_eq!(
+            resolved.scalar("validation.file-state.severity"),
+            Some("warning"),
+            "every `scalar:` entry must be recorded, not just the first",
+        );
+    }
+
+    /// A non-string scalar value (`bool`) is recorded as its YAML scalar string
+    /// (`true`) — the cascade stores opaque strings; typed adjudication is the
+    /// `config set` write path (T6), not this loader.
+    #[test]
+    fn manifest_non_string_scalar_renders_to_its_yaml_string() {
+        let mut scalars = BTreeMap::new();
+        scalars.insert("some-flag".to_owned(), "false".to_owned());
+        let base = engine::cascade::PackDefaultLayer::new("dev", "0.0.0", scalars, Vec::new());
+
+        let cfg = TempDir::new("manifest-bool");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "scalar:\n  some-flag: true\n",
+        )
+        .expect("write manifest");
+
+        let layer = load_project_layer(cfg.path()).expect("manifest loads");
+        let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("some-flag"),
+            Some("true"),
+            "a bool scalar must record as its YAML string form",
+        );
     }
 }
