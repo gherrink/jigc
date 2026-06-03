@@ -436,6 +436,35 @@ pub struct TrackedForkDelta {
     pub base_hash: String,
 }
 
+/// The M5 base-hash basis recorded for a content-bearing **`replace`** / **`remove`**
+/// delta — the separate recording surface keyed by the delta's [`StructuralTarget`],
+/// **not** a field on the compose-facing [`StructuralDelta`] (design-review B2). The
+/// basis is the **blake3 of the displaced *pack-default* unit's resolved native
+/// bytes** plus the pack version it was recorded against — the same basis
+/// [`TrackedForkDelta`] already carries, recorded the same pack-direct way for all
+/// three content-bearing kinds (`design/overrides.md` → Per-kind base-hash basis).
+///
+/// It rides a separate record so the phase-4 compose path and its byte-identical
+/// goldens are untouched — the basis is read only by the (M5) `override-default`
+/// reconciliation, never by compose. For backward-compat an M4-written
+/// `replace`/`remove` delta has **no** recorded basis, so the loader parses the
+/// keys **Optional** for these kinds; a delta with no recorded basis simply has no
+/// [`StructuralBasis`] record (it classifies `needs-rebasing` at probe time). Pure
+/// data; no I/O, no cascade consulted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructuralBasis {
+    /// The `workflow:<id>#<step-id>` target of the `replace`/`remove` delta this
+    /// basis was recorded for — its identity (a delta has no stable id; its target
+    /// keys it uniquely, `StructuralTarget` being `Clone + Eq`).
+    pub target: StructuralTarget,
+    /// The pack version the basis was recorded against — narrative-only at probe
+    /// time, mirroring [`TrackedForkDelta::base_version`].
+    pub base_version: String,
+    /// The blake3 hash of the displaced pack-default unit's resolved native bytes —
+    /// the pinned basis the (M5) stateless compare reads.
+    pub base_hash: String,
+}
+
 /// Identifies one cascade layer by precedence. `Project` is most-specific and
 /// wins; `PackDefault` is the base (`design/overrides.md` → The cascade).
 ///
@@ -936,6 +965,33 @@ mod tests {
         };
 
         assert_eq!(delta.target.anchor, Anchor::At("implement".to_owned()));
+    }
+
+    /// A [`StructuralBasis`] pairs a `replace`/`remove` delta's `#<step-id>` target
+    /// with the recorded basis (`base-version` + `base-hash`); all fields round-trip
+    /// in memory (pure data, no I/O) — the same shape [`TrackedForkDelta`] carries,
+    /// recorded the same pack-direct way (`design/overrides.md` → Per-kind base-hash
+    /// basis).
+    #[test]
+    fn structural_basis_round_trips_target_and_basis() {
+        let basis = StructuralBasis {
+            target: StructuralTarget::parse("workflow:single-task#validate", None)
+                .expect("well-formed #-target parses"),
+            base_version: "v1".to_owned(),
+            base_hash: "a3f9deadbeef".to_owned(),
+        };
+
+        assert_eq!(
+            basis,
+            StructuralBasis {
+                target: StructuralTarget {
+                    workflow_id: "single-task".to_owned(),
+                    anchor: Anchor::At("validate".to_owned()),
+                },
+                base_version: "v1".to_owned(),
+                base_hash: "a3f9deadbeef".to_owned(),
+            },
+        );
     }
 
     fn pack_default() -> PackDefaultLayer {

@@ -23,7 +23,7 @@ use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::cascade::{
     self, AnchorSpec, OverrideLayer, PackDefaultLayer, SlotFillDelta, SlotFillTarget,
-    StructuralDelta, StructuralTarget, TrackedForkDelta,
+    StructuralBasis, StructuralDelta, StructuralTarget, TrackedForkDelta,
 };
 use engine::compose::{
     self, CommandCatalog, ComposedWorkflow, ResolvedFills, StepDef, StepSource, StoreContext,
@@ -560,7 +560,7 @@ fn resolve_cascade(
     // The `tracked-fork` deltas are recording surface only — read by the (M5)
     // reconciliation, never by compose — so they are dropped here (a fork applies
     // as its phase-2 shadowed step file, no new resolution logic).
-    let (project, deltas, slot_fills, _forks) = load_project_layer(project_config)?;
+    let (project, deltas, slot_fills, _forks, _bases) = load_project_layer(project_config)?;
     let fills = load_fills(project_config, &slot_fills)?;
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
     Ok((
@@ -1051,16 +1051,22 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
         .context("`config/defaults` declares no `pack-id`")
 }
 
-/// The project cascade layer plus the three delta surfaces a manifest's `deltas:`
-/// list carries: the [`OverrideLayer`], the phase-4 `structural-op`
-/// [`StructuralDelta`]s, the phase-5 `slot-fill` [`SlotFillDelta`]s, and the
-/// `tracked-fork` [`TrackedForkDelta`]s (recording surface, read only by the (M5)
-/// reconciliation — never fed to compose).
+/// The project cascade layer plus the delta surfaces a manifest's `deltas:` list
+/// carries: the [`OverrideLayer`], the phase-4 `structural-op` [`StructuralDelta`]s,
+/// the phase-5 `slot-fill` [`SlotFillDelta`]s, the `tracked-fork`
+/// [`TrackedForkDelta`]s, and the M5 [`StructuralBasis`] records for any
+/// `replace-step` / `remove-step` that carries a recorded `base-version`/`base-hash`.
+///
+/// The last two are **recording surface only**, read by the (M5) reconciliation —
+/// never fed to compose. The `StructuralBasis` rides a separate vector keyed by the
+/// delta's target (design-review B2), so the phase-4 `StructuralDelta`s — hence the
+/// composed output — are untouched whether or not a basis was recorded.
 type ProjectLayer = (
     OverrideLayer,
     Vec<StructuralDelta>,
     Vec<SlotFillDelta>,
     Vec<TrackedForkDelta>,
+    Vec<StructuralBasis>,
 );
 
 /// Load the project cascade layer from `<project_config>/manifest.yaml` plus the
@@ -1120,6 +1126,7 @@ pub(crate) fn load_project_layer(project_config: &Path) -> Result<ProjectLayer> 
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
+                Vec::new(),
             ));
         }
         Err(e) => {
@@ -1151,14 +1158,14 @@ pub(crate) fn load_project_layer(project_config: &Path) -> Result<ProjectLayer> 
     }
 
     // The `deltas:` block — one list carrying the phase-4 `structural-op`, the
-    // phase-5 `slot-fill`, and the (M5-read) `tracked-fork` recording kinds
-    // (blank/absent → none of any).
-    let (deltas, slot_fills, forks) = match doc.get("deltas") {
-        None | Some(serde_yaml_ng::Value::Null) => (Vec::new(), Vec::new(), Vec::new()),
+    // phase-5 `slot-fill`, the (M5-read) `tracked-fork` recording kind, plus the M5
+    // `replace`/`remove` base-hash basis records (blank/absent → none of any).
+    let (deltas, slot_fills, forks, bases) = match doc.get("deltas") {
+        None | Some(serde_yaml_ng::Value::Null) => (Vec::new(), Vec::new(), Vec::new(), Vec::new()),
         Some(seq) => parse_deltas(seq, &manifest)?,
     };
 
-    Ok((with_files(layer), deltas, slot_fills, forks))
+    Ok((with_files(layer), deltas, slot_fills, forks, bases))
 }
 
 /// Resolve one step's body **through the cascade** — the phase-2 file-owner read a
@@ -1186,7 +1193,7 @@ pub(crate) fn resolve_step_body(
         knobs.base_scalars(),
         Vec::new(),
     );
-    let (project, _deltas, _slot_fills, _forks) = load_project_layer(project_config)?;
+    let (project, _deltas, _slot_fills, _forks, _bases) = load_project_layer(project_config)?;
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
 
     match resolved.file_owner(step_id) {
@@ -1234,6 +1241,17 @@ pub(crate) fn project_step_ids(project_config: &Path) -> Vec<String> {
     ids
 }
 
+/// The four delta surfaces [`parse_deltas`] partitions a `deltas:` list into — the
+/// phase-4 `structural-op` deltas, the phase-5 `slot-fill` deltas, the
+/// `tracked-fork` recordings, and the M5 `replace`/`remove` [`StructuralBasis`]
+/// records — i.e. [`ProjectLayer`] minus its [`OverrideLayer`].
+type DeltaSurfaces = (
+    Vec<StructuralDelta>,
+    Vec<SlotFillDelta>,
+    Vec<TrackedForkDelta>,
+    Vec<StructuralBasis>,
+);
+
 /// Parse the manifest's `deltas:` sequence, **partitioned by `kind:`** into the
 /// phase-4 `structural-op` [`StructuralDelta`]s and the phase-5 `slot-fill`
 /// [`SlotFillDelta`]s (`overrides.md` → Delta representation / Delta targets;
@@ -1243,29 +1261,30 @@ pub(crate) fn project_step_ids(project_config: &Path) -> Vec<String> {
 /// entry carries `kind: slot-fill`, a `target: step:<id>#<fill-id>`, and a
 /// `content: fills/<id>.md`; a `tracked-fork` entry carries `kind: tracked-fork`, a
 /// `target: workflow:<id>#<step-id>`, a `base-version:`, and a `base-hash:`. A
-/// malformed entry surfaces as its located finding.
-fn parse_deltas(
-    seq: &serde_yaml_ng::Value,
-    manifest: &Path,
-) -> Result<(
-    Vec<StructuralDelta>,
-    Vec<SlotFillDelta>,
-    Vec<TrackedForkDelta>,
-)> {
+/// `replace-step` / `remove-step` may **optionally** carry a `base-version:` +
+/// `base-hash:` pair (the M5 basis) — when both are present they parse into a
+/// separate [`StructuralBasis`] record keyed by the delta's target, leaving the
+/// `StructuralDelta` itself unchanged. A malformed entry surfaces as its located
+/// finding.
+fn parse_deltas(seq: &serde_yaml_ng::Value, manifest: &Path) -> Result<DeltaSurfaces> {
     let items = seq
         .as_sequence()
         .with_context(|| format!("{}: `deltas:` must be a list of deltas", manifest.display()))?;
     let mut structural = Vec::new();
     let mut slot_fills = Vec::new();
     let mut forks = Vec::new();
+    let mut bases = Vec::new();
     for item in items {
         match parse_one_delta(item, manifest)? {
-            ParsedDelta::Structural(delta) => structural.push(delta),
+            ParsedDelta::Structural(delta, basis) => {
+                structural.push(delta);
+                bases.extend(basis);
+            }
             ParsedDelta::SlotFill(delta) => slot_fills.push(delta),
             ParsedDelta::TrackedFork(delta) => forks.push(delta),
         }
     }
-    Ok((structural, slot_fills, forks))
+    Ok((structural, slot_fills, forks, bases))
 }
 
 /// One parsed `deltas:` entry, partitioned by kind — a phase-4 structural-op, a
@@ -1273,7 +1292,11 @@ fn parse_deltas(
 /// distinct kinds, distinct phases). The fork is recording-only — not fed to
 /// compose; its basis is read solely by the (M5) reconciliation.
 enum ParsedDelta {
-    Structural(StructuralDelta),
+    /// A phase-4 `structural-op`, plus — for a `replace-step`/`remove-step` that
+    /// recorded the M5 basis — the [`StructuralBasis`] keyed by its target (the
+    /// separate recording surface, design-review B2; an insert / a basis-less
+    /// replace/remove carries `None`).
+    Structural(StructuralDelta, Option<StructuralBasis>),
     SlotFill(SlotFillDelta),
     TrackedFork(TrackedForkDelta),
 }
@@ -1294,14 +1317,21 @@ fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<Parse
         "replace-step" => {
             let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
             let step = with_step(at("with"), kind, manifest)?;
-            Ok(ParsedDelta::Structural(StructuralDelta::Replace {
-                target,
-                step,
-            }))
+            let basis =
+                optional_basis(at("base-version"), at("base-hash"), &target, kind, manifest)?;
+            Ok(ParsedDelta::Structural(
+                StructuralDelta::Replace { target, step },
+                basis,
+            ))
         }
         "remove-step" => {
             let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
-            Ok(ParsedDelta::Structural(StructuralDelta::Remove { target }))
+            let basis =
+                optional_basis(at("base-version"), at("base-hash"), &target, kind, manifest)?;
+            Ok(ParsedDelta::Structural(
+                StructuralDelta::Remove { target },
+                basis,
+            ))
         }
         "insert-step" => {
             let anchor = match (at("after"), at("before")) {
@@ -1319,10 +1349,10 @@ fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<Parse
             let target =
                 StructuralTarget::parse(target_str, Some(anchor)).map_err(finding_to_err)?;
             let step = with_step(at("with"), kind, manifest)?;
-            Ok(ParsedDelta::Structural(StructuralDelta::Insert {
-                target,
-                step,
-            }))
+            Ok(ParsedDelta::Structural(
+                StructuralDelta::Insert { target, step },
+                None,
+            ))
         }
         "slot-fill" => {
             let target = SlotFillTarget::parse(target_str).map_err(finding_to_err)?;
@@ -1383,6 +1413,38 @@ fn required_field(raw: Option<&str>, field: &str, kind: &str, manifest: &Path) -
     let raw =
         raw.with_context(|| format!("{}: a `{kind}` needs a `{field}`", manifest.display()))?;
     Ok(raw.to_owned())
+}
+
+/// The **optional** M5 base-hash basis on a `replace-step` / `remove-step` entry —
+/// the displaced pack unit's recorded ancestor (`overrides.md` → Per-kind base-hash
+/// basis). The pair is **all-or-nothing**: both keys present → a [`StructuralBasis`]
+/// keyed by the delta's `target`; both absent → `None` (an M4-written delta carried
+/// no basis — backward-compat, never an error); exactly one present → a clear,
+/// located error naming the missing field (a half-recorded basis cannot round-trip
+/// into the M5 compare), never a panic.
+fn optional_basis(
+    base_version: Option<&str>,
+    base_hash: Option<&str>,
+    target: &StructuralTarget,
+    kind: &str,
+    manifest: &Path,
+) -> Result<Option<StructuralBasis>> {
+    match (base_version, base_hash) {
+        (None, None) => Ok(None),
+        (Some(base_version), Some(base_hash)) => Ok(Some(StructuralBasis {
+            target: target.clone(),
+            base_version: base_version.to_owned(),
+            base_hash: base_hash.to_owned(),
+        })),
+        (None, Some(_)) => bail!(
+            "{}: a `{kind}` with a `base-hash` also needs a `base-version` (the basis pair is all-or-nothing)",
+            manifest.display()
+        ),
+        (Some(_), None) => bail!(
+            "{}: a `{kind}` with a `base-version` also needs a `base-hash` (the basis pair is all-or-nothing)",
+            manifest.display()
+        ),
+    }
 }
 
 /// The bare step id from a `with:` reference, stripping the manifest's optional
@@ -2201,7 +2263,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills, _forks) =
+        let (layer, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
@@ -2224,7 +2286,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills, _forks) =
+        let (layer, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
@@ -2244,7 +2306,7 @@ mod tests {
         let cfg = TempDir::new("manifest-blank-scalar");
         fs::write(cfg.path().join("manifest.yaml"), "scalar:\n").expect("write manifest");
 
-        let (layer, _deltas, _slot_fills, _forks) =
+        let (layer, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
@@ -2264,7 +2326,7 @@ mod tests {
         let cfg = TempDir::new("manifest-missing");
         // No manifest.yaml written.
 
-        let (layer, _deltas, _slot_fills, _forks) =
+        let (layer, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(cfg.path()).expect("missing manifest is not an error");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
@@ -2297,7 +2359,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills, _forks) =
+        let (layer, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
@@ -2585,7 +2647,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas, _slot_fills, _forks) =
+        let (layer, _deltas, _slot_fills, _forks, _bases) =
             load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
@@ -2621,7 +2683,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, deltas, slot_fills, forks) =
+        let (layer, deltas, slot_fills, forks, _bases) =
             load_project_layer(cfg.path()).expect("a tracked-fork entry must not error the load");
 
         // The fork round-trips to the T1 delta.
@@ -2688,9 +2750,9 @@ mod tests {
         let cfg_with = TempDir::new("fork-guard-with");
         fs::write(cfg_with.path().join("manifest.yaml"), with).expect("write manifest");
 
-        let (_l0, deltas0, slot_fills0, forks0) =
+        let (_l0, deltas0, slot_fills0, forks0, _bases0) =
             load_project_layer(cfg_without.path()).expect("loads");
-        let (_l1, deltas1, slot_fills1, forks1) =
+        let (_l1, deltas1, slot_fills1, forks1, _bases1) =
             load_project_layer(cfg_with.path()).expect("loads");
 
         assert_eq!(
@@ -2710,6 +2772,111 @@ mod tests {
             1,
             "the fork-bearing manifest records exactly its one fork delta",
         );
+    }
+
+    /// The M5 replace/remove base-hash basis: a manifest seeds a `replace-step`
+    /// entry **carrying** `base-version`/`base-hash` and a `remove-step` entry
+    /// **without** them. The loader returns the structural deltas unchanged (the
+    /// replace + remove both compose exactly as before) **plus** a
+    /// [`StructuralBasis`] record for the replace target **only** — the remove,
+    /// lacking the optional keys, loads clean (no basis, never an error)
+    /// (`overrides.md` → Per-kind base-hash basis; backward-compat).
+    #[test]
+    fn replace_remove_basis_records_present_keys_and_loads_absent_clean() {
+        let cfg = TempDir::new("rr-basis");
+        fs::write(
+            cfg.path().join("manifest.yaml"),
+            "deltas:\n  \
+             - kind: replace-step\n    \
+             target: workflow:single-task#implement\n    \
+             with: step:project-implement\n    \
+             base-version: v1\n    \
+             base-hash: a3f9deadbeef\n  \
+             - kind: remove-step\n    \
+             target: workflow:single-task#validate\n",
+        )
+        .expect("write manifest");
+
+        let (_layer, deltas, _slot_fills, _forks, bases) =
+            load_project_layer(cfg.path()).expect("manifest loads");
+
+        // The structural-op vector is unchanged — the basis never perturbs compose.
+        assert_eq!(
+            deltas,
+            vec![
+                StructuralDelta::Replace {
+                    target: StructuralTarget {
+                        workflow_id: "single-task".to_owned(),
+                        anchor: Anchor::At("implement".to_owned()),
+                    },
+                    step: "project-implement".to_owned(),
+                },
+                StructuralDelta::Remove {
+                    target: StructuralTarget {
+                        workflow_id: "single-task".to_owned(),
+                        anchor: Anchor::At("validate".to_owned()),
+                    },
+                },
+            ],
+            "the structural deltas must be byte-identical to the no-basis parse",
+        );
+
+        // Exactly one basis: the replace target. The remove carried no keys, so it
+        // records no basis (and is not an error).
+        assert_eq!(
+            bases,
+            vec![StructuralBasis {
+                target: StructuralTarget {
+                    workflow_id: "single-task".to_owned(),
+                    anchor: Anchor::At("implement".to_owned()),
+                },
+                base_version: "v1".to_owned(),
+                base_hash: "a3f9deadbeef".to_owned(),
+            }],
+            "only the replace target — carrying both keys — records a basis",
+        );
+    }
+
+    /// A malformed `replace-step` / `remove-step` basis — exactly **one** of
+    /// `base-version` / `base-hash` present (the pair is all-or-nothing for these
+    /// optional-basis kinds) — is a **clear, located error**, not a panic: a
+    /// half-recorded basis cannot round-trip into the (M5) compare (`overrides.md`
+    /// → Per-kind base-hash basis).
+    #[test]
+    fn replace_remove_partial_basis_is_a_clear_error_not_a_panic() {
+        for (kind_block, missing) in [
+            (
+                "- kind: replace-step\n    \
+                 target: workflow:single-task#implement\n    \
+                 with: step:project-implement\n    \
+                 base-version: v1\n",
+                "base-hash",
+            ),
+            (
+                "- kind: remove-step\n    \
+                 target: workflow:single-task#validate\n    \
+                 base-hash: a3f9deadbeef\n",
+                "base-version",
+            ),
+        ] {
+            let cfg = TempDir::new("rr-partial-basis");
+            fs::write(
+                cfg.path().join("manifest.yaml"),
+                format!("deltas:\n  {kind_block}"),
+            )
+            .expect("write manifest");
+
+            // The 4-tuple+ `OverrideLayer` is not `Debug`, so match the error out
+            // rather than `expect_err` the whole `Ok` value.
+            let msg = match load_project_layer(cfg.path()) {
+                Ok(_) => panic!("a partial `{missing}`-missing basis must be an error"),
+                Err(e) => e.to_string(),
+            };
+            assert!(
+                msg.contains(missing),
+                "the error must name the missing `{missing}` field; got: {msg}",
+            );
+        }
     }
 
     /// A malformed `tracked-fork` entry — `base-hash` missing — is a **clear,
