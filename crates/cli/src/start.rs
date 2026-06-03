@@ -575,6 +575,112 @@ impl StepSource for PackStepSource<'_> {
     }
 }
 
+/// A layer-aware [`StepSource`]: it consults the resolved cascade's phase-2 by-id
+/// shadowing surface ([`cascade::Resolved::file_owner`]) to read each step from the
+/// **highest-precedence layer that owns the id** — a project
+/// `.jigc/config/steps/<id>.yaml` shadows the pack-default step, else the pack body
+/// is read (`overrides.md` → Resolution algorithm phase 2). This replaces the
+/// single-layer [`PackStepSource`] on the live compose read path: phase-2 by-id
+/// shadowing wired in at last.
+///
+/// **Located-error sink.** The [`StepSource`] contract is `Option<StepDef>`, so a
+/// fault cannot ride the return value. A `file_owner` of `Project` whose on-disk
+/// file is **missing or malformed** is not a silent dangling-include nor a
+/// fall-through to the pack body: `step()` records a clear located [`Finding`] into
+/// an interior sink and returns `None`. The compose caller drains it via
+/// [`CascadeStepSource::take_error`] after a `None` to surface the located fault.
+///
+// Unit-proven here; T4 replaces `PackStepSource` with it at the `compose_core` /
+// `resume_in_repo` call sites (populating `file_owner` from the project `steps/`
+// dir + applying the phase-4 structural deltas, with the no-override goldens
+// guarding byte-identity). The `allow` lifts when that wiring lands.
+#[allow(dead_code)]
+struct CascadeStepSource<'a> {
+    pack: &'a dyn PackSource,
+    resolved: &'a cascade::Resolved,
+    /// The project layer's committed config dir — where `steps/<id>.yaml` lives.
+    project_config: &'a Path,
+    /// The located fault recorded by the most recent `step()` that returned `None`
+    /// for a reason other than "no layer owns the id".
+    error: std::cell::RefCell<Option<Finding>>,
+}
+
+#[allow(dead_code)] // wired live by T4; see the type doc above.
+impl<'a> CascadeStepSource<'a> {
+    /// Build the layer-aware source over the resolved cascade + the project config
+    /// dir the `steps/<id>.yaml` files live under.
+    fn new(
+        pack: &'a dyn PackSource,
+        resolved: &'a cascade::Resolved,
+        project_config: &'a Path,
+    ) -> Self {
+        Self {
+            pack,
+            resolved,
+            project_config,
+            error: std::cell::RefCell::new(None),
+        }
+    }
+
+    /// Take the located fault recorded by the last failing `step()`, clearing the
+    /// sink. `None` when the last `step()` returned `Some` or returned `None`
+    /// because no layer owns the id (a plain dangling include the engine reports).
+    fn take_error(&self) -> Option<Finding> {
+        self.error.borrow_mut().take()
+    }
+
+    /// Read + parse a project-owned step file from `<project_config>/steps/<id>.yaml`,
+    /// recording a located fault on a missing or malformed file (so the owning layer
+    /// is never silently abandoned for the pack body).
+    fn project_step(&self, id: &str) -> Option<StepDef> {
+        let path = self.project_config.join("steps").join(format!("{id}.yaml"));
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.record(Finding::blocking(
+                    "overrides.project-step-missing",
+                    format!(
+                        "project layer owns step `{id}` but its file {} is unreadable: {e}",
+                        path.display()
+                    ),
+                    engine::finding::Location::at(1, 1),
+                ));
+                return None;
+            }
+        };
+        match load_step_def(id, &bytes) {
+            Ok(def) => Some(def),
+            Err(finding) => {
+                self.record(finding);
+                None
+            }
+        }
+    }
+
+    fn record(&self, finding: Finding) {
+        *self.error.borrow_mut() = Some(finding);
+    }
+}
+
+impl StepSource for CascadeStepSource<'_> {
+    fn step(&self, id: &str) -> Option<StepDef> {
+        match self.resolved.file_owner(id) {
+            // The project owns the id → read the project file (a missing/malformed
+            // file is a located fault, never a fall-through to the pack body).
+            Some(cascade::LayerKind::Project) => self.project_step(id),
+            // Pack-default owns it, or no layer does — read the pack body. A
+            // pack-unknown id is a plain dangling include the engine reports.
+            _ => {
+                let bytes = self
+                    .pack
+                    .read(PackResourceKind::Steps, &ResourceId::from(id))
+                    .ok()?;
+                load_step_def(id, &bytes).ok()
+            }
+        }
+    }
+}
+
 /// Resolve the `default-workflow` id **through the cascade** — the live read the
 /// bare front door composes (`overrides.md` → Scalar knobs / Resolution
 /// algorithm). Seeds the [`PackDefaultLayer`] scalar surface from the pack's
@@ -1395,6 +1501,106 @@ mod tests {
         assert!(
             msg.contains("default-workflow") && msg.contains("undeclared"),
             "the read of an undeclared key must name it and the closed-surface rule; got: {msg}",
+        );
+    }
+
+    /// The T3 done-criterion: a [`CascadeStepSource`] consults
+    /// [`cascade::Resolved::file_owner`] so a project-owned step id reads the
+    /// **project** body from `.jigc/config/steps/<id>.yaml`, while an id the
+    /// project does not own reads the **pack** body — the highest-precedence
+    /// layer that owns the id wins (`overrides.md` → Resolution algorithm phase 2).
+    #[test]
+    fn cascade_step_source_reads_project_body_when_project_owns_the_id() {
+        let cfg = TempDir::new("cascade-step");
+        let steps = cfg.path().join("steps");
+        fs::create_dir_all(&steps).expect("mk steps/");
+        // The project layer ships its own `implement` step file; `noop` it does not.
+        fs::write(steps.join("implement.yaml"), "project implement body\n").expect("w");
+
+        // The pack ships both `implement` and `noop`.
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Steps,
+                "implement",
+                "pack implement body\n",
+            ),
+            (PackResourceKind::Steps, "noop", "pack noop body\n"),
+        ]);
+
+        // The resolved cascade: pack ships both ids, project shadows `implement`.
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["implement".to_owned(), "noop".to_owned()],
+        );
+        let project = OverrideLayer::empty().shadow_file("implement");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let source = CascadeStepSource::new(&pack, &resolved, cfg.path());
+
+        // Project owns `implement` → the project file's body is read.
+        let implement = source.step("implement").expect("project step resolves");
+        assert_eq!(
+            implement.body, "project implement body\n",
+            "a project-owned id must read the project layer's body",
+        );
+        assert!(
+            source.take_error().is_none(),
+            "a clean read records no located error",
+        );
+
+        // `noop` is pack-owned → the pack body is read.
+        let noop = source.step("noop").expect("pack step resolves");
+        assert_eq!(
+            noop.body, "pack noop body\n",
+            "an id the project does not own must read the pack body",
+        );
+    }
+
+    /// The T3 located-error half: a `file_owner` of `Project` whose on-disk file
+    /// is **missing** is a clear located error — `step()` returns `None` (no
+    /// silent pack fall-through past the owning layer) and the source records a
+    /// located [`Finding`] naming the absent file, drained via `take_error`.
+    #[test]
+    fn cascade_step_source_missing_project_file_is_a_located_error() {
+        let cfg = TempDir::new("cascade-step-missing");
+        fs::create_dir_all(cfg.path().join("steps")).expect("mk steps/");
+        // No `implement.yaml` written — the project owns the id but ships no file.
+
+        let pack = FixturePack::with(vec![(
+            PackResourceKind::Steps,
+            "implement",
+            "pack implement body\n",
+        )]);
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["implement".to_owned()],
+        );
+        let project = OverrideLayer::empty().shadow_file("implement");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let source = CascadeStepSource::new(&pack, &resolved, cfg.path());
+
+        // The project owns the id but its file is missing → `None`, never a silent
+        // fall-through to the pack body.
+        assert!(
+            source.step("implement").is_none(),
+            "a project-owned id whose file is missing must not fall through to the pack",
+        );
+        let finding = source
+            .take_error()
+            .expect("a missing project-owned file records a located finding");
+        assert!(
+            finding.location.is_some(),
+            "the missing-file fault must be located; got {finding:?}",
+        );
+        assert!(
+            finding.message.contains("implement"),
+            "the located error must name the absent step id; got: {}",
+            finding.message,
         );
     }
 
