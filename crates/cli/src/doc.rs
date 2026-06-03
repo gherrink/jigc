@@ -14,7 +14,7 @@
 //! agent acts on next, surfaced per the settled block-payload envelope).
 
 use crate::cli::Format;
-use crate::pack::EmbeddedPack;
+use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::address::{Address, Fragment};
@@ -166,7 +166,7 @@ fn run_create(cwd: &Path, type_name: &str, title: &str) -> Result<(), DocFailure
 /// schemas and the workflow gate against.
 struct ActiveTask {
     dir: PathBuf,
-    pack: EmbeddedPack,
+    pack: Box<dyn PackSource>,
 }
 
 impl ActiveTask {
@@ -192,7 +192,7 @@ impl ActiveTask {
             0 => bail!("no active task — start one with `jigc start`"),
             1 => Ok(Self {
                 dir: dirs.pop().expect("one task dir"),
-                pack: EmbeddedPack::new(),
+                pack: make_pack(),
             }),
             _ => bail!("more than one active task — name one with `--task <id>`"),
         }

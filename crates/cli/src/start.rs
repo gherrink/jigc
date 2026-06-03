@@ -18,7 +18,7 @@
 //! output is a view). Composition is deterministic and makes no LLM call (same
 //! resolved cascade in → same workflow out).
 
-use crate::pack::EmbeddedPack;
+use crate::pack::make_pack;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::cascade::{
@@ -185,18 +185,19 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
         );
     }
 
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     // Resolve the cascade once: phase-3 scalars (the `default-workflow` read) +
     // phase-2 file owners + the manifest's phase-4 structural deltas (`overrides.md`
     // → Resolution algorithm). The same `Resolved` threads into the layer-aware
     // step source so a project step shadows the pack's.
-    let (resolved, overrides) = resolve_cascade(&pack, &project_config)?;
+    let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let workflow_id = resolved
         .scalar_required(DEFAULT_WORKFLOW_KEY)
         .map(str::to_owned)
         .map_err(anyhow::Error::from)?;
-    let source = CascadeStepSource::new(&pack, &resolved, &project_config);
-    compose_drained(&repo_root, intent, &pack, &workflow_id, &source, &overrides)
+    let source = CascadeStepSource::new(pack, &resolved, &project_config);
+    compose_drained(&repo_root, intent, pack, &workflow_id, &source, &overrides)
 }
 
 /// Compose the workflow named by `workflow_id` from `intent` — the explicit
@@ -220,13 +221,14 @@ pub fn compose_named_in_repo(
         );
     }
 
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     // Form D bypasses the cascade `default-workflow` knob but still resolves the
     // cascade for phase-2 file owners + the phase-4/5 deltas, so a project step
     // override or slot-fill applies to a `--workflow <X>`-composed workflow too.
-    let (resolved, overrides) = resolve_cascade(&pack, &project_config)?;
-    let source = CascadeStepSource::new(&pack, &resolved, &project_config);
-    compose_drained(&repo_root, intent, &pack, workflow_id, &source, &overrides)
+    let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
+    let source = CascadeStepSource::new(pack, &resolved, &project_config);
+    compose_drained(&repo_root, intent, pack, workflow_id, &source, &overrides)
 }
 
 /// Run [`compose_core`] over the layer-aware [`CascadeStepSource`], then prefer the
@@ -492,8 +494,9 @@ pub fn compose_explain_in_repo(
         );
     }
 
-    let pack = EmbeddedPack::new();
-    let (resolved, overrides) = resolve_cascade(&pack, &project_config)?;
+    let pack = make_pack();
+    let pack = pack.as_ref();
+    let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let workflow_id = match workflow {
         Some(id) => id.to_owned(),
         None => resolved
@@ -501,8 +504,8 @@ pub fn compose_explain_in_repo(
             .map(str::to_owned)
             .map_err(anyhow::Error::from)?,
     };
-    let tree = build_resolution_tree(&pack, &resolved, &overrides.deltas, &workflow_id)?;
-    let pack_label = format!("{}/v{}", pack_id_from_config(&pack)?, pack.pack_version());
+    let tree = build_resolution_tree(pack, &resolved, &overrides.deltas, &workflow_id)?;
+    let pack_label = format!("{}/v{}", pack_id_from_config(pack)?, pack.pack_version());
     Ok((tree, pack_label))
 }
 
@@ -689,7 +692,8 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     // task resumed after the default flips to `router` must still compose
     // `single-task`. A working area with no recorded workflow id is a clear fault,
     // not a silent fall-through to the default.
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     let workflow_id = state::read_workflow_id(&task_dir)
         .with_context(|| format!("could not read the recorded workflow for `{id}`"))?
         .with_context(|| {
@@ -697,18 +701,18 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
                 "task `{id}` has no recorded workflow — discard it with `jigc task discard {id}` and re-start with `jigc start`"
             )
         })?;
-    let workflow_bytes = read_pack(&pack, PackResourceKind::Workflows, &workflow_id)?;
+    let workflow_bytes = read_pack(pack, PackResourceKind::Workflows, &workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
-    let commands = load_catalog(&pack)?;
-    let selectable = selectable_workflows(&pack)?;
+    let commands = load_catalog(pack)?;
+    let selectable = selectable_workflows(pack)?;
     // The committed store feed (`{{store.<doctype>}}`), enumerated from the committed
     // `<location>/<slug>.md` instances; the same `schemas` set the edge overlay below
     // resolves `<type>` prefixes against.
-    let schemas = all_schemas(&pack)?;
+    let schemas = all_schemas(pack)?;
     let store_feed = committed_store(&repo_root, &schemas);
 
     let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
-    let source = PackStepSource { pack: &pack };
+    let source = PackStepSource { pack };
 
     // Resume composes the task's pinned workflow, but still over the *live* cascade —
     // a project `slot-fill` (or the pack's empty default for an unfilled
@@ -716,7 +720,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     // front door, else a `{{fill:}}` point would survive resume to phase 8 unresolved.
     // The fill-aware gate runs the same M4 orphan + survivor checks (`overrides.md` →
     // The `{{fill:}}` placeholder); a no-fill cascade is the identity.
-    let (_resolved, overrides) = resolve_cascade(&pack, &project_config)?;
+    let (_resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
         &[],

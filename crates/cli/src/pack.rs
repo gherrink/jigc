@@ -11,6 +11,7 @@
 
 use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 use include_dir::{Dir, include_dir};
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
@@ -77,12 +78,35 @@ impl PackSource for EmbeddedPack {
 /// `pack_version` sentinel when a `FilesystemPack` dir declares no `version:`
 /// (or has no `config/defaults.yaml`). `base-version` is narrative-only, so the
 /// sentinel is harmless. See overrides.md → the `FilesystemPack` seam.
-///
-// `dead_code` is suppressed only until the next task of this increment wires
-// the `JIGC_PACK_DIR` factory that constructs a `FilesystemPack` in production;
-// that task removes this allow.
-#[allow(dead_code)]
 const FS_LOCAL_VERSION: &str = "fs-local";
+
+/// The env var that selects a directory pack over the binary-embedded default.
+/// See overrides.md → the `FilesystemPack` seam.
+const PACK_DIR_ENV: &str = "JIGC_PACK_DIR";
+
+/// The pack-source factory — the **single** production construction point for a
+/// [`PackSource`]. Every production path (the orientation/compose front door, the
+/// `jigc config` recording verbs, the task/doc working areas) routes through this
+/// so the *recording* and *upgrade* paths read the **same** env-selected pack
+/// (overrides.md → the `FilesystemPack` seam: "every production pack-source
+/// construction goes through the factory").
+///
+/// `JIGC_PACK_DIR` set to a directory selects a [`FilesystemPack`] over that tree;
+/// unset, the binary-embedded [`EmbeddedPack`] is the default, so output is
+/// byte-identical to a build without the seam.
+pub fn make_pack() -> Box<dyn PackSource> {
+    make_pack_from(std::env::var_os(PACK_DIR_ENV))
+}
+
+/// The testable core of [`make_pack`]: select on an already-read env value rather
+/// than reading the process environment, so the selection logic is exercised
+/// without mutating global state (parallel-test-safe).
+fn make_pack_from(pack_dir: Option<OsString>) -> Box<dyn PackSource> {
+    match pack_dir {
+        Some(dir) if !dir.is_empty() => Box::new(FilesystemPack::new(PathBuf::from(dir))),
+        _ => Box::new(EmbeddedPack::new()),
+    }
+}
 
 /// `PackSource` over a pack tree read live from a directory — the testability
 /// seam for driving a genuine alternate pack (`v1 → v2`) through the built
@@ -97,11 +121,6 @@ pub struct FilesystemPack {
     root: PathBuf,
 }
 
-// `dead_code` on `new` is suppressed only because the production consumer — the
-// `JIGC_PACK_DIR` pack-source factory — lands in the next task of this
-// increment; that task routes every `EmbeddedPack::new()` site through the
-// factory and removes this allow.
-#[allow(dead_code)]
 impl FilesystemPack {
     pub fn new(root: PathBuf) -> Self {
         FilesystemPack { root }
@@ -423,6 +442,128 @@ mod tests {
             defaults.lines().any(|l| l.trim() == "pack-id: dev"),
             "the pack config must declare `pack-id: dev`; got:\n{defaults}",
         );
+    }
+
+    mod factory {
+        use super::super::*;
+        use std::ffi::OsString;
+        use std::path::{Path, PathBuf};
+
+        /// A throwaway directory that removes itself on drop.
+        struct TempDir(PathBuf);
+
+        impl TempDir {
+            fn new() -> Self {
+                let mut path = std::env::temp_dir();
+                path.push(format!(
+                    "jigc-factory-unit-{}-{:?}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
+                ));
+                std::fs::create_dir_all(&path).expect("create temp dir");
+                TempDir(path)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        /// With `JIGC_PACK_DIR` unset, the factory yields an `EmbeddedPack`-backed
+        /// source: its `list`/`read`/`pack_version` equal `EmbeddedPack`'s, so a
+        /// no-env build is byte-identical to one without the seam.
+        #[test]
+        fn unset_env_yields_an_embedded_backed_source() {
+            let pack = make_pack_from(None);
+            let embedded = EmbeddedPack::new();
+
+            assert_eq!(
+                pack.list(PackResourceKind::Workflows),
+                embedded.list(PackResourceKind::Workflows),
+                "the unset-env factory must list exactly what EmbeddedPack lists",
+            );
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                ),
+                embedded.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                ),
+                "the unset-env factory must read exactly what EmbeddedPack reads",
+            );
+            assert_eq!(
+                pack.pack_version(),
+                embedded.pack_version(),
+                "the unset-env factory's pack_version must equal EmbeddedPack's",
+            );
+        }
+
+        /// An empty `JIGC_PACK_DIR=` falls through to the embedded default rather
+        /// than reading an empty path (an unset-equivalent value is inert).
+        #[test]
+        fn empty_env_yields_an_embedded_backed_source() {
+            let pack = make_pack_from(Some(OsString::new()));
+            let embedded = EmbeddedPack::new();
+            assert_eq!(
+                pack.list(PackResourceKind::Workflows),
+                embedded.list(PackResourceKind::Workflows),
+            );
+            assert_eq!(pack.pack_version(), embedded.pack_version());
+        }
+
+        /// With `JIGC_PACK_DIR=<dir>` the factory yields a `FilesystemPack` reading
+        /// that directory: a workflow seeded only on disk lists and reads back, and
+        /// the directory's `config/defaults.yaml` `version:` is the `pack_version`
+        /// (distinct from the embedded binary version) — proving an alternate pack
+        /// drives the built binary.
+        #[test]
+        fn set_env_yields_a_filesystem_pack_reading_the_dir() {
+            let dir = TempDir::new();
+            let wf = dir.path().join("workflows");
+            std::fs::create_dir_all(&wf).expect("mk workflows/");
+            std::fs::write(wf.join("only-on-disk.yaml"), b"when: from disk\n").expect("seed wf");
+            let cfg = dir.path().join("config");
+            std::fs::create_dir_all(&cfg).expect("mk config/");
+            std::fs::write(cfg.join("defaults.yaml"), b"pack-id: dev\nversion: 9.9.9\n")
+                .expect("seed defaults");
+
+            let pack = make_pack_from(Some(OsString::from(dir.path())));
+
+            assert_eq!(
+                pack.list(PackResourceKind::Workflows),
+                vec![ResourceId::from("only-on-disk")],
+                "the set-env factory must list the on-disk directory pack, not the embedded one",
+            );
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("only-on-disk"),
+                )
+                .expect("the disk-only workflow reads back"),
+                b"when: from disk\n",
+            );
+            assert_eq!(
+                pack.pack_version(),
+                "9.9.9",
+                "the set-env factory's pack_version comes from the dir's defaults.yaml version key",
+            );
+            assert_ne!(
+                pack.pack_version(),
+                EmbeddedPack::new().pack_version(),
+                "the directory pack reports a version distinct from the embedded binary version",
+            );
+        }
     }
 
     mod filesystem_pack {

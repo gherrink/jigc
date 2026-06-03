@@ -22,7 +22,7 @@
 //! whole-cascade consequences (cycles, orphaning) surface later at resolution
 //! through `workflow-refs`.
 
-use crate::pack::EmbeddedPack;
+use crate::pack::make_pack;
 use anyhow::{Context, Result, bail};
 use engine::cascade::{
     Anchor, SlotFillTarget, StructuralDelta, StructuralTarget, TrackedForkDelta,
@@ -182,7 +182,7 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
     }
 
     // Step 1 — the key must be a declared knob (the closed surface).
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
     let knobs_bytes = pack
         .read(PackResourceKind::Config, &ResourceId::from("knobs"))
         .context("the embedded pack is missing `config/knobs`")?;
@@ -261,11 +261,12 @@ fn run_insert_step(
     };
 
     // Both write-time checks run before any write — a rejection touches nothing.
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
-    check_basename_collision(&pack, &project_config, &basename).map_err(finding_to_err)?;
-    check_anchor_present(&pack, workflow, &existing_deltas, anchor_id).map_err(finding_to_err)?;
+    check_basename_collision(pack, &project_config, &basename).map_err(finding_to_err)?;
+    check_anchor_present(pack, workflow, &existing_deltas, anchor_id).map_err(finding_to_err)?;
 
     // Write the native step file, then append the `insert-step` delta.
     let steps_dir = project_config.join("steps");
@@ -313,18 +314,19 @@ fn run_replace_step(cwd: &Path, target: &str, file: &Path) -> Result<()> {
         .with_context(|| format!("could not read source step file {}", file.display()))?;
 
     // Both write-time checks run before any write — a rejection touches nothing.
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
-    check_basename_collision(&pack, &project_config, &basename).map_err(finding_to_err)?;
-    check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
+    check_basename_collision(pack, &project_config, &basename).map_err(finding_to_err)?;
+    check_anchor_present(pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
 
     // The base-hash basis is the **displaced** pack unit — the target step `step_id`
     // being swapped out — read pack-direct (the same `pack.read(Steps, …)` basis
     // `config fork` records), never the replacement file (`overrides.md` → Per-kind
     // base-hash basis; the replace row). Resolved before any write.
-    let displaced = resolve_fork_bytes(&pack, &step_id)?;
+    let displaced = resolve_fork_bytes(pack, &step_id)?;
 
     // Write the native step file, then append the `replace-step` delta carrying the
     // displaced unit's recorded basis (`base-version` + `base-hash`).
@@ -357,17 +359,18 @@ fn run_remove_step(cwd: &Path, target: &str) -> Result<()> {
     let parsed = StructuralTarget::parse(target, None).map_err(finding_to_err)?;
     let step_id = at_step(&parsed);
 
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
-    check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
+    check_anchor_present(pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
 
     // The base-hash basis is the **removed** pack unit — the target step `step_id`
     // being dropped — read pack-direct (the same `pack.read(Steps, …)` basis
     // `config fork`/`replace-step` record) (`overrides.md` → Per-kind base-hash
     // basis; the remove row). Resolved before the append.
-    let removed = resolve_fork_bytes(&pack, &step_id)?;
+    let removed = resolve_fork_bytes(pack, &step_id)?;
 
     let delta = StructuralDelta::Remove { target: parsed };
     append_delta_entry(
@@ -398,9 +401,10 @@ fn run_fill(cwd: &Path, target: &str, from_file: &str) -> Result<()> {
     let content = crate::doc::read_handoff(from_file)?;
 
     // Both write-time checks run before any write — a rejection touches nothing.
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     check_content_no_nested(&content).map_err(finding_to_err)?;
-    check_fill_point_present(&pack, &project_config, &parsed).map_err(finding_to_err)?;
+    check_fill_point_present(pack, &project_config, &parsed).map_err(finding_to_err)?;
 
     // Write the native fill file (id = fill-id), then append the `slot-fill` delta.
     let fills_dir = project_config.join("fills");
@@ -440,17 +444,18 @@ fn run_fork(cwd: &Path, target: &str) -> Result<()> {
     // anchor check, and both before any byte resolution. Unlike insert/replace, the
     // forked id *is* a pack step id by design (a fork copies a pack unit), so the
     // collision is only with an existing **project** shadow — not the pack id.
-    let pack = EmbeddedPack::new();
+    let pack = make_pack();
+    let pack = pack.as_ref();
     let (_layer, existing_deltas, _slot_fills, _forks, _bases) =
         crate::start::load_project_layer(&project_config)?;
     check_not_already_forked(&project_config, &step_id).map_err(finding_to_err)?;
-    check_anchor_present(&pack, &parsed.workflow_id, &existing_deltas, &step_id)
+    check_anchor_present(pack, &parsed.workflow_id, &existing_deltas, &step_id)
         .map_err(finding_to_err)?;
 
     // The resolved unit is the step the `#<step-id>` names. After the collision guard,
     // no project file shadows this id, so the resolved owner is the pack — its body
     // bytes are the post-shadow, pre-expansion bytes phase 2 would load.
-    let bytes = resolve_fork_bytes(&pack, &step_id)?;
+    let bytes = resolve_fork_bytes(pack, &step_id)?;
 
     // Write the native step file (id = step-id), then append the `tracked-fork` delta.
     // The recorded `base-hash` is the blake3 of the **copied** bytes (not a re-read).
@@ -1231,7 +1236,7 @@ mod tests {
         // The displaced pack unit is the target step `implement`; its basis is the
         // blake3 of its pack-default bytes, read pack-direct (independent of any
         // replacement file basename).
-        let pack = EmbeddedPack::new();
+        let pack = crate::pack::EmbeddedPack::new();
         let displaced = pack
             .read(PackResourceKind::Steps, &ResourceId::from("implement"))
             .expect("pack ships an `implement` step");

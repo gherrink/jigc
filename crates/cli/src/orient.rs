@@ -14,7 +14,7 @@
 //! boundary (CLI locates, engine resolves).
 
 use crate::locate::{self, RunContext};
-use crate::pack::EmbeddedPack;
+use crate::pack::make_pack;
 use crate::start::selectable_workflows;
 use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
@@ -39,8 +39,8 @@ const PACK_ID_KEY: &str = "pack-id";
 /// CLI maps the returned [`OrientationView`] to a surface via `Format → render`.
 pub fn orient(start: &Path) -> Result<OrientationView> {
     let ctx = locate::locate(start)?;
-    let pack = EmbeddedPack::new();
-    orient_with(&ctx, &pack)
+    let pack = make_pack();
+    orient_with(&ctx, pack.as_ref())
 }
 
 /// The testable core of [`orient`]: build the orientation view from an

@@ -28,7 +28,7 @@
 //! determinism boundary unaffected — the engine carries the data, the CLI formats).
 
 use crate::cli::Format;
-use crate::pack::EmbeddedPack;
+use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
@@ -239,7 +239,7 @@ struct TaskArea {
     repo_root: PathBuf,
     jigc_root: PathBuf,
     dir: PathBuf,
-    pack: EmbeddedPack,
+    pack: Box<dyn PackSource>,
 }
 
 impl TaskArea {
@@ -258,7 +258,7 @@ impl TaskArea {
             repo_root,
             jigc_root,
             dir,
-            pack: EmbeddedPack::new(),
+            pack: make_pack(),
         })
     }
 
