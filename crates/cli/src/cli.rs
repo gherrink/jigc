@@ -68,6 +68,17 @@ pub enum Command {
         /// with `<intent>`.
         #[arg(long, conflicts_with = "intent")]
         task: Option<String>,
+
+        /// Show the **resolution tree** instead of composing — the cascade
+        /// provenance (`overrides applied: N`), the resolved include list with
+        /// each step's winning layer, and the `← replaces … at position`
+        /// annotation — WITHOUT minting (the tree is task-independent; `design/
+        /// workflow-dialect.md` → `--explain` output contract; `design/worked-
+        /// examples.md` → 3a). Combines with the `<intent>` positional and
+        /// `--workflow <X>`; mutually exclusive with `--task` (resume re-composes
+        /// a minted task, not a task-independent tree).
+        #[arg(long, conflicts_with = "task")]
+        explain: bool,
     },
 
     /// The write-path surface — `jigc doc <verb> <addr>` over the active task's
@@ -113,33 +124,54 @@ impl Cli {
     /// origination).
     pub fn dispatch(self) -> ExitCode {
         match self.command {
+            // `--explain` short-circuits the compose path: it renders the
+            // task-independent resolution tree and mints nothing (clap forbids it
+            // with `--task`, so only the orient/intent forms reach here). The
+            // `<intent>` is the tree's id-slug input; absent, the default-workflow
+            // tree is shown.
+            Command::Start {
+                intent,
+                workflow,
+                task: None,
+                explain: true,
+            } => run_explain(self.format, intent.as_deref(), workflow.as_deref()),
             Command::Start {
                 intent: None,
                 workflow: _,
                 task: None,
+                explain: false,
             } => run_orient(self.format),
             Command::Start {
                 intent: Some(intent),
                 workflow: None,
                 task: None,
+                explain: false,
             } => run_compose(self.format, &intent),
             Command::Start {
                 intent: Some(intent),
                 workflow: Some(workflow),
                 task: None,
+                explain: false,
             } => run_compose_named(self.format, &intent, &workflow),
             Command::Start {
                 intent: None,
                 workflow: _,
                 task: Some(id),
+                explain: false,
             } => run_resume(self.format, &id),
-            // `conflicts_with` makes clap reject `<intent>` + `--task` together,
-            // so this arm is unreachable in practice.
+            // `conflicts_with` makes clap reject `<intent>` + `--task` and
+            // `--explain` + `--task` together, so these arms are unreachable.
             Command::Start {
                 intent: Some(_),
                 workflow: _,
                 task: Some(_),
-            } => unreachable!("clap rejects `<intent>` together with `--task`"),
+                explain: _,
+            }
+            | Command::Start {
+                task: Some(_),
+                explain: true,
+                ..
+            } => unreachable!("clap rejects `<intent>`/`--explain` together with `--task`"),
             Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
             Command::Config { verb } => run_config(verb),
@@ -277,6 +309,33 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str) -> ExitCode {
     }
 }
 
+/// Render the `--explain` resolution tree against the current working directory:
+/// resolve the cascade, build the tree over the resolved default workflow (or the
+/// `--workflow <X>`-named one) — WITHOUT minting (the tree is task-independent) —
+/// render it through the selected `format`, and print it. A blocking resolution
+/// finding (an orphaned anchor, an unknown workflow) surfaces on stderr (with its
+/// route) and exits non-zero (`design/workflow-dialect.md` → `--explain` output
+/// contract; `design/worked-examples.md` → 3a).
+fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match start::compose_explain_in_repo(&cwd, intent, workflow) {
+        Ok((tree, pack_label)) => {
+            println!("{}", render::explain(format, &tree, &pack_label));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
 /// Resume an existing task by id and re-compose its default workflow against the
 /// current working directory, render the composed view through the selected
 /// `format`, and print it. The re-compose reads the task's persisted bound
@@ -342,6 +401,7 @@ mod cli_parse {
                 intent: None,
                 workflow: None,
                 task: None,
+                explain: false,
             }
         );
     }
@@ -356,6 +416,7 @@ mod cli_parse {
                 intent: Some("add rate limiter".to_string()),
                 workflow: None,
                 task: None,
+                explain: false,
             }
         );
     }
@@ -370,6 +431,7 @@ mod cli_parse {
                 intent: None,
                 workflow: None,
                 task: Some("add-rate-limiter".to_string()),
+                explain: false,
             }
         );
     }
@@ -384,8 +446,38 @@ mod cli_parse {
                 intent: Some("an intent".to_string()),
                 workflow: Some("single-task".to_string()),
                 task: None,
+                explain: false,
             }
         );
+    }
+
+    #[test]
+    fn start_explain_combines_with_intent_and_workflow() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "an intent",
+        ])
+        .expect("`--explain --workflow <X> <intent>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Start {
+                intent: Some("an intent".to_string()),
+                workflow: Some("single-task".to_string()),
+                task: None,
+                explain: true,
+            }
+        );
+    }
+
+    #[test]
+    fn start_rejects_explain_and_task_together() {
+        let err = Cli::try_parse_from(["jigc", "start", "--explain", "--task", "some-id"])
+            .expect_err("`--explain` together with `--task` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     #[test]

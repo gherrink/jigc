@@ -13,7 +13,7 @@ use crate::cli::Format;
 use crate::setup::SetupSummary;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
-use engine::result::{Orientation, OrientationView, ValidationReport};
+use engine::result::{Orientation, OrientationView, ResolutionTree, ValidationReport};
 use serde::Serialize;
 
 /// The one-line routing footer appended to every agent-text / human CLI output.
@@ -121,6 +121,61 @@ pub fn composed(format: Format, view: &ComposedWorkflow) -> String {
             out
         }
     }
+}
+
+/// Render the `--explain` [`ResolutionTree`] to the surface `format` selects:
+/// `agent` / `human` emit the agent-text tree (the workflow line with its winning
+/// layer + pack label, the `overrides applied: N` line, the resolved include list
+/// with each step's source layer and any `← replaces … at position` annotation),
+/// followed by the routing footer; `json` emits the **generic** JSON projection of
+/// the tree with **no** footer (tooling-consumed). The `pack_label`
+/// (`<pack-id>/v<version>`) is CLI-side framing — the engine tree carries only the
+/// structural fact (which layer won), not the displayed label
+/// (`design/workflow-dialect.md` → `--explain` output contract; `design/worked-
+/// examples.md` → 3a). Sibling of [`composed`].
+pub fn explain(format: Format, tree: &ResolutionTree, pack_label: &str) -> String {
+    match format {
+        Format::Json => json(tree),
+        Format::Agent | Format::Human => {
+            let mut out = explain_agent_text(tree, pack_label);
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// The agent-text body of the `--explain` tree (footer appended by [`explain`]).
+/// The workflow line names the resolved workflow + its winning layer (with the
+/// pack label), the `overrides applied:` line reports the structural-delta count
+/// (`none` when zero, the worked-example spelling), and one line per resolved
+/// include carries the step's id, its source layer, and — for a `replace-step`
+/// slot — the `← replaces <id> at position N` annotation.
+fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
+    let mut out = format!(
+        "workflow:{}    ({} · {pack_label})\n",
+        tree.workflow,
+        tree.workflow_layer.label(),
+    );
+    if tree.overrides_applied == 0 {
+        out.push_str("  overrides applied: none\n");
+    } else {
+        out.push_str(&format!(
+            "  overrides applied: {}\n",
+            tree.overrides_applied
+        ));
+    }
+    out.push_str("  includes:\n");
+    for step in &tree.steps {
+        out.push_str(&format!("    step:{}    ({})", step.id, step.layer.label(),));
+        if let Some(replacement) = &step.replaces {
+            out.push_str(&format!(
+                "  ← replaces step:{} at position {}",
+                replacement.replaced, replacement.position,
+            ));
+        }
+        out.push('\n');
+    }
+    out
 }
 
 /// Render a [`ValidationReport`] to the surface `format` selects: `agent` / `human`
@@ -338,6 +393,66 @@ mod tests {
         assert!(!json_out.contains(ROUTING_FOOTER));
         let back: ComposedWorkflow = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, view);
+    }
+
+    /// The `--explain` tree renders to agent-text as the workflow line (winning
+    /// layer + pack label), the `overrides applied: N` line, and one line per
+    /// resolved include with its source layer + any `← replaces … at position`
+    /// annotation, ending with the routing footer; JSON is the generic projection
+    /// with no footer and the same provenance.
+    #[test]
+    fn render_explain_tree_agent_text_and_json() {
+        use engine::cascade::LayerKind;
+        use engine::result::{Replacement, ResolutionTree, ResolvedStep};
+
+        let tree = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            1,
+            vec![
+                ResolvedStep {
+                    id: "locate".to_string(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+                ResolvedStep {
+                    id: "project-implement".to_string(),
+                    layer: LayerKind::Project,
+                    replaces: Some(Replacement {
+                        replaced: "implement".to_string(),
+                        position: 2,
+                    }),
+                },
+            ],
+        );
+
+        let agent = explain(Format::Agent, &tree, "dev/v0.0.0");
+        assert!(
+            agent.contains("workflow:single-task    (pack-default · dev/v0.0.0)"),
+            "got:\n{agent}",
+        );
+        assert!(agent.contains("overrides applied: 1"), "got:\n{agent}");
+        assert!(
+            agent.contains("step:locate    (pack-default)"),
+            "got:\n{agent}",
+        );
+        assert!(
+            agent.contains(
+                "step:project-implement    (project)  ← replaces step:implement at position 2"
+            ),
+            "got:\n{agent}",
+        );
+        assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+
+        // A no-override tree spells the count `none`.
+        let clean = ResolutionTree::new("single-task", LayerKind::PackDefault, 0, Vec::new());
+        assert!(explain(Format::Agent, &clean, "dev/v0.0.0").contains("overrides applied: none"),);
+
+        // JSON is the generic projection — parseable, same provenance, no footer.
+        let json_out = explain(Format::Json, &tree, "dev/v0.0.0");
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let back: ResolutionTree = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, tree);
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and

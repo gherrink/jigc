@@ -422,11 +422,8 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
 /// `--explain` dispatch already holds), keeping the seam free of the compose-only
 /// override bundle.
 ///
-/// Exercised by the unit tests; its live caller is the `--explain` flag dispatch
-/// landed by T3 (`render::explain`), hence the `allow(dead_code)` until that wiring
-/// arrives — the retained-seam pattern this crate already uses for
-/// [`crate::render::orientation_agent_text`].
-#[allow(dead_code)]
+/// Its live caller is [`compose_explain_in_repo`] (the `--explain` flag dispatch,
+/// `render::explain`).
 pub(crate) fn build_resolution_tree(
     pack: &dyn PackSource,
     resolved: &cascade::Resolved,
@@ -443,6 +440,55 @@ pub(crate) fn build_resolution_tree(
         resolved.file_owner(id)
     })
     .map_err(finding_to_err)
+}
+
+/// Build the `--explain` resolution tree for the workflow a `jigc start` would
+/// compose, **without minting** — the `jigc start --explain "<intent>"` front door
+/// (`design/workflow-dialect.md` → `--explain` output contract; `design/worked-
+/// examples.md` → 3a). Returns the [`engine::result::ResolutionTree`] paired with
+/// the pack provenance label (`<pack-id>/v<version>`) the renderer stamps on the
+/// workflow line.
+///
+/// Task-independent by construction (the resolution tree is `definition + cascade`,
+/// never live task state — `workflow-dialect.md`: "structure is fixed by
+/// `definition + cascade` and is task-independent"). So `intent` threads nowhere
+/// into the tree; it is accepted only to mirror the compose front door's call shape
+/// and is deliberately unused here — no mint, no working area, no commit doc.
+///
+/// Resolves the cascade exactly as [`compose_in_repo`] does (the cascade-presence
+/// guard routes a missing project layer to `jigc setup`), reads the workflow id
+/// from the cascade `default-workflow` knob unless `workflow` names one explicitly
+/// (`--workflow <X>`, mirroring [`compose_named_in_repo`]'s bypass), and delegates
+/// the tree assembly to [`build_resolution_tree`] over the manifest's
+/// `structural-op` deltas — so the tree's step order equals the order a compose
+/// would expand.
+pub fn compose_explain_in_repo(
+    start: &Path,
+    intent: Option<&str>,
+    workflow: Option<&str>,
+) -> Result<(engine::result::ResolutionTree, String)> {
+    let _ = intent; // task-independent: the tree never embeds the intent.
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let pack = EmbeddedPack::new();
+    let (resolved, overrides) = resolve_cascade(&pack, &project_config)?;
+    let workflow_id = match workflow {
+        Some(id) => id.to_owned(),
+        None => resolved
+            .scalar_required(DEFAULT_WORKFLOW_KEY)
+            .map(str::to_owned)
+            .map_err(anyhow::Error::from)?,
+    };
+    let tree = build_resolution_tree(&pack, &resolved, &overrides.deltas, &workflow_id)?;
+    let pack_label = format!("{}/v{}", pack_id_from_config(&pack)?, pack.pack_version());
+    Ok((tree, pack_label))
 }
 
 /// The compose-relevant override surface a project layer carries beyond its
