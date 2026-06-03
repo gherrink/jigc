@@ -1978,6 +1978,120 @@ mod tests {
         );
     }
 
+    /// A `creates-task: false` `flow` pack whose `replace-step` target —
+    /// `#implement` → `project-implement` — composes to a non-trivial body (the
+    /// project step re-includes the pack `implement` then adds a house rule), so a
+    /// basis that leaked into the `StructuralDelta` would perturb both the loaded
+    /// deltas vector and the composed bytes. No mint needed (`creates-task: false`),
+    /// so the compose path runs without a task working area.
+    fn replace_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: flow\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "flow",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "locate body\n"),
+            (
+                PackResourceKind::Steps,
+                "implement",
+                "pack implement body\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "project-implement",
+                "{{ include: step:implement }}\nhouse rule: run the lint probe\n",
+            ),
+        ])
+    }
+
+    /// T3 — the compose byte-identical golden for the M5 base-hash basis: a
+    /// `replace-step` delta authored **with** `base-version`/`base-hash` and one
+    /// authored **without** them must drive compose identically. Both manifests are
+    /// parsed through the **real loader** (`load_project_layer`, where the basis is
+    /// parsed off the same entry), then fed to `compose_core` over the same pack.
+    ///
+    /// The contract (design-review B2; `overrides.md` → On-disk vs in-memory
+    /// representation): the basis rides only the separate `StructuralBasis` record,
+    /// never the compose-facing `StructuralDelta` — so (a) the `Vec<StructuralDelta>`
+    /// compose receives is byte-for-byte identical, and (b) the composed **output
+    /// bytes** are identical. Asserting the emitted composed text (not a
+    /// reconstruction) makes this the byte-identical golden: a basis that leaked into
+    /// `StructuralDelta` would diverge one or both.
+    #[test]
+    fn replace_basis_never_perturbs_compose() {
+        let with_basis = "deltas:\n  \
+             - kind: replace-step\n    \
+             target: workflow:flow#implement\n    \
+             with: step:project-implement\n    \
+             base-version: v1\n    \
+             base-hash: a3f9deadbeef\n";
+        let without_basis = "deltas:\n  \
+             - kind: replace-step\n    \
+             target: workflow:flow#implement\n    \
+             with: step:project-implement\n";
+
+        let cfg_with = TempDir::new("t3-with-basis");
+        fs::write(cfg_with.path().join("manifest.yaml"), with_basis).expect("write manifest");
+        let cfg_without = TempDir::new("t3-without-basis");
+        fs::write(cfg_without.path().join("manifest.yaml"), without_basis).expect("write manifest");
+
+        let (_l_with, deltas_with, _sf_with, _f_with, bases_with) =
+            load_project_layer(cfg_with.path()).expect("with-basis manifest loads");
+        let (_l_without, deltas_without, _sf_without, _f_without, bases_without) =
+            load_project_layer(cfg_without.path()).expect("without-basis manifest loads");
+
+        // Precondition: the two manifests differ *only* in the recorded basis — the
+        // with-basis parse records one `StructuralBasis`, the without-basis parse
+        // records none. (If this didn't hold the byte-identity below would be vacuous.)
+        assert_eq!(
+            bases_with.len(),
+            1,
+            "the with-basis manifest records its basis"
+        );
+        assert!(
+            bases_without.is_empty(),
+            "the without-basis manifest records no basis",
+        );
+
+        // (a) The `Vec<StructuralDelta>` compose receives is identical — the basis
+        // never reaches the compose-facing delta.
+        assert_eq!(
+            deltas_with, deltas_without,
+            "the basis must not perturb the StructuralDelta vector compose receives",
+        );
+
+        // (b) The composed **output bytes** are identical. Drive the real compose
+        // path over both loaded delta vectors and compare the emitted text verbatim.
+        let pack = replace_pack();
+        let source = PackStepSource { pack: &pack };
+        let repo = TempDir::new("t3-compose");
+        let composed = |deltas: Vec<StructuralDelta>| {
+            compose_core(
+                repo.path(),
+                "anything",
+                &pack,
+                "flow",
+                &source,
+                &ComposeOverrides::structural(deltas),
+            )
+            .expect("flow composes under the replace delta")
+            .text
+        };
+
+        assert_eq!(
+            composed(deltas_with),
+            composed(deltas_without),
+            "the recorded basis must never perturb the composed output bytes",
+        );
+    }
+
     /// A minimal but valid `commit` schema (`type: commit`, a header section + a
     /// `summary` slot) — enough for `provision_commit_doc` to render a fillable
     /// form when a `creates-task: true` workflow mints under Form D.
