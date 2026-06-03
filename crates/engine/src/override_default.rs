@@ -50,17 +50,24 @@ pub struct RecordedDeltas<'a> {
 /// [`Finding`] per non-`clean` delta (`clean` deltas emit nothing —
 /// [overrides.md](../../../design/overrides.md) → Report).
 ///
-/// **T1 scope — question 1 (existence → `orphaned`) for the content-bearing kinds.**
-/// For each `replace` / `remove` [`StructuralDelta`] and each [`TrackedForkDelta`], the
-/// target's step id (`#<step-id>`, an [`Anchor::At`]) must still resolve in v2: a
-/// pack-direct `pack.read(Steps, <step-id>)` that is `Ok` means the target exists (no
-/// orphaned finding — and **no** content compare yet, so no spurious `conflict`); an
-/// `Err(NotFound)` means the v2 pack omits the target → one blocking `orphaned`
-/// [`Finding`] carrying the delta's target string and a remove/re-target route.
+/// Per content-bearing delta (each `replace` / `remove` [`StructuralDelta`] and each
+/// [`TrackedForkDelta`]), against v2:
 ///
-/// The read is **pack-direct** (`PackSource::read`), never the cascade-resolved owner —
-/// the shadow-bypass the fork case depends on (`overrides.md` → the probe re-reads the
-/// pack-default unit). T2/T3 add the content compare and the `needs-rebasing` branch.
+/// 1. **Existence (→ `orphaned`).** The target's step id (`#<step-id>`, an
+///    [`Anchor::At`]) must still resolve: a pack-direct `pack.read(Steps, <step-id>)`
+///    that is `Ok` means the target exists; an `Err(NotFound)` orphans it (one blocking
+///    `orphaned` [`Finding`] with the delta's target string + a remove/re-target route).
+/// 2. **Content (→ `conflict` / `clean`) — T2.** For a still-present target that carries
+///    a recorded `base_hash` (a fork's `base_hash`, or a `replace`/`remove` with a
+///    matching [`StructuralBasis`]), re-read the pack unit and compare: equal → `clean`
+///    (no finding); differs → one blocking `conflict` [`Finding`] with a keep /
+///    re-target / drop route. A present `replace`/`remove` with **no** recorded basis
+///    raises nothing yet — T3 makes that the `needs-rebasing` branch.
+///
+/// Every read is **pack-direct** (`PackSource::read`), never the cascade-resolved owner
+/// — the B3 shadow-bypass the fork case depends on: a shadow-aware read would compare a
+/// fork to its own copy and falsely say `clean` (`overrides.md` → The probe re-reads the
+/// pack-default unit).
 pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Finding> {
     let mut findings = Vec::new();
 
@@ -73,16 +80,84 @@ pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Findin
         };
         if let Some(finding) = orphaned_if_absent(target, pack) {
             findings.push(finding);
+            continue; // an absent target is orphaned; no content compare follows.
+        }
+        // The target exists. A recorded basis (T3 supplies the basis-less branch)
+        // drives the content compare: equal → clean, differs → conflict.
+        if let Some(recorded) = recorded_basis(target, deltas.bases)
+            && let Some(finding) = conflict_if_changed(target, recorded, pack)
+        {
+            findings.push(finding);
         }
     }
 
     for fork in deltas.forks {
         if let Some(finding) = orphaned_if_absent(&fork.target, pack) {
             findings.push(finding);
+            continue;
+        }
+        // A fork always carries its recorded `base_hash` (M4), so the content
+        // compare always applies. The read is pack-direct (`orphaned_if_absent`
+        // / `conflict_if_changed` both go through `pack.read`), bypassing the
+        // fork's own shadow — the B3 shadow-bypass headline.
+        if let Some(finding) = conflict_if_changed(&fork.target, &fork.base_hash, pack) {
+            findings.push(finding);
         }
     }
 
     findings
+}
+
+/// The recorded [`StructuralBasis::base_hash`] for a `replace`/`remove` target, if one
+/// was recorded — keyed by the delta's [`StructuralTarget`] (a delta has no stable id;
+/// its target is its identity — `overrides.md` → On-disk vs in-memory representation).
+/// `None` is the basis-less legacy case T3 turns into `needs-rebasing`.
+fn recorded_basis<'a>(target: &StructuralTarget, bases: &'a [StructuralBasis]) -> Option<&'a str> {
+    bases
+        .iter()
+        .find(|b| &b.target == target)
+        .map(|b| b.base_hash.as_str())
+}
+
+/// Question 3 (`overrides.md` → Upgrade reconciliation): for a content-bearing target
+/// that *exists* and carries a recorded `base_hash`, re-read the **pack-default** unit
+/// and compare. Equal → clean (`None`); differs → one blocking `conflict` [`Finding`].
+///
+/// The read is **pack-direct** — `pack.read(Steps, <step-id>)`, never the
+/// cascade-resolved owner — so a `tracked-fork` that shadows the same id is compared
+/// against the pack's bytes, not its own copy. A shadow-aware read would return the
+/// fork's copy (always == `base_hash`) and falsely say `clean` (the B3 shadow-bypass —
+/// `overrides.md` → The probe re-reads the pack-default unit).
+fn conflict_if_changed(
+    target: &StructuralTarget,
+    base_hash: &str,
+    pack: &dyn PackSource,
+) -> Option<Finding> {
+    let step_id = at_step_id(target);
+    // The existence question already ran for this target, so the read resolves; a
+    // racing `NotFound` is the orphaned case, not a content change.
+    let bytes = pack
+        .read(PackResourceKind::Steps, &ResourceId::from(step_id))
+        .ok()?;
+    if crate::file_state::hash_bytes(&bytes) == base_hash {
+        None // unchanged upstream → clean, you inherit the v2 pack free.
+    } else {
+        Some(conflict(target))
+    }
+}
+
+/// One blocking `conflict` [`Finding`] for a content-bearing delta whose target changed
+/// upstream, identified by its target string and routed to the keep / re-target / drop
+/// review the human acts on (`overrides.md` → conflict → blocks with a review route).
+fn conflict(target: &StructuralTarget) -> Finding {
+    let target_str = render_target(target);
+    Finding::block(
+        "override-default.content-changed",
+        format!("override target `{target_str}` changed in the current pack since it was recorded"),
+        format!(
+            "review the change on `{target_str}`: keep your override, re-target it, or drop it"
+        ),
+    )
 }
 
 /// Question 1 for a content-bearing target: a blocking `orphaned` [`Finding`] when the
@@ -199,9 +274,33 @@ mod tests {
         }
     }
 
+    /// A `remove` delta over `workflow:single-task#<step-id>`.
+    fn remove(workflow: &str, step: &str) -> StructuralDelta {
+        StructuralDelta::Remove {
+            target: StructuralTarget {
+                workflow_id: workflow.to_owned(),
+                anchor: Anchor::At(step.to_owned()),
+            },
+        }
+    }
+
     /// A `tracked-fork` delta over `workflow:single-task#<step-id>`.
     fn fork(workflow: &str, step: &str, base_hash: &str) -> TrackedForkDelta {
         TrackedForkDelta {
+            target: StructuralTarget {
+                workflow_id: workflow.to_owned(),
+                anchor: Anchor::At(step.to_owned()),
+            },
+            base_version: "v1".to_owned(),
+            base_hash: base_hash.to_owned(),
+        }
+    }
+
+    /// A recorded [`StructuralBasis`] for a `replace`/`remove` delta over
+    /// `workflow:single-task#<step-id>` — the M5 base-hash basis the content
+    /// compare reads.
+    fn basis(workflow: &str, step: &str, base_hash: &str) -> StructuralBasis {
+        StructuralBasis {
             target: StructuralTarget {
                 workflow_id: workflow.to_owned(),
                 anchor: Anchor::At(step.to_owned()),
@@ -252,21 +351,25 @@ mod tests {
         }
     }
 
-    /// A delta whose target the v2 pack **still carries** yields **no** orphaned
-    /// finding — and T1 makes no content compare, so a present target raises nothing
-    /// at all (no spurious `conflict`). The negative half of question 1.
+    /// A delta whose target the v2 pack **still carries** raises **no** orphaned
+    /// finding (the negative half of question 1). The basis-less `replace` raises
+    /// nothing here (T3 makes it `needs-rebasing`); the fork carries a basis that
+    /// *matches* the present bytes, so the content compare says clean — a present,
+    /// unchanged target raises nothing at all (no spurious `orphaned`/`conflict`).
     #[test]
     fn target_present_in_v2_yields_no_finding() {
+        let implement_v2 = "implement body v2\n";
         let v2 = FakePack::new(
             "v2",
-            &[
-                ("locate", "locate body v2\n"),
-                ("implement", "implement body v2\n"),
-            ],
+            &[("locate", "locate body v2\n"), ("implement", implement_v2)],
         );
 
         let structural = vec![replace("single-task", "locate", "find")];
-        let forks = vec![fork("single-task", "implement", "abc123")];
+        let forks = vec![fork(
+            "single-task",
+            "implement",
+            &crate::file_state::hash_bytes(implement_v2.as_bytes()),
+        )];
         let bases = Vec::new();
         let deltas = RecordedDeltas {
             structural: &structural,
@@ -307,6 +410,177 @@ mod tests {
         assert!(
             classify(deltas, &v2).is_empty(),
             "insert is not the content-existence question T1 answers"
+        );
+    }
+
+    /// **Clean** — a content-bearing delta whose target the v2 pack still carries
+    /// *unchanged* (the v2 step bytes hash equal to the recorded basis) raises **no**
+    /// finding, for each content-bearing kind: a `replace`/`remove` with a matching
+    /// [`StructuralBasis`], and a `tracked-fork` with a matching `base_hash`. The
+    /// override inherits the v2 pack free (`overrides.md` → question 3: clean).
+    #[test]
+    fn unchanged_unit_classifies_clean_for_each_content_bearing_kind() {
+        // v1 and v2 carry byte-identical step bodies for the overridden targets.
+        let locate_v1 = "locate body v1\n";
+        let implement_v1 = "implement body v1\n";
+        let validate_v1 = "validate body v1\n";
+        let v2 = FakePack::new(
+            "v2",
+            &[
+                ("locate", locate_v1),
+                ("implement", implement_v1),
+                ("validate", validate_v1),
+            ],
+        );
+
+        // The recorded basis is the blake3 of the v1 (== v2) pack-default bytes.
+        let structural = vec![
+            replace("single-task", "locate", "find"),
+            remove("single-task", "implement"),
+        ];
+        let forks = vec![fork(
+            "single-task",
+            "validate",
+            &crate::file_state::hash_bytes(validate_v1.as_bytes()),
+        )];
+        let bases = vec![
+            basis(
+                "single-task",
+                "locate",
+                &crate::file_state::hash_bytes(locate_v1.as_bytes()),
+            ),
+            basis(
+                "single-task",
+                "implement",
+                &crate::file_state::hash_bytes(implement_v1.as_bytes()),
+            ),
+        ];
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert!(
+            findings.is_empty(),
+            "an unchanged unit (v2 bytes == recorded basis) is clean — no finding: {findings:?}"
+        );
+    }
+
+    /// **Conflict** — a `replace` and a `remove` whose target *content changed*
+    /// upstream (the v2 step bytes hash differs from the recorded basis) each
+    /// classify `conflict`: a blocking [`Finding`] identified by the delta's target
+    /// string and carrying a keep / re-target / drop review route
+    /// (`overrides.md` → question 3: conflict → blocks with a review route).
+    #[test]
+    fn changed_replace_and_remove_classify_conflict() {
+        // v1 basis recorded against these bytes; v2 ships *different* bytes.
+        let locate_v1 = "locate body v1\n";
+        let implement_v1 = "implement body v1\n";
+        let v2 = FakePack::new(
+            "v2",
+            &[
+                ("locate", "locate body v2 — changed\n"),
+                ("implement", "implement body v2 — changed\n"),
+            ],
+        );
+
+        let structural = vec![
+            replace("single-task", "locate", "find"),
+            remove("single-task", "implement"),
+        ];
+        let forks = Vec::new();
+        let bases = vec![
+            basis(
+                "single-task",
+                "locate",
+                &crate::file_state::hash_bytes(locate_v1.as_bytes()),
+            ),
+            basis(
+                "single-task",
+                "implement",
+                &crate::file_state::hash_bytes(implement_v1.as_bytes()),
+            ),
+        ];
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(findings.len(), 2, "both changed targets conflict");
+        for (finding, step) in findings.iter().zip(["locate", "implement"]) {
+            assert_eq!(finding.severity, Severity::Blocking);
+            assert_eq!(finding.code, "override-default.content-changed");
+            let target_str = format!("workflow:single-task#{step}");
+            assert!(
+                finding.message.contains(&target_str),
+                "conflict identifies the delta by its target string: {}",
+                finding.message
+            );
+            let route = finding.route.as_deref().expect("conflict carries a route");
+            assert!(
+                route.contains("keep") && route.contains("re-target") && route.contains("drop"),
+                "the conflict route offers keep / re-target / drop: {route}"
+            );
+            assert!(
+                route.contains(&target_str),
+                "the route names the target string: {route}"
+            );
+        }
+    }
+
+    /// **The headline — the fork shadow-bypass (B3).** A `tracked-fork` *shadows the
+    /// same step id*: the project's forked copy lives at `steps/<id>.yaml`, so a
+    /// shadow-aware re-resolution would read the fork's **own** bytes (always == the
+    /// recorded `base_hash`) and falsely say `clean`. The probe instead re-reads the
+    /// **pack-default** unit via [`PackSource::read`]; when those v2 pack bytes differ
+    /// from the recorded basis, the fork classifies **`conflict`** — a blocking
+    /// [`Finding`] with a keep / re-target / drop route. The `FakePack` carries *only*
+    /// the pack bytes, so a passing conflict proves the compare hit the pack unit, not
+    /// the shadow (`overrides.md` → The probe re-reads the pack-default unit).
+    #[test]
+    fn changed_fork_classifies_conflict_via_pack_direct_read() {
+        // The recorded basis: the v1 pack-default bytes the fork was taken from.
+        let validate_v1 = "validate body v1\n";
+        let recorded = crate::file_state::hash_bytes(validate_v1.as_bytes());
+
+        // v2's *pack-default* `validate` step changed upstream. A naive shadow-aware
+        // read would return the fork's own (recorded-hash) copy and say `clean`; the
+        // pack-direct read sees the changed pack bytes and conflicts.
+        let v2 = FakePack::new("v2", &[("validate", "validate body v2 — changed\n")]);
+
+        let structural = Vec::new();
+        let forks = vec![fork("single-task", "validate", &recorded)];
+        let bases = Vec::new();
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(findings.len(), 1, "the changed fork conflicts");
+        let finding = &findings[0];
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "override-default.content-changed");
+        assert!(
+            finding.message.contains("workflow:single-task#validate"),
+            "the fork conflict identifies its target string: {}",
+            finding.message
+        );
+        let route = finding
+            .route
+            .as_deref()
+            .expect("fork conflict carries a route");
+        assert!(
+            route.contains("keep") && route.contains("re-target") && route.contains("drop"),
+            "the fork conflict route offers keep / re-target / drop: {route}"
         );
     }
 }
