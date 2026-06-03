@@ -570,3 +570,125 @@ fn refork_finalize_against_v2(repo: &Path, home: &Path, v2: &Path) {
         "re-fork finalize against v2",
     );
 }
+
+/// **Existence-only kinds through the real binary — `insert` orphaned (hardening
+/// #5: a v2 pack that OMITS the anchor step).** Under v1 record an `insert-step`
+/// anchored `--after locate` (a step v1 ships), then build a v2 that **drops**
+/// `steps/locate.yaml`. `JIGC_PACK_DIR=<v2> jigc upgrade` must emit, **on the
+/// emitted bytes**, a blocking `override-default.target-exists` orphaned finding
+/// naming the anchor target `workflow:single-task#locate`, and exit non-zero —
+/// the insert is existence-only (anchor gone → orphaned, never conflicts).
+#[test]
+fn insert_over_a_dropped_anchor_classifies_orphaned_through_the_binary() {
+    let repo = TempDir::new("insert-repo");
+    init_repo(repo.path());
+    let home = TempDir::new("insert-home");
+
+    let v1_dir = TempDir::new("insert-pack-v1");
+    let v1 = dir_pack_with_version(v1_dir.path(), "0.3.0");
+
+    // Record an `insert-step` anchored after `locate` (a v1 step). The native step
+    // file's basename is its id; the delta references `step:project-extra`.
+    let extra = repo.path().join("project-extra.yaml");
+    fs::write(&extra, "Project-only extra step body.\n").expect("write insert source");
+    expect_ok(
+        &run_config(
+            repo.path(),
+            home.path(),
+            &v1,
+            &[
+                "insert-step",
+                "--workflow",
+                "single-task",
+                "--after",
+                "locate",
+                extra.to_str().expect("utf-8 path"),
+            ],
+            None,
+        ),
+        "config insert-step --after locate",
+    );
+
+    // Build a v2 that DROPS the `locate` anchor step entirely.
+    let v2_dir = TempDir::new("insert-pack-v2");
+    let v2 = dir_pack_with_version(v2_dir.path(), "0.4.0");
+    fs::remove_file(v2.join("steps").join("locate.yaml")).expect("drop v2 locate step");
+
+    let out = run_upgrade(repo.path(), home.path(), &v2);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        !out.status.success(),
+        "the orphaned insert blocks the upgrade — exit non-zero; got {:?}\nstdout:\n{stdout}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        stdout.contains("blocking · override-default.target-exists — ")
+            && stdout.contains("workflow:single-task#locate"),
+        "the insert over the dropped `locate` anchor must emit a blocking orphaned finding; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("\n  route: "),
+        "the orphaned insert finding carries an indented `route:` line; got:\n{stdout}",
+    );
+}
+
+/// **Existence-only kinds through the real binary — `scalar-set` orphaned (hardening
+/// #5: a v2 pack that OMITS the knob key).** Under v1 record a `scalar-set` on the
+/// `default-workflow` knob, then build a v2 whose `config/knobs.yaml` **drops** the
+/// `default-workflow` declaration (the remaining knobs keep their defaults, so the
+/// surface still loads). `JIGC_PACK_DIR=<v2> jigc upgrade` must emit, **on the
+/// emitted bytes**, a blocking `override-default.scalar-set-orphaned` finding naming
+/// `scalar:default-workflow`, and exit non-zero — existence-only, never conflicts.
+#[test]
+fn scalar_set_over_a_dropped_knob_classifies_orphaned_through_the_binary() {
+    let repo = TempDir::new("scalar-repo");
+    init_repo(repo.path());
+    let home = TempDir::new("scalar-home");
+
+    let v1_dir = TempDir::new("scalar-pack-v1");
+    let v1 = dir_pack_with_version(v1_dir.path(), "0.3.0");
+
+    // Record a `scalar-set` on the `default-workflow` knob (declared in v1).
+    expect_ok(
+        &run_config(
+            repo.path(),
+            home.path(),
+            &v1,
+            &["set", "default-workflow", "single-task"],
+            None,
+        ),
+        "config set default-workflow",
+    );
+
+    // Build a v2 whose knob surface DROPS `default-workflow`, keeping only the two
+    // still-declared validation-severity knobs (each retains a default → loads).
+    let v2_dir = TempDir::new("scalar-pack-v2");
+    let v2 = dir_pack_with_version(v2_dir.path(), "0.4.0");
+    fs::write(
+        v2.join("config").join("knobs.yaml"),
+        "validation.workflow-refs.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n\
+         validation.file-state.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n",
+    )
+    .expect("write v2 knobs without default-workflow");
+
+    let out = run_upgrade(repo.path(), home.path(), &v2);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        !out.status.success(),
+        "the orphaned scalar-set blocks the upgrade — exit non-zero; got {:?}\nstdout:\n{stdout}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        stdout.contains("blocking · override-default.scalar-set-orphaned — ")
+            && stdout.contains("scalar:default-workflow"),
+        "the scalar-set over the dropped `default-workflow` knob must emit a blocking orphaned finding; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("\n  route: "),
+        "the orphaned scalar-set finding carries an indented `route:` line; got:\n{stdout}",
+    );
+}

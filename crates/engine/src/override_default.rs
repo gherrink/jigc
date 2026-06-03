@@ -39,8 +39,12 @@ use crate::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 /// `slot_fills` surface answers the **slot's-existence** question (`overrides.md` →
 /// Upgrade reconciliation, the `slot-fill | the slot's existence | clean / orphaned`
 /// row): a slot-fill is clean iff its target step still declares the `{{fill:<id>}}`
-/// point, else orphaned. The `scalar` surface rides along for completeness (its
-/// existence question lands in a later task) and is not yet consulted here.
+/// point, else orphaned. The **existence-only** surfaces (`overrides.md` →
+/// Upgrade reconciliation: each `clean / orphaned (never conflicts)`) are the
+/// `insert` deltas inside `structural` — clean while the anchor step survives — and
+/// `scalars`, the recorded `scalar-set` keys, clean while the key is still a declared
+/// knob in the current pack's closed surface. Neither carries content, so neither can
+/// conflict: each is clean-or-orphaned only.
 #[derive(Clone, Copy)]
 pub struct RecordedDeltas<'a> {
     /// The phase-4 `structural-op` deltas (`insert` / `replace` / `remove`).
@@ -52,6 +56,11 @@ pub struct RecordedDeltas<'a> {
     /// The `slot-fill` deltas — each classified on the **slot's existence** question
     /// (does the target step's v2 body still declare its `{{fill:<id>}}` point?).
     pub slot_fills: &'a [SlotFillDelta],
+    /// The recorded `scalar-set` keys — each classified on the **key's existence**
+    /// question (is the key still a declared knob in the current pack's closed
+    /// surface?). Existence-only, never conflicts (`overrides.md` → Upgrade
+    /// reconciliation: `scalar-set | a key's existence | clean / orphaned`).
+    pub scalars: &'a [String],
 }
 
 /// Classify each recorded delta against the current `pack`, returning one
@@ -75,6 +84,16 @@ pub struct RecordedDeltas<'a> {
 ///    (no finding); differs → one blocking `conflict` [`Finding`] with a keep /
 ///    re-target / drop route.
 ///
+/// The **existence-only** kinds ask question 1 alone — they carry no content, so they
+/// never conflict (`overrides.md` → Upgrade reconciliation: each `clean / orphaned
+/// (never conflicts)`):
+///
+/// - **`insert`** — clean while its **anchor step** still resolves pack-direct
+///   (`pack.read(Steps, <anchor-id>)` is `Ok`), `orphaned` once the current pack drops
+///   the anchor.
+/// - **`scalar-set`** — clean while its **key** is still a declared knob in the current
+///   pack's closed surface (`config/knobs.yaml`), `orphaned` once the pack drops it.
+///
 /// Every read is **pack-direct** (`PackSource::read`), never the cascade-resolved owner
 /// — the B3 shadow-bypass the fork case depends on: a shadow-aware read would compare a
 /// fork to its own copy and falsely say `clean` (`overrides.md` → The probe re-reads the
@@ -83,11 +102,21 @@ pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Findin
     let mut findings = Vec::new();
 
     for delta in deltas.structural {
-        // `insert` depends on anchor existence (a different question, a later task);
-        // only the content-bearing `replace` / `remove` reach the step-existence read.
+        // `insert` is existence-only — it depends on its **anchor step**'s existence,
+        // never content (it splices a project step at an anchor; nothing upstream to
+        // compare against). It is clean while the anchor survives, orphaned once the
+        // current pack drops it (`overrides.md` → Upgrade reconciliation: `insert |
+        // the anchor's existence | clean / orphaned (never conflicts)`). The
+        // content-bearing `replace` / `remove` fall through to the existence + content
+        // questions.
         let target = match delta {
             StructuralDelta::Replace { target, .. } | StructuralDelta::Remove { target } => target,
-            StructuralDelta::Insert { .. } => continue,
+            StructuralDelta::Insert { target, .. } => {
+                if let Some(finding) = orphaned_if_absent(target, pack) {
+                    findings.push(finding);
+                }
+                continue;
+            }
         };
         if let Some(finding) = orphaned_if_absent(target, pack) {
             findings.push(finding);
@@ -128,7 +157,50 @@ pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Findin
         }
     }
 
+    // The `scalar-set` existence question. Each recorded key is clean while it is
+    // still a declared knob in the current pack's closed surface, orphaned once the
+    // pack drops it (`overrides.md` → Upgrade reconciliation: `scalar-set | a key's
+    // existence | clean / orphaned`). Existence-only — a scalar-set carries no
+    // content basis, so it never conflicts. The declared key set is read **once**
+    // from the pack's `config/knobs.yaml`.
+    let declared = declared_knob_keys(pack);
+    for key in deltas.scalars {
+        if !declared.iter().any(|k| k == key) {
+            findings.push(scalar_set_orphaned(key));
+        }
+    }
+
     findings
+}
+
+/// The closed knob-key surface the current pack declares (`config/knobs.yaml`) — the
+/// keys a recorded `scalar-set` may still target. Read **pack-direct** via
+/// [`PackSource::read`] then parsed by [`crate::knobs::load_knobs`], the same loader
+/// the resolver + the `config set` write path use, so the upgrade and the recording
+/// paths agree on what "declared" means. An unreadable / malformed knob surface
+/// yields **no** declared keys, so every recorded `scalar-set` orphans loudly rather
+/// than a key being silently treated as still-present.
+fn declared_knob_keys(pack: &dyn PackSource) -> Vec<String> {
+    pack.read(PackResourceKind::Config, &ResourceId::from("knobs"))
+        .ok()
+        .and_then(|bytes| crate::knobs::load_knobs(&bytes).ok())
+        .map(|knobs| knobs.keys().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+/// One blocking `orphaned` [`Finding`] for a `scalar-set` whose key the current pack
+/// no longer declares (the knob was dropped from the closed surface), identified by
+/// its `scalar:<key>` target string and routed to drop / re-target. Existence-only:
+/// a scalar-set never conflicts, so this is its sole non-clean outcome.
+fn scalar_set_orphaned(key: &str) -> Finding {
+    let target_str = format!("scalar:{key}");
+    Finding::block(
+        "override-default.scalar-set-orphaned",
+        format!(
+            "scalar-set target `{target_str}` is no longer a declared knob in the current pack"
+        ),
+        format!("drop this delta, or re-target `{target_str}` to a current knob key"),
+    )
 }
 
 /// The slot's-existence question (`overrides.md` → Upgrade reconciliation,
@@ -351,6 +423,21 @@ mod tests {
                 resources,
             }
         }
+
+        /// Seed a `config/knobs.yaml` declaring exactly `keys` (each a `string` knob
+        /// with a default), so the scalar-set existence question reads this pack's
+        /// closed surface. Builder-style so a `FakePack::new(...)` can chain it.
+        fn with_knob_keys(mut self, keys: &[&str]) -> Self {
+            let yaml: String = keys
+                .iter()
+                .map(|k| format!("{k}:\n  type: string\n  default: x\n"))
+                .collect();
+            self.resources.insert(
+                (PackResourceKind::Config, ResourceId::from("knobs")),
+                yaml.into_bytes(),
+            );
+            self
+        }
     }
 
     /// A `replace` delta over `workflow:single-task#<step-id>`.
@@ -429,6 +516,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -481,6 +569,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -491,20 +580,31 @@ mod tests {
         );
     }
 
-    /// An `insert` delta is not content-bearing — it depends on anchor existence (a
-    /// later task's question), so the existence read does not apply and it never
-    /// orphans here, even when the v2 pack omits its anchor step.
+    /// An `insert` delta over `after: locate`.
+    fn insert_after(workflow: &str, anchor: &str, step: &str) -> StructuralDelta {
+        StructuralDelta::Insert {
+            target: StructuralTarget {
+                workflow_id: workflow.to_owned(),
+                anchor: Anchor::After(anchor.to_owned()),
+            },
+            step: step.to_owned(),
+        }
+    }
+
+    /// **`insert` existence — orphaned.** An `insert` delta is existence-only: it
+    /// carries no content, so its only question is whether its **anchor step** still
+    /// exists in the current pack. When the v2 pack **drops** the anchor step the
+    /// insert attaches to, the insert classifies `orphaned` — a blocking [`Finding`]
+    /// identified by its `workflow:<id>#<anchor-id>` target string, routed to
+    /// remove/re-target (`overrides.md` → Upgrade reconciliation: `insert | the
+    /// anchor's existence | clean / orphaned (never conflicts)`). Validation
+    /// hardening #5 — the v2 pack OMITS the anchor target.
     #[test]
-    fn insert_delta_is_not_subject_to_the_content_existence_question() {
+    fn insert_over_dropped_anchor_classifies_orphaned() {
+        // v2 omits `locate` (the anchor) — only `implement` survives.
         let v2 = FakePack::new("v2", &[("implement", "implement body v2\n")]);
 
-        let structural = vec![StructuralDelta::Insert {
-            target: StructuralTarget {
-                workflow_id: "single-task".to_owned(),
-                anchor: Anchor::After("locate".to_owned()),
-            },
-            step: "extra".to_owned(),
-        }];
+        let structural = vec![insert_after("single-task", "locate", "extra")];
         let forks = Vec::new();
         let bases = Vec::new();
         let deltas = RecordedDeltas {
@@ -512,11 +612,114 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "the insert over a dropped anchor orphans: {findings:?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "override-default.target-exists");
+        assert!(
+            finding.message.contains("workflow:single-task#locate"),
+            "the orphaned insert is identified by its anchor target string: {}",
+            finding.message
+        );
+        let route = finding.route.as_deref().expect("orphaned carries a route");
+        assert!(
+            route.contains("remove") || route.contains("re-target"),
+            "route directs remove/re-target: {route}"
+        );
+    }
+
+    /// **`insert` existence — clean.** An `insert` whose **anchor step** the v2 pack
+    /// still carries raises **no** finding (existence-only; the anchor survives, so
+    /// the insert is clean — it can never conflict, there being no content to
+    /// compare). The negative half of the insert existence question.
+    #[test]
+    fn insert_over_present_anchor_yields_no_finding() {
+        // v2 still carries `locate` (the anchor) → the insert is clean.
+        let v2 = FakePack::new("v2", &[("locate", "locate body v2\n")]);
+
+        let structural = vec![insert_after("single-task", "locate", "extra")];
+        let forks = Vec::new();
+        let bases = Vec::new();
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+            slot_fills: &[],
+            scalars: &[],
         };
 
         assert!(
             classify(deltas, &v2).is_empty(),
-            "insert is not the content-existence question T1 answers"
+            "an insert whose anchor survives is clean — no finding"
+        );
+    }
+
+    /// **`scalar-set` existence — orphaned + clean in one pass.** A scalar-set is
+    /// existence-only: its key is clean while the current pack still declares it as a
+    /// knob, orphaned once the pack drops it from the closed surface (`overrides.md` →
+    /// Upgrade reconciliation: `scalar-set | a key's existence | clean / orphaned`).
+    /// The v2 pack declares only `default-workflow`; two recorded scalar-sets —
+    /// `default-workflow` (still declared → clean, emits nothing) and `legacy-knob`
+    /// (the v2 pack **removed** it → orphaned, a blocking [`Finding`] with the
+    /// `scalar:legacy-knob` target string and a drop / re-target route). Validation
+    /// hardening #5 — the v2 knob surface OMITS the recorded key.
+    #[test]
+    fn scalar_set_classifies_on_the_keys_existence_in_v2() {
+        // v2's closed surface declares `default-workflow` but dropped `legacy-knob`.
+        let v2 = FakePack::new("v2", &[]).with_knob_keys(&["default-workflow"]);
+
+        let scalars = vec!["default-workflow".to_owned(), "legacy-knob".to_owned()];
+        let structural = Vec::new();
+        let forks = Vec::new();
+        let bases = Vec::new();
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+            slot_fills: &[],
+            scalars: &scalars,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "the dropped key orphans; the still-declared key is clean (silent): {findings:?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "override-default.scalar-set-orphaned");
+        assert!(
+            finding.message.contains("scalar:legacy-knob"),
+            "the orphaned scalar-set is identified by its `scalar:<key>` target string: {}",
+            finding.message
+        );
+        assert!(
+            !finding.message.contains("default-workflow"),
+            "the still-declared key is clean and emits nothing: {}",
+            finding.message
+        );
+        let route = finding
+            .route
+            .as_deref()
+            .expect("an orphaned scalar-set carries a route");
+        assert!(
+            route.contains("drop") || route.contains("re-target"),
+            "the route directs drop / re-target: {route}"
+        );
+        assert!(
+            route.contains("scalar:legacy-knob"),
+            "the route names the target string: {route}"
         );
     }
 
@@ -567,6 +770,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -617,6 +821,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -671,6 +876,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -745,6 +951,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -806,6 +1013,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &[],
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -863,6 +1071,7 @@ mod tests {
             forks: &forks,
             bases: &bases,
             slot_fills: &slot_fills,
+            scalars: &[],
         };
 
         let findings = classify(deltas, &v2);

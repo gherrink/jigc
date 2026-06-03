@@ -548,6 +548,16 @@ impl OverrideLayer {
         self
     }
 
+    /// The keys of every recorded `scalar-set` delta, in manifest (application)
+    /// order. The upgrade-time `override-default` classifier reads these to ask the
+    /// scalar-set existence question (`overrides.md` → Upgrade reconciliation: a
+    /// `scalar-set` is `clean` while its key is still a declared knob, `orphaned`
+    /// once the current pack drops it from the closed surface). The values are
+    /// irrelevant to that existence check, so only the keys are exposed.
+    pub fn scalar_set_keys(&self) -> impl Iterator<Item = &str> {
+        self.scalar_sets.iter().map(|(key, _)| key.as_str())
+    }
+
     /// Declare a file id this layer shadows.
     pub fn shadow_file(mut self, id: impl Into<String>) -> Self {
         self.files.push(id.into());

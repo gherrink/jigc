@@ -58,6 +58,14 @@ impl KnobSet {
     pub fn field(&self, key: &str) -> Option<&Field> {
         self.fields.iter().find(|f| f.id == key)
     }
+
+    /// The declared knob keys (the closed key set), in sorted key order. The
+    /// upgrade-time `override-default` classifier reads these to ask whether a
+    /// recorded `scalar-set`'s key is still a declared knob (`overrides.md` →
+    /// Upgrade reconciliation: `scalar-set | a key's existence | clean / orphaned`).
+    pub fn keys(&self) -> impl Iterator<Item = &str> {
+        self.fields.iter().map(|f| f.id.as_str())
+    }
 }
 
 /// Why loading the knob surface failed.

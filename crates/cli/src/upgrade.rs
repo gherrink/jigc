@@ -55,13 +55,18 @@ pub(crate) fn upgrade_with_pack(
     project_config: &Path,
     pack: &dyn PackSource,
 ) -> Result<ValidationReport> {
-    let (_layer, structural, slot_fills, forks, bases) = load_project_layer(project_config)?;
+    let (layer, structural, slot_fills, forks, bases) = load_project_layer(project_config)?;
+    // The `scalar-set` existence question reads the recorded keys (the values are
+    // irrelevant to "is the key still a declared knob?"). The `OverrideLayer` owns
+    // them; the classifier checks each against the current pack's closed surface.
+    let scalars: Vec<String> = layer.scalar_set_keys().map(str::to_owned).collect();
     let findings = classify(
         RecordedDeltas {
             structural: &structural,
             forks: &forks,
             bases: &bases,
             slot_fills: &slot_fills,
+            scalars: &scalars,
         },
         pack,
     );
@@ -138,9 +143,12 @@ mod tests {
     }
 
     /// A `FilesystemPack` over a fresh directory carrying the given `(stem, body)`
-    /// step files — the "env-selected pack" the recording/upgrade paths share, here
-    /// constructed directly (no `JIGC_PACK_DIR` env mutation, parallel-test-safe;
-    /// the env-through-binary flow is the T4 subprocess e2e).
+    /// step files plus a minimal `config/knobs.yaml` declaring `default-workflow` —
+    /// the "env-selected pack" the recording/upgrade paths share, here constructed
+    /// directly (no `JIGC_PACK_DIR` env mutation, parallel-test-safe; the
+    /// env-through-binary flow is the T4 subprocess e2e). The knob surface is seeded
+    /// so a recorded `scalar-set default-workflow` classifies clean (the key is still
+    /// declared) — the scalar-set existence question reads this surface.
     fn fs_pack(dir: &TempDir, steps: &[(&str, &str)]) -> FilesystemPack {
         let pack_root = dir.path().join("pack");
         let steps_dir = pack_root.join("steps");
@@ -148,6 +156,13 @@ mod tests {
         for (stem, body) in steps {
             fs::write(steps_dir.join(format!("{stem}.yaml")), body).expect("seed step");
         }
+        let config_dir = pack_root.join("config");
+        fs::create_dir_all(&config_dir).expect("mk pack/config");
+        fs::write(
+            config_dir.join("knobs.yaml"),
+            "default-workflow:\n  type: string\n  default: single-task\n",
+        )
+        .expect("seed knobs.yaml");
         FilesystemPack::new(pack_root)
     }
 

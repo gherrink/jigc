@@ -61,7 +61,10 @@ fn seed_repo(root: &Path, manifest_text: &str) {
 }
 
 /// Seed a `JIGC_PACK_DIR` filesystem pack carrying the given `(stem, body)` step
-/// files — the current pack the classifier compares the recorded deltas against.
+/// files plus a minimal `config/knobs.yaml` declaring `default-workflow` — the
+/// current pack the classifier compares the recorded deltas against. The knob
+/// surface is seeded so a recorded `scalar-set default-workflow` classifies clean
+/// (its key is still declared); the scalar-set existence question reads this surface.
 fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
     let pack_root = dir.path().join("pack");
     let steps_dir = pack_root.join("steps");
@@ -69,6 +72,13 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
     for (stem, body) in steps {
         fs::write(steps_dir.join(format!("{stem}.yaml")), body).expect("seed step");
     }
+    let config_dir = pack_root.join("config");
+    fs::create_dir_all(&config_dir).expect("mk pack/config");
+    fs::write(
+        config_dir.join("knobs.yaml"),
+        "default-workflow:\n  type: string\n  default: single-task\n",
+    )
+    .expect("seed knobs.yaml");
     pack_root
 }
 
