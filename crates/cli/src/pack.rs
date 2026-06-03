@@ -11,6 +11,7 @@
 
 use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 use include_dir::{Dir, include_dir};
+use std::path::PathBuf;
 
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
 static PACK: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
@@ -65,6 +66,96 @@ impl PackSource for EmbeddedPack {
             dir.files()
                 .find(|f| f.path().file_stem().and_then(|s| s.to_str()) == Some(id.as_str()))
                 .map(|f| f.contents().to_vec())
+        });
+        bytes.ok_or_else(|| PackError::NotFound {
+            kind,
+            id: id.clone(),
+        })
+    }
+}
+
+/// `pack_version` sentinel when a `FilesystemPack` dir declares no `version:`
+/// (or has no `config/defaults.yaml`). `base-version` is narrative-only, so the
+/// sentinel is harmless. See overrides.md → the `FilesystemPack` seam.
+///
+// `dead_code` is suppressed only until the next task of this increment wires
+// the `JIGC_PACK_DIR` factory that constructs a `FilesystemPack` in production;
+// that task removes this allow.
+#[allow(dead_code)]
+const FS_LOCAL_VERSION: &str = "fs-local";
+
+/// `PackSource` over a pack tree read live from a directory — the testability
+/// seam for driving a genuine alternate pack (`v1 → v2`) through the built
+/// binary, and independently useful for project-local packs. Selected by
+/// `JIGC_PACK_DIR` via the pack-source factory. See overrides.md → the
+/// `FilesystemPack` seam; module-layout.md → The dev pack's home.
+///
+/// The tree mirrors `EmbeddedPack`: one sub-directory per [`PackResourceKind`]
+/// (`workflows/`, `schemas/`, `steps/`, `config/`); a resource's [`ResourceId`]
+/// is its file stem.
+pub struct FilesystemPack {
+    root: PathBuf,
+}
+
+// `dead_code` on `new` is suppressed only because the production consumer — the
+// `JIGC_PACK_DIR` pack-source factory — lands in the next task of this
+// increment; that task routes every `EmbeddedPack::new()` site through the
+// factory and removes this allow.
+#[allow(dead_code)]
+impl FilesystemPack {
+    pub fn new(root: PathBuf) -> Self {
+        FilesystemPack { root }
+    }
+}
+
+impl PackSource for FilesystemPack {
+    fn pack_version(&self) -> String {
+        let path = self
+            .root
+            .join(kind_dir(PackResourceKind::Config))
+            .join("defaults.yaml");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            return FS_LOCAL_VERSION.to_owned();
+        };
+        serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&text)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("version")
+                    .and_then(serde_yaml_ng::Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_else(|| FS_LOCAL_VERSION.to_owned())
+    }
+
+    fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+        let Ok(entries) = std::fs::read_dir(self.root.join(kind_dir(kind))) else {
+            return Vec::new();
+        };
+        let mut ids: Vec<ResourceId> = entries
+            .filter_map(Result::ok)
+            .filter(|e| e.path().is_file())
+            .filter_map(|e| {
+                e.path()
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(ResourceId::from)
+            })
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
+        let entries = std::fs::read_dir(self.root.join(kind_dir(kind))).ok();
+        let bytes = entries.and_then(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .find(|e| {
+                    e.path().is_file()
+                        && e.path().file_stem().and_then(|s| s.to_str()) == Some(id.as_str())
+                })
+                .and_then(|e| std::fs::read(e.path()).ok())
         });
         bytes.ok_or_else(|| PackError::NotFound {
             kind,
@@ -332,5 +423,147 @@ mod tests {
             defaults.lines().any(|l| l.trim() == "pack-id: dev"),
             "the pack config must declare `pack-id: dev`; got:\n{defaults}",
         );
+    }
+
+    mod filesystem_pack {
+        use super::super::*;
+        use std::path::{Path, PathBuf};
+
+        /// A throwaway directory that removes itself on drop (the project's
+        /// no-tempfile pattern, mirrored from `setup.rs`).
+        struct TempDir(PathBuf);
+
+        impl TempDir {
+            fn new() -> Self {
+                let mut path = std::env::temp_dir();
+                let unique = format!(
+                    "jigc-fspack-unit-{}-{:?}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
+                );
+                path.push(unique);
+                std::fs::create_dir_all(&path).expect("create temp dir");
+                TempDir(path)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        /// Write a pack resource file into `<root>/<kind_dir>/<stem>.<ext>`.
+        fn seed(root: &Path, kind_dir: &str, file: &str, bytes: &[u8]) {
+            let dir = root.join(kind_dir);
+            std::fs::create_dir_all(&dir).expect("create kind dir");
+            std::fs::write(dir.join(file), bytes).expect("seed pack resource");
+        }
+
+        /// `list` returns the seeded file stems sorted, matching the
+        /// `EmbeddedPack` stem=ResourceId convention.
+        #[test]
+        fn list_returns_seeded_stems_sorted() {
+            let dir = TempDir::new();
+            seed(dir.path(), "workflows", "single-task.yaml", b"a");
+            seed(dir.path(), "workflows", "router.yaml", b"b");
+
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            assert_eq!(
+                pack.list(PackResourceKind::Workflows),
+                vec![ResourceId::from("router"), ResourceId::from("single-task")],
+            );
+        }
+
+        /// An absent kind directory lists nothing (parity with `EmbeddedPack`).
+        #[test]
+        fn list_of_absent_kind_dir_is_empty() {
+            let dir = TempDir::new();
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            assert!(pack.list(PackResourceKind::Steps).is_empty());
+        }
+
+        /// `read` round-trips the seeded bytes; an absent id is `NotFound`.
+        #[test]
+        fn read_round_trips_bytes_and_absent_is_not_found() {
+            let dir = TempDir::new();
+            seed(
+                dir.path(),
+                "workflows",
+                "single-task.yaml",
+                b"workflow: single-task",
+            );
+
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            let bytes = pack
+                .read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                )
+                .expect("seeded id reads back");
+            assert_eq!(bytes, b"workflow: single-task");
+
+            let err = pack
+                .read(PackResourceKind::Workflows, &ResourceId::from("absent"))
+                .expect_err("an id with no file errors");
+            assert_eq!(
+                err,
+                PackError::NotFound {
+                    kind: PackResourceKind::Workflows,
+                    id: ResourceId::from("absent"),
+                },
+            );
+        }
+
+        /// `pack_version` is the `version:` value from `config/defaults.yaml`.
+        #[test]
+        fn pack_version_reads_the_defaults_version_key() {
+            let dir = TempDir::new();
+            seed(
+                dir.path(),
+                "config",
+                "defaults.yaml",
+                b"pack-id: dev\nversion: 0.4.0\n",
+            );
+
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            assert_eq!(pack.pack_version(), "0.4.0");
+        }
+
+        /// A `defaults.yaml` without a `version:` key falls back to the
+        /// `fs-local` sentinel.
+        #[test]
+        fn pack_version_without_version_key_is_the_sentinel() {
+            let dir = TempDir::new();
+            seed(dir.path(), "config", "defaults.yaml", b"pack-id: dev\n");
+
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            assert_eq!(pack.pack_version(), "fs-local");
+        }
+
+        /// An absent `defaults.yaml` altogether falls back to the sentinel.
+        #[test]
+        fn pack_version_without_defaults_file_is_the_sentinel() {
+            let dir = TempDir::new();
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            assert_eq!(pack.pack_version(), "fs-local");
+        }
+
+        /// The trait is usable behind a `&dyn PackSource`, like `EmbeddedPack`.
+        #[test]
+        fn trait_is_object_usable() {
+            let dir = TempDir::new();
+            seed(dir.path(), "workflows", "single-task.yaml", b"a");
+            let pack = FilesystemPack::new(dir.path().to_owned());
+            let as_dyn: &dyn PackSource = &pack;
+            assert_eq!(as_dyn.list(PackResourceKind::Workflows).len(), 1);
+        }
     }
 }
