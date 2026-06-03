@@ -1504,6 +1504,116 @@ pub fn workflow_refs_with_deltas(
     findings
 }
 
+/// The fill-aware `workflow_refs` gate — [`workflow_refs_with_deltas`] extended with
+/// the **two M4 fill checks**, run over **post-phase-5** step bodies (`overrides.md`
+/// → The `{{fill:}}` placeholder: Orphan detection is M4; no nested fills).
+///
+/// After phase 4 (structural deltas) and phase 7 (include expansion), each composed
+/// step body is fed through phase 5 ([`apply_slot_fills`]) against `fills` before the
+/// per-step checks run, so they fire at the same resolution point as
+/// `structural-anchor-resolves`. The two net-new checks:
+///
+/// - **`slot-fill-orphan`** — a `slot_fills` delta whose `(step_id, fill_id)` **no
+///   resolved step body declares** a `{{fill:<id>}}` point for is blocking, carrying
+///   its repair **route** (symmetric with the orphaned `structural-anchor-resolves`,
+///   closing the closed-surface hole for both authoring paths).
+/// - **`fill-survivor`** — a lone `{{fill:}}` surviving into a post-phase-5 body
+///   (a nested fill phase 5 did not re-run) is blocking, **located at its line**
+///   ([`find_fill_survivor`]).
+///
+/// `deltas` (phase-4 structural-ops) and `slot_fills` (the slot-fill deltas) are both
+/// already **scoped to this workflow** by the frontend. `fills` is the cascade-
+/// resolved fill content ([`ResolvedFills`]). A pure function of its inputs (the
+/// determinism boundary); the empty-`slot_fills`/`fills` call is
+/// [`workflow_refs_with_deltas`]'s behavior over post-phase-5 bodies (no fill point →
+/// phase 5 is a no-op, byte-identical).
+#[allow(clippy::too_many_arguments)]
+pub fn workflow_refs_with_fills(
+    workflow_bytes: &[u8],
+    deltas: &[StructuralDelta],
+    slot_fills: &[crate::cascade::SlotFillDelta],
+    fills: &ResolvedFills,
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    ctx: &crate::data_value::ComposeContext,
+) -> Vec<Finding> {
+    // body-include-only / front-matter: a definition that does not load has no tree.
+    let mut def = match load_workflow_def(workflow_bytes) {
+        Ok(def) => def,
+        Err(finding) => return vec![finding],
+    };
+
+    // Phase 4 — structural deltas on the include id list.
+    def.includes = match apply_structural_deltas(&def.includes, deltas) {
+        Ok(includes) => includes,
+        Err(finding) => return vec![finding],
+    };
+
+    // Phase 7 — include expansion (and phase 6 cycle detection).
+    let composition = match expand_includes(&def, source) {
+        Ok(composition) => composition,
+        Err(finding) => return vec![finding],
+    };
+
+    // slot-fill-orphan: every slot-fill delta must target a `{{fill:<id>}}` point
+    // some resolved step body declares. Collect the declared points first, then
+    // each delta whose `(step_id, fill_id)` is absent is an orphan.
+    let declared: std::collections::BTreeSet<(&str, &str)> = composition
+        .steps
+        .iter()
+        .flat_map(|step| {
+            step.body
+                .lines()
+                .filter_map(move |line| fill_id_of(line.trim()).map(|id| (step.id.as_str(), id)))
+        })
+        .collect();
+    let mut findings = Vec::new();
+    for delta in slot_fills {
+        let key = (delta.target.step_id.as_str(), delta.target.fill_id.as_str());
+        if !declared.contains(&key) {
+            findings.push(Finding {
+                severity: crate::finding::Severity::Blocking,
+                code: "workflow-refs.slot-fill-orphan".to_owned(),
+                message: format!(
+                    "slot-fill targets `step:{}#{}`, a `{{{{fill:}}}}` point no resolved step body declares (orphaned)",
+                    delta.target.step_id, delta.target.fill_id
+                ),
+                location: Some(Location::at(1, 1)),
+                route: Some(format!(
+                    "remove or re-target the slot-fill on `step:{}#{}` with `jigc config fill` (the `{{{{fill:}}}}` point it names is not in the resolved step body)",
+                    delta.target.step_id, delta.target.fill_id
+                )),
+            });
+        }
+    }
+
+    // Per expanded step body, run phase 5, then the post-phase-5 checks:
+    // fill-survivor, run-marker shadow, and emission (command-ref / placeholder).
+    for step in &composition.steps {
+        let applied = match apply_slot_fills(&step.id, &step.body, fills) {
+            Ok(applied) => applied,
+            Err(finding) => {
+                findings.push(finding);
+                continue;
+            }
+        };
+        // A surviving `{{fill:}}` is *this body's* break — it would otherwise be
+        // mis-parsed as a `fill`-rooted data-value by the emitter, so the distinct
+        // survivor finding supersedes the emit check for this body.
+        if let Some(finding) = find_fill_survivor(&applied) {
+            findings.push(finding);
+            continue;
+        }
+        if let Some(finding) = find_run_shadow(&applied) {
+            findings.push(finding);
+        }
+        if let Err(finding) = emit_step_body(&applied, ctx, catalog) {
+            findings.push(finding);
+        }
+    }
+    findings
+}
+
 /// If a step body line shadows the composer-reserved `Run: ` marker, return a
 /// blocking `run-marker-not-shadowed` [`Finding`] located at that line; else
 /// `None`.
@@ -1523,6 +1633,33 @@ fn find_run_shadow(body: &str) -> Option<Finding> {
                 format!(
                     "step prose shadows the composer-reserved `Run: ` marker: `{}`",
                     line.trim()
+                ),
+                Location::at(offset + 1, 1),
+            )
+        })
+    })
+}
+
+/// If a **post-phase-5** step body still carries a lone `{{fill:<id>}}` line, return
+/// a blocking `workflow-refs.fill-survivor` [`Finding`] located at that line; else
+/// `None`.
+///
+/// Phase 5 ([`apply_slot_fills`]) replaces every declared `{{fill:}}` point — filled
+/// or defaulted — and **does not re-run**, so any `{{fill:}}` surviving into the
+/// post-phase-5 body arrived *inside applied content* (a nested fill) and will never
+/// resolve (`overrides.md` → no nested fills: "phase 5 does not re-run"). A surviving
+/// `{{fill:}}` is its own break, distinct from the generic `placeholder-resolves` /
+/// `undeclared-root` finding the emitter would otherwise raise (it parses a lone
+/// `{{fill:…}}` as a `fill`-rooted data-value path). The first survivor is reported
+/// with its body-relative line pointer. The body is scanned line-by-line by the same
+/// [`fill_id_of`] recognizer phase 5 uses.
+fn find_fill_survivor(body: &str) -> Option<Finding> {
+    body.lines().enumerate().find_map(|(offset, line)| {
+        fill_id_of(line.trim()).map(|fill_id| {
+            Finding::blocking(
+                "workflow-refs.fill-survivor",
+                format!(
+                    "a lone `{{{{fill: {fill_id}}}}}` survives composition unresolved (phase 5 does not re-run — fill content may not contain another `{{{{fill:}}}}`)"
                 ),
                 Location::at(offset + 1, 1),
             )
@@ -3452,6 +3589,126 @@ reference — make your consequences explain what changes:
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].code, "workflow-refs.undeclared-root");
         assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
+    }
+
+    // --- M4 fill checks: orphan + survivor (workflow_refs_with_fills) -----------
+
+    /// Build a `slot-fill` delta from a `step:<id>#<fill-id>` target + the native
+    /// fill file's content-id (basename).
+    fn slot_fill(target: &str, content_id: &str) -> crate::cascade::SlotFillDelta {
+        crate::cascade::SlotFillDelta {
+            target: crate::cascade::SlotFillTarget::parse(target).expect("valid target"),
+            content_id: content_id.to_owned(),
+        }
+    }
+
+    /// Done-criterion (a): a `slot-fill` aimed at a fill-id **no resolved body
+    /// declares** is a blocking `workflow-refs.slot-fill-orphan` carrying its repair
+    /// route — symmetric with the orphaned `structural-anchor-resolves`, and closing
+    /// the closed-surface hole for both authoring paths (`overrides.md` → Orphan
+    /// detection is M4).
+    #[test]
+    fn workflow_refs_flags_slot_fill_orphan_with_route() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        // The `implement` step declares `extra-guidance`; the delta targets a
+        // fill-id (`typo-id`) no body declares.
+        let src = MapSource::new(&[("implement", "do it\n{{ fill: extra-guidance }}\nstop\n")]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:implement }}\n";
+        let deltas = [slot_fill("step:implement#typo-id", "typo-id")];
+        let fills = fills(&[]);
+
+        let findings = workflow_refs_with_fills(wf, &[], &deltas, &fills, &src, &catalog, &ctx);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "exactly one orphan finding, got {findings:?}"
+        );
+        assert_eq!(findings[0].code, "workflow-refs.slot-fill-orphan");
+        assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
+        assert!(
+            findings[0].route.is_some(),
+            "an orphaned slot-fill carries its repair route"
+        );
+    }
+
+    /// Done-criterion (b): a surviving lone `{{fill:}}` in a post-phase-5 body is a
+    /// blocking `workflow-refs.fill-survivor` **located at the line** — whether it
+    /// arrived inside applied fill content (a nested fill) or names a point no delta
+    /// filled. Both sub-cases trip the same recognizer (`overrides.md` → no nested
+    /// fills; the survivor is flagged at resolution, not parsed as a generic root).
+    #[test]
+    fn workflow_refs_flags_fill_survivor_at_line() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        // (b1) Applied fill content that itself carries a `{{fill:}}` — phase 5 does
+        //      not re-run, so the nested fill survives on the body's line 2.
+        let nested_src = MapSource::new(&[("implement", "head\n{{ fill: outer }}\ntail\n")]);
+        let nested_wf = b"---\nwhen: x\n---\n{{ include: step:implement }}\n";
+        let nested_deltas = [slot_fill("step:implement#outer", "outer")];
+        let nested_fills = fills(&[("implement", "outer", "{{ fill: inner }}\nmore")]);
+        let nested = workflow_refs_with_fills(
+            nested_wf,
+            &[],
+            &nested_deltas,
+            &nested_fills,
+            &nested_src,
+            &catalog,
+            &ctx,
+        );
+        insta::assert_snapshot!(
+            finding_codes(&nested),
+            @"workflow-refs.fill-survivor @ 2:1"
+        );
+
+        // (b2) A lone `{{fill:}}` that no delta filled and whose point a hostile body
+        //      re-declares inside applied content — same survivor recognizer. Here a
+        //      `{{fill:}}` is injected by content for a *declared* point, so it
+        //      survives as a bare line no later phase resolves.
+        let survivor_src = MapSource::new(&[("implement", "{{ fill: p }}\n")]);
+        let survivor_wf = b"---\nwhen: x\n---\n{{ include: step:implement }}\n";
+        let survivor_deltas = [slot_fill("step:implement#p", "p")];
+        let survivor_fills = fills(&[("implement", "p", "{{ fill: leftover }}")]);
+        let survivor = workflow_refs_with_fills(
+            survivor_wf,
+            &[],
+            &survivor_deltas,
+            &survivor_fills,
+            &survivor_src,
+            &catalog,
+            &ctx,
+        );
+        insta::assert_snapshot!(
+            finding_codes(&survivor),
+            @"workflow-refs.fill-survivor @ 1:1"
+        );
+
+        for findings in [&nested, &survivor] {
+            assert_eq!(findings.len(), 1, "each fixture trips exactly one survivor");
+            assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
+        }
+    }
+
+    /// Done-criterion (c): a correctly-filled body + a matching declared point
+    /// produce **no** finding — the fill resolves cleanly, no orphan, no survivor.
+    #[test]
+    fn workflow_refs_clean_fill_yields_no_finding() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let src = MapSource::new(&[("implement", "do it\n{{ fill: extra-guidance }}\nstop\n")]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:implement }}\n";
+        let deltas = [slot_fill("step:implement#extra-guidance", "extra-guidance")];
+        let fills = fills(&[("implement", "extra-guidance", "follow the house style")]);
+
+        let findings = workflow_refs_with_fills(wf, &[], &deltas, &fills, &src, &catalog, &ctx);
+
+        assert!(
+            findings.is_empty(),
+            "a correctly-filled body + declared point yields no finding, got {findings:?}"
+        );
+        insta::assert_snapshot!(finding_codes(&findings), @"");
     }
 
     // --- phase-4 structural-delta application (apply_structural_deltas) ---
