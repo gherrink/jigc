@@ -285,3 +285,54 @@ Cut 2026-06-03 via the [`/milestone-plan`](../.claude/commands/milestone-plan.md
 ### Status
 
 All six increments (1–6) complete as of 2026-06-03 — override application works end-to-end: the previously-unwired cascade resolver is wired **live** into compose (phases 2–5), all four delta kinds (`scalar-set` · `structural-op` insert/replace/remove · `slot-fill` via `{{fill:}}` · `tracked-fork`) record through the `jigc config` verb suite and demonstrably shift composed output, typed knobs are declared in `config/knobs.yaml` and adjudicated via `check_value`, and the **no-override path stays byte-identical** to the pre-M4 golden (the determinism trap, held). Built via the [milestone-build](milestone-build) harness (a 48-agent run, no build halts — the front-loaded risks held). The [milestone-completion audit](milestone-completion-workflow.md) (independent code-review + real-binary e2e) surfaced **five findings**, all human-triaged for fix and **remediated + re-verified through the binary**: (HIGH) a `slot-fill-orphan` check scoped to the composed workflow instead of the target step *bricked the front door* once any slot-fill was recorded — re-keyed on the target step (`7a1d07f`); (MEDIUM) `{{include:}}` in a mixed prose+include step body hoisted to the end instead of expanding in place, inverting worked-examples-3a order — fixed (`789eaeb`); (LOW) the line-based `{{fill:}}` machinery let an inline mid-line nested fill leak unresolved — made token-based (`e02ad08`); plus two advisories (dead cascade accessors removed `50e452f`; JSON `overrides_applied` aligned with the text total `eeee1f6`). Both the HIGH and MEDIUM defects had been masked by builder in-loop tests (the acceptance only composed `single-task`; the replace-step test declined to assert intra-step order) — caught only by the independent audit.
+
+## Milestone 5 — upgrade reconciliation: decomposition
+
+Cut 2026-06-03 via the [`/milestone-plan`](../.claude/commands/milestone-plan.md) command (scope → detect gaps → settle → review → decompose) — the first run against the M4-hardened harness. Four `capability-auditor` subagents established a clean post-M4 baseline ("no claim-vs-reality landmines"); four `gap-detector`s + an independent `design-reviewer` (both spiking the real binary per the hardening) shaped the design ([DECISIONS.md](../DECISIONS.md) 2026-06-03). Key settled calls: the milestone was **split** (the severity-tuning subsystem the probe's tunability rests on became [M6](#m6--severity-tuning--demotion-lock)); the conflict path **detects-and-surfaces** (blocks with a String review route — 3-way merge deferred, since the stateless base-*hash* design can't feed a true merge); `jigc upgrade` is **report-and-route only** (no manifest mutation); the version is **narrative-only** (the hash compare needs no version diff); and the genuine `v1→v2` e2e rides a new **`FilesystemPack` + `JIGC_PACK_DIR`** seam. The design-reviewer's catch that shaped increment 2: a `tracked-fork` *shadows the same step id*, so the probe must re-read the **pack-default** unit (`PackSource::read`), never the cascade-resolved owner, or every fork falsely classifies `clean`. Design home of record: [overrides.md](../design/overrides.md) → Upgrade reconciliation; acceptance = [worked-examples.md](../design/worked-examples.md) → flow 7. Risk-first, linear: the recording substrate first, the classifier (the core logic) next, the test seam, then the command + genuine acceptance. **Status: planned, not yet built.**
+
+### Increment 1 — base-hash substrate for `replace` / `remove`
+
+**Deliverable:** `jigc config replace-step`/`remove-step` record the displaced pack unit's `base-version`+`base-hash` (pack-direct blake3, the same basis `config fork` already writes), so all three content-bearing delta kinds carry a re-comparable basis — proven on fixtures (manifest round-trip + recorded-basis), with the no-override compose **byte-identical**.
+
+**Grouped scope:**
+- `config.rs`: `replace-step`/`remove-step` resolve the *displaced pack unit's* bytes (pack-direct — reuse `resolve_fork_bytes`/`hash_bytes`) and write `base-version`/`base-hash` keys on the manifest entry ([overrides.md](../design/overrides.md) → Per-kind base-hash basis).
+- **Representation pin (design-review B2):** the basis rides in a **separate in-memory record keyed by target**, *not* as new fields on the compose-facing `StructuralDelta` — so phase-4 compose and its byte-identical goldens are untouched; the loader parses the keys **Optional** for `replace`/`remove` (old manifests lack them), while `tracked-fork`'s stay required.
+- Tests: manifest round-trip with and without the basis; the recorded basis equals an independent pack-direct hash; a compose golden proving `StructuralDelta` (hence composed output) is unchanged.
+
+**Proves:** the conflict table's content-dependent kinds carry a basis recorded the *same pack-direct way* for all three, without perturbing the compose path the basis must never touch.
+
+### Increment 2 — the `override-default` classifier (the core logic)
+
+**Deliverable:** an engine classifier maps each recorded delta against a given `PackSource` to **clean / conflict / orphaned / needs-rebasing** — existence + pack-direct re-hash with the fork shadow-bypass — proven in-process over a two-version `FakePack`, including the changed-fork→conflict case and a delta whose target the v2 pack omits.
+
+**Grouped scope:**
+- engine: the `override-default` classifier `(deltas, &dyn PackSource) → Vec<Finding>` — per-kind existence + content compare; **re-reads the pack-default unit via `PackSource::read`, never the cascade-resolved owner** (the tracked-fork shadow-bypass — design-review B3; a shadow-aware read compares a fork to itself and falsely says `clean`); each delta identified in its finding by its **target string**; a **`String` route**; **blocking-by-default** ([overrides.md](../design/overrides.md), [validation.md](../design/validation.md) → `override-default`).
+- The four outcomes, with **`needs-rebasing` (no recorded basis) distinct from `clean` (basis present and equal)**.
+- Tests (FakePack `v1→v2`, per [Validation hardening](increment-workflow.md) #5 — exercise a context that *omits* the target): clean (unchanged fork), conflict (changed `replace`/`remove`/**fork**), orphaned (target absent in v2), needs-rebasing (basis-less legacy delta).
+
+**Proves:** M5's core logic — correct classification including the fork shadow-bypass a naive read would silently defeat — in isolation, before any command or CLI surface. The #1 risk.
+
+### Increment 3 — `FilesystemPack` + the pack-source factory seam
+
+**Deliverable:** a `FilesystemPack` `PackSource` (reads a pack tree from a dir; `pack_version` from the dir's `config/defaults.yaml` `version` key, `fs-local` sentinel if absent), selected by a **`JIGC_PACK_DIR`** env var via **one pack-source factory** that replaces every production `EmbeddedPack::new()` site; with the env unset, all output is **byte-identical** to today.
+
+**Grouped scope:**
+- `FilesystemPack` impl (`list`/`read`/`pack_version` over a directory) ([overrides.md](../design/overrides.md) → the FilesystemPack seam; [module-layout.md](module-layout.md)).
+- The factory honoring `JIGC_PACK_DIR`; route **every** production pack-source construction through it — the *recording* verbs and the *upgrade* path read the **same** env-selected pack (design-review N1: the obligation, not a site count).
+- **Determinism guard:** a no-env golden over the existing fixtures stays byte-identical; `JIGC_PACK_DIR=<dir>` loads the directory pack; the two pack dirs report distinct `version`s.
+
+**Proves:** a genuine alternate pack can drive the built binary (the `v1→v2` testability seam) with zero behavior change when unused.
+
+### Increment 4 — `jigc upgrade` + the genuine v1→v2 acceptance
+
+**Deliverable:** `jigc upgrade` runs the `override-default` classifier over every recorded delta against the current pack, renders findings+routes, blocks on non-clean, mutates nothing; a **genuine two-pack e2e** (`JIGC_PACK_DIR=<v1>` record → `JIGC_PACK_DIR=<v2>` upgrade) classifies every outcome and the re-pin→clean loop.
+
+**Grouped scope:**
+- `cli`: `Command::Upgrade` (clap + dispatch); **report-and-route only** — load the cascade deltas, run the classifier, render via the existing findings+routes renderer, exit non-zero on blocking; no manifest write, no transaction ([overrides.md](../design/overrides.md) → The `jigc upgrade` command).
+- e2e via the FilesystemPack seam: record the deltas against v1, `jigc upgrade` against a v2 that changes some targets, removes a `{{fill:}}` point, leaves others — assert clean / conflict (incl. the **fork** conflict) / orphaned / needs-rebasing per [worked-examples.md](../design/worked-examples.md) flow 7; then resolve via `jigc config` verbs and re-run to all-clean.
+
+**Proves:** M5's headline — `jigc upgrade` surfaces every divergence at one known moment (*no upstream change silently lost; no override silently broken*), proven **genuinely** through the binary across a real pack change = [worked-examples.md](../design/worked-examples.md) flow 7. The recorded deltas (now with complete bases) are M6's input.
+
+### Status
+
+Planned 2026-06-03; not yet built. Hand off to the [milestone-build](milestone-build) harness.

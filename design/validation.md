@@ -36,7 +36,7 @@ A finding is `{ target, probe, severity, message, route? }`:
 
 - **target** — the address it concerns (`spec:auth-flow#criteria/rate-limit`)
 - **probe** — who raised it · **severity** — engine-assigned via cascade · **message** — human-readable (always present)
-- **route** — an *optional* machine-actionable repair direction, a tagged union the engine **never executes**:
+- **route** — an *optional* repair direction the engine **never executes**. **As built, `route` is a free `Option<String>`** (a human-readable prose direction; the pinned `Finding` JSON envelope). The tagged-union form below — `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}` · `none` — is the **aspirational** target shape; promoting `route` to it is a deferred cross-cutting result-contract change (it would re-shape the pinned golden and every route producer), **not** assumed by any current probe (M5's `override-default` emits a `String` route):
   `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}` · `none`
 
 ```text
@@ -71,8 +71,8 @@ One uniform interface (`check(target, ctx) → [finding]`), two implementations:
   - **`workflow-refs`** (target: workflow) — every `placeholder` / `include` / `command-ref` resolves, no include cycles, no `@` on a scalar-resolving path, no step's instruction prose shadows the composer-reserved `Run: ` line-start ([workflow-dialect.md](workflow-dialect.md#emitted-format)), and workflow bodies contain only `{{include}}` lines / blank lines / HTML comments at top level ([workflow-dialect.md](workflow-dialect.md#on-disk-definition-format)).
   - **`file-state`** (target: file) — the on-disk content hash matches the recorded state; drift → a `reconcile` finding consumed by the reconciliation classifier ([reconciliation.md](reconciliation.md)). With no recorded hash (first run / fresh checkout), the current on-disk content is adopted as the baseline — absent-hash is not drift.
 
-  **Engine-native at contract level (full logic post-MVP):**
-  - **`override-default`** (target: override) — per-delta `clean / conflict / orphaned` reconciliation on a guarded upgrade; full logic in [overrides.md](overrides.md).
+  **Engine-native, full logic in M5:**
+  - **`override-default`** (target: override) — per-delta `clean / conflict / orphaned / needs-rebasing` reconciliation, run via a **bespoke upgrade-time path** by `jigc upgrade` (not `validate_task`; the generic non-task probe seam is M6). Findings carry a **human-readable `String` route** (not the tagged union below) and ship **blocking-by-default** (cascade-tunability of these checks arrives with M6 · severity tuning). Full logic in [overrides.md](overrides.md) → Upgrade reconciliation.
 - **Pack probes** — *post-MVP*, the "not a public API yet" line. An **invoked process** with a JSON-in / JSON-out contract: language-neutral, **read-only and deterministic by contract** (`doc-code` must parse real code, so it can't be declarative). The development pack's **`doc-code`** (does this symbol exist? does a test cover this criterion? did referenced code change after the doc's timestamp?) lands here, after the doc-creation flows exist. **"Deterministic by contract" is locked, not aspirational** — see [Pack-probe determinism contract](#pack-probe-determinism-contract) below for the six rules the subprocess implementation must satisfy and the four meta-finding modes that surface every misbehavior; the implementation (OS-level sandboxing) is deferred with the contract as binding requirement.
 
 ## Pack-probe determinism contract
@@ -148,8 +148,9 @@ Every MVP check ships with a **declared default severity** and an **intrinsic-or
 | | `field-value-conformant` (date / enum / string-shape) | blocking | **yes** | `validation.schema-conformance.field-value-conformant.severity` |
 | **`file-state`** | `hash-matches` (drift → `reconcile` route, [reconciliation.md](reconciliation.md)) | blocking | no — tunable | `validation.file-state.hash-matches.severity` |
 | **`schema-completeness`** *(synthetic — completeness, not integrity; runs at store / milestone scope by default)* | `inverse-cardinality` | advisory at task / blocking at store | no — tunable | `validation.schema-completeness.inverse-cardinality.severity` |
-| **`override-default`** *(contract-level MVP, full logic post-MVP — [overrides.md](overrides.md))* | `target-exists` (emits `orphaned`) | blocking | no — tunable | `validation.override-default.target-exists.severity` |
-| | `target-unchanged` (emits `conflict`) | blocking | no — tunable | `validation.override-default.target-unchanged.severity` |
+| **`override-default`** *(full logic M5; blocking-by-default, cascade-tunable from M6 — [overrides.md](overrides.md))* | `target-exists` (emits `orphaned`) | blocking | no — tunable (M6) | `validation.override-default.target-exists.severity` |
+| | `target-unchanged` (emits `conflict`) | blocking | no — tunable (M6) | `validation.override-default.target-unchanged.severity` |
+| | `basis-recorded` (emits `needs-rebasing` — a content delta with no base-hash) | blocking | no — tunable (M6) | `validation.override-default.basis-recorded.severity` |
 | **`commit-rendering`** *(advisory-by-default convention checks for commit doc → git message, [finalize.md](finalize.md))* | `line-limit-subject` (72ch) | advisory | no — tunable | `validation.commit-rendering.line-limit-subject.severity` |
 | | `line-limit-body` (72ch wrap) | advisory | no — tunable | `validation.commit-rendering.line-limit-body.severity` |
 | **`doc-code`** *(pack-provided, post-MVP — placeholder)* | TBD per check | TBD | no — tunable | `validation.doc-code.*.severity` |

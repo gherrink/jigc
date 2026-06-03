@@ -10,6 +10,7 @@ The flows:
 4. [Finalize-to-git](#4-finalize-to-git) — the seven phases producing one commit
 5. [Superseding decision](#5-superseding-decision--context-slice--edge-integrity) — context-slice over a persisted ADR + forward-ref integrity
 6. [Spec-driven planning](#6-spec-driven-planning--the-two-task-arc) — the M3 arc: a `plan` task authors a spec, a later task binds and implements it
+7. [Upgrade reconciliation](#7-upgrade-reconciliation--clean--conflict--orphaned) — the M5 arc: `jigc upgrade` re-classifies recorded deltas against a new pack
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -398,3 +399,69 @@ $ jigc task finalize implement-gateway-rate-limiting
 ```
 
 Forward-ref resolution walks the overlaid edge index: the `implements` edge originates on the **transient commit doc** in the task's working area (the first edge whose *source* is transient) and its target resolves in the committed store — passing exactly as flow 5's `supersedes` does ([validation.md](validation.md) → Forward-ref resolution; [storage.md](storage.md) → Edge-index lifecycle). The edge is validated at finalize but not persisted past it (the commit doc is the git message, never a repo file). Had `implements` pointed at a non-existent spec, finalize would block with the same three routing options as flow 5's dangling variant.
+
+## 7. Upgrade reconciliation — clean / conflict / orphaned
+
+The M5 flow that proves principle #5's *inherit-upstream* half: a project's recorded overrides ([flow 3](#3-override-application-at-compose-time)) are **re-classified against a new pack** so every divergence surfaces at one known moment. Reuses the recorded-delta substrate (M4) + the `file_state` clean/conflict/block shape; the new surface is the **`override-default` probe + `jigc upgrade`** ([overrides.md](overrides.md) → Upgrade reconciliation). Notation illustrative.
+
+### Setup — a project overrides pack `dev/0.3.0`
+
+```text
+$ jigc config set default-workflow single-task          # scalar-set
+$ jigc config replace-step workflow:single-task#implement ./project-impl.yaml   # replace (records base-hash of pack's implement)
+$ jigc config fork workflow:single-task#finalize         # tracked-fork (records base-hash of pack's finalize)
+$ jigc config fork workflow:single-task#locate           # tracked-fork (records base-hash of pack's locate)
+$ jigc config fill step:locate#hints --from-file -        # slot-fill on the pack's {{fill: hints}} point
+# plus one replace authored UNDER M4 (before M5's substrate fix), so its manifest entry has NO base-hash:
+#   - kind: replace-step   target: workflow:single-task#superseded-context   with: step:project-super
+```
+
+Each content-bearing delta pins the **blake3 of the pack-default unit it sits on** at `base-version: 0.3.0` — re-read pack-direct, *bypassing the fork's own shadow* ([overrides.md](overrides.md) → Per-kind base-hash basis).
+
+### The upgrade — pack `dev/0.4.0` ships; `implement` + `finalize` rewritten, `locate` untouched, the `{{fill: hints}}` point dropped
+
+In production this is *installing a newer binary*; the e2e drives it through the **`FilesystemPack`** seam — record under `JIGC_PACK_DIR=<v1>`, then:
+
+```text
+$ JIGC_PACK_DIR=<v2> jigc upgrade
+Pack: dev/0.4.0 · reconciling 6 recorded deltas against the current pack
+
+  ✓ clean          scalar-set default-workflow            (knob still declared)
+  ✓ clean          tracked-fork workflow:single-task#locate   (pack `locate` unchanged — current-hash == base-hash; your fork still tracks it)
+  ✗ conflict       replace workflow:single-task#implement
+                     pack changed `implement` since you overrode it at dev/0.3.0
+                     route: review — keep your replacement / re-target / drop, then re-run
+  ✗ conflict       tracked-fork workflow:single-task#finalize
+                     pack changed `finalize` since you forked it at dev/0.3.0
+                     route: review — keep your fork / re-fork / drop, then re-run
+  ✗ orphaned       slot-fill step:locate#hints
+                     the `{{fill: hints}}` point no longer exists in pack `locate`
+                     route: drop this delta, or re-target a current {{fill:}} point
+  ✗ needs-rebasing replace workflow:single-task#superseded-context
+                     authored before M5 recorded a base-hash — cannot tell if it changed
+                     route: re-record via `jigc config replace-step …` to pin a basis
+
+4 blocking findings — resolve and re-run `jigc upgrade`.
+```
+
+- **clean** (`default-workflow`; the `locate` fork): existence holds and — for the unchanged fork — `current-hash == recorded base-hash`, so you keep your override *and* inherit every other v0.4.0 improvement free.
+- **conflict** (`replace #implement`; the `finalize` fork): `current-hash ≠ recorded base-hash` — the pack unit moved on. The **fork** conflict is the load-bearing case: the probe re-reads the *pack's* `finalize`, **not** the fork's shadow copy, so a genuinely-changed upstream unit fires (a shadow-aware read would compare the fork to itself and falsely say `clean`). It **blocks with a review route**; M5 surfaces the divergence, it does **not** auto-merge (3-way merge deferred — [overrides.md](overrides.md)).
+- **orphaned** (`slot-fill #hints`): the target is gone → loud failure with a remove/re-target route.
+- **needs-rebasing** (the M4-authored `replace #superseded-context`): no recorded base-hash, so the probe *cannot* tell whether the unit changed — it surfaces loudly rather than silently assuming `clean`. The single most likely classification on a project's *first* upgrade after M5 ships.
+
+### Resolve — re-run the `jigc config` verbs (report-only upgrade writes nothing)
+
+```text
+$ jigc config replace-step workflow:single-task#implement ./project-impl.yaml          # conflict → re-pins to dev/0.4.0's implement (you confirmed your replacement still fits)
+$ jigc config fork workflow:single-task#finalize                                       # conflict → re-forks against dev/0.4.0's finalize
+$ jigc config replace-step workflow:single-task#superseded-context ./project-super.yaml # needs-rebasing → re-record pins a basis
+$ # (drop the orphaned slot-fill by hand-editing .jigc/config/manifest.yaml — the sanctioned delta-form edit)
+
+$ JIGC_PACK_DIR=<v2> jigc upgrade
+Pack: dev/0.4.0 · reconciling 5 recorded deltas against the current pack
+  ✓ clean   (all 5) — no upstream change unaccounted for
+```
+
+`jigc upgrade` is **report-and-route only** — it never mutates the manifest; the human re-pins via the `jigc config` verbs (re-recording a delta pins its basis against the now-current pack), and a clean re-run is the verification. **No upstream change silently lost; no override silently broken** — the milestone's headline, proven through the real binary.
+
+*(Spiked during planning: the `override-default` classifier is purely content-stateless — a stale recorded base-hash yields `conflict`, the matching hash `clean`, a missing target `orphaned` — and the in-process `FakePack`/`FilesystemPack` two-version seam makes the genuine `v1 → v2` drivable; see [DECISIONS.md](../DECISIONS.md) 2026-06-03.)*

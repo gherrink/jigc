@@ -41,7 +41,7 @@ A layer's deltas live in a **config-format manifest**; content lives in **native
 
 - `scalar-set` → inline in the manifest (`key: value`).
 - `structural-op` / `slot-fill` / `tracked-fork` → an operation entry referencing a native file (a step file in workflow-definition form, prose as Markdown). No prose-in-config.
-- Every **content-bearing** delta records its **base-version** and the target's **base-hash** (generalizing `tracked-fork`), which makes reconciliation stateless (below).
+- Every **content-bearing** delta records its **base-version** and the target's **base-hash**, which makes reconciliation stateless (below). *(Shipped for `tracked-fork` in M4; extended to `replace`/`remove` in M5 — old manifests lacking it reconcile as `needs-rebasing`.)*
 
 ```yaml
 # project config — deltas against pack-default v1
@@ -138,8 +138,8 @@ Deltas may be authored two co-equal ways: **by hand** (edit `manifest.yaml` + dr
 |---|---|---|
 | `jigc config set <key> <value>` | a `scalar-set` | closed-surface + `check_value` typed adjudication (undeclared key / wrong type rejected) |
 | `jigc config insert-step --workflow <id> (--after\|--before) <step-id> <file>` | an `insert` `structural-op` + the native step file | anchor step-id present in the resolution *as of this edit* |
-| `jigc config replace-step <workflow:id#step-id> <file>` | a `replace` `structural-op` + native file | target step-id present as of this edit |
-| `jigc config remove-step <workflow:id#step-id>` | a `remove` `structural-op` | target step-id present as of this edit |
+| `jigc config replace-step <workflow:id#step-id> <file>` | a `replace` `structural-op` + native file; **(M5)** also records `base-version`+`base-hash` of the *replaced* unit | target step-id present as of this edit |
+| `jigc config remove-step <workflow:id#step-id>` | a `remove` `structural-op`; **(M5)** also records `base-version`+`base-hash` of the *removed* unit | target step-id present as of this edit |
 | `jigc config fill <step:id#fill-id> --from-file <file>` | a `slot-fill` + native fill file | the `{{fill:<fill-id>}}` point exists in the resolved step body |
 | `jigc config fork <workflow:id#step-id>` | a `tracked-fork` — copies the resolved unit into a native file, records `base-version` + `base-hash` | target resolves as of this edit |
 
@@ -231,12 +231,13 @@ These were under-specified before; locking them here:
 
 ## Upgrade reconciliation — `override-default` (M5)
 
-> **(M5)** — everything in this section ships in **M5 · upgrade reconciliation**, not M4. M4 *records* the `base-version` + `base-hash` on every content-bearing delta (above); M5 is the consumer that re-applies and compares them.
+> **(M5)** — everything in this section ships in **M5 · upgrade reconciliation**, not M4. M4 records the `base-version` + `base-hash` for **`tracked-fork` only**; M5 *extends* recording to `replace`/`remove` (old manifests lack it → `needs-rebasing`, below) and is the consumer that re-applies and compares them.
 
-When pack-default goes `v1 → v2`, a guarded `jigc upgrade` re-applies each recorded delta and classifies it. This is the engine-native **`override-default` probe** ([validation.md](validation.md)); it asks two deterministic questions per delta against v2:
+When pack-default goes `v1 → v2`, a guarded `jigc upgrade` re-applies each recorded delta and classifies it. This is the engine-native **`override-default` probe** ([validation.md](validation.md)); it asks up to **three** deterministic questions per delta against v2:
 
 1. **Does the target still exist?** No → **`orphaned`** (loud failure).
-2. **Did the target change, *and does this delta depend on that content*?** Yes → **`conflict`** (review). No → **`clean`** (you inherit every other v2 improvement free).
+2. **Is this a content-bearing delta with no recorded base-hash** (an `replace`/`remove` authored under M4)? Yes → **`needs-rebasing`** (re-record to pin a basis).
+3. **Did the target change** (`current-pack hash ≠ recorded base-hash`)? Yes → **`conflict`** (review). No → **`clean`** (you inherit every other v2 improvement free).
 
 A delta conflicts *only when it depends on content that changed upstream*:
 
@@ -244,15 +245,42 @@ A delta conflicts *only when it depends on content that changed upstream*:
 |---|---|---|
 | `scalar-set` | a key's existence | clean / orphaned |
 | `insert` | the anchor's *existence* | clean / orphaned (never conflicts) |
-| `replace` / `remove` | the target's *content* | clean / **conflict** / orphaned |
+| `replace` / `remove` | the target's *content* | clean / **conflict** / orphaned / **needs-rebasing** |
 | `slot-fill` | the slot's existence | clean / orphaned |
 | `tracked-fork` | the forked target's *content* | clean / **conflict** / orphaned |
 
-Because every content-bearing delta carries its target's **base-hash**, change-detection is a pure compare (`v2 hash ≠ recorded base-hash`) — **stateless**, no old pack kept around.
+Because every content-bearing delta carries its target's **base-hash**, change-detection is a pure compare (`current-pack hash ≠ recorded base-hash`) — **stateless**, no old pack kept around.
+
+**Per-kind base-hash basis (M5 substrate fix).** M4 recorded `base-version`+`base-hash` only for `tracked-fork`; M5 extends it to the other content-bearing kinds so the conflict column above is real. For **all three** the basis is the **blake3 of the *pack-default* unit's resolved native bytes** — the bytes the override sits on, recorded at authoring time and re-read by the probe from the current pack:
+
+| delta | base-hash is the blake3 of … |
+|---|---|
+| `tracked-fork workflow:W#s` | the forked step `s`'s pack-default bytes (already recorded by M4) |
+| `replace workflow:W#s` | the **replaced** step `s`'s pack-default bytes (the pack unit being swapped out) |
+| `remove workflow:W#s` | the **removed** step `s`'s pack-default bytes (the pack unit being dropped) |
+
+**The probe re-reads the *pack-default* unit (`PackSource::read`), never the cascade-resolved owner.** This matters most for `tracked-fork`, which *shadows the same id* (`steps/s.yaml`): a shadow-aware re-resolution would return the fork's **own** copy, which always equals the recorded base-hash → every fork would falsely classify `clean` and the fork-conflict path would be silently dead. So the basis — at both record time (`config fork`/`replace-step`/`remove-step` already read `pack.read(Steps, s)` pack-direct) and probe time — is the pack's own bytes, deliberately bypassing any project shadow.
+
+**On-disk vs in-memory representation.** The basis is written as `base-version:`/`base-hash:` keys on the *same* `replace-step`/`remove-step` manifest entry (where `config fork` already writes them for a fork). In memory it rides in a **separate M5 recording keyed by the delta's target**, **not** as new fields on the compose-facing `StructuralDelta` — so the phase-4 compose path and its byte-identical goldens are untouched (the basis is read only by `override-default`, never by compose).
+
+So `config replace-step`/`remove-step` gain the same record `config fork` already writes (reusing the resolve-then-hash path). **Backward-compat:** an M4-written `replace`/`remove` delta has **no** recorded base-hash, so M5 parses the keys as **optional** for these kinds; a content-bearing delta with no recorded base-hash classifies as **`needs-rebasing`** (route: re-record it via `jigc config replace-step …`, which pins the basis against the now-current pack) — it is **never** re-derived from the current pack, which would compare equal and silently mask every conflict. A *recorded* basis that simply matches is `clean`; a *missing* basis is `needs-rebasing` — the two are distinct (a present-but-equal hash is never confused with an absent one).
 
 The probe emits validation findings with routes: `orphaned` → a route to remove or re-target the delta; `conflict` → **blocks with a review route** naming what changed and the options (keep your override / re-target / drop). Both ship **blocking-by-default** in M5 (cascade-tunability of these severities is M6 · severity tuning). The upgrade is *guarded by the report*: re-apply, classify, resolve, complete — "no upstream change silently lost; no override silently broken."
 
 **3-way-merge authoring is deferred (past M5 and M6).** The fuller story — *the agent drafts a 3-way-merge proposal through the CLI, the human confirms, the CLI never calls a model* — needs the base-*content* (the v1 ancestor) to merge against, but the stateless design keeps only the base-*hash*. So M5 **detects and surfaces** the conflict (the load-bearing value: every divergence surfaces at a known moment) and routes it to human review, exactly as `file_state` blocks an OOB conflict today without merging ([reconciliation.md](reconciliation.md)); building the diff3/merge surface (and whatever base-content retention it needs) is a separable later step, not part of proving the inherit-upstream half.
+
+### The `jigc upgrade` command — report, route, resolve
+
+`jigc upgrade` is the guarded entry point. It is **report-and-route only** — it never mutates the manifest:
+
+1. **Re-apply** — load the resolved cascade and walk every recorded delta.
+2. **Classify** — run `override-default` per delta against the *current* pack (the questions above), identifying each delta in its finding by its **target** (`workflow:single-task#implement`) — a delta has no stable id; its target is its identity.
+3. **Report** — emit one finding per non-`clean` delta through the standard findings+routes renderer ([validation.md](validation.md) → Findings); `orphaned`/`conflict`/`needs-rebasing` are **blocking-by-default**, `clean` deltas emit nothing. The route is a **human-readable string** (keep / re-target / drop), mirroring `file_state`'s conflict-block prose — not the `run-command`/`reconcile` tagged union (that promotion is a separate cross-cutting result-contract change, out of M5).
+4. **Resolve** — the human acts on each route by **re-running the `jigc config` verbs** (drop an orphaned delta, re-record a conflicted/needs-rebasing one — which re-pins its base-hash to the now-current pack). `jigc upgrade` itself writes nothing, so it needs no guarded-write transaction or rollback; re-running it after the human's edits is the verification.
+
+**Trigger & versioning — hash-driven, not version-gated.** The compare is purely `current-pack-hash ≠ recorded-base-hash`, so reconciliation needs **no** version diff: `jigc upgrade` is a **manual command that re-checks every delta unconditionally** against whatever pack the binary currently carries. There is **no per-project "last-reconciled version" record** — the per-delta `base-version` (recorded `= CARGO_PKG_VERSION` at authoring time) is **narrative only** (shown in the conflict route: *"pack `dev/0.4.0` changed `implement` since you overrode it at `dev/0.3.0`"*), never a classification input. An "upgrade" in production is simply *installing a newer binary* (whose embedded pack carries a bumped `CARGO_PKG_VERSION`) and running `jigc upgrade`; when nothing changed, every delta is `clean` and the command is a clean no-op.
+
+**Testing an upgrade — the `FilesystemPack` seam.** The production pack is compiled in (`include_dir!`), so a single binary embeds exactly one pack version — an e2e cannot otherwise drive a *genuine* `v1 → v2`. M5 adds a **`FilesystemPack`** `PackSource` (a long-named-but-unbuilt seam) selected by a **`JIGC_PACK_DIR`** env var via one pack-source factory. The load-bearing requirement isn't a site count — it's that **every production pack-source construction goes through the factory**, so the *recording* path (the `jigc config` verbs) and the *upgrade* path read the **same** env-selected pack; a basis recorded against one pack and compared against another would mismatch spuriously. A `FilesystemPack` answers `pack_version()` from a **`version` key in its `config/defaults.yaml`** (the file that already carries `pack-id`); absent → a fixed `fs-local` sentinel. Because `base-version` is narrative-only, the sentinel is harmless — but a test that wants the flow-7 `0.3.0`/`0.4.0` route text sets `version:` in each pack dir's `defaults.yaml`. A test records deltas with `JIGC_PACK_DIR=<v1>` then runs `jigc upgrade` with `JIGC_PACK_DIR=<v2>` — a real two-pack reconciliation through the built binary. The seam is independently useful (project-local packs), and `EmbeddedPack` stays the default when the env var is unset.
 
 ## Open questions
 
