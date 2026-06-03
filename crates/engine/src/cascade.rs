@@ -214,6 +214,62 @@ impl StructuralTarget {
     }
 }
 
+/// One `structural-op` delta: which kind of mutation, over which
+/// [`StructuralTarget`]. The three kinds are the override ladder's rung 2
+/// (`design/overrides.md` → The ladder); they operate on a workflow's **include
+/// id list** at phase 4, *before* include expansion.
+///
+/// - [`StructuralDelta::Insert`] — splice a step id at the target's `after:` /
+///   `before:` anchor. The inserted id is `step` (the native step file's
+///   basename — `design/overrides.md` → Native-file id = filename basename); the
+///   anchor lives in `target.anchor` ([`Anchor::After`] / [`Anchor::Before`]).
+/// - [`StructuralDelta::Replace`] — swap the id at the target's `#<step-id>`
+///   position ([`Anchor::At`]) for `step`. The replacement is **another step
+///   id**, never inline content (`design/overrides.md` → `replace` vs
+///   `tracked-fork`).
+/// - [`StructuralDelta::Remove`] — drop the id at the target's `#<step-id>`
+///   position ([`Anchor::At`]).
+///
+/// A delta whose anchor / target id is absent from the current list is an
+/// **orphaned** `workflow-refs` finding ([`crate::compose::apply_structural_deltas`]);
+/// within a layer, deltas apply in manifest order, so an earlier delta's result
+/// is the later delta's input (`design/overrides.md` → Within-layer manifest
+/// order). Pure data; no I/O, no cascade consulted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StructuralDelta {
+    /// Insert `step` at the target's `after:` / `before:` anchor.
+    Insert {
+        /// The workflow + anchor this insert attaches to.
+        target: StructuralTarget,
+        /// The step id to splice in (the native step file's basename).
+        step: String,
+    },
+    /// Replace the id at the target's `#<step-id>` position with `step`.
+    Replace {
+        /// The workflow + `#<step-id>` position to swap.
+        target: StructuralTarget,
+        /// The replacement step id (another step id, never inline content).
+        step: String,
+    },
+    /// Remove the id at the target's `#<step-id>` position.
+    Remove {
+        /// The workflow + `#<step-id>` position to drop.
+        target: StructuralTarget,
+    },
+}
+
+impl StructuralDelta {
+    /// The [`StructuralTarget`] this delta operates on — the workflow id and the
+    /// include-list position / anchor.
+    pub fn target(&self) -> &StructuralTarget {
+        match self {
+            StructuralDelta::Insert { target, .. }
+            | StructuralDelta::Replace { target, .. }
+            | StructuralDelta::Remove { target } => target,
+        }
+    }
+}
+
 /// Identifies one cascade layer by precedence. `Project` is most-specific and
 /// wins; `PackDefault` is the base (`design/overrides.md` → The cascade).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

@@ -16,6 +16,7 @@
 //! position). This is phase-1 input gathering for one layer's workflow file
 //! (`overrides.md` → Resolution algorithm).
 
+use crate::cascade::{Anchor, StructuralDelta};
 use crate::finding::{Finding, Location};
 use serde::{Deserialize, Serialize};
 
@@ -1048,6 +1049,81 @@ impl Composition {
     pub fn step_ids(&self) -> Vec<&str> {
         self.steps.iter().map(|s| s.id.as_str()).collect()
     }
+}
+
+/// Apply a layer-ordered run of `structural-op` deltas to a workflow's include
+/// id list — **phase 4** of `overrides.md` → Resolution algorithm, run *before*
+/// include expansion (phase 7). A pure transform of the id `Vec`: same
+/// `(includes, deltas)` in → same id list out (no I/O, no cascade consulted).
+///
+/// Deltas apply in fed order — the within-layer manifest order chained across
+/// layers (pack → team → project), so an earlier delta's result is the later
+/// delta's input (`overrides.md` → Within-layer manifest order). Each kind:
+///
+/// - [`StructuralDelta::Insert`] — splice the new step id at the [`Anchor::After`]
+///   / [`Anchor::Before`] anchor's position.
+/// - [`StructuralDelta::Replace`] — swap the id at the [`Anchor::At`] position for
+///   the replacement step id (another step id, never inline content).
+/// - [`StructuralDelta::Remove`] — drop the id at the [`Anchor::At`] position.
+///
+/// A delta whose anchor / target id is **absent** from the current list is an
+/// **orphaned** `workflow-refs.structural-anchor-resolves` blocking [`Finding`]
+/// (`overrides.md` → Within-layer manifest order: "a later delta targeting a
+/// now-removed id surfaces an `orphaned` finding"). This precedes phase 7, so a
+/// dangling *inserted* id (one no layer provides a file for) is caught later by
+/// [`expand_includes`]'s `include-resolves` check, not here — phase 4 only
+/// transforms the id list.
+pub fn apply_structural_deltas(
+    includes: &[String],
+    deltas: &[StructuralDelta],
+) -> Result<Vec<String>, Finding> {
+    let mut ids: Vec<String> = includes.to_vec();
+    for delta in deltas {
+        match delta {
+            StructuralDelta::Insert { target, step } => {
+                let (anchor_id, offset) = match &target.anchor {
+                    Anchor::After(id) => (id, 1),
+                    Anchor::Before(id) => (id, 0),
+                    Anchor::At(id) => (id, 0),
+                };
+                let pos = anchor_position(&ids, anchor_id)?;
+                ids.insert(pos + offset, step.clone());
+            }
+            StructuralDelta::Replace { target, step } => {
+                let pos = anchor_position(&ids, at_id(&target.anchor))?;
+                ids[pos] = step.clone();
+            }
+            StructuralDelta::Remove { target } => {
+                let pos = anchor_position(&ids, at_id(&target.anchor))?;
+                ids.remove(pos);
+            }
+        }
+    }
+    Ok(ids)
+}
+
+/// The step id of an [`Anchor::At`] (replace / remove) target, falling back to
+/// the carried id for the never-constructed-here `After` / `Before` cases so the
+/// helper is total without an unreachable.
+fn at_id(anchor: &Anchor) -> &str {
+    match anchor {
+        Anchor::At(id) | Anchor::After(id) | Anchor::Before(id) => id,
+    }
+}
+
+/// The index of `anchor_id` in the current include list, or an **orphaned**
+/// `workflow-refs.structural-anchor-resolves` blocking [`Finding`] when the
+/// anchor / target id is absent (`overrides.md` → Within-layer manifest order).
+fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
+    ids.iter().position(|id| id == anchor_id).ok_or_else(|| {
+        Finding::blocking(
+            "workflow-refs.structural-anchor-resolves",
+            format!(
+                "structural-op anchor `{anchor_id}` resolves to no entry in the include list (orphaned)"
+            ),
+            Location::at(1, 1),
+        )
+    })
 }
 
 /// Expand a workflow's include list into a flat, ordered [`Composition`] —
@@ -3115,5 +3191,195 @@ reference — make your consequences explain what changes:
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].code, "workflow-refs.undeclared-root");
         assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
+    }
+
+    // --- phase-4 structural-delta application (apply_structural_deltas) ---
+
+    use crate::cascade::{AnchorSpec, StructuralTarget};
+
+    /// The done-criterion fixture include list: `single-task`'s pack-default
+    /// composition order.
+    fn fixture_includes() -> Vec<String> {
+        ["locate", "implement", "superseded-context", "finalize"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    /// Build an `insert` delta from a `workflow:<id>` ref + an `after:` / `before:`
+    /// anchor + the inserted step id (the basename rule of the verb surface).
+    fn insert(workflow: &str, anchor: AnchorSpec, step: &str) -> StructuralDelta {
+        StructuralDelta::Insert {
+            target: StructuralTarget::parse(workflow, Some(anchor)).expect("valid target"),
+            step: step.to_owned(),
+        }
+    }
+
+    /// Build a `replace` delta from a `workflow:<id>#<step-id>` ref + the
+    /// replacement step id (another step id, never inline content).
+    fn replace(target: &str, step: &str) -> StructuralDelta {
+        StructuralDelta::Replace {
+            target: StructuralTarget::parse(target, None).expect("valid target"),
+            step: step.to_owned(),
+        }
+    }
+
+    /// Build a `remove` delta from a `workflow:<id>#<step-id>` ref.
+    fn remove(target: &str) -> StructuralDelta {
+        StructuralDelta::Remove {
+            target: StructuralTarget::parse(target, None).expect("valid target"),
+        }
+    }
+
+    /// Golden: an `insert` with an `after:` anchor lands the new id at the slot
+    /// **immediately after** the anchor's index — not at the list head/tail.
+    #[test]
+    fn insert_after_lands_at_anchor_plus_one() {
+        let out = apply_structural_deltas(
+            &fixture_includes(),
+            &[insert(
+                "workflow:single-task",
+                AnchorSpec::After("locate".to_owned()),
+                "team-lint",
+            )],
+        )
+        .expect("anchor present");
+
+        assert_eq!(
+            out,
+            vec![
+                "locate".to_owned(),
+                "team-lint".to_owned(),
+                "implement".to_owned(),
+                "superseded-context".to_owned(),
+                "finalize".to_owned(),
+            ],
+        );
+    }
+
+    /// Golden: an `insert` with a `before:` anchor lands the new id **at** the
+    /// anchor's index, pushing the anchor one slot later.
+    #[test]
+    fn insert_before_lands_at_anchor_index() {
+        let out = apply_structural_deltas(
+            &fixture_includes(),
+            &[insert(
+                "workflow:single-task",
+                AnchorSpec::Before("finalize".to_owned()),
+                "team-lint",
+            )],
+        )
+        .expect("anchor present");
+
+        assert_eq!(
+            out,
+            vec![
+                "locate".to_owned(),
+                "implement".to_owned(),
+                "superseded-context".to_owned(),
+                "team-lint".to_owned(),
+                "finalize".to_owned(),
+            ],
+        );
+    }
+
+    /// Golden: `replace` swaps the id **at the target's position** for another
+    /// step id, leaving every other slot untouched.
+    #[test]
+    fn replace_swaps_id_at_position() {
+        let out = apply_structural_deltas(
+            &fixture_includes(),
+            &[replace(
+                "workflow:single-task#implement",
+                "project-implement",
+            )],
+        )
+        .expect("target present");
+
+        assert_eq!(
+            out,
+            vec![
+                "locate".to_owned(),
+                "project-implement".to_owned(),
+                "superseded-context".to_owned(),
+                "finalize".to_owned(),
+            ],
+        );
+    }
+
+    /// Golden: `remove` drops the targeted id, closing the gap.
+    #[test]
+    fn remove_drops_targeted_id() {
+        let out = apply_structural_deltas(
+            &fixture_includes(),
+            &[remove("workflow:single-task#superseded-context")],
+        )
+        .expect("target present");
+
+        assert_eq!(
+            out,
+            vec![
+                "locate".to_owned(),
+                "implement".to_owned(),
+                "finalize".to_owned(),
+            ],
+        );
+    }
+
+    /// Golden: multiple deltas compose **in fed order** — a `replace` then a
+    /// `remove` of the *same* id. The replace runs first (operating on the
+    /// original `implement`), then the remove operates on the replace's result
+    /// (`project-implement`), dropping it (`overrides.md` → Within-layer manifest
+    /// order).
+    #[test]
+    fn deltas_compose_in_fed_order_replace_then_remove() {
+        let out = apply_structural_deltas(
+            &fixture_includes(),
+            &[
+                replace("workflow:single-task#implement", "project-implement"),
+                remove("workflow:single-task#project-implement"),
+            ],
+        )
+        .expect("each anchor present when its delta runs");
+
+        assert_eq!(
+            out,
+            vec![
+                "locate".to_owned(),
+                "superseded-context".to_owned(),
+                "finalize".to_owned(),
+            ],
+        );
+    }
+
+    /// A delta whose anchor a same-run earlier delta removed is **orphaned** — a
+    /// blocking `workflow-refs.structural-anchor-resolves` finding (`overrides.md`
+    /// → Within-layer manifest order).
+    #[test]
+    fn delta_targeting_a_removed_anchor_is_orphaned() {
+        let finding = apply_structural_deltas(
+            &fixture_includes(),
+            &[
+                remove("workflow:single-task#implement"),
+                insert(
+                    "workflow:single-task",
+                    AnchorSpec::After("implement".to_owned()),
+                    "team-lint",
+                ),
+            ],
+        )
+        .expect_err("the insert's anchor was removed");
+
+        assert_eq!(finding.code, "workflow-refs.structural-anchor-resolves");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.location, Some(Location::at(1, 1)));
+    }
+
+    /// The no-delta path is the identity on the include list — byte-identical id
+    /// `Vec` out (the no-override path stays unchanged).
+    #[test]
+    fn no_deltas_is_the_identity() {
+        let out = apply_structural_deltas(&fixture_includes(), &[]).expect("no deltas");
+        assert_eq!(out, fixture_includes());
     }
 }
