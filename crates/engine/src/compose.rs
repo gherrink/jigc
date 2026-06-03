@@ -1251,15 +1251,20 @@ pub type ResolvedFills = std::collections::BTreeMap<(String, String), String>;
 /// `overrides.md` → Resolution algorithm, run *before* include expansion (phase 7)
 /// and placeholder resolution (phase 8).
 ///
-/// Each lone `{{fill: <id>}}` line in `body` (recognized by [`fill_id_of`]) is
-/// replaced by the content `fills` carries for `(step_id, <id>)`, or — when no
-/// `slot-fill` fills that point — the pack's **default body** (empty in M4, never a
-/// finding: an unfilled extension point is the common case, `overrides.md` → The
-/// `{{fill:}}` placeholder). Non-fill lines pass through byte-for-byte.
+/// Each `{{fill:<id>}}` token in `body` — **anywhere in a line**, recognized by
+/// [`next_fill_token`] — is replaced by the content `fills` carries for
+/// `(step_id, <id>)`, or — when no `slot-fill` fills that point — the pack's
+/// **default body** (empty in M4, never a finding: an unfilled extension point is
+/// the common case, `overrides.md` → The `{{fill:}}` placeholder). A **lone-line**
+/// token whose content is empty collapses the line to nothing (no blank line left
+/// behind); a mid-line token whose content is empty drops just the token. Non-fill
+/// text passes through byte-for-byte.
 ///
 /// The pass **does not re-run**: a `{{fill:}}` *inside* the applied content is left
 /// intact, surviving to phase 8 where `workflow-refs` flags it as a blocking
 /// survivor (the no-nested-fills rule — `overrides.md`: "phase 5 does not re-run").
+/// Substitution scans the *original* line only and never re-scans the spliced
+/// content, so a nested `{{fill:}}` — lone-line or mid-line — survives intact.
 /// Likewise the applied content's own `{{include:}}` / `{{cli.…}}` / `{{@…}}` are
 /// left untouched, resolving in the later phases exactly as if the pack had written
 /// them inline.
@@ -1274,25 +1279,42 @@ pub fn apply_slot_fills(
     body: &str,
     fills: &ResolvedFills,
 ) -> Result<String, Finding> {
+    let resolve = |id: &str| -> &str {
+        fills
+            .get(&(step_id.to_owned(), id.to_owned()))
+            .map(String::as_str)
+            .unwrap_or("")
+    };
     let trailing_newline = body.ends_with('\n');
     let mut out_lines = Vec::new();
     for line in body.lines() {
-        match fill_id_of(line.trim()) {
-            // A lone `{{fill: <id>}}` line → the resolved content (or empty default).
-            Some(fill_id) => {
-                let content = fills
-                    .get(&(step_id.to_owned(), fill_id.to_owned()))
-                    .map(String::as_str)
-                    .unwrap_or("");
-                // Splice the content's lines in place of the fill line; an empty
-                // default collapses the line to nothing (no blank line left behind).
-                for content_line in content.lines() {
-                    out_lines.push(content_line.to_owned());
-                }
+        // A lone-line `{{fill: <id>}}` keeps the byte-identical splice-and-collapse
+        // semantics: the content's lines replace the fill line, an empty default
+        // leaving no blank line behind.
+        if let Some(fill_id) = fill_id_of(line.trim()) {
+            for content_line in resolve(fill_id).lines() {
+                out_lines.push(content_line.to_owned());
             }
-            // Any other line passes through byte-for-byte (the applied content's own
-            // placeholders included — they resolve in later phases).
-            None => out_lines.push(line.to_owned()),
+            continue;
+        }
+        // Otherwise substitute every mid-line `{{fill:<id>}}` token in place,
+        // scanning the *original* line only (the spliced content is never re-scanned,
+        // so a nested fill survives). A line with no fill token passes through
+        // byte-for-byte. Multi-line content splices in at the token's position.
+        let mut rewritten = String::new();
+        let mut cursor = 0;
+        while let Some((range, id)) = next_fill_token(&line[cursor..]) {
+            rewritten.push_str(&line[cursor..cursor + range.start]);
+            rewritten.push_str(resolve(id));
+            cursor += range.end;
+        }
+        if cursor == 0 {
+            out_lines.push(line.to_owned());
+        } else {
+            rewritten.push_str(&line[cursor..]);
+            for rewritten_line in rewritten.split('\n') {
+                out_lines.push(rewritten_line.to_owned());
+            }
         }
     }
     let mut applied = out_lines.join("\n");
@@ -1302,23 +1324,29 @@ pub fn apply_slot_fills(
     Ok(applied)
 }
 
-/// Every lone `{{fill: <id>}}` point a step `body` declares, in line order — the
-/// `{{fill:}}` recognizer ([`fill_id_of`]) applied line-by-line, exposed for the
-/// **write-time** `config fill` checks (`overrides.md` → the `jigc config` verbs:
-/// "the `{{fill:<fill-id>}}` point exists in the resolved step body"; The
-/// `{{fill:}}` placeholder: "rejects fill content containing `{{fill:}}` at write
-/// time").
+/// Every `{{fill:<id>}}` point a step `body` declares — **token-anywhere**, in
+/// occurrence order — the inline `{{fill:}}` recognizer ([`next_fill_token`]) swept
+/// over the whole body, exposed for the **write-time** `config fill` checks
+/// (`overrides.md` → the `jigc config` verbs: "the `{{fill:<fill-id>}}` point exists
+/// in the resolved step body"; The `{{fill:}}` placeholder: "rejects fill content
+/// containing `{{fill:}}` at write time").
 ///
 /// Two uses, one recognizer: the verb checks the target fill-id is among the
 /// resolved step body's points (else the orphan would land at resolution), and
-/// rejects fill content whose own body declares any `{{fill:}}` (the no-nested
-/// rule, since phase 5 does not re-run). The same lone-line discipline the phase-5
-/// pass and the `slot-fill-orphan` / `fill-survivor` checks use, so all paths agree
-/// on what counts as a fill point. Pure: no I/O, no cascade consulted.
+/// rejects fill content whose own body declares any `{{fill:}}` — including a
+/// **mid-line** one (the no-nested rule, since phase 5 does not re-run; a mid-line
+/// nested fill would otherwise leak the literal token into agent output). The same
+/// token discipline the phase-5 pass and the `slot-fill-orphan` / `fill-survivor`
+/// checks use, so all paths agree on what counts as a fill point. Pure: no I/O, no
+/// cascade consulted.
 pub fn fill_ids_in(body: &str) -> Vec<&str> {
-    body.lines()
-        .filter_map(|line| fill_id_of(line.trim()))
-        .collect()
+    let mut ids = Vec::new();
+    let mut base = 0;
+    while let Some((range, id)) = next_fill_token(&body[base..]) {
+        ids.push(id);
+        base += range.end;
+    }
+    ids
 }
 
 /// If `trimmed` is a lone `{{ fill: <id> }}` placeholder, return `<id>`; else
@@ -1326,15 +1354,50 @@ pub fn fill_ids_in(body: &str) -> Vec<&str> {
 /// fourth read-path placeholder kind (`workflow-dialect.md` → Leaves).
 ///
 /// Distinct from [`parse_cli_placeholder`] (`cli.<id>`) and [`parse_include_line`]
-/// (`include: step:<id>`): a `{{fill:}}` is its own leaf kind, recognized only as a
-/// **lone** line (an inline `{{fill:}}` inside prose is not an extension point).
+/// (`include: step:<id>`): a `{{fill:}}` is its own leaf kind. This recognizer is
+/// the **lone-line** form (the whole trimmed line is the placeholder); the
+/// token-anywhere form is [`next_fill_token`].
 fn fill_id_of(trimmed: &str) -> Option<&str> {
     let inner = parse_lone_placeholder(trimmed)?;
-    let id = inner.strip_prefix("fill:")?.trim();
+    fill_id_of_inner(inner)
+}
+
+/// The fill-id of an already-extracted placeholder inner (`fill: <id>`), or `None`.
+/// Shared by the lone-line [`fill_id_of`] and the token scanner [`next_fill_token`]
+/// so both agree on what is a well-formed `{{fill:}}`.
+fn fill_id_of_inner(inner: &str) -> Option<&str> {
+    let id = inner.trim().strip_prefix("fill:")?.trim();
     if id.is_empty() || id.contains(char::is_whitespace) {
         return None;
     }
     Some(id)
+}
+
+/// Find the first `{{fill:<id>}}` token anywhere in `s`, returning its byte range
+/// (`{{`…`}}` inclusive) and the bare `<id>`. A `{{fill:}}` is recognized **inline**,
+/// not only as a lone line (`overrides.md` → The `{{fill:}}` placeholder: "an inline
+/// `{{fill:<id>}}` placeholder") — symmetric with how the substitution / no-nested /
+/// survivor checks treat it. Only `{{fill:…}}` matches: a `{{…}}` whose inner is not
+/// a well-formed `fill:<id>` (a command-ref, data-value, include, or malformed fill)
+/// is **skipped**, the scan continuing after its `{{`, so those placeholders are left
+/// for their own later phases.
+fn next_fill_token(s: &str) -> Option<(std::ops::Range<usize>, &str)> {
+    let mut search_from = 0;
+    while let Some(rel_open) = s[search_from..].find("{{") {
+        let open = search_from + rel_open;
+        // The matching `}}` is the first one after this `{{` (fill ids carry no
+        // braces, so no nesting to balance).
+        if let Some(rel_close) = s[open + 2..].find("}}") {
+            let close = open + 2 + rel_close;
+            let inner = &s[open + 2..close];
+            if let Some(id) = fill_id_of_inner(inner) {
+                return Some((open..close + 2, id));
+            }
+        }
+        // Not a fill token (or no closer): resume just past this `{{`.
+        search_from = open + 2;
+    }
+    None
 }
 
 /// Expand a workflow's include list into a flat, ordered [`Composition`] —
@@ -1684,9 +1747,9 @@ pub fn workflow_refs_with_deltas(
 ///   **inert for that compose, not an orphan** (symmetric with the orphaned
 ///   `structural-anchor-resolves`, closing the closed-surface hole for both authoring
 ///   paths).
-/// - **`fill-survivor`** — a lone `{{fill:}}` surviving into a post-phase-5 body
-///   (a nested fill phase 5 did not re-run) is blocking, **located at its line**
-///   ([`find_fill_survivor`]).
+/// - **`fill-survivor`** — a `{{fill:}}` token (lone-line or mid-line) surviving into
+///   a post-phase-5 body (a nested fill phase 5 did not re-run) is blocking,
+///   **located at its line** ([`find_fill_survivor`]).
 ///
 /// `deltas` (phase-4 structural-ops) and `slot_fills` (the slot-fill deltas) are both
 /// already **scoped to this workflow** by the frontend. `fills` is the cascade-
@@ -1806,26 +1869,26 @@ fn find_run_shadow(body: &str) -> Option<Finding> {
     })
 }
 
-/// If a **post-phase-5** step body still carries a lone `{{fill:<id>}}` line, return
-/// a blocking `workflow-refs.fill-survivor` [`Finding`] located at that line; else
-/// `None`.
+/// If a **post-phase-5** step body still carries a `{{fill:<id>}}` token — lone-line
+/// **or mid-line** — return a blocking `workflow-refs.fill-survivor` [`Finding`]
+/// located at that line; else `None`.
 ///
 /// Phase 5 ([`apply_slot_fills`]) replaces every declared `{{fill:}}` point — filled
 /// or defaulted — and **does not re-run**, so any `{{fill:}}` surviving into the
 /// post-phase-5 body arrived *inside applied content* (a nested fill) and will never
 /// resolve (`overrides.md` → no nested fills: "phase 5 does not re-run"). A surviving
 /// `{{fill:}}` is its own break, distinct from the generic `placeholder-resolves` /
-/// `undeclared-root` finding the emitter would otherwise raise (it parses a lone
-/// `{{fill:…}}` as a `fill`-rooted data-value path). The first survivor is reported
-/// with its body-relative line pointer. The body is scanned line-by-line by the same
-/// [`fill_id_of`] recognizer phase 5 uses.
+/// `undeclared-root` finding the emitter would otherwise raise. The first survivor is
+/// reported with its body-relative line pointer. The body is scanned line-by-line by
+/// the same [`next_fill_token`] recognizer phase 5 uses, so a mid-line nested fill
+/// (which would otherwise leak its literal token into agent output) is caught too.
 fn find_fill_survivor(body: &str) -> Option<Finding> {
     body.lines().enumerate().find_map(|(offset, line)| {
-        fill_id_of(line.trim()).map(|fill_id| {
+        next_fill_token(line).map(|(_, fill_id)| {
             Finding::blocking(
                 "workflow-refs.fill-survivor",
                 format!(
-                    "a lone `{{{{fill: {fill_id}}}}}` survives composition unresolved (phase 5 does not re-run — fill content may not contain another `{{{{fill:}}}}`)"
+                    "a `{{{{fill: {fill_id}}}}}` survives composition unresolved (phase 5 does not re-run — fill content may not contain another `{{{{fill:}}}}`)"
                 ),
                 Location::at(offset + 1, 1),
             )
@@ -4442,9 +4505,10 @@ Follow the house rule.
         ");
     }
 
-    /// A single-line fill emits its content **inline at that line** (the simplest
-    /// (a) case — `x → "house rule"`), and a step body with no lone fill point at
-    /// all passes through byte-for-byte (the no-fill common path).
+    /// A lone-line fill emits its content in place (the simplest (a) case —
+    /// `x → "house rule"`), a **mid-line** `{{fill:}}` token resolves *in place*
+    /// (token-anywhere, not only lone-line), and a body with no fill token at all
+    /// passes through byte-for-byte (the no-fill common path).
     #[test]
     fn fill_single_line_inline_and_no_fill_is_identity() {
         let resolved = fills(&[("implement", "x", "house rule")]);
@@ -4453,8 +4517,18 @@ Follow the house rule.
             .expect("applies");
         assert_eq!(one, "before\nhouse rule\nafter\n");
 
-        // No lone `{{fill:}}` line → the body is returned unchanged.
-        let plain = "Just prose with a {{ fill: inline }} mid-line — not a lone point.\n";
+        // A mid-line `{{fill: x}}` token is substituted in place (not left intact).
+        let mid = apply_slot_fills(
+            "implement",
+            "prose with a {{ fill: x }} mid-line.\n",
+            &resolved,
+        )
+        .expect("applies");
+        assert_eq!(mid, "prose with a house rule mid-line.\n");
+
+        // No `{{fill:}}` token of any form → the body is returned unchanged. (The
+        // `{{ cli.x }}` is a different placeholder kind, left for its own phase.)
+        let plain = "Just prose with a {{ cli.x }} command-ref — no fill here.\n";
         let untouched = apply_slot_fills("implement", plain, &resolved).expect("applies");
         assert_eq!(untouched, plain);
     }
@@ -4502,14 +4576,36 @@ Follow the house rule.
         assert_eq!(fill_id_of("plain prose"), None);
     }
 
-    /// `fill_ids_in` enumerates every lone `{{fill:}}` point a body declares, in
-    /// line order, and is empty for a body with none — the write-time recognizer the
-    /// `config fill` checks drive (point-exists + no-nested).
+    /// `fill_ids_in` enumerates every `{{fill:}}` point a body declares — lone-line
+    /// **and mid-line**, in occurrence order — and is empty for a body with none, the
+    /// write-time recognizer the `config fill` checks drive (point-exists + no-nested).
     #[test]
     fn fill_ids_in_lists_declared_points_in_order() {
         let body = "intro\n{{fill: extra-guidance}}\nmid\n{{ fill: more }}\nend\n";
         assert_eq!(fill_ids_in(body), vec!["extra-guidance", "more"]);
-        // A body that declares no `{{fill:}}` point (inline / other kinds don't count).
+        // Mid-line tokens count, in occurrence order, even multiple per line.
+        let inline = "house rule with {{fill: a}} and {{ fill: b }} embedded\n";
+        assert_eq!(fill_ids_in(inline), vec!["a", "b"]);
+        // A body that declares no `{{fill:}}` point (other placeholder kinds don't count).
         assert!(fill_ids_in("plain\n{{ cli.x }}\n{{ include: step:y }}\n").is_empty());
+    }
+
+    /// `next_fill_token` finds a `{{fill:<id>}}` token **anywhere** in a string —
+    /// mid-line included — and matches *only* `{{fill:…}}`, skipping other `{{…}}`
+    /// placeholder kinds (command-refs, includes, data-values) and malformed fills.
+    #[test]
+    fn next_fill_token_matches_only_fill_anywhere() {
+        let (range, id) = next_fill_token("pre {{fill: x}} post").expect("mid-line fill");
+        assert_eq!(id, "x");
+        assert_eq!(&"pre {{fill: x}} post"[range], "{{fill: x}}");
+
+        // Other placeholder kinds are skipped, then the real fill is found past them.
+        let (_, id) = next_fill_token("{{ cli.set }} then {{ include: step:y }} then {{fill: z}}")
+            .expect("fill after non-fills");
+        assert_eq!(id, "z");
+
+        // No fill token at all (only other kinds / malformed fills) → None.
+        assert!(next_fill_token("{{ cli.x }} and {{ fill: }} and {{ fill: two words }}").is_none());
+        assert!(next_fill_token("plain prose, no braces").is_none());
     }
 }

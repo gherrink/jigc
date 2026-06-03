@@ -383,6 +383,93 @@ fn nested_fill_in_content_is_rejected_at_write_time_and_writes_nothing() {
 }
 
 #[test]
+fn mid_line_nested_fill_in_content_is_rejected_at_write_time_and_writes_nothing() {
+    // (d), mid-line variant: a `{{fill:}}` token embedded *inside* a content line
+    // (not alone on its own line) is still a nested fill — phase 5 does not re-run,
+    // so it would leak the literal token into agent output. The no-nested guard is
+    // token-based, so the verb rejects it non-zero with its route, writing nothing.
+    let repo = TempDir::new("nested-midline-verb");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let config = repo.path().join(".jigc").join("config");
+    let manifest_path = config.join("manifest.yaml");
+    let before = fs::read_to_string(&manifest_path).expect("seed manifest exists");
+
+    let out = run_fill(
+        repo.path(),
+        home.path(),
+        "step:implement#extra-guidance",
+        "house rule with {{fill: nested-thing}} embedded\n",
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        !out.status.success(),
+        "fill content with a mid-line `{{{{fill:}}}}` must exit non-zero; got {:?}",
+        out.status,
+    );
+    assert!(
+        stderr.contains("nested-thing"),
+        "the rejection must name the mid-line nested fill; got:\n{stderr}",
+    );
+
+    assert!(
+        !config.join("fills").exists(),
+        "a rejected mid-line fill must write no native fill file",
+    );
+    assert_eq!(
+        fs::read_to_string(&manifest_path).expect("manifest still readable"),
+        before,
+        "a rejected mid-line fill must leave the manifest byte-unchanged",
+    );
+}
+
+#[test]
+fn mid_line_nested_fill_hand_edited_past_the_verb_never_leaks_into_output() {
+    // (d), mid-line compose half: a hand-edited `fills/extra-guidance.md` carrying a
+    // mid-line `{{fill:}}` (smuggled past the verb) is spliced in by phase 5; the
+    // mid-line token survives — `jigc start` must fail with the blocking
+    // `fill-survivor` finding, and no composed output may carry the literal token.
+    let repo = TempDir::new("nested-midline-compose");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let config = repo.path().join(".jigc").join("config");
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n\
+         deltas:\n\
+         \x20 - kind: slot-fill\n\
+         \x20   target: step:implement#extra-guidance\n\
+         \x20   content: fills/extra-guidance.md\n",
+    )
+    .expect("write the slot-fill manifest");
+    fs::create_dir_all(config.join("fills")).expect("mk fills/");
+    fs::write(
+        config.join("fills").join("extra-guidance.md"),
+        "house rule with {{fill: nested-thing}} embedded\n",
+    )
+    .expect("write fill content smuggling a mid-line nested fill");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        !out.status.success(),
+        "a surviving mid-line `{{{{fill:}}}}` must block compose non-zero; got {:?}",
+        out.status,
+    );
+    assert!(
+        !stdout.contains("{{fill:"),
+        "no composed output may leak an unresolved `{{{{fill:}}}}` token; got stdout:\n{stdout}",
+    );
+    assert!(
+        stderr.contains("nested-thing") && stderr.contains("survives composition"),
+        "the survivor block must name the surviving mid-line fill; got:\n{stderr}",
+    );
+}
+
+#[test]
 fn nested_fill_hand_edited_past_the_verb_is_blocked_at_compose_by_the_survivor_check() {
     // (d), compose-time half: a hand-edited `fills/extra-guidance.md` carrying a
     // nested `{{fill:}}` (smuggled past the verb's write-time guard) targets the real
