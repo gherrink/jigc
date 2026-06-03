@@ -27,6 +27,193 @@
 use std::collections::BTreeMap;
 use thiserror::Error;
 
+use crate::finding::{Finding, Location};
+
+/// The scheme every `structural-op` definition-target carries — the literal
+/// `workflow` in `workflow:<id>`. This parser handles the **workflow include
+/// list** namespace only (the MVP structural surface); `schema:<id>` sections
+/// share the grammar but are out of this increment's scope.
+const WORKFLOW_SCHEME: &str = "workflow";
+
+/// Where a `structural-op` delta attaches in a workflow's include list — the
+/// **anchor**, distinct from the content [`crate::address::Address`] (which is
+/// instance-scoped, `type:slug#unit/...`). A definition-target names *"a list
+/// entry in `WorkflowDef.includes`"*, a different namespace from a document
+/// slice (`design/overrides.md` → Delta targets — addressing a definition).
+///
+/// The anchor is **spelled explicitly** — `after:` / `before:` are their own
+/// manifest keys, never overloaded onto `#` (`design/overrides.md` → Delta
+/// targets). The `#<step-id>` form is the `replace` / `remove` target, which
+/// needs no anchor and is modelled as [`Anchor::At`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Anchor {
+    /// `workflow:<id>#<step-id>` — the entry *at* this step id (replace / remove).
+    At(String),
+    /// `workflow:<id>` + `after:<step-id>` — insert after this anchor step.
+    After(String),
+    /// `workflow:<id>` + `before:<step-id>` — insert before this anchor step.
+    Before(String),
+}
+
+/// The explicit insert anchor a manifest supplies as an `after:` / `before:`
+/// key, paired with its step id — the parser input distinct from the `#`
+/// (replace / remove) target form (`design/overrides.md` → Delta targets).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AnchorSpec {
+    /// The manifest's `after: <step-id>` key.
+    After(String),
+    /// The manifest's `before: <step-id>` key.
+    Before(String),
+}
+
+/// A parsed `structural-op` definition-target: which workflow's include list,
+/// and where in it. The load-bearing distinction from the content
+/// [`crate::address::Address`]: `workflow:single-task#validate` here means *"the
+/// entry `validate` in `single-task`'s include list"* — `single-task` is a
+/// **workflow id**, `validate` a **step-id list entry**, both living in a
+/// namespace separate from document addressing (`design/overrides.md` → Delta
+/// targets). Pure structure; no I/O, no cascade consulted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StructuralTarget {
+    /// The workflow id whose include list this target operates on.
+    pub workflow_id: String,
+    /// Where in the include list — the `#`, `after:`, or `before:` anchor.
+    pub anchor: Anchor,
+}
+
+/// Why a [`StructuralTarget`] failed to parse. Every variant carries the text
+/// for a located, blocking [`Finding`]; hostile input is never a panic
+/// (`design/overrides.md` → Delta targets).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TargetParseError {
+    /// The scheme before `:` was not `workflow`.
+    WrongScheme,
+    /// No `:` separating scheme from id.
+    MissingColon,
+    /// The workflow id was empty.
+    EmptyWorkflowId,
+    /// The `#<step-id>` form had an empty step id (a trailing `#`).
+    EmptyStepId,
+    /// An `after:` / `before:` anchor carried an empty step id.
+    EmptyAnchorStepId,
+    /// Neither a `#<step-id>` nor an `after:` / `before:` anchor was supplied —
+    /// a bare `workflow:<id>` does not name a list position.
+    MissingAnchor,
+    /// Both a `#<step-id>` and an `after:` / `before:` anchor were supplied —
+    /// the two anchor channels are mutually exclusive.
+    ConflictingAnchors,
+    /// A target or anchor id contained a non-ASCII byte (ids are ASCII).
+    NonAscii,
+}
+
+impl TargetParseError {
+    /// The stable machine code for this error's [`Finding`].
+    fn code(self) -> &'static str {
+        match self {
+            TargetParseError::WrongScheme => "structural-target.wrong-scheme",
+            TargetParseError::MissingColon => "structural-target.missing-colon",
+            TargetParseError::EmptyWorkflowId => "structural-target.empty-workflow-id",
+            TargetParseError::EmptyStepId => "structural-target.empty-step-id",
+            TargetParseError::EmptyAnchorStepId => "structural-target.empty-anchor-step-id",
+            TargetParseError::MissingAnchor => "structural-target.missing-anchor",
+            TargetParseError::ConflictingAnchors => "structural-target.conflicting-anchors",
+            TargetParseError::NonAscii => "structural-target.non-ascii",
+        }
+    }
+
+    /// The human-readable message for this error's [`Finding`].
+    fn message(self) -> &'static str {
+        match self {
+            TargetParseError::WrongScheme => "structural-op target scheme must be `workflow`",
+            TargetParseError::MissingColon => "structural-op target needs a `workflow:<id>` scheme",
+            TargetParseError::EmptyWorkflowId => "structural-op target has an empty workflow id",
+            TargetParseError::EmptyStepId => "structural-op target `#<step-id>` is empty",
+            TargetParseError::EmptyAnchorStepId => {
+                "structural-op `after:` / `before:` anchor step id is empty"
+            }
+            TargetParseError::MissingAnchor => {
+                "structural-op target needs a `#<step-id>` or an `after:` / `before:` anchor"
+            }
+            TargetParseError::ConflictingAnchors => {
+                "structural-op target cannot carry both `#<step-id>` and an `after:` / `before:` anchor"
+            }
+            TargetParseError::NonAscii => "structural-op target ids must be ASCII",
+        }
+    }
+
+    /// Project to a located, blocking [`Finding`] — these targets are short
+    /// config strings parsed positionally, so the location is the string head.
+    fn into_finding(self) -> Finding {
+        Finding::blocking(self.code(), self.message(), Location::at(1, 1))
+    }
+}
+
+impl StructuralTarget {
+    /// Parse a definition-target from a `target` string plus the optional
+    /// explicit insert [`AnchorSpec`] (the manifest's `after:` / `before:` key).
+    ///
+    /// - `workflow:<id>#<step-id>`, `anchor = None` → [`Anchor::At`] (replace / remove).
+    /// - `workflow:<id>`, `anchor = Some(After/Before)` → [`Anchor::After`] / [`Anchor::Before`].
+    ///
+    /// Hostile input — empty id, wrong scheme, missing anchor, both anchor
+    /// channels, non-ASCII — returns a located, blocking [`Finding`], never a
+    /// panic. Pure: no I/O, no cascade consulted (`design/overrides.md` → Delta
+    /// targets — addressing a definition).
+    pub fn parse(target: &str, anchor: Option<AnchorSpec>) -> Result<Self, Finding> {
+        Self::parse_inner(target, anchor).map_err(TargetParseError::into_finding)
+    }
+
+    fn parse_inner(target: &str, anchor: Option<AnchorSpec>) -> Result<Self, TargetParseError> {
+        if !target.is_ascii() {
+            return Err(TargetParseError::NonAscii);
+        }
+
+        let (reference, hash_step) = match target.split_once('#') {
+            Some((reference, step)) => (reference, Some(step)),
+            None => (target, None),
+        };
+
+        let (scheme, workflow_id) = reference
+            .split_once(':')
+            .ok_or(TargetParseError::MissingColon)?;
+        if scheme != WORKFLOW_SCHEME {
+            return Err(TargetParseError::WrongScheme);
+        }
+        if workflow_id.is_empty() {
+            return Err(TargetParseError::EmptyWorkflowId);
+        }
+
+        let anchor = match (hash_step, anchor) {
+            (Some(_), Some(_)) => return Err(TargetParseError::ConflictingAnchors),
+            (Some(step), None) => {
+                if step.is_empty() {
+                    return Err(TargetParseError::EmptyStepId);
+                }
+                Anchor::At(step.to_owned())
+            }
+            (None, Some(spec)) => {
+                let (id, make): (&str, fn(String) -> Anchor) = match &spec {
+                    AnchorSpec::After(id) => (id, Anchor::After),
+                    AnchorSpec::Before(id) => (id, Anchor::Before),
+                };
+                if !id.is_ascii() {
+                    return Err(TargetParseError::NonAscii);
+                }
+                if id.is_empty() {
+                    return Err(TargetParseError::EmptyAnchorStepId);
+                }
+                make(id.to_owned())
+            }
+            (None, None) => return Err(TargetParseError::MissingAnchor),
+        };
+
+        Ok(StructuralTarget {
+            workflow_id: workflow_id.to_owned(),
+            anchor,
+        })
+    }
+}
+
 /// Identifies one cascade layer by precedence. `Project` is most-specific and
 /// wins; `PackDefault` is the base (`design/overrides.md` → The cascade).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -264,6 +451,128 @@ pub fn resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::finding::Severity;
+
+    /// The `#<step-id>` form parses to a [`Anchor::At`] target (replace / remove),
+    /// carrying the workflow id and the step id from the fragment.
+    #[test]
+    fn parses_replace_remove_target() {
+        let target = StructuralTarget::parse("workflow:single-task#validate", None)
+            .expect("well-formed #-target parses");
+
+        assert_eq!(
+            target,
+            StructuralTarget {
+                workflow_id: "single-task".to_owned(),
+                anchor: Anchor::At("validate".to_owned()),
+            },
+        );
+    }
+
+    /// `workflow:<id>` + an explicit `after:` anchor parses to [`Anchor::After`].
+    #[test]
+    fn parses_after_insert_anchor() {
+        let target = StructuralTarget::parse(
+            "workflow:single-task",
+            Some(AnchorSpec::After("locate".to_owned())),
+        )
+        .expect("well-formed after-anchor parses");
+
+        assert_eq!(
+            target,
+            StructuralTarget {
+                workflow_id: "single-task".to_owned(),
+                anchor: Anchor::After("locate".to_owned()),
+            },
+        );
+    }
+
+    /// `workflow:<id>` + an explicit `before:` anchor parses to [`Anchor::Before`].
+    #[test]
+    fn parses_before_insert_anchor() {
+        let target = StructuralTarget::parse(
+            "workflow:single-task",
+            Some(AnchorSpec::Before("implement".to_owned())),
+        )
+        .expect("well-formed before-anchor parses");
+
+        assert_eq!(
+            target,
+            StructuralTarget {
+                workflow_id: "single-task".to_owned(),
+                anchor: Anchor::Before("implement".to_owned()),
+            },
+        );
+    }
+
+    /// Hostile input is a located, blocking [`Finding`] (never a panic), carrying
+    /// the stable per-cause `code` at the string head.
+    #[test]
+    fn hostile_input_is_a_located_blocking_finding() {
+        for (target, anchor, code) in [
+            // empty workflow id
+            (
+                "workflow:#validate",
+                None,
+                "structural-target.empty-workflow-id",
+            ),
+            (
+                "workflow:",
+                Some(AnchorSpec::After("x".to_owned())),
+                "structural-target.empty-workflow-id",
+            ),
+            // wrong scheme — a content-Address `type:slug` is not a definition target
+            ("adr:foo#decision", None, "structural-target.wrong-scheme"),
+            // missing colon entirely
+            ("single-task", None, "structural-target.missing-colon"),
+            // missing anchor — a bare workflow ref names no list position
+            (
+                "workflow:single-task",
+                None,
+                "structural-target.missing-anchor",
+            ),
+            // empty `#` step id (trailing hash)
+            (
+                "workflow:single-task#",
+                None,
+                "structural-target.empty-step-id",
+            ),
+            // empty anchor step id
+            (
+                "workflow:single-task",
+                Some(AnchorSpec::After(String::new())),
+                "structural-target.empty-anchor-step-id",
+            ),
+            // both anchor channels — mutually exclusive
+            (
+                "workflow:single-task#validate",
+                Some(AnchorSpec::After("locate".to_owned())),
+                "structural-target.conflicting-anchors",
+            ),
+            // non-ASCII in the target
+            (
+                "workflow:naïve#validate",
+                None,
+                "structural-target.non-ascii",
+            ),
+            // non-ASCII in the anchor step id
+            (
+                "workflow:single-task",
+                Some(AnchorSpec::Before("naïve".to_owned())),
+                "structural-target.non-ascii",
+            ),
+        ] {
+            let finding = StructuralTarget::parse(target, anchor.clone())
+                .expect_err("hostile input is a Finding");
+            assert_eq!(finding.severity, Severity::Blocking, "for {target:?}");
+            assert_eq!(finding.code, code, "for {target:?}");
+            assert_eq!(
+                finding.location,
+                Some(Location::at(1, 1)),
+                "hostile input is located, for {target:?}",
+            );
+        }
+    }
 
     fn pack_default() -> PackDefaultLayer {
         let mut scalars = BTreeMap::new();
