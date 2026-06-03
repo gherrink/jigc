@@ -806,3 +806,406 @@ fn scenario_6_nonconformant_oob_edit_to_committed_adr_blocks_finalize() {
         "a blocked finalize must land no commit"
     );
 }
+
+// ───── scenario 7: cross-kind override acceptance (M4 headline) ─────
+//
+// The M4 acceptance path (`design/worked-examples.md` → flow 3; roadmap Increment 6
+// Proves): a project composes *differently from the pack default* via recorded
+// deltas across **all four delta kinds** (`scalar-set` · `structural-op` ·
+// `slot-fill` · `tracked-fork`), the cascade applied **live** through the real
+// binary — while the **no-override** read path stays byte-identical to the pre-M4
+// baseline (the determinism boundary intact). This scenario DRIVES the inc-1..5
+// `jigc config <verb>` write surface (it does not build it) end-to-end:
+//
+//   - each verb shifts the composed bytes vs the no-override compose,
+//   - the three closed-surface rejections (undeclared-key, wrong-type enum,
+//     hand-authored orphan slot-fill) exit non-zero with their routes,
+//   - `--explain` reflects an applied override (`overrides applied: N` tracks reality),
+//   - a fresh no-override repo composes single-task/router byte-identically to the
+//     pre-M4 baseline golden (the headline determinism assertion through the binary).
+
+/// The **no-override** bare-`jigc start "<intent>"` router composition, byte for byte
+/// (`crates/cli/tests/start_compose.rs::NO_OVERRIDE_ROUTER_GOLDEN` — the recorded
+/// pre-M4 baseline). Re-asserted here through the audit binary so the headline
+/// determinism guard rides on this independent end-to-end harness too.
+const NO_OVERRIDE_ROUTER_GOLDEN: &str = "\
+These are the selectable work-workflows, each with the situation it fits:
+
+- implement-from-spec — build from a committed spec whose acceptance criteria already exist
+- plan — draft the specification for upcoming work before writing any code
+- quick-fix — apply a small commit-only fix with no decision to record
+- single-task — implement one scoped change end-to-end
+
+Pick the workflow whose situation best fits the intent, then re-run with that
+choice and the original intent:
+
+jigc start --workflow <chosen> \"<intent>\"
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
+/// The pack `implement` body's leading marker — present iff `step:implement`
+/// composes (from the pack default or a project shadow). Bounds the include-list /
+/// fork / fill assertions to the relevant region.
+const IMPLEMENT_MARKER: &str = "Implement the change directly in the working tree.";
+
+/// Compose `single-task` over the project layer as it stands, returning stdout.
+/// (`--workflow single-task` makes the work-workflow body compose regardless of the
+/// `default-workflow` knob, so the per-kind delta is isolated from the scalar flip.)
+/// `single-task` is `creates-task: true`, so this mints under `.jigc/tasks/<slug>/`;
+/// the task is discarded immediately so a re-compose of the same intent (the
+/// no-override → overridden comparison) does not hit the serial-collision guard.
+fn compose_single_task(repo: &Path, home: &Path) -> String {
+    let out = jigc(
+        repo,
+        home,
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
+    assert_ok(&out, "`jigc start --workflow single-task` compose");
+    let discard = jigc(repo, home, &["task", "discard", "add-rate-limiter"]);
+    assert_ok(&discard, "`jigc task discard` after a compose");
+    String::from_utf8(out.stdout).expect("utf-8 stdout")
+}
+
+/// A fresh project repo: a real git repo + the `.jigc/config/` project layer, with
+/// no manifest (no delta) — the no-override base every per-kind case forks from.
+fn fresh_project(tag: &str) -> (TempDir, TempDir) {
+    let repo = TempDir::new(tag);
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    (repo, home)
+}
+
+#[test]
+fn scenario_7_no_override_compose_is_byte_identical_to_the_pre_m4_baseline() {
+    // The headline determinism assertion, re-asserted through the audit binary: a
+    // fresh no-override repo composes the cascade default (the router) byte-identical
+    // to the recorded pre-M4 baseline golden. No delta is recorded, so the cascade
+    // resolves the pack default and the composed bytes must equal the golden exactly.
+    let (repo, home) = fresh_project("xkind-baseline");
+
+    let out = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    assert_ok(&out, "the no-override bare compose");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout, NO_OVERRIDE_ROUTER_GOLDEN,
+        "the no-override compose must stay byte-identical to the pre-M4 baseline golden",
+    );
+}
+
+#[test]
+fn scenario_7_scalar_set_shifts_composed_bytes_vs_no_override() {
+    // `scalar-set` (kind 1): `jigc config set default-workflow single-task` flips the
+    // bare-intent compose from the no-mint router catalog to the single-task body —
+    // the composed bytes shift vs the no-override compose (the router golden).
+    let (repo, home) = fresh_project("xkind-set");
+
+    let no_override = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    let no_override = String::from_utf8(no_override.stdout).expect("utf-8");
+
+    let set = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "default-workflow", "single-task"],
+    );
+    assert_ok(&set, "`jigc config set default-workflow single-task`");
+
+    let overridden = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    let overridden = String::from_utf8(overridden.stdout).expect("utf-8");
+    assert_ne!(
+        no_override, overridden,
+        "a scalar-set must shift the composed bytes vs the no-override compose",
+    );
+    assert!(
+        overridden.contains(IMPLEMENT_MARKER) && !overridden.contains("selectable work-workflows"),
+        "the flipped compose must be the single-task body, not the router catalog; got:\n{overridden}",
+    );
+}
+
+#[test]
+fn scenario_7_structural_op_shifts_composed_bytes_vs_no_override() {
+    // `structural-op` (kind 2): an `insert-step --after implement` splices a project
+    // step into the include list; the inserted body composes where no-override has
+    // nothing — the composed bytes shift.
+    let (repo, home) = fresh_project("xkind-structural");
+    let config = repo.path().join(".jigc").join("config");
+
+    let no_override = compose_single_task(repo.path(), home.path());
+    const HOUSE_RULE: &str = "Run the project lint probe before you finalize.";
+    assert!(
+        !no_override.contains(HOUSE_RULE),
+        "the no-override compose must not carry the project step body",
+    );
+
+    fs::write(config.join("extra.yaml"), format!("{HOUSE_RULE}\n")).expect("write source step");
+    let insert = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "config",
+            "insert-step",
+            "--workflow",
+            "single-task",
+            "--after",
+            "implement",
+            ".jigc/config/extra.yaml",
+        ],
+    );
+    assert_ok(&insert, "`jigc config insert-step`");
+
+    let overridden = compose_single_task(repo.path(), home.path());
+    assert_ne!(
+        no_override, overridden,
+        "an insert-step structural-op must shift the composed bytes vs no-override",
+    );
+    assert!(
+        overridden.contains(HOUSE_RULE),
+        "the inserted step body must compose into the include list; got:\n{overridden}",
+    );
+}
+
+#[test]
+fn scenario_7_slot_fill_shifts_composed_bytes_vs_no_override() {
+    // `slot-fill` (kind 3): `jigc config fill step:implement#extra-guidance` injects
+    // content into the pack `implement` step's `{{fill: extra-guidance}}` point; the
+    // fill content composes where no-override emits nothing — the bytes shift.
+    let (repo, home) = fresh_project("xkind-fill");
+    let config = repo.path().join(".jigc").join("config");
+
+    let no_override = compose_single_task(repo.path(), home.path());
+    const FILL: &str = "Confirm a changelog entry exists for any user-facing change.";
+    assert!(
+        !no_override.contains(FILL),
+        "the no-override compose must not carry the fill content",
+    );
+
+    fs::write(config.join("guidance.txt"), format!("{FILL}\n")).expect("write fill content");
+    let fill = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "config",
+            "fill",
+            "step:implement#extra-guidance",
+            "--from-file",
+            ".jigc/config/guidance.txt",
+        ],
+    );
+    assert_ok(&fill, "`jigc config fill step:implement#extra-guidance`");
+
+    let overridden = compose_single_task(repo.path(), home.path());
+    assert_ne!(
+        no_override, overridden,
+        "a slot-fill must shift the composed bytes vs no-override",
+    );
+    assert!(
+        overridden.contains(FILL),
+        "the fill content must compose into the implement body; got:\n{overridden}",
+    );
+}
+
+#[test]
+fn scenario_7_tracked_fork_shifts_composed_bytes_vs_no_override() {
+    // `tracked-fork` (kind 4): `jigc config fork workflow:single-task#implement` copies
+    // the resolved `implement` body into a project shadow (a *faithful copy* — still
+    // byte-identical), then editing that shadow diverges the compose. The shift vs
+    // no-override is the post-edit divergence (the fork is the mechanism that lets the
+    // project own + edit the unit).
+    let (repo, home) = fresh_project("xkind-fork");
+
+    let no_override = compose_single_task(repo.path(), home.path());
+
+    let fork = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "fork", "workflow:single-task#implement"],
+    );
+    assert_ok(&fork, "`jigc config fork workflow:single-task#implement`");
+
+    // The fork is a faithful copy: the implement region composes byte-identical until
+    // the shadow is edited.
+    let native = repo
+        .path()
+        .join(".jigc")
+        .join("config")
+        .join("steps")
+        .join("implement.yaml");
+    let mut body = fs::read(&native).expect("the forked native step");
+    const HOUSE_RULE: &str = "House rule: run the project lint probe before you finalize.";
+    body.extend_from_slice(format!("\n{HOUSE_RULE}\n").as_bytes());
+    fs::write(&native, &body).expect("edit the forked shadow");
+
+    let overridden = compose_single_task(repo.path(), home.path());
+    assert_ne!(
+        no_override, overridden,
+        "an edited tracked-fork must shift the composed bytes vs no-override",
+    );
+    assert!(
+        overridden.contains(HOUSE_RULE) && overridden.contains(IMPLEMENT_MARKER),
+        "the edited fork shadow must compose its divergence over the copied pack body; got:\n{overridden}",
+    );
+}
+
+#[test]
+fn scenario_7_undeclared_key_rejection_exits_non_zero_with_its_route() {
+    // Rejection 1 (closed-surface): a key the pack does not declare is rejected
+    // non-zero with the routed finding, before any write.
+    let (repo, home) = fresh_project("xkind-undeclared");
+
+    let set = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "not-a-knob", "anything"],
+    );
+    assert!(
+        !set.status.success(),
+        "an undeclared key must exit non-zero; streams:\n{}",
+        streams(&set),
+    );
+    let surfaced = streams(&set);
+    assert!(
+        surfaced.contains("not-a-knob") && surfaced.contains("route:"),
+        "the rejection must name the undeclared key and carry a route; got:\n{surfaced}",
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml")
+            .exists(),
+        "an undeclared-key rejection must write no manifest",
+    );
+}
+
+#[test]
+fn scenario_7_wrong_type_enum_rejection_exits_non_zero_with_its_route() {
+    // Rejection 2 (wrong-type enum): a value outside the knob's declared enum is
+    // rejected non-zero with the routed finding, before any write.
+    let (repo, home) = fresh_project("xkind-wrong-type");
+
+    let set = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "default-workflow", "not-a-workflow"],
+    );
+    assert!(
+        !set.status.success(),
+        "a wrong-type enum value must exit non-zero; streams:\n{}",
+        streams(&set),
+    );
+    let surfaced = streams(&set);
+    assert!(
+        surfaced.contains("not-a-workflow") && surfaced.contains("route:"),
+        "the rejection must name the rejected value and carry a route; got:\n{surfaced}",
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml")
+            .exists(),
+        "a wrong-type rejection must write no manifest",
+    );
+}
+
+#[test]
+fn scenario_7_orphan_slot_fill_rejection_blocks_compose_with_its_route() {
+    // Rejection 3 (hand-authored orphan slot-fill): a `slot-fill` targeting a
+    // `<fill-id>` no resolved step body declares is a blocking `slot-fill-orphan`
+    // finding. Hand-author the manifest (smuggling past the verb) so the gate fires
+    // at compose — the closed-surface check runs live, exits non-zero with its route.
+    let (repo, home) = fresh_project("xkind-orphan");
+    let config = repo.path().join(".jigc").join("config");
+
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n\
+         deltas:\n\
+         \x20 - kind: slot-fill\n\
+         \x20   target: step:implement#nonesuch\n\
+         \x20   content: fills/nonesuch.md\n",
+    )
+    .expect("write a manifest with an orphaned slot-fill delta");
+    fs::create_dir_all(config.join("fills")).expect("mk fills/");
+    fs::write(config.join("fills").join("nonesuch.md"), "Some guidance.\n")
+        .expect("write the native fill content");
+
+    let out = jigc(repo.path(), home.path(), &["start", "add rate limiter"]);
+    assert!(
+        !out.status.success(),
+        "an orphaned slot-fill must block compose non-zero; streams:\n{}",
+        streams(&out),
+    );
+    let surfaced = streams(&out);
+    assert!(
+        surfaced.contains("nonesuch") && surfaced.contains("route:"),
+        "the orphan block must name the fill point and carry a route; got:\n{surfaced}",
+    );
+}
+
+#[test]
+fn scenario_7_explain_overrides_applied_tracks_reality() {
+    // `--explain` reflects an applied override: with no delta it reports `overrides
+    // applied: none`; after a `replace-step` it reports `overrides applied: 1` with
+    // the `← replaces … at position` annotation. The count tracks reality (it is not
+    // an inert constant) — proven on the emitted bytes through the binary.
+    let (repo, home) = fresh_project("xkind-explain");
+    let config = repo.path().join(".jigc").join("config");
+
+    let clean = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add rate limiter",
+        ],
+    );
+    assert_ok(&clean, "`jigc start --explain` over the unmodified pack");
+    let clean = String::from_utf8(clean.stdout).expect("utf-8");
+    assert!(
+        clean.contains("overrides applied: none"),
+        "the unmodified pack must report `overrides applied: none`; got:\n{clean}",
+    );
+
+    // Record a replace-step, then re-explain — the count must move to 1.
+    fs::write(
+        config.join("manifest.yaml"),
+        "deltas:\n\
+         \x20 - kind: replace-step\n\
+         \x20   target: workflow:single-task#implement\n\
+         \x20   with: step:project-implement\n",
+    )
+    .expect("write a manifest with a replace-step delta");
+    fs::create_dir_all(config.join("steps")).expect("mk steps/");
+    fs::write(
+        config.join("steps").join("project-implement.yaml"),
+        "{{ include: step:implement }}\n",
+    )
+    .expect("write the project-implement shadow");
+
+    let overridden = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add rate limiter",
+        ],
+    );
+    assert_ok(&overridden, "`jigc start --explain` after a replace-step");
+    let overridden = String::from_utf8(overridden.stdout).expect("utf-8");
+    assert!(
+        overridden.contains("overrides applied: 1"),
+        "a single replace-step must move the count to `overrides applied: 1`; got:\n{overridden}",
+    );
+    assert!(
+        overridden.contains("replaces step:implement at position 2"),
+        "the replace-step slot must carry the `← replaces … at position` annotation; got:\n{overridden}",
+    );
+}
