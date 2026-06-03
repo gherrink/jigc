@@ -372,7 +372,7 @@ fn compose_core(
 /// post-phase-4 `workflow_refs_with_deltas` gate, so the gate validates the exact
 /// list `compose` will expand. A no-delta cascade returns an empty set — the
 /// byte-identity guard (`apply_structural_deltas` over `[]` is the identity).
-fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Vec<StructuralDelta> {
+pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Vec<StructuralDelta> {
     deltas
         .iter()
         .filter(|d| d.target().workflow_id == workflow_id)
@@ -885,7 +885,7 @@ pub(crate) fn load_project_layer(
 /// steps/<id>.yaml` basename. These shadow the pack step of the same id at phase 2
 /// (`overrides.md` → Native-file id = filename basename). A missing `steps/` dir is
 /// the empty list (no project shadows), never an error.
-fn project_step_ids(project_config: &Path) -> Vec<String> {
+pub(crate) fn project_step_ids(project_config: &Path) -> Vec<String> {
     let dir = project_config.join("steps");
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return Vec::new();
@@ -1010,7 +1010,7 @@ fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
 /// unknown `<X>` is rejected with a routed finding). Membership is the pack read:
 /// a `PackError::NotFound` is the "not in the catalog" rejection. Fires before any
 /// mint, so a typo'd id strands no task dir.
-fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> {
+pub(crate) fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> {
     pack.read(PackResourceKind::Workflows, &ResourceId::from(id))
         .map_err(|_| {
             finding_to_err(Finding::block(

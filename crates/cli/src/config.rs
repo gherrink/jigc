@@ -225,6 +225,99 @@ fn append_delta(project_config: &Path, delta: &StructuralDelta) -> Result<()> {
     Ok(())
 }
 
+/// Reject a new native-step **basename** that collides with an existing step id —
+/// the `insert-step` / `replace-step` write-time collision check (`design/overrides.md`
+/// → Native-file id = filename basename: "A name collision with an existing step id
+/// is a write-time error").
+///
+/// The native step a verb registers takes its id from the source file's basename, so
+/// a basename equal to a step id already in the resolution would silently shadow it
+/// (phase-2 by-id shadowing) instead of adding a new unit. The collision set is the
+/// **pack** step ids ([`PackResourceKind::Steps`]) ∪ the **project-shadowed** step
+/// ids (`<project_config>/steps/<id>.yaml` basenames — [`crate::start::project_step_ids`]),
+/// the two layers a new basename could clash with. A clash is a routed blocking
+/// `config.step-id-collision` [`Finding`]; a fresh basename passes.
+///
+/// A pure write-time check: it reads the resolution *as of this edit* (the snapshot),
+/// not the whole-cascade consequences, which stay at resolution time
+/// (`overrides.md` → Write-time vs resolve-time split).
+// Consumed by the `insert-step` / `replace-step` dispatch (this increment's T3/T4) +
+// the tests below; `allow` covers the non-test build until that wiring lands.
+#[allow(dead_code)]
+pub(crate) fn check_basename_collision(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    basename: &str,
+) -> Result<(), Finding> {
+    let collides = pack
+        .list(PackResourceKind::Steps)
+        .iter()
+        .any(|id| id.as_str() == basename)
+        || crate::start::project_step_ids(project_config)
+            .iter()
+            .any(|id| id == basename);
+    if collides {
+        return Err(Finding::block(
+            "config.step-id-collision",
+            format!(
+                "`{basename}` is already a step id — the native file's id is its basename, so this would shadow the existing step, not add a new one"
+            ),
+            "rename the source file so its basename is a fresh step id, then re-run",
+        ));
+    }
+    Ok(())
+}
+
+/// Reject a `replace-step` / `remove-step` `#<target>` (or an `insert-step`
+/// `--after` / `--before` `<anchor>`) that is **absent** from the workflow's include
+/// list *as of this edit* — the write-time anchor/target presence check
+/// (`design/overrides.md` → the `jigc config` verbs: "anchor step-id present in the
+/// resolution as of this edit").
+///
+/// The snapshot is the workflow's include list after the **existing** scoped deltas
+/// apply ([`engine::compose::apply_structural_deltas`] over
+/// [`load_workflow_def`](engine::compose::load_workflow_def)'s `includes`), so it
+/// reflects a prior same-manifest `remove-step` that already dropped the id — an
+/// anchor a prior remove retired is absent here and rejected. An absent target is a
+/// routed blocking `config.anchor-absent` [`Finding`]; a present one passes.
+///
+/// A pure write-time check (`overrides.md` → Write-time vs resolve-time split): it
+/// validates *this* edit's anchor against the current snapshot; whole-cascade
+/// consequences (cycles, a later delta orphaning an earlier one) stay at resolution
+/// time through `workflow-refs`.
+// Consumed by the `insert-step` / `replace-step` / `remove-step` dispatch (this
+// increment's T3/T4) + the tests below; `allow` covers the non-test build until that
+// wiring lands.
+#[allow(dead_code)]
+pub(crate) fn check_anchor_present(
+    pack: &dyn PackSource,
+    workflow_id: &str,
+    existing_deltas: &[StructuralDelta],
+    anchor: &str,
+) -> Result<(), Finding> {
+    let bytes = crate::start::read_workflow(pack, workflow_id).map_err(|err| {
+        Finding::block(
+            "config.anchor-absent",
+            format!("no workflow `{workflow_id}` to anchor against: {err:#}"),
+            "name an existing workflow id, then re-run",
+        )
+    })?;
+    let def = engine::compose::load_workflow_def(&bytes)?;
+    let scoped = crate::start::scoped_deltas(workflow_id, existing_deltas);
+    let snapshot = engine::compose::apply_structural_deltas(&def.includes, &scoped)?;
+    if !snapshot.iter().any(|id| id == anchor) {
+        return Err(Finding::block(
+            "config.anchor-absent",
+            format!(
+                "`{anchor}` is not a step in `{workflow_id}` as of this edit — its include list is: {}",
+                snapshot.join(", ")
+            ),
+            "name a step id present in the workflow's resolved include list, then re-run",
+        ));
+    }
+    Ok(())
+}
+
 /// Render one [`StructuralDelta`] to its manifest-entry mapping — the inverse of
 /// [`crate::start::load_project_layer`]'s `parse_one_delta`. The `with:` step id
 /// is written with the `step:` prefix (the manifest spelling the loader strips).
@@ -397,5 +490,141 @@ mod tests {
             vec![insert, replace],
             "load_project_layer must round-trip the two appended deltas in order\n{text}"
         );
+    }
+
+    /// An in-memory [`PackSource`] seeded from `(kind, id, bytes)` triples — drives
+    /// the write-time checks over a fixture cascade with no embedded pack.
+    struct FixturePack(std::collections::HashMap<(PackResourceKind, ResourceId), Vec<u8>>);
+
+    impl FixturePack {
+        fn with(triples: Vec<(PackResourceKind, &str, &str)>) -> Self {
+            let map = triples
+                .into_iter()
+                .map(|(kind, id, body)| ((kind, ResourceId::from(id)), body.as_bytes().to_vec()))
+                .collect();
+            FixturePack(map)
+        }
+    }
+
+    impl PackSource for FixturePack {
+        fn pack_version(&self) -> String {
+            "0.0.0".to_owned()
+        }
+
+        fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+            let mut ids: Vec<ResourceId> = self
+                .0
+                .keys()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, id)| id.clone())
+                .collect();
+            ids.sort();
+            ids
+        }
+
+        fn read(
+            &self,
+            kind: PackResourceKind,
+            id: &ResourceId,
+        ) -> Result<Vec<u8>, engine::packsource::PackError> {
+            self.0.get(&(kind, id.clone())).cloned().ok_or(
+                engine::packsource::PackError::NotFound {
+                    kind,
+                    id: id.clone(),
+                },
+            )
+        }
+    }
+
+    /// A `single-task` pack whose include list is `locate → implement → validate`,
+    /// plus those three step files — the snapshot the anchor check resolves against.
+    fn single_task_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Workflows,
+                "single-task",
+                "---\nwhen: implement one scoped change\ncreates-task: true\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n{{ include: step:validate }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "locate body\n"),
+            (PackResourceKind::Steps, "implement", "implement body\n"),
+            (PackResourceKind::Steps, "validate", "validate body\n"),
+        ])
+    }
+
+    fn remove_at(workflow: &str, at: &str) -> StructuralDelta {
+        StructuralDelta::Remove {
+            target: StructuralTarget {
+                workflow_id: workflow.to_owned(),
+                anchor: Anchor::At(at.to_owned()),
+            },
+        }
+    }
+
+    /// T2(a) — a new native-step basename equal to a **pack** step id (`implement`)
+    /// is rejected (routed `config.step-id-collision`), and so is one equal to a
+    /// **project-shadowed** id (a `steps/team-lint.yaml` file present in the project
+    /// layer); a fresh basename (`team-extra`) passes. The native file's id is its
+    /// basename, so a clash would shadow rather than add (`overrides.md` →
+    /// Native-file id = filename basename).
+    #[test]
+    fn basename_collision_rejects_pack_and_project_step_ids_passes_fresh() {
+        let pack = single_task_pack();
+        let dir = TempDir::new("collision");
+        let project_config = dir.path();
+        // The project already shadows a `team-lint` step (its `steps/` dir is the
+        // project step layer — `project_step_ids`).
+        let steps = project_config.join("steps");
+        fs::create_dir_all(&steps).expect("mk steps dir");
+        fs::write(steps.join("team-lint.yaml"), "team lint body\n").expect("seed project step");
+
+        // A basename equal to a pack step id is rejected.
+        let pack_clash = check_basename_collision(&pack, project_config, "implement")
+            .expect_err("a pack-step basename must collide");
+        assert_eq!(pack_clash.code, "config.step-id-collision");
+        assert!(
+            pack_clash.route.is_some(),
+            "the collision must carry a route"
+        );
+
+        // A basename equal to a project-shadowed id is rejected.
+        let project_clash = check_basename_collision(&pack, project_config, "team-lint")
+            .expect_err("a project-shadowed basename must collide");
+        assert_eq!(project_clash.code, "config.step-id-collision");
+
+        // A fresh basename passes.
+        check_basename_collision(&pack, project_config, "team-extra")
+            .expect("a fresh basename must pass");
+    }
+
+    /// T2(b) — an anchor/target **present** in the snapshot passes; an **absent** one
+    /// is rejected (routed `config.anchor-absent`); and an anchor a prior same-manifest
+    /// `remove-step` already dropped is rejected because the snapshot applies the
+    /// existing deltas (`overrides.md` → the snapshot reflects prior deltas).
+    #[test]
+    fn anchor_present_in_snapshot_passes_absent_or_prior_removed_rejected() {
+        let pack = single_task_pack();
+
+        // Present in the pack include list, no prior deltas → passes.
+        check_anchor_present(&pack, "single-task", &[], "implement")
+            .expect("a present anchor must pass");
+
+        // Never in the include list → rejected with its route.
+        let absent = check_anchor_present(&pack, "single-task", &[], "nope")
+            .expect_err("an absent anchor must be rejected");
+        assert_eq!(absent.code, "config.anchor-absent");
+        assert!(absent.route.is_some(), "the rejection must carry a route");
+
+        // A prior `remove-step` dropped `implement`; the snapshot applies it, so
+        // re-anchoring on `implement` is now rejected (snapshot reflects prior deltas).
+        let prior = vec![remove_at("single-task", "implement")];
+        let dropped = check_anchor_present(&pack, "single-task", &prior, "implement")
+            .expect_err("an anchor a prior remove dropped must be rejected");
+        assert_eq!(dropped.code, "config.anchor-absent");
+
+        // A delta scoped to a *different* workflow must not affect this snapshot — a
+        // remove of `implement` on `other` leaves `single-task`'s `implement` present.
+        let other = vec![remove_at("other", "implement")];
+        check_anchor_present(&pack, "single-task", &other, "implement")
+            .expect("a delta scoped to another workflow must not drop this anchor");
     }
 }
