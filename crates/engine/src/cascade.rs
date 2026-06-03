@@ -9,6 +9,12 @@
 //! every long-lived surface shows (`design/overrides.md` → Cascade provenance is
 //! visible on every long-lived surface).
 //!
+//! Only the **phase-3 scalar surface** is wired into the live compose path (the
+//! `default-workflow` read goes through [`Resolved::scalar_required`]). The
+//! **phase-2 file-owner surface** ([`Resolved::file_owner`]) is *resolved* here
+//! but **not yet consumed by compose** — the live step source reads pack-default
+//! bytes only; routing step ids through it lands in a later increment.
+//!
 //! The engine is *fed* the layers (feed-layers-in / assert-results-out): the
 //! pack-default layer carries the **closed declared-key surface** and the base
 //! scalar values; `team` / `project` are optional layers carrying `scalar-set`

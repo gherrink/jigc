@@ -999,13 +999,17 @@ fn parse_include_line(line: &str) -> Option<String> {
 /// cascade-resolved step file set.
 ///
 /// Per the engine invariant (CLI locates cascade layers, engine resolves —
-/// `VISION.md` principle #4 / `CLAUDE.md`), the *frontend* maps a step id to the
-/// highest-precedence present layer's file (`overrides.md` phase 2 by-id
-/// shadowing, already built in [`crate::cascade::Resolved::file_owner`]) and
-/// loads its bytes into a [`StepDef`]. The engine consumes that mapping through
-/// this trait, so [`expand_includes`] stays a pure function of `(WorkflowDef,
-/// StepSource)` — feed-layers-in / assert-results-out. A `None` is a *dangling*
-/// include id: the include names a step no layer provides.
+/// `VISION.md` principle #4 / `CLAUDE.md`), the *frontend* maps a step id to a
+/// file and loads its bytes into a [`StepDef`]. The engine consumes that mapping
+/// through this trait, so [`expand_includes`] stays a pure function of
+/// `(WorkflowDef, StepSource)` — feed-layers-in / assert-results-out. A `None` is
+/// a *dangling* include id: the include names a step no layer provides.
+///
+/// The phase-2 by-id shadowing surface ([`crate::cascade::Resolved::file_owner`])
+/// is *resolved* but **not yet consulted on this read path**: the live frontend
+/// (`PackStepSource` in `cli`) reads step bytes from the pack-default layer
+/// only. Routing step ids through `file_owner` so a project-layer file shadows a
+/// pack step lands in a later increment (`overrides.md` phase 2 by-id shadowing).
 pub trait StepSource {
     /// Resolve a step id to its [`StepDef`], or `None` if no layer provides it.
     fn step(&self, id: &str) -> Option<StepDef>;
