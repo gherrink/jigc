@@ -88,8 +88,9 @@ pub enum Command {
 
     /// The cascade-authoring surface — `jigc config <verb>` records deltas into the
     /// project layer's `.jigc/config/manifest.yaml` (`design/overrides.md` →
-    /// Authoring deltas). Only `set <key> <value>` (a `scalar-set`, write-time
-    /// `check_value`-adjudicated) exists this increment.
+    /// Authoring deltas): `set <key> <value>` (a `scalar-set`, write-time
+    /// `check_value`-adjudicated) + `insert-step` (a `structural-op` + native step
+    /// file, write-time collision/anchor-adjudicated).
     Config {
         #[command(subcommand)]
         verb: ConfigCommand,
@@ -189,9 +190,10 @@ fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
 }
 
 /// Dispatch a `jigc config <verb>` cascade-authoring write against the current
-/// working directory. A `set` records a `scalar-set` into the project manifest,
-/// adjudicated at write time; a blocking adjudication finding surfaces on stderr
-/// (with its route) and exits non-zero (`design/overrides.md` → Authoring deltas).
+/// working directory. A `set` records a `scalar-set`, an `insert-step` records a
+/// `structural-op` + its native step file — each adjudicated at write time; a
+/// blocking adjudication finding surfaces on stderr (with its route) and exits
+/// non-zero (`design/overrides.md` → Authoring deltas).
 fn run_config(verb: ConfigCommand) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
@@ -439,6 +441,64 @@ mod cli_parse {
                 },
             }
         );
+    }
+
+    #[test]
+    fn config_insert_step_parses_workflow_anchor_and_file() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "config",
+            "insert-step",
+            "--workflow",
+            "single-task",
+            "--after",
+            "implement",
+            "./extra.yaml",
+        ])
+        .expect("`jigc config insert-step ...` parses");
+        assert_eq!(
+            cli.command,
+            Command::Config {
+                verb: ConfigCommand::InsertStep {
+                    workflow: "single-task".to_string(),
+                    after: Some("implement".to_string()),
+                    before: None,
+                    file: "./extra.yaml".into(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn config_insert_step_rejects_after_and_before_together() {
+        let err = Cli::try_parse_from([
+            "jigc",
+            "config",
+            "insert-step",
+            "--workflow",
+            "single-task",
+            "--after",
+            "implement",
+            "--before",
+            "finalize",
+            "./extra.yaml",
+        ])
+        .expect_err("`--after` together with `--before` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn config_insert_step_requires_an_anchor() {
+        let err = Cli::try_parse_from([
+            "jigc",
+            "config",
+            "insert-step",
+            "--workflow",
+            "single-task",
+            "./extra.yaml",
+        ])
+        .expect_err("`insert-step` with neither `--after` nor `--before` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

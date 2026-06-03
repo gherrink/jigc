@@ -1,11 +1,12 @@
 //! `jigc config <verb>` — authoring cascade deltas into the project layer
 //! (`design/overrides.md` → Authoring deltas — the `jigc config` verbs).
 //!
-//! Only `config set <key> <value>` lands this increment (the `scalar-set` rung);
-//! the `insert-step`/`replace-step`/`remove-step`/`fill`/`fork` rungs are later
-//! increments. `set` writes **only** the project layer's
-//! `.jigc/config/manifest.yaml` `scalar:` block — never a base definition, never
-//! a fork.
+//! `config set <key> <value>` (the `scalar-set` rung) + `config insert-step`
+//! (the `structural-op` insert rung) land here; `replace-step`/`remove-step`/
+//! `fill`/`fork` are later increments. `set` writes **only** the project layer's
+//! `.jigc/config/manifest.yaml` `scalar:` block; `insert-step` appends to its
+//! `deltas:` list + writes a native `steps/<basename>.yaml` — never a base
+//! definition, never a fork.
 //!
 //! **Write-time adjudication** (`overrides.md` → Write-time vs resolve-time
 //! split): the cheap, local checks run here so the human gets an immediate error
@@ -39,6 +40,30 @@ pub enum ConfigCommand {
         /// The value to set (adjudicated against the knob's declared type).
         value: String,
     },
+
+    /// Record an `insert-step` `structural-op` — splice a native step into a
+    /// workflow's include list, anchored `--after` or `--before` an existing step
+    /// (`design/overrides.md` → Authoring deltas). The native step takes its id from
+    /// the source `<file>`'s basename and is written to
+    /// `.jigc/config/steps/<basename>.yaml`; the delta references `step:<basename>`.
+    /// Write-time adjudicated: a basename colliding with an existing step id, or an
+    /// anchor absent from the resolution as of this edit, is rejected non-zero with a
+    /// routed finding and **no** write.
+    InsertStep {
+        /// The workflow whose include list the step splices into.
+        #[arg(long)]
+        workflow: String,
+        /// Insert the native step *after* this anchor step id (mutually exclusive
+        /// with `--before`; exactly one anchor is required).
+        #[arg(long, conflicts_with = "before", required_unless_present = "before")]
+        after: Option<String>,
+        /// Insert the native step *before* this anchor step id (mutually exclusive
+        /// with `--after`; exactly one anchor is required).
+        #[arg(long)]
+        before: Option<String>,
+        /// The source step file; its basename becomes the native step id.
+        file: PathBuf,
+    },
 }
 
 impl ConfigCommand {
@@ -48,6 +73,12 @@ impl ConfigCommand {
     pub fn dispatch(self, cwd: &Path) -> ExitCode {
         let result = match self {
             ConfigCommand::Set { key, value } => run_set(cwd, &key, &value),
+            ConfigCommand::InsertStep {
+                workflow,
+                after,
+                before,
+                file,
+            } => run_insert_step(cwd, &workflow, after.as_deref(), before.as_deref(), &file),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -103,6 +134,81 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
 
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
     write_scalar(&project_config, key, value)
+}
+
+/// `jigc config insert-step --workflow <id> (--after|--before) <step-id> <file>` —
+/// record an `insert-step` `structural-op` + write the native step file
+/// (`design/overrides.md` → Authoring deltas; `design/worked-examples.md` → 3a).
+///
+/// The native step takes its **id from the source file's basename** and is written
+/// to `.jigc/config/steps/<basename>.yaml`; the delta references `step:<basename>`.
+/// Both write-time checks run *before any write* so a rejection leaves the tree
+/// untouched (`overrides.md` → Write-time vs resolve-time split):
+/// 1. read the source file + derive its basename;
+/// 2. `check_basename_collision` — the basename must be a fresh step id else reject;
+/// 3. `check_anchor_present` — the anchor must be in the workflow's resolved include
+///    list *as of this edit* else reject;
+/// 4. write `steps/<basename>.yaml` (the source bytes) + append the `insert-step`
+///    delta to the project manifest.
+///
+/// `after`/`before` are clap-guaranteed mutually exclusive and exactly-one-present,
+/// so the anchor is unambiguous here.
+fn run_insert_step(
+    cwd: &Path,
+    workflow: &str,
+    after: Option<&str>,
+    before: Option<&str>,
+    file: &Path,
+) -> Result<()> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    // The native step's id is the source file's basename (`overrides.md` →
+    // Native-file id = filename basename).
+    let basename = file
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .with_context(|| format!("source file {} has no basename", file.display()))?
+        .to_owned();
+    let source = std::fs::read(file)
+        .with_context(|| format!("could not read source step file {}", file.display()))?;
+
+    // The anchor step id — clap guarantees exactly one of `--after`/`--before`.
+    let (anchor_id, anchor) = match (after, before) {
+        (Some(id), None) => (id, Anchor::After(id.to_owned())),
+        (None, Some(id)) => (id, Anchor::Before(id.to_owned())),
+        // clap's `conflicts_with` + `required_unless_present` make both/neither
+        // unreachable in practice.
+        _ => bail!("insert-step needs exactly one of `--after` / `--before`"),
+    };
+
+    // Both write-time checks run before any write — a rejection touches nothing.
+    let pack = EmbeddedPack::new();
+    let (_layer, existing_deltas) = crate::start::load_project_layer(&project_config)?;
+    check_basename_collision(&pack, &project_config, &basename).map_err(finding_to_err)?;
+    check_anchor_present(&pack, workflow, &existing_deltas, anchor_id).map_err(finding_to_err)?;
+
+    // Write the native step file, then append the `insert-step` delta.
+    let steps_dir = project_config.join("steps");
+    std::fs::create_dir_all(&steps_dir)
+        .with_context(|| format!("could not create {}", steps_dir.display()))?;
+    let native = steps_dir.join(format!("{basename}.yaml"));
+    std::fs::write(&native, &source)
+        .with_context(|| format!("could not write {}", native.display()))?;
+    let delta = StructuralDelta::Insert {
+        target: StructuralTarget {
+            workflow_id: workflow.to_owned(),
+            anchor,
+        },
+        step: basename,
+    };
+    append_delta(&project_config, &delta)
 }
 
 /// Record `scalar.<key> = <value>` into `<project_config>/manifest.yaml`,
@@ -175,10 +281,6 @@ fn write_scalar(project_config: &Path, key: &str, value: &str) -> Result<()> {
 /// The manifest is round-tripped through `serde_yaml_ng::Value` so the loader
 /// reads back exactly the `deltas:` list this writes (the preserve discipline
 /// [`write_scalar`] uses for the `scalar:` sub-map, mirrored for `deltas:`).
-// Consumed by the `insert-step` / `replace-step` / `remove-step` dispatch (this
-// increment's T3/T4) + the test below; `allow` covers the non-test build until
-// that wiring lands.
-#[allow(dead_code)]
 fn append_delta(project_config: &Path, delta: &StructuralDelta) -> Result<()> {
     use serde_yaml_ng::Value as Yaml;
 
@@ -241,9 +343,6 @@ fn append_delta(project_config: &Path, delta: &StructuralDelta) -> Result<()> {
 /// A pure write-time check: it reads the resolution *as of this edit* (the snapshot),
 /// not the whole-cascade consequences, which stay at resolution time
 /// (`overrides.md` → Write-time vs resolve-time split).
-// Consumed by the `insert-step` / `replace-step` dispatch (this increment's T3/T4) +
-// the tests below; `allow` covers the non-test build until that wiring lands.
-#[allow(dead_code)]
 pub(crate) fn check_basename_collision(
     pack: &dyn PackSource,
     project_config: &Path,
@@ -285,10 +384,6 @@ pub(crate) fn check_basename_collision(
 /// validates *this* edit's anchor against the current snapshot; whole-cascade
 /// consequences (cycles, a later delta orphaning an earlier one) stay at resolution
 /// time through `workflow-refs`.
-// Consumed by the `insert-step` / `replace-step` / `remove-step` dispatch (this
-// increment's T3/T4) + the tests below; `allow` covers the non-test build until that
-// wiring lands.
-#[allow(dead_code)]
 pub(crate) fn check_anchor_present(
     pack: &dyn PackSource,
     workflow_id: &str,
