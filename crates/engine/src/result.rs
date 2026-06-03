@@ -239,12 +239,15 @@ pub struct ResolutionTree {
     pub workflow: String,
     /// The cascade layer the workflow definition file resolved to.
     pub workflow_layer: LayerKind,
-    /// How many `structural-op` overrides applied to this workflow's include list
-    /// (the structural component of the `overrides applied: N` header line).
+    /// The **total** applied-override count — `structural-op` deltas to this
+    /// workflow's include list **plus** scalar-key overrides — i.e. exactly the
+    /// `overrides applied: N` header total (so the JSON field and the agent-text
+    /// header agree). The structural-only count is `overrides_applied -
+    /// scalar_overrides.len()`; the scalar breakdown is `scalar_overrides`.
     pub overrides_applied: usize,
     /// The applied scalar-key overrides, each with its winning layer — layer 1 of
     /// the `--explain` output contract. Empty when every knob resolved from the
-    /// pack-default base. Their count folds into the `overrides applied: N` header.
+    /// pack-default base. Their count is included in `overrides_applied`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scalar_overrides: Vec<ScalarOverride>,
     /// The resolved include steps, in post-phase-4 composed order.

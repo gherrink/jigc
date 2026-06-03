@@ -1164,8 +1164,9 @@ fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
 /// include order), tracking which slot each `replace` swapped so the renderer can
 /// emit `← replaces <id> at position N`. No re-resolution, no I/O.
 ///
-/// `overrides_applied` is the count of `scoped` structural deltas — the deltas
-/// that mutated this workflow's include list. A delta whose anchor / target id is
+/// `overrides_applied` is the total applied-override count — `scoped` structural
+/// deltas (that mutated this workflow's include list) **plus** the scalar-key
+/// overrides — matching the agent-text `overrides applied: N` header. A delta whose anchor / target id is
 /// absent surfaces the same **orphaned** blocking [`Finding`] as phase 4
 /// ([`apply_structural_deltas`]); a layer with no file for a resolved id is a
 /// dangling include the compose path reports, so the tree defaults its layer to
@@ -1223,10 +1224,15 @@ pub fn build_resolution_tree(
         })
         .collect();
 
+    // The header total counts *every* applied override — structural deltas plus
+    // scalar-key overrides — so the JSON `overrides_applied` field matches the
+    // agent-text `overrides applied: N` line exactly (the structural-only count
+    // is recoverable as `overrides_applied - scalar_overrides.len()`).
+    let overrides_applied = scoped.len() + scalar_overrides.len();
     Ok(crate::result::ResolutionTree::new(
         workflow,
         workflow_layer,
-        scoped.len(),
+        overrides_applied,
         scalar_overrides,
         steps,
     ))

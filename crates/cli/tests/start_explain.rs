@@ -341,3 +341,47 @@ fn explain_after_a_scalar_set_reports_the_knob_with_its_source_layer() {
         "`--explain` must not mint a task; got:\n{stdout}",
     );
 }
+
+#[test]
+fn explain_json_overrides_applied_matches_the_text_header_for_a_scalar_only_override() {
+    // Regression: the JSON `overrides_applied` field is the SAME total the agent-text
+    // `overrides applied: N` header shows — structural deltas PLUS scalar-key
+    // overrides. A scalar-only override (no structural delta) must report
+    // `overrides_applied: 1` in JSON, not 0 — the two emitted surfaces agree.
+    let repo = TempDir::new("json-scalar-total");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    run_config_set(repo.path(), home.path(), "default-workflow", "single-task");
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &[
+            "--explain",
+            "--format",
+            "json",
+            "--workflow",
+            "single-task",
+            "add rate limiter",
+        ],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(out.status.success(), "must exit 0; stdout:\n{stdout}");
+    let value: serde_json::Value =
+        serde_json::from_str(&stdout).expect("--format json must emit parseable JSON");
+
+    // The fix: a scalar-only override counts in the JSON total (was 0 before).
+    assert_eq!(
+        value["overrides_applied"], 1,
+        "JSON overrides_applied must fold the scalar override into the total (matching the text header); got:\n{stdout}",
+    );
+    let scalars = value["scalar_overrides"]
+        .as_array()
+        .expect("scalar_overrides is an array");
+    assert_eq!(
+        scalars.len(),
+        1,
+        "exactly one scalar override; got:\n{stdout}"
+    );
+}

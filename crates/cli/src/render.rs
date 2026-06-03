@@ -159,7 +159,7 @@ fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
         tree.workflow,
         tree.workflow_layer.label(),
     );
-    let total_overrides = tree.overrides_applied + tree.scalar_overrides.len();
+    let total_overrides = tree.overrides_applied;
     if total_overrides == 0 {
         out.push_str("  overrides applied: none\n");
     } else {
@@ -417,7 +417,8 @@ mod tests {
         let tree = ResolutionTree::new(
             "single-task",
             LayerKind::PackDefault,
-            1,
+            // overrides_applied is the total: 1 structural (the replace below) + 1 scalar.
+            2,
             vec![ScalarOverride {
                 key: "default-workflow".to_string(),
                 value: "single-task".to_string(),
