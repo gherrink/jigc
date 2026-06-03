@@ -4,6 +4,8 @@ How a project customizes the pack without forking it into bit-rot. This is [VISI
 
 Builds on [structural-grammar.md](structural-grammar.md) (override operates on skeleton units by address), [document-type-schema.md](document-type-schema.md) (knobs reuse the field model), [write-commands.md](write-commands.md) (the propose/confirm loop; the workflow create-gate is a cascade scalar at `workflows.<id>.allows-create`), [storage.md](storage.md) (config locations, base-hash, derived caches), [validation.md](validation.md) (`override-default` is a probe; findings + routes), [workflow-dialect.md](workflow-dialect.md) (definitions resolve through the cascade), and [command-catalog.md](command-catalog.md) (command-ref entries resolve through the same cascade — `insert`/`replace`/`remove` deltas apply uniformly). For the *why*, see [DECISIONS.md](../DECISIONS.md). Notation is **illustrative**.
 
+> **Build-scope split — M4 (apply) vs M5 (reconcile).** This doc describes one system, but it ships in two milestones ([roadmap.md](../implementation/roadmap.md), [DECISIONS.md](../DECISIONS.md) 2026-06-03). **M4 · override application** builds the *apply* path: the cascade wired **live** into compose, the four delta kinds (`scalar-set` · `structural-op` · `slot-fill` · `tracked-fork`) authored via the `jigc config` verbs (or by hand in delta form), the typed knob surface, and the `{{fill:<id>}}` extension point — so a project composes differently from the pack default. **M5 · upgrade reconciliation** builds the *inherit-upstream* path: the [`override-default` probe + `jigc upgrade`](#upgrade-reconciliation--override-default-m5), the stateless `base-hash` **compare**, the 3-way-merge proposal, and the **demotion-lock floor enforcement**. The split rule for content below: M4 *records* every content-bearing delta's `base-version`+`base-hash` (so the data is there); M5 is the only consumer that *reads* them. Sections that are M5-only are marked **(M5)**.
+
 ## The cascade
 
 Three layers over a versioned base, ordered by **specificity — most-specific wins**:
@@ -28,8 +30,8 @@ The enemy is not forking; it is the *untracked* fork that discards its ancestor 
 
 1. **`scalar-set`** — set a config knob. Most customization lives here.
 2. **`structural-op`** — `insert` / `replace` / `remove` a unit, targeted **by address** (`workflow:single-task#locate`), never by position.
-3. **`slot-fill`** — fill a named extension point; never the surrounding prose.
-4. **`tracked-fork`** — copy a unit, last resort, recording the base hash so a 3-way merge can detect upstream conflicts.
+3. **`slot-fill`** — fill a named extension point; never the surrounding prose. The extension point is an inline **`{{fill:<id>}}`** placeholder a pack step/section body declares (a read-path placeholder, CLI-filled — see [the fill placeholder](#the-fill-placeholder--slot-fill-targets)); a `slot-fill` delta targets `step:<id>#<fill-id>` and supplies the content, higher layer winning.
+4. **`tracked-fork`** — copy a unit, last resort, recording the base hash so a 3-way merge can detect upstream conflicts. (At compose time a fork is just a shadowed file — phase 2 applies it; the recorded base-hash is read only by the **(M5)** reconciliation.)
 
 These *are* the cascade's delta vocabulary — there is no separate "config system" and "override system."
 
@@ -44,7 +46,7 @@ A layer's deltas live in a **config-format manifest**; content lives in **native
 ```yaml
 # project config — deltas against pack-default v1
 scalar:
-  validation.doc-code.severity: advisory
+  validation.doc-code.severity: advisory   # M4 accepts this; the demotion-lock floor is (M5)
 
 deltas:
   - kind: insert-step
@@ -65,9 +67,87 @@ Hand-editing is allowed **only in delta form** — edit the manifest or a native
 
 A scalar knob is a **pack-declared, typed field** — `enum` / `string` / `bool` / `int` with a default — so it reuses the [field model](document-type-schema.md) entirely: a `scalar-set` is type-checked exactly like `set-field` (write-time adjudication) and reconciled like any delta. The knob surface is **closed**: only declared keys are settable; an undeclared `scalar-set` is an error, a wrong-type value is rejected. This carries the same "anticipated customization" discipline as slots — *knobs exist only where the pack anticipates tuning*. Anything beyond the declared surface that changes the *shape* of a definition is a `structural-op` by address.
 
+**On-disk declaration — `config/knobs.yaml`.** The pack declares its closed knob surface in a `config/knobs.yaml` resource: one entry per key, reusing the document-type [`FieldType`](document-type-schema.md) vocabulary so adjudication is the *same* `check_value` the doc write path uses — no second type system.
+
+```yaml
+# pack/config/knobs.yaml — the closed, typed knob surface
+default-workflow:
+  type: enum
+  of: [router, single-task, quick-fix, plan, implement-from-spec]
+  default: router
+validation.doc-code.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: warning            # demotion-lock floor enforcement is (M5)
+```
+
+The loader builds the pack-default layer's scalar surface from this file — both the **closed key set** (what `scalar-set` may target) and each knob's **default value**. A knob's default is **materialized by the resolver** seeding the resolved map from `knobs.yaml` before applying any delta; this is the knob's own mechanism and is *independent* of the doc-instance `Field.default` (which a created document does not yet materialize — an orthogonal write-path defect, [DECISIONS.md](../DECISIONS.md) 2026-06-03).
+
+**What migrates, and what doesn't.** Only the keys that must **resolve through the cascade** become knobs: `default-workflow` and the `validation.*.severity` keys move to `knobs.yaml` with declared types; the live `serde_yaml_ng::get("default-workflow")` read in the compose path is replaced by `resolved.scalar("default-workflow")`. **`pack-id` is not a knob** — it is the pack *naming itself* (read for the provenance header), not a project-overridable value — so it stays a pack-identity field (the retained `config/defaults.yaml`, or a pack manifest), read directly, never through the cascade. "Subsumed" means the *settable* surface moves to `knobs.yaml`, not that `defaults.yaml` is deleted out from under the `pack-id` read.
+
+**Read-side determinism invariant.** Routing a compose-path read through `resolved.scalar(k)` is byte-safe **only** if `k` is declared in `knobs.yaml` and thus seeded into the base map. So the rule is two-sided: `resolve` already rejects a `scalar-set` to an *undeclared* key (write side); M4 adds that **`resolved.scalar(k)` returning `None` for a key the compose path reads is a hard error, not a silent fallback** (read side). The no-override path must stay **byte-identical** to today's output — proven by a no-delta golden over the existing `start_compose` fixtures, *plus* a test that a read of an undeclared knob fails loudly rather than resolving to the old raw value ([Resolution algorithm](#resolution-algorithm)).
+
 An open surface is rejected for the same reason untracked forks are: a silent, unvalidatable, unreconcilable typo'd key is exactly the failure mode the whole system exists to kill.
 
-**Locked keys.** Some scalar keys are declared but **demotion-locked** — their value can be set above a floor but not below it. The validation severity inventory ([validation.md](validation.md) → Severity inventory) names the intrinsic checks whose `validation.<probe>.<check>.severity` keys cannot be demoted below `blocking`. A `scalar-set` attempting to demote a locked key is rejected at cascade resolution as a config-conformance error (the `scalar-set` is logged, not applied; visible via `--explain`). Same delta machinery — just with a per-key floor declared by the pack.
+**Locked keys (enforcement: M5).** Some scalar keys are declared but **demotion-locked** — their value can be set above a floor but not below it. The validation severity inventory ([validation.md](validation.md) → Severity inventory) names the intrinsic checks whose `validation.<probe>.<check>.severity` keys cannot be demoted below `blocking`. A `scalar-set` attempting to demote a locked key is rejected at cascade resolution as a config-conformance error (the `scalar-set` is logged, not applied; visible via `--explain`). Same delta machinery — just with a per-key floor declared by the pack. M4 ships the severity *knobs themselves* as ordinary `scalar-set`-able typed keys; the **floor enforcement** rides with M5, alongside its only consumer — the tunable `override-default` severities.
+
+## The `{{fill:}}` placeholder — slot-fill targets
+
+A `slot-fill` delta needs something to fill. That something is an inline **`{{fill:<id>}}`** placeholder a pack author writes into a step (or doc-type section) body to mark an *anticipated extension point* — "a project may inject content here without forking the step." It is a **read-path placeholder** ([workflow-dialect.md](workflow-dialect.md#leaves-instructions-and-placeholders) → the fourth placeholder kind): CLI-filled deterministically, syntactically `{{…}}`, the strict opposite of the write-path `<<author:>>` slot (which the LLM fills per-instance). The two must not be confused — `{{fill:}}` is *config-time* content chosen by the cascade; `<<author:>>` is *task-time* prose authored by the agent.
+
+```markdown
+# pack steps/implement.yaml — declares one extension point, default empty
+Implement the change directly in the working tree.
+{{fill: extra-guidance}}
+```
+
+A `slot-fill` delta supplies its content, addressed `step:<id>#<fill-id>`:
+
+```yaml
+# project .jigc/config/manifest.yaml
+deltas:
+  - kind: slot-fill
+    target: step:implement#extra-guidance
+    content: fills/extra-guidance.md     # a native Markdown file in this layer
+```
+
+Resolution applies slot-fills at **phase 5** — *before* include expansion (7) and placeholder resolution (8) — so the filled content's `{{include:}}`, `{{cli.…}}`, and `{{@…}}` placeholders resolve in the later phases exactly as if the pack had written them inline. **One exception — no nested fills:** fill content (and a `{{fill:}}` point's default body) **may not contain another `{{fill:}}`**, because phase 5 does not re-run — a nested `{{fill:}}` would survive to phase 8 unresolved. The `config fill` verb rejects fill content containing `{{fill:}}` at write time, and `workflow-refs` flags a surviving `{{fill:}}` at resolution.
+
+An **unfilled** `{{fill:<id>}}` resolves to the pack's default body (empty if none) — never a finding; an absent extension point is the common case. Higher layer wins for the same `<fill-id>` (phase-5 ordering).
+
+**Orphan detection is M4, not deferred.** A `slot-fill` targeting a `<fill-id>` that **no resolved body declares** is a blocking **`workflow-refs`** finding at compose/resolution — symmetric with the undeclared-`scalar-set` rejection, and closing the same closed-surface hole for *both* authoring paths (the `config fill` verb's write-time check and a hand-edited manifest). This is engine-native M4 validation; it is *not* left to the (M5) `override-default` probe (which adds the *upgrade-time* re-classification of the same condition). A silent, inert, typo'd slot-fill is exactly the failure mode the closed surface exists to kill, so M4 owns the check.
+
+## Delta targets — addressing a definition
+
+A delta names *what* it operates on. The target grammar is **not** the content [`Address`](structural-grammar.md#addressing) (which is instance-scoped — `type:slug#unit/item/leaf`, a slice *inside a persisted document*). A `structural-op` / `slot-fill` targets a **definition's list-entry or extension point**, a distinct namespace:
+
+| delta kind | target form | operates on |
+|---|---|---|
+| `scalar-set` | a knob key (`default-workflow`, `validation.doc-code.severity`) | the resolved scalar map |
+| `structural-op` | `workflow:<id>` + `#<step-id>` / `after:` / `before:` anchor; `schema:<id>#<section-id>` | the definition's **include list** (`workflow.includes`) or **sections list** (`schema.sections`) |
+| `slot-fill` | `step:<id>#<fill-id>` | a `{{fill:<id>}}` extension point in a body |
+| `tracked-fork` | `workflow:<id>#<step-id>` / `schema:<id>#<section-id>` | the forked unit's file (shadowed whole) |
+
+The load-bearing distinction: `workflow:single-task#validate` here means *"the entry `validate` in `single-task`'s include list"* — `single-task` is a **workflow id**, not a doc slug; `validate` is a **step-id list entry**, not a doc section. This needs its own target resolver over `WorkflowDef.includes` / `Schema.sections`; reusing the content-`Address` parser would conflate the definition and document namespaces (the two slugs live in different spaces). The `structural-op` verbs spell the anchor explicitly (`--after <id>` / `--before <id>`) rather than overloading `#`; the manifest mirrors that with `after:` / `before:` keys (the `#<step-id>` form is the `replace`/`remove` target, which needs no anchor).
+
+## Authoring deltas — the `jigc config` verbs
+
+Deltas may be authored two co-equal ways: **by hand** (edit `manifest.yaml` + drop a native file — sanctioned for config because governance is human/team-owned, the one place direct editing is first-class; never a forked base, only delta form) or through the **`jigc config` verb family**, which records the same manifest+native-file shape the loader reads. One verb per rung:
+
+| verb | records | validation at write time |
+|---|---|---|
+| `jigc config set <key> <value>` | a `scalar-set` | closed-surface + `check_value` typed adjudication (undeclared key / wrong type rejected) |
+| `jigc config insert-step --workflow <id> (--after\|--before) <step-id> <file>` | an `insert` `structural-op` + the native step file | anchor step-id present in the resolution *as of this edit* |
+| `jigc config replace-step <workflow:id#step-id> <file>` | a `replace` `structural-op` + native file | target step-id present as of this edit |
+| `jigc config remove-step <workflow:id#step-id>` | a `remove` `structural-op` | target step-id present as of this edit |
+| `jigc config fill <step:id#fill-id> --from-file <file>` | a `slot-fill` + native fill file | the `{{fill:<fill-id>}}` point exists in the resolved step body |
+| `jigc config fork <workflow:id#step-id>` | a `tracked-fork` — copies the resolved unit into a native file, records `base-version` + `base-hash` | target resolves as of this edit |
+
+**Native-file id = filename basename.** `insert-step`/`replace-step` take a *source file*; the native step they register takes its **id from the file's basename** — the same "a step's id is its filename" rule the pack uses ([workflow-dialect.md](workflow-dialect.md) → On-disk definition format). So `jigc config insert-step --workflow single-task --after implement ./project-validate.yaml` writes `.jigc/config/steps/project-validate.yaml`, the `insert` delta references `step:project-validate`, and phase-2 shadows that file. A name collision with an existing step id is a write-time error.
+
+**`tracked-fork` hash basis (pinned now; read in M5).** The recorded `base-hash` is the **blake3** ([decisions-pending.md](../implementation/decisions-pending.md) → Hashing) of the **resolved native step/section file bytes** — the post-shadow, pre-expansion body, the exact bytes phase 2 would load. A fork addressed `workflow:single-task#validate` shadows the **step file** `validate` (`steps/validate.yaml`), not the workflow; the workflow `#<step-id>` form just names which unit to copy. M4 records this; only the (M5) reconciliation compares it — but the basis is pinned in M4 so M5's stateless compare (`v2 hash ≠ recorded hash`) can't silently break on a basis mismatch.
+
+**Write-time vs resolve-time split.** A verb does the *cheap, local* checks at write time (key declared, type valid, anchor present **in the resolution as of this edit** — a snapshot) so the human gets an immediate error; the *whole-cascade* consequences (cycles a delta introduces, a later same-manifest delta orphaning an earlier one — e.g. a `remove-step` that drops the anchor a later `insert-step --after` needs) depend on the *full delta set*, so they surface at **resolution time** through `workflow-refs`, consistent with the within-layer manifest order ([Resolution algorithm](#within-layer-manifest-order)). This mirrors the document write path: `set-field` adjudicates the value at write time; cross-doc integrity waits for `validate`/`finalize`. The verbs write **only** the project (or, with a flag, team) layer's `manifest.yaml` + native files — never a base definition, never an untracked fork.
 
 ## Resolution algorithm
 
@@ -149,7 +229,9 @@ These were under-specified before; locking them here:
 - **No silent cycle handling.** Phase 6 surfaces a cycle as a `workflow-refs` finding; cycles are never broken automatically.
 - **No LLM call.** The algorithm is deterministic — same `(files + deltas)` in, same composition tree out ([VISION.md](../VISION.md) principle #1).
 
-## Upgrade reconciliation — `override-default`
+## Upgrade reconciliation — `override-default` (M5)
+
+> **(M5)** — everything in this section ships in **M5 · upgrade reconciliation**, not M4. M4 *records* the `base-version` + `base-hash` on every content-bearing delta (above); M5 is the consumer that re-applies and compares them.
 
 When pack-default goes `v1 → v2`, a guarded `jigc upgrade` re-applies each recorded delta and classifies it. This is the engine-native **`override-default` probe** ([validation.md](validation.md)); it asks two deterministic questions per delta against v2:
 
@@ -174,4 +256,4 @@ The probe emits validation findings with routes: `orphaned` → a `run-command` 
 
 - **Per-developer `local` layer** — deferred; if added it sits on top (`local > project`), restricted to non-structural / tighten-only (a dev may self-impose stricter checks, never weaken a team standard).
 - **Team-layer distribution** — how a team *shares* its `team` config (each member installs the same external layer); a mechanics detail.
-- **Committed config dir layout** — the concrete name/structure of the project config location (tracks the undecided product name).
+- ~~**Committed config dir layout**~~ — *settled (M4 planning, 2026-06-03):* `.jigc/config/manifest.yaml` (`scalar:` map + `deltas:` list) + `steps/<id>.yaml` (structural-op / tracked-fork native files) + `fills/<id>.md` (slot-fill content); the pack-default knob surface in `config/knobs.yaml`. Formalized in [storage.md](storage.md) → Config layout.

@@ -76,13 +76,14 @@ The **one bounded exception** is `fan-out`, where a runtime-resolved list yields
 A step's body is a block of two leaf kinds:
 
 - **`instruction`** — static directive prose: "run this exact command," "author this doc slot," "reason about X." (The visual grammar that distinguishes these in the emitted output is the open emitted-format question.)
-- **`placeholder`** — read-path, `{{…}}`, CLI-filled before the agent sees it. Three kinds:
+- **`placeholder`** — read-path, `{{…}}`, CLI-filled before the agent sees it. Four kinds:
 
 | kind | resolves to | notes |
 |---|---|---|
 | **command-ref** `{{cli.add_phase}}` | a literal CLI invocation, resolved against the [command catalog](command-catalog.md) via the cascade | typed args (literal / `from:` / `agent:`); project-overridable; validated by `workflow-refs.command-ref-resolves` |
 | **data-value** `{{path}}` / `{{@path}}` | by default, the path's **address**; with `@`, the **content** at that address (see below) | the context-assembly core |
 | **include** `{{include: step:validate-refs}}` | a step/block by id, expanded recursively | cycle-checked at validate-time (phase 6 of [resolution algorithm](overrides.md#resolution-algorithm)) |
+| **fill** `{{fill: extra-guidance}}` | the content a `slot-fill` delta supplies for this extension point, or the pack default body (empty if none) | a pack-declared override point; applied at phase 5 *before* expansion; **no nested `{{fill:}}`**; orphan + survivor flagged by `workflow-refs` ([overrides.md](overrides.md#the-fill-placeholder--slot-fill-targets)) |
 
 **Address vs content — the `@` marker.** A data-value path resolves to the **address** of its target by default; prefix with `@` to dereference and get the **content** at that address. One uniform rule across all depths:
 

@@ -76,14 +76,27 @@ Committed source of truth and derived/transient state live apart:
 ```
 specs/  decisions/  …       # committed .md docs — the only source of truth
 .jigc/                      # one project-state home (committed config + gitignored caches)
-  config/                   #   committed — the project cascade layer (deltas + knobs)
+  config/                   #   committed — the project cascade layer (see Config layout)
+    manifest.yaml           #     scalar-set knobs + the deltas list
+    steps/<id>.yaml         #     native step files for structural-op / tracked-fork deltas
+    fills/<id>.md           #     native content for slot-fill deltas
   .gitignore                #   ignores the derived/transient subdirs below
   tasks/<task-id>/          #   gitignored — per-task working area (staging)
   index/                    #   gitignored — edge index (rebuildable cache)
   state/                    #   gitignored — file↔CLI-state hashes (rebuildable)
 ```
 
-The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo at `.jigc/config/` (deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, shared across a machine's projects); **pack-default** ships with the installed pack. So `.jigc/` is one home: its `config/` subdir is committed, while `tasks/`, `index/`, and `state/` are gitignored (via `.jigc/.gitignore`) and fully disposable.
+The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo at `.jigc/config/` (deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, same internal layout); **pack-default** ships with the installed pack (its knob surface in `config/knobs.yaml`). So `.jigc/` is one home: its `config/` subdir is committed, while `tasks/`, `index/`, and `state/` are gitignored (via `.jigc/.gitignore`) and fully disposable.
+
+### Config layout
+
+A cascade layer's `config/` dir has one fixed shape (settled M4 planning, [overrides.md](overrides.md) → Delta representation / Authoring deltas):
+
+- **`manifest.yaml`** — the layer's deltas: a top-level `scalar:` map (`scalar-set` knobs, inline `key: value`) and a `deltas:` list (one entry per `structural-op` / `slot-fill` / `tracked-fork`, each referencing a native file, never inline prose). Every content-bearing delta records its `base-version` + the target's `base-hash` ([overrides.md](overrides.md) → Delta representation) for the **(M5)** reconciliation.
+- **`steps/<id>.yaml`** — native step files in the **same form the pack's `steps/` ships** (a step body — verbatim instruction prose with `{{…}}` placeholders, optional `---`-fenced front-matter only for a `fan-out` marker; *not* a front-mattered workflow definition). Referenced by `insert`/`replace` structural-ops and `tracked-fork`; the id is the filename basename.
+- **`fills/<id>.md`** — native Markdown content for `slot-fill` deltas (the body that fills a `{{fill:<id>}}` point).
+
+The pack-default layer adds **`config/knobs.yaml`** — the closed, typed knob *declaration* (`{key, type, of?, default}`, [overrides.md](overrides.md) → Scalar knobs); override layers carry only *values* (`scalar:` in their manifest), never re-declare the surface. The loader reads these into the `PackDefaultLayer` / `OverrideLayer` the resolver consumes.
 
 ### The per-task working area (staging)
 
@@ -128,4 +141,4 @@ A fresh worktree **rebuilds** the derived caches (per the stamp rule) and copies
 
 - **Milestone worktree orchestration** — how `milestone-execution` partitions and recombines worktree-isolated tasks is workflow-dialect territory ([workflow-dialect.md](workflow-dialect.md#open-questions)); storage only needs to *accommodate* it, which it does.
 - **Multi-slot sub-label syntax** — the exact rendering of the schema-fixed sub-labels that delimit multiple slots within one section.
-- **Config layout** — the committed config home is `.jigc/config/`; its *internal* structure (manifest + `steps/` + deltas) is illustrated in [worked-examples.md](worked-examples.md) but not yet formally schema'd. The cascade's layers and homes are specified in [overrides.md](overrides.md).
+- ~~**Config layout**~~ — *settled (M4 planning, 2026-06-03):* the committed config home `.jigc/config/` has a fixed shape — `manifest.yaml` (`scalar:` + `deltas:`) + `steps/<id>.yaml` + `fills/<id>.md`, with the pack-default knob *declaration* in `config/knobs.yaml`. See [Config layout](#config-layout) above; the cascade's layers and homes in [overrides.md](overrides.md).

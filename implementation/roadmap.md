@@ -206,3 +206,79 @@ Cut 2026-06-01 via the [`/milestone-plan`](../.claude/commands/milestone-plan.md
 ### Status
 
 All four increments (1–4) complete as of 2026-06-02 — the intent → spec → implementation arc works end-to-end across two tasks: a `plan` task authors and commits a `spec` (code-less `docs(spec):` finalize), and a later `implement-from-spec` task discovers it via `{{store.specs}}`, binds it with `jigc task bind spec <addr> <id>`, reads `{{@task.spec#criteria}}` on the resume re-compose, and finalize walks the `commit —implements→ spec` edge (passing when the spec exists, blocking when it dangles). Built via the [milestone-build](milestone-build) harness on its **first live run** — which surfaced two genuine planning-gap halts (the create-gate hardcoded `single-task`; the spec read path sliced only slot sections, not the shipped repeatable `criteria`), both human-gated and fixed before the harness resumed. Tasks were cut per-increment at pickup via the [increment workflow](increment-workflow.md); the milestone was then audited and triaged via the [milestone-completion workflow](milestone-completion-workflow.md) (independent code-review + e2e → one fix: the emitted `jigc task bind` line was missing the task-id positional; one finding accepted as deferred: `criteria` authoring awaits the unbuilt `add-item` verb).
+
+## Milestone 4 — override application: decomposition
+
+Cut 2026-06-03 via the [`/milestone-plan`](../.claude/commands/milestone-plan.md) command (scope → detect gaps → settle → review → decompose). Four `capability-auditor` subagents established the baseline, four `gap-detector` subagents + an independent `design-reviewer` reshaped the design ([DECISIONS.md](../DECISIONS.md) 2026-06-03). The headline finding: M4's reuse claims were mostly **`unverified-reuse`** — the cascade resolver (`cascade::resolve`, phases 2–3) is unit-proven but **unwired** (zero production callers for `Resolved::file_owner`/`scalar`; its one live caller uses it for the provenance header alone), resolution **phases 4 (structural-op) and 5 (slot-fill) are absent**, the content `Address` grammar is instance-scoped and does **not** fit a definition-target (spiked + refuted), and no typed knob is declared anywhere. So M4's real cost is *wiring the unwired cascade live into compose + building two resolution phases from scratch + a full config-write verb surface* — not "add delta application on a working cascade." The milestone was also split from the old "override machinery" entry (upgrade reconciliation → [M5](#m5--upgrade-reconciliation)); everything `override-default` / `jigc upgrade` / base-hash-compare / 3-way-merge / severity-floor-enforcement is **out**, deferred to M5. The design for every shape below is settled in [overrides.md](../design/overrides.md) (the home of record), [storage.md](../design/storage.md) (config layout), [workflow-dialect.md](../design/workflow-dialect.md) (`{{fill:}}`), and [worked-examples.md](../design/worked-examples.md) flow 3 (the acceptance flow). Risk-first, linear: the determinism-trap wiring first, then the two from-scratch resolution phases with their verbs, then `tracked-fork`, then the acceptance. **Status: planned, not yet built.**
+
+**Pack content rides along.** Two pack additions accrete where first needed: the `config/knobs.yaml` declaration in increment 1, and the `{{fill: extra-guidance}}` extension point in `steps/implement.yaml` in increment 4.
+
+### Increment 1 — Config loader + live scalar cascade (the wiring spine + the determinism trap)
+
+**Deliverable:** a `scalar-set` recorded in `.jigc/config/manifest.yaml` resolves through the cascade and changes composed output — `default-workflow` overridden at the project layer flips bare-`jigc start` minting — while the **no-override** path stays **byte-identical** to today. Proven on a hand-authored fixture manifest + `jigc config set`.
+
+**Grouped scope:**
+- The `config/knobs.yaml` declaration format (`{key, type, of?, default}` reusing `schema::FieldType`) + the loader that seeds the `PackDefaultLayer` scalar surface (closed key set + materialized defaults) from it; `default-workflow` + the `validation.*.severity` keys declared, `pack-id` kept as a non-knob identity field ([overrides.md](../design/overrides.md) → Scalar knobs).
+- The `.jigc/config/manifest.yaml` loader for the `scalar:` block → a populated `OverrideLayer`; wire the resolved cascade into the live compose path so `default-workflow` is read via `resolved.scalar(...)`, not ad-hoc `serde_yaml_ng::get()` ([overrides.md](../design/overrides.md) → Resolution algorithm, [storage.md](../design/storage.md) → Config layout).
+- The **read-side determinism invariant**: `resolved.scalar(k)` returning `None` for a compose-read key is a hard error, not a fallback; a **no-delta byte-identical golden** over the existing `start_compose` fixtures + a test that an undeclared read-key fails loudly.
+- `jigc config set <key> <value>` (clap `config` subcommand tree + dispatch) writing the `scalar:` block, adjudicated at write time via `check_value` (undeclared key / wrong type rejected).
+- Correct the overstated `cascade.rs` / `compose.rs` doc-comments that claim phase-2 shadowing is "already wired into compose."
+
+**Proves:** the unwired resolver is wired **live** for the scalar path, the cascade *applies* a delta (not just locates a layer), and the determinism boundary holds (no-override = byte-identical) — the milestone's #1 risk, retired in isolation.
+
+### Increment 2 — Structural-op application: step shadowing (phase 2) + include-list mutation (phase 4)
+
+**Deliverable:** a `structural-op` delta (insert / replace / remove) in a hand-authored manifest changes a composed workflow's include list — a project step shadows or augments the pack's, proven on fixtures (worked-examples flow 3a's compose-time application), not yet a verb.
+
+**Grouped scope:**
+- A layer-aware `StepSource` that consults `Resolved::file_owner` to read a step from the highest-precedence layer (project `.jigc/config/steps/<id>.yaml` → pack), replacing the single-layer `PackStepSource` — phase-2 by-id shadowing wired into compose at last ([overrides.md](../design/overrides.md) → Resolution algorithm phase 2).
+- The **definition-target** address model — `workflow:<id>` + `#<step-id>` / `after:` / `before:` over `WorkflowDef.includes` — distinct from the instance-scoped content `Address` (the spiked-and-refuted reuse); the insert / replace / remove pass applied at **phase 4, before include expansion** ([overrides.md](../design/overrides.md) → Delta targets, Why structural deltas precede expansion).
+- Cycle/orphan interaction: a structural delta whose anchor a same-manifest delta removed surfaces at resolution via `workflow-refs`; replace's "replacement is another step id" semantics ([overrides.md](../design/overrides.md) → `replace` vs `tracked-fork`).
+
+**Proves:** the second from-scratch resolution phase — structural deltas mutate the composition tree deterministically before expansion, over a target namespace that does not collide with document addressing — the milestone's #2 risk.
+
+### Increment 3 — Structural-op verbs (`config insert-step` / `replace-step` / `remove-step`)
+
+**Deliverable:** the three structural verbs record the deltas + native step files increment 2 applies; `jigc config insert-step --workflow single-task --after implement ./x.yaml` lands a runnable override end-to-end.
+
+**Grouped scope:**
+- clap + dispatch for `insert-step` / `replace-step` / `remove-step`; native step file written to `.jigc/config/steps/<basename>.yaml`, the delta referencing `step:<basename>` (**id = filename basename**); collision-with-existing-id rejected ([overrides.md](../design/overrides.md) → Authoring deltas).
+- Write-time validation: the anchor/target step-id present in the resolution **as of this edit** (a snapshot; whole-cascade consequences stay at resolution-time per the write/resolve split).
+
+**Proves:** the structural override path is authored through the CLI, not just hand-edited — the agent/human records a shape change without forking.
+
+### Increment 4 — slot-fill end-to-end (`{{fill:}}` + the orphan check + `config fill`)
+
+**Deliverable:** a pack step ships a `{{fill: extra-guidance}}` point; a `slot-fill` delta fills it and the content appears in composed output; an orphaned or nested `{{fill:}}` is a blocking `workflow-refs` finding.
+
+**Grouped scope:**
+- The `{{fill:<id>}}` placeholder (the 4th read-path placeholder kind) resolved at **phase 5, before expansion**, from the cascade's `slot-fill` deltas (or the pack default body); **no nested `{{fill:}}`** ([overrides.md](../design/overrides.md) → The `{{fill:}}` placeholder; [workflow-dialect.md](../design/workflow-dialect.md) → Leaves).
+- The engine-native `workflow-refs` checks: a `slot-fill` targeting a `<fill-id>` no resolved body declares = blocking (closed-surface, both authoring paths); a surviving lone `{{fill:}}` = blocking.
+- `jigc config fill <step:id#fill-id> --from-file <file>` writing the `slot-fill` delta + `.jigc/config/fills/<id>.md`; write-time rejection of fill content containing `{{fill:}}`.
+- Pack: add the `{{fill: extra-guidance}}` extension point to `steps/implement.yaml`.
+
+**Proves:** the doc-creation-style extension point — a project injects content into an anticipated point without forking the step, and the closed-surface discipline holds in M4 (orphans caught now, not deferred to M5).
+
+### Increment 5 — `tracked-fork` (`config fork` + base-hash recording)
+
+**Deliverable:** `jigc config fork workflow:single-task#implement` copies the resolved step into a project native file that shadows it (applied as a phase-2 file shadow) and records `base-version` + `base-hash`; the recorded delta round-trips.
+
+**Grouped scope:**
+- `jigc config fork <addr>` (clap + dispatch): copy the resolved native step/section bytes into `.jigc/config/steps/<id>.yaml`, record the `tracked-fork` delta with `base-version` + the **blake3** `base-hash` of those bytes (the pinned basis — recorded in M4, compared only in M5) ([overrides.md](../design/overrides.md) → `tracked-fork` hash basis).
+- Apply path: a `tracked-fork`'d unit is just a shadowed file at phase 2 (no new resolution logic) — the increment is the verb + the recording, not a new phase.
+
+**Proves:** the last-resort rung records its ancestor honestly — the M5-reconciliation precondition (a fork that knows what it forked) exists, with the hash basis pinned so M5's stateless compare can't silently break.
+
+### Increment 6 — `--explain` overrides + the e2e acceptance
+
+**Deliverable:** `jigc start --explain` shows the resolution tree with per-layer override provenance (worked-examples flow 3a's tree); an e2e in a throwaway repo drives all four delta kinds and asserts each changes composed output while the no-override path stays byte-identical.
+
+**Grouped scope:**
+- Extend the `--explain` resolution-tree output ([workflow-dialect.md](../design/workflow-dialect.md) → `--explain` output contract) to render `overrides applied: N`, the winning layer per step/knob, and the `← replaces … at position` annotations.
+- e2e acceptance (throwaway repo): `config set` flips `default-workflow`; `insert/replace-step` changes the include list; `config fill` fills a `{{fill:}}` point; `config fork` records a base-hash; the orphan/wrong-type/undeclared-key rejections fire; **assert no-override compose output is byte-identical** to the pre-M4 baseline ([worked-examples.md](../design/worked-examples.md) → flow 3).
+
+**Proves:** M4's headline — a project composes differently from the pack default via recorded deltas across all four kinds, with the cascade applied live and the determinism boundary intact — the mandated acceptance path. Sets up [M5](#m5--upgrade-reconciliation) (the recorded deltas, now with base-hashes, become reconciliation's input).
+
+### Status
+
+Planned 2026-06-03; not yet built. Hand off to the [milestone-build](milestone-build) harness.

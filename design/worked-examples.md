@@ -108,50 +108,96 @@ File-level block; three-way merge is [deferred](reconciliation.md#mvp-scope-vs-p
 
 ## 3. Override application at compose time
 
-The pack-default `single-task` workflow uses `validate` as its third step. The project wants a stricter version that also runs a custom lint probe.
+The **M4 acceptance flow** — a project-level delta of each kind shifts the composed output, with no override leaking the no-delta byte-stable baseline. This section walks `structural-op` (`replace-step`) in full, then `scalar-set` and `slot-fill` compactly; `tracked-fork` applies exactly as a phase-2 file shadow (its recorded base-hash matters only at the **(M5)** reconciliation). The shapes cited are canonical in [overrides.md](overrides.md); notation is illustrative.
 
-Project's `.jigc/config/manifest.yaml`:
+### 3a · `structural-op` — `replace-step`
+
+The pack-default `single-task` include list is `[locate, implement, superseded-context, finalize]`. The project wants its own `implement` step that augments the pack's with a house lint reminder — without forking the pack step (it re-includes it).
+
+The project authors the delta through the verb:
+
+```text
+$ jigc config replace-step workflow:single-task#implement ./project-implement.yaml
+> replace-step recorded: single-task#implement → step:project-implement   (project layer)
+```
+
+That writes the `replace` delta into `.jigc/config/manifest.yaml` and the native step (id = filename basename) at `.jigc/config/steps/project-implement.yaml`:
 
 ```yaml
 deltas:
   - kind: replace-step
-    target: workflow:single-task#validate
-    with: step:project-validate
+    target: workflow:single-task#implement
+    with: step:project-implement      # id from the file basename
 ```
 
-Project's `.jigc/config/steps/project-validate.md`:
-
 ```markdown
-Run before finalize: validation + the project's lint probe.
+# .jigc/config/steps/project-implement.yaml — re-includes the pack step, adds a house rule
+{{ include: step:implement }}
 
-Run: `jigc task validate {{task.id}}`
-Run: `jigc task validate {{task.id}} --probe lint`
+Before you finalize, run the project lint probe and fix any findings.
 ```
 
 When the agent runs `jigc start "..."`, the composer runs the [9-phase resolution algorithm](overrides.md#resolution-algorithm):
 
-- **Phase 2** (by-id shadowing): `step:validate` resolves to pack-default; `step:project-validate` resolves to the project layer.
-- **Phase 4** (structural deltas): `replace-step` swaps `validate` for `project-validate` in `single-task`'s include list. The list is now `[locate, implement, project-validate]`.
-- **Phase 6** (cycle detection): no cycles.
-- **Phase 7** (include expansion): `step:project-validate.md`'s body expands.
-- **Phase 8** (placeholders): `{{task.id}}` resolves to `add-rate-limiter`.
+- **Phase 2** (by-id shadowing): `step:implement` resolves to pack-default; `step:project-implement` resolves to the project layer.
+- **Phase 4** (structural deltas): `replace-step` swaps `implement` for `project-implement` in the include list, now `[locate, project-implement, superseded-context, finalize]`.
+- **Phase 6** (cycle detection): `project-implement` includes `implement` (a different id) — no cycle.
+- **Phase 7** (include expansion): `project-implement`'s body expands, pulling in the pack `implement` body followed by the house-rule line.
 
-The emitted workflow's third step is now the project's validate. Same workflow id, same address, different content — and the agent doesn't need to know it happened.
+Same workflow id, same composed shape — the agent never knows an override happened.
 
-`jigc start --explain add-rate-limiter` ([workflow-dialect.md](workflow-dialect.md#--explain-output-contract)) shows the resolution tree with `project-validate` named as a project-layer override of pack-default's `validate`:
+`jigc start --explain add-rate-limiter` ([workflow-dialect.md](workflow-dialect.md#--explain-output-contract)) shows the resolution tree with `project-implement` named as a project-layer override:
 
 ```text
 workflow:single-task    (pack-default · dev/v0.3.0)
-  overrides applied: 1 (replace-step at #validate)
+  overrides applied: 1 (replace-step at #implement)
   includes:
-    step:locate              (pack-default · dev/steps/locate.md)
-    step:implement           (pack-default · dev/steps/implement.md)
-    step:project-validate    (project · .jigc/config/steps/project-validate.md
-                              ← replaces step:validate at position 3)
-      {{cli.validate-task}}  → jigc task validate add-rate-limiter
-      {{cli.lint-task}}      → jigc task validate add-rate-limiter --probe lint
+    step:locate              (pack-default · dev/steps/locate.yaml)
+    step:project-implement   (project · .jigc/config/steps/project-implement.yaml
+                              ← replaces step:implement at position 2)
+      {{include: step:implement}}  → (pack-default · dev/steps/implement.yaml)
+    step:superseded-context  (pack-default · dev/steps/superseded-context.yaml)
+    step:finalize            (pack-default · dev/steps/finalize.yaml)
   findings (workflow-refs): 0
 ```
+
+### 3b · `scalar-set` — a typed knob
+
+The project pins the cascade default away from the router to `single-task` (a one-workflow team that wants the bare-intent path to mint directly):
+
+```text
+$ jigc config set default-workflow single-task
+> scalar-set recorded: default-workflow = single-task   (project layer)
+
+$ jigc config set default-workflow typo-workflow
+> error: wrong-type value for default-workflow
+>   knob default-workflow is enum of [router, single-task, quick-fix, plan, implement-from-spec]
+>   resolution: pick a declared workflow id
+```
+
+The first `set` records `scalar: { default-workflow: single-task }` in `.jigc/config/manifest.yaml`; the value is adjudicated at write time via `check_value` against the `config/knobs.yaml` declaration ([overrides.md](overrides.md) → Scalar knobs). On the next `jigc start "<intent>"`, phase-3 resolves `default-workflow` to `single-task` (project wins over the pack default `router`), so bare-intent mints a `single-task` directly — the cascade *applying* the delta, not just locating the layer. The undeclared/wrong-type `set` is rejected before it touches the manifest (closed surface).
+
+### 3c · `slot-fill` — fill a `{{fill:}}` extension point
+
+The pack `implement` step ships a `{{fill:}}` extension point the pack leaves empty (the M4 pack deliverable that makes slot-fill demonstrable):
+
+```markdown
+# pack steps/implement.yaml (excerpt)
+Implement the change directly in the working tree. When done, stage the commit prose:
+...
+{{fill: extra-guidance}}
+```
+
+The project injects a house rule without forking the step (a *lighter* touch than 3a's `replace-step` — no re-include, just fill the anticipated point):
+
+```text
+$ jigc config fill step:implement#extra-guidance --from-file - <<'TXT'
+Confirm a changelog entry exists for any user-facing change before finalizing.
+TXT
+> slot-fill recorded: step:implement#extra-guidance   (project layer)
+```
+
+This records a `slot-fill` delta + `.jigc/config/fills/extra-guidance.md`. At **phase 5** the resolver replaces `{{fill: extra-guidance}}` with that content (before expansion/placeholder resolution), so `implement`'s emitted body now carries the house rule. An **unfilled** `{{fill:}}` would have emitted the pack default (here, nothing) — never a finding; a `slot-fill` aimed at a `<fill-id>` no body declares is a blocking `workflow-refs` finding ([overrides.md](overrides.md#the-fill-placeholder--slot-fill-targets)). Same workflow, same step id, project-specific content.
 
 ## 4. Finalize-to-git
 
