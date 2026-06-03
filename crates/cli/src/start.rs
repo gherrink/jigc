@@ -22,11 +22,13 @@ use crate::pack::EmbeddedPack;
 use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::cascade::{
-    self, AnchorSpec, OverrideLayer, PackDefaultLayer, StructuralDelta, StructuralTarget,
+    self, AnchorSpec, OverrideLayer, PackDefaultLayer, SlotFillDelta, SlotFillTarget,
+    StructuralDelta, StructuralTarget,
 };
 use engine::compose::{
-    self, CommandCatalog, ComposedWorkflow, StepDef, StepSource, StoreContext, WorkflowDef,
-    apply_structural_deltas, load_command_catalog, load_step_def, load_workflow_def,
+    self, CommandCatalog, ComposedWorkflow, ResolvedFills, StepDef, StepSource, StoreContext,
+    WorkflowDef, apply_slot_fills, apply_structural_deltas, load_command_catalog, load_step_def,
+    load_workflow_def,
 };
 use engine::data_value::{ComposeContext, TaskRoot};
 use engine::finding::{Finding, Severity};
@@ -188,13 +190,13 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     // phase-2 file owners + the manifest's phase-4 structural deltas (`overrides.md`
     // → Resolution algorithm). The same `Resolved` threads into the layer-aware
     // step source so a project step shadows the pack's.
-    let (resolved, deltas) = resolve_cascade(&pack, &project_config)?;
+    let (resolved, overrides) = resolve_cascade(&pack, &project_config)?;
     let workflow_id = resolved
         .scalar_required(DEFAULT_WORKFLOW_KEY)
         .map(str::to_owned)
         .map_err(anyhow::Error::from)?;
     let source = CascadeStepSource::new(&pack, &resolved, &project_config);
-    compose_drained(&repo_root, intent, &pack, &workflow_id, &source, &deltas)
+    compose_drained(&repo_root, intent, &pack, &workflow_id, &source, &overrides)
 }
 
 /// Compose the workflow named by `workflow_id` from `intent` — the explicit
@@ -220,11 +222,11 @@ pub fn compose_named_in_repo(
 
     let pack = EmbeddedPack::new();
     // Form D bypasses the cascade `default-workflow` knob but still resolves the
-    // cascade for phase-2 file owners + the phase-4 structural deltas, so a project
-    // step override applies to a `--workflow <X>`-composed workflow too.
-    let (resolved, deltas) = resolve_cascade(&pack, &project_config)?;
+    // cascade for phase-2 file owners + the phase-4/5 deltas, so a project step
+    // override or slot-fill applies to a `--workflow <X>`-composed workflow too.
+    let (resolved, overrides) = resolve_cascade(&pack, &project_config)?;
     let source = CascadeStepSource::new(&pack, &resolved, &project_config);
-    compose_drained(&repo_root, intent, &pack, workflow_id, &source, &deltas)
+    compose_drained(&repo_root, intent, &pack, workflow_id, &source, &overrides)
 }
 
 /// Run [`compose_core`] over the layer-aware [`CascadeStepSource`], then prefer the
@@ -239,9 +241,9 @@ fn compose_drained(
     pack: &dyn PackSource,
     workflow_id: &str,
     source: &CascadeStepSource<'_>,
-    deltas: &[StructuralDelta],
+    overrides: &ComposeOverrides,
 ) -> Result<ComposedWorkflow> {
-    let result = compose_core(repo_root, intent, pack, workflow_id, source, deltas);
+    let result = compose_core(repo_root, intent, pack, workflow_id, source, overrides);
     if result.is_err()
         && let Some(located) = source.take_error()
     {
@@ -286,13 +288,13 @@ fn compose_core(
     pack: &dyn PackSource,
     workflow_id: &str,
     source: &dyn StepSource,
-    deltas: &[StructuralDelta],
+    overrides: &ComposeOverrides,
 ) -> Result<ComposedWorkflow> {
     let workflow_bytes = read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     // The manifest's `structural-op` deltas scoped to *this* workflow id — a
     // manifest may carry deltas for several workflows; only these apply here.
-    let scoped = scoped_deltas(workflow_id, deltas);
+    let scoped = scoped_deltas(workflow_id, &overrides.deltas);
     // Phase 4 — apply the scoped deltas to the include id list, before include
     // expansion. A `replace-step` swaps a pack step id for a project-shadowed one,
     // so the layer-aware source resolves the new id to the project body. An
@@ -345,14 +347,26 @@ fn compose_core(
             store,
         }
     };
-    // Compose-time `workflow-refs` gate over the **post-phase-4** include list:
-    // validate every placeholder / include / command-ref / marker before any
-    // output reaches the agent, with the scoped structural deltas applied — so a
-    // delta-introduced cycle or dangling include surfaces here at resolution time
-    // through the same machinery (`overrides.md` → Resolution algorithm phases
-    // 4–7). A blocking finding short-circuits.
-    let findings =
-        compose::workflow_refs_with_deltas(&workflow_bytes, &scoped, source, &commands, &ctx);
+    // Compose-time `workflow-refs` gate over the **post-phase-4** include list +
+    // the **post-phase-5** step bodies: validate every placeholder / include /
+    // command-ref / marker, plus the two M4 fill checks (slot-fill-orphan +
+    // fill-survivor), before any output reaches the agent — the scoped structural
+    // deltas applied, the slot-fills + resolved fills fed in — so a delta-introduced
+    // cycle / dangling include, an orphaned slot-fill, or a surviving nested
+    // `{{fill:}}` all surface here at resolution time through the same machinery
+    // (`overrides.md` → Resolution algorithm phases 4–7; The `{{fill:}}` placeholder).
+    // The slot-fills thread unscoped (they carry no workflow id; the orphan check is
+    // keyed on whether *this* workflow's composed bodies declare each point). A
+    // blocking finding short-circuits.
+    let findings = compose::workflow_refs_with_fills(
+        &workflow_bytes,
+        &scoped,
+        &overrides.slot_fills,
+        &overrides.fills,
+        source,
+        &commands,
+        &ctx,
+    );
     if let Some(finding) = findings
         .into_iter()
         .find(|f| f.severity == Severity::Blocking)
@@ -360,7 +374,17 @@ fn compose_core(
         return Err(finding_to_err(finding));
     }
 
-    compose::compose(&def, source, &commands, &ctx).map_err(finding_to_err)
+    // Phase 5 — apply the cascade's slot-fill content to each step body *before*
+    // include expansion (phase 7): the [`FillStepSource`] runs `apply_slot_fills` as
+    // each `StepDef` is fetched by id, so the filled content's own `{{include:}}` /
+    // `{{cli.…}}` / `{{@…}}` resolve in the later phases as if the pack had written
+    // them inline. A no-fill cascade (empty `fills`) is the identity — every point
+    // resolves to its pack default, so the no-override path stays byte-identical.
+    let filled = FillStepSource {
+        inner: source,
+        fills: &overrides.fills,
+    };
+    compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)
 }
 
 /// The manifest's `structural-op` deltas scoped to `workflow_id` — a
@@ -380,16 +404,49 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
         .collect()
 }
 
+/// The compose-relevant override surface a project layer carries beyond its
+/// resolved scalar/file owners: the phase-4 `structural-op` deltas, the `slot-fill`
+/// deltas (for the phase-5 fill pass + the orphan check), and the cascade-resolved
+/// [`ResolvedFills`] map (`(step_id, fill_id)` → content body) those slot-fills load.
+/// Bundled so both front doors thread one value through [`compose_drained`] rather
+/// than a widening tuple (`overrides.md` → Resolution algorithm phases 4–5).
+struct ComposeOverrides {
+    /// The manifest's `structural-op` deltas (phase-4 include-list mutation).
+    deltas: Vec<StructuralDelta>,
+    /// The manifest's `slot-fill` deltas — the gate's orphan check walks them; they
+    /// carry no workflow id, so they thread unscoped (the orphan check is keyed on
+    /// whether the *composed* workflow's bodies declare each target's point).
+    slot_fills: Vec<SlotFillDelta>,
+    /// The cascade-resolved fill content the phase-5 pass splices, keyed
+    /// `(step_id, fill_id)`. A no-fill cascade is the empty map (every point → its
+    /// pack default), so the no-override path stays byte-identical.
+    fills: ResolvedFills,
+}
+
+impl ComposeOverrides {
+    /// A structural-only override surface (no slot-fills, empty resolved fills) —
+    /// the phase-4-only shape the `compose_core` unit tests drive (the slot-fill
+    /// apply path is exercised binary-driven in `tests/start_compose.rs`).
+    #[cfg(test)]
+    fn structural(deltas: Vec<StructuralDelta>) -> Self {
+        ComposeOverrides {
+            deltas,
+            slot_fills: Vec::new(),
+            fills: ResolvedFills::new(),
+        }
+    }
+}
+
 /// Resolve the cascade for a compose: seed the [`PackDefaultLayer`] scalar surface
-/// from `config/knobs`, load the project [`OverrideLayer`] + its `structural-op`
-/// deltas from `<project_config>/manifest.yaml`, and resolve — returning the
-/// [`cascade::Resolved`] (phase-2 file owners + phase-3 scalars) paired with the
-/// phase-4 deltas the compose applies. The one cascade build both front doors
-/// share (`overrides.md` → Resolution algorithm).
+/// from `config/knobs`, load the project [`OverrideLayer`] + its `structural-op` /
+/// `slot-fill` deltas from `<project_config>/manifest.yaml`, and resolve — returning
+/// the [`cascade::Resolved`] (phase-2 file owners + phase-3 scalars) paired with the
+/// [`ComposeOverrides`] the compose applies at phases 4–5. The one cascade build both
+/// front doors share (`overrides.md` → Resolution algorithm).
 fn resolve_cascade(
     pack: &dyn PackSource,
     project_config: &Path,
-) -> Result<(cascade::Resolved, Vec<StructuralDelta>)> {
+) -> Result<(cascade::Resolved, ComposeOverrides)> {
     let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
     let pack_default = PackDefaultLayer::new(
@@ -398,9 +455,49 @@ fn resolve_cascade(
         knobs.base_scalars(),
         Vec::new(),
     );
-    let (project, deltas) = load_project_layer(project_config)?;
+    let (project, deltas, slot_fills) = load_project_layer(project_config)?;
+    let fills = load_fills(project_config, &slot_fills)?;
     let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
-    Ok((resolved, deltas))
+    Ok((
+        resolved,
+        ComposeOverrides {
+            deltas,
+            slot_fills,
+            fills,
+        },
+    ))
+}
+
+/// Load each `slot-fill` delta's native content file into the cascade-resolved
+/// [`ResolvedFills`] map: for every delta, read `<project_config>/<content>` (its
+/// `content_id` is the `fills/<id>.md` basename) and key the body by the target's
+/// `(step_id, fill_id)` — the phase-5 input the pass splices (`overrides.md` →
+/// Resolution algorithm phase 5; `storage.md` → Config layout, `fills/<id>.md`).
+///
+/// The project is the only override layer in M4, so a later layer's body never wins
+/// here; when the team layer lands (M5), the same key would be overwritten in
+/// precedence order (project last). A missing or unreadable fill file is a clear,
+/// path-bearing error — the manifest references a native file that must exist.
+fn load_fills(project_config: &Path, slot_fills: &[SlotFillDelta]) -> Result<ResolvedFills> {
+    let mut fills = ResolvedFills::new();
+    for delta in slot_fills {
+        let path = project_config
+            .join("fills")
+            .join(format!("{}.md", delta.content_id));
+        let body = std::fs::read_to_string(&path).with_context(|| {
+            format!(
+                "slot-fill on `step:{}#{}` references {}, which is unreadable",
+                delta.target.step_id,
+                delta.target.fill_id,
+                path.display(),
+            )
+        })?;
+        fills.insert(
+            (delta.target.step_id.clone(), delta.target.fill_id.clone()),
+            body,
+        );
+    }
+    Ok(fills)
 }
 
 /// Build the selectable-workflow catalog from `pack`: every workflow the pack
@@ -678,6 +775,35 @@ impl StepSource for PackStepSource<'_> {
     }
 }
 
+/// A phase-5 [`StepSource`] decorator: it fetches each step from `inner` (the
+/// layer-aware cascade source) and applies the cascade's slot-fill content to the
+/// body **before** returning it ([`compose::apply_slot_fills`]) — so include
+/// expansion (phase 7) sees the filled body, and the filled content's own
+/// `{{include:}}` / `{{cli.…}}` / `{{@…}}` resolve in the later phases as if the
+/// pack had written them inline (`overrides.md` → Resolution algorithm phase 5; The
+/// `{{fill:}}` placeholder).
+///
+/// `apply_slot_fills` is keyed `(step_id, fill_id)`, so applying it per fetched step
+/// is exactly the right granularity. A no-fill cascade (`fills` empty) is the
+/// identity: every `{{fill:}}` point resolves to its pack default (empty in M4), so
+/// the body passes through byte-for-byte and the no-override path stays byte-
+/// identical. Phase 5 does **not** re-run; a `{{fill:}}` nested in applied content
+/// survives, already blocked by the `fill-survivor` gate check above.
+struct FillStepSource<'a> {
+    inner: &'a dyn StepSource,
+    fills: &'a ResolvedFills,
+}
+
+impl StepSource for FillStepSource<'_> {
+    fn step(&self, id: &str) -> Option<StepDef> {
+        let def = self.inner.step(id)?;
+        // The pass has no failure of its own in M4 (orphan/survivor is the gate's
+        // job, already run); on the unreachable `Err` the unfilled body is kept.
+        let body = apply_slot_fills(id, &def.body, self.fills).unwrap_or(def.body);
+        Some(StepDef { id: def.id, body })
+    }
+}
+
 /// A layer-aware [`StepSource`]: it consults the resolved cascade's phase-2 by-id
 /// shadowing surface ([`cascade::Resolved::file_owner`]) to read each step from the
 /// **highest-precedence layer that owns the id** — a project
@@ -798,7 +924,7 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
 
 /// Load the project cascade layer from `<project_config>/manifest.yaml` plus the
 /// project's native `steps/` dir, returning the [`OverrideLayer`] paired with the
-/// manifest's phase-4 `structural-op` deltas.
+/// manifest's phase-4 `structural-op` deltas and phase-5 `slot-fill` deltas.
 ///
 /// The layer carries three surfaces:
 /// - **`scalar:`** — each entry becomes one [`OverrideLayer::scalar_set`], recorded
@@ -809,10 +935,12 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
 ///   `Project` for an id the project ships (phase-2 by-id shadowing). A native step
 ///   file shadows the pack step regardless of any delta (the `steps/` dir *is* the
 ///   project's step layer).
-/// - **`deltas:`** — the `structural-op` deltas (`insert-step` / `replace-step` /
-///   `remove-step`), parsed into [`StructuralDelta`]s for the phase-4 pass; returned
-///   separately because they mutate a workflow's include list at compose, not the
-///   resolved scalar/file surface.
+/// - **`deltas:`** — one entry per delta, split by `kind:`: the `structural-op`
+///   kinds (`insert-step` / `replace-step` / `remove-step`) parse into
+///   [`StructuralDelta`]s for the phase-4 pass; a `slot-fill` kind parses into a
+///   [`SlotFillDelta`] for the phase-5 fill pass + the orphan check. Both ride the
+///   one `deltas:` list (`storage.md` → Config layout) and are returned separately
+///   because they mutate different surfaces at different phases.
 ///
 /// A **missing** manifest file (the dir may still hold `steps/` shadows), or a
 /// present manifest with a **missing or blank** `scalar:` / `deltas:` block, yields
@@ -824,7 +952,7 @@ fn pack_id_from_config(pack: &dyn PackSource) -> Result<String> {
 /// write are adjudicated by the one path.
 pub(crate) fn load_project_layer(
     project_config: &Path,
-) -> Result<(OverrideLayer, Vec<StructuralDelta>)> {
+) -> Result<(OverrideLayer, Vec<StructuralDelta>, Vec<SlotFillDelta>)> {
     let manifest = project_config.join("manifest.yaml");
     // Every native `steps/<id>.yaml` basename shadows the pack step by id (phase 2),
     // independent of the manifest — the `steps/` dir is the project's step layer.
@@ -842,7 +970,7 @@ pub(crate) fn load_project_layer(
         Ok(text) => text,
         // No manifest file → no scalar/delta override (the `steps/` shadows still apply).
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Ok((with_files(OverrideLayer::empty()), Vec::new()));
+            return Ok((with_files(OverrideLayer::empty()), Vec::new(), Vec::new()));
         }
         Err(e) => {
             return Err(e).with_context(|| format!("could not read {}", manifest.display()));
@@ -872,13 +1000,14 @@ pub(crate) fn load_project_layer(
         }
     }
 
-    // The `deltas:` block — the phase-4 `structural-op` list (blank/absent → none).
-    let deltas = match doc.get("deltas") {
-        None | Some(serde_yaml_ng::Value::Null) => Vec::new(),
-        Some(seq) => parse_structural_deltas(seq, &manifest)?,
+    // The `deltas:` block — one list carrying both the phase-4 `structural-op` and
+    // the phase-5 `slot-fill` kinds (blank/absent → none of either).
+    let (deltas, slot_fills) = match doc.get("deltas") {
+        None | Some(serde_yaml_ng::Value::Null) => (Vec::new(), Vec::new()),
+        Some(seq) => parse_deltas(seq, &manifest)?,
     };
 
-    Ok((with_files(layer), deltas))
+    Ok((with_files(layer), deltas, slot_fills))
 }
 
 /// List the native step ids the project layer ships — every `<project_config>/
@@ -900,35 +1029,45 @@ pub(crate) fn project_step_ids(project_config: &Path) -> Vec<String> {
     ids
 }
 
-/// Parse the manifest's `deltas:` sequence into [`StructuralDelta`]s — the phase-4
-/// `structural-op` list (`overrides.md` → Delta representation / Delta targets).
-/// Each entry carries a `kind` (`insert-step` / `replace-step` / `remove-step`), a
-/// `target` (`workflow:<id>#<step>` or `workflow:<id>` + `after:`/`before:`), and —
-/// for insert/replace — a `with:` step reference (`step:<id>`, the native step
-/// basename). The definition-target grammar + its hostile-input rejection live in
-/// [`StructuralTarget::parse`]; a malformed entry surfaces as its located finding.
-fn parse_structural_deltas(
+/// Parse the manifest's `deltas:` sequence, **partitioned by `kind:`** into the
+/// phase-4 `structural-op` [`StructuralDelta`]s and the phase-5 `slot-fill`
+/// [`SlotFillDelta`]s (`overrides.md` → Delta representation / Delta targets;
+/// `storage.md` → Config layout: one `deltas:` list, every kind). A `structural-op`
+/// entry carries a `kind` (`insert-step` / `replace-step` / `remove-step`), a
+/// `target`, and — for insert/replace — a `with:` step reference; a `slot-fill`
+/// entry carries `kind: slot-fill`, a `target: step:<id>#<fill-id>`, and a
+/// `content: fills/<id>.md`. A malformed entry surfaces as its located finding.
+fn parse_deltas(
     seq: &serde_yaml_ng::Value,
     manifest: &Path,
-) -> Result<Vec<StructuralDelta>> {
-    let items = seq.as_sequence().with_context(|| {
-        format!(
-            "{}: `deltas:` must be a list of structural ops",
-            manifest.display()
-        )
-    })?;
-    let mut deltas = Vec::with_capacity(items.len());
+) -> Result<(Vec<StructuralDelta>, Vec<SlotFillDelta>)> {
+    let items = seq
+        .as_sequence()
+        .with_context(|| format!("{}: `deltas:` must be a list of deltas", manifest.display()))?;
+    let mut structural = Vec::new();
+    let mut slot_fills = Vec::new();
     for item in items {
-        deltas.push(parse_one_delta(item, manifest)?);
+        match parse_one_delta(item, manifest)? {
+            ParsedDelta::Structural(delta) => structural.push(delta),
+            ParsedDelta::SlotFill(delta) => slot_fills.push(delta),
+        }
     }
-    Ok(deltas)
+    Ok((structural, slot_fills))
 }
 
-/// Parse one `deltas:` entry into a [`StructuralDelta`]. A `with:`/`target:` value
-/// may carry a `step:` prefix (the manifest spelling — flow 3a's
-/// `with: step:project-implement`); the bare step id is what the include list
-/// holds. A `target`'s `after:`/`before:` anchor is read from sibling keys.
-fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<StructuralDelta> {
+/// One parsed `deltas:` entry, partitioned by kind — a phase-4 structural-op or a
+/// phase-5 slot-fill (`overrides.md` → The ladder: distinct kinds, distinct phases).
+enum ParsedDelta {
+    Structural(StructuralDelta),
+    SlotFill(SlotFillDelta),
+}
+
+/// Parse one `deltas:` entry into a [`ParsedDelta`], branching on `kind:`. A
+/// `with:`/`target:` value may carry a `step:` prefix (the manifest spelling —
+/// flow 3a's `with: step:project-implement`); the bare step id is what the include
+/// list holds. A `target`'s `after:`/`before:` anchor is read from sibling keys. A
+/// `slot-fill` entry's `content: fills/<id>.md` yields the native file's basename id.
+fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<ParsedDelta> {
     let at = |key: &str| item.get(key).and_then(serde_yaml_ng::Value::as_str);
     let kind = at("kind")
         .with_context(|| format!("{}: a `deltas:` entry needs a `kind`", manifest.display()))?;
@@ -939,11 +1078,14 @@ fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<Struc
         "replace-step" => {
             let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
             let step = with_step(at("with"), kind, manifest)?;
-            Ok(StructuralDelta::Replace { target, step })
+            Ok(ParsedDelta::Structural(StructuralDelta::Replace {
+                target,
+                step,
+            }))
         }
         "remove-step" => {
             let target = StructuralTarget::parse(target_str, None).map_err(finding_to_err)?;
-            Ok(StructuralDelta::Remove { target })
+            Ok(ParsedDelta::Structural(StructuralDelta::Remove { target }))
         }
         "insert-step" => {
             let anchor = match (at("after"), at("before")) {
@@ -961,13 +1103,45 @@ fn parse_one_delta(item: &serde_yaml_ng::Value, manifest: &Path) -> Result<Struc
             let target =
                 StructuralTarget::parse(target_str, Some(anchor)).map_err(finding_to_err)?;
             let step = with_step(at("with"), kind, manifest)?;
-            Ok(StructuralDelta::Insert { target, step })
+            Ok(ParsedDelta::Structural(StructuralDelta::Insert {
+                target,
+                step,
+            }))
+        }
+        "slot-fill" => {
+            let target = SlotFillTarget::parse(target_str).map_err(finding_to_err)?;
+            let content_id = content_id(at("content"), manifest)?;
+            Ok(ParsedDelta::SlotFill(SlotFillDelta { target, content_id }))
         }
         other => bail!(
-            "{}: unknown structural-op kind `{other}` (expected insert-step / replace-step / remove-step)",
+            "{}: unknown delta kind `{other}` (expected insert-step / replace-step / remove-step / slot-fill)",
             manifest.display()
         ),
     }
+}
+
+/// The native fill file's basename id from a `slot-fill`'s `content:` value
+/// (`content: fills/extra-guidance.md` → `extra-guidance`), the same
+/// "id = filename basename" rule the `steps/` dir uses (`storage.md` → Config
+/// layout, `fills/<id>.md`). A missing `content:` is a clear error.
+fn content_id(raw: Option<&str>, manifest: &Path) -> Result<String> {
+    let raw = raw.with_context(|| {
+        format!(
+            "{}: a `slot-fill` needs a `content:` file reference",
+            manifest.display()
+        )
+    })?;
+    let basename = Path::new(raw)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .with_context(|| {
+            format!(
+                "{}: a `slot-fill` `content:` must name a `fills/<id>.md` file; got `{raw}`",
+                manifest.display()
+            )
+        })?;
+    Ok(basename.to_owned())
 }
 
 /// The bare step id from a `with:` reference, stripping the manifest's optional
@@ -1268,8 +1442,15 @@ mod tests {
         // no-override step source + empty phase-4 deltas read the fixture pack
         // unchanged (the live `CascadeStepSource` path is the binary-driven tests').
         let source = PackStepSource { pack: &pack };
-        let composed = compose_core(repo.path(), "anything", &pack, "router", &source, &[])
-            .expect("no-task compose");
+        let composed = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "router",
+            &source,
+            &ComposeOverrides::structural(Vec::new()),
+        )
+        .expect("no-task compose");
 
         // (a) The no-task arm mints nothing: no working area is opened.
         assert!(
@@ -1363,8 +1544,15 @@ mod tests {
             ),
         ];
 
-        let err = compose_core(repo.path(), "anything", &pack, "flow", &source, &deltas)
-            .expect_err("the insert's anchor was removed by the earlier delta");
+        let err = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "flow",
+            &source,
+            &ComposeOverrides::structural(deltas),
+        )
+        .expect_err("the insert's anchor was removed by the earlier delta");
 
         let msg = err.to_string();
         assert!(
@@ -1413,8 +1601,15 @@ mod tests {
         let source = PackStepSource { pack: &pack };
         let deltas = vec![replace_delta("workflow:flow#implement", "looping")];
 
-        let err = compose_core(repo.path(), "anything", &pack, "flow", &source, &deltas)
-            .expect_err("the delta introduces an include cycle");
+        let err = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "flow",
+            &source,
+            &ComposeOverrides::structural(deltas),
+        )
+        .expect_err("the delta introduces an include cycle");
 
         assert!(
             err.to_string().contains("include cycle"),
@@ -1461,8 +1656,15 @@ mod tests {
             "project-implement",
         )];
 
-        let composed = compose_core(repo.path(), "anything", &pack, "flow", &source, &deltas)
-            .expect("flow 3a's different-id re-include composes clean");
+        let composed = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "flow",
+            &source,
+            &ComposeOverrides::structural(deltas),
+        )
+        .expect("flow 3a's different-id re-include composes clean");
 
         assert!(
             composed.text.contains("pack implement body")
@@ -1527,7 +1729,7 @@ mod tests {
             &pack,
             "single-task",
             &source,
-            &[],
+            &ComposeOverrides::structural(Vec::new()),
         )
         .expect("Form-D compose of a creates-task workflow");
 
@@ -1563,7 +1765,7 @@ mod tests {
             &pack,
             "does-not-exist",
             &source,
-            &[],
+            &ComposeOverrides::structural(Vec::new()),
         )
         .expect_err("an unknown --workflow id must reject");
 
@@ -1757,7 +1959,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1779,7 +1981,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1798,7 +2000,7 @@ mod tests {
         let cfg = TempDir::new("manifest-blank-scalar");
         fs::write(cfg.path().join("manifest.yaml"), "scalar:\n").expect("write manifest");
 
-        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
 
@@ -1817,7 +2019,7 @@ mod tests {
         let cfg = TempDir::new("manifest-missing");
         // No manifest.yaml written.
 
-        let (layer, _deltas) =
+        let (layer, _deltas, _slot_fills) =
             load_project_layer(cfg.path()).expect("missing manifest is not an error");
         let resolved =
             engine::cascade::resolve(&base_layer(), None, Some(&layer)).expect("resolves");
@@ -1850,7 +2052,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
         assert_eq!(resolved.scalar("default-workflow"), Some("router"));
@@ -1885,7 +2087,7 @@ mod tests {
 
         // The live front-door read: resolve the cascade, then read the key through
         // `scalar_required` (the exact two steps `compose_in_repo` runs).
-        let (resolved, _deltas) = resolve_cascade(&pack, cfg.path()).expect("cascade resolves");
+        let (resolved, _overrides) = resolve_cascade(&pack, cfg.path()).expect("cascade resolves");
         let err = resolved
             .scalar_required(DEFAULT_WORKFLOW_KEY)
             .map(str::to_owned)
@@ -2014,7 +2216,7 @@ mod tests {
         )
         .expect("write manifest");
 
-        let (layer, _deltas) = load_project_layer(cfg.path()).expect("manifest loads");
+        let (layer, _deltas, _slot_fills) = load_project_layer(cfg.path()).expect("manifest loads");
         let resolved = engine::cascade::resolve(&base, None, Some(&layer)).expect("resolves");
 
         assert_eq!(

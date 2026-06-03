@@ -317,6 +317,116 @@ fn no_structural_delta_single_task_compose_is_byte_identical_to_the_golden() {
 }
 
 #[test]
+fn slot_fill_content_composes_into_the_implement_body() {
+    // The T4 done-criterion (worked-examples.md → 3c): a hand-authored project
+    // manifest with a `slot-fill step:implement#extra-guidance` delta + a native
+    // `.jigc/config/fills/extra-guidance.md` makes `jigc start "<intent>"` compose
+    // `single-task` with the fill content spliced into `implement`'s emitted body —
+    // proven on the emitted bytes through the binary (phase 5 wired live).
+    //
+    // The `{{fill: extra-guidance}}` point lands in the pack `implement` step at T6;
+    // until then this test declares it via a native project `steps/implement.yaml`
+    // shadow (the phase-2 mechanism), so the slot-fill targets a point the resolved
+    // body declares — exercising the full apply path without pre-empting T6's pack
+    // change.
+    let repo = TempDir::new("slot-fill");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let config = repo.path().join(".jigc").join("config");
+    // Flip to single-task *and* record the slot-fill delta in the one manifest.
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n\
+         deltas:\n\
+         \x20 - kind: slot-fill\n\
+         \x20   target: step:implement#extra-guidance\n\
+         \x20   content: fills/extra-guidance.md\n",
+    )
+    .expect("write project manifest with a slot-fill delta");
+    // The project step shadow of `implement` declaring the `{{fill:}}` extension
+    // point the slot-fill targets (T6 moves this point into the pack step).
+    fs::create_dir_all(config.join("steps")).expect("mk steps/");
+    fs::write(
+        config.join("steps").join("implement.yaml"),
+        "Implement the change directly in the working tree.\n\n\
+         {{ fill: extra-guidance }}\n",
+    )
+    .expect("write the native implement shadow declaring the fill point");
+    // The native fill content (basename = fill-id) the phase-5 pass splices in.
+    fs::create_dir_all(config.join("fills")).expect("mk fills/");
+    fs::write(
+        config.join("fills").join("extra-guidance.md"),
+        "Before you finalize, run the project lint probe and fix any findings.\n",
+    )
+    .expect("write the native fill content");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "the slot-fill compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The fill content composed into `implement`'s emitted body, in place of the
+    // `{{fill: extra-guidance}}` point — proven on the emitted bytes.
+    assert!(
+        stdout.contains("Before you finalize, run the project lint probe and fix any findings."),
+        "the slot-fill content must compose into the implement body; got:\n{stdout}",
+    );
+    // The `{{fill:}}` point itself is gone — phase 5 replaced it, never emitted raw.
+    assert!(
+        !stdout.contains("{{ fill: extra-guidance }}") && !stdout.contains("fill: extra-guidance"),
+        "the raw `{{fill:}}` point must not survive into the composed view; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn orphaned_slot_fill_blocks_compose_with_its_route() {
+    // The T4 wiring also runs the M4 `workflow-refs` fill checks live in the gate: a
+    // `slot-fill` targeting a `<fill-id>` no resolved step body declares is a blocking
+    // `slot-fill-orphan` finding, surfaced non-zero with its repair route — proven
+    // through the binary (no project step declares `extra-guidance`, so the point is
+    // orphaned).
+    let repo = TempDir::new("slot-fill-orphan");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let config = repo.path().join(".jigc").join("config");
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n\
+         deltas:\n\
+         \x20 - kind: slot-fill\n\
+         \x20   target: step:implement#extra-guidance\n\
+         \x20   content: fills/extra-guidance.md\n",
+    )
+    .expect("write project manifest with an orphaned slot-fill delta");
+    fs::create_dir_all(config.join("fills")).expect("mk fills/");
+    fs::write(
+        config.join("fills").join("extra-guidance.md"),
+        "Some guidance.\n",
+    )
+    .expect("write the native fill content");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+
+    assert!(
+        !out.status.success(),
+        "an orphaned slot-fill must exit non-zero; got {:?}",
+        out.status,
+    );
+    assert!(
+        stderr.contains("extra-guidance") && stderr.contains("route:"),
+        "the orphan block must name the fill point and carry a route; got:\n{stderr}",
+    );
+}
+
+#[test]
 fn replace_step_delta_flips_the_composed_include_list() {
     // The T4 done-criterion (worked-examples.md → 3a): a hand-authored project
     // manifest with a `replace-step workflow:single-task#implement → step:project-
