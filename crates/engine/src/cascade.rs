@@ -408,6 +408,34 @@ pub struct SlotFillDelta {
     pub content_id: String,
 }
 
+/// One `tracked-fork` delta: the override ladder's rung 4 (`design/overrides.md`
+/// → The ladder) — the last resort that copies a unit's body into a native file
+/// at the overriding layer, recording the **pinned basis** that lets a (M5)
+/// 3-way merge detect upstream conflicts.
+///
+/// The `target` reuses [`StructuralTarget`] with an [`Anchor::At`] step id —
+/// `workflow:single-task#implement` names *which* unit the fork copied (the
+/// native step file `implement`, shadowed whole at phase 2), not the workflow
+/// itself (`design/overrides.md` → `tracked-fork` hash basis). At compose time a
+/// fork is just a shadowed file, so this type is **not consumed by compose**.
+///
+/// `base_version` + `base_hash` are the recorded ancestor: the pack version the
+/// fork was taken from and the **blake3** hash of the resolved native step/section
+/// file bytes (the post-shadow, pre-expansion body — `decisions-pending.md` →
+/// Hashing). M4 *records* this basis; only the (M5) reconciliation reads it, where
+/// the stateless compare `v2 hash ≠ base_hash` flags upstream conflicts. Pure
+/// data; no I/O, no cascade consulted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackedForkDelta {
+    /// The `workflow:<id>#<step-id>` unit this fork copied ([`Anchor::At`]).
+    pub target: StructuralTarget,
+    /// The pack version the fork was taken from — the recorded ancestor version.
+    pub base_version: String,
+    /// The blake3 hash of the resolved unit bytes at fork time — the pinned
+    /// basis the (M5) stateless compare reads.
+    pub base_hash: String,
+}
+
 /// Identifies one cascade layer by precedence. `Project` is most-specific and
 /// wins; `PackDefault` is the base (`design/overrides.md` → The cascade).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -834,6 +862,45 @@ mod tests {
                 "hostile input is located, for {target:?}",
             );
         }
+    }
+
+    /// A [`TrackedForkDelta`] pairs a parsed `workflow:<id>#<step-id>` target
+    /// with the recorded basis (`base-version` + `base-hash`); all fields
+    /// round-trip in memory (pure data, no I/O).
+    #[test]
+    fn tracked_fork_delta_round_trips_target_and_basis() {
+        let delta = TrackedForkDelta {
+            target: StructuralTarget::parse("workflow:single-task#implement", None)
+                .expect("well-formed #-target parses"),
+            base_version: "v1".to_owned(),
+            base_hash: "a3f9deadbeef".to_owned(),
+        };
+
+        assert_eq!(
+            delta,
+            TrackedForkDelta {
+                target: StructuralTarget {
+                    workflow_id: "single-task".to_owned(),
+                    anchor: Anchor::At("implement".to_owned()),
+                },
+                base_version: "v1".to_owned(),
+                base_hash: "a3f9deadbeef".to_owned(),
+            },
+        );
+    }
+
+    /// The forked-unit step id reads back off the [`Anchor::At`] target — the
+    /// `#<step-id>` form names which native step file the fork copied.
+    #[test]
+    fn tracked_fork_step_id_reads_off_anchor_at_target() {
+        let delta = TrackedForkDelta {
+            target: StructuralTarget::parse("workflow:single-task#implement", None)
+                .expect("well-formed #-target parses"),
+            base_version: "v1".to_owned(),
+            base_hash: "a3f9deadbeef".to_owned(),
+        };
+
+        assert_eq!(delta.target.anchor, Anchor::At("implement".to_owned()));
     }
 
     fn pack_default() -> PackDefaultLayer {
