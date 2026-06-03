@@ -1114,15 +1114,23 @@ fn at_id(anchor: &Anchor) -> &str {
 /// The index of `anchor_id` in the current include list, or an **orphaned**
 /// `workflow-refs.structural-anchor-resolves` blocking [`Finding`] when the
 /// anchor / target id is absent (`overrides.md` → Within-layer manifest order).
+///
+/// The finding carries its repair **route**: an orphaned structural delta routes
+/// the human to remove or re-target it (`validation.md` → route: `run-command`;
+/// `overrides.md` → "`orphaned` → a `run-command` route to remove or re-target the
+/// delta"). The block is located *and* routed — the settled block envelope keeps
+/// both (`finding.rs`).
 fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
-    ids.iter().position(|id| id == anchor_id).ok_or_else(|| {
-        Finding::blocking(
-            "workflow-refs.structural-anchor-resolves",
-            format!(
-                "structural-op anchor `{anchor_id}` resolves to no entry in the include list (orphaned)"
-            ),
-            Location::at(1, 1),
-        )
+    ids.iter().position(|id| id == anchor_id).ok_or_else(|| Finding {
+        severity: crate::finding::Severity::Blocking,
+        code: "workflow-refs.structural-anchor-resolves".to_owned(),
+        message: format!(
+            "structural-op anchor `{anchor_id}` resolves to no entry in the include list (orphaned)"
+        ),
+        location: Some(Location::at(1, 1)),
+        route: Some(format!(
+            "remove or re-target the structural-op anchored at `{anchor_id}` with `jigc config` (the anchor it names is not in the include list)"
+        )),
     })
 }
 
@@ -1346,15 +1354,51 @@ pub fn workflow_refs(
     catalog: &CommandCatalog,
     ctx: &crate::data_value::ComposeContext,
 ) -> Vec<Finding> {
+    workflow_refs_with_deltas(workflow_bytes, &[], source, catalog, ctx)
+}
+
+/// The `workflow_refs` gate over a workflow's **post-phase-4** include list —
+/// [`workflow_refs`] with the manifest's `structural-op` `deltas` applied before
+/// the checks run, so a delta-introduced orphan / cycle / dangling surfaces at
+/// resolution time through the same machinery (`overrides.md` → Resolution
+/// algorithm phases 4–7; Write-time vs resolve-time split).
+///
+/// `deltas` are the deltas already **scoped to this workflow id** (the frontend
+/// filters by `target().workflow_id` before calling — [`apply_structural_deltas`]
+/// applies every delta it is fed). Phase 4 runs first: an orphaned anchor — a
+/// delta whose anchor a same-manifest delta removed — short-circuits to that one
+/// located [`Finding`] (`structural-anchor-resolves`, carrying its repair route),
+/// with no half-built tree to walk. Otherwise the post-phase-4 id list flows into
+/// [`expand_includes`]'s `include-resolves` / `include-cycle-absent` checks, so a
+/// re-include of a *different* id is clean (flow 3a) while a re-include that loops
+/// back is the located cycle finding — never a panic.
+///
+/// A pure function of its inputs (the determinism boundary); the empty-`deltas`
+/// call is [`workflow_refs`]'s exact prior behavior (the no-override path stays
+/// byte-identical).
+pub fn workflow_refs_with_deltas(
+    workflow_bytes: &[u8],
+    deltas: &[StructuralDelta],
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+    ctx: &crate::data_value::ComposeContext,
+) -> Vec<Finding> {
     // body-include-only (and malformed/missing front-matter): a definition that
     // does not load has no tree to walk.
-    let def = match load_workflow_def(workflow_bytes) {
+    let mut def = match load_workflow_def(workflow_bytes) {
         Ok(def) => def,
         Err(finding) => return vec![finding],
     };
 
+    // Phase 4 — apply the structural deltas to the include id list before
+    // expansion. An orphaned anchor surfaces here as that one located finding.
+    def.includes = match apply_structural_deltas(&def.includes, deltas) {
+        Ok(includes) => includes,
+        Err(finding) => return vec![finding],
+    };
+
     // include-resolves / include-cycle-absent: a tree that does not expand cannot
-    // be emitted.
+    // be emitted. Run over the **post-phase-4** include list.
     let composition = match expand_includes(&def, source) {
         Ok(composition) => composition,
         Err(finding) => return vec![finding],
@@ -3176,6 +3220,137 @@ reference — make your consequences explain what changes:
                 "every workflow-refs check is intrinsic-blocking"
             );
         }
+    }
+
+    // --- T5: resolution-time cycle/orphan over the post-phase-4 include list ---
+    //
+    // The phase-4 structural deltas mutate the include id list *before* expansion;
+    // the gate must validate the **post-phase-4** list so a delta-introduced
+    // orphan / cycle / dangling surfaces at resolution time through the same
+    // `workflow-refs` machinery — all located findings, never a panic
+    // (`overrides.md` → Write-time vs resolve-time split; Resolution algorithm
+    // phases 6–7).
+
+    /// (a) An orphaned-anchor delta — `remove-step #locate` then
+    /// `insert-step --after locate` in the **same manifest** — surfaces a blocking
+    /// `workflow-refs.structural-anchor-resolves` finding **with its route** (the
+    /// `run-command` direction to remove or re-target the delta — `validation.md`
+    /// → route; `overrides.md` → Within-layer manifest order). Located, never a
+    /// panic.
+    #[test]
+    fn delta_orphaned_anchor_surfaces_located_finding_with_route() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let deltas = vec![
+            remove("workflow:single-task#locate"),
+            insert(
+                "workflow:single-task",
+                AnchorSpec::After("locate".to_owned()),
+                "team-lint",
+            ),
+        ];
+
+        let findings = workflow_refs_with_deltas(
+            SINGLE_TASK.as_bytes(),
+            &deltas,
+            &single_task_source(),
+            &catalog,
+            &ctx,
+        );
+
+        assert_eq!(findings.len(), 1, "exactly the orphaned-anchor finding");
+        let f = &findings[0];
+        assert_eq!(f.code, "workflow-refs.structural-anchor-resolves");
+        assert_eq!(f.severity, crate::finding::Severity::Blocking);
+        assert_eq!(f.location, Some(Location::at(1, 1)), "located, not a panic");
+        assert!(
+            f.route.is_some(),
+            "an orphaned delta carries its repair route, got {:?}",
+            f.route
+        );
+        let route = f.route.as_deref().unwrap();
+        assert!(
+            route.contains("jigc config"),
+            "the route directs the human to remove or re-target the delta, got {route:?}"
+        );
+    }
+
+    /// (b) A structural delta that introduces an **include cycle** is caught at
+    /// phase 6 through the same `include-cycle-absent` machinery: a `replace-step`
+    /// swaps `implement` for a project step whose body re-includes a step that
+    /// loops back, so the post-phase-4 list expands into a cycle. Located, never a
+    /// panic.
+    #[test]
+    fn delta_introducing_a_cycle_is_caught_at_phase_6() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        // The project step `looping-implement` re-includes `back`, which re-includes
+        // `looping-implement` — a cycle only the post-phase-4 list reaches.
+        let src = MapSource::new(&[
+            ("locate", STEP_LOCATE),
+            (
+                "looping-implement",
+                "house rule\n{{ include: step:back }}\n",
+            ),
+            ("back", "{{ include: step:looping-implement }}\n"),
+            ("superseded-context", STEP_SUPERSEDED),
+            (
+                "finalize",
+                include_str!("../../cli/pack/steps/finalize.yaml"),
+            ),
+        ]);
+        let deltas = vec![replace(
+            "workflow:single-task#implement",
+            "looping-implement",
+        )];
+
+        let findings =
+            workflow_refs_with_deltas(SINGLE_TASK.as_bytes(), &deltas, &src, &catalog, &ctx);
+
+        assert_eq!(findings.len(), 1, "the delta-introduced cycle, located");
+        assert_eq!(findings[0].code, "workflow-refs.include-cycle-absent");
+        assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
+        assert_eq!(findings[0].location, Some(Location::at(1, 1)));
+    }
+
+    /// (c) Flow 3a's clean re-include: `replace-step #implement → project-implement`
+    /// where `project-implement` re-includes `implement` (a **different** id). The
+    /// post-phase-4 list expands cleanly — **no false cycle**, zero findings
+    /// (`worked-examples.md` → 3a; `overrides.md` → `replace` vs `tracked-fork`).
+    #[test]
+    fn flow_3a_re_include_is_clean_no_false_cycle() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        // `project-implement` re-includes the pack `implement` (a different id), per
+        // flow 3a — augmenting it, not forking. No cycle: implement does not loop back.
+        let src = MapSource::new(&[
+            ("locate", STEP_LOCATE),
+            (
+                "implement",
+                include_str!("../../cli/pack/steps/implement.yaml"),
+            ),
+            (
+                "project-implement",
+                "{{ include: step:implement }}\n\nRun the project lint probe before you finalize.\n",
+            ),
+            ("superseded-context", STEP_SUPERSEDED),
+            (
+                "finalize",
+                include_str!("../../cli/pack/steps/finalize.yaml"),
+            ),
+        ]);
+        let deltas = vec![replace(
+            "workflow:single-task#implement",
+            "project-implement",
+        )];
+
+        let findings =
+            workflow_refs_with_deltas(SINGLE_TASK.as_bytes(), &deltas, &src, &catalog, &ctx);
+
+        assert!(
+            findings.is_empty(),
+            "flow 3a's different-id re-include must be clean, got {findings:?}"
+        );
     }
 
     /// The `placeholder-resolves` check: an undeclared data-value root (a

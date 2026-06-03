@@ -290,13 +290,17 @@ fn compose_core(
 ) -> Result<ComposedWorkflow> {
     let workflow_bytes = read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
-    // Phase 4 — apply the manifest's `structural-op` deltas to the include id list,
-    // before include expansion. The deltas targeting *this* workflow id mutate its
-    // `includes`; a `replace-step` swaps a pack step id for a project-shadowed one,
+    // The manifest's `structural-op` deltas scoped to *this* workflow id — a
+    // manifest may carry deltas for several workflows; only these apply here.
+    let scoped = scoped_deltas(workflow_id, deltas);
+    // Phase 4 — apply the scoped deltas to the include id list, before include
+    // expansion. A `replace-step` swaps a pack step id for a project-shadowed one,
     // so the layer-aware source resolves the new id to the project body. An
-    // orphaned anchor surfaces here as a blocking finding (T5 widens the gate over
-    // the post-phase-4 list; T4 applies the pass + composes the result).
-    def.includes = apply_phase4(&def.includes, workflow_id, deltas)?;
+    // orphaned anchor (a delta whose anchor a same-manifest delta removed) surfaces
+    // here as a blocking, routed finding (`overrides.md` → Within-layer manifest
+    // order); the gate below re-runs the same pass to validate the post-phase-4
+    // list for delta-introduced cycles/dangles.
+    def.includes = apply_structural_deltas(&def.includes, &scoped).map_err(finding_to_err)?;
     let commands = load_catalog(pack)?;
     // The selectable-workflow list both arms feed to composition — the router's
     // `{{catalog}}` input, filtered to `creates-task: true` so it never lists
@@ -341,10 +345,14 @@ fn compose_core(
             store,
         }
     };
-    // Compose-time `workflow-refs` gate: validate every placeholder / include /
-    // command-ref / marker before any output reaches the agent. A blocking
-    // finding short-circuits.
-    let findings = compose::workflow_refs(&workflow_bytes, source, &commands, &ctx);
+    // Compose-time `workflow-refs` gate over the **post-phase-4** include list:
+    // validate every placeholder / include / command-ref / marker before any
+    // output reaches the agent, with the scoped structural deltas applied — so a
+    // delta-introduced cycle or dangling include surfaces here at resolution time
+    // through the same machinery (`overrides.md` → Resolution algorithm phases
+    // 4–7). A blocking finding short-circuits.
+    let findings =
+        compose::workflow_refs_with_deltas(&workflow_bytes, &scoped, source, &commands, &ctx);
     if let Some(finding) = findings
         .into_iter()
         .find(|f| f.severity == Severity::Blocking)
@@ -355,29 +363,21 @@ fn compose_core(
     compose::compose(&def, source, &commands, &ctx).map_err(finding_to_err)
 }
 
-/// Apply the phase-4 `structural-op` deltas that target `workflow_id` to its
-/// `includes` id list — the cli-side wrapper around the engine's pure
-/// [`apply_structural_deltas`] (`overrides.md` → Resolution algorithm phase 4).
-///
-/// A `structural-op` names its workflow in the target (`workflow:<id>#…`), so a
+/// The manifest's `structural-op` deltas scoped to `workflow_id` — a
+/// `structural-op` names its workflow in the target (`workflow:<id>#…`), so a
 /// manifest may carry deltas for several workflows; only those targeting the
-/// composed `workflow_id` apply here. A no-delta cascade returns the include list
-/// unchanged (the byte-identity guard). An orphaned anchor is the engine's
-/// blocking `workflow-refs.structural-anchor-resolves` finding.
-fn apply_phase4(
-    includes: &[String],
-    workflow_id: &str,
-    deltas: &[StructuralDelta],
-) -> Result<Vec<String>> {
-    let scoped: Vec<StructuralDelta> = deltas
+/// composed workflow apply at its phase 4 (`overrides.md` → Resolution algorithm
+/// phase 4 / Delta targets). The scoped set threads into **both** the phase-4
+/// `apply_structural_deltas` (the include list `compose` consumes) and the
+/// post-phase-4 `workflow_refs_with_deltas` gate, so the gate validates the exact
+/// list `compose` will expand. A no-delta cascade returns an empty set — the
+/// byte-identity guard (`apply_structural_deltas` over `[]` is the identity).
+fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Vec<StructuralDelta> {
+    deltas
         .iter()
         .filter(|d| d.target().workflow_id == workflow_id)
         .cloned()
-        .collect();
-    if scoped.is_empty() {
-        return Ok(includes.to_vec());
-    }
-    apply_structural_deltas(includes, &scoped).map_err(finding_to_err)
+        .collect()
 }
 
 /// Resolve the cascade for a compose: seed the [`PackDefaultLayer`] scalar surface
@@ -1294,6 +1294,180 @@ mod tests {
         assert!(
             !composed.text.contains("- router —"),
             "the router must not list itself (creates-task: false is filtered); got:\n{}",
+            composed.text,
+        );
+    }
+
+    /// Build an `insert` structural delta from a `workflow:<id>` + `after:`/`before:`
+    /// anchor + the inserted step id (the CLI-side mirror of the engine test helper).
+    fn insert_delta(workflow: &str, anchor: AnchorSpec, step: &str) -> StructuralDelta {
+        StructuralDelta::Insert {
+            target: StructuralTarget::parse(workflow, Some(anchor)).expect("valid target"),
+            step: step.to_owned(),
+        }
+    }
+
+    /// Build a `replace` structural delta from a `workflow:<id>#<step-id>` ref + the
+    /// replacement step id.
+    fn replace_delta(target: &str, step: &str) -> StructuralDelta {
+        StructuralDelta::Replace {
+            target: StructuralTarget::parse(target, None).expect("valid target"),
+            step: step.to_owned(),
+        }
+    }
+
+    /// Build a `remove` structural delta from a `workflow:<id>#<step-id>` ref.
+    fn remove_delta(target: &str) -> StructuralDelta {
+        StructuralDelta::Remove {
+            target: StructuralTarget::parse(target, None).expect("valid target"),
+        }
+    }
+
+    /// A `creates-task: false` `router`-style fixture pack over a two-step
+    /// `flow` workflow (`[locate, implement]`) — enough surface to apply a
+    /// structural delta to its include list and compose the result without a mint.
+    fn structural_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: flow\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "flow",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "locate body\n"),
+            (PackResourceKind::Steps, "implement", "implement body\n"),
+        ])
+    }
+
+    /// T5 wire-through (a): `compose_core` runs its `workflow-refs` gate over the
+    /// **post-phase-4** include list, so an orphaned-anchor delta — `remove #locate`
+    /// then `insert --after locate` in the same manifest — fails the compose with the
+    /// routed `structural-anchor-resolves` block (`overrides.md` → Within-layer
+    /// manifest order). The orphan surfaces on the real CLI path, never a panic.
+    #[test]
+    fn compose_core_orphaned_anchor_delta_fails_with_route() {
+        let repo = TempDir::new("t5-orphan");
+        let pack = structural_pack();
+        let source = PackStepSource { pack: &pack };
+        let deltas = vec![
+            remove_delta("workflow:flow#locate"),
+            insert_delta(
+                "workflow:flow",
+                AnchorSpec::After("locate".to_owned()),
+                "lint",
+            ),
+        ];
+
+        let err = compose_core(repo.path(), "anything", &pack, "flow", &source, &deltas)
+            .expect_err("the insert's anchor was removed by the earlier delta");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("orphaned") && msg.contains("locate"),
+            "the orphaned-anchor failure must name the cause + the anchor; got: {msg}",
+        );
+        assert!(
+            msg.contains("route:") && msg.contains("jigc config"),
+            "the orphan surfaces its repair route on the CLI path; got: {msg}",
+        );
+    }
+
+    /// T5 wire-through (b): a `replace-step` whose replacement step re-includes a
+    /// step that loops back introduces an include cycle the gate catches at phase 6
+    /// over the post-phase-4 list — the compose fails with `include-cycle-absent`,
+    /// not a panic (`overrides.md` → No silent cycle handling).
+    #[test]
+    fn compose_core_delta_introduced_cycle_fails_at_phase_6() {
+        let repo = TempDir::new("t5-cycle");
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: flow\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "flow",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "locate body\n"),
+            (PackResourceKind::Steps, "implement", "implement body\n"),
+            // The replacement loops: looping -> back -> looping.
+            (
+                PackResourceKind::Steps,
+                "looping",
+                "house rule\n{{ include: step:back }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "back",
+                "{{ include: step:looping }}\n",
+            ),
+        ]);
+        let source = PackStepSource { pack: &pack };
+        let deltas = vec![replace_delta("workflow:flow#implement", "looping")];
+
+        let err = compose_core(repo.path(), "anything", &pack, "flow", &source, &deltas)
+            .expect_err("the delta introduces an include cycle");
+
+        assert!(
+            err.to_string().contains("include cycle"),
+            "a delta-introduced cycle must fail the gate at phase 6; got: {err}",
+        );
+    }
+
+    /// T5 wire-through (c): flow 3a's clean re-include — `replace #implement →
+    /// project-implement` where `project-implement` re-includes the pack `implement`
+    /// (a **different** id) — composes cleanly with no false cycle, and the composed
+    /// view carries both the pack `implement` body and the house rule
+    /// (`worked-examples.md` → 3a). The deltas flow through the real CLI compose path.
+    #[test]
+    fn compose_core_flow_3a_re_include_composes_clean() {
+        let repo = TempDir::new("t5-3a");
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: flow\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "flow",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "locate body\n"),
+            (
+                PackResourceKind::Steps,
+                "implement",
+                "pack implement body\n",
+            ),
+            // The project step re-includes the pack `implement` (a different id).
+            (
+                PackResourceKind::Steps,
+                "project-implement",
+                "{{ include: step:implement }}\nhouse rule: run the lint probe\n",
+            ),
+        ]);
+        let source = PackStepSource { pack: &pack };
+        let deltas = vec![replace_delta(
+            "workflow:flow#implement",
+            "project-implement",
+        )];
+
+        let composed = compose_core(repo.path(), "anything", &pack, "flow", &source, &deltas)
+            .expect("flow 3a's different-id re-include composes clean");
+
+        assert!(
+            composed.text.contains("pack implement body")
+                && composed.text.contains("house rule: run the lint probe"),
+            "the re-include must pull the pack body in then the house rule; got:\n{}",
             composed.text,
         );
     }
