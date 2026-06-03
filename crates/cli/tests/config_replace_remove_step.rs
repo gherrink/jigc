@@ -220,21 +220,26 @@ fn replace_step_re_includes_pack_step_and_adds_house_rule_through_compose() {
     let house_at = stdout
         .find(house_rule)
         .unwrap_or_else(|| panic!("the project house rule must compose; got:\n{stdout}"));
+    // The intra-step order is the **in-place** expansion contract
+    // (`design/workflow-dialect.md` → Composition: "expanded recursively in place";
+    // `worked-examples.md` 3a phase-7): `project-implement`'s body is
+    // `{{ include: step:implement }}` then the house rule, so the re-included pack
+    // `implement` body composes **followed by** the house rule — never hoisted.
+    assert!(
+        implement_at < house_at,
+        "in-place expansion: the re-included pack `implement` body must precede the house rule; got:\n{stdout}",
+    );
     // The include-list order: locate before the replaced position's content, and
     // superseded-context after it — the list became
-    // `[locate, project-implement, superseded-context, finalize]`. (The intra-step
-    // ordering of the house rule vs the re-included pack body is the engine's
-    // pre-order flattening property, not T4's contract, so it is not asserted.)
+    // `[locate, project-implement, superseded-context, finalize]`.
     let locate_at = stdout
         .find("Reason about the change.")
         .expect("the locate step composes");
     let superseded_at = stdout
         .find(SUPERSEDED_MARKER)
         .expect("superseded-context still composes after the replace");
-    let replaced_first = implement_at.min(house_at);
-    let replaced_last = implement_at.max(house_at);
     assert!(
-        locate_at < replaced_first && replaced_last < superseded_at,
+        locate_at < implement_at && house_at < superseded_at,
         "the include order must be [locate, project-implement, superseded-context, ...]; got:\n{stdout}",
     );
 }

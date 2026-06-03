@@ -1019,18 +1019,33 @@ pub trait StepSource {
 /// One leaf of the flattened composition: a step's id and its body, placeholders
 /// **still unresolved** (phase 7 output, before phase 8 placeholder resolution).
 ///
-/// `body` is the step's verbatim prompt with its own nested `{{include: …}}`
-/// lines removed — those nested steps are flattened into their own
-/// [`ComposedStep`]s in pre-order immediately after this one (`overrides.md`
-/// phase 7: "recursively expand each `{{include: step:foo}}` … Result: a flat
-/// composition"). For a *plain* step (no nested includes — every MVP step), the
-/// body is the verbatim step body unchanged.
+/// A step whose body mixes prose with `{{include: …}}` lines expands **in place**
+/// (`workflow-dialect.md` → Composition: "expanded recursively in place";
+/// `worked-examples.md` 3a phase-7): the body splits at each include line into
+/// ordered segments — a prose run becomes one leaf under *this* step's id, and an
+/// include is replaced by the recursively-expanded child subtree at its position.
+/// So a `before / {{include}} / after` body yields three leaves —
+/// `[parent("before"), child…, parent("after")]` — preserving prose order around
+/// the splice. The first leaf of each included step is a step boundary; the
+/// continuation prose segments after an in-body include carry [`continues`] so the
+/// emit join concatenates them to the prior segment with no injected blank line,
+/// keeping the spliced body contiguous. For a *plain* step (no nested includes —
+/// every MVP step), the body is the verbatim step body unchanged in a single leaf.
+///
+/// [`continues`]: ComposedStep::continues
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ComposedStep {
     /// The frozen step id this leaf came from.
     pub id: String,
     /// The step's prompt body, nested include lines removed, placeholders unresolved.
     pub body: String,
+    /// `true` when this leaf is a *continuation* of the same on-disk step body
+    /// across an in-place include splice (a prose segment after a nested include,
+    /// or a deeper continuation) — the emit join concatenates it directly to the
+    /// prior leaf instead of inserting the inter-step blank line, so the spliced
+    /// body reads as one contiguous step. `false` for a step boundary (the first
+    /// leaf of an included step).
+    pub continues: bool,
 }
 
 /// The flat, ordered composition tree of a workflow: its step bodies in
@@ -1347,23 +1362,35 @@ pub fn expand_includes(def: &WorkflowDef, source: &dyn StepSource) -> Result<Com
     let mut steps = Vec::new();
     let mut on_path = Vec::new();
     for id in &def.includes {
-        expand_step(id, source, &mut steps, &mut on_path)?;
+        expand_step(id, source, &mut steps, &mut on_path, true)?;
     }
     Ok(Composition { steps })
 }
 
-/// Recursively expand one step id into `out`, pre-order, with cycle detection.
+/// Recursively expand one step id into `out`, **in place**, with cycle detection.
 ///
 /// `on_path` is the active include path (the DFS stack). If `id` is already on
-/// it, this is an include cycle. Otherwise the step resolves, its body's nested
-/// include lines are split out, the de-included body is emitted as this step's
-/// [`ComposedStep`], and each nested include is expanded in physical order
-/// immediately after — yielding a pre-order flattening.
+/// it, this is an include cycle. Otherwise the step resolves and its body is split
+/// into ordered [`BodySegment`]s at each `{{include:}}` line: a prose run is
+/// emitted as a [`ComposedStep`] leaf under *this* `id`, and an include is
+/// recursively expanded at its position — so the child subtree lands **between**
+/// the surrounding prose, not appended after it (`workflow-dialect.md` →
+/// Composition: "expanded recursively in place"; `worked-examples.md` 3a phase-7).
+///
+/// `boundary` is `true` when the first leaf this call emits begins a new on-disk
+/// step (a top-level workflow include, or a nested include that is itself the
+/// first segment of its parent) — that leaf is a step boundary the emit join
+/// separates with a blank line. Every later leaf of the *same* on-disk body — a
+/// prose segment after an in-body include, or a child include not in first
+/// position — is a **continuation** (`continues = true`), concatenated with no
+/// injected blank line so the spliced body stays contiguous. A plain step (no
+/// nested includes — every MVP step) emits exactly one leaf, its body verbatim.
 fn expand_step(
     id: &str,
     source: &dyn StepSource,
     out: &mut Vec<ComposedStep>,
     on_path: &mut Vec<String>,
+    boundary: bool,
 ) -> Result<(), Finding> {
     if on_path.iter().any(|p| p == id) {
         let cycle = on_path
@@ -1387,44 +1414,75 @@ fn expand_step(
         )
     })?;
 
-    let (body, nested) = split_nested_includes(&step.body);
-    out.push(ComposedStep {
-        id: id.to_owned(),
-        body,
-    });
-
     on_path.push(id.to_owned());
-    for child in &nested {
-        expand_step(child, source, out, on_path)?;
+    // `first` tracks whether the next leaf this step emits is its very first — only
+    // that one inherits the caller's `boundary`; all later leaves continue.
+    let mut first = true;
+    for segment in body_segments(&step.body) {
+        let continues = if first { !boundary } else { true };
+        match segment {
+            BodySegment::Prose(body) => out.push(ComposedStep {
+                id: id.to_owned(),
+                body,
+                continues,
+            }),
+            // A child include that is *not* the first segment is a continuation of
+            // this body — its subtree's first leaf must not start a new blank-line
+            // boundary. The first segment inherits this step's own `boundary`.
+            BodySegment::Include(child) => {
+                expand_step(&child, source, out, on_path, first && boundary)?;
+            }
+        }
+        first = false;
     }
     on_path.pop();
     Ok(())
 }
 
-/// Split a step body into `(de_included_body, nested_ids)`: the body with its
-/// `{{include: step:<id>}}` lines removed, and the ordered ids those lines named.
+/// One ordered piece of a step body: a verbatim prose run, or a nested include.
+enum BodySegment {
+    /// A maximal run of non-include lines, kept byte-for-byte (with its newlines).
+    Prose(String),
+    /// A `{{include: step:<id>}}` line, carrying the resolved `<id>`.
+    Include(String),
+}
+
+/// Split a step body into ordered [`BodySegment`]s at each `{{include:}}` line —
+/// the basis of **in-place** expansion. Consecutive non-include lines coalesce
+/// into one [`BodySegment::Prose`]; each include line becomes a
+/// [`BodySegment::Include`] at its position. A line is an include when
+/// [`parse_include_line`] accepts its trimmed form (the same recognizer the
+/// workflow body uses). Prose — the step's `{{cli.…}}` / `{{…}}` / `<<author:…>>`
+/// leaves and plain text — survives verbatim.
 ///
-/// A line is a nested include when [`parse_include_line`] accepts its trimmed
-/// form (the same recognizer the workflow body uses). Non-include lines — the
-/// step's prose, its `{{cli.…}}` / `{{…}}` / `<<author:…>>` leaves — are kept
-/// verbatim. A body with no nested includes (every MVP step) returns unchanged.
-fn split_nested_includes(body: &str) -> (String, Vec<String>) {
-    // Fast path: no include line at all → body is returned byte-for-byte.
+/// A body with **no** include lines (every MVP step) yields a single
+/// [`BodySegment::Prose`] holding the body byte-for-byte, so a plain step composes
+/// exactly as before (the no-override determinism invariant).
+fn body_segments(body: &str) -> Vec<BodySegment> {
+    // Fast path: no include line at all → one verbatim prose segment.
     if !body.lines().any(|l| parse_include_line(l.trim()).is_some()) {
-        return (body.to_owned(), Vec::new());
+        return vec![BodySegment::Prose(body.to_owned())];
     }
-    let mut kept = String::with_capacity(body.len());
-    let mut nested = Vec::new();
+    let mut segments = Vec::new();
+    let mut prose = String::new();
     for line in body.lines() {
         match parse_include_line(line.trim()) {
-            Some(id) => nested.push(id),
+            Some(child) => {
+                if !prose.is_empty() {
+                    segments.push(BodySegment::Prose(std::mem::take(&mut prose)));
+                }
+                segments.push(BodySegment::Include(child));
+            }
             None => {
-                kept.push_str(line);
-                kept.push('\n');
+                prose.push_str(line);
+                prose.push('\n');
             }
         }
     }
-    (kept, nested)
+    if !prose.is_empty() {
+        segments.push(BodySegment::Prose(prose));
+    }
+    segments
 }
 
 /// A fully composed workflow: the ordered, four-class **emitted text** of every
@@ -1490,13 +1548,16 @@ pub fn compose_with_store(
     for step in &composition.steps {
         emitted_steps.push(emit_step_body_with(&step.body, ctx, catalog, store)?);
     }
-    // Join the per-step emitted texts with a single blank line between steps, so
-    // the composed view reads as one ordered document. Each step body already
-    // carries its own internal newlines; we trim a step's trailing newline before
-    // the separator so the separator is exactly one blank line, not two.
+    // Join the per-step emitted texts with a single blank line between **step
+    // boundaries**, so the composed view reads as one ordered document. A leaf that
+    // *continues* the same on-disk step body across an in-place include splice
+    // (`ComposedStep::continues`) is concatenated directly — no blank line — so the
+    // spliced prose-before / child / prose-after reads contiguous. Each step body
+    // carries its own internal newlines; we trim a leaf's trailing newline before
+    // the separator so a boundary separator is exactly one blank line, not two.
     let mut text = String::new();
-    for (i, emitted) in emitted_steps.iter().enumerate() {
-        if i > 0 {
+    for (i, (step, emitted)) in composition.steps.iter().zip(&emitted_steps).enumerate() {
+        if i > 0 && !step.continues {
             text.push('\n');
         }
         text.push_str(emitted.trim_end_matches('\n'));
@@ -3142,12 +3203,15 @@ reference — make your consequences explain what changes:
         assert_eq!(err.severity, crate::finding::Severity::Blocking);
     }
 
-    /// A nested include inside a step body is expanded in pre-order: the parent
-    /// step's de-included body comes first, then the nested step's body — phase 7
-    /// recursive expansion (`overrides.md`). The nested `{{include:}}` line is
-    /// removed from the parent body; the parent's other prose survives verbatim.
+    /// A nested include inside a step body expands **in place**: the parent's prose
+    /// *before* the include comes first, then the nested step's body at the include
+    /// line's position, then the parent's prose *after* — phase 7 recursive
+    /// expansion (`overrides.md`; `workflow-dialect.md` → expanded in place). The
+    /// nested `{{include:}}` line is replaced by the child subtree; the parent's
+    /// prose segments survive verbatim, split into their own leaves under the
+    /// parent id so each retains per-step fill/run-shadow attribution.
     #[test]
-    fn nested_include_in_step_body_flattens_pre_order() {
+    fn nested_include_in_step_body_expands_in_place() {
         let source = MapSource::new(&[
             ("parent", "before\n{{ include: step:child }}\nafter\n"),
             ("child", "child body\n"),
@@ -3162,10 +3226,97 @@ reference — make your consequences explain what changes:
 
         let composition = expand_includes(&def, &source).expect("expands");
 
-        assert_eq!(composition.step_ids(), vec!["parent", "child"]);
-        // The parent body keeps its prose but drops the nested include line.
-        assert_eq!(composition.steps[0].body, "before\nafter\n");
+        // The child is spliced *between* the parent's prose segments — not appended
+        // after the whole parent body. Both prose leaves keep the parent id.
+        assert_eq!(composition.step_ids(), vec!["parent", "child", "parent"]);
+        assert_eq!(composition.steps[0].body, "before\n");
         assert_eq!(composition.steps[1].body, "child body\n");
+        assert_eq!(composition.steps[2].body, "after\n");
+    }
+
+    /// A nested `{{include:}}` mixed with prose expands **in place**: the included
+    /// body replaces the include line at its position, with the prose **before** and
+    /// **after** preserved in order — `design/workflow-dialect.md` (Leaves /
+    /// Composition: "expanded recursively in place") + `worked-examples.md` 3a
+    /// phase-7. Reproduces the M4 audit MEDIUM finding: the prior pre-order
+    /// flattening hoisted the included body to the **end** of the step, collapsing
+    /// `before` and `after` above it. Asserts the *composed text* order, the
+    /// byte-level contract the agent reads.
+    #[test]
+    fn nested_include_expands_in_place_not_hoisted_to_end() {
+        let source = MapSource::new(&[
+            (
+                "parent",
+                "LINE-BEFORE-INCLUDE\n{{ include: step:child }}\nLINE-AFTER-INCLUDE\n",
+            ),
+            ("child", "CHILD-BODY\n"),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["parent".to_owned()],
+        };
+
+        // Composed text: the child body lands **between** the two prose lines, not
+        // after them. With prose and include continuous (no blank line injected),
+        // the splice reads as one contiguous step body.
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+        assert_eq!(
+            composed.text, "LINE-BEFORE-INCLUDE\nCHILD-BODY\nLINE-AFTER-INCLUDE\n",
+            "the include must expand in place: before, child, after — not before, after, child"
+        );
+
+        // The flattened leaves carry the same ids, the child spliced *between* the
+        // parent's prose segments (not appended after the whole parent body).
+        let composition = expand_includes(&def, &source).expect("expands");
+        assert_eq!(composition.step_ids(), vec!["parent", "child", "parent"]);
+        assert_eq!(composition.steps[0].body, "LINE-BEFORE-INCLUDE\n");
+        assert_eq!(composition.steps[1].body, "CHILD-BODY\n");
+        assert_eq!(composition.steps[2].body, "LINE-AFTER-INCLUDE\n");
+    }
+
+    /// The literal `worked-examples.md` 3a pattern: a `project-implement` body that
+    /// is `{{ include: step:implement }}`, a blank line, then a house-rule line. The
+    /// design (3a phase-7) requires the pack `implement` body to compose **followed
+    /// by** the house rule. The hoisting bug emitted the house rule first.
+    #[test]
+    fn worked_example_3a_implement_body_then_house_rule() {
+        let house_rule = "Before you finalize, run the project lint probe.";
+        let source = MapSource::new(&[
+            (
+                "project-implement",
+                &format!("{{{{ include: step:implement }}}}\n\n{house_rule}\n"),
+            ),
+            ("implement", "PACK-IMPLEMENT-BODY\n"),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: true,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["project-implement".to_owned()],
+        };
+
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+        let body_at = composed
+            .text
+            .find("PACK-IMPLEMENT-BODY")
+            .expect("the pack implement body composes");
+        let rule_at = composed
+            .text
+            .find(house_rule)
+            .expect("the house rule composes");
+        assert!(
+            body_at < rule_at,
+            "3a requires the implement body FOLLOWED BY the house rule; got:\n{}",
+            composed.text
+        );
     }
 
     /// A self-including step (A includes A) is a cycle the moment it re-enters.
@@ -3186,7 +3337,11 @@ reference — make your consequences explain what changes:
     /// A diamond (A→B, A→C, B→D, C→D) is **not** a cycle: D is reached twice but
     /// never while already on the active path, so it expands once per inclusion in
     /// pre-order. Cycle detection keys on the active DFS path, not on having seen
-    /// an id before.
+    /// an id before. With in-place expansion, the pure-container bodies (`a`, `b`,
+    /// `c` — only includes, no prose) contribute **no text leaf** of their own: an
+    /// include line is replaced by its child subtree, so only the prose-bearing `d`
+    /// leaves remain. The walk still pushes `a`/`b`/`c` onto the DFS path, so cycle
+    /// detection is unaffected.
     #[test]
     fn diamond_is_not_a_cycle() {
         let source = MapSource::new(&[
@@ -3203,8 +3358,15 @@ reference — make your consequences explain what changes:
             includes: vec!["a".to_owned()],
         };
         let composition = expand_includes(&def, &source).expect("diamond expands");
-        // Pre-order: a, then b's subtree (b, d), then c's subtree (c, d).
-        assert_eq!(composition.step_ids(), vec!["a", "b", "d", "c", "d"]);
+        // Only the prose-bearing leaf `d` remains, once per inclusion in pre-order.
+        assert_eq!(composition.step_ids(), vec!["d", "d"]);
+        // `a`'s body is two *adjacent* include lines (no blank between), so the
+        // in-place splice replaces each line with `d`'s body contiguously: the
+        // second inclusion continues the first, never hoisted or blank-separated.
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+        assert_eq!(composed.text, "leaf\nleaf\n");
     }
 
     proptest::proptest! {
