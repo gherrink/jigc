@@ -14,6 +14,7 @@ use crate::render;
 use crate::setup;
 use crate::start;
 use crate::task::TaskCommand;
+use crate::upgrade;
 use clap::{Parser, Subcommand, ValueEnum};
 use std::process::ExitCode;
 
@@ -115,6 +116,14 @@ pub enum Command {
     /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
     /// Idempotent; the install the unset-project orientation routes the agent to.
     Setup,
+
+    /// The upgrade-reconciliation surface. Runs the `override-default` classifier
+    /// over every recorded delta against the **current** pack, renders the findings
+    /// and routes through the global `--format`, and **blocks** (exits non-zero) on
+    /// any blocking finding. **Report-and-route only** — it mutates nothing; the
+    /// human resolves each route by re-running the `jigc config` verbs
+    /// (`design/overrides.md` → The `jigc upgrade` command).
+    Upgrade,
 }
 
 impl Cli {
@@ -176,6 +185,7 @@ impl Cli {
             Command::Task { verb } => run_task(self.format, verb),
             Command::Config { verb } => run_config(verb),
             Command::Setup => run_setup(self.format),
+            Command::Upgrade => run_upgrade(self.format),
         }
     }
 }
@@ -237,6 +247,39 @@ fn run_config(verb: ConfigCommand) -> ExitCode {
         }
     };
     verb.dispatch(&cwd)
+}
+
+/// Run `jigc upgrade` against the current working directory: locate the project
+/// layer, run the `override-default` classifier over every recorded delta against
+/// the current pack, render the findings + routes through the selected `format`,
+/// and **gate the exit code on `report.has_blocking()`** — any blocking finding
+/// exits non-zero. **Report-and-route only**: nothing is written. The rendered
+/// report (the standard findings+routes view, or the positive no-findings line on
+/// a clean cascade) prints on stdout; a locator error (no repo / no project layer)
+/// routes to stderr and exits non-zero (`design/overrides.md` → The `jigc upgrade`
+/// command, step 3: report through the standard renderer, blocking-by-default).
+fn run_upgrade(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match upgrade::upgrade_in_repo(&cwd) {
+        Ok(report) => {
+            println!("{}", render::validation(format, &report));
+            if report.has_blocking() {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Dispatch a `jigc doc <verb>` write against the active task in the current
@@ -520,6 +563,27 @@ mod cli_parse {
     fn setup_parses() {
         let cli = Cli::try_parse_from(["jigc", "setup"]).expect("`jigc setup` parses");
         assert_eq!(cli.command, Command::Setup);
+    }
+
+    #[test]
+    fn upgrade_parses() {
+        let cli = Cli::try_parse_from(["jigc", "upgrade"]).expect("`jigc upgrade` parses");
+        assert_eq!(cli.command, Command::Upgrade);
+    }
+
+    #[test]
+    fn upgrade_format_json_is_selected() {
+        let cli = Cli::try_parse_from(["jigc", "upgrade", "--format", "json"])
+            .expect("`jigc upgrade --format json` parses");
+        assert_eq!(cli.format, Format::Json);
+        assert_eq!(cli.command, Command::Upgrade);
+    }
+
+    #[test]
+    fn upgrade_takes_no_positional() {
+        let err = Cli::try_parse_from(["jigc", "upgrade", "extra"])
+            .expect_err("`jigc upgrade` takes no positional argument");
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 
     #[test]

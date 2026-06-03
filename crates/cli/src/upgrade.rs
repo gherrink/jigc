@@ -10,12 +10,9 @@
 //! renders and gates on (`overrides.md` → The `jigc upgrade` command, steps 1–2:
 //! re-apply, classify).
 //!
-//! This is the **assembly seam only** (T2): `Command::Upgrade` (clap + dispatch)
-//! is the next task (T3) and is the production consumer of [`upgrade_in_repo`].
-//! Until it lands, the seam is reachable only from this module's tests, so the
-//! module-level `allow(dead_code)` marks the deliberate one-task gap (the same
-//! retained-for-an-adjacent-consumer pattern as `render.rs`).
-#![allow(dead_code)]
+//! `Command::Upgrade` (clap + dispatch, T3) is the production consumer of
+//! [`upgrade_in_repo`]; `upgrade_with_pack` is the directly-built-pack core it
+//! delegates to (and the tests drive without mutating `JIGC_PACK_DIR`).
 
 use crate::pack::make_pack;
 use crate::start::load_project_layer;
