@@ -404,6 +404,47 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
         .collect()
 }
 
+/// Build the `--explain` resolution tree (layers 1–2 — `workflow-dialect.md` →
+/// `--explain` output contract) for `workflow_id` over the resolved cascade —
+/// the seam the `--explain` dispatch (T3) renders.
+///
+/// Assembles the **exact** inputs [`compose_core`] feeds phase 4: the pack
+/// workflow's include id list ([`read_workflow`] + [`load_workflow_def`]), the
+/// manifest's `structural-op` `deltas` [`scoped_deltas`]-filtered to this
+/// workflow, the layer the workflow definition file itself resolved to
+/// ([`cascade::Resolved::file_owner`], defaulting to pack-default since the pack
+/// always ships the workflow), and `file_owner` as the per-step layer lookup.
+/// Delegates the position/annotation semantics to
+/// [`compose::build_resolution_tree`], so the built tree's step order equals the
+/// composed include order by construction — no re-resolution, no second algorithm.
+///
+/// Takes the manifest `deltas` directly (the same `ComposeOverrides.deltas` the
+/// `--explain` dispatch already holds), keeping the seam free of the compose-only
+/// override bundle.
+///
+/// Exercised by the unit tests; its live caller is the `--explain` flag dispatch
+/// landed by T3 (`render::explain`), hence the `allow(dead_code)` until that wiring
+/// arrives — the retained-seam pattern this crate already uses for
+/// [`crate::render::orientation_agent_text`].
+#[allow(dead_code)]
+pub(crate) fn build_resolution_tree(
+    pack: &dyn PackSource,
+    resolved: &cascade::Resolved,
+    deltas: &[StructuralDelta],
+    workflow_id: &str,
+) -> Result<engine::result::ResolutionTree> {
+    let workflow_bytes = read_workflow(pack, workflow_id)?;
+    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    let scoped = scoped_deltas(workflow_id, deltas);
+    let workflow_layer = resolved
+        .file_owner(workflow_id)
+        .unwrap_or(cascade::LayerKind::PackDefault);
+    compose::build_resolution_tree(workflow_id, workflow_layer, &def.includes, &scoped, |id| {
+        resolved.file_owner(id)
+    })
+    .map_err(finding_to_err)
+}
+
 /// The compose-relevant override surface a project layer carries beyond its
 /// resolved scalar/file owners: the phase-4 `structural-op` deltas, the `slot-fill`
 /// deltas (for the phase-5 fill pass + the orphan check), and the cascade-resolved
@@ -2341,6 +2382,129 @@ mod tests {
             finding.message.contains("implement"),
             "the located error must name the absent step id; got: {}",
             finding.message,
+        );
+    }
+
+    /// The CLI `--explain` tree seam over a real cascade: it reads the pack
+    /// workflow's include list, tags each step against the resolved
+    /// `file_owner` (phase-2 by-id shadowing), and threads any scoped
+    /// `structural-op` delta into the engine builder. The project shadows the
+    /// `implement` step file, so the no-delta tree tags `implement` **project**
+    /// and `locate` **pack-default** with `overrides_applied: 0` — the
+    /// file-owner provenance the CLI half of T1 wires (`overrides.md` →
+    /// Resolution algorithm phase 2; `workflow-dialect.md` → `--explain`).
+    #[test]
+    fn cli_resolution_tree_tags_each_step_by_resolved_file_owner() {
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Workflows,
+                "wf",
+                "---\nwhen: x\ncreates-task: true\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "pack locate body\n"),
+            (
+                PackResourceKind::Steps,
+                "implement",
+                "pack implement body\n",
+            ),
+        ]);
+        // The cascade: pack owns both steps + the workflow; the project shadows the
+        // `implement` step file (phase-2 by-id shadowing), so `file_owner` reports
+        // it project-owned.
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["wf".to_owned(), "locate".to_owned(), "implement".to_owned()],
+        );
+        let project = OverrideLayer::empty().shadow_file("implement");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let tree = build_resolution_tree(&pack, &resolved, &[], "wf").expect("tree builds");
+
+        assert_eq!(tree.workflow, "wf");
+        assert_eq!(tree.overrides_applied, 0);
+        let by_owner: Vec<(&str, engine::cascade::LayerKind)> = tree
+            .steps
+            .iter()
+            .map(|s| (s.id.as_str(), s.layer))
+            .collect();
+        assert_eq!(
+            by_owner,
+            vec![
+                ("locate", engine::cascade::LayerKind::PackDefault),
+                ("implement", engine::cascade::LayerKind::Project),
+            ],
+            "each step is tagged by its resolved file owner, in include order",
+        );
+        assert!(
+            tree.steps.iter().all(|s| s.replaces.is_none()),
+            "a no-delta tree carries no replace annotation",
+        );
+    }
+
+    /// The CLI seam threads a **scoped** `replace-step` delta through to the
+    /// engine builder: a project `replace-step workflow:wf#implement →
+    /// step:project-implement` yields `overrides_applied: 1`, the replacing step
+    /// tagged project at the same position with the `replaces implement at
+    /// position 2` annotation, while a same-manifest delta scoped to *another*
+    /// workflow is filtered out (`scoped_deltas`).
+    #[test]
+    fn cli_resolution_tree_threads_scoped_replace_delta() {
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Workflows,
+                "wf",
+                "---\nwhen: x\ncreates-task: true\n---\n{{ include: step:locate }}\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "locate", "pack locate body\n"),
+            (
+                PackResourceKind::Steps,
+                "implement",
+                "pack implement body\n",
+            ),
+        ]);
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec![
+                "wf".to_owned(),
+                "locate".to_owned(),
+                "implement".to_owned(),
+                "project-implement".to_owned(),
+            ],
+        );
+        let project = OverrideLayer::empty().shadow_file("project-implement");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let deltas = vec![
+            StructuralDelta::Replace {
+                target: StructuralTarget::parse("workflow:wf#implement", None).expect("target"),
+                step: "project-implement".to_owned(),
+            },
+            // A delta for a different workflow — `scoped_deltas` must drop it, so it
+            // neither applies nor inflates `overrides_applied`.
+            StructuralDelta::Remove {
+                target: StructuralTarget::parse("workflow:other#locate", None).expect("target"),
+            },
+        ];
+
+        let tree = build_resolution_tree(&pack, &resolved, &deltas, "wf").expect("tree builds");
+
+        assert_eq!(
+            tree.overrides_applied, 1,
+            "only the `wf`-scoped delta counts; the `other`-scoped delta is filtered",
+        );
+        let replacing = &tree.steps[1];
+        assert_eq!(replacing.id, "project-implement");
+        assert_eq!(replacing.layer, engine::cascade::LayerKind::Project);
+        assert_eq!(
+            replacing.replaces,
+            Some(engine::result::Replacement {
+                replaced: "implement".to_owned(),
+                position: 2,
+            }),
         );
     }
 

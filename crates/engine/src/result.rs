@@ -11,6 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::cascade::LayerKind;
 use crate::finding::{Finding, Severity};
 
 /// The result-contract schema version. Bumped only when the JSON projection of a
@@ -168,6 +169,82 @@ impl ValidationReport {
         self.findings
             .iter()
             .any(|f| f.severity == Severity::Blocking)
+    }
+}
+
+/// Why a step sits at its position in the resolved include list: a `replace-step`
+/// delta swapped the pack id at this slot for the resolving one. Carries the
+/// replaced step id and the slot's **1-based** position in the post-phase-4 list,
+/// so the renderer can emit the `← replaces <id> at position N` annotation
+/// (`design/worked-examples.md` → 3a; `design/workflow-dialect.md` → `--explain`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Replacement {
+    /// The step id this slot's entry replaced (the pack-default id swapped out).
+    pub replaced: String,
+    /// The 1-based position of this slot in the resolved include list.
+    pub position: usize,
+}
+
+/// One step in the resolution tree: its resolved id, the cascade layer that owns
+/// its file after phase-2 shadowing ([`LayerKind`]), and — when a `replace-step`
+/// delta placed it — the [`Replacement`] annotation.
+///
+/// This is layer 2 of the `--explain` output contract (the include-expansion
+/// tree, one entry per post-phase-4 include in order). The `source` path string
+/// is **framing** the CLI renderer derives from `(id, layer)`; the engine model
+/// carries the structural fact — which layer won — not the displayed path.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolvedStep {
+    /// The resolved step id at this include-list slot.
+    pub id: String,
+    /// The cascade layer that owns this step's file (phase-2 by-id shadowing).
+    pub layer: LayerKind,
+    /// The `replace-step` annotation, when an override placed this id here.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<Replacement>,
+}
+
+/// The structural slice of the `--explain` resolution tree — layers 1–2 of the
+/// output contract (`design/workflow-dialect.md` → `--explain` output contract):
+/// the workflow's cascade provenance (`overrides applied: N`) and the resolved
+/// include-expansion tree (each step tagged with its source [`LayerKind`] and any
+/// `replace-step` annotation), in post-phase-4 composed include order.
+///
+/// **Derived, never persisted** — re-computed each call from the same
+/// `(definition + cascade)` (`workflow-dialect.md`: the tree is re-computed on
+/// demand). A pure function of the resolved cascade; carries no presentation
+/// (path strings, indentation) — `cli::render` frames it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResolutionTree {
+    /// The result-contract schema version (see [`SCHEMA_VERSION`]).
+    pub schema_version: u32,
+    /// The workflow id whose resolution this tree explains.
+    pub workflow: String,
+    /// The cascade layer the workflow definition file resolved to.
+    pub workflow_layer: LayerKind,
+    /// How many `structural-op` overrides applied to this workflow's include list
+    /// (the `overrides applied: N` header line).
+    pub overrides_applied: usize,
+    /// The resolved include steps, in post-phase-4 composed order.
+    pub steps: Vec<ResolvedStep>,
+}
+
+impl ResolutionTree {
+    /// Build a resolution tree over its workflow provenance + resolved steps,
+    /// stamping the current [`SCHEMA_VERSION`].
+    pub fn new(
+        workflow: impl Into<String>,
+        workflow_layer: LayerKind,
+        overrides_applied: usize,
+        steps: Vec<ResolvedStep>,
+    ) -> Self {
+        Self {
+            schema_version: SCHEMA_VERSION,
+            workflow: workflow.into(),
+            workflow_layer,
+            overrides_applied,
+            steps,
+        }
     }
 }
 

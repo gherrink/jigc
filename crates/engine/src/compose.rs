@@ -1134,6 +1134,87 @@ fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
     })
 }
 
+/// Build the structural slice of the `--explain` resolution tree — layers 1–2 of
+/// the output contract (`design/workflow-dialect.md` → `--explain` output
+/// contract): the workflow's `overrides applied: N` provenance and the resolved
+/// include-expansion tree, each step tagged with the cascade layer that owns its
+/// file and any `replace-step` annotation, in **post-phase-4 composed order**.
+///
+/// A pure derivation over the inputs `compose` already holds — the pack
+/// `includes` id list, the `scoped` `structural-op` deltas for *this* workflow,
+/// the `workflow_layer` the definition file resolved to, and a `file_owner`
+/// lookup ([`crate::cascade::Resolved::file_owner`]) closed over by the caller. It
+/// replays phase 4 with the **same** position semantics as
+/// [`apply_structural_deltas`] (so the built step order equals the composed
+/// include order), tracking which slot each `replace` swapped so the renderer can
+/// emit `← replaces <id> at position N`. No re-resolution, no I/O.
+///
+/// `overrides_applied` is the count of `scoped` structural deltas — the deltas
+/// that mutated this workflow's include list. A delta whose anchor / target id is
+/// absent surfaces the same **orphaned** blocking [`Finding`] as phase 4
+/// ([`apply_structural_deltas`]); a layer with no file for a resolved id is a
+/// dangling include the compose path reports, so the tree defaults its layer to
+/// pack-default — the live caller only builds the tree on a clean compose.
+pub fn build_resolution_tree(
+    workflow: &str,
+    workflow_layer: crate::cascade::LayerKind,
+    includes: &[String],
+    scoped: &[StructuralDelta],
+    file_owner: impl Fn(&str) -> Option<crate::cascade::LayerKind>,
+) -> Result<crate::result::ResolutionTree, Finding> {
+    use crate::result::{Replacement, ResolvedStep};
+
+    // Replay phase 4 carrying a parallel provenance slot per id: `Some(replaced)`
+    // marks a slot a `replace` swapped, so the post-phase-4 position is the
+    // annotation's position. Mirrors `apply_structural_deltas` exactly.
+    let mut ids: Vec<String> = includes.to_vec();
+    let mut replaced: Vec<Option<String>> = vec![None; ids.len()];
+    for delta in scoped {
+        match delta {
+            StructuralDelta::Insert { target, step } => {
+                let (anchor_id, offset) = match &target.anchor {
+                    Anchor::After(id) => (id, 1),
+                    Anchor::Before(id) | Anchor::At(id) => (id, 0),
+                };
+                let pos = anchor_position(&ids, anchor_id)?;
+                ids.insert(pos + offset, step.clone());
+                replaced.insert(pos + offset, None);
+            }
+            StructuralDelta::Replace { target, step } => {
+                let pos = anchor_position(&ids, at_id(&target.anchor))?;
+                replaced[pos] = Some(ids[pos].clone());
+                ids[pos] = step.clone();
+            }
+            StructuralDelta::Remove { target } => {
+                let pos = anchor_position(&ids, at_id(&target.anchor))?;
+                ids.remove(pos);
+                replaced.remove(pos);
+            }
+        }
+    }
+
+    let steps = ids
+        .iter()
+        .zip(replaced)
+        .enumerate()
+        .map(|(idx, (id, replaced))| ResolvedStep {
+            id: id.clone(),
+            layer: file_owner(id).unwrap_or(crate::cascade::LayerKind::PackDefault),
+            replaces: replaced.map(|replaced| Replacement {
+                replaced,
+                position: idx + 1,
+            }),
+        })
+        .collect();
+
+    Ok(crate::result::ResolutionTree::new(
+        workflow,
+        workflow_layer,
+        scoped.len(),
+        steps,
+    ))
+}
+
 /// The cascade-resolved slot-fill content for a composition, keyed by
 /// `(step_id, fill_id)` — the input to the **phase-5** fill-application pass
 /// ([`apply_slot_fills`]).
@@ -3932,6 +4013,150 @@ reference — make your consequences explain what changes:
     fn no_deltas_is_the_identity() {
         let out = apply_structural_deltas(&fixture_includes(), &[]).expect("no deltas");
         assert_eq!(out, fixture_includes());
+    }
+
+    // --- resolution-tree builder (build_resolution_tree) — layers 1–2 ---
+
+    use crate::cascade::LayerKind;
+    use crate::result::{Replacement, ResolvedStep};
+
+    /// A `file_owner` lookup that reports the given ids as project-owned, every
+    /// other id pack-default — the phase-2 by-id shadowing surface the tree tags
+    /// each resolved step against.
+    fn owner_of<'a>(project: &'a [&'a str]) -> impl Fn(&str) -> Option<LayerKind> + 'a {
+        move |id: &str| {
+            Some(if project.contains(&id) {
+                LayerKind::Project
+            } else {
+                LayerKind::PackDefault
+            })
+        }
+    }
+
+    /// (a) The no-override single-task tree: `overrides_applied: 0`, every step
+    /// tagged pack-default (its pack file owns it), in the pack include order, no
+    /// `replaces` annotation anywhere.
+    #[test]
+    fn tree_no_override_all_pack_default() {
+        let tree = build_resolution_tree(
+            "single-task",
+            LayerKind::PackDefault,
+            &fixture_includes(),
+            &[],
+            owner_of(&[]),
+        )
+        .expect("builds");
+
+        assert_eq!(tree.workflow, "single-task");
+        assert_eq!(tree.workflow_layer, LayerKind::PackDefault);
+        assert_eq!(tree.overrides_applied, 0);
+        assert_eq!(
+            tree.steps,
+            vec![
+                ResolvedStep {
+                    id: "locate".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+                ResolvedStep {
+                    id: "implement".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+                ResolvedStep {
+                    id: "superseded-context".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+                ResolvedStep {
+                    id: "finalize".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+            ],
+        );
+    }
+
+    /// (b) A `replace-step` over `implement`: `overrides_applied: 1`; the
+    /// replacing `project-implement` step is tagged **project** at the **same
+    /// position** (1-based 2) with a `replaces implement at position 2` annotation;
+    /// every other step stays pack-default and unannotated (`worked-examples.md` →
+    /// 3a).
+    #[test]
+    fn tree_replace_step_tags_project_with_annotation() {
+        let tree = build_resolution_tree(
+            "single-task",
+            LayerKind::PackDefault,
+            &fixture_includes(),
+            &[replace(
+                "workflow:single-task#implement",
+                "project-implement",
+            )],
+            owner_of(&["project-implement"]),
+        )
+        .expect("builds");
+
+        assert_eq!(tree.overrides_applied, 1);
+        assert_eq!(
+            tree.steps,
+            vec![
+                ResolvedStep {
+                    id: "locate".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+                ResolvedStep {
+                    id: "project-implement".to_owned(),
+                    layer: LayerKind::Project,
+                    replaces: Some(Replacement {
+                        replaced: "implement".to_owned(),
+                        position: 2,
+                    }),
+                },
+                ResolvedStep {
+                    id: "superseded-context".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+                ResolvedStep {
+                    id: "finalize".to_owned(),
+                    layer: LayerKind::PackDefault,
+                    replaces: None,
+                },
+            ],
+        );
+    }
+
+    /// (c) The built tree's step order equals the post-phase-4 composed include
+    /// order — the tree is the *same* list `compose` expands. Driven over a
+    /// non-trivial multi-delta cascade (insert + replace) so the equality is not a
+    /// no-op identity: the tree ids are asserted **against
+    /// `apply_structural_deltas`'s output**, the exact list the compose path
+    /// consumes.
+    #[test]
+    fn tree_step_order_equals_post_phase4_include_order() {
+        let deltas = [
+            replace("workflow:single-task#implement", "project-implement"),
+            insert(
+                "workflow:single-task",
+                AnchorSpec::After("locate".to_owned()),
+                "team-lint",
+            ),
+        ];
+
+        let composed = apply_structural_deltas(&fixture_includes(), &deltas).expect("applies");
+        let tree = build_resolution_tree(
+            "single-task",
+            LayerKind::PackDefault,
+            &fixture_includes(),
+            &deltas,
+            owner_of(&["project-implement", "team-lint"]),
+        )
+        .expect("builds");
+
+        let tree_ids: Vec<&str> = tree.steps.iter().map(|s| s.id.as_str()).collect();
+        let composed_ids: Vec<&str> = composed.iter().map(String::as_str).collect();
+        assert_eq!(tree_ids, composed_ids);
     }
 
     // -- Phase 5: slot-fill application (`apply_slot_fills` / `fill_id_of`) --------

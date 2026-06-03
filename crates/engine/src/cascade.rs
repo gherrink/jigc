@@ -438,7 +438,15 @@ pub struct TrackedForkDelta {
 
 /// Identifies one cascade layer by precedence. `Project` is most-specific and
 /// wins; `PackDefault` is the base (`design/overrides.md` → The cascade).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+///
+/// Its JSON projection (`pack-default` / `team` / `project`) is the stable
+/// per-step provenance label the `--explain` resolution tree binds to
+/// (`design/workflow-dialect.md` → `--explain` output contract, layers 1–2), so
+/// the kebab-case rename is pinned like the other result-contract enums.
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
 pub enum LayerKind {
     PackDefault,
     Team,
@@ -446,7 +454,9 @@ pub enum LayerKind {
 }
 
 impl LayerKind {
-    fn label(self) -> &'static str {
+    /// The provenance label shown in the cascade header / `--explain` tree
+    /// (`pack-default` / `team` / `project`).
+    pub fn label(self) -> &'static str {
         match self {
             LayerKind::PackDefault => "pack-default",
             LayerKind::Team => "team",
