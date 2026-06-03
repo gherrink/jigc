@@ -146,22 +146,31 @@ pub fn explain(format: Format, tree: &ResolutionTree, pack_label: &str) -> Strin
 
 /// The agent-text body of the `--explain` tree (footer appended by [`explain`]).
 /// The workflow line names the resolved workflow + its winning layer (with the
-/// pack label), the `overrides applied:` line reports the structural-delta count
-/// (`none` when zero, the worked-example spelling), and one line per resolved
-/// include carries the step's id, its source layer, and — for a `replace-step`
-/// slot — the `← replaces <id> at position N` annotation.
+/// pack label), the `overrides applied:` line reports the **total** override count —
+/// structural deltas plus applied scalar-key overrides — (`none` when zero, the
+/// worked-example spelling), one `<key> = <value>  (<layer>)` line per applied
+/// scalar-key override (layer 1 of the output contract — `design/workflow-dialect.md`
+/// → "any scalar-key overrides applied with their source layer"), and one line per
+/// resolved include carrying the step's id, its source layer, and — for a
+/// `replace-step` slot — the `← replaces <id> at position N` annotation.
 fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
     let mut out = format!(
         "workflow:{}    ({} · {pack_label})\n",
         tree.workflow,
         tree.workflow_layer.label(),
     );
-    if tree.overrides_applied == 0 {
+    let total_overrides = tree.overrides_applied + tree.scalar_overrides.len();
+    if total_overrides == 0 {
         out.push_str("  overrides applied: none\n");
     } else {
+        out.push_str(&format!("  overrides applied: {total_overrides}\n"));
+    }
+    for scalar in &tree.scalar_overrides {
         out.push_str(&format!(
-            "  overrides applied: {}\n",
-            tree.overrides_applied
+            "    {} = {}    ({})\n",
+            scalar.key,
+            scalar.value,
+            scalar.layer.label(),
         ));
     }
     out.push_str("  includes:\n");
@@ -403,12 +412,17 @@ mod tests {
     #[test]
     fn render_explain_tree_agent_text_and_json() {
         use engine::cascade::LayerKind;
-        use engine::result::{Replacement, ResolutionTree, ResolvedStep};
+        use engine::result::{Replacement, ResolutionTree, ResolvedStep, ScalarOverride};
 
         let tree = ResolutionTree::new(
             "single-task",
             LayerKind::PackDefault,
             1,
+            vec![ScalarOverride {
+                key: "default-workflow".to_string(),
+                value: "single-task".to_string(),
+                layer: LayerKind::Project,
+            }],
             vec![
                 ResolvedStep {
                     id: "locate".to_string(),
@@ -431,7 +445,13 @@ mod tests {
             agent.contains("workflow:single-task    (pack-default · dev/v0.0.0)"),
             "got:\n{agent}",
         );
-        assert!(agent.contains("overrides applied: 1"), "got:\n{agent}");
+        // One structural delta + one scalar override fold into the total count.
+        assert!(agent.contains("overrides applied: 2"), "got:\n{agent}");
+        // The per-knob scalar-override line carries the key, value, and winning layer.
+        assert!(
+            agent.contains("default-workflow = single-task    (project)"),
+            "got:\n{agent}",
+        );
         assert!(
             agent.contains("step:locate    (pack-default)"),
             "got:\n{agent}",
@@ -445,7 +465,13 @@ mod tests {
         assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
 
         // A no-override tree spells the count `none`.
-        let clean = ResolutionTree::new("single-task", LayerKind::PackDefault, 0, Vec::new());
+        let clean = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+        );
         assert!(explain(Format::Agent, &clean, "dev/v0.0.0").contains("overrides applied: none"),);
 
         // JSON is the generic projection — parseable, same provenance, no footer.

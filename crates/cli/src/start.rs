@@ -413,7 +413,9 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
 /// manifest's `structural-op` `deltas` [`scoped_deltas`]-filtered to this
 /// workflow, the layer the workflow definition file itself resolved to
 /// ([`cascade::Resolved::file_owner`], defaulting to pack-default since the pack
-/// always ships the workflow), and `file_owner` as the per-step layer lookup.
+/// always ships the workflow), `file_owner` as the per-step layer lookup, and the
+/// applied scalar-key overrides ([`cascade::Resolved::scalar_overrides`]) for the
+/// tree's layer-1 per-knob provenance lines.
 /// Delegates the position/annotation semantics to
 /// [`compose::build_resolution_tree`], so the built tree's step order equals the
 /// composed include order by construction — no re-resolution, no second algorithm.
@@ -436,9 +438,22 @@ pub(crate) fn build_resolution_tree(
     let workflow_layer = resolved
         .file_owner(workflow_id)
         .unwrap_or(cascade::LayerKind::PackDefault);
-    compose::build_resolution_tree(workflow_id, workflow_layer, &def.includes, &scoped, |id| {
-        resolved.file_owner(id)
-    })
+    let scalar_overrides = resolved
+        .scalar_overrides()
+        .map(|(key, value, layer)| engine::result::ScalarOverride {
+            key: key.to_owned(),
+            value: value.to_owned(),
+            layer,
+        })
+        .collect();
+    compose::build_resolution_tree(
+        workflow_id,
+        workflow_layer,
+        &def.includes,
+        &scoped,
+        scalar_overrides,
+        |id| resolved.file_owner(id),
+    )
     .map_err(finding_to_err)
 }
 

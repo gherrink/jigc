@@ -80,6 +80,23 @@ fn run_start(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .expect("run the jigc binary")
 }
 
+/// Run `jigc config set <key> <value>` with `cwd = repo` and `$HOME = home`,
+/// recording a `scalar-set` into the project layer.
+fn run_config_set(repo: &Path, home: &Path, key: &str, value: &str) {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["config", "set", key, value])
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary");
+    assert!(
+        out.status.success(),
+        "`jigc config set {key} {value}` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
 #[test]
 fn explain_over_the_unmodified_pack_prints_the_tree_and_mints_nothing() {
     // (a) `jigc start --explain --workflow single-task "<intent>"` over the
@@ -274,5 +291,53 @@ fn explain_format_json_emits_the_structured_tree() {
     assert!(
         !stdout.contains("— jigc ·"),
         "JSON --explain output must carry no routing footer; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn explain_after_a_scalar_set_reports_the_knob_with_its_source_layer() {
+    // A recorded `scalar-set` (`config set default-workflow single-task`) is a
+    // genuine override that flips the resolved knob project-over-pack. `--explain`
+    // MUST render its winning layer per the output contract — "any scalar-key
+    // overrides applied with their source layer" (`design/workflow-dialect.md`) —
+    // and fold it into the `overrides applied: N` count, NOT report it as `none`.
+    let repo = TempDir::new("scalar-set");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    run_config_set(repo.path(), home.path(), "default-workflow", "single-task");
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--explain", "--workflow", "single-task", "add rate limiter"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "`jigc start --explain` after a scalar-set must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The scalar-only override MUST NOT report `none` — it is a real override.
+    assert!(
+        !stdout.contains("overrides applied: none"),
+        "a recorded scalar-set must not report `overrides applied: none`; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("overrides applied: 1"),
+        "a single scalar-set must fold into `overrides applied: 1`; got:\n{stdout}",
+    );
+    // The per-knob line carries the key, its value, and its winning source layer.
+    assert!(
+        stdout.contains("default-workflow = single-task    (project)"),
+        "the scalar override must show its source layer (project); got:\n{stdout}",
+    );
+
+    // Still mints nothing.
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "`--explain` must not mint a task; got:\n{stdout}",
     );
 }

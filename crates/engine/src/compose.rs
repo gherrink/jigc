@@ -1160,6 +1160,7 @@ pub fn build_resolution_tree(
     workflow_layer: crate::cascade::LayerKind,
     includes: &[String],
     scoped: &[StructuralDelta],
+    scalar_overrides: Vec<crate::result::ScalarOverride>,
     file_owner: impl Fn(&str) -> Option<crate::cascade::LayerKind>,
 ) -> Result<crate::result::ResolutionTree, Finding> {
     use crate::result::{Replacement, ResolvedStep};
@@ -1211,6 +1212,7 @@ pub fn build_resolution_tree(
         workflow,
         workflow_layer,
         scoped.len(),
+        scalar_overrides,
         steps,
     ))
 }
@@ -4043,6 +4045,7 @@ reference — make your consequences explain what changes:
             LayerKind::PackDefault,
             &fixture_includes(),
             &[],
+            Vec::new(),
             owner_of(&[]),
         )
         .expect("builds");
@@ -4092,6 +4095,7 @@ reference — make your consequences explain what changes:
                 "workflow:single-task#implement",
                 "project-implement",
             )],
+            Vec::new(),
             owner_of(&["project-implement"]),
         )
         .expect("builds");
@@ -4150,6 +4154,7 @@ reference — make your consequences explain what changes:
             LayerKind::PackDefault,
             &fixture_includes(),
             &deltas,
+            Vec::new(),
             owner_of(&["project-implement", "team-lint"]),
         )
         .expect("builds");

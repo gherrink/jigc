@@ -204,11 +204,28 @@ pub struct ResolvedStep {
     pub replaces: Option<Replacement>,
 }
 
+/// One applied scalar-key override in the `--explain` tree's layer-1 provenance:
+/// the knob key, its resolved value, and the cascade layer that won it by applying
+/// a `scalar-set` (`design/workflow-dialect.md` → `--explain` output contract:
+/// "any scalar-key overrides applied with their source layer";
+/// `design/worked-examples.md` → 3b). A knob left at the pack-default base carries
+/// no entry — only an overridden key appears here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScalarOverride {
+    /// The scalar knob key a higher layer set (e.g. `default-workflow`).
+    pub key: String,
+    /// The resolved value the winning layer set for the knob.
+    pub value: String,
+    /// The cascade layer that won the knob (the layer that applied the `scalar-set`).
+    pub layer: LayerKind,
+}
+
 /// The structural slice of the `--explain` resolution tree — layers 1–2 of the
 /// output contract (`design/workflow-dialect.md` → `--explain` output contract):
-/// the workflow's cascade provenance (`overrides applied: N`) and the resolved
-/// include-expansion tree (each step tagged with its source [`LayerKind`] and any
-/// `replace-step` annotation), in post-phase-4 composed include order.
+/// the workflow's cascade provenance (`overrides applied: N` plus the per-knob
+/// scalar-override lines) and the resolved include-expansion tree (each step
+/// tagged with its source [`LayerKind`] and any `replace-step` annotation), in
+/// post-phase-4 composed include order.
 ///
 /// **Derived, never persisted** — re-computed each call from the same
 /// `(definition + cascade)` (`workflow-dialect.md`: the tree is re-computed on
@@ -223,8 +240,13 @@ pub struct ResolutionTree {
     /// The cascade layer the workflow definition file resolved to.
     pub workflow_layer: LayerKind,
     /// How many `structural-op` overrides applied to this workflow's include list
-    /// (the `overrides applied: N` header line).
+    /// (the structural component of the `overrides applied: N` header line).
     pub overrides_applied: usize,
+    /// The applied scalar-key overrides, each with its winning layer — layer 1 of
+    /// the `--explain` output contract. Empty when every knob resolved from the
+    /// pack-default base. Their count folds into the `overrides applied: N` header.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scalar_overrides: Vec<ScalarOverride>,
     /// The resolved include steps, in post-phase-4 composed order.
     pub steps: Vec<ResolvedStep>,
 }
@@ -236,6 +258,7 @@ impl ResolutionTree {
         workflow: impl Into<String>,
         workflow_layer: LayerKind,
         overrides_applied: usize,
+        scalar_overrides: Vec<ScalarOverride>,
         steps: Vec<ResolvedStep>,
     ) -> Self {
         Self {
@@ -243,6 +266,7 @@ impl ResolutionTree {
             workflow: workflow.into(),
             workflow_layer,
             overrides_applied,
+            scalar_overrides,
             steps,
         }
     }

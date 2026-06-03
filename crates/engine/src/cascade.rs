@@ -632,6 +632,19 @@ impl Resolved {
         self.scalar_provenance.len()
     }
 
+    /// Each overridden scalar key paired with its resolved value and the layer
+    /// that won it — the per-knob provenance the `--explain` tree's layer-1 lines
+    /// render (`design/workflow-dialect.md` → `--explain` output contract: "any
+    /// scalar-key overrides applied with their source layer"). Keys left at the
+    /// pack-default base are absent (no override). Iterates in key order
+    /// (`scalar_provenance` is a `BTreeMap`), so the rendered lines are stable.
+    pub fn scalar_overrides(&self) -> impl Iterator<Item = (&str, &str, LayerKind)> {
+        self.scalar_provenance.iter().map(|(key, layer)| {
+            let value = self.scalars.get(key).map(String::as_str).unwrap_or("");
+            (key.as_str(), value, *layer)
+        })
+    }
+
     /// Which layer owns the file with this id after shadowing, or `None` if no
     /// layer provides it.
     pub fn file_owner(&self, id: &str) -> Option<LayerKind> {
