@@ -385,6 +385,59 @@ fn slot_fill_content_composes_into_the_implement_body() {
 }
 
 #[test]
+fn slot_fill_for_an_omitted_step_does_not_brick_the_router_front_door() {
+    // Regression (M4 audit, HIGH): once a project records *any* slot-fill on the
+    // shipped `step:implement#extra-guidance` point, bare `jigc start` (the cascade-
+    // default `router`, which includes `present-catalog`/`route-to-workflow` — *not*
+    // `implement`) must still compose cleanly. The orphan check keys on the *target
+    // step's* resolved body, so a slot-fill whose target step the composed workflow
+    // omits is **inert, not an orphan** — the primary front door stays open.
+    //
+    // No project `steps/` shadow: the pack `implement` step genuinely ships
+    // `{{fill: extra-guidance}}`, so the slot-fill targets a real declared point. The
+    // earlier `scenario_7` slot-fill coverage only ever composed `--workflow
+    // single-task` (which *does* include `implement`), which is exactly why it missed
+    // this false block.
+    let repo = TempDir::new("router-front-door");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let config = repo.path().join(".jigc").join("config");
+    // Record the slot-fill but leave `default-workflow` at the pack default (`router`),
+    // so bare `jigc start "<intent>"` composes the router that omits `implement`.
+    fs::write(
+        config.join("manifest.yaml"),
+        "deltas:\n\
+         \x20 - kind: slot-fill\n\
+         \x20   target: step:implement#extra-guidance\n\
+         \x20   content: fills/extra-guidance.md\n",
+    )
+    .expect("write project manifest with an implement slot-fill");
+    fs::create_dir_all(config.join("fills")).expect("mk fills/");
+    fs::write(
+        config.join("fills").join("extra-guidance.md"),
+        "Before you finalize, run the project lint probe and fix any findings.\n",
+    )
+    .expect("write the native fill content");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    assert!(
+        out.status.success(),
+        "bare `jigc start` (the router) must compose cleanly even with an `implement` \
+         slot-fill recorded — the target step is omitted, so the fill is inert, not an \
+         orphan; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    // It really composed the router (no `implement`), not single-task.
+    assert!(
+        !stdout.contains("{{ fill: extra-guidance }}") && !stdout.contains("fill: extra-guidance"),
+        "no raw `{{fill:}}` point may leak into the router view; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn orphaned_slot_fill_blocks_compose_with_its_route() {
     // The T4 wiring also runs the M4 `workflow-refs` fill checks live in the gate: a
     // `slot-fill` targeting a `<fill-id>` no resolved step body declares is a blocking

@@ -1615,10 +1615,14 @@ pub fn workflow_refs_with_deltas(
 /// per-step checks run, so they fire at the same resolution point as
 /// `structural-anchor-resolves`. The two net-new checks:
 ///
-/// - **`slot-fill-orphan`** — a `slot_fills` delta whose `(step_id, fill_id)` **no
-///   resolved step body declares** a `{{fill:<id>}}` point for is blocking, carrying
-///   its repair **route** (symmetric with the orphaned `structural-anchor-resolves`,
-///   closing the closed-surface hole for both authoring paths).
+/// - **`slot-fill-orphan`** — a `slot_fills` delta whose **target step** (via
+///   `source`) either does not resolve or resolves but declares no `{{fill:<id>}}`
+///   point for `fill_id` is blocking, carrying its repair **route**. Keyed on the
+///   *target step* — the same question the write-time `check_fill_point_present` asks
+///   — so a slot-fill whose target step is simply absent from the composed workflow is
+///   **inert for that compose, not an orphan** (symmetric with the orphaned
+///   `structural-anchor-resolves`, closing the closed-surface hole for both authoring
+///   paths).
 /// - **`fill-survivor`** — a lone `{{fill:}}` surviving into a post-phase-5 body
 ///   (a nested fill phase 5 did not re-run) is blocking, **located at its line**
 ///   ([`find_fill_survivor`]).
@@ -1657,22 +1661,21 @@ pub fn workflow_refs_with_fills(
         Err(finding) => return vec![finding],
     };
 
-    // slot-fill-orphan: every slot-fill delta must target a `{{fill:<id>}}` point
-    // some resolved step body declares. Collect the declared points first, then
-    // each delta whose `(step_id, fill_id)` is absent is an orphan.
-    let declared: std::collections::BTreeSet<(&str, &str)> = composition
-        .steps
-        .iter()
-        .flat_map(|step| {
-            step.body
-                .lines()
-                .filter_map(move |line| fill_id_of(line.trim()).map(|id| (step.id.as_str(), id)))
-        })
-        .collect();
+    // slot-fill-orphan: a slot-fill is orphaned iff its **target step** resolves but
+    // declares no `{{fill:<fill-id>}}` point (or the target step does not resolve at
+    // all) — keyed on the *target step* via `source`, the same question the write-time
+    // `check_fill_point_present` asks, evaluated regardless of whether the
+    // currently-composed workflow includes that step. A slot-fill whose target step is
+    // simply absent from this workflow is **inert for this compose, not an orphan**
+    // (`overrides.md` → The `{{fill:}}` placeholder: slot-fill targets). Keying on the
+    // composed workflow's bodies instead would falsely orphan-block every workflow that
+    // omits the targeted step — including the bare-`jigc start` router.
     let mut findings = Vec::new();
     for delta in slot_fills {
-        let key = (delta.target.step_id.as_str(), delta.target.fill_id.as_str());
-        if !declared.contains(&key) {
+        let declares_point = source
+            .step(&delta.target.step_id)
+            .is_some_and(|step| fill_ids_in(&step.body).contains(&delta.target.fill_id.as_str()));
+        if !declares_point {
             findings.push(Finding {
                 severity: crate::finding::Severity::Blocking,
                 code: "workflow-refs.slot-fill-orphan".to_owned(),
@@ -3825,6 +3828,68 @@ reference — make your consequences explain what changes:
             "a correctly-filled body + declared point yields no finding, got {findings:?}"
         );
         insta::assert_snapshot!(finding_codes(&findings), @"");
+    }
+
+    /// Regression (M4 audit, HIGH): a slot-fill whose **target step is not in the
+    /// composed workflow** is **inert, not an orphan**. The orphan check keys on the
+    /// *target step's* resolved body (via `source`), not the composed workflow's
+    /// bodies — so a workflow that omits the target step (here `other`, with no
+    /// `implement` include) composes cleanly even though a slot-fill targets
+    /// `step:implement#extra-guidance`, which `implement` (fetchable via `source`)
+    /// genuinely declares. Keying on the composed bodies bricked the bare-`jigc start`
+    /// router the moment any `implement` slot-fill was recorded.
+    #[test]
+    fn workflow_refs_slot_fill_for_omitted_step_is_inert_not_orphan() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        // `source` knows both steps; the workflow includes only `other`.
+        let src = MapSource::new(&[
+            ("implement", "do it\n{{ fill: extra-guidance }}\nstop\n"),
+            ("other", "a different step body\n"),
+        ]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:other }}\n";
+        let deltas = [slot_fill("step:implement#extra-guidance", "extra-guidance")];
+        let fills = fills(&[]);
+
+        let findings = workflow_refs_with_fills(wf, &[], &deltas, &fills, &src, &catalog, &ctx);
+
+        assert!(
+            findings.is_empty(),
+            "a slot-fill whose target step the composed workflow omits is inert, not an orphan, got {findings:?}"
+        );
+        insta::assert_snapshot!(finding_codes(&findings), @"");
+    }
+
+    /// Regression guard (keep catching real orphans): a slot-fill whose target step
+    /// **does resolve but declares no such point** is still a blocking orphan, even
+    /// when that step is absent from the composed workflow — so the check is not a
+    /// no-op. Here `implement` declares only `extra-guidance`; the delta targets the
+    /// undeclared `typo-id`, and the workflow includes only `other`.
+    #[test]
+    fn workflow_refs_orphan_for_omitted_step_still_blocks() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+        let src = MapSource::new(&[
+            ("implement", "do it\n{{ fill: extra-guidance }}\nstop\n"),
+            ("other", "a different step body\n"),
+        ]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:other }}\n";
+        let deltas = [slot_fill("step:implement#typo-id", "typo-id")];
+        let fills = fills(&[]);
+
+        let findings = workflow_refs_with_fills(wf, &[], &deltas, &fills, &src, &catalog, &ctx);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "exactly one orphan finding, got {findings:?}"
+        );
+        assert_eq!(findings[0].code, "workflow-refs.slot-fill-orphan");
+        assert_eq!(findings[0].severity, crate::finding::Severity::Blocking);
+        assert!(
+            findings[0].route.is_some(),
+            "the orphan carries its repair route"
+        );
     }
 
     // --- phase-4 structural-delta application (apply_structural_deltas) ---
