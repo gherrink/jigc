@@ -25,7 +25,7 @@
 //! `workflow:<id>#<step-id>` — a delta has no stable id, so its target is its identity.
 
 use crate::cascade::{
-    Anchor, StructuralBasis, StructuralDelta, StructuralTarget, TrackedForkDelta,
+    Anchor, SlotFillDelta, StructuralBasis, StructuralDelta, StructuralTarget, TrackedForkDelta,
 };
 use crate::finding::Finding;
 use crate::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
@@ -36,8 +36,11 @@ use crate::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
 /// The classifier consults the **content-bearing** surfaces (`structural` filtered to
 /// `replace`/`remove`, `forks`) for the existence + content questions; `bases` pairs a
 /// recorded base-hash to a content-bearing target (read by the T2/T3 branches). The
-/// `scalar`/`slot-fill` surfaces ride along for completeness (their existence questions
-/// land in later tasks) and are not yet consulted here.
+/// `slot_fills` surface answers the **slot's-existence** question (`overrides.md` →
+/// Upgrade reconciliation, the `slot-fill | the slot's existence | clean / orphaned`
+/// row): a slot-fill is clean iff its target step still declares the `{{fill:<id>}}`
+/// point, else orphaned. The `scalar` surface rides along for completeness (its
+/// existence question lands in a later task) and is not yet consulted here.
 #[derive(Clone, Copy)]
 pub struct RecordedDeltas<'a> {
     /// The phase-4 `structural-op` deltas (`insert` / `replace` / `remove`).
@@ -46,6 +49,9 @@ pub struct RecordedDeltas<'a> {
     pub forks: &'a [TrackedForkDelta],
     /// The M5 base-hash basis records, keyed by a content-bearing delta's target.
     pub bases: &'a [StructuralBasis],
+    /// The `slot-fill` deltas — each classified on the **slot's existence** question
+    /// (does the target step's v2 body still declare its `{{fill:<id>}}` point?).
+    pub slot_fills: &'a [SlotFillDelta],
 }
 
 /// Classify each recorded delta against the current `pack`, returning one
@@ -116,7 +122,61 @@ pub fn classify(deltas: RecordedDeltas<'_>, pack: &dyn PackSource) -> Vec<Findin
         }
     }
 
+    for delta in deltas.slot_fills {
+        if let Some(finding) = slot_fill_orphaned_if_point_absent(delta, pack) {
+            findings.push(finding);
+        }
+    }
+
     findings
+}
+
+/// The slot's-existence question (`overrides.md` → Upgrade reconciliation,
+/// `slot-fill | the slot's existence | clean / orphaned`): a `slot-fill` is `clean`
+/// iff its target step's v2 body still declares the `{{fill:<fill-id>}}` point it
+/// fills, else **`orphaned`** (one blocking [`Finding`]). The point's existence is
+/// settled by reading the **pack-default** step body directly —
+/// `pack.read(Steps, <step-id>)` → [`crate::compose::load_step_def`] →
+/// [`crate::compose::fill_ids_in`] — the same shadow-bypass the content questions
+/// use, so a project shadow of the step never masks an upstream point removal.
+///
+/// Two orphaning conditions, one outcome: the step is **absent** entirely (the
+/// absent-step path — the body cannot declare a point it does not exist to hold), or
+/// the step is present but its body **no longer declares** the fill-id. Both surface
+/// loudly rather than a false `clean` (worked-examples flow 7 → `step:locate#hints`).
+/// A non-UTF-8 step body is treated as not-declaring (the point cannot be confirmed).
+fn slot_fill_orphaned_if_point_absent(
+    delta: &SlotFillDelta,
+    pack: &dyn PackSource,
+) -> Option<Finding> {
+    let step_id = &delta.target.step_id;
+    let declares_point = pack
+        .read(PackResourceKind::Steps, &ResourceId::from(step_id.as_str()))
+        .ok()
+        .and_then(|bytes| crate::compose::load_step_def(step_id.as_str(), &bytes).ok())
+        .is_some_and(|step| {
+            crate::compose::fill_ids_in(&step.body).contains(&delta.target.fill_id.as_str())
+        });
+    if declares_point {
+        None
+    } else {
+        Some(slot_fill_orphaned(delta))
+    }
+}
+
+/// One blocking `orphaned` [`Finding`] for a `slot-fill` whose `{{fill:}}` point the
+/// v2 pack no longer declares (the point was dropped, or its step is gone), identified
+/// by its `step:<step-id>#<fill-id>` target string and routed to drop / re-target
+/// (worked-examples flow 7 → the `step:locate#hints` orphaned route).
+fn slot_fill_orphaned(delta: &SlotFillDelta) -> Finding {
+    let target_str = format!("step:{}#{}", delta.target.step_id, delta.target.fill_id);
+    Finding::block(
+        "override-default.slot-fill-orphaned",
+        format!(
+            "slot-fill target `{target_str}` is no longer a declared `{{{{fill:}}}}` point in the current pack"
+        ),
+        format!("drop this delta, or re-target `{target_str}` to a current `{{{{fill:}}}}` point"),
+    )
 }
 
 /// The recorded [`StructuralBasis::base_hash`] for a `replace`/`remove` target, if one
@@ -340,6 +400,18 @@ mod tests {
         }
     }
 
+    /// A `slot-fill` delta targeting `step:<step-id>#<fill-id>` — its existence
+    /// question is whether the target step body still declares that `{{fill:}}` point.
+    fn slot_fill(step: &str, fill_id: &str) -> SlotFillDelta {
+        SlotFillDelta {
+            target: crate::cascade::SlotFillTarget {
+                step_id: step.to_owned(),
+                fill_id: fill_id.to_owned(),
+            },
+            content_id: "house-rules".to_owned(),
+        }
+    }
+
     /// The v2 pack **omits** the `locate` step both a `replace` and a `tracked-fork`
     /// delta target → each classifies `orphaned`: a blocking [`Finding::block`]
     /// carrying the delta's target string `workflow:single-task#locate` and a
@@ -356,6 +428,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -407,6 +480,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -437,6 +511,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         assert!(
@@ -491,6 +566,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -540,6 +616,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -593,6 +670,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -666,6 +744,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -726,6 +805,7 @@ mod tests {
             structural: &structural,
             forks: &forks,
             bases: &bases,
+            slot_fills: &[],
         };
 
         let findings = classify(deltas, &v2);
@@ -740,6 +820,80 @@ mod tests {
             assert_eq!(
                 finding.code, "override-default.target-exists",
                 "the absent-target path wins over the no-basis branch (existence is asked first)"
+            );
+        }
+    }
+
+    /// **T1 — the slot's-existence question** (`overrides.md` → Upgrade reconciliation,
+    /// the `slot-fill | the slot's existence | clean / orphaned` row; worked-examples
+    /// flow 7 → the `step:locate#hints` orphaned outcome). Three slot-fills against a
+    /// v2 pack:
+    ///
+    /// - **(a) point dropped** — the v2 `locate` step body **no longer declares** its
+    ///   `{{fill: hints}}` point → **orphaned**: a blocking [`Finding`] whose target
+    ///   string is `step:locate#hints` (the `step:<id>#<fill-id>` slot-fill spelling, not
+    ///   the structural `workflow:` spelling), routed to drop / re-target.
+    /// - **(b) point still declared** — the v2 `implement` step body still declares its
+    ///   `{{fill: extra-guidance}}` point → **no finding** (clean).
+    /// - **(c) step omitted entirely** — the v2 pack drops the `gone` step the slot-fill
+    ///   targets → **orphaned** via the absent-step path (never a panic, never a false
+    ///   clean): existence of the body is itself the existence of the point.
+    ///
+    /// The read is **pack-direct** (`pack.read(Steps, <step-id>)` → parse → `fill_ids_in`)
+    /// — the same shadow-bypass the content questions use: a project shadow of the step
+    /// must not mask an upstream point removal.
+    #[test]
+    fn slot_fill_classifies_on_the_points_existence_in_v2() {
+        // v2 `locate` dropped its `{{fill: hints}}` point; `implement` keeps
+        // `{{fill: extra-guidance}}`; the `gone` step is omitted entirely.
+        let locate_v2 = "find the code\n";
+        let implement_v2 = "write it\n{{fill: extra-guidance}}\n";
+        let v2 = FakePack::new("v2", &[("locate", locate_v2), ("implement", implement_v2)]);
+
+        let slot_fills = vec![
+            slot_fill("locate", "hints"),             // (a) point dropped → orphaned
+            slot_fill("implement", "extra-guidance"), // (b) still declared → clean
+            slot_fill("gone", "anything"),            // (c) step omitted → orphaned
+        ];
+        let structural = Vec::new();
+        let forks = Vec::new();
+        let bases = Vec::new();
+        let deltas = RecordedDeltas {
+            structural: &structural,
+            forks: &forks,
+            bases: &bases,
+            slot_fills: &slot_fills,
+        };
+
+        let findings = classify(deltas, &v2);
+
+        assert_eq!(
+            findings.len(),
+            2,
+            "the dropped point and the omitted step orphan; the still-declared point is clean: {findings:?}"
+        );
+        for (finding, target_str) in findings
+            .iter()
+            .zip(["step:locate#hints", "step:gone#anything"])
+        {
+            assert_eq!(finding.severity, Severity::Blocking);
+            assert_eq!(finding.code, "override-default.slot-fill-orphaned");
+            assert!(
+                finding.message.contains(target_str),
+                "the orphaned slot-fill is identified by its `step:<id>#<fill-id>` target string: {}",
+                finding.message
+            );
+            let route = finding
+                .route
+                .as_deref()
+                .expect("an orphaned slot-fill carries a route");
+            assert!(
+                route.contains("drop") || route.contains("re-target"),
+                "the route directs drop / re-target: {route}"
+            );
+            assert!(
+                route.contains(target_str),
+                "the route names the target string: {route}"
             );
         }
     }
