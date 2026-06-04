@@ -42,10 +42,10 @@ struct KnobDecl {
 /// demotion would break a load-bearing invariant of the system itself
 /// (`validation.md` → What "intrinsic" means mechanically: the seven
 /// `workflow-refs.*` checks and the four `schema-conformance.*` checks). The
-/// engine asserts at pack-load that any of these knobs a pack *declares* is
+/// engine asserts at pack-load that every one of these knobs is **declared** and
 /// floored at `blocking`, so a mis-declared pack cannot silently un-lock the
-/// determinism boundary by leaving an intrinsic check demotable. This is
-/// *assertion-only* — it never assigns severity nor ships pack content, so the
+/// determinism boundary by leaving an intrinsic check absent or demotable. This
+/// is *assertion-only* — it never assigns severity nor ships pack content, so the
 /// engine-empty invariant holds.
 pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.workflow-refs.placeholder-resolves.severity",
@@ -129,6 +129,16 @@ pub enum KnobError {
     /// (`overrides.md` → Locked keys; assertion-only).
     #[error("intrinsic check `{0}` must declare `floor: blocking` but does not")]
     UnflooredIntrinsic(String),
+
+    /// An engine-known intrinsic check is not declared in the knob surface at
+    /// all. Today a `scalar-set` on an undeclared key hard-aborts, so an absent
+    /// intrinsic key is not *directly* demotable — but requiring every intrinsic
+    /// check be declared (and floored) keeps the determinism boundary locked by
+    /// the floor itself, not resting solely on the closed-surface rule (which a
+    /// future change could loosen). Defense-in-depth; assertion-only
+    /// (`overrides.md` → Locked keys).
+    #[error("intrinsic check `{0}` must be declared (with `floor: blocking`) but is absent")]
+    UndeclaredIntrinsic(String),
 }
 
 /// Parse the closed knob surface from raw `config/knobs.yaml` bytes.
@@ -138,8 +148,10 @@ pub enum KnobError {
 /// Every knob must declare a `default` (the value the resolver seeds the base map
 /// with); an absent default is a [`KnobError::MissingDefault`]. A knob may also
 /// declare a `floor` (the demotion-lock; see [`KnobSet::floors`]). The engine
-/// asserts at load that each [`INTRINSIC_CHECK_KEYS`] knob is floored at
-/// `blocking` — an unfloored intrinsic is a [`KnobError::UnflooredIntrinsic`].
+/// asserts at load that every [`INTRINSIC_CHECK_KEYS`] knob is **declared** and
+/// floored at `blocking` — an absent intrinsic is a
+/// [`KnobError::UndeclaredIntrinsic`], a declared-but-unfloored one a
+/// [`KnobError::UnflooredIntrinsic`].
 pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
     let text = std::str::from_utf8(bytes).map_err(|_| KnobError::NotUtf8)?;
     let decls: BTreeMap<String, KnobDecl> = serde_yaml_ng::from_str(text)?;
@@ -168,15 +180,20 @@ pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
         });
     }
 
-    // Assertion-only: an engine-known intrinsic check that a pack *declares* must
-    // be floored at `blocking`, else a mis-declared pack could un-lock the
-    // determinism boundary by leaving it demotable. (An *absent* intrinsic key is
-    // not a demotion risk — a `scalar-set` on an undeclared key hard-aborts
-    // `UndeclaredScalar` — so the guard fires only on the declared-but-unfloored
-    // case.) This never assigns a severity nor ships pack content, so the
-    // engine-empty invariant holds.
+    // Assertion-only: every engine-known intrinsic check must be *declared* and
+    // floored at `blocking`. An undeclared intrinsic key is not *directly*
+    // demotable today (a `scalar-set` on an undeclared key hard-aborts
+    // `UndeclaredScalar`), but requiring declaration too keeps the determinism
+    // boundary locked by the floor itself — defense-in-depth, not resting solely
+    // on the closed-surface rule (which a future change could loosen). A
+    // declared-but-unfloored intrinsic is the un-lock a mis-declared pack would
+    // otherwise sneak in. This never assigns a severity nor ships pack content,
+    // so the engine-empty invariant holds.
     for key in INTRINSIC_CHECK_KEYS {
-        if defaults.contains_key(*key) && floors.get(*key).map(String::as_str) != Some("blocking") {
+        if !defaults.contains_key(*key) {
+            return Err(KnobError::UndeclaredIntrinsic((*key).to_owned()));
+        }
+        if floors.get(*key).map(String::as_str) != Some("blocking") {
             return Err(KnobError::UnflooredIntrinsic((*key).to_owned()));
         }
     }
@@ -415,6 +432,29 @@ mod tests {
             matches!(err, KnobError::UnflooredIntrinsic(ref k)
                 if k == "validation.workflow-refs.placeholder-resolves.severity"),
             "expected UnflooredIntrinsic, got {err:?}",
+        );
+    }
+
+    /// A `knobs.yaml` that omits an intrinsic key entirely fails to load with the
+    /// typed [`KnobError::UndeclaredIntrinsic`]. Defense-in-depth: the floor must
+    /// be present to lock the check, never resting solely on the closed-surface
+    /// (undeclared-key-hard-aborts) rule (`overrides.md` → Locked keys).
+    #[test]
+    fn undeclared_intrinsic_is_a_typed_error() {
+        // Drop the whole declaration block for one intrinsic key.
+        let text = std::str::from_utf8(KNOBS_YAML).unwrap();
+        let stripped = text.replacen(
+            "validation.workflow-refs.placeholder-resolves.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n  floor: blocking\n",
+            "",
+            1,
+        );
+        assert_ne!(stripped, text, "the strip must actually remove the block");
+
+        let err = load_knobs(stripped.as_bytes()).expect_err("an undeclared intrinsic errors");
+        assert!(
+            matches!(err, KnobError::UndeclaredIntrinsic(ref k)
+                if k == "validation.workflow-refs.placeholder-resolves.severity"),
+            "expected UndeclaredIntrinsic, got {err:?}",
         );
     }
 }

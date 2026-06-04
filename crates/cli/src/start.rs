@@ -2581,14 +2581,16 @@ mod tests {
         fs::create_dir_all(cfg.path()).expect("mk config dir");
 
         // A pack whose knob surface omits `default-workflow` entirely — so the
-        // cascade-resolved surface never carries it.
+        // cascade-resolved surface never carries it. The intrinsic knobs are
+        // present (the engine's load-time assertion requires them); the point is
+        // that `default-workflow` specifically is undeclared.
+        let knobs = format!(
+            "some-other-knob:\n  type: string\n  default: x\n{}",
+            crate::pack::intrinsic_knobs_yaml(),
+        );
         let pack = FixturePack::with(vec![
             (PackResourceKind::Config, "defaults", "pack-id: dev\n"),
-            (
-                PackResourceKind::Config,
-                "knobs",
-                "some-other-knob:\n  type: string\n  default: x\n",
-            ),
+            (PackResourceKind::Config, "knobs", &knobs),
         ]);
 
         // The live front-door read: resolve the cascade, then read the key through

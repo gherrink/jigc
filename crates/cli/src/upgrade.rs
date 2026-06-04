@@ -174,7 +174,10 @@ mod tests {
         fs::create_dir_all(&config_dir).expect("mk pack/config");
         fs::write(
             config_dir.join("knobs.yaml"),
-            "default-workflow:\n  type: string\n  default: single-task\n",
+            format!(
+                "default-workflow:\n  type: string\n  default: single-task\n{}",
+                crate::pack::intrinsic_knobs_yaml(),
+            ),
         )
         .expect("seed knobs.yaml");
         // The severity post-pass now resolves the project cascade against this pack

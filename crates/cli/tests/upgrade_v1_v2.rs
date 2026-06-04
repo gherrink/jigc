@@ -663,13 +663,25 @@ fn scalar_set_over_a_dropped_knob_classifies_orphaned_through_the_binary() {
     );
 
     // Build a v2 whose knob surface DROPS `default-workflow`, keeping only the two
-    // still-declared validation-severity knobs (each retains a default → loads).
+    // still-declared validation-severity knobs (each retains a default → loads) —
+    // plus the 11 intrinsic per-check knobs the engine's load-time assertion
+    // requires (generated from the engine's intrinsic set so the pack still loads).
     let v2_dir = TempDir::new("scalar-pack-v2");
     let v2 = dir_pack_with_version(v2_dir.path(), "0.4.0");
+    let intrinsic: String = engine::knobs::INTRINSIC_CHECK_KEYS
+        .iter()
+        .map(|k| {
+            format!(
+                "{k}:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n  floor: blocking\n"
+            )
+        })
+        .collect();
     fs::write(
         v2.join("config").join("knobs.yaml"),
-        "validation.workflow-refs.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n\
-         validation.file-state.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n",
+        format!(
+            "validation.workflow-refs.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n\
+             validation.file-state.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n{intrinsic}",
+        ),
     )
     .expect("write v2 knobs without default-workflow");
 

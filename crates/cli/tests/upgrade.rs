@@ -74,13 +74,26 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
     }
     let config_dir = pack_root.join("config");
     fs::create_dir_all(&config_dir).expect("mk pack/config");
+    // The 11 intrinsic per-check knobs (each floored at `blocking`), generated from
+    // the engine's intrinsic set so this minimal pack satisfies the load-time
+    // intrinsic-floored assertion without hand-listing the surface.
+    let intrinsic: String = engine::knobs::INTRINSIC_CHECK_KEYS
+        .iter()
+        .map(|k| {
+            format!(
+                "{k}:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n  floor: blocking\n"
+            )
+        })
+        .collect();
     fs::write(
         config_dir.join("knobs.yaml"),
         // `default-workflow` (the resolve surface the no-delta tests lean on) plus the
         // `override-default.target-unchanged.severity` tunable — the closed enum the M6
-        // warning-tier exit-code test demotes a conflict through.
-        "default-workflow:\n  type: string\n  default: single-task\n\
-         validation.override-default.target-unchanged.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n",
+        // warning-tier exit-code test demotes a conflict through — plus the intrinsic surface.
+        format!(
+            "default-workflow:\n  type: string\n  default: single-task\n\
+             validation.override-default.target-unchanged.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n{intrinsic}",
+        ),
     )
     .expect("seed knobs.yaml");
     // `jigc upgrade` now resolves the project cascade to feed the M6 severity

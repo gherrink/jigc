@@ -169,10 +169,11 @@ mod tests {
                     self.pack_id
                 )
                 .into_bytes()),
-                (PackResourceKind::Config, "knobs") => Ok(
-                    b"default-workflow:\n  type: enum\n  of: [router, single-task, quick-fix]\n  default: router\n"
-                        .to_vec(),
-                ),
+                (PackResourceKind::Config, "knobs") => Ok(format!(
+                    "default-workflow:\n  type: enum\n  of: [router, single-task, quick-fix]\n  default: router\n{}",
+                    crate::pack::intrinsic_knobs_yaml(),
+                )
+                .into_bytes()),
                 _ => Err(PackError::NotFound {
                     kind,
                     id: id.clone(),

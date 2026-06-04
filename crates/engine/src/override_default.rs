@@ -438,14 +438,21 @@ mod tests {
             }
         }
 
-        /// Seed a `config/knobs.yaml` declaring exactly `keys` (each a `string` knob
-        /// with a default), so the scalar-set existence question reads this pack's
-        /// closed surface. Builder-style so a `FakePack::new(...)` can chain it.
+        /// Seed a `config/knobs.yaml` declaring the given `keys` (each a `string`
+        /// knob with a default) **plus** the 11 intrinsic per-check knobs (floored),
+        /// so the scalar-set existence question reads this pack's closed surface and
+        /// the pack still satisfies the engine's load-time intrinsic-floored
+        /// assertion. Builder-style so a `FakePack::new(...)` can chain it.
         fn with_knob_keys(mut self, keys: &[&str]) -> Self {
-            let yaml: String = keys
+            let mut yaml: String = keys
                 .iter()
                 .map(|k| format!("{k}:\n  type: string\n  default: x\n"))
                 .collect();
+            for k in crate::knobs::INTRINSIC_CHECK_KEYS {
+                yaml.push_str(&format!(
+                    "{k}:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n  floor: blocking\n"
+                ));
+            }
             self.resources.insert(
                 (PackResourceKind::Config, ResourceId::from("knobs")),
                 yaml.into_bytes(),

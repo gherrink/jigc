@@ -183,6 +183,23 @@ impl PackSource for FilesystemPack {
     }
 }
 
+/// The YAML for the 11 intrinsic per-check severity knobs, each floored at
+/// `blocking`, generated from [`engine::knobs::INTRINSIC_CHECK_KEYS`]. A minimal
+/// test pack appends this to its `config/knobs.yaml` so it satisfies the engine's
+/// load-time intrinsic-floored assertion ([`engine::knobs::load_knobs`]) without
+/// hand-listing the surface — and stays in sync if the intrinsic set changes.
+#[cfg(test)]
+pub(crate) fn intrinsic_knobs_yaml() -> String {
+    engine::knobs::INTRINSIC_CHECK_KEYS
+        .iter()
+        .map(|k| {
+            format!(
+                "{k}:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n  floor: blocking\n"
+            )
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
