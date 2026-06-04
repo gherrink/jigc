@@ -558,6 +558,19 @@ impl OverrideLayer {
         self.scalar_sets.iter().map(|(key, _)| key.as_str())
     }
 
+    /// Every recorded `scalar-set` delta as `(key, value)` pairs, in manifest
+    /// (application) order. The companion to [`scalar_set_keys`] for callers that must
+    /// reconstruct a layer from a subset of its deltas — `jigc upgrade` resolves the
+    /// severity cascade over only the scalar-sets the current pack still declares,
+    /// dropping the orphaned ones it reports separately (so an orphaned scalar-set
+    /// does not make [`resolve`]'s closed-surface check abort the upgrade that exists
+    /// to report it).
+    pub fn scalar_set_pairs(&self) -> impl Iterator<Item = (&str, &str)> {
+        self.scalar_sets
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+    }
+
     /// Declare a file id this layer shadows.
     pub fn shadow_file(mut self, id: impl Into<String>) -> Self {
         self.files.push(id.into());

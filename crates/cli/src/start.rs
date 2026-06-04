@@ -552,20 +552,12 @@ fn resolve_cascade(
     pack: &dyn PackSource,
     project_config: &Path,
 ) -> Result<(cascade::Resolved, ComposeOverrides)> {
-    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
-    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
-    let pack_default = PackDefaultLayer::new(
-        pack_id_from_config(pack)?,
-        pack.pack_version(),
-        knobs.base_scalars(),
-        Vec::new(),
-    );
     // The `tracked-fork` deltas are recording surface only — read by the (M5)
     // reconciliation, never by compose — so they are dropped here (a fork applies
     // as its phase-2 shadowed step file, no new resolution logic).
     let (project, deltas, slot_fills, _forks, _bases) = load_project_layer(project_config)?;
     let fills = load_fills(project_config, &slot_fills)?;
-    let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
+    let resolved = resolve_layers(pack, &project)?;
     Ok((
         resolved,
         ComposeOverrides {
@@ -574,6 +566,77 @@ fn resolve_cascade(
             fills,
         },
     ))
+}
+
+/// Resolve the cascade for severity assignment only — the [`cascade::Resolved`] the
+/// engine's M6 post-pass reads (`design/validation.md` → Every finding-emitting entry
+/// point must resolve the cascade). The finding-emitting paths that do *not* compose a
+/// workflow (`task validate` / `finalize`, `jigc upgrade`) build their `Resolved` here,
+/// so a recorded `validation.<probe>.<check>.severity` scalar-set tunes their findings
+/// — while a no-override project layer resolves to the base scalars, leaving the
+/// post-pass inert (the no-override path stays byte-identical).
+///
+/// A **missing** `project_config` dir is the no-override case: [`load_project_layer`]
+/// yields an empty layer (no manifest, no `steps/` shadows), so the resolution is the
+/// pack-default base — exactly `cascade::resolve(pack, None, None)` would give.
+pub(crate) fn resolve_severity_cascade(
+    pack: &dyn PackSource,
+    project_config: &Path,
+) -> Result<cascade::Resolved> {
+    let (project, _deltas, _slot_fills, _forks, _bases) = load_project_layer(project_config)?;
+    resolve_layers(pack, &project)
+}
+
+/// Resolve the severity cascade for `jigc upgrade` — like [`resolve_severity_cascade`]
+/// but **resilient to an orphaned scalar-set**. Upgrade compares a layer recorded
+/// against an *older* pack: a `scalar-set` whose key the current pack dropped is
+/// exactly the orphan `override-default` reports, but feeding it to [`cascade::resolve`]
+/// would trip the closed-surface check and abort the upgrade that exists to report it.
+/// So the project layer's scalar-sets are filtered to keys the current pack still
+/// declares before resolving — the live `validation.<probe>.<check>.severity` overrides
+/// still tune the upgrade's findings, while a dropped knob is left to the classifier
+/// (`design/validation.md` → Every finding-emitting entry point must resolve the
+/// cascade; `overrides.md` → Upgrade reconciliation: a `scalar-set` is `orphaned` once
+/// the pack drops it).
+pub(crate) fn resolve_severity_cascade_resilient(
+    pack: &dyn PackSource,
+    project_config: &Path,
+) -> Result<cascade::Resolved> {
+    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
+    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    let base = knobs.base_scalars();
+    let pack_default = PackDefaultLayer::new(
+        pack_id_from_config(pack)?,
+        pack.pack_version(),
+        base.clone(),
+        Vec::new(),
+    );
+    let (project, _deltas, _slot_fills, _forks, _bases) = load_project_layer(project_config)?;
+    // Keep only the scalar-sets whose key the current pack still declares; an orphaned
+    // one is reported by the classifier, not resolved here.
+    let mut filtered = OverrideLayer::empty();
+    for (key, value) in project.scalar_set_pairs() {
+        if base.contains_key(key) {
+            filtered = filtered.scalar_set(key, value);
+        }
+    }
+    Ok(cascade::resolve(&pack_default, None, Some(&filtered))?)
+}
+
+/// Seed the [`PackDefaultLayer`] scalar surface from `config/knobs` and resolve the
+/// cascade with `project` as the sole override layer (`team` lands later) — the one
+/// resolution step `resolve_cascade` / [`resolve_severity_cascade`] / [`resolve_step_body`]
+/// share (`overrides.md` → Resolution algorithm).
+fn resolve_layers(pack: &dyn PackSource, project: &OverrideLayer) -> Result<cascade::Resolved> {
+    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
+    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    let pack_default = PackDefaultLayer::new(
+        pack_id_from_config(pack)?,
+        pack.pack_version(),
+        knobs.base_scalars(),
+        Vec::new(),
+    );
+    Ok(cascade::resolve(&pack_default, None, Some(project))?)
 }
 
 /// Load each `slot-fill` delta's native content file into the cascade-resolved
@@ -1189,16 +1252,8 @@ pub(crate) fn resolve_step_body(
     project_config: &Path,
     step_id: &str,
 ) -> Result<Option<engine::compose::StepDef>> {
-    let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
-    let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
-    let pack_default = PackDefaultLayer::new(
-        pack_id_from_config(pack)?,
-        pack.pack_version(),
-        knobs.base_scalars(),
-        Vec::new(),
-    );
     let (project, _deltas, _slot_fills, _forks, _bases) = load_project_layer(project_config)?;
-    let resolved = cascade::resolve(&pack_default, None, Some(&project))?;
+    let resolved = resolve_layers(pack, &project)?;
 
     match resolved.file_owner(step_id) {
         // The project owns the id → read the project file (missing/malformed is a

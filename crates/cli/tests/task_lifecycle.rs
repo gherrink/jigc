@@ -228,6 +228,88 @@ fn task_validate_exit_code_tracks_blocking_findings() {
     );
 }
 
+/// T3 done-criterion: a recorded `validation.file-state.severity` scalar-set, read
+/// through the cascade `task validate` now resolves (the M6 severity post-pass fed a
+/// *real* `Resolved`), **demotes a real blocking `file-state.hash-matches` finding**
+/// observed through `task validate`'s exit code and rendered output
+/// (`design/validation.md` → Every finding-emitting entry point must resolve the
+/// cascade; Severity assignment — the M6 post-pass).
+///
+/// The drift is genuine: the staged commit doc is filled conformant (so the only
+/// blocker is the file-state probe, not `schema-conformance.*`), then the file-state
+/// record is seeded with a wrong baseline hash for the staged doc — exactly the
+/// `recorded + differing` drift the probe blocks on. Without the override, validate
+/// exits non-zero on the blocking drift; with `validation.file-state.severity:
+/// warning` recorded in the project manifest, the post-pass re-grades it to warning,
+/// the finding is still surfaced, and validate exits **zero** (the gate keys on
+/// blocking only).
+#[test]
+fn task_validate_severity_override_demotes_a_blocking_file_state_finding() {
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+
+    // Fill the commit doc conformant so `schema-conformance.*` is clean — the only
+    // blocking finding left will be the file-state drift we seed below.
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    // Seed a *wrong* baseline hash for the staged commit doc, so the file-state probe
+    // sees `recorded + differing` → a blocking `file-state.hash-matches` drift.
+    let rel_key = format!("docs/commit:{task}.md");
+    let state_dir = repo.path().join(".jigc").join("state");
+    fs::create_dir_all(&state_dir).expect("mk state dir");
+    let bogus_hash = "0".repeat(64);
+    fs::write(
+        state_dir.join("file-state.json"),
+        format!("{{\n  \"hashes\": {{\n    \"{rel_key}\": \"{bogus_hash}\"\n  }}\n}}\n"),
+    )
+    .expect("seed file-state record");
+
+    // Control: no override → the drift blocks, validate exits non-zero.
+    let out = run_task(repo.path(), home.path(), &["validate", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        !out.status.success(),
+        "the seeded file-state drift must block validate without an override; output:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("file-state.hash-matches"),
+        "validate must surface the file-state drift finding; got:\n{rendered}"
+    );
+
+    // Record `validation.file-state.severity: warning` in the project manifest — the
+    // scalar-set the resolved cascade carries, demoting the file-state check.
+    fs::write(
+        repo.path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml"),
+        "scalar:\n  validation.file-state.severity: warning\n",
+    )
+    .expect("seed manifest with the severity override");
+
+    // With the override resolved through the cascade, the drift is a warning — still
+    // surfaced, but no longer blocking, so validate exits zero.
+    let out = run_task(repo.path(), home.path(), &["validate", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        out.status.success(),
+        "the recorded severity override must demote the drift to non-blocking, so validate \
+         exits zero; output:\n{rendered}"
+    );
+    assert!(
+        rendered.contains("file-state.hash-matches"),
+        "the demoted finding is still surfaced (as a warning); got:\n{rendered}"
+    );
+}
+
 #[test]
 fn task_discard_removes_the_working_area_and_exits_zero() {
     let (repo, home) = started_repo("add rate limiter");

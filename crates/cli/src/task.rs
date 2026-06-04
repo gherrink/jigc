@@ -262,6 +262,25 @@ impl TaskArea {
         })
     }
 
+    /// The project cascade layer's config dir (`<repo>/.jigc/config`) — the override
+    /// surface `task validate` / `finalize` resolve to feed the engine's severity
+    /// post-pass (`design/validation.md` → Every finding-emitting entry point must
+    /// resolve the cascade). A missing dir is the no-override case
+    /// ([`crate::start::resolve_severity_cascade`] yields the pack-default base).
+    fn project_config(&self) -> PathBuf {
+        self.jigc_root.join("config")
+    }
+
+    /// Resolve the project cascade for the engine's M6 severity post-pass — the
+    /// `Resolved` `validate` / `finalize` thread through `ValidationReport::new`, so a
+    /// recorded `validation.<probe>.<check>.severity` scalar-set tunes their findings
+    /// (`design/validation.md` → Severity assignment — the M6 post-pass). A no-override
+    /// project layer resolves to the base scalars → the post-pass is inert (the
+    /// no-override path stays byte-identical).
+    fn severity_cascade(&self) -> Result<engine::cascade::Resolved> {
+        crate::start::resolve_severity_cascade(self.pack.as_ref(), &self.project_config())
+    }
+
     /// Read the task's pinned base commit.
     fn base(&self) -> Result<BasePin> {
         let path = self.dir.join("base.json");
@@ -324,7 +343,7 @@ impl TaskArea {
             &self.repo_root,
             &self.jigc_root,
             &head,
-            &crate::cascade_util::no_delta_resolved()?,
+            &self.severity_cascade()?,
         )
         .with_context(|| format!("validating task at {:?}", self.dir))
     }
@@ -368,10 +387,8 @@ impl TaskArea {
         ) {
             Ok(plan) => plan,
             Err(findings) => {
-                let report = engine::result::ValidationReport::new(
-                    findings,
-                    &crate::cascade_util::no_delta_resolved()?,
-                );
+                let report =
+                    engine::result::ValidationReport::new(findings, &self.severity_cascade()?);
                 eprint!("{}", render::validation(format, &report));
                 if format != Format::Json {
                     eprintln!();

@@ -70,13 +70,16 @@ pub(crate) fn upgrade_with_pack(
         },
         pack,
     );
-    // The engine severity post-pass reads the resolved cascade; T3 threads the
-    // project-resolved one here. A no-delta cascade keeps `override-default`'s
-    // emitted (blocking) severities byte-identical until then.
-    Ok(ValidationReport::new(
-        findings,
-        &crate::cascade_util::no_delta_resolved()?,
-    ))
+    // The engine severity post-pass reads the resolved cascade: a recorded
+    // `validation.override-default.*.severity` scalar-set tunes the classifier's
+    // findings (`design/validation.md` → Every finding-emitting entry point must
+    // resolve the cascade). Resolved *resiliently* — an orphaned scalar-set (a knob
+    // the current pack dropped) is the very thing `classify` reports above, so it is
+    // filtered out of the severity resolution rather than aborting it. A no-override
+    // project layer resolves to the base scalars, so the post-pass is inert and
+    // `override-default`'s emitted severities stay byte-identical.
+    let resolved = crate::start::resolve_severity_cascade_resilient(pack, project_config)?;
+    Ok(ValidationReport::new(findings, &resolved))
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the same preamble
@@ -169,6 +172,12 @@ mod tests {
             "default-workflow:\n  type: string\n  default: single-task\n",
         )
         .expect("seed knobs.yaml");
+        // The severity post-pass now resolves the project cascade against this pack
+        // (T3: `override-default`'s findings tune through the resolved cascade), which
+        // reads `config/defaults`'s `pack-id` (the pack-default layer provenance). A
+        // real pack always ships it; seed it so the directly-built pack resolves.
+        fs::write(config_dir.join("defaults.yaml"), "pack-id: test-pack\n")
+            .expect("seed defaults.yaml");
         FilesystemPack::new(pack_root)
     }
 

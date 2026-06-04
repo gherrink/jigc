@@ -79,6 +79,11 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
         "default-workflow:\n  type: string\n  default: single-task\n",
     )
     .expect("seed knobs.yaml");
+    // `jigc upgrade` now resolves the project cascade to feed the M6 severity
+    // post-pass (T3), reading `config/defaults`'s `pack-id` for the pack-default
+    // layer provenance. A real pack always ships it; seed it here too.
+    fs::write(config_dir.join("defaults.yaml"), "pack-id: test-pack\n")
+        .expect("seed defaults.yaml");
     pack_root
 }
 
