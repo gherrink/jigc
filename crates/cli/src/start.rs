@@ -347,6 +347,10 @@ fn compose_core(
             task: None,
             catalog: selectable,
             store,
+            // No milestone in this single-`start` compose path — the fan-out
+            // list-source is fed only by the milestone-execution wiring (a later
+            // increment); empty here, the empty collection.
+            milestone: Vec::new(),
         }
     };
     // Compose-time `workflow-refs` gate over the **post-phase-4** include list +
@@ -976,6 +980,8 @@ fn build_context(
         // resolves to the committed instances (the determinism boundary; the
         // engine resolver does no committed-store I/O).
         store,
+        // No milestone in this single-`start` compose path (see the no-task arm).
+        milestone: Vec::new(),
     }
 }
 

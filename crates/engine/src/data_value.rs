@@ -224,6 +224,15 @@ pub struct ComposeContext {
     /// from the map (no committed instances) resolves to the empty collection —
     /// empty text, not a finding.
     pub store: BTreeMap<String, Vec<Address>>,
+    /// The engine-native `milestone` work-unit root — the live, **id-sorted**
+    /// sub-task ids of the milestone being composed (`{{milestone.tasks}}`, the
+    /// `fan-out` step's list-source; [workflow-dialect.md](../../../design/workflow-dialect.md)
+    /// → data-value roots). The CLI feeds the `TaskList::enumerate()` output
+    /// (already canonically id-sorted); the resolver does **no** work-unit I/O (the
+    /// determinism boundary), mirroring how `catalog`/`store` are fed. Empty when
+    /// the composition has no milestone (no fan-out) or the milestone has no
+    /// sub-tasks — the empty collection, not a finding.
+    pub milestone: Vec<String>,
 }
 
 /// What a data-value [`Path`] resolves to against a [`ComposeContext`] — the
@@ -281,6 +290,18 @@ pub enum Resolution {
         /// The committed instance addresses of one doctype, in fed order.
         entries: Vec<Address>,
     },
+    /// The live **collection** of sub-task ids the engine-native `milestone` root
+    /// resolves to (`milestone.tasks`; [workflow-dialect.md](../../../design/workflow-dialect.md)
+    /// → data-value roots — "its `.tasks` resolves to the milestone's sub-task
+    /// collection"). A collection leaf like [`Catalog`](Resolution::Catalog) /
+    /// [`Store`](Resolution::Store): it carries the bare sub-task ids (the
+    /// `fan-out` step fans over them) but is not navigable — a further `.relation`
+    /// hop, `#fragment`, or `@` past it is a structural error. An empty milestone
+    /// resolves to the empty collection (no finding).
+    Milestone {
+        /// The milestone's sub-task ids, in canonical id-sorted order (as fed).
+        ids: Vec<String>,
+    },
 }
 
 impl Path {
@@ -309,6 +330,10 @@ impl Path {
     ///   committed instances of that doctype (empty when none); a `.relation` hop,
     ///   `#fragment`, or `@` past it is the `workflow-refs.store-not-navigable`
     ///   structural error (a collection root, like `catalog`).
+    /// - `milestone.tasks` (the fixed `.tasks` leaf hop) → [`Resolution::Milestone`],
+    ///   the milestone's sub-task ids (empty when none); `milestone` alone, a
+    ///   non-`tasks` hop, a further hop past `.tasks`, a `#fragment`, or `@` is the
+    ///   `workflow-refs.milestone-not-navigable` structural error (a collection leaf).
     ///
     /// A literal `type:name` [`Head::Doc`] head is a committed-store read that
     /// needs the wired store/edge-index; it is out of MVP resolution scope and
@@ -367,6 +392,35 @@ impl Path {
             let doctype = self.hops[0].as_str();
             return Ok(Resolution::Store {
                 entries: ctx.store.get(doctype).cloned().unwrap_or_default(),
+            });
+        }
+
+        // The engine-native `milestone` work-unit root is a **collection leaf**
+        // reached by the fixed `.tasks` hop: `milestone.tasks` (exactly that one
+        // hop, no `#fragment`, no `@` marker) resolves to the milestone's sub-task
+        // ids as a collection. The `.tasks` hop is the lone navigation; `milestone`
+        // alone, a `@` marker, a `#fragment`, any non-`tasks` first hop, or a
+        // further hop past `.tasks` is a structural error — there is nothing to
+        // navigate into, slice, or dereference past the collection
+        // (workflow-dialect.md → data-value roots). An empty milestone resolves to
+        // the **empty** collection (empty text, not a finding), mirroring `store`.
+        if root == "milestone" {
+            let is_bare_tasks = self.hops.len() == 1
+                && self.hops[0].as_str() == "tasks"
+                && self.fragment.is_none()
+                && !self.marker;
+            if !is_bare_tasks {
+                return Err(Finding::blocking(
+                    "workflow-refs.milestone-not-navigable",
+                    "`milestone.tasks` is the only navigable milestone path — it takes \
+                     exactly the `.tasks` hop and no further `.relation` hop, \
+                     `#fragment`, or `@` content marker"
+                        .to_owned(),
+                    Location::at(1, 1),
+                ));
+            }
+            return Ok(Resolution::Milestone {
+                ids: ctx.milestone.clone(),
             });
         }
 
@@ -643,6 +697,7 @@ mod tests {
             }),
             catalog: Vec::new(),
             store: BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -686,7 +741,8 @@ mod tests {
         );
 
         // Structural error: an undeclared root is *not* absent — it is a finding.
-        let undeclared = resolve("milestone.x", &ctx).expect_err("undeclared root is structural");
+        // (`milestone` is now a declared root, so this uses a still-undeclared one.)
+        let undeclared = resolve("sprint.x", &ctx).expect_err("undeclared root is structural");
         assert_eq!(undeclared.code, "workflow-refs.undeclared-root");
         assert_eq!(undeclared.severity, crate::finding::Severity::Blocking);
 
@@ -728,6 +784,7 @@ mod tests {
             task: None,
             catalog: Vec::new(),
             store: BTreeMap::new(),
+            milestone: Vec::new(),
         };
 
         for path in [
@@ -778,6 +835,7 @@ mod tests {
                 CatalogEntry::new("quick-fix", "A small, localized fix."),
             ],
             store: BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -842,6 +900,7 @@ mod tests {
             task: None,
             catalog: Vec::new(),
             store,
+            milestone: Vec::new(),
         }
     }
 
@@ -888,6 +947,66 @@ mod tests {
             assert_eq!(
                 err.code, "workflow-refs.store-not-navigable",
                 "`{path}` should be the store-not-navigable conformance code"
+            );
+            assert_eq!(err.severity, crate::finding::Severity::Blocking);
+        }
+    }
+
+    /// A composition context fed the milestone's id-sorted sub-task list — the
+    /// engine-native `milestone` work-unit root the `fan-out` step's
+    /// `{{milestone.tasks}}` reads ([workflow-dialect.md](../../../design/workflow-dialect.md)
+    /// → data-value roots). The CLI feeds the `TaskList::enumerate()` output (already
+    /// id-sorted); the resolver does **no** work-unit I/O (the determinism boundary).
+    fn two_task_milestone_ctx() -> ComposeContext {
+        ComposeContext {
+            milestone: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
+            ..ComposeContext::default()
+        }
+    }
+
+    /// Core done-criterion: a bare `milestone.tasks` (the fixed `.tasks` leaf hop,
+    /// no `#fragment`, no `@` marker) resolves to [`Resolution::Milestone`] carrying
+    /// the fed sub-task ids verbatim — the collection the `fan-out` step fans over.
+    /// An empty milestone resolves to the **empty** collection (no finding).
+    #[test]
+    fn bare_milestone_tasks_resolves_to_milestone_collection() {
+        let ctx = two_task_milestone_ctx();
+
+        assert_eq!(
+            resolve("milestone.tasks", &ctx).expect("bare `milestone.tasks` resolves"),
+            Resolution::Milestone {
+                ids: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
+            }
+        );
+
+        // An empty milestone → the empty collection, not a finding.
+        let empty = ComposeContext::default();
+        assert_eq!(
+            resolve("milestone.tasks", &empty).expect("empty milestone resolves to empty"),
+            Resolution::Milestone { ids: Vec::new() }
+        );
+    }
+
+    /// `milestone.tasks` is a **collection leaf** reached by the fixed `.tasks` hop,
+    /// not a navigable root: `milestone` alone, the `@` content marker, a `#fragment`,
+    /// a further `.relation` hop, and any non-`tasks` first hop are *each* a blocking
+    /// `workflow-refs.milestone-not-navigable` conformance error.
+    #[test]
+    fn navigated_milestone_is_blocking() {
+        let ctx = two_task_milestone_ctx();
+
+        for path in [
+            "milestone",
+            "@milestone.tasks",
+            "milestone.tasks#x",
+            "milestone.tasks.y",
+            "milestone.other",
+        ] {
+            let err = resolve(path, &ctx)
+                .expect_err(&format!("`{path}` is not a navigable milestone path"));
+            assert_eq!(
+                err.code, "workflow-refs.milestone-not-navigable",
+                "`{path}` should be the milestone-not-navigable conformance code"
             );
             assert_eq!(err.severity, crate::finding::Severity::Blocking);
         }

@@ -364,7 +364,9 @@ fn render_arg(
                     address.to_string()
                 }
                 Resolution::Absent => String::new(),
-                Resolution::Catalog { .. } | Resolution::Store { .. } => {
+                Resolution::Catalog { .. }
+                | Resolution::Store { .. }
+                | Resolution::Milestone { .. } => {
                     return Err(collection_not_lone());
                 }
             }
@@ -625,7 +627,9 @@ fn emit_content(
         Resolution::Address { address } => Ok(format!("> {address}")),
         Resolution::Scalar { value } => Ok(format!("> {value}")),
         Resolution::Absent => Ok(String::new()),
-        Resolution::Catalog { .. } | Resolution::Store { .. } => Err(collection_not_lone()),
+        Resolution::Catalog { .. } | Resolution::Store { .. } | Resolution::Milestone { .. } => {
+            Err(collection_not_lone())
+        }
     }
 }
 
@@ -712,7 +716,9 @@ fn emit_bare_data_value(
             Ok(address.to_string())
         }
         Resolution::Absent => Ok(String::new()),
-        Resolution::Catalog { .. } | Resolution::Store { .. } => Err(collection_not_lone()),
+        Resolution::Catalog { .. } | Resolution::Store { .. } | Resolution::Milestone { .. } => {
+            Err(collection_not_lone())
+        }
     }
 }
 
@@ -769,7 +775,7 @@ fn emit_author_line(
         Resolution::Address { address } | Resolution::Content { address } => address.to_string(),
         Resolution::Scalar { value } => value,
         Resolution::Absent => String::new(),
-        Resolution::Catalog { .. } | Resolution::Store { .. } => {
+        Resolution::Catalog { .. } | Resolution::Store { .. } | Resolution::Milestone { .. } => {
             return Err(collection_not_lone());
         }
     };
@@ -1934,6 +1940,7 @@ mod tests {
             }),
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -2151,6 +2158,7 @@ Slightly higher write latency for resilience.
             }),
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -2237,6 +2245,7 @@ Slightly higher write latency for resilience.
             }),
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         };
         let emitted_unbound =
             emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
@@ -2360,6 +2369,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             }),
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -3051,6 +3061,7 @@ reference — make your consequences explain what changes:
             }),
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -3500,6 +3511,7 @@ reference — make your consequences explain what changes:
             }),
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         }
     }
 
@@ -3606,6 +3618,7 @@ reference — make your consequences explain what changes:
                 ),
             ],
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         };
 
         let emitted = emit_step_body("{{ catalog }}\n", &ctx, &empty_catalog).expect("emits");
@@ -3620,6 +3633,7 @@ reference — make your consequences explain what changes:
             task: None,
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         };
         let emitted_empty =
             emit_step_body("{{ catalog }}\n", &empty_ctx, &empty_catalog).expect("emits");
@@ -3650,6 +3664,7 @@ reference — make your consequences explain what changes:
             task: None,
             catalog: Vec::new(),
             store,
+            milestone: Vec::new(),
         };
 
         // A two-spec store renders one `> <address>` line per instance, fed order.
@@ -3664,6 +3679,7 @@ reference — make your consequences explain what changes:
             task: None,
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
+            milestone: Vec::new(),
         };
         let emitted_empty =
             emit_step_body("{{ store.specs }}\n", &empty_ctx, &empty_catalog).expect("emits");
