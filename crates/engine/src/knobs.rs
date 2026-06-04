@@ -31,7 +31,35 @@ struct KnobDecl {
     of: Option<Vec<String>>,
     #[serde(default)]
     default: Option<String>,
+    /// The demotion-lock floor: the value may be set to this severity or
+    /// stricter, never below (`overrides.md` → Locked keys). Intrinsic checks
+    /// carry `floor: blocking`; tunable checks carry none.
+    #[serde(default)]
+    floor: Option<String>,
 }
+
+/// The engine-owned set of intrinsic check cascade keys — the checks whose
+/// demotion would break a load-bearing invariant of the system itself
+/// (`validation.md` → What "intrinsic" means mechanically: the seven
+/// `workflow-refs.*` checks and the four `schema-conformance.*` checks). The
+/// engine asserts at pack-load that any of these knobs a pack *declares* is
+/// floored at `blocking`, so a mis-declared pack cannot silently un-lock the
+/// determinism boundary by leaving an intrinsic check demotable. This is
+/// *assertion-only* — it never assigns severity nor ships pack content, so the
+/// engine-empty invariant holds.
+pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
+    "validation.workflow-refs.placeholder-resolves.severity",
+    "validation.workflow-refs.include-resolves.severity",
+    "validation.workflow-refs.command-ref-resolves.severity",
+    "validation.workflow-refs.include-cycle-absent.severity",
+    "validation.workflow-refs.at-marker-on-non-scalar.severity",
+    "validation.workflow-refs.run-marker-not-shadowed.severity",
+    "validation.workflow-refs.body-include-only.severity",
+    "validation.schema-conformance.ref-resolves.severity",
+    "validation.schema-conformance.required-slot-present.severity",
+    "validation.schema-conformance.required-field-present.severity",
+    "validation.schema-conformance.field-value-conformant.severity",
+];
 
 /// The parsed knob surface: the declared knobs as `(key, Field)` in sorted key
 /// order, each carrying its materialized default. This is what seeds the
@@ -43,6 +71,10 @@ pub struct KnobSet {
     /// Each knob's materialized default value, keyed by knob key — the base
     /// scalar map the resolver starts from.
     defaults: BTreeMap<String, String>,
+    /// The demotion-lock floor for each *floored* knob, keyed by knob key. Only
+    /// floored (intrinsic) knobs appear; a tunable knob is absent. The cascade
+    /// resolver reads this to soft-reject a below-floor `scalar-set`.
+    floors: BTreeMap<String, String>,
 }
 
 impl KnobSet {
@@ -66,6 +98,14 @@ impl KnobSet {
     pub fn keys(&self) -> impl Iterator<Item = &str> {
         self.fields.iter().map(|f| f.id.as_str())
     }
+
+    /// The demotion-lock floors, keyed by knob key — only floored knobs appear
+    /// (a tunable knob declaring no `floor` is absent). The cascade resolver
+    /// reads this to soft-reject a `scalar-set` that would set a key below its
+    /// floor (`overrides.md` → Soft-rejection).
+    pub fn floors(&self) -> &BTreeMap<String, String> {
+        &self.floors
+    }
 }
 
 /// Why loading the knob surface failed.
@@ -82,25 +122,39 @@ pub enum KnobError {
     /// A knob carried no `default` — it cannot seed the closed scalar surface.
     #[error("knob `{0}` declares no `default` (a knob must materialize a base value)")]
     MissingDefault(String),
+
+    /// An engine-known intrinsic check's knob is not floored at `blocking` — a
+    /// mis-declared pack that would silently un-lock the determinism boundary.
+    /// The engine asserts its known intrinsic id set is each floored at load
+    /// (`overrides.md` → Locked keys; assertion-only).
+    #[error("intrinsic check `{0}` must declare `floor: blocking` but does not")]
+    UnflooredIntrinsic(String),
 }
 
 /// Parse the closed knob surface from raw `config/knobs.yaml` bytes.
 ///
-/// Each top-level key is a settable knob; its `{type, of?, default}` body folds
-/// into a [`Field`] (id = the key) reusing the document-type field model. Every
-/// knob must declare a `default` (the value the resolver seeds the base map with);
-/// an absent default is a [`KnobError::MissingDefault`].
+/// Each top-level key is a settable knob; its `{type, of?, default, floor?}` body
+/// folds into a [`Field`] (id = the key) reusing the document-type field model.
+/// Every knob must declare a `default` (the value the resolver seeds the base map
+/// with); an absent default is a [`KnobError::MissingDefault`]. A knob may also
+/// declare a `floor` (the demotion-lock; see [`KnobSet::floors`]). The engine
+/// asserts at load that each [`INTRINSIC_CHECK_KEYS`] knob is floored at
+/// `blocking` — an unfloored intrinsic is a [`KnobError::UnflooredIntrinsic`].
 pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
     let text = std::str::from_utf8(bytes).map_err(|_| KnobError::NotUtf8)?;
     let decls: BTreeMap<String, KnobDecl> = serde_yaml_ng::from_str(text)?;
 
     let mut fields = Vec::with_capacity(decls.len());
     let mut defaults = BTreeMap::new();
+    let mut floors = BTreeMap::new();
     for (key, decl) in decls {
         let default = decl
             .default
             .ok_or_else(|| KnobError::MissingDefault(key.clone()))?;
         defaults.insert(key.clone(), default);
+        if let Some(floor) = decl.floor {
+            floors.insert(key.clone(), floor);
+        }
         fields.push(Field {
             id: key,
             ty: decl.ty,
@@ -114,7 +168,24 @@ pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
         });
     }
 
-    Ok(KnobSet { fields, defaults })
+    // Assertion-only: an engine-known intrinsic check that a pack *declares* must
+    // be floored at `blocking`, else a mis-declared pack could un-lock the
+    // determinism boundary by leaving it demotable. (An *absent* intrinsic key is
+    // not a demotion risk — a `scalar-set` on an undeclared key hard-aborts
+    // `UndeclaredScalar` — so the guard fires only on the declared-but-unfloored
+    // case.) This never assigns a severity nor ships pack content, so the
+    // engine-empty invariant holds.
+    for key in INTRINSIC_CHECK_KEYS {
+        if defaults.contains_key(*key) && floors.get(*key).map(String::as_str) != Some("blocking") {
+            return Err(KnobError::UnflooredIntrinsic((*key).to_owned()));
+        }
+    }
+
+    Ok(KnobSet {
+        fields,
+        defaults,
+        floors,
+    })
 }
 
 #[cfg(test)]
@@ -280,5 +351,70 @@ mod tests {
         let yaml = b"some-knob:\n  type: string\n  defualt: x\n";
         let err = load_knobs(yaml).expect_err("unknown body key errors");
         assert!(matches!(err, KnobError::Malformed(_)), "got {err:?}");
+    }
+
+    /// The embedded pack floors **exactly** the 11 intrinsic checks at `blocking`
+    /// — the `floors` accessor exposes them, and the set is precisely the
+    /// engine-owned intrinsic id set (`validation.md` → What 'intrinsic' means
+    /// mechanically). The assertion-only load-time guard passes for the shipped
+    /// pack because every intrinsic id is floored.
+    #[test]
+    fn embedded_knobs_floor_the_intrinsic_checks() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        let floors = knobs.floors();
+
+        let floored: Vec<&str> = floors.keys().map(String::as_str).collect();
+        let mut expected: Vec<&str> = INTRINSIC_CHECK_KEYS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(
+            floored, expected,
+            "floored set is exactly the intrinsic ids"
+        );
+
+        for key in INTRINSIC_CHECK_KEYS {
+            assert_eq!(floors.get(*key).map(String::as_str), Some("blocking"));
+        }
+    }
+
+    /// A tunable check carries no floor — the demotion-lock is intrinsic-only, so
+    /// `file-state.hash-matches` (a tunable check) is absent from the `floors`
+    /// surface even though it is a declared knob.
+    #[test]
+    fn tunable_check_carries_no_floor() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        assert!(
+            knobs
+                .field("validation.file-state.hash-matches.severity")
+                .is_some()
+        );
+        assert!(
+            knobs
+                .floors()
+                .get("validation.file-state.hash-matches.severity")
+                .is_none()
+        );
+    }
+
+    /// A `knobs.yaml` that omits the floor on one intrinsic key fails to load with
+    /// the typed [`KnobError::UnflooredIntrinsic`] — a mis-declared pack cannot
+    /// silently un-lock the determinism boundary (`overrides.md` → Locked keys;
+    /// review M1 hybrid, assertion-only).
+    #[test]
+    fn unfloored_intrinsic_is_a_typed_error() {
+        // The embedded surface with the floor stripped from one intrinsic key.
+        let text = std::str::from_utf8(KNOBS_YAML).unwrap();
+        let unfloored = text.replacen(
+            "validation.workflow-refs.placeholder-resolves.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n  floor: blocking\n",
+            "validation.workflow-refs.placeholder-resolves.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n",
+            1,
+        );
+        assert_ne!(unfloored, text, "the strip must actually change the bytes");
+
+        let err = load_knobs(unfloored.as_bytes()).expect_err("an unfloored intrinsic errors");
+        assert!(
+            matches!(err, KnobError::UnflooredIntrinsic(ref k)
+                if k == "validation.workflow-refs.placeholder-resolves.severity"),
+            "expected UnflooredIntrinsic, got {err:?}",
+        );
     }
 }

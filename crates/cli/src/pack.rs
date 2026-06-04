@@ -431,48 +431,59 @@ mod tests {
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.workflow-refs.include-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.workflow-refs.command-ref-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.workflow-refs.include-cycle-absent.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.workflow-refs.at-marker-on-non-scalar.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.workflow-refs.run-marker-not-shadowed.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.workflow-refs.body-include-only.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
 
         # --- schema-conformance.* (4, intrinsic) ---
         validation.schema-conformance.ref-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.schema-conformance.required-slot-present.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.schema-conformance.required-field-present.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
         validation.schema-conformance.field-value-conformant.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+          floor: blocking
 
         # --- file-state.hash-matches (1, tunable) ---
         validation.file-state.hash-matches.severity:
