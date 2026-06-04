@@ -151,7 +151,7 @@ fn run_set_field(
         .with_context(|| format!("no field addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = read_staged(&path, addr)?;
+    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let edited = set_field_validated(
         &schema,
@@ -182,7 +182,7 @@ fn run_set_slot(
     let prose = read_handoff(from_file)?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
-    let source = read_staged(&path, addr)?;
+    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
     let edited = set_slot_validated(&schema, &source, &section_id, &prose)
         .map_err(|f| block(&f, "set-slot", addr))?;
@@ -214,6 +214,9 @@ struct ActiveTask {
     /// the write-time barrier scopes the staged-doc destination to.
     id: String,
     dir: PathBuf,
+    /// The repo root the task lives under — the anchor copy-on-first-touch resolves
+    /// a base-committed `<location>/<slug>.md` against (`canonical_path`).
+    repo_root: PathBuf,
     pack: Box<dyn PackSource>,
 }
 
@@ -238,6 +241,7 @@ impl ActiveTask {
             return Ok(Self {
                 id: id.to_string(),
                 dir,
+                repo_root,
                 pack: make_pack(),
             });
         }
@@ -263,11 +267,54 @@ impl ActiveTask {
                 Ok(Self {
                     id,
                     dir,
+                    repo_root,
                     pack: make_pack(),
                 })
             }
             _ => bail!("more than one active task — name one with `--task <id>`"),
         }
+    }
+
+    /// Read the staged instance bytes the edit verb splices into, applying
+    /// **copy-on-first-touch** when the doc is base-committed but not yet staged
+    /// (`design/write-commands.md` → copy-on-first-touch).
+    ///
+    /// Three cases, in order:
+    /// 1. **Already staged** — read the staged body (the steady-state path: a
+    ///    `created` doc, or a base doc already copied in by an earlier edit). A
+    ///    second edit therefore never re-copies, so the prior edit survives.
+    /// 2. **Absent from the area but committed at base** — the slug's canonical
+    ///    `<location>/<slug>.md` exists under `repo_root`: copy that committed body
+    ///    in via [`state::copy_in`] (which records `edited-from-base` write-once),
+    ///    then read the copied-in body. This is the *only* new wiring T4 adds — the
+    ///    first production caller of `copy_in`.
+    /// 3. **Neither staged nor committed** — reject with the unchanged
+    ///    "no staged instance" error (`read_staged`).
+    fn read_or_copy_in(
+        &self,
+        path: &Path,
+        schema: &Schema,
+        address: &Address,
+        addr: &str,
+    ) -> Result<String, DocFailure> {
+        if path.is_file() {
+            return Ok(read_staged(path, addr)?);
+        }
+        // The copy-in trigger predicate: the slug is absent from the area AND its
+        // committed `<location>/<slug>.md` exists at base — resolved by the same
+        // `schema.location`-keyed path the committed store / `task bind` use.
+        let slug = address.slug.as_str();
+        if let Some(committed) = engine::store::canonical_path(&self.repo_root, schema, slug)
+            && committed.is_file()
+        {
+            let body = std::fs::read_to_string(&committed)
+                .with_context(|| format!("could not read committed `{addr}`"))?;
+            state::copy_in(&self.dir, address.r#type.as_str(), slug, &body)
+                .with_context(|| format!("could not copy in `{addr}` for editing"))?;
+            return Ok(read_staged(path, addr)?);
+        }
+        // Neither staged nor committed → the unchanged absent-instance reject.
+        Ok(read_staged(path, addr)?)
     }
 
     /// Load the schema for `type_name` from the embedded pack.
