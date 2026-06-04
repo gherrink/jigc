@@ -1,6 +1,11 @@
-//! End-to-end integration test for the `milestone` work-unit front door
-//! (`jigc milestone create` + `jigc milestone add-task`) — the substrate spine
-//! before the by-task-id join consumes it (Increment 1, T4).
+//! End-to-end integration tests for the `milestone` work-unit front door — the
+//! mint/populate spine (`create` · `add-task` · `add-from-spec` · `list-tasks`,
+//! Increment 1) and the **by-task-id join verb** (`jigc milestone join`, Increment
+//! 3 T4): the join enumerates the sub-areas by sorted task id, merges their staged
+//! docs, and reports the merged outcome — suffixing a `created` collision (with the
+//! self-ref rewrite) and routing a same-doc clash without committing anything (it is
+//! not yet wired to finalize; `design/storage.md` → The by-task-id join;
+//! `design/worked-examples.md` → flow 9).
 //!
 //! Drives the built `jigc` binary against a throwaway temp git repo and asserts
 //! the done-criterion: `milestone create "Cache rework"` mints
@@ -423,6 +428,228 @@ fn add_from_spec_over_a_zero_criteria_spec_blocks_and_seeds_nothing() {
     assert!(
         list_stdout.contains("(0)"),
         "the task list must be empty after a blocked seed; got:\n{list_stdout}",
+    );
+}
+
+/// Stage a doc `body` into a milestone sub-task's `docs/` area with a chosen
+/// `provenance`, exactly as the staging primitives would — write
+/// `tasks/<sub>/docs/<type>:<slug>.md` verbatim and record (merge into) the area's
+/// `docs/provenance.json` manifest. These are the two inputs the by-task-id join
+/// reads (the staged body + its provenance bit); the integration test writes them
+/// directly because no front-door verb yet stages into a milestone sub-area.
+fn stage_doc(repo: &Path, sub: &str, address: &str, body: &str, provenance: &str) {
+    let docs = repo.join(".jigc").join("tasks").join(sub).join("docs");
+    fs::create_dir_all(&docs).expect("mk docs/");
+    fs::write(docs.join(format!("{address}.md")), body).expect("write staged body");
+
+    let manifest = docs.join("provenance.json");
+    let mut record: serde_json::Value = match fs::read_to_string(&manifest) {
+        Ok(s) => serde_json::from_str(&s).expect("provenance manifest parses"),
+        Err(_) => serde_json::json!({ "docs": {} }),
+    };
+    record["docs"][address] = serde_json::Value::String(provenance.to_string());
+    fs::write(
+        &manifest,
+        serde_json::to_string_pretty(&record).expect("serialize manifest"),
+    )
+    .expect("write provenance manifest");
+}
+
+/// An ADR body whose `supersedes` ref points at `to` (its OWN slug when `to` is its
+/// own address) — the self-reference the collision-suffix rule must rewrite in
+/// lockstep with the `-2` slug suffix.
+fn adr_superseding(title: &str, to: &str) -> String {
+    format!(
+        "---\nstatus: accepted\ndate: 2026-06-04\nsupersedes: {to}\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+    )
+}
+
+/// A plain ADR body with no `supersedes` ref — a clean, disjoint doc.
+fn adr_plain(title: &str) -> String {
+    format!(
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+    )
+}
+
+/// Current HEAD sha + the porcelain working-tree status of `repo` — the pair the
+/// "nothing was committed" assertion compares before/after the join.
+fn git_state(repo: &Path) -> (String, String) {
+    let head = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("git rev-parse");
+    let status = Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(repo)
+        .output()
+        .expect("git status");
+    (
+        String::from_utf8(head.stdout).unwrap().trim().to_string(),
+        String::from_utf8(status.stdout).unwrap(),
+    )
+}
+
+#[test]
+fn milestone_join_suffixes_a_created_collision_and_reports_the_decision() {
+    let repo = TempDir::new("join-ok");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Mint the milestone + two sub-tasks, added in NON-id order (zed before low) so
+    // id-order is not an accident of insertion order. id-sorted: [area-low, area-zed].
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    // Both areas `created` an `adr:cache-strategy` that supersedes its OWN slug — a
+    // collision of DISTINCT created instances (a suffix, not a clash). The lower task
+    // id (`area-low`) keeps the bare slug; `area-zed` takes the deterministic `-2`
+    // suffix, its self-ref rewritten in lockstep. `area-low` also stages a clean,
+    // disjoint `edited-from-base` doc.
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:cache-strategy",
+        &adr_superseding("Cache strategy", "adr:cache-strategy"),
+        "created",
+    );
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:eviction-policy",
+        &adr_plain("Eviction policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:cache-strategy",
+        &adr_superseding("Cache strategy", "adr:cache-strategy"),
+        "created",
+    );
+
+    let before = git_state(repo.path());
+
+    let joined = run_milestone(repo.path(), home.path(), &["join", "cache-rework"]);
+    let stdout = String::from_utf8(joined.stdout).expect("utf-8 stdout");
+    assert!(
+        joined.status.success(),
+        "a created-collision join must exit 0; got {:?}\nstderr:\n{}",
+        joined.status,
+        String::from_utf8_lossy(&joined.stderr),
+    );
+
+    // The summary names the merged docs, the `-2` suffix decision, and the self-ref
+    // rewrite — read straight off the emitted bytes (the agent-facing artifact).
+    assert!(
+        stdout.contains("adr:cache-strategy-2"),
+        "the join summary must name the `-2` suffixed instance; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("suffixed -2 on collision"),
+        "the join summary must name the suffix decision; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("self-ref rewritten"),
+        "the join summary must name the self-ref rewrite; got:\n{stdout}",
+    );
+    // The disjoint doc is merged but carries no suffix annotation.
+    assert!(
+        stdout.contains("adr:eviction-policy"),
+        "the disjoint doc must be merged; got:\n{stdout}",
+    );
+
+    // Nothing was committed (the verb is not wired to finalize): no new commit and the
+    // working tree is unchanged.
+    let after = git_state(repo.path());
+    assert_eq!(
+        before, after,
+        "the join must commit nothing and leave the working tree unchanged",
+    );
+}
+
+#[test]
+fn milestone_join_same_doc_clash_blocks_and_commits_nothing() {
+    let repo = TempDir::new("join-clash");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    // Both areas write the SAME committed-at-base slug as `edited-from-base` — a
+    // same-doc clash (a partition violation), blocking, never blind-merged.
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:cache-strategy",
+        &adr_plain("Cache strategy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:cache-strategy",
+        &adr_plain("Cache strategy"),
+        "edited-from-base",
+    );
+
+    let before = git_state(repo.path());
+
+    let joined = run_milestone(repo.path(), home.path(), &["join", "cache-rework"]);
+    let stderr = String::from_utf8(joined.stderr).expect("utf-8 stderr");
+    assert!(
+        !joined.status.success(),
+        "a same-doc clash join must exit non-zero; got {:?}",
+        joined.status,
+    );
+    assert!(
+        stderr.contains("same-doc clash") && stderr.contains("route:"),
+        "the clash block must carry the `join.same-doc-clash` message + a route; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("area-low") && stderr.contains("area-zed"),
+        "the clash block must name both contending sub-tasks; got:\n{stderr}",
+    );
+
+    // Nothing was committed and the working tree is unchanged — a clash routes, it
+    // never mutates the repo.
+    let after = git_state(repo.path());
+    assert_eq!(
+        before, after,
+        "a clash must commit nothing and leave the working tree unchanged",
     );
 }
 

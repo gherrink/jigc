@@ -442,7 +442,7 @@ pub fn read_base_pin(milestone_dir: &Path) -> std::io::Result<BasePin> {
 /// (T2) and cross-area rule (T3) will key on, plus the sub-task it came from (so a
 /// later rule can name the offending area) and the doc's forward edges (the per-area
 /// `overlay_working` derivation's output for this `from`, reused unchanged).
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MergedDoc {
     /// How the doc came to be staged — `created` (minted here) vs `edited-from-base`
     /// (copied in from the committed store); the bit the join's clash rule needs.
@@ -461,7 +461,7 @@ pub struct MergedDoc {
 /// hardening #7). `findings` is the **ordered** finding list the join surfaces; in this
 /// (skeleton) increment it is always empty — the provenance clash / collision-suffix
 /// rules (T2) and the cross-area / isolation checks (T3) populate it later.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JoinOutcome {
     /// The merged staged docs, keyed by `<type>:<slug>` address (id-sorted iteration).
     pub overlay: std::collections::BTreeMap<String, MergedDoc>,

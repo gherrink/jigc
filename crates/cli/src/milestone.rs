@@ -24,7 +24,11 @@ use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::finding::Finding;
-use engine::milestone::{add_from_spec, add_task, milestone_dir, mint_milestone, read_task_list};
+use engine::index::load_committed;
+use engine::milestone::{
+    JoinOutcome, add_from_spec, add_task, join, milestone_dir, mint_milestone, read_base_pin,
+    read_task_list,
+};
 use engine::packsource::PackResourceKind;
 use engine::schema::{Schema, load_schema};
 use engine::state::BasePin;
@@ -74,6 +78,18 @@ pub enum MilestoneCommand {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
+    /// Merge the milestone's sub-task areas into the parent working overlay by the
+    /// **by-task-id join** — enumerate sub-areas by sorted task id, disjoint-union
+    /// their staged docs (collision-suffixing distinct `created` instances, blocking
+    /// a same-doc clash), and report the merged outcome. **Commits nothing** — wiring
+    /// the suffix-resolved overlay into `finalize` is a later increment
+    /// (`design/storage.md` → The by-task-id join; `design/worked-examples.md` →
+    /// flow 9). A blocking finding (a same-doc clash, an unknown milestone) surfaces
+    /// on stderr with its route and exits non-zero.
+    Join {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+    },
 }
 
 impl MilestoneCommand {
@@ -82,6 +98,12 @@ impl MilestoneCommand {
     /// finding (serial collision, unknown milestone) surfaces on stderr with its
     /// route and exits non-zero (`design/write-commands.md` → Minting a milestone).
     pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
+        // The `join` verb reports a `JoinOutcome` (overlay + findings), not a one-line
+        // summary, and a same-doc clash is a *blocking finding inside an Ok outcome*
+        // (the merge ran, then routed the contention) — so it has its own dispatch arm.
+        if let MilestoneCommand::Join { milestone_id } = self {
+            return dispatch_join(cwd, format, &milestone_id);
+        }
         let result = match self {
             MilestoneCommand::Create { title } => run_create(cwd, &title),
             MilestoneCommand::AddTask {
@@ -93,6 +115,7 @@ impl MilestoneCommand {
                 spec_addr,
             } => run_add_from_spec(cwd, &milestone_id, &spec_addr),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
+            MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
         };
         match result {
             Ok(summary) => {
@@ -218,6 +241,73 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
         ids.len(),
         ids.join(", ")
     ))
+}
+
+/// Dispatch `jigc milestone join <milestone-id>`: run the by-task-id join, render the
+/// merged outcome, and map it to the exit code. A locator/IO error or an unknown
+/// milestone (an `Err(Finding)`) routes to stderr and exits non-zero **before** any
+/// summary. A successful merge always renders the outcome on stdout (so the agent sees
+/// the suffix/rewrite decisions); if any **blocking** finding rode inside the outcome —
+/// a same-doc clash, an isolation violation — its route also goes to stderr and the
+/// process exits non-zero. The verb **commits nothing** (Increment 4 wires the
+/// suffix-resolved overlay into finalize); a clash leaves the working tree untouched.
+fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
+    let outcome = match run_join(cwd, milestone_id) {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            eprintln!("{err:#}");
+            return ExitCode::FAILURE;
+        }
+    };
+    // The merged-overlay summary always prints (the agent reads the suffix/rewrite
+    // decisions even when the join is clean).
+    println!("{}", render::milestone_join(format, milestone_id, &outcome));
+
+    // A blocking finding inside the outcome (e.g. `join.same-doc-clash`) routes to
+    // stderr and gates the exit code — nothing is committed regardless.
+    let blocking: Vec<&Finding> = outcome
+        .findings
+        .iter()
+        .filter(|f| f.severity == engine::finding::Severity::Blocking)
+        .collect();
+    if blocking.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        for finding in blocking {
+            eprintln!("{}", finding.message);
+            if let Some(route) = &finding.route {
+                eprintln!("  route: {route}");
+            }
+        }
+        ExitCode::FAILURE
+    }
+}
+
+/// `jigc milestone join <milestone-id>` — the CLI I/O around the engine's by-task-id
+/// [`join`]: discover the repo root + `.jigc/` home, read the milestone's **shared
+/// base** pin (the stamp the committed edge index is keyed to), load the shipped
+/// schemas the per-area overlay derivation resolves staged-doc types against, and load
+/// the committed [`EdgeIndex`](engine::index::EdgeIndex) the per-sub-area cross-area
+/// ref walk resolves against. The engine performs no git I/O; the CLI feeds it the
+/// resolved inputs (`design/storage.md` → The by-task-id join). An unknown milestone
+/// (no area) surfaces as the engine's routed `milestone.unknown` block.
+fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_root = repo_root.join(".jigc");
+    let schemas = shipped_schemas()?;
+
+    // The committed edge index is keyed to the milestone's shared base — the commit
+    // every sub-task inherited — so the cross-area ref walk resolves against the store
+    // as it stood at that base. An unknown milestone has no base pin; fall back to the
+    // engine's routed `milestone.unknown` block by leaving the join to detect it.
+    let head = match read_base_pin(&milestone_dir(&jigc_root, milestone_id)) {
+        Ok(pin) => pin.sha,
+        Err(_) => String::new(),
+    };
+    let committed = load_committed(&repo_root, &jigc_root, &schemas, &head);
+
+    join(&jigc_root, &repo_root, milestone_id, &schemas, &committed).map_err(finding_to_err)
 }
 
 /// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including

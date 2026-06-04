@@ -13,6 +13,7 @@ use crate::cli::Format;
 use crate::setup::SetupSummary;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
+use engine::milestone::JoinOutcome;
 use engine::result::{Orientation, OrientationView, ResolutionTree, ValidationReport};
 use serde::Serialize;
 
@@ -310,6 +311,77 @@ pub fn milestone(format: Format, summary: &str) -> String {
             out.push_str(ROUTING_FOOTER);
             out
         }
+    }
+}
+
+/// Render a **successful** `jigc milestone join` outcome to the surface `format`
+/// selects: `agent` / `human` emit the merged-overlay summary (one `  - <address>`
+/// line per merged doc, id-sorted, naming each doc's provenance + contributing
+/// sub-task, and — for a collision-suffixed instance — the `← suffixed -N on
+/// collision` decision plus `; self-ref rewritten` when its own reference was
+/// rewritten in lockstep) followed by the routing footer; `json` emits the
+/// **generic** projection of the [`JoinOutcome`], with no footer (tooling-consumed).
+///
+/// The suffix decision is read straight off the merged overlay (a pure function of
+/// it, like the merge itself): an entry is a collision suffix iff its address ends
+/// `-<N>` (N ≥ 2) **and** the de-suffixed base address is also in the overlay (the
+/// bare instance the lower task id kept); the self-ref rewrite is named iff that
+/// suffixed instance carries an edge back to its own (suffixed) address. The verb
+/// commits nothing — wiring the suffix-resolved overlay into `finalize` is a later
+/// increment (`design/storage.md` → The by-task-id join; `design/worked-examples.md`
+/// → flow 9).
+pub fn milestone_join(format: Format, milestone_id: &str, outcome: &JoinOutcome) -> String {
+    match format {
+        Format::Json => json(outcome),
+        Format::Agent | Format::Human => {
+            let mut out = format!(
+                "joined milestone:{milestone_id} — {} doc(s) merged\n",
+                outcome.overlay.len(),
+            );
+            for (address, doc) in &outcome.overlay {
+                out.push_str("  - ");
+                out.push_str(address);
+                out.push_str("  (");
+                out.push_str(provenance_label(doc.provenance));
+                out.push_str(" · from ");
+                out.push_str(&doc.source_task);
+                out.push(')');
+                if let Some(n) = suffix_of(address, &outcome.overlay) {
+                    out.push_str(&format!("  ← suffixed -{n} on collision"));
+                    if doc.edges.iter().any(|e| &e.to == address) {
+                        out.push_str("; self-ref rewritten");
+                    }
+                }
+                out.push('\n');
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// The agent-text label for a merged doc's provenance.
+fn provenance_label(provenance: engine::state::Provenance) -> &'static str {
+    match provenance {
+        engine::state::Provenance::Created => "created",
+        engine::state::Provenance::EditedFromBase => "edited-from-base",
+    }
+}
+
+/// The collision-suffix index `N` (≥ 2) of `address`, iff it ends `-<N>` and the
+/// de-suffixed base address is also present in the merged `overlay` — i.e. the bare
+/// instance the lower task id kept. Returns `None` for a non-suffixed (disjoint)
+/// address, so a plain doc whose slug merely ends in a number is never mislabeled.
+fn suffix_of(
+    address: &str,
+    overlay: &std::collections::BTreeMap<String, engine::milestone::MergedDoc>,
+) -> Option<usize> {
+    let (base, num) = address.rsplit_once('-')?;
+    let n: usize = num.parse().ok()?;
+    if n >= 2 && overlay.contains_key(base) {
+        Some(n)
+    } else {
+        None
     }
 }
 
@@ -644,6 +716,82 @@ mod tests {
             "the warning finding must carry its indented `route:` line; got:\n{agent}",
         );
         assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+    }
+
+    /// The `jigc milestone join` summary names every merged doc (id-sorted, with
+    /// provenance + contributing sub-task) and — for a collision-suffixed `created`
+    /// instance — the `← suffixed -2 on collision` decision plus `; self-ref
+    /// rewritten` when the suffixed instance references its own (rewritten) address.
+    /// A disjoint doc carries no suffix annotation; JSON is the generic projection
+    /// with no footer.
+    #[test]
+    fn render_milestone_join_names_suffix_decision_and_self_ref_rewrite() {
+        use engine::index::Edge;
+        use engine::milestone::{JoinOutcome, MergedDoc};
+        use engine::state::Provenance;
+        use std::collections::BTreeMap;
+
+        let mut overlay: BTreeMap<String, MergedDoc> = BTreeMap::new();
+        // A disjoint edited-from-base doc (no suffix annotation).
+        overlay.insert(
+            "adr:eviction-policy".to_string(),
+            MergedDoc {
+                provenance: Provenance::EditedFromBase,
+                source_task: "evict-stale-keys".to_string(),
+                edges: Vec::new(),
+            },
+        );
+        // The bare `created` instance the lower task id kept.
+        overlay.insert(
+            "adr:cache-strategy".to_string(),
+            MergedDoc {
+                provenance: Provenance::Created,
+                source_task: "area-low".to_string(),
+                edges: vec![Edge {
+                    from: "adr:cache-strategy".to_string(),
+                    relation: "supersedes".to_string(),
+                    to: "adr:cache-strategy".to_string(),
+                }],
+            },
+        );
+        // The suffixed instance, its own self-ref rewritten to the suffixed slug.
+        overlay.insert(
+            "adr:cache-strategy-2".to_string(),
+            MergedDoc {
+                provenance: Provenance::Created,
+                source_task: "area-zed".to_string(),
+                edges: vec![Edge {
+                    from: "adr:cache-strategy-2".to_string(),
+                    relation: "supersedes".to_string(),
+                    to: "adr:cache-strategy-2".to_string(),
+                }],
+            },
+        );
+        let outcome = JoinOutcome {
+            overlay,
+            findings: Vec::new(),
+        };
+
+        let agent = milestone_join(Format::Agent, "cache-rework", &outcome);
+        insta::assert_snapshot!(agent, @r"
+        joined milestone:cache-rework — 3 doc(s) merged
+          - adr:cache-strategy  (created · from area-low)
+          - adr:cache-strategy-2  (created · from area-zed)  ← suffixed -2 on collision; self-ref rewritten
+          - adr:eviction-policy  (edited-from-base · from evict-stale-keys)
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        assert!(agent.ends_with(ROUTING_FOOTER));
+        // The disjoint doc carries no suffix annotation.
+        assert!(
+            !agent.contains("adr:eviction-policy  (edited-from-base · from evict-stale-keys)  ←"),
+            "a disjoint doc must not be annotated as suffixed; got:\n{agent}",
+        );
+
+        // JSON is the generic projection — round-trips, no footer.
+        let json_out = milestone_join(Format::Json, "cache-rework", &outcome);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let back: JoinOutcome = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, outcome);
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and
