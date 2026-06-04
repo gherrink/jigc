@@ -849,6 +849,59 @@ pub struct StepDef {
     pub id: String,
     /// The verbatim prompt body (post-front-matter remainder, byte-for-byte).
     pub body: String,
+    /// The step kind, parsed from the front-matter markers. A plain step (no
+    /// `fan-out:`/`join:` marker) is [`StepKind::Plain`].
+    pub kind: StepKind,
+}
+
+/// A step's kind, parsed from its front-matter markers (`workflow-dialect.md` →
+/// On-disk definition format). A plain step (no marker, or no front-matter at
+/// all) is [`StepKind::Plain`]; a `fan-out:` marker is [`StepKind::FanOut`]; a
+/// `join: {}` marker is [`StepKind::Join`]. The markers are **parsed and
+/// honored**, not stripped — pre-M8 `load_step_def` discarded all step
+/// front-matter, so a `fan-out:` marker silently composed as inert prose
+/// (`DECISIONS.md` 2026-06-04). The kind reaches [`ComposedStep`] so the emit
+/// (`Spawn:`) and `workflow-refs` passes can read it without re-parsing.
+///
+/// Internally tagged (like [`CommandArg`]) so the serde projection is an
+/// unambiguous golden discriminant.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum StepKind {
+    /// A plain step: instruction prose, no repetition marker.
+    Plain,
+    /// A `fan-out` step: spawns the `run:` sub-workflow once per item of the
+    /// `over:` collection. `over` carries the verbatim data-value path text (e.g.
+    /// `{{ milestone.tasks }}`); `run` the `workflow:<id>` string. Both are
+    /// required — resolution runs later, in composition.
+    FanOut {
+        /// The verbatim `over:` data-value path text (the fan-out list-source).
+        over: String,
+        /// The `run:` sub-workflow ref (`workflow:<id>`) each spawn runs.
+        run: String,
+    },
+    /// A `join` step: the barrier that merges the fanned sub-task areas by
+    /// task-id order. Carries no parameters (`join: {}`).
+    Join,
+}
+
+/// The config-family front-matter of a step definition, as YAML — the optional
+/// `fan-out:` / `join:` markers. Both default absent (a plain step needs no
+/// front-matter); the kind validation happens in [`load_step_def`].
+#[derive(Deserialize)]
+struct StepFrontMatter {
+    #[serde(rename = "fan-out", default)]
+    fan_out: Option<FanOutMarker>,
+    #[serde(default)]
+    join: Option<serde_yaml_ng::Value>,
+}
+
+/// The `fan-out:` marker body: `over` (the list-source path) and `run` (the
+/// sub-workflow ref). Both required — a missing key is a malformed kind.
+#[derive(Deserialize)]
+struct FanOutMarker {
+    over: Option<String>,
+    run: Option<String>,
 }
 
 /// Parse one step definition's raw bytes into a [`StepDef`] under `id`.
@@ -871,24 +924,59 @@ pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Fin
             Location::at(1, 1),
         )
     })?;
-    let body = strip_optional_front_matter(text);
+    let (front, body) = match split_front_matter(text) {
+        // The front-matter (config-family YAML) sits on line 2, after the opening
+        // `---` fence — where a malformed-kind finding points.
+        Some((front, body)) => (Some(front), body),
+        // No fence → a plain step, no front-matter to parse.
+        None => (None, text),
+    };
+    let kind = match front {
+        Some(front) => parse_step_kind(front)?,
+        None => StepKind::Plain,
+    };
     Ok(StepDef {
         id: id.into(),
         body: body.to_owned(),
+        kind,
     })
 }
 
-/// Return the step's verbatim body: the post-front-matter remainder when `text`
-/// opens with a `---`-fenced block, else `text` unchanged.
-///
-/// Reuses the one fence recognizer ([`crate::catalog::front_matter`]); the body is
-/// the bytes after the closing `---` fence line's terminating newline (or after a
-/// closing `---` at end-of-file). A file that does not open with a fence has no
-/// front-matter, so its whole content is the body — byte-for-byte.
-fn strip_optional_front_matter(text: &str) -> &str {
-    match split_front_matter(text) {
-        Some((_front, body)) => body,
-        None => text,
+/// Parse a step's front-matter YAML into its [`StepKind`], honoring the
+/// `fan-out:` / `join:` markers (`workflow-dialect.md` → On-disk definition
+/// format). A blocking, **located** `workflow-refs.step-kind-malformed`
+/// [`Finding`] (pointing at the front-matter, line 2) rejects: malformed YAML,
+/// **both** markers present (a step is one kind), or a `fan-out` missing `over`
+/// or `run` (both are required). Front-matter that declares neither marker — any
+/// other config a step might carry — is [`StepKind::Plain`].
+fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
+    // The front-matter begins on line 2 (line 1 is the opening `---` fence).
+    let malformed = |msg: &str| {
+        Finding::blocking(
+            "workflow-refs.step-kind-malformed",
+            format!("step front-matter declares a malformed step kind: {msg}"),
+            Location::at(2, 1),
+        )
+    };
+    let meta: StepFrontMatter = serde_yaml_ng::from_str(front)
+        .map_err(|source| malformed(&format!("not valid config-family YAML: {source}")))?;
+    match (meta.fan_out, meta.join) {
+        (Some(_), Some(_)) => Err(malformed(
+            "a step is one kind, but both `fan-out:` and `join:` are present",
+        )),
+        (Some(fan_out), None) => {
+            let over = fan_out
+                .over
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| malformed("`fan-out` requires a non-empty `over:`"))?;
+            let run = fan_out
+                .run
+                .filter(|s| !s.trim().is_empty())
+                .ok_or_else(|| malformed("`fan-out` requires a non-empty `run:`"))?;
+            Ok(StepKind::FanOut { over, run })
+        }
+        (None, Some(_)) => Ok(StepKind::Join),
+        (None, None) => Ok(StepKind::Plain),
     }
 }
 
@@ -1052,6 +1140,14 @@ pub struct ComposedStep {
     /// body reads as one contiguous step. `false` for a step boundary (the first
     /// leaf of an included step).
     pub continues: bool,
+    /// The step kind, carried from the originating [`StepDef`] (the doc-elaboration
+    /// pin, `DECISIONS.md` 2026-06-04) so the emit (`Spawn:`) and `workflow-refs`
+    /// passes read it without re-parsing front-matter. Only the **boundary** leaf
+    /// (a step's first segment) inherits the step's kind; every **continuation**
+    /// leaf ([`continues`] true) is [`StepKind::Plain`].
+    ///
+    /// [`continues`]: ComposedStep::continues
+    pub kind: StepKind,
 }
 
 /// The flat, ordered composition tree of a workflow: its step bodies in
@@ -1506,10 +1602,17 @@ fn expand_step(
     for segment in body_segments(&step.body) {
         let continues = if first { !boundary } else { true };
         match segment {
+            // Only the boundary leaf (a step's first segment, `!continues`) carries
+            // the step's kind; continuation prose leaves stay `Plain`.
             BodySegment::Prose(body) => out.push(ComposedStep {
                 id: id.to_owned(),
                 body,
                 continues,
+                kind: if continues {
+                    StepKind::Plain
+                } else {
+                    step.kind.clone()
+                },
             }),
             // A child include that is *not* the first segment is a continuation of
             // this body — its subtree's first leaf must not start a new blank-line
@@ -2296,6 +2399,7 @@ Slightly higher write latency for resilience.
                 body: "Here are the acceptance criteria you must satisfy:\n\
                        {{ @task.spec#criteria }}\n"
                     .to_owned(),
+                kind: StepKind::Plain,
             })
         }
     }
@@ -2974,11 +3078,11 @@ reference — make your consequences explain what changes:
         "###);
 
         // A step *with* front-matter: the body is exactly the post-fence remainder,
-        // byte-for-byte — the front-matter (config-family YAML) is stripped, the
-        // prose preserved verbatim including its internal blank lines.
+        // byte-for-byte — the front-matter (config-family YAML) is parsed into the
+        // step kind, the prose preserved verbatim including its internal blank lines.
         let fenced = load_step_def(
             "fan-out-step",
-            b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n---\nSpawn a sub-task per item.\n\nEach runs the sub-workflow.\n",
+            b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-task per item.\n\nEach runs the sub-workflow.\n",
         )
         .expect("loads");
         assert_eq!(fenced.id, "fan-out-step");
@@ -2986,6 +3090,82 @@ reference — make your consequences explain what changes:
             fenced.body,
             "Spawn a sub-task per item.\n\nEach runs the sub-workflow.\n"
         );
+        // The `fan-out:` marker is now **parsed and honored**, not stripped to inert
+        // prose: the kind carries `over` (the verbatim `{{ milestone.tasks }}` text)
+        // and `run` (the `workflow:sub-task` string) — M8 (`workflow-dialect.md` →
+        // On-disk definition format; `DECISIONS.md` 2026-06-04).
+        assert_eq!(
+            fenced.kind,
+            StepKind::FanOut {
+                over: "{{ milestone.tasks }}".to_owned(),
+                run: "workflow:sub-task".to_owned(),
+            }
+        );
+    }
+
+    /// A plain step (no front-matter) loads as `StepKind::Plain` — the kindless
+    /// default (`workflow-dialect.md` → On-disk definition format: "a plain step
+    /// stays kindless").
+    #[test]
+    fn plain_step_has_plain_kind() {
+        let locate = load_step_def("locate", STEP_LOCATE.as_bytes()).expect("loads");
+        assert_eq!(locate.kind, StepKind::Plain);
+    }
+
+    /// The done-criterion `join: {}` shape: a `join` step loads as `StepKind::Join`
+    /// with its body intact (`workflow-dialect.md` → On-disk definition format).
+    #[test]
+    fn join_step_has_join_kind() {
+        let join = load_step_def(
+            "join-tasks",
+            b"---\njoin: {}\n---\nAll sub-tasks are complete and merged by task-id order. Continue.\n",
+        )
+        .expect("loads");
+        assert_eq!(join.kind, StepKind::Join);
+        assert_eq!(
+            join.body,
+            "All sub-tasks are complete and merged by task-id order. Continue.\n"
+        );
+    }
+
+    /// Both `fan-out` and `join` markers on one step is a blocking, **located**
+    /// conformance finding — a step is one kind (`workflow-dialect.md` → On-disk
+    /// definition format: the two step kinds are distinct markers).
+    #[test]
+    fn both_markers_is_blocking_located_finding() {
+        let err = load_step_def(
+            "confused",
+            b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\njoin: {}\n---\nbody\n",
+        )
+        .expect_err("both markers rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// A `fan-out` marker missing `over` is a blocking located finding (both `over`
+    /// and `run` are required — `workflow-dialect.md` → the `fan-out` step declares
+    /// a list-source and a referenced sub-workflow).
+    #[test]
+    fn fan_out_missing_over_is_blocking_located_finding() {
+        let err = load_step_def(
+            "no-over",
+            b"---\nfan-out:\n  run: workflow:sub-task\n---\nbody\n",
+        )
+        .expect_err("missing over rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// A `fan-out` marker missing `run` is a blocking located finding.
+    #[test]
+    fn fan_out_missing_run_is_blocking_located_finding() {
+        let err = load_step_def(
+            "no-run",
+            b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n---\nbody\n",
+        )
+        .expect_err("missing run rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
     }
 
     proptest::proptest! {
@@ -3205,10 +3385,9 @@ reference — make your consequences explain what changes:
 
     impl StepSource for MapSource {
         fn step(&self, id: &str) -> Option<StepDef> {
-            self.0.get(id).map(|body| StepDef {
-                id: id.to_owned(),
-                body: body.clone(),
-            })
+            self.0
+                .get(id)
+                .map(|body| load_step_def(id, body.as_bytes()).expect("loads"))
         }
     }
 
@@ -3291,6 +3470,96 @@ reference — make your consequences explain what changes:
         let err = expand_includes(&cyclic, &cyclic_source).expect_err("cycle rejects");
         assert_eq!(err.code, "workflow-refs.include-cycle-absent");
         assert_eq!(err.severity, crate::finding::Severity::Blocking);
+    }
+
+    /// The step kind reaches the [`ComposedStep`] (the doc-elaboration pin,
+    /// `DECISIONS.md` 2026-06-04): a `fan-out` step's boundary leaf carries its
+    /// [`StepKind::FanOut`], a `join` step its [`StepKind::Join`], a plain step
+    /// [`StepKind::Plain`] — so the emit/check passes (T3/T4) can read the kind off
+    /// the composition without re-parsing front-matter.
+    #[test]
+    fn step_kind_reaches_composed_step() {
+        // A source that loads real step bytes (front-matter parsed) so the kind is
+        // genuinely propagated, not hand-set.
+        struct BytesSource(std::collections::BTreeMap<String, Vec<u8>>);
+        impl StepSource for BytesSource {
+            fn step(&self, id: &str) -> Option<StepDef> {
+                self.0.get(id).map(|b| load_step_def(id, b).expect("loads"))
+            }
+        }
+        let source = BytesSource(
+            [
+                (
+                    "fan".to_owned(),
+                    b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nfan body\n".to_vec(),
+                ),
+                ("join".to_owned(), b"---\njoin: {}\n---\njoin body\n".to_vec()),
+                ("plain".to_owned(), b"plain body\n".to_vec()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let def = WorkflowDef {
+            when: None,
+            creates_task: false,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["fan".to_owned(), "join".to_owned(), "plain".to_owned()],
+        };
+        let composition = expand_includes(&def, &source).expect("expands");
+        assert_eq!(
+            composition.steps[0].kind,
+            StepKind::FanOut {
+                over: "{{ milestone.tasks }}".to_owned(),
+                run: "workflow:sub-task".to_owned(),
+            }
+        );
+        assert_eq!(composition.steps[1].kind, StepKind::Join);
+        assert_eq!(composition.steps[2].kind, StepKind::Plain);
+    }
+
+    /// A continuation leaf — a prose segment after an in-body include splice — stays
+    /// [`StepKind::Plain`] even when its on-disk step carries a kind: only the
+    /// boundary leaf (the step's first segment) inherits the step kind. (Fan-out/
+    /// join steps are single-bodied by construction, but the rule is explicit so the
+    /// invariant doesn't drift.)
+    #[test]
+    fn continuation_leaf_stays_plain() {
+        struct BytesSource(std::collections::BTreeMap<String, Vec<u8>>);
+        impl StepSource for BytesSource {
+            fn step(&self, id: &str) -> Option<StepDef> {
+                self.0.get(id).map(|b| load_step_def(id, b).expect("loads"))
+            }
+        }
+        // `outer` carries a `join` kind and splices `inner` mid-body, so it emits a
+        // boundary prose leaf, then `inner`, then a continuation prose leaf.
+        let source = BytesSource(
+            [
+                (
+                    "outer".to_owned(),
+                    b"---\njoin: {}\n---\nbefore\n{{ include: step:inner }}\nafter\n".to_vec(),
+                ),
+                ("inner".to_owned(), b"inner body\n".to_vec()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let def = WorkflowDef {
+            when: None,
+            creates_task: false,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["outer".to_owned()],
+        };
+        let composition = expand_includes(&def, &source).expect("expands");
+        // [ outer("before", boundary, Join), inner(Plain), outer("after", continuation, Plain) ]
+        assert_eq!(composition.steps[0].id, "outer");
+        assert_eq!(composition.steps[0].kind, StepKind::Join);
+        assert!(!composition.steps[0].continues);
+        let last = composition.steps.last().expect("has leaves");
+        assert_eq!(last.id, "outer");
+        assert!(last.continues, "the after-include prose is a continuation");
+        assert_eq!(last.kind, StepKind::Plain);
     }
 
     /// A nested include inside a step body expands **in place**: the parent's prose

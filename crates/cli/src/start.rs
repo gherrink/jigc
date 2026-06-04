@@ -1027,7 +1027,12 @@ impl StepSource for FillStepSource<'_> {
         // The pass has no failure of its own in M4 (orphan/survivor is the gate's
         // job, already run); on the unreachable `Err` the unfilled body is kept.
         let body = apply_slot_fills(id, &def.body, self.fills).unwrap_or(def.body);
-        Some(StepDef { id: def.id, body })
+        // The fill pass rewrites only the body; the step kind passes through.
+        Some(StepDef {
+            id: def.id,
+            body,
+            kind: def.kind,
+        })
     }
 }
 
