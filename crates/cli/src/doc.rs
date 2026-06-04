@@ -20,14 +20,14 @@ use anyhow::{Context, Result, bail};
 use engine::address::{Address, Fragment};
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::field_block::Value;
-use engine::finding::Finding;
+use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{Schema, SectionBody, load_schema};
 use engine::state;
 use engine::write::{set_field_validated, set_slot_validated};
 use std::collections::BTreeMap;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 /// The `jigc doc <verb>` subcommand tree. Each verb addresses a managed doc in
@@ -150,7 +150,7 @@ fn run_set_field(
     let (section_id, field_key) = field_target(&schema, &address)
         .with_context(|| format!("no field addressed by `{addr}`"))?;
 
-    let path = staged_path(&task.dir, &address);
+    let path = staged_path(&task.dir, &address, &task.id)?;
     let source = read_staged(&path, addr)?;
 
     let edited = set_field_validated(
@@ -181,7 +181,7 @@ fn run_set_slot(
 
     let prose = read_handoff(from_file)?;
 
-    let path = staged_path(&task.dir, &address);
+    let path = staged_path(&task.dir, &address, &task.id)?;
     let source = read_staged(&path, addr)?;
 
     let edited = set_slot_validated(&schema, &source, &section_id, &prose)
@@ -210,6 +210,9 @@ fn run_create(
 /// The active task: its working-area directory + the embedded pack to resolve
 /// schemas and the workflow gate against.
 struct ActiveTask {
+    /// The resolved task id (the directory name under `.jigc/tasks/`) — the name
+    /// the write-time barrier scopes the staged-doc destination to.
+    id: String,
     dir: PathBuf,
     pack: Box<dyn PackSource>,
 }
@@ -233,6 +236,7 @@ impl ActiveTask {
                 bail!("no task `{id}` — list live tasks with `jigc start`");
             }
             return Ok(Self {
+                id: id.to_string(),
                 dir,
                 pack: make_pack(),
             });
@@ -249,10 +253,19 @@ impl ActiveTask {
         dirs.sort();
         match dirs.len() {
             0 => bail!("no active task — start one with `jigc start`"),
-            1 => Ok(Self {
-                dir: dirs.pop().expect("one task dir"),
-                pack: make_pack(),
-            }),
+            1 => {
+                let dir = dirs.pop().expect("one task dir");
+                let id = dir
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .expect("a task dir under .jigc/tasks/ has a utf-8 name")
+                    .to_string();
+                Ok(Self {
+                    id,
+                    dir,
+                    pack: make_pack(),
+                })
+            }
             _ => bail!("more than one active task — name one with `--task <id>`"),
         }
     }
@@ -309,9 +322,88 @@ fn parse_addr(addr: &str) -> Result<Address> {
     Address::parse(addr).with_context(|| format!("malformed address `{addr}`"))
 }
 
-/// The staged on-disk path of `address`'s instance within the task working area.
-fn staged_path(task_dir: &Path, address: &Address) -> PathBuf {
-    state::instance_path(task_dir, address.r#type.as_str(), address.slug.as_str())
+/// The staged on-disk path of `address`'s instance within the task working area,
+/// **guarded by the write-time barrier** (`design/write-commands.md` → The
+/// write-time `--task`-scoped barrier; `design/storage.md` → The by-task-id join:
+/// the write-time complement to the join-time isolation check).
+///
+/// The address slug is structural, not sanitized ([`engine::address`] splits on
+/// `:` / `#` / `/` only), so a slug like `../../<sibling>/docs/x` would make the
+/// destination escape this area. The barrier rejects up front any destination that
+/// lexically lands **outside** `<task_dir>/docs/` — a sub-agent physically cannot
+/// stage into a sibling's area. (Lexical, not on-disk `canonicalize`: an escaping
+/// destination does not exist, so it has no real path to canonicalize.)
+fn staged_path(task_dir: &Path, address: &Address, task_id: &str) -> Result<PathBuf, DocFailure> {
+    // The area is the parent of any non-escaping staged-instance path — sourced
+    // from `instance_path` itself so the `docs/` layout constant stays owned by
+    // the engine, never restated here.
+    let area = state::instance_path(task_dir, "_", "_")
+        .parent()
+        .expect("a staged instance path has a `docs/` parent")
+        .to_path_buf();
+    let dest = state::instance_path(task_dir, address.r#type.as_str(), address.slug.as_str());
+    if within_area(&area, &dest) {
+        Ok(dest)
+    } else {
+        Err(DocFailure::Block(barrier_block(task_id, address)))
+    }
+}
+
+/// The destination-containment predicate the barrier is built on: does `dest`
+/// lexically resolve to a path **within** `area`? Both are normalized by folding
+/// `.` / `..` syntactically (an escaping `..` that climbs above `area` fails the
+/// `starts_with`), never touching the filesystem — the dest of a refused write
+/// does not exist, so there is nothing to `canonicalize`.
+fn within_area(area: &Path, dest: &Path) -> bool {
+    let dest = lexically_normalize(dest);
+    let area = lexically_normalize(area);
+    dest.starts_with(&area)
+}
+
+/// Lexically fold a path's `.` (dropped) and `..` (pop the prior real component)
+/// components, leaving roots/prefixes intact. A leading `..` that cannot pop is
+/// preserved, so a path that climbs above its anchor keeps the `..` and fails a
+/// `starts_with` against any anchor below it.
+fn lexically_normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Pop a prior normal component; if the tail is a `..` (or there is
+                // nothing to pop), keep the `..` so the escape stays visible.
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else {
+                    out.push(Component::ParentDir.as_os_str());
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+/// The write-time barrier block (`design/write-commands.md` → The write-time
+/// `--task`-scoped barrier) — the write-time complement to the M7
+/// `join.area-isolation` finding. Blocking, **located** at the offending address +
+/// **routed**, emitted directly with no `knobs.yaml` row (the blocking-but-untunable
+/// precedent; mirrors [`engine::milestone`]'s `join.area-isolation`).
+fn barrier_block(task_id: &str, address: &Address) -> Finding {
+    let address = address.to_string();
+    Finding::graded(
+        Severity::Blocking,
+        "write.area-barrier",
+        format!(
+            "barrier — the staged destination for `{address}` lands outside task \
+             `{task_id}`'s area (`tasks/{task_id}/docs/`); a staging write must stay \
+             within its own sub-area"
+        ),
+        Some(Location::addressed(&address, 1, 1)),
+        Some(format!(
+            "address the doc with a slug inside task `{task_id}`'s own area"
+        )),
+    )
 }
 
 /// Read the staged instance bytes, mapping an absent instance to an actionable
@@ -450,6 +542,47 @@ mod tests {
             field_target(&schema, &alias),
             Some(("header".to_string(), "implements".to_string())),
             "the flat single-hop alias resolves identically",
+        );
+    }
+
+    /// The destination-containment predicate the barrier is built on
+    /// (`design/write-commands.md` → The write-time `--task`-scoped barrier): an
+    /// in-area staged destination is accepted; a slug that path-escapes the area
+    /// (climbs above `tasks/<id>/docs/`) is rejected — the lexical complement to the
+    /// M7 join-time isolation check (`design/storage.md` → The by-task-id join).
+    #[test]
+    fn barrier_predicate_accepts_in_area_and_rejects_escaping() {
+        let task_dir = Path::new("/repo/.jigc/tasks/move-cache-to-redis");
+        let area = state::instance_path(task_dir, "_", "_")
+            .parent()
+            .expect("area parent")
+            .to_path_buf();
+
+        // The ordinary in-area destination — `tasks/<id>/docs/commit:<id>.md`.
+        let in_area = state::instance_path(task_dir, "commit", "move-cache-to-redis");
+        assert!(
+            within_area(&area, &in_area),
+            "a staged instance under the task's own `docs/` is in-area",
+        );
+
+        // A slug that path-escapes into a sibling sub-area — refused. The
+        // `<type>:` prefix on the filename absorbs one `..`, so escaping the
+        // `docs/` boundary takes two leading `..` past it.
+        let escaping = state::instance_path(
+            task_dir,
+            "commit",
+            "../../../evict-stale-keys/docs/commit:pwned",
+        );
+        assert!(
+            !within_area(&area, &escaping),
+            "a destination that climbs above the area's `docs/` is out-of-area",
+        );
+
+        // Escaping the task dir entirely is also refused.
+        let far = state::instance_path(task_dir, "commit", "../../../../../../tmp/pwned");
+        assert!(
+            !within_area(&area, &far),
+            "a destination climbing above the repo is out-of-area",
         );
     }
 }
