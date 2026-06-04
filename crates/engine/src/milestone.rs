@@ -2127,6 +2127,284 @@ Context without any acceptance criteria.
         );
     }
 
+    /// A pure, seeded Fisher–Yates shuffle (no `rand` dependency) — a tiny
+    /// SplitMix64 PRNG drives the swaps so the permutation is **reproducible**
+    /// from `seed` yet genuinely scrambles the order. Used by the T5 acceptance to
+    /// feed the join a third divergent order beyond id and reverse.
+    fn seeded_shuffle<T>(items: &mut [T], seed: u64) {
+        let mut state = seed;
+        let mut next = || {
+            // SplitMix64 — a well-known minimal full-period generator.
+            state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        };
+        let n = items.len();
+        for i in (1..n).rev() {
+            let j = (next() % (i as u64 + 1)) as usize;
+            items.swap(i, j);
+        }
+    }
+
+    /// **The #1-risk Proves — permutation determinism** (Validation hardening #7;
+    /// `increment-workflow.md` → A second principle (M7): determinism by
+    /// re-execution; `design/worked-examples.md` flow 9 → Headline). The SAME
+    /// populated, **overlapping-by-design** sub-task area set is fed to the engine
+    /// join under **three divergent feed orders** — task-id order, **reverse**
+    /// task-id order, and a **seed-shuffled** order — and the merged outcome (the
+    /// suffix-resolved overlay **and** the ordered finding list) is asserted
+    /// **byte-identical** across all three: the join is a *pure function of the set
+    /// of sub-task areas*, never their iteration / completion / `read_dir` order.
+    ///
+    /// The fixture forces **genuine overlap** across every contention path the
+    /// disjoint partition is meant to make rare (flow 9's "deliberately exercise
+    /// every contention path"):
+    /// - **two same-slug `created`** `adr:cache-strategy` instances, **each
+    ///   self-referential** (`supersedes` its own slug) — so the task-id-ordered
+    ///   suffix *and* its lockstep self-ref rewrite are exercised, and a broken
+    ///   self-rewrite (or an input-order-keyed suffix) would diverge across orders;
+    /// - a **cross-area ref** — one area's `supersedes` guesses a sibling's slug,
+    ///   rejected by the per-area `ref_resolves` walk;
+    /// - an **`edited-from-base` clash** — two areas edit the same committed-at-base
+    ///   slug, a blocking `join.same-doc-clash`.
+    ///
+    /// The on-disk areas' raw `read_dir` order is captured and asserted to diverge
+    /// from id order in this run (a green result then cannot be a `read_dir`-order
+    /// accident), and the seed-shuffled order is asserted to differ from **both** id
+    /// and reverse order (so it is a genuinely third condition, not a relabelled
+    /// reverse). Byte-identity is asserted over the serialized `JoinOutcome` (its
+    /// only accumulators are address-keyed `BTreeMap`s + a sorted finding `Vec`, so
+    /// no hash-container iteration can reach the bytes).
+    #[test]
+    fn join_is_byte_identical_across_id_reverse_and_shuffled_feed_orders() {
+        let root = TempRoot::new("join-permutation");
+        let repo = TempRoot::new("join-permutation-repo");
+        let base = BasePin::new("cccccccccccccccccccccccccccccccccccccccc", "ccccccc");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone =
+            mint_milestone(root.path(), "Cache hardening", base).expect("milestone mints");
+
+        // Five sub-tasks, **inserted in an order that is neither id nor reverse-id**
+        // order, so insertion / read_dir order diverges from the canonical id order.
+        // Id-sorted, the areas are:
+        //   [a-area, b-area, evict-area, low-strategy, zed-strategy]
+        for intent in [
+            "Zed strategy",
+            "A area",
+            "Evict area",
+            "Low strategy",
+            "B area",
+        ] {
+            add_task(root.path(), &milestone.id, intent, "single-task")
+                .unwrap_or_else(|e| panic!("{intent} adds: {e:?}"));
+        }
+
+        // --- Overlap 1: two same-slug `created` `adr:cache-strategy`, each
+        // self-referential (supersedes its own slug). Lower id keeps the bare slug,
+        // higher takes `-2` with its self-ref rewritten in lockstep.
+        stage_doc(
+            &root.path().join("tasks").join("low-strategy"),
+            "adr",
+            "cache-strategy",
+            &adr_superseding("Cache strategy", "adr:cache-strategy"),
+            crate::state::Provenance::Created,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("zed-strategy"),
+            "adr",
+            "cache-strategy",
+            &adr_superseding("Cache strategy", "adr:cache-strategy"),
+            crate::state::Provenance::Created,
+        );
+
+        // --- Overlap 2: a cross-area ref. `a-area` creates `adr:lru-eviction`;
+        // `b-area` creates `adr:b-decision` whose `supersedes` GUESSES `a-area`'s
+        // slug — resolvable only inside a sibling area → blocking ref-resolves.
+        stage_doc(
+            &root.path().join("tasks").join("a-area"),
+            "adr",
+            "lru-eviction",
+            &adr_superseding("LRU eviction", "adr:lru-eviction"),
+            crate::state::Provenance::Created,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("b-area"),
+            "adr",
+            "b-decision",
+            &adr_superseding("B decision", "adr:lru-eviction"),
+            crate::state::Provenance::Created,
+        );
+
+        // --- Overlap 3: an `edited-from-base` clash. `evict-area` and `b-area` both
+        // edit the same committed-at-base slug `adr:eviction-policy` → same-doc clash.
+        let edited_adr = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n";
+        stage_doc(
+            &root.path().join("tasks").join("evict-area"),
+            "adr",
+            "eviction-policy",
+            edited_adr,
+            crate::state::Provenance::EditedFromBase,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("b-area"),
+            "adr",
+            "eviction-policy",
+            edited_adr,
+            crate::state::Provenance::EditedFromBase,
+        );
+
+        // The canonical id-sorted enumeration the join feeds.
+        let id_order = read_task_list(&milestone.dir)
+            .expect("read list")
+            .enumerate();
+        assert_eq!(
+            id_order,
+            vec![
+                "a-area".to_string(),
+                "b-area".to_string(),
+                "evict-area".to_string(),
+                "low-strategy".to_string(),
+                "zed-strategy".to_string(),
+            ],
+            "the enumeration is the canonical id-sorted order"
+        );
+
+        // The on-disk read_dir order must diverge from id order in this run — so a
+        // green result cannot be a filesystem-handed-back-id-order accident.
+        let read_dir_order: Vec<String> = std::fs::read_dir(root.path().join("tasks"))
+            .expect("tasks dir")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_ne!(
+            read_dir_order, id_order,
+            "the read_dir order must diverge from id order: {read_dir_order:?}"
+        );
+
+        // Order A: canonical id order.
+        let order_id = id_order.clone();
+        // Order B: reverse id order — mandatory (an id-ordered fixture would let a
+        // completion-ordered merge pass trivially).
+        let mut order_reverse = id_order.clone();
+        order_reverse.reverse();
+        assert_ne!(
+            order_reverse, order_id,
+            "reverse genuinely diverges from id order"
+        );
+        // Order C: a seed-shuffled order — a third divergent condition, asserted to
+        // differ from BOTH id and reverse (so it is genuinely a third feed order).
+        let mut order_shuffled = id_order.clone();
+        seeded_shuffle(&mut order_shuffled, 42);
+        assert_ne!(
+            order_shuffled, order_id,
+            "the shuffled order must differ from id order: {order_shuffled:?}"
+        );
+        assert_ne!(
+            order_shuffled, order_reverse,
+            "the shuffled order must differ from reverse order too: {order_shuffled:?}"
+        );
+
+        // Feed the SAME area set under each order through the engine join's fold.
+        let outcome_id = fold_areas(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &order_id,
+            &schemas,
+            &committed,
+        )
+        .expect("id-order fold");
+        let outcome_reverse = fold_areas(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &order_reverse,
+            &schemas,
+            &committed,
+        )
+        .expect("reverse-order fold");
+        let outcome_shuffled = fold_areas(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &order_shuffled,
+            &schemas,
+            &committed,
+        )
+        .expect("shuffled-order fold");
+
+        // The overlapping fixture must actually exercise every contention path — a
+        // non-overlapping fixture would prove nothing. The suffix produced a `-2`
+        // instance, the cross-area ref was rejected, and the clash blocked.
+        assert!(
+            outcome_id.overlay.contains_key("adr:cache-strategy")
+                && outcome_id.overlay.contains_key("adr:cache-strategy-2"),
+            "the two same-slug `created` instances suffix-resolved: {:?}",
+            outcome_id.overlay.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            outcome_id
+                .findings
+                .iter()
+                .any(|f| f.code == "schema-conformance.ref-resolves"),
+            "the cross-area ref is rejected: {:?}",
+            outcome_id.findings
+        );
+        assert!(
+            outcome_id
+                .findings
+                .iter()
+                .any(|f| f.code == "join.same-doc-clash"),
+            "the edited-from-base clash blocks: {:?}",
+            outcome_id.findings
+        );
+
+        // BYTE-IDENTICAL across all three feed orders — the #1-risk Proves. Compare
+        // both the structural `JoinOutcome` and its serialized bytes (the bytes are
+        // the contract `finalize` will later consume).
+        let bytes =
+            |o: &JoinOutcome| serde_json::to_string_pretty(o).expect("JoinOutcome serializes");
+        let bytes_id = bytes(&outcome_id);
+        assert_eq!(
+            bytes_id,
+            bytes(&outcome_reverse),
+            "reverse-order join is byte-identical to id-order"
+        );
+        assert_eq!(
+            bytes_id,
+            bytes(&outcome_shuffled),
+            "shuffled-order join is byte-identical to id-order"
+        );
+        // The structural equality matches the byte equality (no Serialize-only quirk).
+        assert_eq!(
+            outcome_id, outcome_reverse,
+            "reverse outcome equals id outcome"
+        );
+        assert_eq!(
+            outcome_id, outcome_shuffled,
+            "shuffled outcome equals id outcome"
+        );
+
+        // The public `join` (which feeds id order internally) equals the explicit
+        // id-order fold — the contract surface is the one proven order-invariant.
+        let public = join(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("public join folds");
+        assert_eq!(
+            bytes(&public),
+            bytes_id,
+            "the public join is byte-identical to the explicit id-order fold"
+        );
+    }
+
     /// A title that normalizes to nothing falls back to the `milestone` type
     /// name (the same fallback discipline as `state::mint_id`).
     #[test]
