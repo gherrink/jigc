@@ -250,6 +250,182 @@ fn milestone_create_then_add_tasks_through_the_binary() {
     );
 }
 
+/// A committed `spec` with **three** repeatable `criteria` items — the seed
+/// substrate `add-from-spec` enumerates. The three titles are deliberately not in
+/// id-sorted physical order so the mint (physical) and the milestone's enumeration
+/// (id-sorted) are distinct. Sub-task ids (the criterion-title slugs):
+/// `rejects-the-101st-request`, `admits-within-the-window`,
+/// `recovers-after-the-window` → id-sorted: admits, recovers, rejects.
+const THREE_CRITERIA_SPEC: &str = "\
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Rejects the 101st request  {#rejects-burst}
+
+The gateway rejects the 101st request in a rolling 60s window.
+
+### Admits within the window  {#admits-within}
+
+Requests under the cap are admitted unchanged.
+
+### Recovers after the window  {#recovers}
+
+The next window admits requests again.
+";
+
+/// A committed `spec` whose `criteria` section has **zero** items — the
+/// "nothing to seed from" block fixture.
+const ZERO_CRITERIA_SPEC: &str = "\
+# Empty plan
+
+## Goal
+
+A goal with no criteria yet.
+
+## Context
+
+Context without any acceptance criteria.
+
+## Criteria
+";
+
+/// Write `body` to the canonical committed spec path (`specs/<slug>.md`) under
+/// `repo` and `git add`/`commit` it, so the spec is genuinely committed state
+/// (the done-criterion commits the spec before seeding from it).
+fn commit_spec(repo: &Path, slug: &str, body: &str) {
+    let specs = repo.join("specs");
+    fs::create_dir_all(&specs).expect("mk specs/");
+    fs::write(specs.join(format!("{slug}.md")), body).expect("write spec");
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "add spec"]);
+}
+
+#[test]
+fn add_from_spec_seeds_one_sub_task_per_criterion_through_the_binary() {
+    let repo = TempDir::new("from-spec");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // A committed 3-criteria spec is the seed substrate.
+    commit_spec(repo.path(), "gateway-rate-limiting", THREE_CRITERIA_SPEC);
+
+    // Mint the milestone, then seed its task list from the committed spec.
+    let created = run_milestone(repo.path(), home.path(), &["create", "Cache rework"]);
+    assert!(
+        created.status.success(),
+        "`jigc milestone create` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr),
+    );
+
+    let seeded = run_milestone(
+        repo.path(),
+        home.path(),
+        &[
+            "add-from-spec",
+            "cache-rework",
+            "spec:gateway-rate-limiting",
+        ],
+    );
+    let seed_stdout = String::from_utf8(seeded.stdout).expect("utf-8 stdout");
+    assert!(
+        seeded.status.success(),
+        "`jigc milestone add-from-spec` over a 3-criteria spec must exit 0; got {:?}\nstderr:\n{}",
+        seeded.status,
+        String::from_utf8_lossy(&seeded.stderr),
+    );
+    // The summary names the 3 seeded sub-tasks.
+    for id in [
+        "rejects-the-101st-request",
+        "admits-within-the-window",
+        "recovers-after-the-window",
+    ] {
+        assert!(
+            seed_stdout.contains(id),
+            "the seed summary must name sub-task `{id}`; got:\n{seed_stdout}",
+        );
+    }
+    assert!(
+        seed_stdout.contains('3'),
+        "the seed summary must name the count (3); got:\n{seed_stdout}",
+    );
+
+    // `list-tasks` reports the 3 ids id-sorted (the order the join reads).
+    let listed = run_milestone(repo.path(), home.path(), &["list-tasks", "cache-rework"]);
+    let list_stdout = String::from_utf8(listed.stdout).expect("utf-8 stdout");
+    assert!(listed.status.success(), "list-tasks must exit 0");
+    let admits = list_stdout
+        .find("admits-within-the-window")
+        .expect("lists admits-within-the-window");
+    let recovers = list_stdout
+        .find("recovers-after-the-window")
+        .expect("lists recovers-after-the-window");
+    let rejects = list_stdout
+        .find("rejects-the-101st-request")
+        .expect("lists rejects-the-101st-request");
+    assert!(
+        admits < recovers && recovers < rejects,
+        "the 3 sub-tasks must be id-sorted (admits < recovers < rejects); got:\n{list_stdout}",
+    );
+}
+
+#[test]
+fn add_from_spec_over_a_zero_criteria_spec_blocks_and_seeds_nothing() {
+    let repo = TempDir::new("from-spec-empty");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    commit_spec(repo.path(), "empty-plan", ZERO_CRITERIA_SPEC);
+
+    let created = run_milestone(repo.path(), home.path(), &["create", "Empty work"]);
+    assert!(created.status.success(), "create must exit 0");
+
+    let seeded = run_milestone(
+        repo.path(),
+        home.path(),
+        &["add-from-spec", "empty-work", "spec:empty-plan"],
+    );
+    let stderr = String::from_utf8(seeded.stderr).expect("utf-8 stderr");
+    assert!(
+        !seeded.status.success(),
+        "a zero-criteria spec must exit non-zero; got {:?}",
+        seeded.status,
+    );
+    assert!(
+        stderr.contains("no criteria") && stderr.contains("route:"),
+        "the zero-criteria block must carry the `milestone.no-criteria` message + a route; got:\n{stderr}",
+    );
+
+    // Nothing was seeded — the task list is still empty.
+    let listed = run_milestone(repo.path(), home.path(), &["list-tasks", "empty-work"]);
+    let list_stdout = String::from_utf8(listed.stdout).expect("utf-8 stdout");
+    assert!(listed.status.success(), "list-tasks must exit 0");
+    assert!(
+        list_stdout.contains("(0)"),
+        "the task list must be empty after a blocked seed; got:\n{list_stdout}",
+    );
+}
+
 #[test]
 fn add_task_to_an_unknown_milestone_rejects() {
     let repo = TempDir::new("unknown");

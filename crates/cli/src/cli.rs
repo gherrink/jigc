@@ -850,6 +850,34 @@ mod cli_parse {
     }
 
     #[test]
+    fn milestone_add_from_spec_parses_the_id_and_spec_address() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "milestone",
+            "add-from-spec",
+            "cache-rework",
+            "spec:gateway-rate-limiting",
+        ])
+        .expect("`jigc milestone add-from-spec <id> <spec-addr>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::AddFromSpec {
+                    milestone_id: "cache-rework".to_string(),
+                    spec_addr: "spec:gateway-rate-limiting".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_add_from_spec_requires_both_id_and_spec_address() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "add-from-spec", "cache-rework"])
+            .expect_err("`milestone add-from-spec` with no spec address must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
     fn milestone_rejects_an_unknown_verb() {
         let err = Cli::try_parse_from(["jigc", "milestone", "destroy", "cache-rework"])
             .expect_err("an unknown milestone verb must be rejected");

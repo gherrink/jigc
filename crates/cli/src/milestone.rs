@@ -20,11 +20,15 @@
 //! `milestones/`.
 
 use crate::cli::Format;
+use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::finding::Finding;
-use engine::milestone::{add_task, milestone_dir, mint_milestone, read_task_list};
+use engine::milestone::{add_from_spec, add_task, milestone_dir, mint_milestone, read_task_list};
+use engine::packsource::PackResourceKind;
+use engine::schema::{Schema, load_schema};
 use engine::state::BasePin;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -54,6 +58,15 @@ pub enum MilestoneCommand {
         /// The sub-task intent — slugged into the sub-task id.
         intent: String,
     },
+    /// Seed a milestone's task list from a committed spec: mint one sub-task per
+    /// repeatable `criterion` of the spec (criterion text as intent). A spec with
+    /// zero criteria blocks with `milestone.no-criteria` ("nothing to seed from").
+    AddFromSpec {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+        /// The committed spec's address (`spec:<slug>`) to enumerate criteria from.
+        spec_addr: String,
+    },
     /// Emit a milestone's sub-task ids in **canonical id-sorted order** — the
     /// deterministic order the by-task-id join enumerates, surfaced through the
     /// binary (`design/storage.md` → The by-task-id join).
@@ -75,6 +88,10 @@ impl MilestoneCommand {
                 milestone_id,
                 intent,
             } => run_add_task(cwd, &milestone_id, &intent),
+            MilestoneCommand::AddFromSpec {
+                milestone_id,
+                spec_addr,
+            } => run_add_from_spec(cwd, &milestone_id, &spec_addr),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
         };
         match result {
@@ -123,6 +140,56 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str) -> Result<String> 
         "added task:{} to milestone:{}",
         added.task.id, added.milestone_id
     ))
+}
+
+/// `jigc milestone add-from-spec <milestone-id> <spec-addr>` — seed the milestone's
+/// task list with one sub-task per repeatable `criterion` of a committed spec (the
+/// criterion text as the sub-task intent). The CLI does the I/O — discover the repo
+/// root, load the shipped schemas the engine resolves the spec address against — and
+/// hands them to [`add_from_spec`], which performs no git I/O. Returns a summary
+/// naming the seeded sub-tasks; an unknown milestone, an unknown/transient/
+/// unparseable spec, or a **zero-criteria** spec (`milestone.no-criteria`) surfaces
+/// as the engine's routed blocking finding and exits non-zero
+/// (`design/write-commands.md` → Minting a milestone).
+fn run_add_from_spec(cwd: &Path, milestone_id: &str, spec_addr: &str) -> Result<String> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_root = repo_root.join(".jigc");
+    let schemas = shipped_schemas()?;
+
+    let added = add_from_spec(
+        &jigc_root,
+        &repo_root,
+        &schemas,
+        milestone_id,
+        spec_addr,
+        SUB_TASK_WORKFLOW,
+    )
+    .map_err(finding_to_err)?;
+
+    let ids: Vec<&str> = added.iter().map(|a| a.task.id.as_str()).collect();
+    Ok(format!(
+        "seeded {} sub-task(s) into milestone:{milestone_id} from {spec_addr}: {}",
+        ids.len(),
+        ids.join(", ")
+    ))
+}
+
+/// Load every shipped schema keyed by doctype — the set [`add_from_spec`] resolves
+/// the spec address's type against (the engine stays domain-empty; the CLI feeds the
+/// pack in, the same idiom `TaskArea::schemas` uses).
+fn shipped_schemas() -> Result<BTreeMap<String, Schema>> {
+    let pack = make_pack();
+    let mut out = BTreeMap::new();
+    for id in pack.list(PackResourceKind::Schemas) {
+        let bytes = pack
+            .read(PackResourceKind::Schemas, &id)
+            .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
+        let schema =
+            load_schema(&bytes).with_context(|| format!("the `{}` schema parses", id.as_str()))?;
+        out.insert(schema.ty.clone(), schema);
+    }
+    Ok(out)
 }
 
 /// `jigc milestone list-tasks <milestone-id>` — read the milestone's persisted
