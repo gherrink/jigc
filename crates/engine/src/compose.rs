@@ -722,6 +722,62 @@ fn emit_bare_data_value(
     }
 }
 
+/// Emit a `fan-out` step's `Spawn:` directive block — one
+/// `` Spawn: `jigc workflow <run> --task <id>` `` line per id of the resolved
+/// `over:` collection, in the collection's (already id-sorted) order, joined by
+/// newlines (`workflow-dialect.md` → Emitted format, rule 4: the 5th class).
+///
+/// `over` carries the verbatim marker placeholder text (e.g. `{{ milestone.tasks }}`);
+/// its `{{…}}` braces are stripped and the inner data-value path resolved against
+/// `ctx` to a [`Resolution::Milestone`] collection. `run` is the marker's
+/// `workflow:<id>` ref; the `workflow:` prefix is stripped to the bare workflow id
+/// that names the re-entry command (`jigc workflow <id> --task <sub>`) — the BARE
+/// CLI payload; the adapter launch wrapper is a later increment
+/// ([assistant-adapter.md] → Bind the spawn mechanism). An **empty** collection
+/// emits the empty string — zero directives, never a finding (the
+/// empty-vs-unresolvable stance, same as an empty `catalog`/`store`).
+///
+/// A non-collection `over:` resolution (the path resolves to a scalar/address rather
+/// than a `Milestone` collection) is the `collection`-shaped misuse — surfaced as the
+/// resolver's structural [`Finding`] rather than a silent empty emit.
+fn emit_fan_out_spawns(
+    over: &str,
+    run: &str,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    use crate::data_value::Resolution;
+    let inner = parse_lone_placeholder(over.trim()).ok_or_else(|| {
+        Finding::blocking(
+            "workflow-refs.malformed-data-value",
+            format!("fan-out `over:` `{over}` is not a lone `{{{{<path>}}}}` placeholder"),
+            Location::at(1, 1),
+        )
+    })?;
+    let path = parse_data_value(inner)?;
+    let ids = match path.resolve(ctx)? {
+        Resolution::Milestone { ids } => ids,
+        _ => {
+            return Err(Finding::blocking(
+                "workflow-refs.malformed-data-value",
+                format!(
+                    "fan-out `over:` `{over}` must resolve to a collection (e.g. `{{{{milestone.tasks}}}}`)"
+                ),
+                Location::at(1, 1),
+            ));
+        }
+    };
+    // The re-entry command names the bare workflow id (the `workflow:` prefix stripped).
+    let workflow = run.strip_prefix("workflow:").unwrap_or(run);
+    let lines: Vec<String> = ids
+        .iter()
+        .map(|id| {
+            let cmd = format!("jigc workflow {workflow} --task {id}");
+            format!("Spawn: `{cmd}`")
+        })
+        .collect();
+    Ok(lines.join("\n"))
+}
+
 /// Render the resolved `catalog` collection as the router's option list: one
 /// `- <id> — <when>` line per entry, in fed order, joined by newlines (the T3
 /// line shape, `workflow-dialect.md` → Workflow selection / Emitted format). An
@@ -1734,7 +1790,20 @@ pub fn compose_with_store(
     let composition = expand_includes(def, source)?;
     let mut emitted_steps = Vec::with_capacity(composition.steps.len());
     for step in &composition.steps {
-        emitted_steps.push(emit_step_body_with(&step.body, ctx, catalog, store)?);
+        let mut emitted = emit_step_body_with(&step.body, ctx, catalog, store)?;
+        // A `fan-out` step appends its `Spawn:` directives — one per id-sorted
+        // sub-task of the resolved `over:` collection — after the step's reasoning
+        // prose (`workflow-dialect.md` → Emitted format, rule 4: the 5th class).
+        if let StepKind::FanOut { over, run } = &step.kind {
+            let spawns = emit_fan_out_spawns(over, run, ctx)?;
+            if !spawns.is_empty() {
+                if !emitted.is_empty() && !emitted.ends_with('\n') {
+                    emitted.push('\n');
+                }
+                emitted.push_str(&spawns);
+            }
+        }
+        emitted_steps.push(emitted);
     }
     // Join the per-step emitted texts with a single blank line between **step
     // boundaries**, so the composed view reads as one ordered document. A leaf that
@@ -4911,5 +4980,108 @@ Follow the house rule.
         // No fill token at all (only other kinds / malformed fills) → None.
         assert!(next_fill_token("{{ cli.x }} and {{ fill: }} and {{ fill: two words }}").is_none());
         assert!(next_fill_token("plain prose, no braces").is_none());
+    }
+
+    // --- Spawn: the 5th emit class (fan-out step) (T3) ---
+
+    /// A `creates-task: false` ctx fed the milestone's id-sorted sub-task ids — the
+    /// `fan-out` step's `over:` list-source ([workflow-dialect.md] → data-value
+    /// roots). No `task` root (a `fan-out`/`join` workflow operates on an existing
+    /// milestone work-unit and mints no task).
+    fn fan_out_ctx(ids: &[&str]) -> ComposeContext {
+        ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
+            milestone: ids.iter().map(|s| (*s).to_owned()).collect(),
+        }
+    }
+
+    /// The done-criterion fixture: a `fan-out` step over `{{ milestone.tasks }}` with
+    /// `run: workflow:sub-task`, plus a later `join` step. Fed two ids it must emit
+    /// **exactly** one `` Spawn: `jigc workflow sub-task --task <id>` `` per id in id
+    /// order, no others; the `Spawn:` line matches the same strict line-start/backtick
+    /// pattern `Run:` uses (`workflow-dialect.md` → Emitted format, rule 4).
+    #[test]
+    fn fan_out_emits_one_spawn_per_id_in_id_order() {
+        let source = MapSource::new(&[
+            (
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "---\njoin: {}\n---\nAll sub-tasks complete and merged by task-id order. Continue.\n",
+            ),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: false,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
+        };
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        // Fed in id order: the resolver carries the already-id-sorted collection.
+        let ctx = fan_out_ctx(&["alpha-fix", "zebra-fix"]);
+
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+
+        // Extract the emitted Spawn directives — the bytes the agent reads — and assert
+        // on those, never a reconstruction.
+        let spawns: Vec<&str> = composed
+            .text
+            .lines()
+            .filter(|l| l.starts_with("Spawn: "))
+            .collect();
+        assert_eq!(
+            spawns,
+            vec![
+                "Spawn: `jigc workflow sub-task --task alpha-fix`",
+                "Spawn: `jigc workflow sub-task --task zebra-fix`",
+            ],
+            "exactly one Spawn per id, in id order, no others"
+        );
+        // The Spawn line matches the same strict line-start/backtick pattern `Run:` uses.
+        for spawn in &spawns {
+            assert!(
+                spawn.starts_with("Spawn: `") && spawn.ends_with('`'),
+                "Spawn line must be `^Spawn: `(.+)`$`, got {spawn:?}"
+            );
+        }
+    }
+
+    /// An **empty** milestone (no sub-tasks) → **zero** `Spawn:` lines — the
+    /// empty-collection emits no directives (the empty-vs-unresolvable stance, same as
+    /// an empty `catalog`/`store`).
+    #[test]
+    fn empty_milestone_emits_zero_spawn_lines() {
+        let source = MapSource::new(&[
+            (
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "---\njoin: {}\n---\nAll sub-tasks complete. Continue.\n",
+            ),
+        ]);
+        let def = WorkflowDef {
+            when: None,
+            creates_task: false,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
+        };
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = fan_out_ctx(&[]);
+
+        let composed = compose(&def, &source, &catalog, &ctx).expect("composes");
+
+        assert!(
+            !composed.text.lines().any(|l| l.starts_with("Spawn: ")),
+            "an empty milestone emits no Spawn directives, got:\n{}",
+            composed.text
+        );
     }
 }
