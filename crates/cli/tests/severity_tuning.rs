@@ -18,6 +18,14 @@
 //!   not folded into `overrides applied: N`), and `jigc start --explain` shows the
 //!   rejected-demotion line (attempted `advisory` · floor `blocking` · `project`).
 //!
+//! These two are the **supporting** half of the flow-8 trio (`worked-examples.md` →
+//! flow 8, Supporting): (a) the *tunable demote stops blocking* and (b) the *intrinsic
+//! demote is floor-rejected + shown in `--explain`*. The flow-8 **headline** — the M5
+//! `override-default` conflict demoted blocking→warning so `jigc upgrade` warns instead
+//! of blocks (exit 0) — lives in `flow8_override_default_warning.rs`; the *no-override
+//! byte-identical* supporting leg lives in `upgrade.rs`'s no-delta byte-identity
+//! goldens (cross-referenced so the flow is tracked complete — hardening #1 / #6).
+//!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! dev's repo.
