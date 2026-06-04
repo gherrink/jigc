@@ -547,6 +547,108 @@ pub fn join(
     )
 }
 
+/// The result of [`materialize`] — the parent staging area whose `docs/` now holds every
+/// merged, suffix-resolved doc body, the staging form `finalize`'s promote sweep reads
+/// (`<area>/docs/<type>:<slug>.md`). `docs_dir` is the absolute path of that `docs/`
+/// folder (`<jigc_root>/milestones/<id>/merged/docs/`); `addresses` are the materialized
+/// final addresses in id-sorted order (the overlay keys), the audit trail of what landed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaterializeOutcome {
+    /// The parent staging `docs/` folder the merged bodies were written into.
+    pub docs_dir: PathBuf,
+    /// The materialized final `<type>:<slug>` addresses, id-sorted (the overlay keys).
+    pub addresses: Vec<String>,
+}
+
+/// The parent staging-area subfolder a milestone's merged bodies materialize under,
+/// relative to the milestone area: `<jigc_root>/milestones/<id>/merged/`. Its `docs/`
+/// holds the suffix-resolved bodies in the same `<type>:<slug>.md` staging form a single
+/// task's working area uses, so `finalize`'s promote sweep reads it unchanged.
+const MERGED_AREA: &str = "merged";
+
+/// **Materialize the join's suffix-rewritten doc bodies into the parent staging area**
+/// (`design/storage.md` → The by-task-id join (M7): "the parent working overlay, already
+/// suffix-resolved … finalize then commits the overlay"; `DECISIONS.md` 2026-06-04 → the
+/// inc-4 fork resolution). Runs [`join`]; **blocks** if its [`JoinOutcome::findings`] holds
+/// any blocking finding (same-doc clash / cross-area / isolation) — surfacing the **first**
+/// such finding and writing **nothing**. Otherwise, iterating the **id-sorted** overlay,
+/// re-produces each entry's final body bytes (the net-new byte production [`resolved_body`]
+/// owns — a bare/lone instance's body is its sub-area body unchanged; a suffixed instance's
+/// body is its sub-area body with its own self-references rewritten to the suffixed id) and
+/// writes it to `<jigc_root>/milestones/<id>/merged/docs/<final-address>.md`, the staging
+/// form `finalize`'s promote sweep already reads.
+///
+/// The written bytes are a **pure function of the area set**: the overlay is id-keyed and
+/// each body is `resolved_body`'s deterministic output, so no enumeration / completion /
+/// `read_dir` order can reach the materialized bytes (the order-invariance M7 proves). The
+/// `merged/docs/` folder is **truncated** before writing (a re-materialize is a clean
+/// rebuild, never a stale-body accretion).
+pub fn materialize(
+    jigc_root: &Path,
+    repo_root: &Path,
+    milestone_id: &str,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    committed: &crate::index::EdgeIndex,
+) -> Result<MaterializeOutcome, Finding> {
+    // Run the join. A blocking finding is surfaced before anything is materialized
+    // (the `dispatch_join` precedent: the merge ran, then routed the contention).
+    let outcome = join(jigc_root, repo_root, milestone_id, schemas, committed)?;
+    if let Some(blocking) = outcome
+        .findings
+        .iter()
+        .find(|f| f.severity == Severity::Blocking)
+    {
+        return Err(blocking.clone());
+    }
+
+    // Re-gather the same staged groups from the same areas (the shared gather, no
+    // divergent re-walk) and re-produce each entry's final body via `resolved_body`.
+    let dir = milestone_dir(jigc_root, milestone_id);
+    let list =
+        read_task_list(&dir).map_err(|err| io_finding(milestone_id, "read the task list", &err))?;
+    let (groups, _findings) = gather_groups(
+        jigc_root,
+        repo_root,
+        milestone_id,
+        &list.enumerate(),
+        schemas,
+        committed,
+    )?;
+
+    // The parent staging docs/ — a clean rebuild on each materialize.
+    let docs_dir = dir.join(MERGED_AREA).join(crate::state::DOCS_DIR);
+    if docs_dir.exists() {
+        std::fs::remove_dir_all(&docs_dir)
+            .map_err(|err| io_finding(milestone_id, "clear the parent staging area", &err))?;
+    }
+    std::fs::create_dir_all(&docs_dir)
+        .map_err(|err| io_finding(milestone_id, "open the parent staging area", &err))?;
+
+    let mut addresses = Vec::new();
+    for (_address, mut staged) in groups {
+        // Resolve strictly by task id, the same order `fold_areas` resolves a group in,
+        // so the materialized body for a given final address is order-invariant.
+        staged.sort_by(|a, b| a.source_task.cmp(&b.source_task));
+        for (nth, d) in staged.into_iter().enumerate() {
+            let (final_address, body) = resolved_body(milestone_id, &d, nth + 1, schemas)?;
+            let (ty, slug) = final_address
+                .split_once(':')
+                .unwrap_or((final_address.as_str(), ""));
+            let path = crate::state::instance_path(dir.join(MERGED_AREA).as_path(), ty, slug);
+            std::fs::write(&path, &body)
+                .map_err(|err| io_finding(milestone_id, "write a materialized doc body", &err))?;
+            addresses.push(final_address);
+        }
+    }
+    // Id-sorted addresses (the overlay-key order) — the audit trail of what landed.
+    addresses.sort();
+
+    Ok(MaterializeOutcome {
+        docs_dir,
+        addresses,
+    })
+}
+
 /// One staged doc gathered from a sub-area before the clash/suffix rules decide its
 /// fate — its minted `address` (`<type>:<slug>`), contributing `source_task`,
 /// recorded `provenance`, the area's forward `edges` for this `from`, and the
@@ -560,27 +662,32 @@ struct StagedDoc {
     sub_dir: PathBuf,
 }
 
-/// Fold the named sub-task areas — in the **given** order — into the merged overlay,
-/// applying the provenance clash rule (block) vs the collision-suffix for distinct
-/// `created` instances (`design/storage.md` → The by-task-id join, steps 2–4). The
-/// only output accumulator is the address-keyed `BTreeMap`, and every collision group
-/// is resolved by **task-id order** (the gather order), so the result is a pure
-/// function of the *set* of `sub_ids`, independent of their iteration order (the
-/// order-invariance the join's contract rests on; the public [`join`] always feeds the
-/// id-sorted order).
-fn fold_areas(
+/// Gather every staged doc across the named sub-task areas — in the **given** order —
+/// grouped by minted address, alongside the per-sub-area cross-area / isolation findings
+/// (`design/storage.md` → The by-task-id join, steps 1–2 + step 5). The gather order *is*
+/// the input order, so each group's instances are already in that order; the group
+/// resolution then sorts every group strictly by task id, so the result is a pure function
+/// of the *set* of areas (hardening #7). Shared by [`fold_areas`] (which resolves groups to
+/// edges) and [`materialize`] (which resolves them to bodies), so the two paths gather the
+/// **same** staged docs from the **same** areas with no divergent re-walk. **Unknown
+/// provenance** for a staged body → the blocking [`missing_provenance_finding`] (a real
+/// fault, the bit is written beside every body).
+#[allow(clippy::type_complexity)]
+fn gather_groups(
     jigc_root: &Path,
     repo_root: &Path,
     milestone_id: &str,
     sub_ids: &[String],
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     committed: &crate::index::EdgeIndex,
-) -> Result<JoinOutcome, Finding> {
+) -> Result<
+    (
+        std::collections::BTreeMap<String, Vec<StagedDoc>>,
+        Vec<Finding>,
+    ),
+    Finding,
+> {
     let mut findings = Vec::new();
-
-    // Gather every staged doc across the areas in task-id order, grouped by minted
-    // address (the gather order *is* the task-id order, so each group's instances are
-    // already in the order the suffix rule assigns `-2`, `-3`, …).
     let mut groups: std::collections::BTreeMap<String, Vec<StagedDoc>> =
         std::collections::BTreeMap::new();
     for sub_id in sub_ids {
@@ -640,6 +747,33 @@ fn fold_areas(
             });
         }
     }
+    Ok((groups, findings))
+}
+
+/// Fold the named sub-task areas — in the **given** order — into the merged overlay,
+/// applying the provenance clash rule (block) vs the collision-suffix for distinct
+/// `created` instances (`design/storage.md` → The by-task-id join, steps 2–4). The
+/// only output accumulator is the address-keyed `BTreeMap`, and every collision group
+/// is resolved by **task-id order** (the gather order), so the result is a pure
+/// function of the *set* of `sub_ids`, independent of their iteration order (the
+/// order-invariance the join's contract rests on; the public [`join`] always feeds the
+/// id-sorted order).
+fn fold_areas(
+    jigc_root: &Path,
+    repo_root: &Path,
+    milestone_id: &str,
+    sub_ids: &[String],
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    committed: &crate::index::EdgeIndex,
+) -> Result<JoinOutcome, Finding> {
+    let (groups, mut findings) = gather_groups(
+        jigc_root,
+        repo_root,
+        milestone_id,
+        sub_ids,
+        schemas,
+        committed,
+    )?;
 
     // Resolve each address group: a lone staged doc is a disjoint-union insert; a
     // collision is either a blocking same-doc clash or a deterministic suffix.
@@ -752,14 +886,70 @@ fn suffix_resolve(
 
     // Rewrite the self-ref field value(s) in the body via the set_field/splice path,
     // then re-derive the edges from the rewritten bytes so the overlay edges are the
-    // bytes' truth (never hand-patched into divergence).
+    // bytes' truth (never hand-patched into divergence). The body production is the
+    // shared [`resolved_body`] (the same bytes [`materialize`] writes), so the overlay
+    // edges and the materialized bytes can never diverge.
+    let (resolved_address, body) = resolved_body(milestone_id, d, nth, schemas)?;
     let schema = schemas
         .get(ty)
         .ok_or_else(|| missing_schema_finding(milestone_id, &d.source_task, &d.address))?;
+    let edges = crate::index::edges_from_source(schema, &body, &resolved_address);
+    Ok((
+        resolved_address,
+        MergedDoc {
+            provenance: d.provenance,
+            source_task: d.source_task.clone(),
+            edges,
+        },
+    ))
+}
+
+/// Produce the **final body bytes** of one staged doc at position `nth` (1-based, in
+/// task-id order) and its **final address** — the net-new byte production the
+/// materialize step writes and [`suffix_resolve`] derives its edges from (so the
+/// overlay edges and the committed bytes are always the same truth;
+/// `DECISIONS.md` 2026-06-04 → the inc-4 fork resolution: the join keeps only edges,
+/// materialize re-reads the body + re-applies the rewrite). The sub-area body is read
+/// fresh and:
+/// - `nth <= 1` (the first / lone instance) → the body is returned **byte-unchanged**
+///   at its bare address;
+/// - a suffixed instance with **no** self-reference → the body is unchanged (only its
+///   identity / filename changes) at the `<type>:<slug>-<nth>` address;
+/// - a suffixed instance **with** self-references → each self-ref field value is
+///   rewritten to the suffixed address via the `set_field`/splice path, in lockstep with
+///   the slug suffix, so the renamed doc never dangles or points at its sibling.
+fn resolved_body(
+    milestone_id: &str,
+    d: &StagedDoc,
+    nth: usize,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+) -> Result<(String, String), Finding> {
+    let (ty, slug) = d
+        .address
+        .split_once(':')
+        .unwrap_or((d.address.as_str(), ""));
     let path = crate::state::instance_path(&d.sub_dir, ty, slug);
     let source = std::fs::read_to_string(&path)
-        .map_err(|err| io_finding(milestone_id, "read a colliding staged doc body", &err))?;
+        .map_err(|err| io_finding(milestone_id, "read a staged doc body", &err))?;
 
+    // The first / lone instance keeps its bare address and byte-unchanged body.
+    if nth <= 1 {
+        return Ok((d.address.clone(), source));
+    }
+
+    let new_address = format!("{ty}:{}", crate::slug::suffixed(slug, nth));
+
+    // The self-references to rewrite: edges whose `to` is the doc's own (old) address.
+    let self_refs: Vec<&crate::index::Edge> =
+        d.edges.iter().filter(|e| e.to == d.address).collect();
+    if self_refs.is_empty() {
+        // Only the identity changes — the body bytes are unchanged.
+        return Ok((new_address, source));
+    }
+
+    let schema = schemas
+        .get(ty)
+        .ok_or_else(|| missing_schema_finding(milestone_id, &d.source_task, &d.address))?;
     let mut body = source;
     for edge in &self_refs {
         let Some(section_id) = ref_section(schema, &edge.relation) else {
@@ -768,16 +958,7 @@ fn suffix_resolve(
         body = crate::write::set_field(schema, &body, &section_id, &edge.relation, &new_address)
             .map_err(|err| splice_finding(milestone_id, &d.address, &edge.relation, err))?;
     }
-
-    let edges = crate::index::edges_from_source(schema, &body, &new_address);
-    Ok((
-        new_address.clone(),
-        MergedDoc {
-            provenance: d.provenance,
-            source_task: d.source_task.clone(),
-            edges,
-        },
-    ))
+    Ok((new_address, body))
 }
 
 /// The schema section id that declares the `ref` field `relation`, if any — used to
@@ -2431,6 +2612,214 @@ Context without any acceptance criteria.
             bytes_id,
             "the public join is byte-identical to the explicit id-order fold"
         );
+    }
+
+    /// The done-criterion for T2 (`design/storage.md` → The by-task-id join (M7):
+    /// "the parent working overlay, already suffix-resolved … finalize then commits
+    /// the overlay"; `DECISIONS.md` 2026-06-04 → the inc-4 fork resolution:
+    /// materialize the join's suffix-rewritten doc **bodies** into the parent area —
+    /// the join keeps only edges today). Over a forced-overlap fixture — two `created`
+    /// colliding `adr:cache-strategy` slugs, the **higher-id** one self-referential
+    /// (`supersedes` its own slug), plus a **disjoint** `commit:alpha-area`, `materialize`
+    /// blocks on nothing (a collision of distinct `created` instances suffix-resolves) and
+    /// writes the **bare-slug** body (lower task id) **byte-unchanged**, the **`-2`-suffixed**
+    /// body (higher task id) with its **OWN** self-ref rewritten to the suffixed id
+    /// `adr:cache-strategy-2` (the fixture references its own slug, so a broken self-rewrite —
+    /// leaving `adr:cache-strategy`, or pointing at the sibling — fails the body assertion)
+    /// renamed to `adr:cache-strategy-2.md`, and the disjoint doc unchanged — all under the
+    /// parent staging `docs/` (`.jigc/milestones/<id>/merged/docs/`), the staging form
+    /// `finalize`'s promote sweep already reads. The materialized bytes are a pure function
+    /// of the area set (the overlay is id-sorted; net-new byte production — re-read the
+    /// sub-area body + re-apply the `write::set_field` self-ref rewrite).
+    #[test]
+    fn materialize_writes_bare_and_suffixed_bodies_with_self_ref_rewritten() {
+        let root = TempRoot::new("materialize");
+        let repo = TempRoot::new("materialize-repo");
+        let base = BasePin::new("dddddddddddddddddddddddddddddddddddddddd", "ddddddd");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+
+        // Inserted in reverse-id order so insertion order diverges from id order. Id-sorted:
+        // [alpha-area, area-low, area-zed]. `area-low` < `area-zed`, so `area-low` keeps the
+        // bare slug and `area-zed` takes the `-2` suffix.
+        add_task(root.path(), &milestone.id, "Area zed", "single-task").expect("zed adds");
+        add_task(root.path(), &milestone.id, "Area low", "single-task").expect("low adds");
+        add_task(root.path(), &milestone.id, "Alpha area", "single-task").expect("alpha adds");
+
+        // Two colliding `created` `adr:cache-strategy`, each self-referential.
+        let low_body = adr_superseding("Cache strategy", "adr:cache-strategy");
+        let zed_body = adr_superseding("Cache strategy", "adr:cache-strategy");
+        stage_doc(
+            &root.path().join("tasks").join("area-low"),
+            "adr",
+            "cache-strategy",
+            &low_body,
+            crate::state::Provenance::Created,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("area-zed"),
+            "adr",
+            "cache-strategy",
+            &zed_body,
+            crate::state::Provenance::Created,
+        );
+        // A disjoint `created` doc — no collision, body materialized unchanged.
+        let disjoint_body = "# Subject\n\nBody.\n";
+        stage_doc(
+            &root.path().join("tasks").join("alpha-area"),
+            "commit",
+            "alpha-area",
+            disjoint_body,
+            crate::state::Provenance::Created,
+        );
+
+        let outcome = materialize(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("materialize succeeds over a non-clashing fixture");
+
+        // The parent staging docs/ lives under the milestone's merged area.
+        let merged_docs = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged")
+            .join("docs");
+        assert_eq!(
+            outcome.docs_dir, merged_docs,
+            "the materialized docs/ is the parent staging area"
+        );
+
+        // The bare-slug body (lower task id) is materialized byte-UNCHANGED.
+        let bare_path = merged_docs.join("adr:cache-strategy.md");
+        let bare = std::fs::read_to_string(&bare_path).expect("bare body materialized");
+        assert_eq!(
+            bare, low_body,
+            "the bare-slug body is its sub-area body unchanged"
+        );
+
+        // The `-2`-suffixed body (higher task id) has its OWN self-ref rewritten to the
+        // suffixed id — never left at the bare slug, never pointing at its sibling.
+        let suffixed_path = merged_docs.join("adr:cache-strategy-2.md");
+        let suffixed = std::fs::read_to_string(&suffixed_path).expect("suffixed body materialized");
+        assert!(
+            suffixed.contains("supersedes: adr:cache-strategy-2"),
+            "the suffixed body's self-ref is rewritten to the suffixed id: {suffixed:?}"
+        );
+        assert!(
+            !suffixed.contains("supersedes: adr:cache-strategy\n"),
+            "the suffixed body's self-ref is NOT left at the bare slug: {suffixed:?}"
+        );
+        // The rewritten edges agree: a re-derive of the materialized bytes yields the
+        // suffixed self-ref edge (the bytes are the truth, not a hand-patched divergence).
+        let suffixed_edges =
+            crate::index::edges_from_source(&schemas["adr"], &suffixed, "adr:cache-strategy-2");
+        assert_eq!(
+            suffixed_edges,
+            vec![crate::index::Edge {
+                from: "adr:cache-strategy-2".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:cache-strategy-2".to_string(),
+            }],
+            "the materialized suffixed body re-derives the suffixed self-ref edge"
+        );
+
+        // The disjoint doc is materialized unchanged at its own address.
+        let disjoint = std::fs::read_to_string(merged_docs.join("commit:alpha-area.md"))
+            .expect("disjoint body materialized");
+        assert_eq!(
+            disjoint, disjoint_body,
+            "the disjoint doc body is unchanged"
+        );
+
+        // Exactly the three expected `.md` bodies are present (no stray files).
+        let mut names: Vec<String> = std::fs::read_dir(&merged_docs)
+            .expect("merged docs/")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".md"))
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            vec![
+                "adr:cache-strategy-2.md".to_string(),
+                "adr:cache-strategy.md".to_string(),
+                "commit:alpha-area.md".to_string(),
+            ],
+            "exactly the three resolved bodies are materialized"
+        );
+    }
+
+    /// The done-criterion for T2, the clash arm (`design/storage.md` → The by-task-id join,
+    /// step 3). A same-doc clash fixture — two sub-areas each `edited-from-base` the SAME
+    /// committed-at-base slug `adr:eviction-policy` — makes `materialize` **block** with the
+    /// routed `join.same-doc-clash` and write **nothing**: no parent `docs/` body is
+    /// produced, the clashing slug never materialized (never blind-merged).
+    #[test]
+    fn materialize_blocks_on_same_doc_clash_and_writes_nothing() {
+        let root = TempRoot::new("materialize-clash");
+        let repo = TempRoot::new("materialize-clash-repo");
+        let base = BasePin::new("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0", "eeeeeee");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        add_task(root.path(), &milestone.id, "Purge area", "single-task").expect("purge adds");
+        add_task(root.path(), &milestone.id, "Evict area", "single-task").expect("evict adds");
+
+        let adr = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n";
+        stage_doc(
+            &root.path().join("tasks").join("evict-area"),
+            "adr",
+            "eviction-policy",
+            adr,
+            crate::state::Provenance::EditedFromBase,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("purge-area"),
+            "adr",
+            "eviction-policy",
+            adr,
+            crate::state::Provenance::EditedFromBase,
+        );
+
+        let err = materialize(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect_err("a same-doc clash blocks materialize");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(err.code, "join.same-doc-clash");
+        assert!(err.route.is_some(), "the clash block carries a route");
+        assert!(
+            err.message.contains("adr:eviction-policy"),
+            "the block names the clashing slug: {err:?}"
+        );
+
+        // NOTHING materialized: the parent staging docs/ holds no body (and need not exist).
+        let merged_docs = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged")
+            .join("docs");
+        let bodies = std::fs::read_dir(&merged_docs)
+            .map(|rd| {
+                rd.flatten()
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+                    .count()
+            })
+            .unwrap_or(0);
+        assert_eq!(bodies, 0, "a blocked materialize writes no body");
     }
 
     /// A title that normalizes to nothing falls back to the `milestone` type

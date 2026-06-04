@@ -57,7 +57,7 @@ const WORKFLOW_FILE: &str = "workflow";
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
-const DOCS_DIR: &str = "docs";
+pub(crate) const DOCS_DIR: &str = "docs";
 
 /// The bare filename of a staged doc instance: the `:`-joined address slug
 /// (`<type>:<slug>.md`), the on-disk form the working-area layout pins
