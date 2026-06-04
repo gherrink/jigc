@@ -27,6 +27,21 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// The **no-delta** `jigc task finalize` rendered output over the dangling-`supersedes`
+/// block, byte for byte — captured from the binary as the pre-M6 baseline. The clean
+/// finalize path emits nothing, so the meaningful finalize render to pin is its
+/// validate-sweep block (the forward-ref integrity gate). T3 threaded a real `Resolved`
+/// into the finalize path so the M6 severity post-pass has a cascade to read; this repo
+/// carries no `validation.*.severity` scalar-set, so the post-pass overrides nothing and
+/// the rendered bytes must equal the pre-M6 baseline (`design/validation.md` → Severity
+/// assignment — the M6 post-pass: the byte-identical golden must cover the finalize path,
+/// not only `start_compose`; review B2). Findings render to stderr on the finalize path.
+const NO_DELTA_DANGLING_FINALIZE_GOLDEN: &str = "\
+blocking · schema-conformance.ref-resolves — forward-ref integrity — `adr:shared-redis-session-cache#supersedes` target `adr:typo-nonexistent` resolves in neither the committed store nor this task's working area; resolution: fix the reference to an existing target, create the target in this task, or drop the `supersedes` field
+  route: fix the reference, create the target in this task, or drop the field
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
 
@@ -473,6 +488,88 @@ fn finalize_blocks_on_a_dangling_supersedes_ref() {
             .join("shared-redis-session-cache.md")
             .exists(),
         "a blocked finalize promotes nothing"
+    );
+}
+
+#[test]
+fn no_delta_finalize_block_render_is_byte_identical_to_the_baseline() {
+    // T4 (M6 Increment 1) determinism guard: T3 threaded a real `Resolved` into the
+    // finalize path so the M6 severity post-pass has a cascade to read. Building that
+    // `Resolved` must not perturb the no-override render — `design/validation.md` flags
+    // the finalize path (not only `start_compose`) as the real M6 risk surface (review
+    // B2). The clean finalize emits nothing, so the meaningful render to pin is the
+    // validate-sweep block; this repo carries no `validation.*.severity` scalar-set, so
+    // the post-pass overrides nothing and the emitted stderr must equal the captured
+    // pre-M6 baseline. Setup mirrors `finalize_blocks_on_a_dangling_supersedes_ref`.
+    let (repo, home) = started_repo("supersede the cache decision");
+    let task = "supersede-the-cache-decision";
+
+    let create = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Shared redis session cache"],
+        None,
+    );
+    assert!(
+        create.status.success(),
+        "`jigc doc create adr` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = run_doc(
+            repo.path(),
+            home.path(),
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert!(
+            out.status.success(),
+            "set-slot {addr} must succeed; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    set_slot(
+        "adr:shared-redis-session-cache#context",
+        b"A single node is a single point of failure.\n",
+    );
+    set_slot(
+        "adr:shared-redis-session-cache#decision",
+        b"Replicate the session cache across nodes.\n",
+    );
+    set_slot(
+        "adr:shared-redis-session-cache#consequences",
+        b"Slightly higher write latency for resilience.\n",
+    );
+
+    let staged_adr = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("adr:shared-redis-session-cache.md");
+    let body = fs::read_to_string(&staged_adr).expect("read the staged ADR");
+    let with_supersedes = body.replacen(
+        "---\n---\n",
+        "---\nsupersedes: adr:typo-nonexistent\n---\n",
+        1,
+    );
+    fs::write(&staged_adr, &with_supersedes).expect("inject the dangling supersedes ref");
+
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert!(
+        !out.status.success(),
+        "the dangling forward-ref must still make finalize exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert_eq!(
+        stderr, NO_DELTA_DANGLING_FINALIZE_GOLDEN,
+        "the no-delta finalize block render must stay byte-identical to the pre-M6 baseline",
     );
 }
 

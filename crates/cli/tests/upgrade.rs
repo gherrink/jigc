@@ -87,6 +87,29 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
     pack_root
 }
 
+/// The **no-delta** `jigc upgrade` rendered output over a blocking-classifying
+/// `remove-step` delta whose target the current pack omits, byte for byte —
+/// captured from the binary as the pre-M6 baseline. T3 threaded a real `Resolved`
+/// into `upgrade_in_repo` to feed the M6 severity post-pass; this manifest carries
+/// **no** `validation.*.severity` scalar-set, so the post-pass overrides nothing
+/// and the rendered bytes must equal the pre-M6 baseline (`design/validation.md` →
+/// Severity assignment — the M6 post-pass: the byte-identical golden must cover the
+/// validate and upgrade paths; review B2).
+const NO_DELTA_BLOCKING_UPGRADE_GOLDEN: &str = "\
+blocking · override-default.target-exists — override target `workflow:single-task#gone` no longer exists in the current pack
+  route: remove or re-target the delta on `workflow:single-task#gone`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
+/// The **no-delta** `jigc upgrade` rendered output over a clean / no-delta manifest,
+/// byte for byte — the positive no-findings path. The companion baseline to
+/// `NO_DELTA_BLOCKING_UPGRADE_GOLDEN`: the post-pass must perturb neither the
+/// blocking nor the clean render of the upgrade path.
+const NO_DELTA_CLEAN_UPGRADE_GOLDEN: &str = "\
+no findings — the task validates clean
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
 /// Run `jigc upgrade <args>` with `cwd = repo`, `$HOME = home`, and the given
 /// `JIGC_PACK_DIR` selecting the current pack.
 fn run_upgrade(repo: &Path, home: &Path, pack_dir: &Path, args: &[&str]) -> std::process::Output {
@@ -181,5 +204,54 @@ fn no_delta_manifest_exits_zero_with_the_positive_no_findings_line() {
     assert!(
         stdout.contains("no findings"),
         "the emitted output must carry the positive no-findings line; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn no_delta_upgrade_render_is_byte_identical_to_the_baseline() {
+    // T4 (M6 Increment 1) determinism guard: T3 threaded a real `Resolved` into
+    // `upgrade_in_repo` so the M6 severity post-pass has a cascade to read. Building
+    // that `Resolved` must not perturb the no-override render — `design/validation.md`
+    // flags the upgrade path (not only `start_compose`) as the real M6 risk surface
+    // (review B2). Both manifests below carry no `validation.*.severity` scalar-set, so
+    // the post-pass overrides nothing and the emitted bytes must equal the captured
+    // pre-M6 baselines — for the blocking AND the clean render.
+    let repo = TempDir::new("byte-identical");
+    let home = TempDir::new("home");
+    let pack_dir = seed_pack(&repo, &[("implement", "implement body\n")]);
+
+    // The blocking render: a `remove-step` orphaned by the current pack.
+    seed_repo(
+        repo.path(),
+        "\
+deltas:
+  - kind: remove-step
+    target: workflow:single-task#gone
+",
+    );
+    let out = run_upgrade(repo.path(), home.path(), &pack_dir, &[]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        !out.status.success(),
+        "the blocking delta must still exit non-zero; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        stdout, NO_DELTA_BLOCKING_UPGRADE_GOLDEN,
+        "the no-delta blocking upgrade render must stay byte-identical to the pre-M6 baseline",
+    );
+
+    // The clean render: a no-delta manifest, same repo, re-seeded.
+    seed_repo(repo.path(), "scalar:\n  default-workflow: single-task\n");
+    let out = run_upgrade(repo.path(), home.path(), &pack_dir, &[]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "the clean manifest must still exit zero; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        stdout, NO_DELTA_CLEAN_UPGRADE_GOLDEN,
+        "the no-delta clean upgrade render must stay byte-identical to the pre-M6 baseline",
     );
 }

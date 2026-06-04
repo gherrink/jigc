@@ -22,6 +22,31 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+/// The **no-delta** `jigc task validate` rendered output over the freshly-provisioned
+/// (conformance-broken) commit doc, byte for byte — captured from the binary as the
+/// pre-M6 baseline. T3 threaded a real `Resolved` into `task.rs::validate` so the M6
+/// severity post-pass has a cascade to read; this repo carries no
+/// `validation.*.severity` scalar-set, so the post-pass overrides nothing and the
+/// rendered bytes must equal the pre-M6 baseline (`design/validation.md` → Severity
+/// assignment — the M6 post-pass: the byte-identical golden must cover the validate
+/// path, not only `start_compose`; review B2).
+const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
+blocking · schema-conformance.field-value-conformant — field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
+blocking · schema-conformance.field-value-conformant — field `scope` in section `header`: \"scope\" must not be empty
+blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
+blocking · schema-conformance.required-slot-present — required slot in section `body` is empty
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
+/// The **no-delta** `jigc task validate` rendered output over a conformant commit doc,
+/// byte for byte — the clean (exit-0) companion to `NO_DELTA_BROKEN_VALIDATE_GOLDEN`.
+/// The post-pass must perturb neither the blocking nor the clean validate render.
+const NO_DELTA_CLEAN_VALIDATE_GOLDEN: &str = "\
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
 
@@ -307,6 +332,46 @@ fn task_validate_severity_override_demotes_a_blocking_file_state_finding() {
     assert!(
         rendered.contains("file-state.hash-matches"),
         "the demoted finding is still surfaced (as a warning); got:\n{rendered}"
+    );
+}
+
+#[test]
+fn no_delta_validate_render_is_byte_identical_to_the_baseline() {
+    // T4 (M6 Increment 1) determinism guard: T3 threaded a real `Resolved` into
+    // `task.rs::validate` so the M6 severity post-pass has a cascade to read. Building
+    // that `Resolved` must not perturb the no-override render — `design/validation.md`
+    // flags the validate path (not only `start_compose`) as the real M6 risk surface
+    // (review B2). This repo carries no `validation.*.severity` scalar-set, so the
+    // post-pass overrides nothing and the emitted bytes must equal the captured pre-M6
+    // baselines — for both the conformance-broken (blocking) and the clean render.
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+
+    // The blocking render: the freshly-provisioned commit doc has empty required
+    // slots/fields → blocking `schema-conformance.*`.
+    let out = run_task(repo.path(), home.path(), &["validate", task]);
+    assert!(
+        !out.status.success(),
+        "the conformance-broken instance must still exit non-zero"
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout, NO_DELTA_BROKEN_VALIDATE_GOLDEN,
+        "the no-delta broken validate render must stay byte-identical to the pre-M6 baseline",
+    );
+
+    // The clean render: fill every required field/slot → validate is clean (exit 0).
+    make_commit_conformant(repo.path(), home.path(), task);
+    let out = run_task(repo.path(), home.path(), &["validate", task]);
+    assert!(
+        out.status.success(),
+        "the conformant instance must still exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout, NO_DELTA_CLEAN_VALIDATE_GOLDEN,
+        "the no-delta clean validate render must stay byte-identical to the pre-M6 baseline",
     );
 }
 
