@@ -575,6 +575,59 @@ mod tests {
         );
     }
 
+    /// A `warning` finding is a **live third tier** (M6): it flows produce → render →
+    /// gate as **non-blocking**. A report whose only non-clean finding is
+    /// `Severity::Warning` renders a `warning · …` line that is textually DISTINCT
+    /// from the `advisory` tier, and `has_blocking()` — the predicate the upgrade gate
+    /// maps to exit 0 — is false (`design/validation.md` → `warning` is a live third
+    /// tier). This pins the END-TO-END contract the upgrade dispatch leans on: a
+    /// warning-only report exits non-blocking, not merely that the render arm exists.
+    #[test]
+    fn render_warning_finding_is_non_blocking_and_distinct_from_advisory() {
+        use engine::finding::{Finding, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let report = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Warning,
+                "override-default.target-unchanged",
+                "override target `workflow:single-task#implement` changed in the current pack",
+                None,
+                Some("re-review the delta on `workflow:single-task#implement`".into()),
+            )],
+            &resolved,
+        );
+
+        // The gate the upgrade dispatch maps to its exit code: a warning-only report
+        // does NOT block, so `run_upgrade` returns `ExitCode::SUCCESS` (exit 0).
+        assert!(
+            !report.has_blocking(),
+            "a warning-only report must be non-blocking (the upgrade gate exits 0); got:\n{:?}",
+            report.findings,
+        );
+
+        let agent = validation(Format::Agent, &report);
+        // The warning tier renders a `warning · …` line — present and DISTINCT from
+        // the `advisory` tier (so a demoted finding is visibly a warning, not silent
+        // and not mislabeled advisory).
+        assert!(
+            agent.contains(
+                "warning · override-default.target-unchanged — override target `workflow:single-task#implement` changed in the current pack"
+            ),
+            "the warning finding must render a `warning · code — message` line; got:\n{agent}",
+        );
+        assert!(
+            !agent.contains("advisory · "),
+            "the warning tier must be textually distinct from `advisory`; got:\n{agent}",
+        );
+        // The block-payload envelope: the warning carries its indented `route:` line.
+        assert!(
+            agent.contains("\n  route: re-review the delta on `workflow:single-task#implement`"),
+            "the warning finding must carry its indented `route:` line; got:\n{agent}",
+        );
+        assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+    }
+
     /// The JSON rendering of the same value is valid JSON of the result type and
     /// carries no footer.
     #[test]

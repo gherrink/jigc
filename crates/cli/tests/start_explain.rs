@@ -156,6 +156,46 @@ fn explain_over_the_unmodified_pack_prints_the_tree_and_mints_nothing() {
 }
 
 #[test]
+fn bare_explain_resolves_the_default_workflow_and_exits_success() {
+    // M2 confirm (review M2): bare `jigc start --explain` — NO `--workflow`, NO intent
+    // — resolves the cascade's `default-workflow` knob and prints its tree, exiting
+    // success. This is the omitting context for `--workflow`: with the target absent
+    // the front door must fall through to the resolved default (the MVP pack default,
+    // `single-task`), never error (`design/workflow-dialect.md` → `--explain` resolves
+    // the default workflow when none is named). It still mints nothing.
+    let repo = TempDir::new("bare-default");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(repo.path(), home.path(), &["--explain"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "bare `jigc start --explain` must resolve the default workflow and exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The resolved default is the pack default `router` (post-M2 flip — `DECISIONS.md`
+    // 2026-06-01); its tree names the workflow + its winning cascade layer, proving the
+    // `default-workflow` knob resolved (not a no-op / error / a hardcoded fallthrough).
+    assert!(
+        stdout.contains("workflow:router"),
+        "the bare-explain tree must name the resolved default workflow `router`; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("pack-default"),
+        "the default-workflow knob resolves from the pack-default layer; got:\n{stdout}",
+    );
+
+    // --explain is task-independent: bare resolution mints nothing either.
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "bare `--explain` must not mint a task; got:\n{stdout}",
+    );
+}
+
+#[test]
 fn explain_after_a_replace_step_reports_one_override_with_the_replaces_annotation() {
     // (b) After a `replace-step workflow:single-task#implement → step:project-
     // implement`, `--explain` prints `overrides applied: 1` with the `← replaces …

@@ -76,7 +76,11 @@ fn seed_pack(dir: &TempDir, steps: &[(&str, &str)]) -> PathBuf {
     fs::create_dir_all(&config_dir).expect("mk pack/config");
     fs::write(
         config_dir.join("knobs.yaml"),
-        "default-workflow:\n  type: string\n  default: single-task\n",
+        // `default-workflow` (the resolve surface the no-delta tests lean on) plus the
+        // `override-default.target-unchanged.severity` tunable — the closed enum the M6
+        // warning-tier exit-code test demotes a conflict through.
+        "default-workflow:\n  type: string\n  default: single-task\n\
+         validation.override-default.target-unchanged.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n",
     )
     .expect("seed knobs.yaml");
     // `jigc upgrade` now resolves the project cascade to feed the M6 severity
@@ -204,6 +208,66 @@ fn no_delta_manifest_exits_zero_with_the_positive_no_findings_line() {
     assert!(
         stdout.contains("no findings"),
         "the emitted output must carry the positive no-findings line; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn warning_demoted_conflict_exits_zero_through_the_upgrade_gate() {
+    // T2 — the `warning` live tier, produce → render → exit through the REAL binary.
+    // A `tracked-fork` conflict (the recorded `base-hash` ≠ the current pack's
+    // `validate` body, emitted blocking under `override-default.target-unchanged`) is
+    // demoted to `warning` by a recorded `validation.override-default.target-unchanged.
+    // severity: warning` scalar-set. The upgrade gate maps `!has_blocking()` →
+    // `ExitCode::SUCCESS`, so the warning-only report exits **0** (non-blocking), and
+    // the emitted bytes carry the `warning · …` line — DISTINCT from `blocking`/
+    // `advisory` (`design/validation.md` → `warning` is a live third tier;
+    // `design/worked-examples.md` → flow 8). This is the exit-code half of the
+    // done-criterion the unit `has_blocking()` proof anchors; the full flow-8 bundle
+    // (tunable/intrinsic/byte-identical) is T3.
+    let repo = TempDir::new("warning-exit");
+    let home = TempDir::new("home");
+
+    // The pack ships a v2 `validate` body; the recorded fork basis is the v1 hash → a
+    // content conflict the classifier emits blocking under `target-unchanged`.
+    let validate_v1 = "validate body v1\n";
+    let recorded = engine::file_state::hash_bytes(validate_v1.as_bytes());
+    let pack_dir = seed_pack(&repo, &[("validate", "validate body v2 — changed\n")]);
+
+    seed_repo(
+        repo.path(),
+        &format!(
+            "\
+scalar:
+  validation.override-default.target-unchanged.severity: warning
+deltas:
+  - kind: tracked-fork
+    target: workflow:single-task#validate
+    base-version: v1
+    base-hash: {recorded}
+"
+        ),
+    );
+
+    let out = run_upgrade(repo.path(), home.path(), &pack_dir, &[]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "a warning-demoted conflict must exit 0 (the gate maps !has_blocking → success); got {:?}\nstdout:\n{stdout}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    // The emitted bytes carry the `warning · …` finding line — the live third tier.
+    // The finding's `code` is `override-default.content-changed` (its post-pass tuning
+    // key is the `target-unchanged` check); the render line leads with the code.
+    assert!(
+        stdout.contains("warning · override-default.content-changed — "),
+        "the demoted conflict must render a `warning · code — message` line; got:\n{stdout}",
+    );
+    // Distinct from the other tiers: neither `blocking ·` nor `advisory ·` appears.
+    assert!(
+        !stdout.contains("blocking · ") && !stdout.contains("advisory · "),
+        "the warning tier must render distinct from blocking/advisory; got:\n{stdout}",
     );
 }
 
