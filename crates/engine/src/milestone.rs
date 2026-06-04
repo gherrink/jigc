@@ -436,6 +436,160 @@ pub fn read_base_pin(milestone_dir: &Path) -> std::io::Result<BasePin> {
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
+/// One staged doc folded into the parent working overlay at the by-task-id join
+/// (`design/storage.md` → The by-task-id join, algorithm step 2: "disjoint union of
+/// staged docs, classified by provenance"). Carries the discriminator the clash rule
+/// (T2) and cross-area rule (T3) will key on, plus the sub-task it came from (so a
+/// later rule can name the offending area) and the doc's forward edges (the per-area
+/// `overlay_working` derivation's output for this `from`, reused unchanged).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MergedDoc {
+    /// How the doc came to be staged — `created` (minted here) vs `edited-from-base`
+    /// (copied in from the committed store); the bit the join's clash rule needs.
+    pub provenance: crate::state::Provenance,
+    /// The sub-task id whose area contributed this staged doc.
+    pub source_task: String,
+    /// The doc's forward edges, sorted by `(from, relation, to)` — the same edges the
+    /// single-area [`crate::index::overlay_working`] derivation emits for this `from`.
+    pub edges: Vec<crate::index::Edge>,
+}
+
+/// The result of a by-task-id join (`design/storage.md` → The by-task-id join). The
+/// `overlay` is the parent working overlay the merge produced — an **address-keyed
+/// [`BTreeMap`](std::collections::BTreeMap)** so iteration is id-sorted and no
+/// enumeration / `read_dir` / completion order can leak into the output (Validation
+/// hardening #7). `findings` is the **ordered** finding list the join surfaces; in this
+/// (skeleton) increment it is always empty — the provenance clash / collision-suffix
+/// rules (T2) and the cross-area / isolation checks (T3) populate it later.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct JoinOutcome {
+    /// The merged staged docs, keyed by `<type>:<slug>` address (id-sorted iteration).
+    pub overlay: std::collections::BTreeMap<String, MergedDoc>,
+    /// The join's findings, in a stable order (empty in the skeleton increment).
+    pub findings: Vec<Finding>,
+}
+
+/// **The by-task-id join skeleton** (edge-index lifecycle **site 4**;
+/// `design/storage.md` → The by-task-id join, algorithm steps 1–2). Enumerate the
+/// milestone's sub-task areas by their **sorted task id** ([`TaskList::enumerate`],
+/// never `read_dir` / filesystem / completion order) and fold each area's staged docs
+/// into the parent working `overlay`, **classified by provenance**
+/// ([`crate::state::ProvenanceRecord::load`]). The per-area basis is the single-area
+/// working-overlay derivation reused unchanged ([`crate::index::overlay_working`]),
+/// so each merged doc carries the same forward edges that derivation emits.
+///
+/// The merge is a **pure function of the set of sub-task areas**: every accumulator is
+/// id-keyed (the address-keyed [`BTreeMap`](std::collections::BTreeMap) `overlay`), so
+/// enumeration order cannot reach the output — the same set in yields the byte-identical
+/// outcome out regardless of order, the property M7 exists to prove.
+///
+/// This is the **skeleton**: it assumes the sub-areas stage **disjoint** slugs (no
+/// contention). The provenance clash rule + collision-suffix (T2) and the per-sub-area
+/// cross-area / join-time isolation checks (T3) layer onto this fold; until then
+/// [`JoinOutcome::findings`] is empty. **Unknown milestone** → the same blocking
+/// [`unknown_milestone_finding`] the add path raises, before any area is read.
+pub fn join(
+    jigc_root: &Path,
+    milestone_id: &str,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    committed: &crate::index::EdgeIndex,
+) -> Result<JoinOutcome, Finding> {
+    let dir = milestone_dir(jigc_root, milestone_id);
+
+    // Unknown milestone → reject before any sub-area is read.
+    if !dir.is_dir() {
+        return Err(unknown_milestone_finding(milestone_id));
+    }
+
+    let list =
+        read_task_list(&dir).map_err(|err| io_finding(milestone_id, "read the task list", &err))?;
+
+    // Step 1: enumerate the sub-task areas by sorted task id (never read_dir order),
+    // then fold. The fold itself is order-invariant (its only accumulator is the
+    // address-keyed `BTreeMap`), so feeding `enumerate()`'s sorted order is what the
+    // contract requires while the result does not *depend* on it — hardening #7.
+    fold_areas(
+        jigc_root,
+        milestone_id,
+        &list.enumerate(),
+        schemas,
+        committed,
+    )
+}
+
+/// Fold the named sub-task areas — in the **given** order — into the merged overlay,
+/// classified by provenance (`design/storage.md` → The by-task-id join, step 2). The
+/// only accumulator is the address-keyed `BTreeMap`, so the result is a pure function
+/// of the *set* of `sub_ids`, independent of their iteration order (the order-invariance
+/// the join's contract rests on; the public [`join`] always feeds the id-sorted order).
+fn fold_areas(
+    jigc_root: &Path,
+    milestone_id: &str,
+    sub_ids: &[String],
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    committed: &crate::index::EdgeIndex,
+) -> Result<JoinOutcome, Finding> {
+    let mut overlay: std::collections::BTreeMap<String, MergedDoc> =
+        std::collections::BTreeMap::new();
+
+    for sub_id in sub_ids {
+        let sub_dir = jigc_root.join("tasks").join(sub_id);
+
+        // The per-area basis: the single-area working-overlay derivation, reused
+        // unchanged — its `task_edges` are the staged docs' forward edges, keyed by
+        // `from`; its `task_froms` are this area's staged doc addresses.
+        let area = crate::index::overlay_working(committed, &sub_dir, schemas);
+        let provenance = crate::state::ProvenanceRecord::load(&sub_dir)
+            .map_err(|err| io_finding(milestone_id, "read a sub-task provenance manifest", &err))?;
+
+        // Step 2: disjoint union of this area's staged docs, classified by provenance.
+        for from in &area.task_froms {
+            // The forward edges this staged doc contributes (already sorted in `area`).
+            let edges: Vec<crate::index::Edge> = area
+                .task_edges
+                .iter()
+                .filter(|e| &e.from == from)
+                .cloned()
+                .collect();
+            // A staged doc with no recorded provenance is a real fault (the bit is
+            // written at stage time beside every body); defaulting to a provenance is
+            // wrong, so surface the absence as a blocking finding routed to re-stage.
+            let Some(prov) = provenance.get(from) else {
+                return Err(missing_provenance_finding(milestone_id, sub_id, from));
+            };
+            overlay.insert(
+                from.clone(),
+                MergedDoc {
+                    provenance: prov,
+                    source_task: sub_id.clone(),
+                    edges,
+                },
+            );
+        }
+    }
+
+    Ok(JoinOutcome {
+        overlay,
+        findings: Vec::new(),
+    })
+}
+
+/// A staged doc whose `docs/` area carries **no** provenance entry for it — a real
+/// fault, since every staging primitive records the bit beside the body
+/// (`design/storage.md` → classification by provenance). Blocking, routed to re-stage;
+/// never defaulted to a provenance the clash rule would then mis-decide on.
+fn missing_provenance_finding(milestone_id: &str, sub_id: &str, address: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "join.missing-provenance",
+        format!(
+            "staged doc `{address}` in sub-task `{sub_id}` of milestone `{milestone_id}` has no recorded provenance"
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some("re-stage the doc so its provenance is recorded".to_string()),
+    )
+}
+
 /// Slug the title into the milestone id, applying the empty → type-name
 /// (`milestone`) fallback — the same discipline as `state::mint_id`.
 fn mint_id(title: &str) -> String {
@@ -1028,6 +1182,172 @@ Context without any acceptance criteria.
             Vec::<String>::new(),
             "an unknown spec appends nothing"
         );
+    }
+
+    const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    /// The schema set the join's per-area `overlay_working` basis resolves staged
+    /// doc types against — `commit` (the `created` instance) and `adr` (the
+    /// `edited-from-base` instance).
+    fn join_schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "commit".to_string(),
+            crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads"),
+        );
+        m.insert(
+            "adr".to_string(),
+            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+        );
+        m
+    }
+
+    /// The done-criterion for T1 (`design/storage.md` → The by-task-id join, algorithm
+    /// steps 1–2: order by task id; disjoint union classified by provenance). Two
+    /// **disjoint** sub-task areas — distinct slugs, one a `created` instance
+    /// ([`crate::state::provision_doc`]), one an `edited-from-base` instance
+    /// ([`crate::state::copy_in`]) — fold into a merged overlay that contains **both**
+    /// docs with their **distinct** provenance and contributing sub-task. The fold is
+    /// proven order-invariant: folding the **reverse** enumeration yields the
+    /// **identical** merged overlay (the only accumulator is an address-keyed
+    /// `BTreeMap`, never an unsorted `HashMap` reaching output; Validation hardening
+    /// #7). The fixture is built so the milestone's on-disk sub-task areas, listed in
+    /// raw `read_dir` order, are **not** pre-sorted by id, so a green fold cannot be an
+    /// accident of filesystem order.
+    #[test]
+    fn join_folds_disjoint_sub_areas_classified_by_provenance_order_invariant() {
+        let root = TempRoot::new("join-skeleton");
+        let base = BasePin::new("6666666666666666666666666666666666666666", "6666666");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+
+        // Two disjoint sub-tasks, **inserted in reverse id order** (`zebra` before
+        // `alpha`) so insertion/read_dir order diverges from id order.
+        add_task(root.path(), &milestone.id, "Zebra area", "single-task").expect("zebra adds");
+        add_task(root.path(), &milestone.id, "Alpha area", "single-task").expect("alpha adds");
+
+        // Stage one `created` doc into the `alpha-area` sub-task and one
+        // `edited-from-base` doc into the `zebra-area` sub-task — disjoint slugs.
+        let alpha_dir = root.path().join("tasks").join("alpha-area");
+        crate::state::provision_doc(&alpha_dir, &schemas["commit"], "alpha-area")
+            .expect("provision created doc");
+        let zebra_dir = root.path().join("tasks").join("zebra-area");
+        let adr_source = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Zebra decision\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n";
+        crate::state::copy_in(&zebra_dir, "adr", "zebra-decision", adr_source)
+            .expect("copy in edited-from-base doc");
+
+        // The fixture's RECORDED task list is reverse-id insertion order, the
+        // guaranteed divergence: if the fold keyed on recorded/insertion order instead
+        // of the id-sorted set, it would observe `[zebra-area, alpha-area]` — yet the
+        // overlay must come out id-sorted regardless (proven by the reverse-fold below).
+        let recorded = read_task_list(&milestone.dir).expect("read list").tasks;
+        assert_eq!(
+            recorded,
+            vec!["zebra-area".to_string(), "alpha-area".to_string()],
+            "the recorded backing list is reverse-id insertion order"
+        );
+        // The on-disk areas' raw read_dir order is also captured; on filesystems that
+        // do not pre-sort it diverges from id order (a green fold then cannot be an
+        // accident of read_dir handing back id order). The recorded-order divergence
+        // above and the reverse-fold below are the order-independent guarantee.
+        let read_dir_order: Vec<String> = std::fs::read_dir(root.path().join("tasks"))
+            .expect("tasks dir")
+            .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+            .collect();
+
+        // The join folds by sorted task id and produces the merged overlay.
+        let outcome =
+            join(root.path(), &milestone.id, &schemas, &committed).expect("the join folds");
+
+        // The merged overlay contains BOTH staged docs with their distinct provenance
+        // and contributing sub-task.
+        assert_eq!(
+            outcome.overlay.len(),
+            2,
+            "the disjoint union holds both staged docs"
+        );
+        let created = outcome
+            .overlay
+            .get("commit:alpha-area")
+            .expect("the created doc is in the overlay");
+        assert_eq!(created.provenance, crate::state::Provenance::Created);
+        assert_eq!(created.source_task, "alpha-area");
+        let edited = outcome
+            .overlay
+            .get("adr:zebra-decision")
+            .expect("the edited-from-base doc is in the overlay");
+        assert_eq!(edited.provenance, crate::state::Provenance::EditedFromBase);
+        assert_eq!(edited.source_task, "zebra-area");
+
+        // The skeleton increment surfaces no findings (clash/cross-area are T2/T3).
+        assert!(
+            outcome.findings.is_empty(),
+            "the skeleton join surfaces no findings: {:?}",
+            outcome.findings
+        );
+
+        // Order-invariance: folding the REVERSE enumeration yields the IDENTICAL
+        // merged overlay. The id-sorted enumeration is `[alpha-area, zebra-area]`; its
+        // reverse `[zebra-area, alpha-area]` must produce a byte-identical outcome.
+        let ids = read_task_list(&milestone.dir)
+            .expect("read list")
+            .enumerate();
+        assert_eq!(
+            ids,
+            vec!["alpha-area".to_string(), "zebra-area".to_string()],
+            "enumeration is id-sorted"
+        );
+        let forward = fold_areas(root.path(), &milestone.id, &ids, &schemas, &committed)
+            .expect("forward fold");
+        let mut reversed = ids.clone();
+        reversed.reverse();
+        let backward = fold_areas(root.path(), &milestone.id, &reversed, &schemas, &committed)
+            .expect("reverse fold");
+        assert_eq!(
+            forward, backward,
+            "the fold is order-invariant: reversed enumeration yields the identical overlay"
+        );
+        assert_eq!(
+            forward, outcome,
+            "the public join's id-sorted fold equals the explicit forward fold"
+        );
+
+        // Feeding the raw read_dir order itself yields the IDENTICAL overlay — so even
+        // if the filesystem hands back a non-id order, it cannot leak into the output
+        // (the done-criterion's read_dir-order ≠ id-order obligation, proven directly:
+        // the fold's only accumulator is an address-keyed `BTreeMap`).
+        let by_read_dir = fold_areas(
+            root.path(),
+            &milestone.id,
+            &read_dir_order,
+            &schemas,
+            &committed,
+        )
+        .expect("read_dir-order fold");
+        assert_eq!(
+            by_read_dir, outcome,
+            "folding in raw read_dir order yields the identical overlay: {read_dir_order:?}"
+        );
+    }
+
+    /// An unknown milestone rejects before any sub-area is read (reuses the shared
+    /// `milestone.unknown` block shape).
+    #[test]
+    fn join_rejects_unknown_milestone() {
+        let root = TempRoot::new("join-unknown");
+        let err = join(
+            root.path(),
+            "no-such-milestone",
+            &join_schemas(),
+            &crate::index::EdgeIndex::default(),
+        )
+        .expect_err("an unknown milestone rejects");
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(err.code, "milestone.unknown");
+        assert!(err.route.is_some());
     }
 
     /// A title that normalizes to nothing falls back to the `milestone` type
