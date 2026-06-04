@@ -117,10 +117,10 @@ A `fan-out` workflow's parent task's `finalize` is the commit boundary; sub-agen
 
 1. **Merge sub-task working areas into the parent** — by task-id order; slug collisions resolve via the deterministic suffix ([workflow-dialect.md](workflow-dialect.md#fan-out--join)).
 2. **Validate** the merged effective state — one validate run, not N.
-3. **Render, promote, stage, commit** — **one commit per sub-task in task-id order, plus the parent's commit**. Squash is a cascade knob: `finalize.fan-out.squash: false` (pack default — per-sub-task commits preserve structure, matching the doc model); set `true` for a single squashed commit.
+3. **Render, promote, stage, commit.** **M7 ships the single-commit form**: one commit per milestone finalize, its message **synthesized deterministically by the CLI** — a structural projection of the milestone id + its id-ordered sub-task list (no authored prose, so it's *structure* the CLI owns, not a slot; like git's auto-generated merge message). A milestone has no commit doc to render, and the synthesized message is byte-identical across feed orders, which flow-9's determinism assertion requires. *Eventual (deferred past M7):* the per-sub-task-commit variant — **one commit per sub-task in task-id order, plus the parent's commit** (each sub-task bearing its own commit doc) — gated by the `finalize.fan-out.squash` cascade knob. That knob + the per-sub-task commit docs are **deferred** ([DECISIONS.md](../DECISIONS.md) 2026-06-04 — M7 ships one synthesized commit; the knob lands when a workflow earns per-sub-task commit authoring, M8+).
 4. **Post-commit** runs once for the whole batch.
 
-The "one commit per sub-task in task-id order" rule keeps fan-out reproducible: the commit graph is identical given the same `definition + cascade + live state`.
+The synthesized-message rule keeps fan-out reproducible: the commit (message + tree) is identical given the same `definition + cascade + live state`, independent of completion/feed order.
 
 ## Commit-doc rendering
 

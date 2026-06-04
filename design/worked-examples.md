@@ -546,17 +546,17 @@ The milestone pins **one shared base**; each sub-task gets an isolated `tasks/<s
 
 ### Headline — permutation determinism (the #7-failure-class guard)
 
-The same populated area set is joined under **≥3 divergent feed orders** — task-id order, **reverse** task-id order, and a **seed-shuffled** order — and the committed bytes are asserted identical:
+The same populated area set is finalized under **≥3 divergent feed orders** — task-id order, **reverse** task-id order, and a **seed-shuffled** order — and the committed bytes (message *and* tree) are asserted identical. (`jigc milestone join` *reports* the merge; milestone `finalize` materializes the merged bodies, synthesizes the message, and commits.)
 
 ```text
-$ jigc milestone join cache-hardening --debug-feed-order=id        # → commit tree T
-$ jigc milestone join cache-hardening --debug-feed-order=reverse   # → commit tree T   (identical)
-$ jigc milestone join cache-hardening --debug-feed-order=shuffled:42# → commit tree T   (identical)
+$ jigc milestone finalize cache-hardening   # internally: join (feed order id) → materialize → commit C
+$ jigc milestone finalize cache-hardening   # (feed order reverse)                              → commit C  (identical)
+$ jigc milestone finalize cache-hardening   # (feed order shuffled:42)                          → commit C  (identical)
 
-assert byte-identical(T_id, T_reverse, T_shuffled)
+assert byte-identical(C_id, C_reverse, C_shuffled)   # message + tree
 ```
 
-Reverse order is mandatory: an id-ordered fixture where completion-order trivially equals id-order would pass even a completion-ordered (broken) merge. The merge enumerates sub-areas by **sorted task id** and every accumulator it touches (staged-doc set, edge overlay, finding list) is order-keyed (`BTreeMap`/sorted `Vec`, **never** a `HashMap` whose iteration could leak into output) — see [Validation hardening #7](../implementation/increment-workflow.md) (single-execution determinism trust).
+The **commit message is CLI-synthesized** — a structural projection of the milestone id + its **id-ordered** sub-task list (no authored prose, no commit doc), so it is byte-identical across feed orders just like the tree ([DECISIONS.md](../DECISIONS.md) 2026-06-04 → the inc-4 fork). Reverse order is mandatory: an id-ordered fixture where completion-order trivially equals id-order would pass even a completion-ordered (broken) merge. The merge enumerates sub-areas by **sorted task id** and every accumulator it touches (staged-doc set, edge overlay, finding list) is order-keyed (`BTreeMap`/sorted `Vec`, **never** a `HashMap` whose iteration could leak into output) — see [Validation hardening #7](../implementation/increment-workflow.md) (single-execution determinism trust).
 
 ### Supporting — colliding new instances get a task-id-ordered suffix; self-refs rewritten
 
