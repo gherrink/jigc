@@ -77,16 +77,46 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
 /// slots provision empty and `set-slot` generates the section's home on demand —
 /// `write-commands.md` → Instance provisioning; `DECISIONS.md` 2026-05-31 → inc-4
 /// fillable-form provisioning.)
-fn provision_commit_doc(pack: &dyn PackSource, minted: &MintedTask) -> Result<()> {
+fn provision_commit_doc(pack: &dyn PackSource, dir: &Path, id: &str) -> Result<()> {
     let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
     let schema = engine::schema::load_schema(&bytes)
         .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))?;
-    let instance = fillable_form(&schema, &minted.id);
-    let path = state::instance_path(&minted.dir, &schema.ty, &minted.id);
+    let instance = fillable_form(&schema, id);
+    let path = state::instance_path(dir, &schema.ty, id);
     let rendered = engine::write::render(&schema, &instance);
     state::persist(&path, rendered.as_bytes())
-        .with_context(|| format!("could not provision the commit doc for `{}`", minted.id))?;
+        .with_context(|| format!("could not provision the commit doc for `{id}`"))?;
     Ok(())
+}
+
+/// Provision the sub-workflow's deterministic commit doc into the sub-task's
+/// working area **on first re-entry only** — `jigc workflow <W> --task <id>`'s
+/// deferred mirror of `jigc start`'s mint-time provisioning (`write-commands.md` →
+/// Sub-agent re-entry: the first re-entry provisions the sub-workflow's deterministic
+/// instances, deferred to first entry so unspawned areas aren't provisioned).
+///
+/// **Gated on `creates_task`** — a `creates-task: false` `<W>` (the router and its
+/// kind) provisions nothing, mirroring [`compose_core`]'s no-task arm. **Idempotent /
+/// first-entry-only** — keyed on the **absence** of the `docs/commit:<id>.md` skeleton
+/// (the mint-time write-once), so a sub-agent's in-progress edits survive a later
+/// re-entry; the doc is provisioned exactly once, on the first entry that finds it
+/// missing.
+fn provision_on_first_entry(
+    pack: &dyn PackSource,
+    def: &WorkflowDef,
+    dir: &Path,
+    id: &str,
+) -> Result<()> {
+    if !def.creates_task {
+        return Ok(());
+    }
+    // The skeleton's presence marks the area already-provisioned: a re-entry never
+    // overwrites it, so an agent's in-progress edits are preserved.
+    let path = state::instance_path(dir, FALLBACK_TYPE, id);
+    if path.exists() {
+        return Ok(());
+    }
+    provision_commit_doc(pack, dir, id)
 }
 
 /// Build the **fillable** empty instance for `schema`: the H1 title is the task id,
@@ -326,7 +356,7 @@ fn compose_core(
         // slots (`write-commands.md` → Instance provisioning → Workflow-
         // provisioned). The empty skeleton stages here, ready for the
         // `jigc doc set-field`/`set-slot` write loop.
-        provision_commit_doc(pack, &minted)?;
+        provision_commit_doc(pack, &minted.dir, &minted.id)?;
         // At mint there are no bound context roles yet (the agent binds them
         // in-task, e.g. an ADR via the create-gate); resume re-reads them.
         build_context(
@@ -793,6 +823,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
         id,
         &workflow_id,
         &head,
+        false,
     )
 }
 
@@ -875,6 +906,7 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
         id,
         workflow_id,
         &head,
+        true,
     )
 }
 
@@ -885,7 +917,10 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
 /// `workflow_id`; this reads the intent + bound roles, runs the fill-aware
 /// `workflow-refs` gate, and composes over the committed store + edge overlay so a
 /// context-slice over a persisted doc dereferences (`worked-examples.md` → Task 2).
-/// Mints nothing and provisions nothing — purely read/compose.
+/// Mints nothing. On the **re-entry** path (`provision == true`) it provisions the
+/// write-ready area on first entry ([`provision_on_first_entry`], first-entry-only,
+/// `creates-task`-gated); resume (`provision == false`) provisions nothing — its
+/// top-level task was already provisioned at mint.
 fn compose_task_workflow(
     repo_root: &Path,
     project_config: &Path,
@@ -893,6 +928,7 @@ fn compose_task_workflow(
     id: &str,
     workflow_id: &str,
     head: &BasePin,
+    provision: bool,
 ) -> Result<ComposedWorkflow> {
     let intent = state::read_intent(task_dir)
         .with_context(|| format!("could not read intent for `{id}`"))?;
@@ -906,6 +942,13 @@ fn compose_task_workflow(
     // be a not-yet-shipped pack workflow, e.g. `sub-task` before increment 5).
     let workflow_bytes = read_workflow(pack, workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+    // Provision-on-first-entry — the sub-agent re-entry's deferred mirror of mint-time
+    // provisioning. Gated on `provision` (re-entry only) and idempotent inside (first
+    // entry only, `creates-task`-gated), so a resume / a `creates-task: false` `<W>` /
+    // a second re-entry over an edited doc all leave the area untouched.
+    if provision {
+        provision_on_first_entry(pack, &def, task_dir, id)?;
+    }
     let commands = load_catalog(pack)?;
     let selectable = selectable_workflows(pack)?;
     // The committed store feed (`{{store.<doctype>}}`), enumerated from the committed
