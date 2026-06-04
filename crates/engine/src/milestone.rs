@@ -50,6 +50,19 @@ pub struct TaskList {
 }
 
 impl TaskList {
+    /// The sub-task ids in **canonical id-sorted order** — the order the
+    /// by-task-id join enumerates (`design/storage.md` → The by-task-id join;
+    /// `structural-grammar.md` → ordering lives in a separate ordered list).
+    /// Insertion order (and any `read_dir` order behind it) is recorded in
+    /// [`Self::tasks`] as the audit trail, but enumeration is a pure function of
+    /// the id *set* — sorted at this boundary so no insertion/iteration order can
+    /// leak into the join's output (Validation hardening #7).
+    pub fn enumerate(&self) -> Vec<String> {
+        let mut ids = self.tasks.clone();
+        ids.sort();
+        ids
+    }
+
     /// Serialize to the frozen on-disk byte form: pretty JSON, one trailing
     /// newline (golden-locked, matching the `base.json` convention in
     /// [`crate::state`]).
@@ -510,6 +523,99 @@ mod tests {
         assert!(
             unknown.route.is_some(),
             "the unknown-milestone block carries a route"
+        );
+    }
+
+    /// Validation hardening #7 (`increment-workflow.md` → determinism by
+    /// re-execution; `design/storage.md` → The by-task-id join): the task list the
+    /// join enumerates returns a **canonical id-sorted** order, never insertion or
+    /// `read_dir` order. The list is enumerated **twice** from divergent insertion
+    /// orders — `[zebra-fix, alpha-fix]` and its **reverse** `[alpha-fix,
+    /// zebra-fix]` — and both must yield the same id-sorted `[alpha-fix,
+    /// zebra-fix]`; reverse is mandatory, since an id-ordered insertion would make
+    /// insertion order trivially equal id order and hide the bug. The fixture is
+    /// also built so the milestone's on-disk sub-task areas, listed in raw
+    /// `read_dir` order, are not pre-sorted by id, so enumeration cannot be passing
+    /// merely because the filesystem happened to hand back id order. The recorded
+    /// backing list keeps insertion order (the audit trail); only enumeration is
+    /// canonicalized.
+    #[test]
+    fn enumeration_is_id_sorted_under_divergent_insertion_and_read_dir_orders() {
+        // Enumerate the same two sub-task ids under a given insertion order and
+        // return both the recorded backing order and the canonical enumeration.
+        fn enumerate_under(
+            tag: &str,
+            insertion: [(&str, &str); 2],
+        ) -> (Vec<String>, Vec<String>, Vec<String>) {
+            let root = TempRoot::new(tag);
+            let base = BasePin::new("2222222222222222222222222222222222222222", "2222222");
+            let milestone =
+                mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+            for (intent, _id) in insertion {
+                add_task(root.path(), &milestone.id, intent, "single-task")
+                    .unwrap_or_else(|e| panic!("{intent} adds: {e:?}"));
+            }
+            let list = read_task_list(&milestone.dir).expect("read list");
+            // Raw read_dir order of the sub-task areas, for the fixture-shape check.
+            let read_dir_order: Vec<String> = std::fs::read_dir(root.path().join("tasks"))
+                .expect("tasks dir")
+                .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
+                .collect();
+            (list.tasks.clone(), list.enumerate(), read_dir_order)
+        }
+
+        let id_sorted = vec!["alpha-fix".to_string(), "zebra-fix".to_string()];
+
+        // Order 1: insertion is the reverse of id order.
+        let (recorded1, enum1, read_dir1) = enumerate_under(
+            "enum-fwd",
+            [("Zebra fix", "zebra-fix"), ("Alpha fix", "alpha-fix")],
+        );
+        assert_eq!(
+            recorded1,
+            vec!["zebra-fix".to_string(), "alpha-fix".to_string()],
+            "the recorded backing list keeps insertion order"
+        );
+        assert_eq!(
+            enum1, id_sorted,
+            "enumeration is id-sorted, not insertion order"
+        );
+
+        // Order 2: the reverse insertion — mandatory per #7, so an id-ordered
+        // insertion cannot make insertion order trivially equal id order.
+        let (recorded2, enum2, read_dir2) = enumerate_under(
+            "enum-rev",
+            [("Alpha fix", "alpha-fix"), ("Zebra fix", "zebra-fix")],
+        );
+        assert_eq!(
+            recorded2,
+            vec!["alpha-fix".to_string(), "zebra-fix".to_string()],
+            "the reverse insertion is recorded in its own order"
+        );
+        assert_eq!(
+            enum2, id_sorted,
+            "the reverse insertion still enumerates id-sorted"
+        );
+
+        // Byte-identical enumeration across the two divergent insertion orders.
+        assert_eq!(
+            enum1, enum2,
+            "enumeration is order-invariant across divergent insertion orders"
+        );
+
+        // The fixture's on-disk sub-task areas are not handed back pre-sorted by id
+        // by the filesystem in at least one of the two runs — so a green
+        // enumeration cannot be an accident of read_dir order. (If a filesystem
+        // returns id order in BOTH runs we still have the insertion-order proof
+        // above; this asserts the fixture genuinely exercises a divergent order.)
+        let read_dir_diverges = |raw: &[String]| {
+            let mut sorted = raw.to_vec();
+            sorted.sort();
+            raw != sorted.as_slice()
+        };
+        assert!(
+            read_dir_diverges(&read_dir1) || read_dir_diverges(&read_dir2),
+            "neither run's read_dir order diverged from id order: {read_dir1:?} / {read_dir2:?}"
         );
     }
 
