@@ -138,10 +138,15 @@ impl ProvenanceRecord {
         task_dir.join(DOCS_DIR).join(PROVENANCE_FILE)
     }
 
-    /// Record `address`'s provenance (overwriting any prior entry — the most recent
-    /// staging of an address wins, the same last-write semantics as a re-provision).
+    /// Record `address`'s provenance **write-once**: the first provenance recorded for
+    /// an address sticks; a later `record` of the same address is a no-op
+    /// (`write-commands.md` → copy-on-first-touch: "provenance is recorded once, at
+    /// first touch, keyed on whether the slug existed in the committed store at the
+    /// milestone base — `created` is sticky across later edits in the same area").
+    /// So a `created` doc later copied-in for editing stays `created`, never flipping
+    /// to `edited-from-base`, keeping the join's mixed-case clash discriminator stable.
     pub fn record(&mut self, address: impl Into<String>, provenance: Provenance) {
-        self.docs.insert(address.into(), provenance);
+        self.docs.entry(address.into()).or_insert(provenance);
     }
 
     /// The provenance recorded for `address`, if any.
@@ -183,6 +188,23 @@ fn record_provenance(
         &ProvenanceRecord::path_in(task_dir),
         record.to_bytes().as_bytes(),
     )
+}
+
+/// Record `address` → `provenance` in the task's `docs/` provenance manifest — the
+/// write-once stage-time record the by-task-id join reads (`storage.md` → The
+/// by-task-id join → classification by provenance). The public companion of the
+/// staging primitives' internal write, for callers that persist a staged body
+/// outside [`provision_doc`] / [`copy_in`] and must still record its provenance —
+/// the CLI's `provision_commit_doc` records `commit:<id>` → [`Provenance::Created`]
+/// this way (`write-commands.md` → copy-on-first-touch: "`provision_commit_doc`
+/// likewise records `created` provenance under M8"). Write-once: a re-entry that
+/// re-records the same address never overwrites the first ([`ProvenanceRecord::record`]).
+pub fn record_doc_provenance(
+    task_dir: &Path,
+    address: &str,
+    provenance: Provenance,
+) -> std::io::Result<()> {
+    record_provenance(task_dir, address, provenance)
 }
 
 /// **Provision** a workflow-provisioned empty doc instance into the task working area
@@ -908,6 +930,37 @@ mod tests {
             landed,
             write::first_touch_canonicalize(source),
             "copy-in IS first_touch_canonicalize of the source"
+        );
+    }
+
+    /// The done-criterion (i) (`write-commands.md` → copy-on-first-touch:
+    /// "provenance is recorded once, at first touch … `created` is sticky across
+    /// later edits in the same area"; `DECISIONS.md` 2026-06-04 → M8 Increment 3 T3).
+    /// [`ProvenanceRecord::record`] is **write-once**: the first provenance recorded
+    /// for an address sticks, so a `created` doc later copied-in (recorded
+    /// `edited-from-base`) stays `created` — the join's clash discriminator keys on
+    /// base-membership, not on whether this area later edited the doc. A
+    /// first-and-only `edited-from-base` record reads back `edited-from-base`.
+    #[test]
+    fn record_is_write_once_so_created_is_sticky() {
+        let mut record = ProvenanceRecord::default();
+
+        // First write of `created` sticks; a later `edited-from-base` is a no-op.
+        record.record("commit:add-rate-limiter", Provenance::Created);
+        record.record("commit:add-rate-limiter", Provenance::EditedFromBase);
+        assert_eq!(
+            record.get("commit:add-rate-limiter"),
+            Some(Provenance::Created),
+            "the first-recorded `created` is sticky — a later `edited-from-base` never flips it",
+        );
+
+        // A first-and-only `edited-from-base` reads back as `edited-from-base` —
+        // write-once means the *first* write wins, whatever it is.
+        record.record("adr:rate-limit", Provenance::EditedFromBase);
+        assert_eq!(
+            record.get("adr:rate-limit"),
+            Some(Provenance::EditedFromBase),
+            "a first-and-only `edited-from-base` record reads back `edited-from-base`",
         );
     }
 

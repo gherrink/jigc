@@ -86,6 +86,14 @@ fn provision_commit_doc(pack: &dyn PackSource, dir: &Path, id: &str) -> Result<(
     let rendered = engine::write::render(&schema, &instance);
     state::persist(&path, rendered.as_bytes())
         .with_context(|| format!("could not provision the commit doc for `{id}`"))?;
+    // Record the per-sub-task commit doc as `created` in the manifest the by-task-id
+    // join consumes — a commit doc must appear there, and it is collision-safe by
+    // construction (`commit:<sub-id>` is sub-task-id-derived, unique per sub-area, so
+    // it never reaches the join's same-slug suffix/clash rules) (`write-commands.md`
+    // → copy-on-first-touch). Write-once: a re-entry never flips it.
+    let address = format!("{}:{id}", schema.ty);
+    state::record_doc_provenance(dir, &address, engine::state::Provenance::Created)
+        .with_context(|| format!("could not record provenance for the commit doc `{address}`"))?;
     Ok(())
 }
 
@@ -2604,6 +2612,63 @@ mod tests {
         assert!(is_optional_ref(implements));
         // The pre-stamped required fields carry an empty scalar (the fillable line).
         assert_eq!(header.fields[0].value, Value::Scalar(String::new()));
+    }
+
+    /// The done-criterion (ii) (`write-commands.md` → copy-on-first-touch:
+    /// "`provision_commit_doc` likewise records `created` provenance under M8 — a
+    /// per-sub-task commit doc must appear in the provenance manifest the join
+    /// consumes"; `DECISIONS.md` 2026-06-04 → M8 Increment 3 T3). After
+    /// `provision_on_first_entry` provisions the sub-area's commit doc, the
+    /// provenance manifest the join reads reports `commit:<id>` → `Created` —
+    /// collision-safe by construction (`commit:<sub-id>` is sub-task-id-derived,
+    /// unique per sub-area). A second entry over the already-provisioned area is a
+    /// no-op (first-entry-only) and the provenance stays `created` (write-once).
+    #[test]
+    fn provision_commit_doc_records_created_provenance() {
+        use engine::state::{Provenance, ProvenanceRecord};
+
+        let area = TempDir::new("provenance-created");
+        let sub_dir = area.path();
+        let pack = form_d_pack();
+
+        // The recorded sub-workflow is `creates-task: true`, so the re-entry mirror
+        // provisions the commit doc on first entry.
+        let def = load_workflow_def(
+            &pack
+                .read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                )
+                .expect("single-task workflow"),
+        )
+        .expect("single-task def loads");
+
+        provision_on_first_entry(&pack, &def, sub_dir, "add-rate-limiter")
+            .expect("first entry provisions the commit doc");
+
+        // The commit skeleton landed AND its `created` provenance is in the manifest
+        // the join consumes.
+        assert!(
+            state::instance_path(sub_dir, FALLBACK_TYPE, "add-rate-limiter").is_file(),
+            "the commit skeleton must be provisioned on first entry",
+        );
+        let record = ProvenanceRecord::load(sub_dir).expect("provenance manifest loads");
+        assert_eq!(
+            record.get("commit:add-rate-limiter"),
+            Some(Provenance::Created),
+            "provision_commit_doc must record the commit doc as `created` in the manifest",
+        );
+
+        // A second entry is first-entry-only (no re-provision) and write-once keeps
+        // the provenance `created`.
+        provision_on_first_entry(&pack, &def, sub_dir, "add-rate-limiter")
+            .expect("a second entry is a no-op");
+        let again = ProvenanceRecord::load(sub_dir).expect("provenance manifest reloads");
+        assert_eq!(
+            again.get("commit:add-rate-limiter"),
+            Some(Provenance::Created),
+            "a re-entry never flips the recorded `created` provenance",
+        );
     }
 
     /// A pack-default base layer declaring `default-workflow: single-task` — the
