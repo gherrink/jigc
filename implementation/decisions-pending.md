@@ -7,6 +7,8 @@ Two altitudes of "surface it before it's forced," each **consulted at a fixed tr
 
 This is a *decision/discussion* backlog, not a *task* backlog — tasks are still cut per-increment at pickup ([roadmap.md](roadmap.md)). Entries **graduate to [DECISIONS.md](../DECISIONS.md) when settled; delete them here once logged.**
 
+**How entries arrive — the write side (everyone, not just the planner).** Whoever *defers* a topic to a future milestone — in a [design](design-workflow.md) discussion, a [dev](dev-workflow.md) run, a planning [Settle](milestone-planning-workflow.md#the-loop-one-milestone), or a [completion](milestone-completion-workflow.md) triage — **records it here in the same motion as the deferral**, keyed to its trigger. The split is the point: [DECISIONS.md](../DECISIONS.md) logs what was *decided*; this file logs what is *owed and when it comes due*. A deferral that lives only in a DECISIONS sentence has no trigger and will be forgotten — which is the exact failure this log exists to prevent.
+
 ## Before planning — milestone-keyed deferrals
 
 ### Before planning M8 (milestone execution — control plane)
@@ -18,7 +20,30 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 - **(D) The spawn re-entry contract.** Reconcile the design's `jigc workflow W --task <id>` (named across [assistant-adapter.md](../design/assistant-adapter.md) / [workflow-dialect.md](../design/workflow-dialect.md)) with the built `jigc start --task` resume (which `conflicts_with --workflow`): add the verb, or render `start --task` and drop the redundant `{{workflow}}`? (The L1 landmine from M7 planning, deferred to M8 where the spawn binding lands.)
 - **(integration seam) The real-write path must satisfy the M7 join's preconditions.** M7's join was proven over **fixture-staged** sub-areas; M8's real `--task`-scoped writes are where the deferred **write-time isolation barrier** and the now-reachable suffix/cross-group edges (the 2 LOW audit fixes guard the *data plane*; the *write path* must feed them correctly) are actually exercised. Spike this seam at M8 Settle — the inc-4 lesson generalized (don't assume the new producer satisfies the existing consumer's preconditions).
 
-*(Triage [VISION.md](../VISION.md) → Open questions for further milestone-keyed entries — e.g. 3-way-merge authoring, the per-developer `local` layer, team-layer distribution — assigning each a trigger as its home milestone firms up.)*
+### Before planning M9 (project setup — new & existing)
+
+- **(D) Legacy ingestion / migration.** The `project setup (existing project)` flow must ingest docs in inconsistent states — **research-grade**, flagged hard-not-solved ([VISION.md](../VISION.md) → Open questions). M9's headline risk and likely #1 gap; settle the approach (or consciously bound its scope) before cutting M9.
+- **(D) Profiles beyond Claude Code** — only if M9 targets a second assistant; else stays deferred ([assistant-adapter.md](../design/assistant-adapter.md) → Open questions).
+
+### After the spine completes (post-M9 — these need a milestone *created* for them)
+
+The roadmap spine ends at M9; these are real, locked-direction items with **no home milestone on the current spine** — listed so they get one, rather than drifting:
+
+- **Self-hosting** — distill the harness into a jigc pack + dogfood it ([ideas/self-hosting.md](../ideas/self-hosting.md)); the designed terminus, presupposing M7 (done) + M8 + workflow-as-artifact machinery.
+- **`describe` / introspection surface** — parked post-MVP, direction locked ([ideas/describe.md](../ideas/describe.md)); candidate home `design/introspection.md`.
+- **The `doc↔code` pack-probe family** — pack-probe sandboxing, `doc-code` logic, the subprocess probe contract ([validation.md](../design/validation.md) / [module-layout.md](module-layout.md) → Open questions); lands after the doc-creation flows exist (VISION principle #6). Wants its own pack-probe milestone.
+- **Multi-pack composition** — a second domain pack + cascade composition ([VISION.md](../VISION.md)); blocked on a real second pack (the "not a second domain yet" non-goal).
+
+### No firm trigger yet — condition-keyed (revisit when the condition arrives, not on a date)
+
+Tracked so they're not lost, but honestly *not* milestone-scheduled — assigning each a milestone now would be false precision:
+
+- **Per-developer `local` layer · team-layer distribution** ([overrides.md](../design/overrides.md)) — when multi-developer / team adoption is real.
+- **`import` three-way-merge authoring** ([write-commands.md](../design/write-commands.md)) — detection ships; *authoring* deferred past M5/M6, fires when a real merge-conflict authoring need arises.
+- **Reconciliation strictness · concurrent-OOB-during-a-task · external-edit notification** ([reconciliation.md](../design/reconciliation.md)) — post-MVP robustness.
+- **Misc hardening opens** — `finalize --dry-run` + commit-msg hook capture ([finalize.md](../design/finalize.md)); command-ref scoping / stdin binding / multi-target ([command-catalog.md](../design/command-catalog.md)); parser span-precision / mentions-in-prose ([parsing.md](parsing.md)); engine→crate splits ([module-layout.md](module-layout.md)); multi-slot sub-label syntax.
+
+*(This is the **triage view** of [VISION.md](../VISION.md) → Open questions, not a second copy — VISION stays the full categorized index; this adds each still-open item's trigger. Several VISION opens are already **resolved** and not repeated here: slug-normalization + collision-suffix form (M7), `milestone-execution` orchestration + milestone-worktree (M7), config layout + committed-config-dir (M4), emitted-format micro-syntax (2026-05-28).)*
 
 ## Build-time — increment-keyed (historical: M1)
 

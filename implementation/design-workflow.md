@@ -10,5 +10,5 @@ Maurice develops the idea; Claude is a constructive-critical partner, not a code
 1. **Develop & present in chat** — options, tradeoffs, a recommendation with reasoning. One decision at a time; never a batched "whole design" dump.
 2. **Discuss & iterate** — push back, name risks, flag honest boundaries. Constructive-and-critical is the standing stance, not a per-request ask.
 3. **Converge** — write **only** on an explicit "write it." Never infer convergence from enthusiasm.
-4. **Write** — into the agreed home at the agreed granularity (route by home — see [CLAUDE.md](../CLAUDE.md) → Conventions).
+4. **Write** — into the agreed home at the agreed granularity (route by home — see [CLAUDE.md](../CLAUDE.md) → Conventions). A discussion that **defers** rather than settles still has a home: [decisions-pending.md](decisions-pending.md) → *Before planning*, keyed to its trigger milestone — record it there in the same motion, so it resurfaces at planning instead of evaporating.
 5. **Review, then commit** — Maurice reviews the written file; commit (conventional message, one logical change) only after he's satisfied.
