@@ -23,7 +23,7 @@ use crate::cli::Format;
 use crate::render;
 use anyhow::{Context, Result, bail};
 use engine::finding::Finding;
-use engine::milestone::{add_task, mint_milestone};
+use engine::milestone::{add_task, milestone_dir, mint_milestone, read_task_list};
 use engine::state::BasePin;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -54,6 +54,13 @@ pub enum MilestoneCommand {
         /// The sub-task intent — slugged into the sub-task id.
         intent: String,
     },
+    /// Emit a milestone's sub-task ids in **canonical id-sorted order** — the
+    /// deterministic order the by-task-id join enumerates, surfaced through the
+    /// binary (`design/storage.md` → The by-task-id join).
+    ListTasks {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+    },
 }
 
 impl MilestoneCommand {
@@ -68,6 +75,7 @@ impl MilestoneCommand {
                 milestone_id,
                 intent,
             } => run_add_task(cwd, &milestone_id, &intent),
+            MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
         };
         match result {
             Ok(summary) => {
@@ -114,6 +122,34 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str) -> Result<String> 
     Ok(format!(
         "added task:{} to milestone:{}",
         added.task.id, added.milestone_id
+    ))
+}
+
+/// `jigc milestone list-tasks <milestone-id>` — read the milestone's persisted
+/// task list and emit its sub-task ids in **canonical id-sorted order** (the
+/// deterministic order the by-task-id join enumerates, surfaced through the
+/// binary, not just the internal enumerate fn). Returns the summary line; an
+/// unknown milestone (no area / unreadable list) surfaces as a context-wrapped
+/// error and exits non-zero.
+fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_root = repo_root.join(".jigc");
+    let dir = milestone_dir(&jigc_root, milestone_id);
+    if !dir.is_dir() {
+        bail!(
+            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
+        );
+    }
+    let list = read_task_list(&dir)
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    // Enumeration is id-sorted — the order the join reads, not the recorded
+    // insertion order.
+    let ids = list.enumerate();
+    Ok(format!(
+        "milestone:{milestone_id} tasks ({}): {}",
+        ids.len(),
+        ids.join(", ")
     ))
 }
 

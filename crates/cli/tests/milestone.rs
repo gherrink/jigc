@@ -179,6 +179,32 @@ fn milestone_create_then_add_tasks_through_the_binary() {
         );
     }
 
+    // The binary surfaces the id-sorted enumeration the by-task-id join reads —
+    // NOT the recorded `[zebra-fix, alpha-fix]` add order. This is the headline
+    // deliverable: the deterministic sorted-id order must be reachable through the
+    // binary, not just an internal test-only function.
+    let listed = run_milestone(repo.path(), home.path(), &["list-tasks", "cache-rework"]);
+    let list_stdout = String::from_utf8(listed.stdout).expect("utf-8 stdout");
+    assert!(
+        listed.status.success(),
+        "`jigc milestone list-tasks cache-rework` must exit 0; got {:?}\nstderr:\n{}",
+        listed.status,
+        String::from_utf8_lossy(&listed.stderr),
+    );
+    // alpha-fix must precede zebra-fix in the emitted bytes (id-sorted), even
+    // though they were added zebra-then-alpha.
+    let alpha_at = list_stdout
+        .find("alpha-fix")
+        .expect("emitted list names alpha-fix");
+    let zebra_at = list_stdout
+        .find("zebra-fix")
+        .expect("emitted list names zebra-fix");
+    assert!(
+        alpha_at < zebra_at,
+        "the binary must emit the task list id-sorted (alpha-fix before zebra-fix), \
+         not in add order; got:\n{list_stdout}",
+    );
+
     // A duplicate add-task intent rejects non-zero with a routed finding.
     let dup = run_milestone(
         repo.path(),

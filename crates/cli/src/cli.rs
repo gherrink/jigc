@@ -836,6 +836,20 @@ mod cli_parse {
     }
 
     #[test]
+    fn milestone_list_tasks_parses_the_id() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "list-tasks", "cache-rework"])
+            .expect("`jigc milestone list-tasks <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::ListTasks {
+                    milestone_id: "cache-rework".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
     fn milestone_rejects_an_unknown_verb() {
         let err = Cli::try_parse_from(["jigc", "milestone", "destroy", "cache-rework"])
             .expect_err("an unknown milestone verb must be rejected");
