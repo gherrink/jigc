@@ -17,8 +17,9 @@
 use crate::pack::make_pack;
 use crate::start::load_project_layer;
 use anyhow::{Context, Result, bail};
-use engine::override_default::{RecordedDeltas, classify};
+use engine::override_default::RecordedDeltas;
 use engine::packsource::PackSource;
+use engine::probe::{OverrideCtx, OverrideDefaultProbe, Probe};
 use engine::result::ValidationReport;
 use std::path::{Path, PathBuf};
 
@@ -60,8 +61,12 @@ pub(crate) fn upgrade_with_pack(
     // irrelevant to "is the key still a declared knob?"). The `OverrideLayer` owns
     // them; the classifier checks each against the current pack's closed surface.
     let scalars: Vec<String> = layer.scalar_set_keys().map(str::to_owned).collect();
-    let findings = classify(
-        RecordedDeltas {
+    // `override-default` is invoked through the non-task `Probe` seam (its ctx is
+    // `(recorded deltas, pack)`, not a task working area — `validation.md` → The
+    // non-task `Probe` seam). The seam delegates to the M5 `classify` logic; severity
+    // stays engine-owned, assigned by the post-pass at `ValidationReport::new` below.
+    let findings = OverrideDefaultProbe.check(OverrideCtx {
+        deltas: RecordedDeltas {
             structural: &structural,
             forks: &forks,
             bases: &bases,
@@ -69,7 +74,7 @@ pub(crate) fn upgrade_with_pack(
             scalars: &scalars,
         },
         pack,
-    );
+    });
     // The engine severity post-pass reads the resolved cascade: a recorded
     // `validation.override-default.*.severity` scalar-set tunes the classifier's
     // findings (`design/validation.md` → Every finding-emitting entry point must
@@ -181,6 +186,24 @@ mod tests {
         FilesystemPack::new(pack_root)
     }
 
+    /// A `FilesystemPack` like [`fs_pack`] whose `config/knobs.yaml` **also** declares
+    /// the `validation.override-default.target-unchanged.severity` knob (an `enum` of
+    /// the three severity tokens, defaulting to `blocking`) — the closed surface a
+    /// recorded `scalar-set` on that key resolves against, so the M6 post-pass can tune
+    /// an `override-default` conflict. A real pack ships this knob; the test seeds it so
+    /// the directly-built pack carries it (the env-through-binary flow is the flow-8 T3
+    /// e2e).
+    fn fs_pack_with_severity_knob(dir: &TempDir, steps: &[(&str, &str)]) -> FilesystemPack {
+        let pack = fs_pack(dir, steps);
+        let knobs = dir.path().join("pack").join("config").join("knobs.yaml");
+        let mut text = fs::read_to_string(&knobs).expect("read knobs");
+        text.push_str(
+            "validation.override-default.target-unchanged.severity:\n  type: enum\n  of: [blocking, warning, advisory]\n  default: blocking\n",
+        );
+        fs::write(&knobs, text).expect("append severity knob");
+        pack
+    }
+
     /// T2 done-criterion (the blocking half). A hand-authored manifest carries a
     /// `remove-step` delta whose target step the env-selected pack **omits**;
     /// `upgrade_with_pack` returns a [`ValidationReport`] carrying the expected
@@ -254,6 +277,108 @@ deltas:
         assert!(
             !report.has_blocking(),
             "a clean report does not block: {report:?}"
+        );
+    }
+
+    /// **T1 — the seam preserves the post-pass tuning.** `override-default`'s `classify`
+    /// is now invoked **through the non-task `Probe` seam** ([`engine::probe`]); this
+    /// proves routing through the seam does not regress the inc-1 severity post-pass. A
+    /// `tracked-fork` whose recorded `base-hash` differs from the env-selected pack's
+    /// `validate` step (a **conflict**, emitted blocking) is demoted to
+    /// [`engine::finding::Severity::Warning`] by a recorded
+    /// `scalar:` on `validation.override-default.target-unchanged.severity` — through the
+    /// seam path. The manifest is byte-unchanged on disk (report-and-route only).
+    #[test]
+    fn upgrade_demotes_a_conflict_to_warning_through_the_seam() {
+        use engine::finding::Severity;
+
+        let dir = TempDir::new("conflict-demote");
+        let project_config = seed_repo(&dir);
+
+        // The recorded basis = the blake3 of the *v1* `validate` body the fork was
+        // taken from; the pack ships a *changed* v2 body → the pack-direct compare
+        // conflicts (emitted blocking under `target-unchanged`).
+        let validate_v1 = "validate body v1\n";
+        let recorded = engine::file_state::hash_bytes(validate_v1.as_bytes());
+        let manifest_text = format!(
+            "\
+scalar:
+  validation.override-default.target-unchanged.severity: warning
+deltas:
+  - kind: tracked-fork
+    target: workflow:single-task#validate
+    base-version: v1
+    base-hash: {recorded}
+"
+        );
+        let manifest = project_config.join("manifest.yaml");
+        fs::write(&manifest, &manifest_text).expect("seed manifest");
+
+        // The pack's `validate` step changed upstream (≠ the recorded basis) → conflict.
+        let pack =
+            fs_pack_with_severity_knob(&dir, &[("validate", "validate body v2 — changed\n")]);
+
+        let report = upgrade_with_pack(&project_config, &pack).expect("classify");
+
+        assert_eq!(report.findings.len(), 1, "exactly the conflict: {report:?}");
+        let finding = &report.findings[0];
+        assert_eq!(finding.code, "override-default.content-changed");
+        assert_eq!(finding.check, "target-unchanged");
+        assert_eq!(
+            finding.severity,
+            Severity::Warning,
+            "the recorded `scalar-set` demotes the conflict to warning through the seam path",
+        );
+        assert!(
+            !report.has_blocking(),
+            "a demoted conflict no longer blocks the upgrade: {report:?}",
+        );
+
+        // The seam mutates nothing — the manifest is byte-identical on disk.
+        let after = fs::read_to_string(&manifest).expect("re-read manifest");
+        assert_eq!(after, manifest_text, "upgrade is report-and-route only");
+    }
+
+    /// **Validation hardening #5 — the omitting-target context.** The *same* conflict,
+    /// classified through the seam against a project layer that **omits** the severity
+    /// `scalar-set`, keeps its emitted **blocking** severity (the post-pass is inert when
+    /// the cascade carries no override). A green pass over the demote test alone would
+    /// hide a seam bug that always tunes; this pins the inert-on-omission behaviour.
+    #[test]
+    fn upgrade_conflict_stays_blocking_when_severity_override_is_omitted() {
+        use engine::finding::Severity;
+
+        let dir = TempDir::new("conflict-no-override");
+        let project_config = seed_repo(&dir);
+
+        let validate_v1 = "validate body v1\n";
+        let recorded = engine::file_state::hash_bytes(validate_v1.as_bytes());
+        // No `scalar:` severity override — the omitting context.
+        let manifest_text = format!(
+            "\
+deltas:
+  - kind: tracked-fork
+    target: workflow:single-task#validate
+    base-version: v1
+    base-hash: {recorded}
+"
+        );
+        fs::write(project_config.join("manifest.yaml"), &manifest_text).expect("seed manifest");
+
+        let pack =
+            fs_pack_with_severity_knob(&dir, &[("validate", "validate body v2 — changed\n")]);
+
+        let report = upgrade_with_pack(&project_config, &pack).expect("classify");
+
+        assert_eq!(report.findings.len(), 1, "exactly the conflict: {report:?}");
+        assert_eq!(
+            report.findings[0].severity,
+            Severity::Blocking,
+            "with no severity override the post-pass is inert — the conflict stays blocking",
+        );
+        assert!(
+            report.has_blocking(),
+            "an un-demoted conflict blocks: {report:?}"
         );
     }
 
