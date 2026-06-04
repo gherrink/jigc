@@ -5257,4 +5257,167 @@ Follow the house rule.
             composed.text
         );
     }
+
+    // --- Determinism (#7) + the #5 face: order-invariant Spawn + marker honored (T5) ---
+
+    /// The acceptance fixture for T5: the assembled T1–T4 spine — a `fan-out` step
+    /// over `{{ milestone.tasks }}` (`run: workflow:sub-task`) paired with a later
+    /// `join` step, the shape the increment ships. Reused by both T5 acceptance tests
+    /// so the cross-order and marker-present/absent assertions run over one workflow.
+    fn t5_fan_out_def() -> WorkflowDef {
+        WorkflowDef {
+            when: None,
+            creates_task: false,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
+        }
+    }
+
+    /// The milestone ctx as the CLI actually feeds it: the sub-task id *set* run
+    /// through [`crate::milestone::TaskList::enumerate`] (the id-sort boundary —
+    /// Validation hardening #7), so insertion / feed order never reaches the resolver
+    /// unsorted. Two divergent feed orders therefore produce the **same** collection.
+    fn t5_ctx_via_enumerate(tasks: &[&str]) -> ComposeContext {
+        let list = crate::milestone::TaskList {
+            tasks: tasks.iter().map(|s| (*s).to_owned()).collect(),
+        };
+        ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
+            milestone: list.enumerate(),
+        }
+    }
+
+    /// Validation hardening #7 (determinism by re-execution): composing the fan-out
+    /// workflow over the milestone ctx fed `[zebra-fix, alpha-fix]` produces output
+    /// **byte-identical** to the same ctx fed the reverse order `[alpha-fix,
+    /// zebra-fix]` — fed through the `TaskList::enumerate()` id-sort boundary the CLI
+    /// uses — with the `Spawn:` lines in id order in both. One green run is not a
+    /// red→green: the two divergent feed orders are the proof the id-sort, not feed
+    /// order, drives the emitted directive sequence.
+    #[test]
+    fn fan_out_spawns_byte_identical_across_divergent_feed_orders() {
+        let source = MapSource::new(&[
+            (
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "---\njoin: {}\n---\nAll sub-tasks complete and merged by task-id order. Continue.\n",
+            ),
+        ]);
+        let def = t5_fan_out_def();
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // Two divergent feed orders — minimum id-order and its reverse.
+        let forward = compose(
+            &def,
+            &source,
+            &catalog,
+            &t5_ctx_via_enumerate(&["alpha-fix", "zebra-fix"]),
+        )
+        .expect("composes forward");
+        let reversed = compose(
+            &def,
+            &source,
+            &catalog,
+            &t5_ctx_via_enumerate(&["zebra-fix", "alpha-fix"]),
+        )
+        .expect("composes reversed");
+
+        // The whole composed view — every byte — is identical regardless of feed order.
+        assert_eq!(
+            forward.text, reversed.text,
+            "compose output must be byte-identical across divergent feed orders"
+        );
+
+        // And the Spawn directives are the id-ordered sequence in both — extracted from
+        // the emitted bytes the agent reads, never reconstructed.
+        let spawns = |w: &ComposedWorkflow| -> Vec<String> {
+            w.text
+                .lines()
+                .filter(|l| l.starts_with("Spawn: "))
+                .map(str::to_owned)
+                .collect()
+        };
+        let expected = vec![
+            "Spawn: `jigc workflow sub-task --task alpha-fix`".to_owned(),
+            "Spawn: `jigc workflow sub-task --task zebra-fix`".to_owned(),
+        ];
+        assert_eq!(
+            spawns(&forward),
+            expected,
+            "forward feed: id-ordered Spawns"
+        );
+        assert_eq!(
+            spawns(&reversed),
+            expected,
+            "reverse feed: id-ordered Spawns"
+        );
+    }
+
+    /// The M8 #5 face: a marker that parses but leaves compose output unchanged is
+    /// parsed-but-ignored. The same step body composed **with** the `fan-out:`
+    /// front-matter emits N `Spawn:` lines; composed with the marker **removed** (the
+    /// identical instruction prose as a plain step) emits **zero** `Spawn:` lines and
+    /// the two composed views **differ** — proving the marker is honored on the emit
+    /// path, not merely recognized by the loader.
+    #[test]
+    fn marker_present_differs_from_marker_absent() {
+        let ctx = t5_ctx_via_enumerate(&["alpha-fix", "zebra-fix"]);
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // The marker-present spine (a `fan-out`/`join` pair).
+        let with_marker = MapSource::new(&[
+            (
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "---\njoin: {}\n---\nAll sub-tasks complete and merged by task-id order. Continue.\n",
+            ),
+        ]);
+        // The marker-absent body — the *same* instruction prose, no `fan-out:`
+        // front-matter (a plain step), and no `join` (a plain step is not a fan-out, so
+        // the pairing check does not apply).
+        let without_marker = MapSource::new(&[
+            (
+                "implement-tasks",
+                "Spawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "All sub-tasks complete and merged by task-id order. Continue.\n",
+            ),
+        ]);
+        let def = t5_fan_out_def();
+
+        let present = compose(&def, &with_marker, &catalog, &ctx).expect("composes with marker");
+        let absent =
+            compose(&def, &without_marker, &catalog, &ctx).expect("composes without marker");
+
+        let spawn_count = |w: &ComposedWorkflow| -> usize {
+            w.text.lines().filter(|l| l.starts_with("Spawn: ")).count()
+        };
+        assert_eq!(
+            spawn_count(&present),
+            2,
+            "marker present: one Spawn per id-sorted sub-task, got:\n{}",
+            present.text
+        );
+        assert_eq!(
+            spawn_count(&absent),
+            0,
+            "marker absent: zero Spawn lines (inert prose), got:\n{}",
+            absent.text
+        );
+        assert_ne!(
+            present.text, absent.text,
+            "the marker must be honored — marker-present and marker-absent compose differently"
+        );
+    }
 }
