@@ -92,15 +92,15 @@ Minted IDs are **frozen content-slugs**:
 Documents and workflows are the **managed-artifact family** — minted, structurally rich, dialect-specific. A second family — **work-units** — shares the minting discipline but has no internal section/leaf structure. Work-units are first-class minted identities that scope state, coordination, and validation:
 
 - **task** (MVP) — the staging unit; one task → one `finalize` → one logical commit. Per-task working area, base pin, validation scope, fan-out join key.
-- **milestone** (planned) — a higher-level work container; tasks roll up to a milestone for store-scope validation (completeness obligations like inverse-cardinality).
-- **increment** (planned) — sits between milestone and task: a **deliverable increment**, a coherent group of tasks that together deliver one vertical slice of a milestone's outcome. It is the unit `milestone-planning` decomposes a milestone into, and the rollup parent of its tasks; the hierarchy is `milestone > increment > task`. (Whether the increment or the task is the one-level `fan-out` boundary is a post-MVP question, deferred with the hierarchy.)
+- **milestone** (**M7**) — a higher-level work container; tasks roll up to a milestone for store-scope validation (completeness obligations like inverse-cardinality). M7 builds it as the **fan-out container**: its task list is what the by-task-id join enumerates ([storage.md](storage.md#the-by-task-id-join-m7)), populated by `jigc milestone add-task <intent>` and a spec-seed path ([write-commands.md](write-commands.md) → Minting a milestone). The `{{milestone.tasks}}` *data-value root* that exposes the same list to the read path lands in **M8** with its consumer, the `fan-out` step ([workflow-dialect.md](workflow-dialect.md) → data-value roots). For M7 the hierarchy is **`milestone > task`** directly — `increment` minting stays deferred.
+- **increment** (planned) — sits between milestone and task: a **deliverable increment**, a coherent group of tasks that together deliver one vertical slice of a milestone's outcome. It is the unit `milestone-planning` decomposes a milestone into, and the rollup parent of its tasks; the full hierarchy is `milestone > increment > task`. (Whether the increment or the task is the one-level `fan-out` boundary is a post-MVP question, deferred with increment minting.)
 
 All work-units use the same slug-from-source / frozen / collision-suffix discipline as artifacts; they don't have leaves to address into, so addresses are `type:name` with no fragment (`task:add-rate-limiter`, `milestone:m1`). They are referenced as live-state roots by data-values (`task.intent`, `milestone.tasks`), as command surfaces (`jigc task …`, future `jigc milestone …`), and as validation scopes.
 
 **Minting sites — full picture:**
 
 - managed-artifact family: exactly two sites (container creation, repeatable-item add) — see [Repetition](#repetition) and [IDs](#ids-provenance-and-minting).
-- work-unit family: each work-unit `create`/`start` operation (`jigc start --workflow` mints a task; future `jigc milestone create`, `jigc increment create`).
+- work-unit family: each work-unit `create`/`start` operation (`jigc start --workflow` mints a task; the **M7** `jigc milestone create` mints a milestone; future `jigc increment create`).
 
 Both families' mints are deterministic under concurrency (task-id-ordered collision suffix), so reproducibility holds across the whole runtime, not just inside artifacts.
 
@@ -124,4 +124,4 @@ Integrity holds at the **`finalize` boundary**, not on every write (else bootstr
 ## Open questions
 
 - **Multi-level repetition** — deferred unless a real type forces a second repeatable level.
-- **Minting mechanics** — exact slug normalization (case/charset) and collision-suffix form.
+- **Minting mechanics** — exact slug normalization (case/charset) remains the open edge. The **collision-suffix form is settled for M7**: a numeric `-2`/`-3`/… suffix applied **in task-id order at the `join`** (lower task-id keeps the bare slug), with the renamed instance's intra-document self-references rewritten in lockstep ([storage.md](storage.md#the-by-task-id-join-m7)).

@@ -71,6 +71,16 @@ Minting is **structure declared by the workflow**, never inferred — the CLI re
 
 The principle: **suffix only in the deterministic parallel case** (where both works are legitimate and the join needs to disambiguate); **reject in the serial case** (where it's almost certainly a forgotten resume the agent should see).
 
+### Minting a milestone + its task list (M7)
+
+The `milestone` work-unit is the **fan-out container** ([structural-grammar.md](structural-grammar.md#work-units-and-runtime-identity)) — `milestone > task` for M7. Three verbs, all on the same work-unit-family minting discipline as `jigc start`:
+
+- **`jigc milestone create "<title>"`** — mints a milestone work-unit (id = frozen slug from the title), opens its area with an empty task list, and **pins one shared base** (= HEAD) that every sub-task inherits — so the join's "present at the milestone base" test is a deterministic lookup against a frozen commit ([storage.md](storage.md#the-by-task-id-join-m7)). No sub-task minted yet.
+- **`jigc milestone add-task <milestone-id> "<intent>"`** — mints a sub-task under the milestone (a task work-unit: id = slug from intent, pinned to the **milestone's** base, isolated `tasks/<sub>/` area) and appends it to the milestone's task list. Incremental — called once per sub-task; a serial slug collision within one milestone **rejects** (the deterministic suffix runs only at the join, never at incremental add).
+- **`jigc milestone add-from-spec <milestone-id> <spec-addr>`** — the convenience populator (requested alongside incremental add): seeds the task list from a committed spec by **enumerating its repeatable `criteria` items** (the parse-items read path — `parse_sections` → the section's `items`, *not* the `jigc task bind` slice path) and minting one sub-task per criterion, the criterion's text as that sub-task's intent. A spec with **zero criteria items** is a blocking *"nothing to seed from"* — never a silent empty milestone.
+
+The task list is what the by-task-id join enumerates ([storage.md](storage.md#the-by-task-id-join-m7)). M7 builds the work-unit, these verbs, and the join; the `{{milestone.tasks}}` data-value root that exposes the list to the read path, and the `milestone-execution` *workflow* that fans out over it, are M8.
+
 A task carries **context roles** its workflow declares; `task.<role>` ([workflow-dialect.md](workflow-dialect.md)) navigates the bound doc, and **the CLI never infers a binding** — the agent binds explicitly, by one of two routes depending on where the doc comes from:
 
 - **agent-created, same task** — `jigc doc create <type>` under a create-gate entry whose object form declares `as: <role>` binds the new instance in one step ([The create-gate](#the-create-gate)).

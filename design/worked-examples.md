@@ -526,3 +526,71 @@ workflow:single-task                              (pack-default · dev/v0.4.0)
 The demoting delta is **soft-rejected**: logged on the resolution tree, *not applied* — `placeholder-resolves` stays `blocking`, so a dangling placeholder still bricks composition as before. Resolution **does not abort** (an *undeclared* key still would — that's a typo, not a locked-key demotion). The determinism boundary cannot be weakened from config; the floor is the lock ([validation.md](validation.md) → The two-tier rule).
 
 *(Spiked during planning: severity is assigned by one engine post-pass over aggregated findings — synthetic categories, inline `workflow-refs`/`schema-conformance` emissions, and the non-task `override-default` all tune through it because each emits a `Finding` carrying `(probe, check)`; the seam is built minimally to fit `override-default` without rewriting the byte-stable `validate_task` path; see [DECISIONS.md](../DECISIONS.md) 2026-06-04.)*
+
+## 9. Milestone execution — the deterministic join (M7)
+
+The M7 flow that proves the locked concurrency invariant: **the join is a pure function of the *set* of sub-task working areas — same set in, byte-identical committed state out, regardless of completion order** ([storage.md](storage.md#the-by-task-id-join-m7); CLAUDE.md → "merges at a join ordered by task ID, not completion order"). This is the **engine-genuine** proof: the sub-task areas are provisioned and populated as fixtures, then fed to the join in deliberately-scrambled orders. The *real agent spawn* (the adapter launching sub-agents through the Task tool) is **M8** ([flow … M8](#); the `milestone-execution` workflow end-to-end). Proving determinism by **permutation over a fixed area set** is stronger than a single real spawn — it cannot be faked by a sequential-in-process loop (the hollow-spawn trap), and it directly exercises the property a real launch can only sample once. Notation illustrative.
+
+### Setup — a milestone with overlapping-by-design sub-tasks
+
+```text
+$ jigc milestone create "Cache hardening"
+minted milestone:cache-hardening (base a1b2c3d)
+
+$ jigc milestone add-task cache-hardening "add an LRU eviction ADR"      # → task:add-an-lru-eviction-adr
+$ jigc milestone add-task cache-hardening "add a cache-strategy ADR"     # → task:add-a-cache-strategy-adr
+$ jigc milestone add-task cache-hardening "document the cache strategy"  # → task:document-the-cache-strategy
+```
+
+The milestone pins **one shared base**; each sub-task gets an isolated `tasks/<sub>/` area (separate dirs). In M7 the areas are populated as **fixtures** and isolation is enforced **at the join** (the write-time `--task`-scoped barrier is M8). The three areas are populated to **deliberately exercise every contention path** the disjoint partition is supposed to make rare: two stage a `created` doc that slugs the same (`adr:cache-strategy`), one of which **references its own slug**; one types a ref into a sibling's area.
+
+### Headline — permutation determinism (the #7-failure-class guard)
+
+The same populated area set is joined under **≥3 divergent feed orders** — task-id order, **reverse** task-id order, and a **seed-shuffled** order — and the committed bytes are asserted identical:
+
+```text
+$ jigc milestone join cache-hardening --debug-feed-order=id        # → commit tree T
+$ jigc milestone join cache-hardening --debug-feed-order=reverse   # → commit tree T   (identical)
+$ jigc milestone join cache-hardening --debug-feed-order=shuffled:42# → commit tree T   (identical)
+
+assert byte-identical(T_id, T_reverse, T_shuffled)
+```
+
+Reverse order is mandatory: an id-ordered fixture where completion-order trivially equals id-order would pass even a completion-ordered (broken) merge. The merge enumerates sub-areas by **sorted task id** and every accumulator it touches (staged-doc set, edge overlay, finding list) is order-keyed (`BTreeMap`/sorted `Vec`, **never** a `HashMap` whose iteration could leak into output) — see [Validation hardening #7](../implementation/increment-workflow.md) (single-execution determinism trust).
+
+### Supporting — colliding new instances get a task-id-ordered suffix; self-refs rewritten
+
+Two sub-tasks each *create* `adr:cache-strategy`. They are distinct decisions, not a clash — the join disambiguates deterministically:
+
+```text
+join: adr:cache-strategy — collision across {task:add-a-cache-strategy-adr, task:document-the-cache-strategy}
+      task:add-a-cache-strategy-adr (lower id)  → adr:cache-strategy     (bare slug kept)
+      task:document-the-cache-strategy          → adr:cache-strategy-2   (suffixed, task-id order)
+      rewrote 1 intra-document self-reference in adr:cache-strategy-2  (…supersedes: adr:cache-strategy-2)
+```
+
+The renamed instance's **own** self-reference is rewritten in lockstep (a fixture whose colliding docs referenced only *siblings* would pass a broken self-rewrite — so the fixture references its own slug on purpose).
+
+### Supporting — cross-area ref rejected, not silently resolved
+
+Sub-task B typed `supersedes: adr:lru-eviction` guessing sub-task A's slug. Even though that doc *byte-exists* in A's area on disk at join time, the ref resolves against `committed ∪ B's own area` only:
+
+```text
+  ✗ blocking  schema-conformance.cross-area-ref  task:add-a-cache-strategy-adr
+                supersedes → adr:lru-eviction  resolves only in a sibling sub-task's area
+                route: order the tasks so the target commits first / move the creation here / drop the ref
+```
+
+A naïve overlay that unioned every sub-area's `docs/` would have resolved this *clean* — the bug the per-`from` narrowing prevents ([validation.md](validation.md) → Fan-out cross-area refs).
+
+### Supporting — same pre-existing doc edited by two sub-tasks → blocking clash
+
+If two sub-tasks both stage an **`edited-from-base`** write to the *same committed-at-base slug* (a partition violation, not a coincidental new-slug collision), the join blocks rather than blind-merging. The `created`-vs-`edited-from-base` provenance recorded at stage time, plus the milestone's shared base, make this decidable without a filesystem race:
+
+```text
+  ✗ blocking  join.same-doc-clash  decisions/eviction-policy.md   (existed at milestone base)
+                edited-from-base by {task:tune-eviction-thresholds, task:document-eviction-policy}
+                route: the fan-out partition must be disjoint — re-partition or sequence these
+```
+
+No section-merge, no last-writer-win (rejected in planning — [DECISIONS.md](../DECISIONS.md) 2026-06-04); overlap of a shared target is an error the human routes. The **mixed case** — one sub-task `created` a slug another `edited-from-base` — is also a blocking clash, never a suffix.

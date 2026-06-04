@@ -26,7 +26,7 @@ Direction reads source → target; cardinality is the rough *intent*, not a lock
 - `prd` —**decomposes-into**→ `spec` (1 → n) — a PRD's requirements fan out into specs.
 - `arch-doc` —**cites**→ `adr` (n → n) — architecture docs reference the decisions behind them.
 
-Work-units (`task`, `increment`, `milestone`) are **not doctypes** — they're the anchors docs bind to (`task.commit`, `task.spec`, `task.decision`), carrying engine-native data-value roots, not schemas.
+Work-units (`task`, `increment`, `milestone`) are **not doctypes** — they're the anchors docs bind to (`task.commit`, `task.spec`, `task.decision`), carrying engine-native data-value roots, not schemas. The `milestone` work-unit activates in **M7** (the deterministic join core — [roadmap](roadmap.md)); its `{{milestone.tasks}}` data-value root lands in **M8** with the fan-out step that consumes it; `increment` minting stays deferred.
 
 ```text
 prd ──decomposes-into──▶ spec ──decided-by──▶ adr ◀──supersedes── adr
