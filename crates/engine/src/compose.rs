@@ -1839,9 +1839,13 @@ pub fn compose_with_store(
 /// - `include-resolves` / `include-cycle-absent` — every `{{include}}` resolves
 ///   to a step in the cascade and the include graph is acyclic
 ///   ([`expand_includes`]).
-/// - `run-marker-not-shadowed` — no step's instruction prose starts a line with
-///   the composer-reserved `Run: ` marker (`workflow-dialect.md` → Compose-time
-///   conformance); checked per expanded step body by [`find_run_shadow`].
+/// - `run-marker-not-shadowed` / `spawn-marker-not-shadowed` — no step's
+///   instruction prose starts a line with the composer-reserved `Run: ` / `Spawn: `
+///   marker (`workflow-dialect.md` → Compose-time conformance); checked per expanded
+///   step body by [`find_run_shadow`] / [`find_spawn_shadow`].
+/// - `fan-out-join-paired` — each `fan-out` step pairs with a `join` step in the
+///   workflow and vice-versa (M8), checked over the composition's per-step kinds by
+///   [`find_fan_out_join_pairing`].
 /// - `command-ref-resolves` / `placeholder-resolves` / `at-marker-on-non-scalar`
 ///   — every `{{cli.…}}` resolves against the catalog, every `{{…}}`/`{{@…}}`
 ///   data-value resolves (or is legitimately absent), and no `@` applies to a
@@ -1910,11 +1914,19 @@ pub fn workflow_refs_with_deltas(
         Err(finding) => return vec![finding],
     };
 
-    // Per expanded step body: the reserved-marker shadow check, then emission
-    // (command-ref-resolves / placeholder-resolves / at-marker-on-non-scalar).
+    // Workflow-level: each `fan-out` step must pair with a `join` step (M8).
     let mut findings = Vec::new();
+    if let Some(finding) = find_fan_out_join_pairing(&composition) {
+        findings.push(finding);
+    }
+
+    // Per expanded step body: the reserved-marker shadow checks, then emission
+    // (command-ref-resolves / placeholder-resolves / at-marker-on-non-scalar).
     for step in &composition.steps {
         if let Some(finding) = find_run_shadow(&step.body) {
+            findings.push(finding);
+        }
+        if let Some(finding) = find_spawn_shadow(&step.body) {
             findings.push(finding);
         }
         if let Err(finding) = emit_step_body(&step.body, ctx, catalog) {
@@ -2010,8 +2022,15 @@ pub fn workflow_refs_with_fills(
         }
     }
 
+    // Workflow-level: each `fan-out` step must pair with a `join` step (M8). The
+    // kind rides on the boundary leaf untouched by phase 5, so it reads the same
+    // composition the per-step loop walks.
+    if let Some(finding) = find_fan_out_join_pairing(&composition) {
+        findings.push(finding);
+    }
+
     // Per expanded step body, run phase 5, then the post-phase-5 checks:
-    // fill-survivor, run-marker shadow, and emission (command-ref / placeholder).
+    // fill-survivor, run/spawn-marker shadow, and emission (command-ref / placeholder).
     for step in &composition.steps {
         let applied = match apply_slot_fills(&step.id, &step.body, fills) {
             Ok(applied) => applied,
@@ -2028,6 +2047,9 @@ pub fn workflow_refs_with_fills(
             continue;
         }
         if let Some(finding) = find_run_shadow(&applied) {
+            findings.push(finding);
+        }
+        if let Some(finding) = find_spawn_shadow(&applied) {
             findings.push(finding);
         }
         if let Err(finding) = emit_step_body(&applied, ctx, catalog) {
@@ -2061,6 +2083,69 @@ fn find_run_shadow(body: &str) -> Option<Finding> {
             )
         })
     })
+}
+
+/// If a step body line shadows the composer-reserved `Spawn: ` marker, return a
+/// blocking `spawn-marker-not-shadowed` [`Finding`] located at that line; else
+/// `None`. The `Spawn: ` mirror of [`find_run_shadow`].
+///
+/// `Spawn: ` at a line's left margin is the composer's fan-out directive, emitted
+/// only from a resolved `fan-out` step ([`emit_fan_out_spawns`]) — never authored
+/// prose (`workflow-dialect.md` → Compose-time conformance: "instruction prose in a
+/// step definition must not start a line with `Run: ` or `Spawn: `"). The body
+/// here is the de-included step prose with the `fan-out` spawns not yet appended,
+/// so a literal `Spawn: ` line is authored prose, never an emitted directive. The
+/// first shadowing line is reported with a precise (step-body-relative) pointer.
+fn find_spawn_shadow(body: &str) -> Option<Finding> {
+    body.lines().enumerate().find_map(|(offset, line)| {
+        line.trim_start().starts_with("Spawn: ").then(|| {
+            Finding::blocking(
+                "workflow-refs.spawn-marker-not-shadowed",
+                format!(
+                    "step prose shadows the composer-reserved `Spawn: ` marker: `{}`",
+                    line.trim()
+                ),
+                Location::at(offset + 1, 1),
+            )
+        })
+    })
+}
+
+/// The workflow-level `fan-out-join-paired` check over a composition's per-step
+/// kinds: a `fan-out` step must have a matching `join` step in the same workflow
+/// **and vice-versa** (`workflow-dialect.md` → Compose-time conformance; the M8
+/// pairing rule). An unpaired `fan-out` (a spawn with no merge boundary) or an
+/// unpaired `join` (a merge with nothing fanned out) is a blocking
+/// `workflow-refs.fan-out-join-paired` [`Finding`]; a paired (or kind-free)
+/// composition yields none.
+///
+/// The check is presence-pairing, not count-matching (one `join` rejoins any
+/// number of fan-outs) — it reads only the [`StepKind`]s already on
+/// [`ComposedStep`] (T2), so it re-parses no front-matter. The finding carries no
+/// per-step location (it is a whole-workflow property); the route names the missing
+/// counterpart.
+fn find_fan_out_join_pairing(composition: &Composition) -> Option<Finding> {
+    let has_fan_out = composition
+        .steps
+        .iter()
+        .any(|s| matches!(s.kind, StepKind::FanOut { .. }));
+    let has_join = composition
+        .steps
+        .iter()
+        .any(|s| matches!(s.kind, StepKind::Join));
+    match (has_fan_out, has_join) {
+        (true, false) => Some(Finding::block(
+            "workflow-refs.fan-out-join-paired",
+            "a `fan-out` step has no matching `join` step in the workflow",
+            "add a `join` step after the `fan-out` so the fanned sub-tasks have a merge boundary",
+        )),
+        (false, true) => Some(Finding::block(
+            "workflow-refs.fan-out-join-paired",
+            "a `join` step has no matching `fan-out` step in the workflow",
+            "add a `fan-out` step before the `join`, or remove the unpaired `join`",
+        )),
+        _ => None,
+    }
 }
 
 /// If a **post-phase-5** step body still carries a `{{fill:<id>}}` token — lone-line
@@ -4152,6 +4237,94 @@ reference — make your consequences explain what changes:
                 "every workflow-refs check is intrinsic-blocking"
             );
         }
+    }
+
+    // --- T4: the two M8 workflow-refs checks (intrinsic, blocking) ---
+
+    /// `spawn-marker-not-shadowed` (M8): a step body line starting `Spawn: ` shadows
+    /// the composer-reserved fan-out marker → blocking finding located at that line.
+    /// A *genuine* fan-out step is clean: its `Spawn:` directives are emitted by the
+    /// composer from the resolved `over:` collection (not present in the step body
+    /// the probe walks), and its prose ("Spawn a sub-task per item.") does not start
+    /// a line with the reserved prefix. The shadow finding is intrinsic-blocking.
+    #[test]
+    fn workflow_refs_flags_spawn_marker_shadow() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        // A step body literally starting a line `Spawn: ` shadows the marker.
+        let shadow_src =
+            MapSource::new(&[("only", "do the thing\nSpawn: a sub-task\nthen stop\n")]);
+        let shadow_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let shadow = workflow_refs(shadow_wf, &shadow_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&shadow),
+            @"workflow-refs.spawn-marker-not-shadowed @ 2:1"
+        );
+        assert_eq!(shadow.len(), 1, "exactly the shadow check trips");
+        assert_eq!(shadow[0].severity, crate::finding::Severity::Blocking);
+
+        // A genuine fan-out step (paired with a join) is clean — no spawn-shadow.
+        let clean_src = MapSource::new(&[
+            (
+                "fan",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nSpawn a sub-task per item.\n",
+            ),
+            ("join", "---\njoin: {}\n---\nMerge the results.\n"),
+        ]);
+        let clean_wf = b"---\nwhen: x\n---\n{{ include: step:fan }}\n{{ include: step:join }}\n";
+        let clean = workflow_refs(clean_wf, &clean_src, &catalog, &ctx);
+        assert!(
+            clean.is_empty(),
+            "a genuine paired fan-out step yields zero findings, got {clean:?}"
+        );
+    }
+
+    /// `fan-out-join-paired` (M8): a workflow with a `fan-out` step and no `join`
+    /// step (and vice-versa) is a blocking finding; a paired workflow is clean. The
+    /// check reads the composition's per-step kinds — presence-pairing, not
+    /// count-matching. Intrinsic-blocking.
+    #[test]
+    fn workflow_refs_flags_unpaired_fan_out_join() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        let fan = (
+            "fan",
+            "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nSpawn a sub-task per item.\n",
+        );
+        let join = ("join", "---\njoin: {}\n---\nMerge the results.\n");
+
+        // fan-out with no join → blocking pairing finding.
+        let fan_only_src = MapSource::new(&[fan]);
+        let fan_only_wf = b"---\nwhen: x\n---\n{{ include: step:fan }}\n";
+        let fan_only = workflow_refs(fan_only_wf, &fan_only_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&fan_only),
+            @"workflow-refs.fan-out-join-paired @ -"
+        );
+        assert_eq!(fan_only.len(), 1, "exactly the pairing check trips");
+        assert_eq!(fan_only[0].severity, crate::finding::Severity::Blocking);
+
+        // join with no fan-out → blocking pairing finding.
+        let join_only_src = MapSource::new(&[join]);
+        let join_only_wf = b"---\nwhen: x\n---\n{{ include: step:join }}\n";
+        let join_only = workflow_refs(join_only_wf, &join_only_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&join_only),
+            @"workflow-refs.fan-out-join-paired @ -"
+        );
+        assert_eq!(join_only.len(), 1, "exactly the pairing check trips");
+        assert_eq!(join_only[0].severity, crate::finding::Severity::Blocking);
+
+        // A paired fan-out + join → clean.
+        let paired_src = MapSource::new(&[fan, join]);
+        let paired_wf = b"---\nwhen: x\n---\n{{ include: step:fan }}\n{{ include: step:join }}\n";
+        let paired = workflow_refs(paired_wf, &paired_src, &catalog, &ctx);
+        assert!(
+            paired.is_empty(),
+            "a paired fan-out + join yields zero findings, got {paired:?}"
+        );
     }
 
     // --- T5: resolution-time cycle/orphan over the post-phase-4 include list ---

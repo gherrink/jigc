@@ -183,7 +183,7 @@ impl PackSource for FilesystemPack {
     }
 }
 
-/// The YAML for the 11 intrinsic per-check severity knobs, each floored at
+/// The YAML for the 13 intrinsic per-check severity knobs, each floored at
 /// `blocking`, generated from [`engine::knobs::INTRINSIC_CHECK_KEYS`]. A minimal
 /// test pack appends this to its `config/knobs.yaml` so it satisfies the engine's
 /// load-time intrinsic-floored assertion ([`engine::knobs::load_knobs`]) without
@@ -396,7 +396,7 @@ mod tests {
     /// increment) seeds the `PackDefaultLayer` scalar surface from it: the
     /// closed key set + each knob's materialized default. Golden over the bytes
     /// pins the canonical declared surface — `default-workflow` (enum, default
-    /// `router`) + the full per-check `validation.*.severity` surface (the 17
+    /// `router`) + the full per-check `validation.*.severity` surface (the 20
     /// inventory rows, validation.md → MVP check inventory) plus the two M4
     /// per-probe keys retained as additive defaults. `pack-id` is **not** a knob
     /// (it is pack identity, read for the provenance header) — it stays in
@@ -423,7 +423,7 @@ mod tests {
         # not a project-overridable value, so it stays in defaults.yaml.
         # The `validation.*.severity` keys are the per-check severity surface; their
         # defaults + intrinsic-ness are governed by the single source of truth,
-        # validation.md → MVP check inventory (17 checks across 6 categories). The two
+        # validation.md → MVP check inventory (20 checks across 6 categories). The two
         # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
         # per-probe *defaults* (never a rename) so an M4-authored manifest still
         # resolves; they sit alongside the per-check keys.
@@ -443,7 +443,7 @@ mod tests {
           of: [blocking, warning, advisory]
           default: blocking
 
-        # --- workflow-refs.* (7, intrinsic) ---
+        # --- workflow-refs.* (9, intrinsic) ---
         validation.workflow-refs.placeholder-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
@@ -470,6 +470,16 @@ mod tests {
           default: blocking
           floor: blocking
         validation.workflow-refs.run-marker-not-shadowed.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        validation.workflow-refs.spawn-marker-not-shadowed.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        validation.workflow-refs.fan-out-join-paired.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking

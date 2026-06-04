@@ -40,7 +40,7 @@ struct KnobDecl {
 
 /// The engine-owned set of intrinsic check cascade keys — the checks whose
 /// demotion would break a load-bearing invariant of the system itself
-/// (`validation.md` → What "intrinsic" means mechanically: the seven
+/// (`validation.md` → What "intrinsic" means mechanically: the nine
 /// `workflow-refs.*` checks and the four `schema-conformance.*` checks). The
 /// engine asserts at pack-load that every one of these knobs is **declared** and
 /// floored at `blocking`, so a mis-declared pack cannot silently un-lock the
@@ -54,6 +54,8 @@ pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.workflow-refs.include-cycle-absent.severity",
     "validation.workflow-refs.at-marker-on-non-scalar.severity",
     "validation.workflow-refs.run-marker-not-shadowed.severity",
+    "validation.workflow-refs.spawn-marker-not-shadowed.severity",
+    "validation.workflow-refs.fan-out-join-paired.severity",
     "validation.workflow-refs.body-include-only.severity",
     "validation.schema-conformance.ref-resolves.severity",
     "validation.schema-conformance.required-slot-present.severity",
@@ -219,7 +221,7 @@ mod tests {
     /// Loading the embedded `knobs.yaml`, building the pack-default layer from its
     /// base scalars, and resolving yields each key's declared default — and the
     /// resolved key set is **exactly** the declared knob keys (the closed surface):
-    /// the full per-check severity surface (17 inventory rows, per
+    /// the full per-check severity surface (20 inventory rows, per
     /// `validation.md` → MVP check inventory) plus the two retained M4 per-probe
     /// keys (additive defaults, never a rename) and `default-workflow`. No
     /// team/project layer is present, so resolution returns the materialized base
@@ -284,7 +286,7 @@ mod tests {
                 "validation.schema-conformance.required-slot-present.severity",
                 "blocking",
             ),
-            // workflow-refs (7, intrinsic) + the M4 per-probe default (retained).
+            // workflow-refs (9, intrinsic) + the M4 per-probe default (retained).
             (
                 "validation.workflow-refs.at-marker-on-non-scalar.severity",
                 "blocking",
@@ -295,6 +297,10 @@ mod tests {
             ),
             (
                 "validation.workflow-refs.command-ref-resolves.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.fan-out-join-paired.severity",
                 "blocking",
             ),
             (
@@ -314,6 +320,10 @@ mod tests {
                 "blocking",
             ),
             ("validation.workflow-refs.severity", "blocking"),
+            (
+                "validation.workflow-refs.spawn-marker-not-shadowed.severity",
+                "blocking",
+            ),
         ];
 
         // The closed surface is exactly the declared keys — no more, no less.
@@ -370,7 +380,7 @@ mod tests {
         assert!(matches!(err, KnobError::Malformed(_)), "got {err:?}");
     }
 
-    /// The embedded pack floors **exactly** the 11 intrinsic checks at `blocking`
+    /// The embedded pack floors **exactly** the 13 intrinsic checks at `blocking`
     /// — the `floors` accessor exposes them, and the set is precisely the
     /// engine-owned intrinsic id set (`validation.md` → What 'intrinsic' means
     /// mechanically). The assertion-only load-time guard passes for the shipped
