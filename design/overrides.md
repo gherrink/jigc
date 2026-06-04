@@ -75,10 +75,15 @@ default-workflow:
   type: enum
   of: [router, single-task, quick-fix, plan, implement-from-spec]
   default: router
-validation.doc-code.severity:
+validation.override-default.target-unchanged.severity:   # tunable (no floor)
   type: enum
   of: [blocking, warning, advisory]
-  default: warning            # demotion-lock floor enforcement is (M6)
+  default: blocking
+validation.workflow-refs.placeholder-resolves.severity:  # intrinsic (M6)
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking             # demotion-lock: may not be set below blocking
 ```
 
 The loader builds the pack-default layer's scalar surface from this file — both the **closed key set** (what `scalar-set` may target) and each knob's **default value**. A knob's default is **materialized by the resolver** seeding the resolved map from `knobs.yaml` before applying any delta; this is the knob's own mechanism and is *independent* of the doc-instance `Field.default` (which a created document does not yet materialize — an orthogonal write-path defect, [DECISIONS.md](../DECISIONS.md) 2026-06-03).
@@ -89,7 +94,9 @@ The loader builds the pack-default layer's scalar surface from this file — bot
 
 An open surface is rejected for the same reason untracked forks are: a silent, unvalidatable, unreconcilable typo'd key is exactly the failure mode the whole system exists to kill.
 
-**Locked keys (enforcement: M6).** Some scalar keys are declared but **demotion-locked** — their value can be set above a floor but not below it. The validation severity inventory ([validation.md](validation.md) → Severity inventory) names the intrinsic checks whose `validation.<probe>.<check>.severity` keys cannot be demoted below `blocking`. A `scalar-set` attempting to demote a locked key is rejected at cascade resolution as a config-conformance error (the `scalar-set` is logged, not applied; visible via `--explain`). Same delta machinery — just with a per-key floor declared by the pack. M4 ships the severity *knobs themselves* as ordinary `scalar-set`-able typed keys; the **cascade-assigned severities + floor enforcement** ride with **M6 · severity tuning**, alongside the first probe with tunable checks (`override-default`, which itself ships blocking-by-default in M5).
+**Locked keys (enforcement: M6).** Some scalar keys are declared but **demotion-locked** — their value can be set above a floor but not below it. The mechanism (M6) is a **`floor:` field on the knob's `KnobDecl`** (declared by the pack in `config/knobs.yaml`, alongside `type`/`of`/`default`): `floor: blocking` means the key may be set to `blocking` but not below. The validation severity inventory ([validation.md](validation.md) → Severity inventory) is where the 11 intrinsic checks get `floor: blocking` on their `validation.<probe>.<check>.severity` keys. **Intrinsic-ness is expressed as "the knob carries `floor: blocking`"** — but, so a mis-declared pack cannot silently un-lock the determinism boundary, the **engine asserts at pack-load that its known intrinsic check-id set is each floored**, failing loudly on an unfloored intrinsic check. The assertion is *assertion-only* (it never assigns severity, never ships pack content) — the engine-empty invariant holds; the engine is merely checking that its own load-bearing invariants are declared.
+
+**Soft-rejection, not abort.** Severities are totally ordered `blocking > warning > advisory`; a `floor: X` key may be set to `X` or stricter, never below. A `scalar-set` attempting to set a key below its floor is **soft-rejected at cascade resolution**: the offending delta is **dropped (logged, not applied)** and **resolution continues** — *as if that delta were absent*, so the value resolves from the remaining layers (it does **not** snap to a synthetic "floor literal"; for an all-intrinsic key with no other delta that means the pack default `blocking` stands). This is deliberately distinct from setting an *undeclared* key (a typo), which stays a **hard** resolution error (`UndeclaredScalar`). So resolution gains a third outcome beyond "applied" / "hard error": "declared-but-below-floor → recorded as a rejected delta." The rejected deltas ride on the resolved cascade (a new surface on `Resolved`, consumed by `--explain`) and surface via **`--explain`** (a new line distinct from the *applied* overrides — [workflow-dialect.md](workflow-dialect.md) → `--explain` output contract). Same delta machinery — just with a per-key floor declared by the pack. M4 ships the severity *knobs themselves* as ordinary `scalar-set`-able typed keys; the **cascade-assigned severities + floor enforcement** ride with **M6 · severity tuning**, alongside the first probe with tunable checks (`override-default`, which itself ships blocking-by-default in M5). M6 also moves `knobs.yaml` from M4's two **per-probe** severity keys to the full **per-check** surface (per-probe key retained as a default — additive, never a rename, so an M4-authored manifest still resolves; an M4-authored demotion of an all-intrinsic probe like `workflow-refs` is now correctly soft-rejected by the floor).
 
 ## The `{{fill:}}` placeholder — slot-fill targets
 

@@ -24,11 +24,11 @@ Validation is **the determinism boundary applied to correctness**: the CLI-owned
 |---|---|
 | scope → target resolution (task / doc / store) | an **id** (`workflow-refs`, `file-state`, `doc-code`, …) |
 | the read-only **effective-state graph + edge index** | a **target-type** (any-doc / a doc-type / workflow / file / override) |
-| **scheduling** probes over targets (independent, parallelizable) | a **default severity** (blocking / advisory) |
-| **severity assignment via the cascade**, aggregation, report | a read-only **`check(target, ctx) → [finding]`** |
+| **scheduling** probes over targets (independent, parallelizable) | a **default severity** (blocking / warning / advisory) |
+| **severity assignment via the cascade** (the M6 post-pass below), aggregation, report | a read-only **`check(target, ctx) → [finding]`** |
 | the **`finalize` gate** | — |
 
-**Severity is engine-owned, via the cascade.** A probe returns a finding with a *suggested default*; the engine assigns the **final** severity from `project > team > pack-default`. This is the only design that honors the locked "severity is a cascade setting" — a project promotes or demotes a check (e.g. `doc-code.missing-test: advisory`) as a recorded override delta, never a code change. Self-classify (severity baked into probe code) is rejected for exactly that reason.
+**Severity is engine-owned, via the cascade.** A probe returns a finding with a *suggested default*; the engine assigns the **final** severity from `project > team > pack-default`. This is the only design that honors the locked "severity is a cascade setting" — a project promotes or demotes a check (e.g. `doc-code.missing-test: advisory`) as a recorded override delta, never a code change. Self-classify (severity baked into probe code) is rejected for exactly that reason. **Wired in M6** ([Severity assignment — the M6 post-pass](#severity-assignment--the-m6-post-pass)); pre-M6 every finding carries its hardcoded default and no cascade read happens.
 
 ## Findings
 
@@ -72,7 +72,7 @@ One uniform interface (`check(target, ctx) → [finding]`), two implementations:
   - **`file-state`** (target: file) — the on-disk content hash matches the recorded state; drift → a `reconcile` finding consumed by the reconciliation classifier ([reconciliation.md](reconciliation.md)). With no recorded hash (first run / fresh checkout), the current on-disk content is adopted as the baseline — absent-hash is not drift.
 
   **Engine-native, full logic in M5:**
-  - **`override-default`** (target: override) — per-delta `clean / conflict / orphaned / needs-rebasing` reconciliation, run via a **bespoke upgrade-time path** by `jigc upgrade` (not `validate_task`; the generic non-task probe seam is M6). Findings carry a **human-readable `String` route** (not the tagged union below) and ship **blocking-by-default** (cascade-tunability of these checks arrives with M6 · severity tuning). Full logic in [overrides.md](overrides.md) → Upgrade reconciliation.
+  - **`override-default`** (target: override) — per-delta `clean / conflict / orphaned / needs-rebasing` reconciliation, run by `jigc upgrade`. **M5** shipped it via a **bespoke upgrade-time path** (a direct `classify(deltas, pack)` call, not `validate_task`) with **blocking-by-default** hardcoded severities. **M6** moves it onto the **non-task `Probe` seam** ([The non-task `Probe` seam](#the-non-task-probe-seam-m6)) and makes its three checks **cascade-tunable** via the M6 post-pass — it is the seam's first (and this milestone's only) real consumer, the proof the seam is non-hollow. Findings carry a **human-readable `String` route** (not the tagged union below). Full logic in [overrides.md](overrides.md) → Upgrade reconciliation.
 - **Pack probes** — *post-MVP*, the "not a public API yet" line. An **invoked process** with a JSON-in / JSON-out contract: language-neutral, **read-only and deterministic by contract** (`doc-code` must parse real code, so it can't be declarative). The development pack's **`doc-code`** (does this symbol exist? does a test cover this criterion? did referenced code change after the doc's timestamp?) lands here, after the doc-creation flows exist. **"Deterministic by contract" is locked, not aspirational** — see [Pack-probe determinism contract](#pack-probe-determinism-contract) below for the six rules the subprocess implementation must satisfy and the four meta-finding modes that surface every misbehavior; the implementation (OS-level sandboxing) is deferred with the contract as binding requirement.
 
 ## Pack-probe determinism contract
@@ -128,8 +128,8 @@ Every MVP check ships with a **declared default severity** and an **intrinsic-or
 
 ### The two-tier rule
 
-- **Intrinsic** — the determinism boundary cannot survive demotion. Locked at `blocking`. The cascade cannot demote below `blocking`; a `scalar-set` attempting to do so is rejected at cascade resolution as a config-conformance error (the `scalar-set` is logged, not applied; visible via `--explain`).
-- **Tunable** — cascade can promote or demote freely. Use a `scalar-set` keyed `validation.<probe>.<check>.severity: <level>` for per-check tuning, or `validation.<probe>.severity: <level>` to set a default for every check under a probe (per-check still wins via normal cascade resolution — [overrides.md](overrides.md) → Resolution algorithm).
+- **Intrinsic** — the determinism boundary cannot survive demotion. Locked at `blocking`. **Mechanically (M6): the check's knob carries `floor: blocking`** ([overrides.md](overrides.md) → Locked keys; the per-key floor is a `KnobDecl` field). The floor *value* and severity *assignment* are pack/cascade-driven, but the engine **also asserts at pack-load that its known intrinsic check-id set each carries `floor: blocking`** — a mis-declared pack (an intrinsic check left unfloored) fails loudly at load rather than silently un-locking. This is legitimately engine knowledge: the intrinsic checks *are* the engine's own load-bearing invariants ([What "intrinsic" means mechanically](#what-intrinsic-means-mechanically)), and the assertion is *assertion-only* — it never assigns severity or ships pack content, so the engine-empty invariant holds. A `scalar-set` attempting to set the key below its floor is **soft-rejected at cascade resolution** (the offending delta is dropped, not applied; resolution continues; visible via `--explain`). This is distinct from setting an *undeclared* key, which stays a hard resolution error.
+- **Tunable** — cascade can promote or demote freely (its knob declares no `floor`, or a floor it sits above). Use a `scalar-set` keyed `validation.<probe>.<check>.severity: <level>` for per-check tuning, or `validation.<probe>.severity: <level>` to set a default for every check under a probe. **Per-check wins** via a deliberate three-step lookup (M6): the post-pass resolves a finding's severity by trying its per-check key, then the per-probe key, then the knob's declared default — *not* plain exact-key resolution (which has no prefix fallback).
 
 ### MVP check inventory
 
@@ -155,7 +155,25 @@ Every MVP check ships with a **declared default severity** and an **intrinsic-or
 | | `line-limit-body` (72ch wrap) | advisory | no — tunable | `validation.commit-rendering.line-limit-body.severity` |
 | **`doc-code`** *(pack-provided, post-MVP — placeholder)* | TBD per check | TBD | no — tunable | `validation.doc-code.*.severity` |
 
-**17 MVP-shipping checks across 6 categories.** Roughly half intrinsic (load-bearing for composition + integration advantage), half tunable.
+**17 MVP-shipping checks across 6 categories.** Roughly half intrinsic (load-bearing for composition + integration advantage), half tunable. **This table is the single source of truth** for the check-id set, the per-check default severity, and intrinsic-ness — `knobs.yaml` and the engine's emitted `check` ids must agree with it (DECISIONS.md's earlier "16 checks / 10 intrinsic" tally is stale: it is **17 checks / 11 intrinsic** — `workflow-refs.*` ×7 + `schema-conformance.*` ×4).
+
+**Inventory = the keyed (tunable + floored) surface, not every finding the engine emits.** A finding carries a `(probe, check)` only some of which are inventory rows; the rest are **un-keyed and exempt from the post-pass** (they keep their emitted severity). Two distinct kinds of un-keyed finding, not to be conflated:
+- **Informational outcomes — emitted advisory, intentionally not tunable.** `file-state.baseline-adopt` and `reconciliation.absorb`: not pass/fail checks, just routing notes. No row, stay advisory.
+- **Blocking-but-untunable outcomes.** `reconciliation.rename` / `reconciliation.conformance-block` / `reconciliation.conflict-block`: genuine blocking failure modes that are *deliberately* not exposed as a tunable knob (distinct from `file-state.hash-matches`, which *is* tunable). No row, stay blocking — so demoting `hash-matches` to advisory does **not** silently disable a conflict-block on the same file.
+
+Only checks a project should be able to tune, or that must be floored, get an inventory row + a `knobs.yaml` key.
+
+**Code-id reconciliation (M6) — the built `override-default` codes map many-to-one onto the three canonical checks** (the build aligns the emitted `check` field to the table id; the descriptive `code` is retained for rendering):
+
+| built code (M5) | emits | → inventory `check` | tunable key |
+|---|---|---|---|
+| `scalar-set-orphaned` | orphaned | `target-exists` | `validation.override-default.target-exists.severity` |
+| `slot-fill-orphaned` | orphaned | `target-exists` | *(same key)* |
+| structural target-missing | orphaned | `target-exists` | *(same key)* |
+| `content-changed` | conflict | `target-unchanged` | `validation.override-default.target-unchanged.severity` |
+| `needs-rebasing` | needs-rebasing | `basis-recorded` | `validation.override-default.basis-recorded.severity` |
+
+The three orphan emissions **deliberately collapse to one `target-exists` knob** — a project tunes "an override's target vanished" as one thing, not per-delta-kind (a minimality call; per-orphan-kind tuning is not a use case). `content-changed`→`target-unchanged` and `needs-rebasing`→`basis-recorded` are renames flow 8's headline key depends on.
 
 ### What "intrinsic" means mechanically
 
@@ -168,7 +186,27 @@ Tunable checks protect themselves with their *route* and *default severity*, not
 
 ### Synthetic categories
 
-`schema-conformance`, `schema-completeness`, and `commit-rendering` are **synthetic probe categories** — not literal probes with a `check(target, ctx) → [finding]` implementation, but namespaces for cascade-key consistency. The engine runs these checks as part of other pipelines (the parse + schema-validate path for `schema-conformance`, the edge-index walk for `schema-completeness`, the commit-doc renderer for `commit-rendering`). The cascade key naming is uniform regardless of whether a check sits in a literal probe or a synthetic category — a project tuning severity doesn't need to know the implementation detail.
+`schema-conformance`, `schema-completeness`, and `commit-rendering` are **synthetic probe categories** — not literal probes with a `check(target, ctx) → [finding]` implementation, but namespaces for cascade-key consistency. The engine runs these checks as part of other pipelines (the parse + schema-validate path for `schema-conformance`, the edge-index walk for `schema-completeness`, the commit-doc renderer for `commit-rendering`). The cascade key naming is uniform regardless of whether a check sits in a literal probe or a synthetic category — a project tuning severity doesn't need to know the implementation detail. **This is exactly why severity assignment is a post-pass** (below): a synthetic check has no `check()` site to thread a cascade read into, but it still produces a `Finding` carrying a `(probe, check)`, so the engine's aggregate post-pass tunes it identically to a real probe's finding.
+
+## Severity assignment — the M6 post-pass
+
+Severity is assigned in **one engine-owned pass over the aggregated findings**, *after* every probe and synthetic pipeline has run — never threaded into each probe site. This is what "the engine assigns, the probe suggests" means concretely, and it is the design that makes the synthetic categories, the inline `workflow-refs`/`schema-conformance` emissions, and the non-task `override-default` all tune through one mechanism.
+
+- **A `Finding` carries `(probe, check)` as structured fields** (M6 — alongside the existing `code`/`message`/`route`; the dotted `code` is retained for rendering but is no longer the severity handle). The pre-M6 finding had only a dotted `code`, and the built codes did **not** all parse to a clean `<probe>.<check>` (e.g. `override-default.content-changed` vs the inventory's `target-unchanged`; `file-state` emitting `reconciliation.*`), so the handle is made explicit rather than parsed.
+- **Override-only-on-explicit-delta.** The post-pass overrides a finding's severity **only when the resolved cascade actually carries a `scalar-set` for that finding's key** (per-check, then per-probe — the three-step lookup above). Absent any delta, the finding keeps the **hardcoded default** the probe emitted. This makes the **no-override path byte-identical** to pre-M6 output *automatically* — the determinism boundary's #1 risk for this milestone — and sidesteps any need for `knobs.yaml` defaults to exactly mirror the code's literals (the knob `default` exists for `check_value`, the floor, and `--explain`, not the hot path).
+- **Matched by inventory `(probe, check)` membership, never by code-prefix.** A finding is tuned only if its `(probe, check)` is an inventory row. The per-probe fallback step applies *only* to findings whose check has a row — so an unkeyed sibling carrying a category-prefixed code (e.g. `schema-conformance.unknown-type`, or the parser's `conformance.*` codes — neither in the inventory) is **exempt from the post-pass entirely** and keeps its emitted (blocking) severity. A per-probe key never accidentally catches a determinism-boundary code that has no row.
+- **Assigned once, at report construction — before the gate.** Severity assignment runs as the single construction point of the `ValidationReport` (`ValidationReport::new(findings, &resolved)` — or an explicit assignment the contract requires before any read), so `has_blocking()` and every downstream consumer see *post-pass* severities. There is no window where a caller reads a finding's pre-assignment severity. A test pins that `has_blocking()` reflects the assigned severities (a demoted blocking check stops gating; a promoted advisory one starts).
+- **The gate itself is unchanged.** `finalize` still blocks on `severity == blocking` ([How it gates `finalize`](#how-it-gates-finalize)); once severity is cascade-assigned at construction, a demoted check simply stops being blocking with no change to the gate predicate.
+- **Every finding-emitting entry point must resolve the cascade.** Compose already builds a `Resolved`; **`task validate` / `finalize` and `jigc upgrade` do not today** and must gain one to feed the post-pass. Building a `Resolved` at those entry points is itself behaviour that must not perturb the no-override path, so the **byte-identical golden must cover the validate and upgrade paths**, not only `start_compose` — the determinism guard's real surface this milestone.
+
+**`warning` is a live third tier (M6).** Pre-M6 only `blocking`/`advisory` were ever produced. M6 makes `warning` a settable, produced severity: it is **surfaced but non-blocking** (the gate keys on `blocking` only), rendered distinctly from `advisory`. A check demoted `blocking → warning` still appears in every report and `--explain`, but does not stop `finalize`/`upgrade`.
+
+## The non-task `Probe` seam (M6)
+
+M6 stands up the `Probe` seam (`probe.rs` is a stub today) **minimally** — shaped to fit `override-default`, not as a universal trait forced over every existing probe. `validate_task`'s proven inline probes (`file-state`, `schema-conformance`, `ref-resolves`) stay wired as they are; they become severity-tunable purely via the post-pass above, with **no rewrite of the byte-stable task path**. The seam's job is narrower: give a **non-task-scoped** probe (one whose ctx is `(recorded deltas, pack)`, not a task working area) a first-class entry point so it participates in aggregation + the post-pass.
+
+- **`override-default` is the retrofit.** M5 ran it as a bespoke `classify(deltas, pack)` call inside `jigc upgrade`; M6 routes it through the seam and threads the resolved severity lookup into it, so its three checks tune via `validation.override-default.*.severity` like any other. `upgrade_in_repo` is the only production caller, so the retrofit touches one CLI seam.
+- **Two ctx shapes, not one trait over both.** Task-scoped and override-scoped probes consume structurally different inputs; the seam admits the non-task shape rather than coercing both into a single generic ctx (the over-generalization trap M3 paid for). A future store-scoped probe extends the seam then, when a real consumer exists.
 
 ## How it gates `finalize`
 

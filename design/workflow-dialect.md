@@ -29,7 +29,7 @@ A **flow diagram** (mermaid) is one such derived view: the CLI *generates* it fr
 
 The resolution tree shows exactly **what the composer did to get from definition to emitted text** — five layers, in resolution order, so a reader can debug cascade, include, and placeholder problems without reading internal state:
 
-1. **Workflow & cascade provenance** — the workflow file, the layer that won (pack-default / team / project), and any scalar-key overrides applied with their source layer.
+1. **Workflow & cascade provenance** — the workflow file, the layer that won (pack-default / team / project), any scalar-key overrides applied with their source layer, and (M6) any **rejected** scalar-sets — a demotion soft-rejected by a knob's `floor` (logged, not applied), shown distinctly from applied overrides with the attempted value, the floor, and its source layer ([overrides.md](overrides.md) → Locked keys).
 2. **Include expansion tree** — each step pulled in by id, with its source file and source layer; nested includes shown under their parent so a cycle or unexpected pull is visible in the shape.
 3. **Command-ref resolution** — for each `{{cli.…}}`, the cascade path walked (which layers had an entry, which won), the template invocation at that layer, and the final substituted result.
 4. **Data-value path resolution** — for each `{{path}}` / `{{@path}}`, the parsed path (head + `.relation` hops + `#fragment`), the live-state root it started from, what it resolved to (**scalar** / **address** / **content** / **collection**), and — for `@` — the address it dereferenced.

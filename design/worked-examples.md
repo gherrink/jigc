@@ -1,6 +1,6 @@
 # Worked examples
 
-End-to-end walkthroughs of four MVP-critical flows, with cross-refs to the canonical spec for every surface they touch. This doc is **last in the reading order**; each example references prior part-docs without re-stating their content. Notation is **illustrative** — the docs cited are the source of truth for shape, error format, and edge cases.
+End-to-end walkthroughs of the milestone-critical flows, with cross-refs to the canonical spec for every surface they touch. This doc is **last in the reading order**; each example references prior part-docs without re-stating their content. Notation is **illustrative** — the docs cited are the source of truth for shape, error format, and edge cases.
 
 The flows:
 
@@ -11,6 +11,7 @@ The flows:
 5. [Superseding decision](#5-superseding-decision--context-slice--edge-integrity) — context-slice over a persisted ADR + forward-ref integrity
 6. [Spec-driven planning](#6-spec-driven-planning--the-two-task-arc) — the M3 arc: a `plan` task authors a spec, a later task binds and implements it
 7. [Upgrade reconciliation](#7-upgrade-reconciliation--clean--conflict--orphaned) — the M5 arc: `jigc upgrade` re-classifies recorded deltas against a new pack
+8. [Severity tuning & demotion-lock](#8-severity-tuning--demotion-lock) — the M6 arc: a project tunes a check's severity through the cascade; an intrinsic demotion is floor-rejected
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -465,3 +466,63 @@ Pack: dev/0.4.0 · reconciling 5 recorded deltas against the current pack
 `jigc upgrade` is **report-and-route only** — it never mutates the manifest; the human re-pins via the `jigc config` verbs (re-recording a delta pins its basis against the now-current pack), and a clean re-run is the verification. **No upstream change silently lost; no override silently broken** — the milestone's headline, proven through the real binary.
 
 *(Spiked during planning: the `override-default` classifier is purely content-stateless — a stale recorded base-hash yields `conflict`, the matching hash `clean`, a missing target `orphaned` — and the in-process `FakePack`/`FilesystemPack` two-version seam makes the genuine `v1 → v2` drivable; see [DECISIONS.md](../DECISIONS.md) 2026-06-03.)*
+
+## 8. Severity tuning & demotion-lock
+
+The M6 flow that proves principle #6's promise *"severity is a cascade setting, never a code change"* end-to-end. The headline is the **`override-default` retrofit**: the M5 probe — which shipped with hardcoded blocking severities on a bespoke path ([flow 7](#7-upgrade-reconciliation--clean--conflict--orphaned)) — is now on the **non-task `Probe` seam** and tunes through the cascade like any other ([validation.md](validation.md) → The non-task `Probe` seam, Severity assignment — the M6 post-pass). The tunable/intrinsic/byte-identical checks are the supporting assertions. Notation illustrative.
+
+### Headline — demote an `override-default` conflict from blocking to warning
+
+A project carries a deliberate `replace #implement` it intends to keep across upgrades; it does not want a pack change to that step to *block* `jigc upgrade`, only to *warn*. It tunes the conflict check through the cascade:
+
+```text
+$ jigc config set validation.override-default.target-unchanged.severity warning
+recorded scalar-set (project): validation.override-default.target-unchanged.severity = warning
+
+$ JIGC_PACK_DIR=<v2> jigc upgrade            # same v2 as flow 7: implement changed
+Pack: dev/0.4.0 · reconciling recorded deltas against the current pack
+
+  ⚠ warning  override-default.target-unchanged  replace workflow:single-task#implement
+               pack changed `implement` since you overrode it at dev/0.3.0
+               route: review — keep your replacement / re-target / drop
+
+0 blocking findings — upgrade is clean to proceed (1 warning surfaced).
+$ echo $?
+0
+```
+
+The conflict is **surfaced but no longer blocks** (exit 0). The proof the retrofit is real: the demotion flows through the **post-pass over aggregated findings**, the *same* mechanism that tunes `validate_task`'s inline probes — `override-default` is not a special case, it rode the seam in ([validation.md](validation.md) → The non-task `Probe` seam). Pre-M6 this severity was hardcoded `blocking` and no `scalar-set` could touch it.
+
+### Supporting — a tunable check stops blocking; the no-override path is byte-identical
+
+```text
+$ jigc config set validation.file-state.hash-matches.severity advisory   # tunable (no floor)
+$ jigc task validate <id>        # an OOB-drifted file that would have blocked
+  ℹ advisory  file-state.hash-matches  drift on docs/decisions/cache.md  (route: reconcile)
+0 blocking findings.
+```
+
+With **no** severity deltas recorded, every finding keeps its emitted default — the composed/validated output is **byte-identical** to pre-M6 (the post-pass overrides *only* on an explicit `scalar-set`; the determinism boundary's #1 risk, held — [validation.md](validation.md) → Severity assignment — the M6 post-pass).
+
+### Supporting — an intrinsic demotion is floor-rejected (logged, not applied)
+
+`workflow-refs.placeholder-resolves` is intrinsic — its knob carries `floor: blocking` ([overrides.md](overrides.md) → Locked keys). A project tries to demote it anyway:
+
+```text
+$ jigc config set validation.workflow-refs.placeholder-resolves.severity advisory
+recorded scalar-set (project): validation.workflow-refs.placeholder-resolves.severity = advisory
+# (write-time records the delta; the floor is enforced at resolution, where the whole cascade is known)
+
+$ jigc start --explain
+Pack: dev/0.4.0 · Project config: .jigc/config · Branch: main (HEAD a1b2c3d)
+workflow:single-task                              (pack-default · dev/v0.4.0)
+  overrides applied: 0
+  rejected (below floor): 1
+    validation.workflow-refs.placeholder-resolves.severity
+      attempted: advisory (project) · floor: blocking · NOT applied — check is intrinsic
+  …
+```
+
+The demoting delta is **soft-rejected**: logged on the resolution tree, *not applied* — `placeholder-resolves` stays `blocking`, so a dangling placeholder still bricks composition as before. Resolution **does not abort** (an *undeclared* key still would — that's a typo, not a locked-key demotion). The determinism boundary cannot be weakened from config; the floor is the lock ([validation.md](validation.md) → The two-tier rule).
+
+*(Spiked during planning: severity is assigned by one engine post-pass over aggregated findings — synthetic categories, inline `workflow-refs`/`schema-conformance` emissions, and the non-task `override-default` all tune through it because each emits a `Finding` carrying `(probe, check)`; the seam is built minimally to fit `override-default` without rewriting the byte-stable `validate_task` path; see [DECISIONS.md](../DECISIONS.md) 2026-06-04.)*
