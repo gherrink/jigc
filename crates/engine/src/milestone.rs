@@ -776,9 +776,39 @@ fn fold_areas(
     )?;
 
     // Resolve each address group: a lone staged doc is a disjoint-union insert; a
-    // collision is either a blocking same-doc clash or a deterministic suffix.
+    // collision is either a blocking same-doc clash or a deterministic suffix. Resolution
+    // produces each group's **final** addresses (bare or suffixed) into `assignments`
+    // *before* anything lands in the overlay, so a final address that two different groups
+    // both claim (a suffixed `X-2` vs a pre-existing separate group already named `X-2`)
+    // is detected and blocked rather than silently overwritten (the cross-group guard).
     let mut overlay: std::collections::BTreeMap<String, MergedDoc> =
         std::collections::BTreeMap::new();
+    // Each resolved final address → its (group minted address, contributing source task,
+    // merged doc). `BTreeMap`-keyed so the contributor listing for a collision is
+    // id-sorted, independent of group iteration order (hardening #7).
+    let mut assignments: std::collections::BTreeMap<String, (String, String, MergedDoc)> =
+        std::collections::BTreeMap::new();
+    // Final addresses claimed by ≥2 distinct groups — the cross-group collisions, each
+    // recorded with every contending `(minted address, source task)` in id order.
+    let mut collisions: std::collections::BTreeMap<String, Vec<(String, String)>> =
+        std::collections::BTreeMap::new();
+    let mut claim = |final_address: String, minted: &str, merged: MergedDoc| {
+        match assignments.entry(final_address.clone()) {
+            std::collections::btree_map::Entry::Vacant(v) => {
+                v.insert((minted.to_string(), merged.source_task.clone(), merged));
+            }
+            std::collections::btree_map::Entry::Occupied(o) => {
+                // A second claim on the same final address from a different group: this
+                // is a cross-group collision, not a within-group suffix. Record both
+                // contenders and keep the colliding address out of the overlay.
+                let (prev_minted, prev_task, _) = o.get();
+                let contenders = collisions
+                    .entry(final_address)
+                    .or_insert_with(|| vec![(prev_minted.clone(), prev_task.clone())]);
+                contenders.push((minted.to_string(), merged.source_task));
+            }
+        }
+    };
     for (address, mut staged) in groups {
         // Resolve every group strictly by **task id** — the suffix order and the clash
         // listing must not depend on the order `sub_ids` was fed in (the order-invariance
@@ -787,8 +817,9 @@ fn fold_areas(
         staged.sort_by(|a, b| a.source_task.cmp(&b.source_task));
         if staged.len() == 1 {
             let d = staged.into_iter().next().expect("len == 1");
-            overlay.insert(
-                d.address,
+            claim(
+                d.address.clone(),
+                &address,
                 MergedDoc {
                     provenance: d.provenance,
                     source_task: d.source_task,
@@ -812,8 +843,21 @@ fn fold_areas(
         // self-references rewritten to the suffixed id in lockstep.
         for (nth, d) in staged.into_iter().enumerate() {
             let merged = suffix_resolve(milestone_id, &d, nth + 1, schemas)?;
-            overlay.insert(merged.0, merged.1);
+            claim(merged.0, &address, merged.1);
         }
+    }
+
+    // Land every uniquely-claimed final address; a final address claimed by ≥2 groups was
+    // pulled from `assignments` into `collisions` and is kept out of the overlay, emitting
+    // the same blocking, route-bearing clash the within-group rule raises.
+    for (final_address, (_minted, _task, merged)) in assignments {
+        if collisions.contains_key(&final_address) {
+            continue;
+        }
+        overlay.insert(final_address, merged);
+    }
+    for (final_address, contenders) in collisions {
+        findings.push(cross_group_collision_finding(&final_address, &contenders));
     }
 
     // The cross-area / isolation findings were gathered in the *input* sub-area order
@@ -995,6 +1039,35 @@ fn same_doc_clash_finding(address: &str, staged: &[StagedDoc]) -> Finding {
         Some(Location::addressed(address, 1, 1)),
         Some(
             "have the contending sub-tasks edit distinct docs, or merge their intent by hand"
+                .to_string(),
+        ),
+    )
+}
+
+/// A blocking, route-bearing `join.same-doc-clash` for a **cross-group** final-address
+/// collision: two *different* address groups resolve to the same final address (a
+/// suffixed `X-2` and a separate group already named `X-2`). Without this the later
+/// claim would silently overwrite the earlier in the overlay (and the materialize
+/// `fs::write`) — a deterministic but lossy drop of a sub-task's doc with no finding.
+/// `contenders` are the `(minted address, source task)` pairs in id order, so the
+/// message is byte-stable across any group iteration order (hardening #7).
+fn cross_group_collision_finding(final_address: &str, contenders: &[(String, String)]) -> Finding {
+    let listing: Vec<String> = contenders
+        .iter()
+        .map(|(minted, task)| format!("`{minted}` (sub-task `{task}`)"))
+        .collect();
+    Finding::graded(
+        Severity::Blocking,
+        "join.same-doc-clash",
+        format!(
+            "same-doc clash — {} resolve to the same final address `{final_address}`; \
+             the join never silently overwrites a managed doc",
+            listing.join(", ")
+        ),
+        Some(Location::addressed(final_address, 1, 1)),
+        Some(
+            "have the contending sub-tasks write distinct docs, or rename one so the \
+             suffixed and pre-existing addresses no longer collide"
                 .to_string(),
         ),
     )
@@ -2133,6 +2206,98 @@ Context without any acceptance criteria.
         assert!(
             !outcome.overlay.contains_key("adr:retention"),
             "the mixed clash is not merged"
+        );
+    }
+
+    /// Cross-group final-address collision (the M7-audit LOW finding): the suffix rule
+    /// resolves a same-slug `created` group `adr:cache-strategy` to the pair
+    /// `adr:cache-strategy` and `adr:cache-strategy-2`, while a **separate** group's slug
+    /// is *already* `adr:cache-strategy-2` (a sub-task whose intent slugged that way), so
+    /// the two **final** addresses collide. Without a cross-group guard, the `BTreeMap`
+    /// insert (and the materialize `fs::write`) would silently let one win — a
+    /// deterministic but lossy overwrite that drops a sub-task's doc with no finding. The
+    /// join must instead emit a blocking, route-bearing `join.same-doc-clash` for the
+    /// colliding final address and keep it out of the merged overlay (never overwrite).
+    #[test]
+    fn join_blocks_cross_group_final_address_collision() {
+        let root = TempRoot::new("join-cross-group-collision");
+        let base = BasePin::new("9999999999999999999999999999999999999999", "9999999");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone =
+            mint_milestone(root.path(), "Cache strategy", base).expect("milestone mints");
+
+        // Three sub-areas. Two `created` `adr:cache-strategy` (→ bare + `-2` suffix); a
+        // third `created` whose slug IS already `cache-strategy-2` — so the suffixed
+        // result of the first group and the bare slug of the third group are the SAME
+        // final address `adr:cache-strategy-2`.
+        add_task(root.path(), &milestone.id, "Low strategy", "single-task").expect("low adds");
+        add_task(root.path(), &milestone.id, "Zed strategy", "single-task").expect("zed adds");
+        add_task(root.path(), &milestone.id, "Pre strategy", "single-task").expect("pre adds");
+
+        let adr = |title: &str| {
+            format!(
+                "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+            )
+        };
+
+        // Group A: two `created` `adr:cache-strategy` → `adr:cache-strategy` (lower id)
+        // + `adr:cache-strategy-2` (higher id).
+        stage_doc(
+            &root.path().join("tasks").join("low-strategy"),
+            "adr",
+            "cache-strategy",
+            &adr("Cache strategy"),
+            crate::state::Provenance::Created,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("zed-strategy"),
+            "adr",
+            "cache-strategy",
+            &adr("Cache strategy"),
+            crate::state::Provenance::Created,
+        );
+
+        // Group B: a separate `created` whose slug is ALREADY `cache-strategy-2` — its
+        // bare final address collides with group A's suffixed result.
+        stage_doc(
+            &root.path().join("tasks").join("pre-strategy"),
+            "adr",
+            "cache-strategy-2",
+            &adr("Cache strategy two"),
+            crate::state::Provenance::Created,
+        );
+
+        let outcome = join(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("the join folds");
+
+        // The colliding final address must surface a blocking, route-bearing clash —
+        // never a silent overwrite.
+        let collision: Vec<&Finding> = outcome
+            .findings
+            .iter()
+            .filter(|f| {
+                f.code == "join.same-doc-clash" && f.message.contains("adr:cache-strategy-2")
+            })
+            .collect();
+        assert_eq!(
+            collision.len(),
+            1,
+            "the cross-group final-address collision surfaces exactly one blocking clash: {:?}",
+            outcome.findings
+        );
+        assert_eq!(collision[0].severity, Severity::Blocking);
+        assert!(
+            collision[0].route.is_some(),
+            "the collision clash carries a route: {:?}",
+            collision[0]
         );
     }
 
