@@ -16,7 +16,7 @@ use crate::finding::{Finding, Severity};
 
 /// The result-contract schema version. Bumped only when the JSON projection of a
 /// public result type changes in a way an external consumer must notice.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// One workflow as it appears in orientation's catalog: a stable `id` and its
 /// selection-guidance `when` line (the [`design/bootstrap.md`] orientation example
@@ -313,6 +313,27 @@ pub struct ScalarOverride {
     pub layer: LayerKind,
 }
 
+/// One soft-rejected `scalar-set` in the `--explain` tree's layer-1 provenance:
+/// a demotion a knob's `floor` dropped at cascade resolution — the attempted
+/// value, the floor it ranked below, and the source layer that tried to set it
+/// (`design/workflow-dialect.md` → `--explain` output contract: "any **rejected**
+/// scalar-sets … shown distinctly from applied overrides with the attempted value,
+/// the floor, and its source layer"; `design/overrides.md` → Soft-rejection). The
+/// delta was **logged, not applied** — so the knob's value resolved from the
+/// remaining layers; this records *why* the attempted demotion did not win,
+/// distinct from the applied [`ScalarOverride`] lines.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectedDemotion {
+    /// The floored knob key the rejected `scalar-set` targeted.
+    pub key: String,
+    /// The below-floor value the layer attempted to set (dropped, not applied).
+    pub attempted: String,
+    /// The knob's `floor` the attempted value ranked below.
+    pub floor: String,
+    /// The cascade layer that attempted the below-floor `scalar-set`.
+    pub layer: LayerKind,
+}
+
 /// The structural slice of the `--explain` resolution tree — layers 1–2 of the
 /// output contract (`design/workflow-dialect.md` → `--explain` output contract):
 /// the workflow's cascade provenance (`overrides applied: N` plus the per-knob
@@ -343,6 +364,13 @@ pub struct ResolutionTree {
     /// pack-default base. Their count is included in `overrides_applied`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scalar_overrides: Vec<ScalarOverride>,
+    /// The `scalar-set` demotions a knob's `floor` soft-rejected at cascade
+    /// resolution — layer 1 of the `--explain` output contract, **distinct** from
+    /// the applied `scalar_overrides` (logged, not applied). Empty when no floored
+    /// key was set below its floor. Not counted in `overrides_applied` (a rejected
+    /// delta did not become an override).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rejected_demotions: Vec<RejectedDemotion>,
     /// The resolved include steps, in post-phase-4 composed order.
     pub steps: Vec<ResolvedStep>,
 }
@@ -355,6 +383,7 @@ impl ResolutionTree {
         workflow_layer: LayerKind,
         overrides_applied: usize,
         scalar_overrides: Vec<ScalarOverride>,
+        rejected_demotions: Vec<RejectedDemotion>,
         steps: Vec<ResolvedStep>,
     ) -> Self {
         Self {
@@ -363,6 +392,7 @@ impl ResolutionTree {
             workflow_layer,
             overrides_applied,
             scalar_overrides,
+            rejected_demotions,
             steps,
         }
     }
@@ -371,6 +401,66 @@ impl ResolutionTree {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `--explain` `ResolutionTree` projects under the **bumped** schema version
+    /// (`SCHEMA_VERSION == 2`) and carries the new `rejected_demotions` field — one
+    /// entry per soft-rejected below-floor `scalar-set`, each with its `key`,
+    /// `attempted` value, `floor`, and source `layer`. The field is the stable surface
+    /// `--explain` reads (`design/workflow-dialect.md` → `--explain` output contract;
+    /// `design/overrides.md` → Soft-rejection). A tree with no rejection omits the key
+    /// entirely (`skip_serializing_if`), so the no-rejection projection is unchanged
+    /// but for the version bump.
+    #[test]
+    fn resolution_tree_projects_rejected_demotions_under_bumped_schema_version() {
+        // The bump is intentional + versioned.
+        assert_eq!(
+            SCHEMA_VERSION, 2,
+            "the projection change bumps the schema version"
+        );
+
+        let tree = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            vec![RejectedDemotion {
+                key: "validation.workflow-refs.placeholder-resolves.severity".to_owned(),
+                attempted: "advisory".to_owned(),
+                floor: "blocking".to_owned(),
+                layer: LayerKind::Project,
+            }],
+            Vec::new(),
+        );
+
+        let json = serde_json::to_value(&tree).expect("serializes");
+        assert_eq!(json["schema_version"], serde_json::json!(2));
+        let rejected = json["rejected_demotions"]
+            .as_array()
+            .expect("rejected_demotions is an array");
+        assert_eq!(rejected.len(), 1);
+        assert_eq!(
+            rejected[0]["key"],
+            serde_json::json!("validation.workflow-refs.placeholder-resolves.severity")
+        );
+        assert_eq!(rejected[0]["attempted"], serde_json::json!("advisory"));
+        assert_eq!(rejected[0]["floor"], serde_json::json!("blocking"));
+        assert_eq!(rejected[0]["layer"], serde_json::json!("project"));
+
+        // A tree with no rejection omits the key entirely (skip_serializing_if).
+        let clean = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let clean_json = serde_json::to_value(&clean).expect("serializes");
+        assert!(
+            clean_json.get("rejected_demotions").is_none(),
+            "an empty rejected_demotions is omitted; got:\n{clean_json:#}",
+        );
+    }
 
     /// Constructing an `Orientation` over a two-entry catalog and serializing it
     /// must project to the documented, stable keys: `schema_version` at the root
@@ -407,7 +497,7 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "workflows": [
                     { "id": "single-task", "when": "Implement one well-scoped change." },
                     { "id": "project-setup", "when": "Set up the development pack on a fresh repo." }
@@ -425,7 +515,7 @@ mod tests {
         let unset = serde_json::to_value(OrientationView::unset_project()).expect("serializes");
         assert_eq!(
             unset,
-            serde_json::json!({ "state": "unset-project", "schema_version": 1 })
+            serde_json::json!({ "state": "unset-project", "schema_version": 2 })
         );
 
         let clean = serde_json::to_value(OrientationView::clean(
@@ -440,7 +530,7 @@ mod tests {
             clean,
             serde_json::json!({
                 "state": "clean",
-                "schema_version": 1,
+                "schema_version": 2,
                 "header": "Pack: dev/v0.3.0 · Project config: .jigc/config",
                 "workflows": [
                     { "id": "single-task", "when": "Implement one well-scoped change." }
@@ -465,7 +555,7 @@ mod tests {
         assert!(!empty.has_blocking(), "empty report does not block");
         assert_eq!(
             serde_json::to_value(&empty).expect("serializes"),
-            serde_json::json!({ "schema_version": 1, "findings": [] })
+            serde_json::json!({ "schema_version": 2, "findings": [] })
         );
 
         // Advisory-only: surfaced but does not block.

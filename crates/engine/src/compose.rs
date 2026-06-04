@@ -1168,7 +1168,11 @@ fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
 ///
 /// `overrides_applied` is the total applied-override count — `scoped` structural
 /// deltas (that mutated this workflow's include list) **plus** the scalar-key
-/// overrides — matching the agent-text `overrides applied: N` header. A delta whose anchor / target id is
+/// overrides — matching the agent-text `overrides applied: N` header. The
+/// `rejected_demotions` ride layer 1 distinctly from the applied overrides
+/// (`design/workflow-dialect.md` → `--explain` output contract): a below-floor
+/// `scalar-set` the cascade soft-rejected (logged, not applied), so it is **not**
+/// folded into `overrides_applied`. A delta whose anchor / target id is
 /// absent surfaces the same **orphaned** blocking [`Finding`] as phase 4
 /// ([`apply_structural_deltas`]); a layer with no file for a resolved id is a
 /// dangling include the compose path reports, so the tree defaults its layer to
@@ -1179,6 +1183,7 @@ pub fn build_resolution_tree(
     includes: &[String],
     scoped: &[StructuralDelta],
     scalar_overrides: Vec<crate::result::ScalarOverride>,
+    rejected_demotions: Vec<crate::result::RejectedDemotion>,
     file_owner: impl Fn(&str) -> Option<crate::cascade::LayerKind>,
 ) -> Result<crate::result::ResolutionTree, Finding> {
     use crate::result::{Replacement, ResolvedStep};
@@ -1236,6 +1241,9 @@ pub fn build_resolution_tree(
         workflow_layer,
         overrides_applied,
         scalar_overrides,
+        // The soft-rejected demotions ride layer 1 distinctly from the applied
+        // overrides — logged, not applied, so never folded into `overrides_applied`.
+        rejected_demotions,
         steps,
     ))
 }
@@ -4344,6 +4352,7 @@ reference — make your consequences explain what changes:
             &fixture_includes(),
             &[],
             Vec::new(),
+            Vec::new(),
             owner_of(&[]),
         )
         .expect("builds");
@@ -4393,6 +4402,7 @@ reference — make your consequences explain what changes:
                 "workflow:single-task#implement",
                 "project-implement",
             )],
+            Vec::new(),
             Vec::new(),
             owner_of(&["project-implement"]),
         )
@@ -4452,6 +4462,7 @@ reference — make your consequences explain what changes:
             LayerKind::PackDefault,
             &fixture_includes(),
             &deltas,
+            Vec::new(),
             Vec::new(),
             owner_of(&["project-implement", "team-lint"]),
         )

@@ -448,12 +448,28 @@ pub(crate) fn build_resolution_tree(
             layer,
         })
         .collect();
+    // The soft-rejected below-floor `scalar-set`s ride the tree's layer 1 distinctly
+    // from the applied overrides, mirroring how `scalar_overrides` flows from
+    // `Resolved` (`design/overrides.md` → Soft-rejection: the rejected deltas ride
+    // `Resolved`, consumed by `--explain`).
+    let rejected_demotions = resolved
+        .rejected_scalar_sets()
+        .map(
+            |(key, attempted, floor, layer)| engine::result::RejectedDemotion {
+                key: key.to_owned(),
+                attempted: attempted.to_owned(),
+                floor: floor.to_owned(),
+                layer,
+            },
+        )
+        .collect();
     compose::build_resolution_tree(
         workflow_id,
         workflow_layer,
         &def.includes,
         &scoped,
         scalar_overrides,
+        rejected_demotions,
         |id| resolved.file_owner(id),
     )
     .map_err(finding_to_err)

@@ -150,7 +150,12 @@ pub fn explain(format: Format, tree: &ResolutionTree, pack_label: &str) -> Strin
 /// structural deltas plus applied scalar-key overrides — (`none` when zero, the
 /// worked-example spelling), one `<key> = <value>  (<layer>)` line per applied
 /// scalar-key override (layer 1 of the output contract — `design/workflow-dialect.md`
-/// → "any scalar-key overrides applied with their source layer"), and one line per
+/// → "any scalar-key overrides applied with their source layer"), one
+/// `rejected demotion: <key> = <attempted> below floor <floor>  (<layer>)` line per
+/// below-floor `scalar-set` the cascade soft-rejected — shown **distinctly** from
+/// the applied overrides (`design/workflow-dialect.md` → "any **rejected**
+/// scalar-sets … shown distinctly … with the attempted value, the floor, and its
+/// source layer"; `design/overrides.md` → Soft-rejection), and one line per
 /// resolved include carrying the step's id, its source layer, and — for a
 /// `replace-step` slot — the `← replaces <id> at position N` annotation.
 fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
@@ -171,6 +176,20 @@ fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
             scalar.key,
             scalar.value,
             scalar.layer.label(),
+        ));
+    }
+    // The soft-rejected below-floor `scalar-set`s — shown distinctly from the applied
+    // overrides above, with the attempted value, the floor it ranked below, and the
+    // source layer (`design/workflow-dialect.md` → `--explain` output contract;
+    // `design/overrides.md` → Soft-rejection). Absent entirely when no demotion was
+    // floor-rejected.
+    for rejected in &tree.rejected_demotions {
+        out.push_str(&format!(
+            "    rejected demotion: {} = {} below floor {}    ({})\n",
+            rejected.key,
+            rejected.attempted,
+            rejected.floor,
+            rejected.layer.label(),
         ));
     }
     out.push_str("  includes:\n");
@@ -424,6 +443,7 @@ mod tests {
                 value: "single-task".to_string(),
                 layer: LayerKind::Project,
             }],
+            Vec::new(),
             vec![
                 ResolvedStep {
                     id: "locate".to_string(),
@@ -465,11 +485,18 @@ mod tests {
         );
         assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
 
+        // The applied-override tree shows no rejected-demotion line (none present).
+        assert!(
+            !agent.contains("rejected demotion:"),
+            "an applied-override tree carries no rejected-demotion line; got:\n{agent}",
+        );
+
         // A no-override tree spells the count `none`.
         let clean = ResolutionTree::new(
             "single-task",
             LayerKind::PackDefault,
             0,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
         );
@@ -482,6 +509,72 @@ mod tests {
         assert_eq!(back, tree);
     }
 
+    /// A below-floor `scalar-set` the cascade soft-rejected renders as a
+    /// **rejected-demotion** line in the `--explain` agent-text body — carrying the
+    /// key, the attempted value, the floor it ranked below, and the source layer —
+    /// **distinct** from the applied-override lines (`design/workflow-dialect.md` →
+    /// `--explain` output contract; `design/overrides.md` → Soft-rejection). A
+    /// rejected demotion is **not** counted in `overrides applied: N` (logged, not
+    /// applied). A tree with no rejection shows no such line.
+    #[test]
+    fn render_explain_shows_a_rejected_demotion_line_distinct_from_applied_overrides() {
+        use engine::cascade::LayerKind;
+        use engine::result::{RejectedDemotion, ResolutionTree, ScalarOverride};
+
+        let tree = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            // One applied scalar override; the rejected demotion is NOT in the total.
+            1,
+            vec![ScalarOverride {
+                key: "default-workflow".to_string(),
+                value: "single-task".to_string(),
+                layer: LayerKind::Project,
+            }],
+            vec![RejectedDemotion {
+                key: "validation.workflow-refs.placeholder-resolves.severity".to_string(),
+                attempted: "advisory".to_string(),
+                floor: "blocking".to_string(),
+                layer: LayerKind::Project,
+            }],
+            Vec::new(),
+        );
+
+        let agent = explain(Format::Agent, &tree, "dev/v0.0.0");
+
+        // The rejected-demotion line carries key · attempted · floor · source layer.
+        assert!(
+            agent.contains(
+                "rejected demotion: validation.workflow-refs.placeholder-resolves.severity = advisory below floor blocking    (project)"
+            ),
+            "the rejected-demotion line must show key/attempted/floor/layer; got:\n{agent}",
+        );
+        // It is DISTINCT from the applied-override line (the applied scalar still shows).
+        assert!(
+            agent.contains("default-workflow = single-task    (project)"),
+            "the applied scalar override must still render distinctly; got:\n{agent}",
+        );
+        // The rejection is logged, not applied — the total stays at the one applied override.
+        assert!(
+            agent.contains("overrides applied: 1"),
+            "a rejected demotion is not folded into the applied-override count; got:\n{agent}",
+        );
+
+        // A tree with no rejection shows no rejected-demotion line.
+        let no_rejection = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        assert!(
+            !explain(Format::Agent, &no_rejection, "dev/v0.0.0").contains("rejected demotion:"),
+            "no rejected demotion → no rejected-demotion line",
+        );
+    }
+
     /// The JSON rendering of the same value is valid JSON of the result type and
     /// carries no footer.
     #[test]
@@ -490,7 +583,7 @@ mod tests {
 
         insta::assert_snapshot!(rendered, @r#"
         {
-          "schema_version": 1,
+          "schema_version": 2,
           "workflows": [
             {
               "id": "single-task",
