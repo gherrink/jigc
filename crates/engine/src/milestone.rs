@@ -490,6 +490,7 @@ pub struct JoinOutcome {
 /// [`unknown_milestone_finding`] the add path raises, before any area is read.
 pub fn join(
     jigc_root: &Path,
+    repo_root: &Path,
     milestone_id: &str,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     committed: &crate::index::EdgeIndex,
@@ -510,6 +511,7 @@ pub fn join(
     // contract requires while the result does not *depend* on it — hardening #7.
     fold_areas(
         jigc_root,
+        repo_root,
         milestone_id,
         &list.enumerate(),
         schemas,
@@ -540,11 +542,14 @@ struct StagedDoc {
 /// id-sorted order).
 fn fold_areas(
     jigc_root: &Path,
+    repo_root: &Path,
     milestone_id: &str,
     sub_ids: &[String],
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     committed: &crate::index::EdgeIndex,
 ) -> Result<JoinOutcome, Finding> {
+    let mut findings = Vec::new();
+
     // Gather every staged doc across the areas in task-id order, grouped by minted
     // address (the gather order *is* the task-id order, so each group's instances are
     // already in the order the suffix rule assigns `-2`, `-3`, …).
@@ -559,6 +564,31 @@ fn fold_areas(
         let area = crate::index::overlay_working(committed, &sub_dir, schemas);
         let provenance = crate::state::ProvenanceRecord::load(&sub_dir)
             .map_err(|err| io_finding(milestone_id, "read a sub-task provenance manifest", &err))?;
+
+        // Step 5 — **cross-area refs, checked per sub-area** (`design/storage.md` → The
+        // by-task-id join, step 5; `design/validation.md` → Fan-out cross-area refs). The
+        // existing single-area forward-ref walk is reused **unchanged**, invoked once per
+        // sub-area with *that area's own* `sub_dir`, so each outgoing edge resolves only
+        // against `committed ∪ this one area` — never a merged multi-area overlay. A ref
+        // resolving only inside a sibling area is unreachable here (its target is neither
+        // committed nor in *this* `docs/`), so it surfaces as the already-floored,
+        // intrinsic `schema-conformance.ref-resolves` block. No flattened union is ever
+        // built, so a cross-area ref can never resolve clean by mere path-existence.
+        findings.extend(crate::index::ref_resolves(
+            &area, repo_root, &sub_dir, schemas,
+        ));
+
+        // Join-time isolation (`design/storage.md` → isolation is structural +
+        // join-checked in M7; the write-time `--task` barrier is M8). A doc the area's
+        // provenance manifest **attributes to itself** but whose body is not physically
+        // staged in this area's `docs/` (so it is not in `task_froms`) is not attributable
+        // to its own sub-area → a blocking, route-bearing finding. Emitted directly with
+        // no `knobs.yaml` row (the `reconciliation.*` blocking-but-untunable precedent).
+        for claimed in provenance.docs.keys() {
+            if !area.task_froms.contains(claimed) {
+                findings.push(isolation_finding(milestone_id, sub_id, claimed));
+            }
+        }
 
         for from in &area.task_froms {
             let edges: Vec<crate::index::Edge> = area
@@ -587,7 +617,6 @@ fn fold_areas(
     // collision is either a blocking same-doc clash or a deterministic suffix.
     let mut overlay: std::collections::BTreeMap<String, MergedDoc> =
         std::collections::BTreeMap::new();
-    let mut findings = Vec::new();
     for (address, mut staged) in groups {
         // Resolve every group strictly by **task id** — the suffix order and the clash
         // listing must not depend on the order `sub_ids` was fed in (the order-invariance
@@ -624,6 +653,15 @@ fn fold_areas(
             overlay.insert(merged.0, merged.1);
         }
     }
+
+    // The cross-area / isolation findings were gathered in the *input* sub-area order
+    // (the clash findings already iterate the address-keyed `BTreeMap`, so they are
+    // id-sorted); sort the whole list by `(code, message)` so the surfaced findings are
+    // a pure function of the *set* of sub-areas, never their iteration order — the
+    // order-invariance the join's contract rests on (hardening #7). The message carries
+    // every finding's distinguishing identity (addresses, contending task ids), so this
+    // total order is byte-stable across any input permutation.
+    findings.sort_by(|a, b| (&a.code, &a.message).cmp(&(&b.code, &b.message)));
 
     Ok(JoinOutcome { overlay, findings })
 }
@@ -801,6 +839,31 @@ fn missing_provenance_finding(milestone_id: &str, sub_id: &str, address: &str) -
         ),
         Some(Location::addressed(address, 1, 1)),
         Some("re-stage the doc so its provenance is recorded".to_string()),
+    )
+}
+
+/// The join-time isolation block (`design/storage.md` → The by-task-id join: isolation
+/// is structural + join-checked in M7; the write-time `--task` barrier is M8). A
+/// sub-area's provenance manifest attributes `address` to itself, yet no body for it is
+/// physically staged in that area's `docs/` — the doc is **not attributable to its own
+/// sub-area**, a violation of the locked "each sub-agent writes only to its own area"
+/// invariant. Blocking, routed to re-stage; emitted directly with **no** `knobs.yaml`
+/// row (the `reconciliation.*` blocking-but-untunable precedent;
+/// `DECISIONS.md` 2026-06-04 → M7 Increment 3 planning).
+fn isolation_finding(milestone_id: &str, sub_id: &str, address: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "join.area-isolation",
+        format!(
+            "isolation — sub-task `{sub_id}` of milestone `{milestone_id}` attributes `{address}` \
+             to itself but stages no such doc in its own area; a staged doc must belong to its \
+             own sub-area"
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some(
+            "re-stage the doc inside its own sub-task area, or drop the stray attribution"
+                .to_string(),
+        ),
     )
 }
 
@@ -1473,8 +1536,14 @@ Context without any acceptance criteria.
             .collect();
 
         // The join folds by sorted task id and produces the merged overlay.
-        let outcome =
-            join(root.path(), &milestone.id, &schemas, &committed).expect("the join folds");
+        let outcome = join(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("the join folds");
 
         // The merged overlay contains BOTH staged docs with their distinct provenance
         // and contributing sub-task.
@@ -1514,12 +1583,26 @@ Context without any acceptance criteria.
             vec!["alpha-area".to_string(), "zebra-area".to_string()],
             "enumeration is id-sorted"
         );
-        let forward = fold_areas(root.path(), &milestone.id, &ids, &schemas, &committed)
-            .expect("forward fold");
+        let forward = fold_areas(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &ids,
+            &schemas,
+            &committed,
+        )
+        .expect("forward fold");
         let mut reversed = ids.clone();
         reversed.reverse();
-        let backward = fold_areas(root.path(), &milestone.id, &reversed, &schemas, &committed)
-            .expect("reverse fold");
+        let backward = fold_areas(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &reversed,
+            &schemas,
+            &committed,
+        )
+        .expect("reverse fold");
         assert_eq!(
             forward, backward,
             "the fold is order-invariant: reversed enumeration yields the identical overlay"
@@ -1534,6 +1617,7 @@ Context without any acceptance criteria.
         // (the done-criterion's read_dir-order ≠ id-order obligation, proven directly:
         // the fold's only accumulator is an address-keyed `BTreeMap`).
         let by_read_dir = fold_areas(
+            root.path(),
             root.path(),
             &milestone.id,
             &read_dir_order,
@@ -1553,6 +1637,7 @@ Context without any acceptance criteria.
     fn join_rejects_unknown_milestone() {
         let root = TempRoot::new("join-unknown");
         let err = join(
+            root.path(),
             root.path(),
             "no-such-milestone",
             &join_schemas(),
@@ -1642,8 +1727,14 @@ Context without any acceptance criteria.
             crate::state::Provenance::Created,
         );
 
-        let outcome =
-            join(root.path(), &milestone.id, &schemas, &committed).expect("the join folds");
+        let outcome = join(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("the join folds");
 
         // No findings: a collision of distinct `created` instances is a suffix, not a clash.
         assert!(
@@ -1702,10 +1793,24 @@ Context without any acceptance criteria.
             .enumerate();
         let mut reversed = ids.clone();
         reversed.reverse();
-        let forward =
-            fold_areas(root.path(), &milestone.id, &ids, &schemas, &committed).expect("fwd fold");
-        let backward = fold_areas(root.path(), &milestone.id, &reversed, &schemas, &committed)
-            .expect("rev fold");
+        let forward = fold_areas(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &ids,
+            &schemas,
+            &committed,
+        )
+        .expect("fwd fold");
+        let backward = fold_areas(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &reversed,
+            &schemas,
+            &committed,
+        )
+        .expect("rev fold");
         assert_eq!(
             forward, backward,
             "the suffix fold is order-invariant: the lower task id keeps the bare slug"
@@ -1775,8 +1880,14 @@ Context without any acceptance criteria.
             crate::state::Provenance::EditedFromBase,
         );
 
-        let outcome =
-            join(root.path(), &milestone.id, &schemas, &committed).expect("the join folds");
+        let outcome = join(
+            root.path(),
+            root.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("the join folds");
 
         // Exactly two blocking clashes, one per clashing slug, each route-bearing.
         let clashes: Vec<&Finding> = outcome
@@ -1813,6 +1924,206 @@ Context without any acceptance criteria.
         assert!(
             !outcome.overlay.contains_key("adr:retention"),
             "the mixed clash is not merged"
+        );
+    }
+
+    /// The done-criterion for T3, part (a) (`design/storage.md` → The by-task-id join,
+    /// step 5; `design/validation.md` → Fan-out cross-area refs: the per-`from`
+    /// narrowing). Sub-area B authors `supersedes: adr:lru-eviction` while that slug
+    /// **byte-exists only** in sibling area A's `docs/`. The join runs the existing
+    /// single-area `ref_resolves` walk **once per sub-area** against `committed ∪ that
+    /// one area` — so B's ref resolves in neither A (excluded) nor the committed store →
+    /// a **blocking `schema-conformance.ref-resolves`**. The control assertion proves the
+    /// per-area scoping is load-bearing, not incidental: a **naïve all-areas union
+    /// overlay** (B's edges keyed `from`, the union of every area's `task_froms` as the
+    /// reachable set) would resolve the very same ref *clean* — the silent-defeat bug the
+    /// per-`from` narrowing exists to prevent.
+    #[test]
+    fn join_rejects_cross_area_ref_proving_per_area_scoping_is_load_bearing() {
+        let root = TempRoot::new("join-cross-area");
+        let repo = TempRoot::new("join-cross-area-repo");
+        let base = BasePin::new("9999999999999999999999999999999999999999", "9999999");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+
+        // Two sub-areas. A creates `adr:lru-eviction`; B creates `adr:cache-strategy`
+        // whose `supersedes` GUESSES A's slug — a cross-area ref. Inserted in reverse-id
+        // order so insertion order diverges from id order.
+        add_task(root.path(), &milestone.id, "B area", "single-task").expect("b adds");
+        add_task(root.path(), &milestone.id, "A area", "single-task").expect("a adds");
+
+        let a_dir = root.path().join("tasks").join("a-area");
+        stage_doc(
+            &a_dir,
+            "adr",
+            "lru-eviction",
+            &adr_superseding("LRU eviction", "adr:lru-eviction"),
+            crate::state::Provenance::Created,
+        );
+        let b_dir = root.path().join("tasks").join("b-area");
+        stage_doc(
+            &b_dir,
+            "adr",
+            "cache-strategy",
+            // B references A's slug — resolvable only inside A's sibling area.
+            &adr_superseding("Cache strategy", "adr:lru-eviction"),
+            crate::state::Provenance::Created,
+        );
+
+        let outcome = join(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("join folds");
+
+        // B's cross-area ref is rejected with the existing, intrinsic, already-floored
+        // `schema-conformance.ref-resolves` (no new check id).
+        let cross: Vec<&Finding> = outcome
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.ref-resolves")
+            .collect();
+        assert_eq!(
+            cross.len(),
+            1,
+            "exactly one cross-area ref is rejected: {:?}",
+            outcome.findings
+        );
+        assert_eq!(cross[0].severity, Severity::Blocking);
+        assert!(
+            cross[0].route.is_some(),
+            "the cross-area block carries a route"
+        );
+        assert!(
+            cross[0].message.contains("adr:lru-eviction"),
+            "the block names the unreachable target: {:?}",
+            cross[0]
+        );
+        assert!(
+            cross[0]
+                .location
+                .as_ref()
+                .and_then(|l| l.address.as_deref())
+                == Some("adr:cache-strategy"),
+            "the block is located at B's authoring doc: {:?}",
+            cross[0]
+        );
+
+        // CONTROL — per-area scoping is load-bearing, not incidental. A naïve all-areas
+        // union (B's outgoing edges over the union of every area's staged `from`
+        // identities as the reachable set) would resolve the SAME ref clean. We feed
+        // `ref_resolves` exactly that flattened overlay and assert ZERO findings — so the
+        // green block above can only come from the per-`from` narrowing, never from the
+        // target being genuinely unreachable.
+        let b_area = crate::index::overlay_working(&committed, &b_dir, &schemas);
+        let a_area = crate::index::overlay_working(&committed, &a_dir, &schemas);
+        let mut union_froms = b_area.task_froms.clone();
+        union_froms.extend(a_area.task_froms.clone()); // the flattened multi-area surface
+        union_froms.sort();
+        union_froms.dedup();
+        let naive_union = crate::index::WorkingOverlay {
+            committed: committed.edges.clone(),
+            task_edges: b_area.task_edges.clone(),
+            task_froms: union_froms,
+        };
+        // A naïve-union resolution writes A's body into B's reachable surface, so the
+        // ref's target byte-exists on B's read path — mimic that flattened view.
+        let naive_dir = TempRoot::new("join-cross-area-naive");
+        for dir in [&a_dir, &b_dir] {
+            for entry in std::fs::read_dir(dir.join("docs")).expect("docs/") {
+                let p = entry.expect("entry").path();
+                if p.extension().and_then(|x| x.to_str()) == Some("md") {
+                    let dst = naive_dir.path().join("docs");
+                    std::fs::create_dir_all(&dst).expect("mk docs/");
+                    std::fs::copy(&p, dst.join(p.file_name().unwrap())).expect("copy");
+                }
+            }
+        }
+        let control =
+            crate::index::ref_resolves(&naive_union, repo.path(), naive_dir.path(), &schemas);
+        assert!(
+            control.is_empty(),
+            "CONTROL: the SAME ref resolves clean against a naïve all-areas union — \
+             so the per-area scoping is what makes the rejection load-bearing: {control:?}"
+        );
+    }
+
+    /// The done-criterion for T3, part (b) (`design/storage.md` → isolation is structural
+    /// and join-checked in M7; the write-time `--task` barrier is M8). A sub-area whose
+    /// provenance manifest **attributes a doc to itself** that it does not physically
+    /// stage in its own `docs/` is not attributable to its own sub-area → a **blocking**
+    /// `join.area-isolation` finding, route-bearing, emitted directly with no `knobs.yaml`
+    /// row. The legitimately-staged doc still merges; only the stray attribution blocks.
+    #[test]
+    fn join_blocks_doc_not_attributable_to_its_own_sub_area() {
+        let root = TempRoot::new("join-isolation");
+        let repo = TempRoot::new("join-isolation-repo");
+        let base = BasePin::new("0000000000000000000000000000000000000000", "0000000");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        add_task(root.path(), &milestone.id, "Solo area", "single-task").expect("solo adds");
+
+        let solo_dir = root.path().join("tasks").join("solo-area");
+        // A legitimately-staged doc: body present in docs/ AND attributed in the manifest.
+        stage_doc(
+            &solo_dir,
+            "commit",
+            "solo-area",
+            "# Subject\n\nBody.\n",
+            crate::state::Provenance::Created,
+        );
+        // A stray attribution: the manifest claims `adr:elsewhere`, but no body for it is
+        // staged in this area — a doc not attributable to its own sub-area.
+        let mut record = crate::state::ProvenanceRecord::load(&solo_dir).expect("load manifest");
+        record.record("adr:elsewhere", crate::state::Provenance::Created);
+        std::fs::write(
+            crate::state::ProvenanceRecord::path_in(&solo_dir),
+            record.to_bytes(),
+        )
+        .expect("write manifest");
+
+        let outcome = join(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("join folds");
+
+        // Exactly one blocking isolation finding, naming the stray doc and the area.
+        let iso: Vec<&Finding> = outcome
+            .findings
+            .iter()
+            .filter(|f| f.code == "join.area-isolation")
+            .collect();
+        assert_eq!(
+            iso.len(),
+            1,
+            "the stray attribution fires exactly one isolation block: {:?}",
+            outcome.findings
+        );
+        assert_eq!(iso[0].severity, Severity::Blocking);
+        assert!(
+            iso[0].route.is_some(),
+            "the isolation block carries a route"
+        );
+        assert!(
+            iso[0].message.contains("adr:elsewhere") && iso[0].message.contains("solo-area"),
+            "the block names the stray doc and its area: {:?}",
+            iso[0]
+        );
+        // The legitimately-staged doc still merges — only the stray attribution blocks.
+        assert!(
+            outcome.overlay.contains_key("commit:solo-area"),
+            "the genuinely-staged doc is unaffected by the stray attribution"
         );
     }
 
