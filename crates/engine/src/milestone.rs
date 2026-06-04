@@ -716,11 +716,16 @@ fn gather_groups(
         // Join-time isolation (`design/storage.md` → isolation is structural +
         // join-checked in M7; the write-time `--task` barrier is M8). A doc the area's
         // provenance manifest **attributes to itself** but whose body is not physically
-        // staged in this area's `docs/` (so it is not in `task_froms`) is not attributable
-        // to its own sub-area → a blocking, route-bearing finding. Emitted directly with
-        // no `knobs.yaml` row (the `reconciliation.*` blocking-but-untunable precedent).
+        // staged in this area's `docs/` is not attributable to its own sub-area → a
+        // blocking, route-bearing finding. Attribution keys on the **physical body**
+        // (`docs/<addr>.md` exists), *not* on the schema-gated `task_froms`: a body whose
+        // doctype is absent from the resolved schema set is skipped by `overlay_working`
+        // (never reaches `task_froms`) yet is genuinely attributable to its own area, so
+        // keying on `task_froms` would over-block it. Emitted directly with no
+        // `knobs.yaml` row (the `reconciliation.*` blocking-but-untunable precedent).
         for claimed in provenance.docs.keys() {
-            if !area.task_froms.contains(claimed) {
+            let body = sub_dir.join("docs").join(format!("{claimed}.md"));
+            if !body.exists() {
                 findings.push(isolation_finding(milestone_id, sub_id, claimed));
             }
         }
@@ -2498,6 +2503,60 @@ Context without any acceptance criteria.
         assert!(
             outcome.overlay.contains_key("commit:solo-area"),
             "the genuinely-staged doc is unaffected by the stray attribution"
+        );
+    }
+
+    /// Regression: the isolation check keys on **physical body presence**, not on the
+    /// schema-gated `task_froms`. A doc whose doctype is **absent from the resolved
+    /// schema set** is skipped by [`crate::index::overlay_working`] (so it never lands in
+    /// `task_froms`), yet its body **is** physically staged in this area's `docs/` and is
+    /// recorded in the provenance manifest — it is genuinely attributable to its own
+    /// sub-area. The join must **not** fire `join.area-isolation` for it (no over-block).
+    /// Pairs with the genuine-violation control above (a manifest address with no body in
+    /// its area still blocks).
+    #[test]
+    fn join_does_not_over_block_a_staged_doc_of_an_unknown_doctype() {
+        let root = TempRoot::new("join-isolation-unknown");
+        let repo = TempRoot::new("join-isolation-unknown-repo");
+        let base = BasePin::new("0000000000000000000000000000000000000000", "0000000");
+        let schemas = join_schemas(); // `commit` + `adr` only — `prd` is unknown here.
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        add_task(root.path(), &milestone.id, "Solo area", "single-task").expect("solo adds");
+
+        let solo_dir = root.path().join("tasks").join("solo-area");
+        // A body of an UNKNOWN doctype, physically staged in this area's docs/ AND
+        // recorded in the manifest — genuinely attributable to its own sub-area, even
+        // though `prd` resolves to no schema (so `overlay_working` skips it / it never
+        // reaches `task_froms`).
+        stage_doc(
+            &solo_dir,
+            "prd",
+            "solo-area",
+            "# Subject\n\nBody.\n",
+            crate::state::Provenance::Created,
+        );
+
+        let outcome = join(
+            root.path(),
+            repo.path(),
+            &milestone.id,
+            &schemas,
+            &committed,
+        )
+        .expect("join folds");
+
+        let iso: Vec<&Finding> = outcome
+            .findings
+            .iter()
+            .filter(|f| f.code == "join.area-isolation")
+            .collect();
+        assert!(
+            iso.is_empty(),
+            "a staged body of an unknown doctype is attributable to its own area and \
+             must not fire `join.area-isolation`: {:?}",
+            outcome.findings
         );
     }
 
