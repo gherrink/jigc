@@ -1,0 +1,358 @@
+//! End-to-end severity-tuning + demotion-lock (M6 inc-2, T5) — both tiers of the
+//! two-tier rule driven **verbatim through the emitted `jigc` binary** against a
+//! throwaway git repo, asserted on the emitted bytes (`design/validation.md` → The
+//! two-tier rule; `implementation/roadmap.md` → M6 inc-2 grouped-scope bullet 5;
+//! `increment-workflow.md` → Validation hardening #4 + #5):
+//!
+//! - **(a) a real-key tunable demotion stops a check blocking.** `jigc config set
+//!   validation.file-state.hash-matches.severity advisory` + a `file-state` drift on
+//!   a staged commit doc → `task validate` no longer blocks (exit 0) and surfaces the
+//!   drift as an **advisory** finding rather than a blocking one. `hash-matches` is a
+//!   *tunable* check (no floor), so the demotion applies.
+//! - **(b) an intrinsic demotion is floor-rejected.** `jigc config set
+//!   validation.workflow-refs.placeholder-resolves.severity advisory` targets a
+//!   *floored* intrinsic check. The below-floor `scalar-set` is **soft-rejected at
+//!   cascade resolution** — the delta is *not applied* (the resolved knob stays
+//!   `blocking`, so the check still blocks where it fires: the JSON `--explain`
+//!   carries the key in `rejected_demotions`, never in `scalar_overrides`, and it is
+//!   not folded into `overrides applied: N`), and `jigc start --explain` shows the
+//!   rejected-demotion line (attempted `advisory` · floor `blocking` · `project`).
+//!
+//! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
+//! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
+//! dev's repo.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        let unique = format!(
+            "jigc-severity-tuning-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        );
+        path.push(unique);
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Run a `git` command in `repo`, asserting success.
+fn git(repo: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// Initialize a real git repo with one commit + the `.jigc/config/` project layer.
+fn init_repo(repo: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+    fs::write(repo.join("README.md"), "hello\n").expect("write file");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
+}
+
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, capturing output.
+fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Run `jigc doc <args>`, optionally piping `stdin`, capturing output.
+fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command.arg("doc").args(args);
+    command.current_dir(repo).env("HOME", home);
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn jigc");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// Assert a `jigc` invocation succeeded, surfacing its streams on failure.
+fn assert_ok(out: &std::process::Output, what: &str) {
+    assert!(
+        out.status.success(),
+        "{what} must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The combined stdout+stderr of a `jigc` invocation (findings render to either).
+fn streams(out: &std::process::Output) -> String {
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    )
+}
+
+/// Fill every author-required field/slot of the provisioned commit doc so a validate
+/// over it is clean of `schema-conformance` findings (isolating the `file-state` drift).
+fn fill_commit(repo: &Path, home: &Path, task: &str) {
+    let set_field = |addr: &str, value: &str| {
+        let out = jigc_doc(repo, home, &["set-field", addr, "--value", value], None);
+        assert_ok(&out, &format!("set-field {addr}"));
+    };
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo,
+            home,
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_field(&format!("commit:{task}#type"), "feat");
+    set_field(&format!("commit:{task}#scope"), "limiter");
+    set_slot(&format!("commit:{task}#summary"), b"add a rate limiter\n");
+    set_slot(&format!("commit:{task}#body"), b"A rate limiter.\n");
+}
+
+/// Seed the `file-state` record with a **stale** hash for the staged commit doc, so the
+/// next `task validate` sees `recorded != on-disk` → a `file-state.hash-matches` drift.
+///
+/// `task validate` *loads* the record but never persists it (the record advances only at
+/// adopt/absorb/commit), so two validates always baseline-adopt the working-area doc
+/// fresh — drift over a working-area key can only arise from a pre-existing recorded
+/// baseline. Writing the record's plain JSON state directly is the established way to
+/// establish that baseline (mirrors `engine::validate`'s `record.record(...)` unit setup,
+/// driven here through the binary's `task validate`).
+fn seed_stale_commit_baseline(repo: &Path, task: &str) {
+    let key = format!("docs/commit:{task}.md");
+    let state = repo.join(".jigc").join("state");
+    fs::create_dir_all(&state).expect("create .jigc/state");
+    // A deterministic 64-char lowercase-hex digest that does NOT match any real
+    // blake3 hash of the filled doc — the staleness is the whole point.
+    let stale = "0".repeat(64);
+    let body = format!("{{\n  \"hashes\": {{\n    \"{key}\": \"{stale}\"\n  }}\n}}\n");
+    fs::write(state.join("file-state.json"), body).expect("seed file-state.json");
+}
+
+// ─────────────── (a) tunable demotion stops a check blocking ───────────────
+
+#[test]
+fn tunable_severity_demotion_stops_file_state_drift_blocking() {
+    let repo = TempDir::new("tunable");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let start = jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
+    assert_ok(&start, "`jigc start`");
+    let task = "add-rate-limiter";
+
+    // Fill the commit doc so the only finding is the file-state drift, then seed a
+    // stale baseline for the staged commit doc so `task validate` sees drift.
+    fill_commit(repo.path(), home.path(), task);
+    seed_stale_commit_baseline(repo.path(), task);
+
+    // Before the demotion: `file-state.hash-matches` is blocking by default →
+    // `task validate` exits non-zero and surfaces the drift as a *blocking* finding.
+    let before = jigc(repo.path(), home.path(), &["task", "validate", task]);
+    assert!(
+        !before.status.success(),
+        "a file-state drift must block validate by default; streams:\n{}",
+        streams(&before)
+    );
+    assert!(
+        streams(&before).contains("blocking · file-state.hash-matches"),
+        "the default drift finding must render as `blocking`; got:\n{}",
+        streams(&before)
+    );
+
+    // Demote the *tunable* check to advisory — a real-key `scalar-set` on the closed
+    // surface (`hash-matches` carries no floor, so the demotion applies).
+    let set = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "config",
+            "set",
+            "validation.file-state.hash-matches.severity",
+            "advisory",
+        ],
+    );
+    assert_ok(&set, "`jigc config set` (tunable demotion)");
+
+    // After the demotion: the SAME drift no longer blocks (exit 0) and is surfaced as
+    // an *advisory* finding — files are truth, the drift is still reported, just not
+    // gated. The drift state itself is unchanged (the record was not advanced).
+    let after = jigc(repo.path(), home.path(), &["task", "validate", task]);
+    assert!(
+        after.status.success(),
+        "after demoting `file-state.hash-matches` to advisory, the drift must NOT block \
+         (exit 0); streams:\n{}",
+        streams(&after)
+    );
+    let surfaced = streams(&after);
+    assert!(
+        surfaced.contains("advisory · file-state.hash-matches"),
+        "the demoted drift must render as `advisory`; got:\n{surfaced}"
+    );
+    assert!(
+        !surfaced.contains("blocking · file-state.hash-matches"),
+        "the demoted drift must NOT render as `blocking`; got:\n{surfaced}"
+    );
+}
+
+// ─────────────── (b) intrinsic demotion is floor-rejected ───────────────
+
+/// The exact rejected-demotion line the `--explain` agent text must emit for a
+/// floor-rejected intrinsic demotion (key · attempted · floor · source layer).
+const REJECTED_LINE: &str = "rejected demotion: \
+     validation.workflow-refs.placeholder-resolves.severity = advisory below floor blocking    (project)";
+
+#[test]
+fn intrinsic_severity_demotion_is_floor_rejected_and_shown_in_explain() {
+    let repo = TempDir::new("intrinsic");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // `config set` records the scalar-set into the project layer (the closed-surface
+    // check passes — the key is a declared knob; the floor is adjudicated at *resolve*
+    // time, not write time).
+    let set = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "config",
+            "set",
+            "validation.workflow-refs.placeholder-resolves.severity",
+            "advisory",
+        ],
+    );
+    assert_ok(&set, "`jigc config set` (intrinsic, below-floor)");
+
+    // `jigc start --explain` resolves the cascade and renders its layer-1 provenance.
+    let explain = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--workflow",
+            "single-task",
+            "add rate limiter",
+        ],
+    );
+    assert_ok(&explain, "`jigc start --explain`");
+    let stdout = String::from_utf8(explain.stdout).expect("utf-8 stdout");
+
+    // The agent-text body shows the rejected-demotion line on the emitted bytes
+    // (hardening #4 — assert the emitted artifact, not a reconstruction).
+    assert!(
+        stdout.contains(REJECTED_LINE),
+        "the floor-rejected intrinsic demotion must render its rejected-demotion line \
+         (attempted advisory · floor blocking · project); got:\n{stdout}"
+    );
+    // The rejected demotion is NOT applied: it does not appear as an applied override,
+    // and it is not folded into the `overrides applied: N` count.
+    assert!(
+        !stdout.contains(
+            "validation.workflow-refs.placeholder-resolves.severity = advisory    (project)"
+        ),
+        "a floor-rejected demotion must NOT render as an applied override; got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("overrides applied: none"),
+        "a floor-rejected demotion is the only delta — it is logged, not applied, so no \
+         override is counted; got:\n{stdout}"
+    );
+
+    // The structured JSON projection is the strongest "the delta is not applied" proof:
+    // the key rides `rejected_demotions`, NEVER `scalar_overrides`, so the resolved knob
+    // stays `blocking` and the check still blocks where it fires.
+    let json_out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--explain",
+            "--format",
+            "json",
+            "--workflow",
+            "single-task",
+            "add rate limiter",
+        ],
+    );
+    assert_ok(&json_out, "`jigc start --explain --format json`");
+    let value: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(json_out.stdout).expect("utf-8"))
+            .expect("--format json must emit parseable JSON");
+
+    // Not applied: absent from scalar_overrides, present in rejected_demotions.
+    let scalars = value["scalar_overrides"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        scalars
+            .iter()
+            .all(|s| s["key"] != "validation.workflow-refs.placeholder-resolves.severity"),
+        "the floored key must NOT appear in scalar_overrides (not applied); got:\n{value:#}"
+    );
+    let rejected = value["rejected_demotions"]
+        .as_array()
+        .expect("rejected_demotions is an array");
+    let entry = rejected
+        .iter()
+        .find(|r| r["key"] == "validation.workflow-refs.placeholder-resolves.severity")
+        .expect("the floored key appears in rejected_demotions");
+    assert_eq!(entry["attempted"], "advisory", "got:\n{value:#}");
+    assert_eq!(entry["floor"], "blocking", "got:\n{value:#}");
+    assert_eq!(entry["layer"], "project", "got:\n{value:#}");
+    // Not counted as an applied override.
+    assert_eq!(
+        value["overrides_applied"], 0,
+        "a floor-rejected demotion is not folded into overrides_applied; got:\n{value:#}"
+    );
+}

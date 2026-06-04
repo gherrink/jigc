@@ -621,12 +621,16 @@ pub(crate) fn resolve_severity_cascade_resilient(
     let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
     let base = knobs.base_scalars();
+    // Carry the demotion-lock floors here too (same as `resolve_layers`): a below-floor
+    // demotion on a still-declared intrinsic key is soft-rejected, not applied, when
+    // upgrade re-resolves the layer's findings (`design/overrides.md` → Soft-rejection).
     let pack_default = PackDefaultLayer::new(
         pack_id_from_config(pack)?,
         pack.pack_version(),
         base.clone(),
         Vec::new(),
-    );
+    )
+    .with_floors(knobs.floors().clone());
     let (project, _deltas, _slot_fills, _forks, _bases) = load_project_layer(project_config)?;
     // Keep only the scalar-sets whose key the current pack still declares; an orphaned
     // one is reported by the classifier, not resolved here.
@@ -646,12 +650,17 @@ pub(crate) fn resolve_severity_cascade_resilient(
 fn resolve_layers(pack: &dyn PackSource, project: &OverrideLayer) -> Result<cascade::Resolved> {
     let knobs_bytes = read_pack(pack, PackResourceKind::Config, "knobs")?;
     let knobs = engine::knobs::load_knobs(&knobs_bytes).context("`config/knobs` is malformed")?;
+    // Attach the demotion-lock floors so a below-floor `scalar-set` on a floored
+    // intrinsic check is soft-rejected at resolution (`design/overrides.md` →
+    // Soft-rejection; the floor is a `KnobDecl` field). Without this the floored
+    // intrinsic keys would resolve floor-less and a demotion would silently apply.
     let pack_default = PackDefaultLayer::new(
         pack_id_from_config(pack)?,
         pack.pack_version(),
         knobs.base_scalars(),
         Vec::new(),
-    );
+    )
+    .with_floors(knobs.floors().clone());
     Ok(cascade::resolve(&pack_default, None, Some(project))?)
 }
 
