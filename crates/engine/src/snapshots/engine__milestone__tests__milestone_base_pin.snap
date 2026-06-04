@@ -1,0 +1,8 @@
+---
+source: crates/engine/src/milestone.rs
+expression: pin
+---
+{
+  "sha": "0123456789abcdef0123456789abcdef01234567",
+  "short": "0123456"
+}
