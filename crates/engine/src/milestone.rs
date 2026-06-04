@@ -117,6 +117,125 @@ pub fn mint_milestone(
     Ok(MintedMilestone { id, dir, base })
 }
 
+/// A sub-task freshly added under a milestone: the [`crate::state::MintedTask`]
+/// returned by the reused mint, plus the milestone-relative bookkeeping the join
+/// will read — the milestone `id` it was appended to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AddedTask {
+    /// The milestone the sub-task was appended to.
+    pub milestone_id: String,
+    /// The minted sub-task (its frozen id, isolated `tasks/<sub>/` area, and the
+    /// **milestone's** base it inherited).
+    pub task: crate::state::MintedTask,
+}
+
+/// Mint a sub-task under an existing milestone and append it to the milestone's
+/// task list (`design/write-commands.md` → `jigc milestone add-task`;
+/// `design/storage.md` → The by-task-id join). The sub-task is a task work-unit:
+/// its id is the frozen slug of `intent`, it lives in the **shared**
+/// `<jigc_root>/tasks/<sub>/` namespace in its own isolated area, and it inherits
+/// the milestone's **single shared base** (read back from the milestone area, not
+/// a fresh HEAD) so the join's "present at the milestone base" stays a lookup
+/// against a frozen commit. `workflow_id` is the workflow the sub-task is minted
+/// from (supplied by the caller), persisted by [`crate::state::mint_task`].
+///
+/// **Unknown milestone** — no area at `<jigc_root>/milestones/<milestone_id>/` →
+/// reject with a blocking [`Finding`]; nothing is minted. **Within-milestone
+/// serial collision** — the minted sub-task id is already in *this milestone's*
+/// task list → reject with a routed blocking [`Finding`], appending nothing (the
+/// `-2`/`-3` suffix is the join's, never incremental add). A slug colliding with a
+/// *non-milestone* task is the existing `task.serial-collision` path inside
+/// [`crate::state::mint_task`], surfaced unchanged.
+pub fn add_task(
+    jigc_root: &Path,
+    milestone_id: &str,
+    intent: &str,
+    workflow_id: &str,
+) -> Result<AddedTask, Finding> {
+    let dir = milestone_dir(jigc_root, milestone_id);
+
+    // Unknown milestone → reject before anything is minted.
+    if !dir.is_dir() {
+        return Err(unknown_milestone_finding(milestone_id));
+    }
+
+    // The single shared base every sub-task inherits — read back from the
+    // milestone area, never a fresh HEAD.
+    let base = read_base_pin(&dir)
+        .map_err(|err| io_finding(milestone_id, "read the shared base pin", &err))?;
+
+    // The id the sub-task will mint to — checked against *this milestone's* list
+    // before the mint, so a within-milestone collision rejects without side effect.
+    let sub_id = mint_sub_id(intent);
+    let mut list =
+        read_task_list(&dir).map_err(|err| io_finding(milestone_id, "read the task list", &err))?;
+    if list.tasks.iter().any(|t| t == &sub_id) {
+        return Err(sub_task_collision_finding(milestone_id, &sub_id));
+    }
+
+    // Reuse the task mint so the sub-task inherits the milestone's base and the
+    // standard working-area files (base/intent/workflow), in the shared namespace.
+    let task = crate::state::mint_task(jigc_root, intent, SUB_TASK_TYPE, workflow_id, base)?;
+
+    // Append to the milestone's task list and persist it.
+    list.tasks.push(task.id.clone());
+    std::fs::write(dir.join(TASKS_FILE), list.to_bytes())
+        .map_err(|err| io_finding(milestone_id, "append to the task list", &err))?;
+
+    Ok(AddedTask {
+        milestone_id: milestone_id.to_string(),
+        task,
+    })
+}
+
+/// The type-name a milestone sub-task mints under — the empty-intent fallback for
+/// [`crate::state::mint_task`]. A sub-task is a `task` work-unit; the workflow it
+/// runs is supplied separately and the fallback only fires on an empty slug.
+const SUB_TASK_TYPE: &str = "task";
+
+/// Slug `intent` into the sub-task id with the empty → `task` type-name fallback —
+/// the *same* result [`crate::state::mint_task`] computes, recomputed here only to
+/// key the within-milestone collision check before the mint (no separate
+/// minting discipline).
+fn mint_sub_id(intent: &str) -> String {
+    let slug = crate::slug::slugify(intent);
+    if slug.is_empty() {
+        crate::slug::slugify(SUB_TASK_TYPE)
+    } else {
+        slug
+    }
+}
+
+/// The unknown-milestone block: a blocking finding naming the missing milestone,
+/// routing the agent to create it first (`write-commands.md` → add-task mints
+/// *under* an existing milestone).
+fn unknown_milestone_finding(milestone_id: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.unknown",
+        format!("milestone `{milestone_id}` does not exist"),
+        Some(Location::addressed(
+            format!("milestone:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some("create it first with `jigc milestone create \"<title>\"`".to_string()),
+    )
+}
+
+/// The within-milestone serial-collision block: a blocking finding naming the
+/// already-listed sub-task id, routing the agent to a distinct intent (the `-2`
+/// suffix is the join's, never incremental add; `write-commands.md` → add-task).
+fn sub_task_collision_finding(milestone_id: &str, sub_id: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.sub-task-collision",
+        format!("sub-task `{sub_id}` is already in milestone `{milestone_id}`"),
+        Some(Location::addressed(format!("task:{sub_id}"), 1, 1)),
+        Some("add the sub-task with a distinct intent".to_string()),
+    )
+}
+
 /// Read the persisted [`TaskList`] of a milestone from its area
 /// (`<jigc_root>/milestones/<id>/tasks.json`) — the companion of the mint write,
 /// read back to enumerate the sub-tasks. A missing or malformed file is an error
@@ -279,6 +398,119 @@ mod tests {
             .expect("milestones dir")
             .count();
         assert_eq!(before, after, "no second dir created on collision");
+    }
+
+    /// The done-criterion for T2 (`design/write-commands.md` → `jigc milestone
+    /// add-task`; `design/storage.md` → The by-task-id join): two distinct
+    /// sub-tasks each open an **isolated** `tasks/<sub>/` area whose `base.json`
+    /// equals the **milestone's** shared base (not a fresh HEAD), and both ids
+    /// land in the milestone's task list. A third add whose intent slugs to an
+    /// already-listed id returns a routed blocking collision and appends nothing;
+    /// an add against an unknown milestone rejects.
+    #[test]
+    fn add_task_mints_isolated_sub_tasks_on_the_shared_base_and_rejects_collision() {
+        let root = TempRoot::new("add-task");
+        let milestone_base = BasePin::new("1111111111111111111111111111111111111111", "1111111");
+
+        let milestone = mint_milestone(root.path(), "Cache rework", milestone_base.clone())
+            .expect("milestone mints");
+
+        // First sub-task.
+        let a = add_task(
+            root.path(),
+            &milestone.id,
+            "Add rate limiter",
+            "single-task",
+        )
+        .expect("first sub-task adds");
+        assert_eq!(a.milestone_id, "cache-rework");
+        assert_eq!(a.task.id, "add-rate-limiter");
+        // Isolated area in the shared tasks/ namespace.
+        let a_dir = root.path().join("tasks").join("add-rate-limiter");
+        assert_eq!(a.task.dir, a_dir);
+        assert!(a_dir.is_dir(), "sub-task opens its own isolated area");
+        // Its base IS the milestone's shared base, not a fresh HEAD.
+        assert_eq!(
+            a.task.base, milestone_base,
+            "sub-task inherits the shared base"
+        );
+        assert_eq!(
+            crate::state::read_base_pin(&a_dir).expect("read sub base"),
+            milestone_base,
+            "the sub-task's base.json equals the milestone's base on disk"
+        );
+
+        // Second, distinct sub-task — its own isolated area, same shared base.
+        let b = add_task(
+            root.path(),
+            &milestone.id,
+            "Evict stale keys",
+            "single-task",
+        )
+        .expect("second sub-task adds");
+        assert_eq!(b.task.id, "evict-stale-keys");
+        let b_dir = root.path().join("tasks").join("evict-stale-keys");
+        assert!(
+            b_dir.is_dir() && b_dir != a_dir,
+            "the two areas are distinct"
+        );
+        assert_eq!(
+            crate::state::read_base_pin(&b_dir).expect("read sub base"),
+            milestone_base,
+            "the second sub-task also inherits the milestone's shared base"
+        );
+
+        // Both ids are in the milestone's task list.
+        let list = read_task_list(&milestone.dir).expect("read list");
+        assert_eq!(
+            list.tasks,
+            vec![
+                "add-rate-limiter".to_string(),
+                "evict-stale-keys".to_string()
+            ],
+            "both sub-task ids land in the milestone's task list"
+        );
+
+        // A third add whose intent slugs to an already-listed id → routed block,
+        // appends nothing, mints nothing new.
+        let tasks_before = std::fs::read_dir(root.path().join("tasks"))
+            .expect("tasks dir")
+            .count();
+        let collide = add_task(
+            root.path(),
+            &milestone.id,
+            "Add rate limiter",
+            "single-task",
+        )
+        .expect_err("a within-milestone slug collision rejects");
+        assert_eq!(collide.severity, Severity::Blocking);
+        assert_eq!(collide.code, "milestone.sub-task-collision");
+        assert!(
+            collide.message.contains("add-rate-limiter")
+                && collide.message.contains("cache-rework"),
+            "the block names the colliding sub-task and the milestone: {collide:?}"
+        );
+        assert!(collide.route.is_some(), "the collision carries a route");
+        // Nothing appended: the list is unchanged.
+        assert_eq!(
+            read_task_list(&milestone.dir).expect("read list").tasks,
+            list.tasks,
+            "a collision appends nothing to the task list"
+        );
+        let tasks_after = std::fs::read_dir(root.path().join("tasks"))
+            .expect("tasks dir")
+            .count();
+        assert_eq!(tasks_before, tasks_after, "a collision mints no new area");
+
+        // Add against an unknown milestone → reject.
+        let unknown = add_task(root.path(), "no-such-milestone", "Whatever", "single-task")
+            .expect_err("an unknown milestone rejects");
+        assert_eq!(unknown.severity, Severity::Blocking);
+        assert_eq!(unknown.code, "milestone.unknown");
+        assert!(
+            unknown.route.is_some(),
+            "the unknown-milestone block carries a route"
+        );
     }
 
     /// A title that normalizes to nothing falls back to the `milestone` type
