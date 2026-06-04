@@ -30,6 +30,20 @@
 /// actual result may be shorter.
 const MAX_LEN: usize = 50;
 
+/// Apply the **deterministic collision suffix** to a base slug: `1` keeps the bare
+/// `slug`, `2` yields `<slug>-2`, `3` yields `<slug>-3`, … (`design/structural-grammar.md`
+/// → IDs: provenance and minting → "the lower-task-id instance keeps the bare slug; each
+/// higher one takes the deterministic numeric suffix `-2`, `-3`, … in task-id order").
+/// The first instance of a colliding slug is `nth == 1`; the suffix is applied only by the
+/// caller that knows the task-id merge order (the by-task-id join), never at a mint site.
+pub fn suffixed(slug: &str, nth: usize) -> String {
+    if nth <= 1 {
+        slug.to_string()
+    } else {
+        format!("{slug}-{nth}")
+    }
+}
+
 /// Normalize an id-source into a frozen content-slug.
 ///
 /// See the [module docs](self) for the full rule. Pure and total: every input
@@ -185,6 +199,18 @@ mod tests {
         assert_eq!(slugify("café"), "cafe");
         assert_eq!(slugify("Add rate limiter"), "add-rate-limiter");
         assert_eq!(slugify(""), "");
+    }
+
+    /// The deterministic collision suffix: the first instance (`nth == 1`) keeps the
+    /// bare slug; each higher one takes `-2`, `-3`, … in task-id merge order
+    /// (`structural-grammar.md` → IDs: provenance and minting).
+    #[test]
+    fn suffixed_keeps_bare_first_then_numbers() {
+        assert_eq!(suffixed("cache-strategy", 1), "cache-strategy");
+        assert_eq!(suffixed("cache-strategy", 2), "cache-strategy-2");
+        assert_eq!(suffixed("cache-strategy", 3), "cache-strategy-3");
+        // `0` is not a valid position; treat it as the bare (defensive, like `1`).
+        assert_eq!(suffixed("x", 0), "x");
     }
 
     #[test]

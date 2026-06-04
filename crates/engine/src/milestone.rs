@@ -517,11 +517,27 @@ pub fn join(
     )
 }
 
+/// One staged doc gathered from a sub-area before the clash/suffix rules decide its
+/// fate — its minted `address` (`<type>:<slug>`), contributing `source_task`,
+/// recorded `provenance`, the area's forward `edges` for this `from`, and the
+/// `sub_dir` (so a suffixed instance's body can be re-read for the self-ref rewrite).
+/// Gathered in **task-id order** so the deterministic suffix is assigned in that order.
+struct StagedDoc {
+    address: String,
+    source_task: String,
+    provenance: crate::state::Provenance,
+    edges: Vec<crate::index::Edge>,
+    sub_dir: PathBuf,
+}
+
 /// Fold the named sub-task areas — in the **given** order — into the merged overlay,
-/// classified by provenance (`design/storage.md` → The by-task-id join, step 2). The
-/// only accumulator is the address-keyed `BTreeMap`, so the result is a pure function
-/// of the *set* of `sub_ids`, independent of their iteration order (the order-invariance
-/// the join's contract rests on; the public [`join`] always feeds the id-sorted order).
+/// applying the provenance clash rule (block) vs the collision-suffix for distinct
+/// `created` instances (`design/storage.md` → The by-task-id join, steps 2–4). The
+/// only output accumulator is the address-keyed `BTreeMap`, and every collision group
+/// is resolved by **task-id order** (the gather order), so the result is a pure
+/// function of the *set* of `sub_ids`, independent of their iteration order (the
+/// order-invariance the join's contract rests on; the public [`join`] always feeds the
+/// id-sorted order).
 fn fold_areas(
     jigc_root: &Path,
     milestone_id: &str,
@@ -529,9 +545,11 @@ fn fold_areas(
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     committed: &crate::index::EdgeIndex,
 ) -> Result<JoinOutcome, Finding> {
-    let mut overlay: std::collections::BTreeMap<String, MergedDoc> =
+    // Gather every staged doc across the areas in task-id order, grouped by minted
+    // address (the gather order *is* the task-id order, so each group's instances are
+    // already in the order the suffix rule assigns `-2`, `-3`, …).
+    let mut groups: std::collections::BTreeMap<String, Vec<StagedDoc>> =
         std::collections::BTreeMap::new();
-
     for sub_id in sub_ids {
         let sub_dir = jigc_root.join("tasks").join(sub_id);
 
@@ -542,9 +560,7 @@ fn fold_areas(
         let provenance = crate::state::ProvenanceRecord::load(&sub_dir)
             .map_err(|err| io_finding(milestone_id, "read a sub-task provenance manifest", &err))?;
 
-        // Step 2: disjoint union of this area's staged docs, classified by provenance.
         for from in &area.task_froms {
-            // The forward edges this staged doc contributes (already sorted in `area`).
             let edges: Vec<crate::index::Edge> = area
                 .task_edges
                 .iter()
@@ -557,21 +573,219 @@ fn fold_areas(
             let Some(prov) = provenance.get(from) else {
                 return Err(missing_provenance_finding(milestone_id, sub_id, from));
             };
-            overlay.insert(
-                from.clone(),
-                MergedDoc {
-                    provenance: prov,
-                    source_task: sub_id.clone(),
-                    edges,
-                },
-            );
+            groups.entry(from.clone()).or_default().push(StagedDoc {
+                address: from.clone(),
+                source_task: sub_id.clone(),
+                provenance: prov,
+                edges,
+                sub_dir: sub_dir.clone(),
+            });
         }
     }
 
-    Ok(JoinOutcome {
-        overlay,
-        findings: Vec::new(),
+    // Resolve each address group: a lone staged doc is a disjoint-union insert; a
+    // collision is either a blocking same-doc clash or a deterministic suffix.
+    let mut overlay: std::collections::BTreeMap<String, MergedDoc> =
+        std::collections::BTreeMap::new();
+    let mut findings = Vec::new();
+    for (address, mut staged) in groups {
+        // Resolve every group strictly by **task id** — the suffix order and the clash
+        // listing must not depend on the order `sub_ids` was fed in (the order-invariance
+        // the join's contract rests on; the public [`join`] feeds id-sorted order, but a
+        // permutation must still yield byte-identical output — hardening #7).
+        staged.sort_by(|a, b| a.source_task.cmp(&b.source_task));
+        if staged.len() == 1 {
+            let d = staged.into_iter().next().expect("len == 1");
+            overlay.insert(
+                d.address,
+                MergedDoc {
+                    provenance: d.provenance,
+                    source_task: d.source_task,
+                    edges: d.edges,
+                },
+            );
+            continue;
+        }
+        // Step 3: any `edited-from-base` in a colliding group is a partition violation
+        // — two edits to one committed-at-base slug, or the mixed (one created, one
+        // edited) case. Blocking, never a blind merge; the clashing slug is kept out.
+        if staged
+            .iter()
+            .any(|d| d.provenance == crate::state::Provenance::EditedFromBase)
+        {
+            findings.push(same_doc_clash_finding(&address, &staged));
+            continue;
+        }
+        // Step 4: all `created` → distinct docs. The first (lowest task id) keeps the
+        // bare slug; each later one takes the deterministic suffix, with its intra-doc
+        // self-references rewritten to the suffixed id in lockstep.
+        for (nth, d) in staged.into_iter().enumerate() {
+            let merged = suffix_resolve(milestone_id, &d, nth + 1, schemas)?;
+            overlay.insert(merged.0, merged.1);
+        }
+    }
+
+    Ok(JoinOutcome { overlay, findings })
+}
+
+/// Resolve one `created` instance of a colliding slug at position `nth` (1-based, in
+/// task-id order): apply the deterministic suffix to its address and, when suffixed,
+/// **rewrite its own self-references** to the suffixed id via the `set_field`/splice
+/// path (`design/storage.md` → step 4; `structural-grammar.md` → deterministic suffix
+/// in task-id merge order), re-deriving its edges from the rewritten body so the
+/// overlay and the bytes `finalize` will write agree. Returns the suffixed
+/// `(address, MergedDoc)`. The first instance (`nth == 1`) keeps its bare slug and
+/// edges unchanged.
+fn suffix_resolve(
+    milestone_id: &str,
+    d: &StagedDoc,
+    nth: usize,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+) -> Result<(String, MergedDoc), Finding> {
+    if nth <= 1 {
+        return Ok((
+            d.address.clone(),
+            MergedDoc {
+                provenance: d.provenance,
+                source_task: d.source_task.clone(),
+                edges: d.edges.clone(),
+            },
+        ));
+    }
+
+    // The suffixed address: `<type>:<slug>-<nth>`.
+    let (ty, slug) = d
+        .address
+        .split_once(':')
+        .unwrap_or((d.address.as_str(), ""));
+    let new_address = format!("{ty}:{}", crate::slug::suffixed(slug, nth));
+
+    // The self-references to rewrite: edges whose `to` is the doc's own (old) address.
+    let self_refs: Vec<&crate::index::Edge> =
+        d.edges.iter().filter(|e| e.to == d.address).collect();
+
+    // No self-ref → only the identity changes; re-key the edges' `from` to the suffix.
+    if self_refs.is_empty() {
+        let edges = d
+            .edges
+            .iter()
+            .map(|e| crate::index::Edge {
+                from: new_address.clone(),
+                ..e.clone()
+            })
+            .collect();
+        return Ok((
+            new_address.clone(),
+            MergedDoc {
+                provenance: d.provenance,
+                source_task: d.source_task.clone(),
+                edges,
+            },
+        ));
+    }
+
+    // Rewrite the self-ref field value(s) in the body via the set_field/splice path,
+    // then re-derive the edges from the rewritten bytes so the overlay edges are the
+    // bytes' truth (never hand-patched into divergence).
+    let schema = schemas
+        .get(ty)
+        .ok_or_else(|| missing_schema_finding(milestone_id, &d.source_task, &d.address))?;
+    let path = crate::state::instance_path(&d.sub_dir, ty, slug);
+    let source = std::fs::read_to_string(&path)
+        .map_err(|err| io_finding(milestone_id, "read a colliding staged doc body", &err))?;
+
+    let mut body = source;
+    for edge in &self_refs {
+        let Some(section_id) = ref_section(schema, &edge.relation) else {
+            continue; // the relation is not a known schema ref field: nothing to splice.
+        };
+        body = crate::write::set_field(schema, &body, &section_id, &edge.relation, &new_address)
+            .map_err(|err| splice_finding(milestone_id, &d.address, &edge.relation, err))?;
+    }
+
+    let edges = crate::index::edges_from_source(schema, &body, &new_address);
+    Ok((
+        new_address.clone(),
+        MergedDoc {
+            provenance: d.provenance,
+            source_task: d.source_task.clone(),
+            edges,
+        },
+    ))
+}
+
+/// The schema section id that declares the `ref` field `relation`, if any — used to
+/// target [`crate::write::set_field`] when rewriting a suffixed instance's self-ref.
+fn ref_section(schema: &crate::schema::Schema, relation: &str) -> Option<String> {
+    schema.sections.iter().find_map(|s| {
+        let crate::schema::SectionBody::Simple { fields, .. } = &s.body else {
+            return None;
+        };
+        fields
+            .iter()
+            .any(|f| f.ty == crate::schema::FieldType::Ref && f.id == relation)
+            .then(|| s.id.clone())
     })
+}
+
+/// The same-doc clash block (`design/storage.md` → The by-task-id join, step 3): two
+/// sub-areas writing the same committed-at-base slug (two `edited-from-base`, or the
+/// mixed `created` + `edited-from-base` case) is a partition violation — blocking,
+/// routed to a human, never section-merged or last-writer-win. Names the contending
+/// sub-tasks so the human can act. Emits `Severity::Blocking` directly with a route and
+/// **no** knobs/inventory row (the verified `reconciliation.*`-shaped intrinsic-block
+/// precedent; `DECISIONS.md` 2026-06-04 → M7 Increment 3 planning).
+fn same_doc_clash_finding(address: &str, staged: &[StagedDoc]) -> Finding {
+    let tasks: Vec<&str> = staged.iter().map(|d| d.source_task.as_str()).collect();
+    Finding::graded(
+        Severity::Blocking,
+        "join.same-doc-clash",
+        format!(
+            "same-doc clash — sub-tasks [{}] each write `{address}` at the milestone base; \
+             the join never blind-merges a shared managed doc",
+            tasks.join(", ")
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some(
+            "have the contending sub-tasks edit distinct docs, or merge their intent by hand"
+                .to_string(),
+        ),
+    )
+}
+
+/// A blocking finding for a colliding `created` instance whose type has no schema in the
+/// resolved set — the self-ref rewrite cannot run without it (should not arise: the
+/// overlay derivation only stages known types, but defaulting is wrong).
+fn missing_schema_finding(milestone_id: &str, sub_id: &str, address: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "join.unknown-type",
+        format!(
+            "colliding staged doc `{address}` in sub-task `{sub_id}` of milestone `{milestone_id}` has an unknown doctype"
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some("re-stage the doc under a known doctype".to_string()),
+    )
+}
+
+/// A blocking finding for a self-ref splice failure during suffix resolution — the
+/// colliding body did not conform or the located field vanished (a real fault, since the
+/// edge was derived from this very body).
+fn splice_finding(
+    milestone_id: &str,
+    address: &str,
+    relation: &str,
+    err: crate::write::SpliceError,
+) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "join.self-ref-rewrite",
+        format!(
+            "could not rewrite the self-reference `{relation}` of colliding doc `{address}` in milestone `{milestone_id}`: {err:?}"
+        ),
+        Some(Location::addressed(address, 1, 1)),
+        Some("re-stage the colliding doc so its self-reference is well-formed".to_string()),
+    )
 }
 
 /// A staged doc whose `docs/` area carries **no** provenance entry for it — a real
@@ -1348,6 +1562,258 @@ Context without any acceptance criteria.
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "milestone.unknown");
         assert!(err.route.is_some());
+    }
+
+    /// Stage a doc body into a sub-task's `docs/` area with a chosen [`Provenance`],
+    /// the way the two staging primitives would have but with a caller-supplied body
+    /// (so a `created` instance can carry a deliberate self-reference). Writes
+    /// `<sub_dir>/docs/<type>:<slug>.md` verbatim and records the provenance in that
+    /// area's manifest — the two inputs the join's clash rule reads.
+    fn stage_doc(
+        sub_dir: &Path,
+        type_name: &str,
+        slug: &str,
+        body: &str,
+        provenance: crate::state::Provenance,
+    ) {
+        let path = crate::state::instance_path(sub_dir, type_name, slug);
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk docs/");
+        std::fs::write(&path, body).expect("write staged body");
+        let mut record =
+            crate::state::ProvenanceRecord::load(sub_dir).expect("load provenance manifest");
+        record.record(format!("{type_name}:{slug}"), provenance);
+        std::fs::write(
+            crate::state::ProvenanceRecord::path_in(sub_dir),
+            record.to_bytes(),
+        )
+        .expect("write provenance manifest");
+    }
+
+    /// An ADR body whose `supersedes` ref points at `to` — used to build a `created`
+    /// ADR that references its *own* slug on purpose (the self-ref the suffix rule must
+    /// rewrite in lockstep with the slug suffix).
+    fn adr_superseding(title: &str, to: &str) -> String {
+        format!(
+            "---\nstatus: accepted\ndate: 2026-06-04\nsupersedes: {to}\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+        )
+    }
+
+    /// The done-criterion for T2 (`design/storage.md` → The by-task-id join, step 4:
+    /// colliding new instances + intra-doc self-ref rewrite; `structural-grammar.md` →
+    /// IDs: provenance and minting → deterministic suffix in task-id merge order). Two
+    /// sub-tasks each `created` an `adr:cache-strategy` instance whose body references
+    /// its **own** slug (`supersedes: adr:cache-strategy`). These are *distinct* docs,
+    /// not a clash: the **lower-task-id** instance keeps the bare `adr:cache-strategy`;
+    /// the **higher** takes the deterministic `-2` suffix → `adr:cache-strategy-2`, and
+    /// the suffixed instance's OWN self-reference is rewritten in lockstep to
+    /// `adr:cache-strategy-2` (so the renamed doc never dangles or points at its
+    /// sibling). The merged overlay holds both, suffix-resolved; the join surfaces no
+    /// findings (a collision of distinct `created` instances is not an error).
+    #[test]
+    fn join_suffixes_colliding_created_instances_and_rewrites_self_ref() {
+        let root = TempRoot::new("join-suffix");
+        let base = BasePin::new("7777777777777777777777777777777777777777", "7777777");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+
+        // Two sub-tasks, inserted in reverse-id order so insertion order diverges from
+        // id order. The id-sorted enumeration is `[area-low, area-zed]`, so `area-low`
+        // is the lower task id (keeps the bare slug) and `area-zed` the higher (suffixed).
+        add_task(root.path(), &milestone.id, "Area zed", "single-task").expect("zed adds");
+        add_task(root.path(), &milestone.id, "Area low", "single-task").expect("low adds");
+
+        // Each area stages a `created` `adr:cache-strategy` that supersedes its OWN slug.
+        let low_dir = root.path().join("tasks").join("area-low");
+        stage_doc(
+            &low_dir,
+            "adr",
+            "cache-strategy",
+            &adr_superseding("Cache strategy", "adr:cache-strategy"),
+            crate::state::Provenance::Created,
+        );
+        let zed_dir = root.path().join("tasks").join("area-zed");
+        stage_doc(
+            &zed_dir,
+            "adr",
+            "cache-strategy",
+            &adr_superseding("Cache strategy", "adr:cache-strategy"),
+            crate::state::Provenance::Created,
+        );
+
+        let outcome =
+            join(root.path(), &milestone.id, &schemas, &committed).expect("the join folds");
+
+        // No findings: a collision of distinct `created` instances is a suffix, not a clash.
+        assert!(
+            outcome.findings.is_empty(),
+            "colliding `created` instances suffix, never block: {:?}",
+            outcome.findings
+        );
+
+        // The overlay holds both, suffix-resolved by task-id order.
+        assert_eq!(
+            outcome.overlay.len(),
+            2,
+            "both distinct created docs survive"
+        );
+        let bare = outcome
+            .overlay
+            .get("adr:cache-strategy")
+            .expect("the lower-task-id instance keeps the bare slug");
+        assert_eq!(bare.source_task, "area-low");
+        assert_eq!(bare.provenance, crate::state::Provenance::Created);
+        // The bare instance's self-ref stays its own (bare) slug.
+        assert_eq!(
+            bare.edges,
+            vec![crate::index::Edge {
+                from: "adr:cache-strategy".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:cache-strategy".to_string(),
+            }],
+            "the bare instance references its own bare slug"
+        );
+
+        let suffixed = outcome
+            .overlay
+            .get("adr:cache-strategy-2")
+            .expect("the higher-task-id instance takes the `-2` suffix");
+        assert_eq!(suffixed.source_task, "area-zed");
+        assert_eq!(suffixed.provenance, crate::state::Provenance::Created);
+        // The suffixed instance's OWN self-reference is rewritten in lockstep: both the
+        // edge's `from` (its identity) and its self-ref `to` are the suffixed slug.
+        assert_eq!(
+            suffixed.edges,
+            vec![crate::index::Edge {
+                from: "adr:cache-strategy-2".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:cache-strategy-2".to_string(),
+            }],
+            "the suffixed instance's self-ref is rewritten to the suffixed slug"
+        );
+
+        // The suffix assignment is by **task id**, not by the order the areas are fed:
+        // folding the enumeration and its reverse yields the byte-identical outcome (the
+        // lower id always keeps the bare slug). A naïve fold keyed on input order would
+        // hand the bare slug to whichever area came first.
+        let ids = read_task_list(&milestone.dir)
+            .expect("read list")
+            .enumerate();
+        let mut reversed = ids.clone();
+        reversed.reverse();
+        let forward =
+            fold_areas(root.path(), &milestone.id, &ids, &schemas, &committed).expect("fwd fold");
+        let backward = fold_areas(root.path(), &milestone.id, &reversed, &schemas, &committed)
+            .expect("rev fold");
+        assert_eq!(
+            forward, backward,
+            "the suffix fold is order-invariant: the lower task id keeps the bare slug"
+        );
+        assert_eq!(forward, outcome, "the public join equals the explicit fold");
+    }
+
+    /// The done-criterion for T2 (`design/storage.md` → The by-task-id join, step 3:
+    /// same-doc clash incl. the mixed case). Two sub-areas staging **`edited-from-base`**
+    /// writes to the **same** committed-at-base slug is a partition violation → a
+    /// blocking, route-bearing `join.same-doc-clash` (never a blind merge). The **mixed
+    /// case** — one sub-area `created` a slug the other `edited-from-base` (same slug) —
+    /// is *also* a blocking clash, not a suffix. Each clashing slug emits exactly one
+    /// block and is kept out of the merged overlay.
+    #[test]
+    fn join_blocks_same_doc_clash_including_the_mixed_case() {
+        let root = TempRoot::new("join-clash");
+        let base = BasePin::new("8888888888888888888888888888888888888888", "8888888");
+        let schemas = join_schemas();
+        let committed = crate::index::EdgeIndex::default();
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+
+        // Three sub-areas. `evict` + `purge` both edit the SAME base slug
+        // `adr:eviction-policy` (the pure two-edited clash). `alpha` creates and `beta`
+        // edits the SAME slug `adr:retention` (the mixed clash).
+        add_task(root.path(), &milestone.id, "Purge area", "single-task").expect("purge adds");
+        add_task(root.path(), &milestone.id, "Evict area", "single-task").expect("evict adds");
+        add_task(root.path(), &milestone.id, "Beta area", "single-task").expect("beta adds");
+        add_task(root.path(), &milestone.id, "Alpha area", "single-task").expect("alpha adds");
+
+        let adr = |title: &str| {
+            format!(
+                "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+            )
+        };
+
+        // Two `edited-from-base` writes to one committed-at-base slug → clash.
+        stage_doc(
+            &root.path().join("tasks").join("evict-area"),
+            "adr",
+            "eviction-policy",
+            &adr("Eviction policy"),
+            crate::state::Provenance::EditedFromBase,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("purge-area"),
+            "adr",
+            "eviction-policy",
+            &adr("Eviction policy"),
+            crate::state::Provenance::EditedFromBase,
+        );
+
+        // Mixed case: one `created`, one `edited-from-base`, same slug → clash.
+        stage_doc(
+            &root.path().join("tasks").join("alpha-area"),
+            "adr",
+            "retention",
+            &adr("Retention"),
+            crate::state::Provenance::Created,
+        );
+        stage_doc(
+            &root.path().join("tasks").join("beta-area"),
+            "adr",
+            "retention",
+            &adr("Retention"),
+            crate::state::Provenance::EditedFromBase,
+        );
+
+        let outcome =
+            join(root.path(), &milestone.id, &schemas, &committed).expect("the join folds");
+
+        // Exactly two blocking clashes, one per clashing slug, each route-bearing.
+        let clashes: Vec<&Finding> = outcome
+            .findings
+            .iter()
+            .filter(|f| f.code == "join.same-doc-clash")
+            .collect();
+        assert_eq!(
+            clashes.len(),
+            2,
+            "one clash per clashing slug (two-edited + mixed): {:?}",
+            outcome.findings
+        );
+        for c in &clashes {
+            assert_eq!(c.severity, Severity::Blocking);
+            assert!(c.route.is_some(), "a same-doc clash carries a route: {c:?}");
+        }
+        // Both clashing slugs are named.
+        assert!(
+            clashes
+                .iter()
+                .any(|c| c.message.contains("adr:eviction-policy")),
+            "the two-edited clash names its slug: {clashes:?}"
+        );
+        assert!(
+            clashes.iter().any(|c| c.message.contains("adr:retention")),
+            "the mixed clash names its slug: {clashes:?}"
+        );
+        // A clashing slug is kept OUT of the merged overlay — never blind-merged.
+        assert!(
+            !outcome.overlay.contains_key("adr:eviction-policy"),
+            "the two-edited clash is not merged"
+        );
+        assert!(
+            !outcome.overlay.contains_key("adr:retention"),
+            "the mixed clash is not merged"
+        );
     }
 
     /// A title that normalizes to nothing falls back to the `milestone` type

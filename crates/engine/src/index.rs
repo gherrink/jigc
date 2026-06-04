@@ -419,6 +419,24 @@ fn dangling(edge: &Edge) -> Finding {
     )
 }
 
+/// Emit the sorted forward edges a doc `source` contributes under identity `from` —
+/// the same `(from, relation, to)` extraction the committed-rebuild / working-overlay
+/// paths perform, exposed for callers that hold a doc as bytes rather than a file (the
+/// by-task-id join's self-ref rewrite re-derives a suffixed instance's edges from its
+/// rewritten body, `storage.md` → The by-task-id join, step 4). An unparseable source
+/// contributes no edges (best-effort, mirroring the rebuild). Edges are sorted by
+/// `(from, relation, to)`.
+pub fn edges_from_source(schema: &Schema, source: &str, from: &str) -> Vec<Edge> {
+    let mut src = source.to_string();
+    crate::parse::strip_leading_bom(&mut src);
+    let Ok(doc) = crate::parse::parse_sections(schema, &src) else {
+        return Vec::new();
+    };
+    let mut edges = doc_edges(schema, &doc, from);
+    edges.sort();
+    edges
+}
+
 /// Emit the forward edges a single parsed doc contributes: one per present schema
 /// `ref` field (a list-valued ref → one edge per element).
 fn doc_edges(schema: &Schema, doc: &crate::parse::Document, from: &str) -> Vec<Edge> {
