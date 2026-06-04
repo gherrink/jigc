@@ -201,6 +201,174 @@ pub fn add_task(
     })
 }
 
+/// Seed a milestone's task list from a committed spec: enumerate the spec's
+/// repeatable **`criteria`** items via the parse-items read path
+/// (`parse_sections` → the section's `items`, *not* the `jigc task bind` slice)
+/// and mint one sub-task per criterion, the criterion's **text** (`ParsedItem.title`,
+/// the same value the slug mints from) as that sub-task's intent
+/// (`design/write-commands.md` → Minting a milestone, `jigc milestone
+/// add-from-spec`). Sub-tasks are appended in **physical item order** (the recorded
+/// audit trail); the milestone's enumeration stays id-sorted (Increment 1).
+///
+/// Reuses [`add_task`] for the per-criterion mint (no second minting discipline),
+/// so every sub-task inherits the milestone's single shared base in its own
+/// isolated `tasks/<sub>/` area and lands in the milestone's task list.
+///
+/// **Unknown milestone** → the [`add_task`] unknown-milestone block, before any
+/// spec read or mint. **Unknown / transient / unparseable spec** → the existing
+/// [`crate::store`]-shaped routed blocking finding (`store.unknown-type`,
+/// `store.transient-type`, `store.not-found`, `store.unparseable`). **Zero
+/// `criteria` items** → a blocking `milestone.no-criteria` finding ("nothing to
+/// seed from"); nothing is minted. A within-spec slug collision between two
+/// criteria surfaces the [`add_task`] `milestone.sub-task-collision` block
+/// unchanged (the suffix is the join's, never incremental seed).
+pub fn add_from_spec(
+    jigc_root: &Path,
+    repo_root: &Path,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    milestone_id: &str,
+    spec_addr: &str,
+    workflow_id: &str,
+) -> Result<Vec<AddedTask>, Finding> {
+    // Unknown milestone → reject before any spec read or mint.
+    if !milestone_dir(jigc_root, milestone_id).is_dir() {
+        return Err(unknown_milestone_finding(milestone_id));
+    }
+
+    // Read the committed spec and enumerate its `criteria` items (parse-items path).
+    let criteria = read_spec_criteria(repo_root, schemas, spec_addr)?;
+
+    // Zero criteria → "nothing to seed from"; mint nothing.
+    if criteria.is_empty() {
+        return Err(no_criteria_finding(spec_addr));
+    }
+
+    // One sub-task per criterion, the criterion text as intent, in physical order.
+    let mut added = Vec::with_capacity(criteria.len());
+    for intent in &criteria {
+        added.push(add_task(jigc_root, milestone_id, intent, workflow_id)?);
+    }
+    Ok(added)
+}
+
+/// The block-section id the spec's repeatable acceptance criteria live in
+/// (`cli/pack/schemas/spec.yaml`); the seed substrate `add_from_spec` enumerates.
+const CRITERIA_SECTION: &str = "criteria";
+
+/// Read a committed spec named by `spec_addr` and return its `criteria` items'
+/// **titles** in physical order (the criterion text the slug mints from).
+///
+/// Resolves the address's type to a [`Schema`](crate::schema::Schema), computes the
+/// canonical committed path, reads + parses it via [`crate::parse::parse_sections`]
+/// (the parse-items read path), and collects the `criteria` section's
+/// [`ParsedItem.title`](crate::parse::ParsedItem)s. Every failure — unknown type,
+/// transient (location-less) type, missing file, unparseable file, or no `criteria`
+/// section — is a routed blocking store-shaped [`Finding`].
+fn read_spec_criteria(
+    repo_root: &Path,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    spec_addr: &str,
+) -> Result<Vec<String>, Finding> {
+    let address = crate::address::Address::parse(spec_addr).map_err(|err| {
+        store_block(
+            "store.unparseable",
+            format!("could not parse spec address `{spec_addr}`: {err}"),
+            spec_addr,
+            "supply a valid `<type>:<slug>` spec address".to_string(),
+        )
+    })?;
+    let type_name = address.r#type.as_str();
+    let slug = address.slug.as_str();
+
+    let Some(schema) = schemas.get(type_name) else {
+        return Err(store_block(
+            "store.unknown-type",
+            format!("unknown doctype `{type_name}` for `{spec_addr}`"),
+            spec_addr,
+            "list the available doctypes with `jigc doc types`".to_string(),
+        ));
+    };
+
+    let Some(path) = crate::store::canonical_path(repo_root, schema, slug) else {
+        return Err(store_block(
+            "store.transient-type",
+            format!(
+                "doctype `{type_name}` is transient (no `location:`); `{spec_addr}` is not committed"
+            ),
+            spec_addr,
+            "the referenced doctype has no committed location".to_string(),
+        ));
+    };
+
+    let mut source = std::fs::read_to_string(&path).map_err(|err| {
+        store_block(
+            "store.not-found",
+            format!(
+                "could not read `{spec_addr}` at `{}`: {err}",
+                path.display()
+            ),
+            spec_addr,
+            "create the referenced spec, or fix the address to an existing one".to_string(),
+        )
+    })?;
+    crate::parse::strip_leading_bom(&mut source);
+
+    let doc = crate::parse::parse_sections(schema, &source).map_err(|findings| {
+        let why = findings
+            .first()
+            .map(|f| f.message.clone())
+            .unwrap_or_else(|| "unparseable".to_string());
+        store_block(
+            "store.unparseable",
+            format!(
+                "`{spec_addr}` at `{}` does not parse: {why}",
+                path.display()
+            ),
+            spec_addr,
+            "fix the committed spec so it conforms to its schema".to_string(),
+        )
+    })?;
+
+    let Some(section) = doc.sections.iter().find(|s| s.id == CRITERIA_SECTION) else {
+        return Err(store_block(
+            "store.no-such-section",
+            format!("`{spec_addr}` names no `{CRITERIA_SECTION}` section to seed from"),
+            spec_addr,
+            format!("the spec must declare a `{CRITERIA_SECTION}` section"),
+        ));
+    };
+
+    Ok(section.items.iter().map(|i| i.title.clone()).collect())
+}
+
+/// Build a blocking store-shaped finding (the same code/route shape
+/// [`crate::store`] surfaces) for a spec-read failure during seeding.
+fn store_block(code: &str, message: String, address: &str, route: String) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        code,
+        message,
+        Some(Location::addressed(address, 1, 1)),
+        Some(route),
+    )
+}
+
+/// The zero-criteria block: a blocking finding naming the empty spec, routing the
+/// agent to add criteria or seed differently — never a silent empty milestone
+/// (`design/write-commands.md` → Minting a milestone: "nothing to seed from").
+fn no_criteria_finding(spec_addr: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.no-criteria",
+        format!("spec `{spec_addr}` has no criteria to seed from"),
+        Some(Location::addressed(spec_addr, 1, 1)),
+        Some(
+            "add `criteria` items to the spec, or add sub-tasks with `jigc milestone add-task`"
+                .to_string(),
+        ),
+    )
+}
+
 /// The type-name a milestone sub-task mints under — the empty-intent fallback for
 /// [`crate::state::mint_task`]. A sub-task is a `task` work-unit; the workflow it
 /// runs is supplied separately and the fallback only fires on an empty slug.
@@ -616,6 +784,249 @@ mod tests {
         assert!(
             read_dir_diverges(&read_dir1) || read_dir_diverges(&read_dir2),
             "neither run's read_dir order diverged from id order: {read_dir1:?} / {read_dir2:?}"
+        );
+    }
+
+    use crate::schema::Schema;
+    use std::collections::BTreeMap;
+
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+
+    /// The schema map `add_from_spec` resolves the spec address's type against —
+    /// the shipped `spec` doctype (its repeatable `criteria` section is the seed
+    /// substrate).
+    fn schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert(
+            "spec".to_string(),
+            crate::schema::load_schema(SPEC_YAML).expect("spec.yaml loads"),
+        );
+        m
+    }
+
+    /// A committed `spec` with **three** repeatable `criteria` items — the seed
+    /// substrate `add-from-spec` enumerates. Human-editable, conformant bytes; the
+    /// three titles are deliberately not in id-sorted physical order, so the mint
+    /// (physical order) and the milestone's enumeration (id-sorted) are distinct.
+    const THREE_CRITERIA_SPEC: &str = "\
+# Gateway rate limiting
+
+## Goal
+
+Bound per-client request volume at the gateway.
+
+## Context
+
+Downstream services were each enforcing limits ad hoc.
+
+## Criteria
+
+### Rejects the 101st request  {#rejects-burst}
+
+The gateway rejects the 101st request in a rolling 60s window.
+
+### Admits within the window  {#admits-within}
+
+Requests under the cap are admitted unchanged.
+
+### Recovers after the window  {#recovers}
+
+The next window admits requests again.
+";
+
+    /// A committed `spec` whose `criteria` section has **zero** items — the
+    /// "nothing to seed from" block fixture.
+    const ZERO_CRITERIA_SPEC: &str = "\
+# Empty plan
+
+## Goal
+
+A goal with no criteria yet.
+
+## Context
+
+Context without any acceptance criteria.
+
+## Criteria
+";
+
+    /// Write a committed spec to its canonical path (`specs/<slug>.md`) under
+    /// `repo_root`.
+    fn write_committed_spec(repo_root: &Path, slug: &str, body: &str) {
+        let path = repo_root.join("specs").join(format!("{slug}.md"));
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, body).expect("write committed spec");
+    }
+
+    /// The done-criterion for T2 (`design/write-commands.md` → Minting a milestone,
+    /// `jigc milestone add-from-spec`; `design/storage.md` → The by-task-id join):
+    /// over a 3-criteria committed spec, `add_from_spec` mints EXACTLY 3 sub-tasks,
+    /// each pinned to the milestone's shared base in its own isolated `tasks/<sub>/`
+    /// area, with the 3 sub-task ids in the milestone's task list. Each sub-task's
+    /// intent is the criterion's TEXT (`ParsedItem.title`), so its id is the slug of
+    /// that title. The spec's physical criterion order is *not* id order, so the
+    /// recorded task list keeps mint (physical) order while enumeration is id-sorted.
+    #[test]
+    fn add_from_spec_mints_one_sub_task_per_criterion() {
+        let root = TempRoot::new("from-spec");
+        let repo = TempRoot::new("from-spec-repo");
+        let base = BasePin::new("3333333333333333333333333333333333333333", "3333333");
+
+        let milestone =
+            mint_milestone(root.path(), "Cache rework", base.clone()).expect("milestone mints");
+        write_committed_spec(repo.path(), "gateway-rate-limiting", THREE_CRITERIA_SPEC);
+
+        let added = add_from_spec(
+            root.path(),
+            repo.path(),
+            &schemas(),
+            &milestone.id,
+            "spec:gateway-rate-limiting",
+            "single-task",
+        )
+        .expect("3-criteria spec seeds 3 sub-tasks");
+
+        // EXACTLY 3 sub-tasks, minted in the spec's physical criterion order, each
+        // intent = the criterion title.
+        assert_eq!(added.len(), 3, "one sub-task per criterion");
+        let intent_ids: Vec<&str> = added.iter().map(|a| a.task.id.as_str()).collect();
+        assert_eq!(
+            intent_ids,
+            vec![
+                "rejects-the-101st-request",
+                "admits-within-the-window",
+                "recovers-after-the-window"
+            ],
+            "sub-tasks mint from the criterion text in physical order"
+        );
+
+        // Each sub-task: its own isolated area, pinned to the MILESTONE's shared base.
+        for a in &added {
+            assert_eq!(a.milestone_id, "cache-rework");
+            let sub_dir = root.path().join("tasks").join(&a.task.id);
+            assert_eq!(a.task.dir, sub_dir);
+            assert!(sub_dir.is_dir(), "sub-task opens its own isolated area");
+            assert_eq!(a.task.base, base, "sub-task inherits the shared base");
+            assert_eq!(
+                crate::state::read_base_pin(&sub_dir).expect("read sub base"),
+                base,
+                "the sub-task's base.json equals the milestone's shared base"
+            );
+            // Its intent is the criterion text verbatim.
+            let intent = crate::state::read_intent(&sub_dir).expect("read intent");
+            assert!(
+                !intent.is_empty() && crate::slug::slugify(&intent) == a.task.id,
+                "the sub-task intent is the criterion text: {intent:?}"
+            );
+        }
+
+        // All 3 ids land in the milestone's task list (recorded = mint/physical order).
+        let list = read_task_list(&milestone.dir).expect("read list");
+        assert_eq!(
+            list.tasks,
+            vec![
+                "rejects-the-101st-request".to_string(),
+                "admits-within-the-window".to_string(),
+                "recovers-after-the-window".to_string(),
+            ],
+            "all 3 sub-task ids are recorded in mint order"
+        );
+        // Enumeration (what the join reads) is id-sorted, distinct from mint order.
+        assert_eq!(
+            list.enumerate(),
+            vec![
+                "admits-within-the-window".to_string(),
+                "recovers-after-the-window".to_string(),
+                "rejects-the-101st-request".to_string(),
+            ],
+            "enumeration is id-sorted, not physical/mint order"
+        );
+    }
+
+    /// A spec whose `criteria` section has **zero** items returns a blocking,
+    /// route-bearing `milestone.no-criteria` finding and mints nothing — never a
+    /// silent empty milestone (`design/write-commands.md` → Minting a milestone:
+    /// "A spec with zero criteria items is a blocking 'nothing to seed from'").
+    #[test]
+    fn add_from_spec_with_zero_criteria_blocks_and_mints_nothing() {
+        let root = TempRoot::new("zero-crit");
+        let repo = TempRoot::new("zero-crit-repo");
+        let base = BasePin::new("4444444444444444444444444444444444444444", "4444444");
+
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        write_committed_spec(repo.path(), "empty-plan", ZERO_CRITERIA_SPEC);
+
+        let err = add_from_spec(
+            root.path(),
+            repo.path(),
+            &schemas(),
+            &milestone.id,
+            "spec:empty-plan",
+            "single-task",
+        )
+        .expect_err("a zero-criteria spec blocks");
+
+        assert_eq!(err.severity, Severity::Blocking);
+        assert_eq!(err.code, "milestone.no-criteria");
+        assert!(
+            err.message.contains("empty-plan"),
+            "the block names the empty spec: {err:?}"
+        );
+        assert!(err.route.is_some(), "the no-criteria block carries a route");
+
+        // Nothing minted: the task list is still empty and no tasks/ areas exist.
+        assert_eq!(
+            read_task_list(&milestone.dir).expect("read list").tasks,
+            Vec::<String>::new(),
+            "a zero-criteria block appends nothing"
+        );
+        assert!(
+            !root.path().join("tasks").exists(),
+            "a zero-criteria block mints no sub-task area"
+        );
+    }
+
+    /// An unknown milestone rejects before any spec read or mint; an unknown spec
+    /// (no committed file) rejects with a routed store-shaped block — each reusing
+    /// the existing milestone + store finding shapes.
+    #[test]
+    fn add_from_spec_rejects_unknown_milestone_and_unknown_spec() {
+        let root = TempRoot::new("from-spec-rejects");
+        let repo = TempRoot::new("from-spec-rejects-repo");
+        let base = BasePin::new("5555555555555555555555555555555555555555", "5555555");
+
+        // Unknown milestone → reject (reuses the add-task unknown-milestone shape).
+        let unknown_ms = add_from_spec(
+            root.path(),
+            repo.path(),
+            &schemas(),
+            "no-such-milestone",
+            "spec:whatever",
+            "single-task",
+        )
+        .expect_err("an unknown milestone rejects");
+        assert_eq!(unknown_ms.severity, Severity::Blocking);
+        assert_eq!(unknown_ms.code, "milestone.unknown");
+        assert!(unknown_ms.route.is_some());
+
+        // Unknown spec (no committed file) → routed store-not-found block, nothing minted.
+        let milestone = mint_milestone(root.path(), "Cache rework", base).expect("milestone mints");
+        let unknown_spec = add_from_spec(
+            root.path(),
+            repo.path(),
+            &schemas(),
+            &milestone.id,
+            "spec:does-not-exist",
+            "single-task",
+        )
+        .expect_err("an unknown spec rejects");
+        assert_eq!(unknown_spec.severity, Severity::Blocking);
+        assert_eq!(unknown_spec.code, "store.not-found");
+        assert!(unknown_spec.route.is_some());
+        assert_eq!(
+            read_task_list(&milestone.dir).expect("read list").tasks,
+            Vec::<String>::new(),
+            "an unknown spec appends nothing"
         );
     }
 
