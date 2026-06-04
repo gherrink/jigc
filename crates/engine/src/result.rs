@@ -200,19 +200,6 @@ fn is_inventory_check(probe: &str, check: &str) -> bool {
         .any(|(p, c)| *p == probe && *c == check)
 }
 
-/// Parse a resolved knob value into a [`Severity`]. The keys are `type: enum` of
-/// `[blocking, warning, advisory]`, adjudicated at cascade resolution; an
-/// unrecognized token here safely yields `None` (keep the emitted default) rather
-/// than panicking on hostile config.
-fn parse_severity(value: &str) -> Option<Severity> {
-    match value {
-        "blocking" => Some(Severity::Blocking),
-        "warning" => Some(Severity::Warning),
-        "advisory" => Some(Severity::Advisory),
-        _ => None,
-    }
-}
-
 /// The engine-owned severity post-pass (`validation.md` → Severity assignment — the
 /// M6 post-pass): for each finding **whose `(probe, check)` is an inventory row**,
 /// resolve its severity by the three-step lookup — per-check key
@@ -233,7 +220,7 @@ fn assign_severity(findings: &mut [Finding], resolved: &Resolved) {
         if let Some(severity) = resolved
             .overridden_scalar(&per_check)
             .or_else(|| resolved.overridden_scalar(&per_probe))
-            .and_then(parse_severity)
+            .and_then(Severity::from_token)
         {
             finding.severity = severity;
         }
