@@ -85,6 +85,34 @@ pub struct MintedMilestone {
     pub base: BasePin,
 }
 
+/// Synthesize the **one** milestone-finalize commit message as a pure
+/// **structural projection** of the milestone `id` + its **id-ordered** sub-task
+/// list (`DECISIONS.md` 2026-06-04 → the inc-4 fork resolution; `finalize.md` →
+/// `fan-out` finalize). No authored prose, no commit doc, no slot — this is
+/// *structure* the CLI owns, like git's auto-generated merge message, so it stays
+/// on the CLI's side of the determinism boundary.
+///
+/// The body lines are the sub-task ids in canonical id-sorted order
+/// ([`TaskList::enumerate`], never insertion / `read_dir` / feed order), so the
+/// message is **byte-identical** across feed orders — the property flow-9's
+/// determinism assertion requires (Validation hardening #7). The layout is
+/// golden-locked: a subject naming the milestone and its sub-task count, a blank
+/// line, then one `- <sub-task-id>` line per sub-task, and a trailing newline.
+pub fn synthesized_message(milestone_id: &str, tasks: &TaskList) -> String {
+    let ids = tasks.enumerate();
+    let mut msg = format!(
+        "Finalize milestone {milestone_id} ({} sub-task{})\n\n",
+        ids.len(),
+        if ids.len() == 1 { "" } else { "s" }
+    );
+    for id in &ids {
+        msg.push_str("- ");
+        msg.push_str(id);
+        msg.push('\n');
+    }
+    msg
+}
+
 /// The on-disk directory a milestone's state lives in: `<jigc_root>/milestones/<id>/`.
 pub fn milestone_dir(jigc_root: &Path, id: &str) -> PathBuf {
     jigc_root.join("milestones").join(id)
@@ -2419,5 +2447,60 @@ Context without any acceptance criteria.
             "stripped-to-empty title uses the type name"
         );
         assert!(root.path().join("milestones").join("milestone").is_dir());
+    }
+
+    /// T1 done-criterion (`DECISIONS.md` 2026-06-04 → the inc-4 fork resolution;
+    /// `finalize.md` → `fan-out` finalize): the milestone-finalize commit message
+    /// is a **pure structural projection** of the milestone id + its
+    /// **id-ordered** sub-task list — no authored prose, golden-locked. A
+    /// `TaskList` carrying ≥2 sub-tasks renders the expected golden string; the
+    /// **same task set** under two divergent insertion orders (incl. the reverse)
+    /// renders a **byte-identical** message, since the projection sorts at the
+    /// boundary ([`TaskList::enumerate`]), never reading insertion order
+    /// (Validation hardening #7).
+    #[test]
+    fn synthesized_message_is_a_byte_stable_id_ordered_projection() {
+        // Insertion order: reverse of id order.
+        let forward = TaskList {
+            tasks: vec![
+                "zebra-fix".to_string(),
+                "alpha-fix".to_string(),
+                "mid-fix".to_string(),
+            ],
+        };
+        // The reverse insertion order over the same id set.
+        let reverse = TaskList {
+            tasks: vec![
+                "mid-fix".to_string(),
+                "alpha-fix".to_string(),
+                "zebra-fix".to_string(),
+            ],
+        };
+
+        let msg = synthesized_message("cache-hardening", &forward);
+
+        // Golden: subject names the milestone + count; one id-ordered line per
+        // sub-task; the body is id-sorted, never insertion order.
+        let expected = "\
+Finalize milestone cache-hardening (3 sub-tasks)
+
+- alpha-fix
+- mid-fix
+- zebra-fix
+";
+        assert_eq!(
+            msg, expected,
+            "the synthesized message is the golden projection"
+        );
+
+        // The reverse insertion order yields the byte-identical message — the
+        // id-sort at the boundary, hardening #7 (reverse is mandatory: an
+        // id-ordered insertion would make insertion order trivially equal id order
+        // and hide an insertion-order leak).
+        assert_eq!(
+            synthesized_message("cache-hardening", &reverse),
+            msg,
+            "the message is byte-identical across divergent insertion orders"
+        );
     }
 }
