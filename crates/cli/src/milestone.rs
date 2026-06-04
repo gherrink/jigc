@@ -38,13 +38,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
-/// The work-workflow a milestone sub-task is minted from. A sub-task is a `task`
-/// work-unit that will be executed end-to-end, so it is minted as the canonical
-/// `single-task` work-workflow (the cascade `default-workflow` is the
-/// `creates-task: false` router, which is not a work-workflow — `DECISIONS.md`
-/// 2026-06-04). The choice of execution workflow per sub-task is an M8 control-plane
-/// concern; here it only records the minting workflow.
-const SUB_TASK_WORKFLOW: &str = "single-task";
+/// The default minting workflow for a milestone sub-task when `add-task` /
+/// `add-from-spec` are given no `--workflow <id>`. A sub-task is a `task` work-unit
+/// re-entered via `jigc workflow <W> --task <id>`; its minting workflow is recorded
+/// per sub-task (read back by [`engine::state::read_workflow_id`]) and the re-entry
+/// asserts equality against it (`design/write-commands.md` → Minting a milestone, the
+/// `--workflow <id>` arg; `DECISIONS.md` 2026-06-04). The choice of workflow per
+/// sub-task is the caller's; here we only record it.
+const DEFAULT_SUB_TASK_WORKFLOW: &str = "sub-task";
 
 /// The `jigc milestone <verb>` subcommand tree (`design/write-commands.md` →
 /// Minting a milestone + its task list).
@@ -63,6 +64,10 @@ pub enum MilestoneCommand {
         milestone_id: String,
         /// The sub-task intent — slugged into the sub-task id.
         intent: String,
+        /// The minting workflow recorded for the sub-task (read back on re-entry,
+        /// which asserts equality against it). Defaults to `sub-task`.
+        #[arg(long, default_value = DEFAULT_SUB_TASK_WORKFLOW)]
+        workflow: String,
     },
     /// Seed a milestone's task list from a committed spec: mint one sub-task per
     /// repeatable `criterion` of the spec (criterion text as intent). A spec with
@@ -72,6 +77,10 @@ pub enum MilestoneCommand {
         milestone_id: String,
         /// The committed spec's address (`spec:<slug>`) to enumerate criteria from.
         spec_addr: String,
+        /// The minting workflow recorded for every seeded sub-task (read back on
+        /// re-entry, which asserts equality against it). Defaults to `sub-task`.
+        #[arg(long, default_value = DEFAULT_SUB_TASK_WORKFLOW)]
+        workflow: String,
     },
     /// Emit a milestone's sub-task ids in **canonical id-sorted order** — the
     /// deterministic order the by-task-id join enumerates, surfaced through the
@@ -128,11 +137,13 @@ impl MilestoneCommand {
             MilestoneCommand::AddTask {
                 milestone_id,
                 intent,
-            } => run_add_task(cwd, &milestone_id, &intent),
+                workflow,
+            } => run_add_task(cwd, &milestone_id, &intent, &workflow),
             MilestoneCommand::AddFromSpec {
                 milestone_id,
                 spec_addr,
-            } => run_add_from_spec(cwd, &milestone_id, &spec_addr),
+                workflow,
+            } => run_add_from_spec(cwd, &milestone_id, &spec_addr, &workflow),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
             MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
             MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
@@ -172,13 +183,12 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
 /// the milestone's shared base in its own isolated area and append it. Returns the
 /// summary line; an unknown milestone or a within-milestone collision surfaces as
 /// the engine's routed blocking finding.
-fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str) -> Result<String> {
+fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) -> Result<String> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = repo_root.join(".jigc");
 
-    let added =
-        add_task(&jigc_root, milestone_id, intent, SUB_TASK_WORKFLOW).map_err(finding_to_err)?;
+    let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
     Ok(format!(
         "added task:{} to milestone:{}",
         added.task.id, added.milestone_id
@@ -194,7 +204,12 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str) -> Result<String> 
 /// unparseable spec, or a **zero-criteria** spec (`milestone.no-criteria`) surfaces
 /// as the engine's routed blocking finding and exits non-zero
 /// (`design/write-commands.md` → Minting a milestone).
-fn run_add_from_spec(cwd: &Path, milestone_id: &str, spec_addr: &str) -> Result<String> {
+fn run_add_from_spec(
+    cwd: &Path,
+    milestone_id: &str,
+    spec_addr: &str,
+    workflow: &str,
+) -> Result<String> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = repo_root.join(".jigc");
@@ -206,7 +221,7 @@ fn run_add_from_spec(cwd: &Path, milestone_id: &str, spec_addr: &str) -> Result<
         &schemas,
         milestone_id,
         spec_addr,
-        SUB_TASK_WORKFLOW,
+        workflow,
     )
     .map_err(finding_to_err)?;
 

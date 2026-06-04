@@ -901,3 +901,67 @@ fn add_task_to_an_unknown_milestone_rejects() {
         "the unknown-milestone block must name it and carry a route; got:\n{stderr}",
     );
 }
+
+/// Read the persisted minting-workflow id of a sub-task from its isolated working
+/// area (`.jigc/tasks/<sub>/workflow`) — the `read_workflow_id` companion of the
+/// engine mint, surfaced through the on-disk file the CLI threads `--workflow` into.
+fn sub_task_workflow(repo: &Path, sub: &str) -> String {
+    let path = repo.join(".jigc").join("tasks").join(sub).join("workflow");
+    fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("sub-task `{sub}` must persist its minting workflow: {e}"))
+}
+
+#[test]
+fn add_task_records_the_default_and_explicit_minting_workflow() {
+    let repo = TempDir::new("workflow-arg");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let created = run_milestone(repo.path(), home.path(), &["create", "Cache rework"]);
+    assert!(
+        created.status.success(),
+        "`jigc milestone create` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr),
+    );
+
+    // No `--workflow` → the new default `sub-task` is recorded (no longer the
+    // hardcoded `single-task`).
+    let defaulted = run_milestone(
+        repo.path(),
+        home.path(),
+        &["add-task", "cache-rework", "Default fix"],
+    );
+    assert!(
+        defaulted.status.success(),
+        "`jigc milestone add-task` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&defaulted.stderr),
+    );
+    assert_eq!(
+        sub_task_workflow(repo.path(), "default-fix"),
+        "sub-task",
+        "with no `--workflow`, the sub-task must record the default `sub-task`",
+    );
+
+    // Explicit `--workflow single-task` → that value is recorded.
+    let explicit = run_milestone(
+        repo.path(),
+        home.path(),
+        &[
+            "add-task",
+            "cache-rework",
+            "Explicit fix",
+            "--workflow",
+            "single-task",
+        ],
+    );
+    assert!(
+        explicit.status.success(),
+        "`jigc milestone add-task --workflow single-task` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&explicit.stderr),
+    );
+    assert_eq!(
+        sub_task_workflow(repo.path(), "explicit-fix"),
+        "single-task",
+        "with `--workflow single-task`, the sub-task must record `single-task`",
+    );
+}

@@ -823,6 +823,31 @@ mod cli_parse {
                 verb: MilestoneCommand::AddTask {
                     milestone_id: "cache-rework".to_string(),
                     intent: "Zebra fix".to_string(),
+                    workflow: "sub-task".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_add_task_workflow_parses_explicit_value() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "milestone",
+            "add-task",
+            "cache-rework",
+            "Zebra fix",
+            "--workflow",
+            "single-task",
+        ])
+        .expect("`jigc milestone add-task <id> <intent> --workflow <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::AddTask {
+                    milestone_id: "cache-rework".to_string(),
+                    intent: "Zebra fix".to_string(),
+                    workflow: "single-task".to_string(),
                 },
             }
         );
@@ -907,6 +932,31 @@ mod cli_parse {
                 verb: MilestoneCommand::AddFromSpec {
                     milestone_id: "cache-rework".to_string(),
                     spec_addr: "spec:gateway-rate-limiting".to_string(),
+                    workflow: "sub-task".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_add_from_spec_workflow_parses_explicit_value() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "milestone",
+            "add-from-spec",
+            "cache-rework",
+            "spec:gateway-rate-limiting",
+            "--workflow",
+            "single-task",
+        ])
+        .expect("`jigc milestone add-from-spec <id> <spec-addr> --workflow <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::AddFromSpec {
+                    milestone_id: "cache-rework".to_string(),
+                    spec_addr: "spec:gateway-rate-limiting".to_string(),
+                    workflow: "single-task".to_string(),
                 },
             }
         );
