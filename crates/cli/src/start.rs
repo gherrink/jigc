@@ -774,18 +774,11 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
         );
     }
 
-    let intent = state::read_intent(&task_dir)
-        .with_context(|| format!("could not read intent for `{id}`"))?;
-    let bound =
-        RolesRecord::load(&task_dir).with_context(|| format!("could not read roles for `{id}`"))?;
-
     // Resume composes the task's **own** minting workflow, never the cascade
     // default (`DECISIONS.md` 2026-06-01 → M2 Increment 3 re-cut): a `single-task`
     // task resumed after the default flips to `router` must still compose
     // `single-task`. A working area with no recorded workflow id is a clear fault,
     // not a silent fall-through to the default.
-    let pack = make_pack();
-    let pack = pack.as_ref();
     let workflow_id = state::read_workflow_id(&task_dir)
         .with_context(|| format!("could not read the recorded workflow for `{id}`"))?
         .with_context(|| {
@@ -793,7 +786,125 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
                 "task `{id}` has no recorded workflow — discard it with `jigc task discard {id}` and re-start with `jigc start`"
             )
         })?;
-    let workflow_bytes = read_pack(pack, PackResourceKind::Workflows, &workflow_id)?;
+    compose_task_workflow(
+        &repo_root,
+        &project_config,
+        &task_dir,
+        id,
+        &workflow_id,
+        &head,
+    )
+}
+
+/// Re-enter a milestone sub-task as a fanned sub-agent — the `jigc workflow <W>
+/// --task <id>` form (`design/write-commands.md` → Sub-agent re-entry). It composes
+/// the **explicitly-named** sub-workflow `workflow_id`, **asserting it equals the
+/// sub-task's recorded mint workflow** (`add-task`/`add-from-spec`'s `--workflow`)
+/// before composing — so a stale launch template that names the wrong workflow fails
+/// loudly rather than silently composing the wrong thing.
+///
+/// Distinct from [`resume_in_repo`] (`jigc start --task <id>`): resume takes no `<W>`
+/// arg and recomposes the task's *own* recorded workflow with no equality assertion;
+/// re-entry takes `<W>` and rejects a mismatch. Both share the same read/compose
+/// machinery ([`compose_task_workflow`]): the base-pin guard, the bound-roles context,
+/// the fill-aware `workflow-refs` gate, and `compose_with_store`. This is the
+/// read/compose half only — provisioning the write-ready area is a later task.
+///
+/// A nonexistent id rejects with `no task \`<id>\``; a `<W>` ≠ the recorded workflow
+/// rejects with a routed `workflow-refs.workflow-mismatch` block naming both ids + the
+/// sub-task; a base mismatch rejects with the divergence-routing prompt.
+pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<ComposedWorkflow> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let task_dir = repo_root.join(".jigc").join("tasks").join(id);
+    if !task_dir.is_dir() {
+        bail!(
+            "no task `{id}` — list a milestone's sub-tasks with `jigc milestone list-tasks <milestone-id>`"
+        );
+    }
+
+    // The task is pinned to its (milestone-shared) base; never operate it off it.
+    let pinned = state::read_base_pin(&task_dir)
+        .with_context(|| format!("could not read the base pin for task `{id}`"))?;
+    let head = read_head(&repo_root)?;
+    if pinned.sha != head.sha {
+        bail!(
+            "task `{id}` is pinned to base {} but you're on {} — switch back with `git checkout {}` or `jigc task discard {id}`",
+            pinned.short,
+            head.short,
+            pinned.short,
+        );
+    }
+
+    // The W-equality guard: the requested `<W>` must equal the sub-task's recorded
+    // mint workflow. A mismatch (the fan-out / launch template names a workflow the
+    // sub-task wasn't seeded for) is a blocking, routed finding — fail loud, never
+    // compose the wrong thing (`design/write-commands.md` → Sub-agent re-entry: the
+    // re-entry equality guard). A missing recorded workflow is the same clear fault
+    // resume reports.
+    let recorded = state::read_workflow_id(&task_dir)
+        .with_context(|| format!("could not read the recorded workflow for `{id}`"))?
+        .with_context(|| {
+            format!(
+                "task `{id}` has no recorded workflow — discard it with `jigc task discard {id}` and re-seed it with `jigc milestone add-task`"
+            )
+        })?;
+    if recorded != workflow_id {
+        return Err(finding_to_err(Finding::block(
+            "workflow-refs.workflow-mismatch",
+            format!(
+                "`jigc workflow {workflow_id} --task {id}` names workflow `{workflow_id}`, but sub-task `{id}` was minted with `{recorded}` — re-entry must compose the recorded workflow"
+            ),
+            format!(
+                "re-run as `jigc workflow {recorded} --task {id}`, or re-seed the sub-task with the intended `--workflow`"
+            ),
+        )));
+    }
+
+    compose_task_workflow(
+        &repo_root,
+        &project_config,
+        &task_dir,
+        id,
+        workflow_id,
+        &head,
+    )
+}
+
+/// Compose `workflow_id` over an existing task's working area — the read/compose
+/// spine both [`resume_in_repo`] (the recorded workflow) and [`reenter_in_repo`]
+/// (the explicitly-named, equality-guarded `<W>`) share. The caller has already
+/// resolved the task dir, verified the base pin against `head`, and resolved
+/// `workflow_id`; this reads the intent + bound roles, runs the fill-aware
+/// `workflow-refs` gate, and composes over the committed store + edge overlay so a
+/// context-slice over a persisted doc dereferences (`worked-examples.md` → Task 2).
+/// Mints nothing and provisions nothing — purely read/compose.
+fn compose_task_workflow(
+    repo_root: &Path,
+    project_config: &Path,
+    task_dir: &Path,
+    id: &str,
+    workflow_id: &str,
+    head: &BasePin,
+) -> Result<ComposedWorkflow> {
+    let intent = state::read_intent(task_dir)
+        .with_context(|| format!("could not read intent for `{id}`"))?;
+    let bound =
+        RolesRecord::load(task_dir).with_context(|| format!("could not read roles for `{id}`"))?;
+
+    let pack = make_pack();
+    let pack = pack.as_ref();
+    // A workflow the pack does not provide is the routed `workflow-refs.unknown-
+    // workflow` block (not a generic "pack is missing" — the recorded/named id may
+    // be a not-yet-shipped pack workflow, e.g. `sub-task` before increment 5).
+    let workflow_bytes = read_workflow(pack, workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     let commands = load_catalog(pack)?;
     let selectable = selectable_workflows(pack)?;
@@ -801,7 +912,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     // `<location>/<slug>.md` instances; the same `schemas` set the edge overlay below
     // resolves `<type>` prefixes against.
     let schemas = all_schemas(pack)?;
-    let store_feed = committed_store(&repo_root, &schemas);
+    let store_feed = committed_store(repo_root, &schemas);
 
     let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
     let source = PackStepSource { pack };
@@ -812,7 +923,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     // front door, else a `{{fill:}}` point would survive resume to phase 8 unresolved.
     // The fill-aware gate runs the same M4 orphan + survivor checks (`overrides.md` →
     // The `{{fill:}}` placeholder); a no-fill cascade is the identity.
-    let (_resolved, overrides) = resolve_cascade(pack, &project_config)?;
+    let (_resolved, overrides) = resolve_cascade(pack, project_config)?;
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
         &[],
@@ -835,10 +946,10 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     // CLI locates the layers (committed-store root + the `.jigc/` index home), the
     // engine resolves through the `ContentStore` trait (`VISION.md` principle #4).
     let jigc_root = repo_root.join(".jigc");
-    let committed = index::load_committed(&repo_root, &jigc_root, &schemas, &head.sha);
-    let overlay = index::overlay_working(&committed, &task_dir, &schemas);
+    let committed = index::load_committed(repo_root, &jigc_root, &schemas, &head.sha);
+    let overlay = index::overlay_working(&committed, task_dir, &schemas);
     let store = StoreContext {
-        repo_root: &repo_root,
+        repo_root,
         schemas: &schemas,
         overlay: &overlay,
     };

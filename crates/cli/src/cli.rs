@@ -83,6 +83,23 @@ pub enum Command {
         explain: bool,
     },
 
+    /// Sub-agent re-entry — `jigc workflow <W> --task <id>` composes the
+    /// **explicitly-named** sub-workflow `<W>` for a milestone sub-task, asserting
+    /// `<W>` equals the sub-task's recorded mint workflow (a mismatch is rejected,
+    /// failing loudly on a stale launch template). Distinct from `jigc start --task`
+    /// (top-level resume, which recomposes the task's *own* recorded workflow with
+    /// no `<W>` arg) (`design/write-commands.md` → Sub-agent re-entry).
+    Workflow {
+        /// The sub-workflow to compose — the fan-out step's `run:` workflow. Must
+        /// equal the sub-task's recorded mint workflow, else rejected.
+        workflow: String,
+
+        /// The milestone sub-task to enter. Required: re-entry always names its
+        /// sub-task (the `--task`-scoped barrier; `design/write-commands.md`).
+        #[arg(long)]
+        task: String,
+    },
+
     /// The write-path surface — `jigc doc <verb> <addr>` over the active task's
     /// working area (`design/write-commands.md` → The verbs).
     Doc {
@@ -192,6 +209,7 @@ impl Cli {
                 explain: true,
                 ..
             } => unreachable!("clap rejects `<intent>`/`--explain` together with `--task`"),
+            Command::Workflow { workflow, task } => run_reenter(self.format, &workflow, &task),
             Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
             Command::Config { verb } => run_config(verb),
@@ -423,6 +441,34 @@ fn run_resume(format: Format, id: &str) -> ExitCode {
         }
     };
     match start::resume_in_repo(&cwd, id) {
+        Ok(view) => {
+            println!("{}", render::composed(format, &view));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Re-enter a milestone sub-task as a fanned sub-agent: compose the
+/// explicitly-named `workflow` for sub-task `task` against the current working
+/// directory, render the composed view through the selected `format`, and print
+/// it. The CLI asserts `workflow` equals the sub-task's recorded mint workflow
+/// before composing — a mismatch (a stale launch template) is a blocking finding
+/// on stderr (with its route) and exits non-zero; an unknown sub-task or a
+/// blocking gate finding likewise surfaces on stderr and exits non-zero
+/// (`design/write-commands.md` → Sub-agent re-entry).
+fn run_reenter(format: Format, workflow: &str, task: &str) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match start::reenter_in_repo(&cwd, workflow, task) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
             ExitCode::SUCCESS
@@ -974,6 +1020,26 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "milestone", "destroy", "cache-rework"])
             .expect_err("an unknown milestone verb must be rejected");
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
+    }
+
+    #[test]
+    fn workflow_parses_the_id_and_required_task() {
+        let cli = Cli::try_parse_from(["jigc", "workflow", "single-task", "--task", "move-cache"])
+            .expect("`jigc workflow <W> --task <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Workflow {
+                workflow: "single-task".to_string(),
+                task: "move-cache".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn workflow_requires_the_task_flag() {
+        let err = Cli::try_parse_from(["jigc", "workflow", "single-task"])
+            .expect_err("`jigc workflow <W>` with no `--task` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]
