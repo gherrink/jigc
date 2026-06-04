@@ -79,6 +79,12 @@ const DOCS_DIR: &str = "docs";
 /// `schema-conformance.ref-resolves` (forward-ref / edge-index integrity) sweep over
 /// the whole task once.
 ///
+/// `resolved` is the resolved cascade the caller already built; it feeds the
+/// engine-owned severity post-pass at [`ValidationReport::new`] (`validation.md` →
+/// Severity assignment — the M6 post-pass), so a project can tune a tunable check's
+/// severity. A no-delta cascade leaves every emitted severity untouched (the
+/// byte-identical no-override path).
+///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
 /// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
@@ -96,6 +102,7 @@ pub fn validate_task(
     repo_root: &Path,
     jigc_root: &Path,
     head: &str,
+    resolved: &crate::cascade::Resolved,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for entry in staged_instances(dir)? {
@@ -137,7 +144,11 @@ pub fn validate_task(
         &overlay, repo_root, dir, schemas,
     ));
 
-    Ok(ValidationReport::new(findings))
+    // Severity assignment is the engine-owned post-pass at report construction
+    // (`validation.md` → Severity assignment — the M6 post-pass): `resolved` is the
+    // cascade the caller resolved, read per-finding by inventory `(probe, check)`
+    // membership. A no-delta cascade leaves every emitted severity untouched.
+    Ok(ValidationReport::new(findings, resolved))
 }
 
 /// One staged doc instance under `<dir>/docs/`: its `docs/<filename>` record key
@@ -592,6 +603,22 @@ kind: memo
         m
     }
 
+    /// A no-delta resolved cascade — the post-pass leaves every emitted severity
+    /// untouched, so these sweeps assert the byte-identical no-override path.
+    fn no_delta_resolved() -> crate::cascade::Resolved {
+        crate::cascade::resolve(
+            &crate::cascade::PackDefaultLayer::new(
+                "dev-pack",
+                "0.1.0",
+                BTreeMap::new(),
+                Vec::new(),
+            ),
+            None,
+            None,
+        )
+        .expect("resolves")
+    }
+
     /// The done-criterion. Over a working area with **one drifted file** and **one
     /// conformance-broken instance**, `validate_task` returns *both* findings and
     /// `has_blocking() == true`; over a **clean** area it returns an empty report and
@@ -618,6 +645,7 @@ kind: memo
             area.dir(),
             area.dir(),
             "HEAD",
+            &no_delta_resolved(),
         )
         .expect("sweep runs");
 
@@ -649,6 +677,7 @@ kind: memo
             clean.dir(),
             clean.dir(),
             "HEAD",
+            &no_delta_resolved(),
         )
         .expect("clean sweep runs");
 
@@ -718,6 +747,22 @@ mod ref_resolves_in_sweep_tests {
             load_schema(ADR_YAML).expect("adr.yaml loads"),
         );
         m
+    }
+
+    /// A no-delta resolved cascade — the post-pass is a no-op, so these sweeps
+    /// exercise the byte-identical no-override path.
+    fn no_delta_resolved() -> crate::cascade::Resolved {
+        crate::cascade::resolve(
+            &crate::cascade::PackDefaultLayer::new(
+                "dev-pack",
+                "0.1.0",
+                BTreeMap::new(),
+                Vec::new(),
+            ),
+            None,
+            None,
+        )
+        .expect("resolves")
     }
 
     /// A committed ADR `A` (the supersede target), with no outgoing ref. Its required
@@ -807,6 +852,7 @@ Slightly higher write latency for resilience.
             repo.path(),
             &jigc,
             "HEAD",
+            &no_delta_resolved(),
         )
         .expect("sweep runs");
 
@@ -857,6 +903,7 @@ Slightly higher write latency for resilience.
             repo.path(),
             &jigc,
             "HEAD",
+            &no_delta_resolved(),
         )
         .expect("sweep runs");
 

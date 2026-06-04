@@ -11,7 +11,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::cascade::LayerKind;
+use crate::cascade::{LayerKind, Resolved};
 use crate::finding::{Finding, Severity};
 
 /// The result-contract schema version. Bumped only when the JSON projection of a
@@ -152,10 +152,103 @@ pub struct ValidationReport {
     pub findings: Vec<Finding>,
 }
 
+/// The MVP check inventory as the `(probe, check)` **membership set** — the keyed
+/// (tunable + floored) surface the M6 post-pass matches on, the engine constant
+/// mirroring `validation.md` → MVP check inventory. A `Finding` whose `(probe,
+/// check)` is *not* a row here is **exempt** from the post-pass and keeps its
+/// emitted severity (`validation.md` → Inventory = the keyed surface, not every
+/// finding the engine emits; matched by membership, never code-prefix).
+///
+/// Membership is all this milestone's post-pass needs: severity is re-graded **only**
+/// on an explicit `scalar-set` (override-only-on-explicit-delta) and otherwise kept
+/// at the *emitted* severity, so the table never has to carry a declared default that
+/// mirrors the code's literal. The per-check default severity + `floor` land in
+/// `knobs.yaml` in the next increment (where `check_value` / `--explain` consume
+/// them); the membership set is the engine knowledge this increment requires.
+///
+/// The five built `override-default` codes collapse onto three checks
+/// (`target-exists` / `target-unchanged` / `basis-recorded`) via the `Finding.check`
+/// field T1 already canonicalizes (`validation.md` → Code-id reconciliation), so the
+/// inventory carries the three checks, not the five codes.
+const CHECK_INVENTORY: &[(&str, &str)] = &[
+    ("workflow-refs", "placeholder-resolves"),
+    ("workflow-refs", "include-resolves"),
+    ("workflow-refs", "command-ref-resolves"),
+    ("workflow-refs", "include-cycle-absent"),
+    ("workflow-refs", "at-marker-on-non-scalar"),
+    ("workflow-refs", "run-marker-not-shadowed"),
+    ("workflow-refs", "body-include-only"),
+    ("schema-conformance", "ref-resolves"),
+    ("schema-conformance", "required-slot-present"),
+    ("schema-conformance", "required-field-present"),
+    ("schema-conformance", "field-value-conformant"),
+    ("file-state", "hash-matches"),
+    ("schema-completeness", "inverse-cardinality"),
+    ("override-default", "target-exists"),
+    ("override-default", "target-unchanged"),
+    ("override-default", "basis-recorded"),
+    ("commit-rendering", "line-limit-subject"),
+    ("commit-rendering", "line-limit-body"),
+];
+
+/// Whether a `(probe, check)` is a keyed inventory row — the membership test that
+/// gates the post-pass (a non-member finding is exempt and keeps its emitted
+/// severity).
+fn is_inventory_check(probe: &str, check: &str) -> bool {
+    CHECK_INVENTORY
+        .iter()
+        .any(|(p, c)| *p == probe && *c == check)
+}
+
+/// Parse a resolved knob value into a [`Severity`]. The keys are `type: enum` of
+/// `[blocking, warning, advisory]`, adjudicated at cascade resolution; an
+/// unrecognized token here safely yields `None` (keep the emitted default) rather
+/// than panicking on hostile config.
+fn parse_severity(value: &str) -> Option<Severity> {
+    match value {
+        "blocking" => Some(Severity::Blocking),
+        "warning" => Some(Severity::Warning),
+        "advisory" => Some(Severity::Advisory),
+        _ => None,
+    }
+}
+
+/// The engine-owned severity post-pass (`validation.md` → Severity assignment — the
+/// M6 post-pass): for each finding **whose `(probe, check)` is an inventory row**,
+/// resolve its severity by the three-step lookup — per-check key
+/// (`validation.<probe>.<check>.severity`), then per-probe key
+/// (`validation.<probe>.severity`), then leave the emitted severity. A finding is
+/// re-graded **only** when the resolved cascade actually carries a `scalar-set` for
+/// one of those keys (override-only-on-explicit-delta); absent any delta it keeps the
+/// emitted default, so the no-override path is byte-identical. Findings with no
+/// inventory row are exempt entirely — matched by membership, never code-prefix.
+fn assign_severity(findings: &mut [Finding], resolved: &Resolved) {
+    for finding in findings {
+        if !is_inventory_check(&finding.probe, &finding.check) {
+            // Not a keyed row → exempt: keep the emitted severity.
+            continue;
+        }
+        let per_check = format!("validation.{}.{}.severity", finding.probe, finding.check);
+        let per_probe = format!("validation.{}.severity", finding.probe);
+        if let Some(severity) = resolved
+            .overridden_scalar(&per_check)
+            .or_else(|| resolved.overridden_scalar(&per_probe))
+            .and_then(parse_severity)
+        {
+            finding.severity = severity;
+        }
+    }
+}
+
 impl ValidationReport {
-    /// Build a report over the aggregated `findings`, stamping the current
-    /// [`SCHEMA_VERSION`].
-    pub fn new(findings: Vec<Finding>) -> Self {
+    /// Build a report over the aggregated `findings`, running the engine-owned
+    /// severity post-pass against the resolved cascade before stamping the current
+    /// [`SCHEMA_VERSION`] — the single construction point, so `has_blocking()` and
+    /// every downstream consumer read *post-pass* severities (`validation.md` →
+    /// Assigned once, at report construction — before the gate). On a no-delta
+    /// cascade the post-pass is a no-op and output is byte-identical.
+    pub fn new(mut findings: Vec<Finding>, resolved: &Resolved) -> Self {
+        assign_severity(&mut findings, resolved);
         Self {
             schema_version: SCHEMA_VERSION,
             findings,
@@ -358,13 +451,17 @@ mod tests {
 
     /// `ValidationReport` projects to the stable `{schema_version, findings}` shape
     /// and `has_blocking()` is true iff any finding is blocking — the gate predicate
-    /// `finalize` consults. An advisory-only report is non-blocking.
+    /// `finalize` consults. An advisory-only report is non-blocking. The reports here
+    /// are built over a **no-delta** cascade, so the post-pass leaves every emitted
+    /// severity untouched.
     #[test]
     fn validation_report_projection_and_has_blocking() {
         use crate::finding::Location;
 
+        let resolved = no_delta_resolved();
+
         // Empty report: non-blocking, version-stamped, empty findings array.
-        let empty = ValidationReport::new(Vec::new());
+        let empty = ValidationReport::new(Vec::new(), &resolved);
         assert!(!empty.has_blocking(), "empty report does not block");
         assert_eq!(
             serde_json::to_value(&empty).expect("serializes"),
@@ -379,7 +476,7 @@ mod tests {
             Some(Location::addressed("docs/note:ok.md", 1, 1)),
             None,
         );
-        let report = ValidationReport::new(vec![advisory.clone()]);
+        let report = ValidationReport::new(vec![advisory.clone()], &resolved);
         assert!(
             !report.has_blocking(),
             "an advisory-only report does not block"
@@ -393,10 +490,175 @@ mod tests {
             None,
             None,
         );
-        let report = ValidationReport::new(vec![advisory, blocking]);
+        let report = ValidationReport::new(vec![advisory, blocking], &resolved);
         assert!(
             report.has_blocking(),
             "any blocking finding blocks the gate"
+        );
+    }
+
+    /// A cascade with no `scalar-set` deltas over a pack declaring every per-check /
+    /// per-probe severity knob the post-pass might read — so a finding's emitted
+    /// severity is its assigned severity (the no-override path is byte-identical).
+    fn no_delta_resolved() -> crate::cascade::Resolved {
+        crate::cascade::resolve(&severity_pack(), None, None).expect("resolves")
+    }
+
+    /// A pack-default layer declaring the per-check and per-probe severity knobs the
+    /// post-pass three-step lookup reads — the closed surface an `OverrideLayer` may
+    /// `scalar-set` against (knobs.yaml gains these in increment 2; the post-pass is
+    /// proven here over a synthetic surface, the planner's "fed a synthetic
+    /// resolved-override map" form).
+    fn severity_pack() -> crate::cascade::PackDefaultLayer {
+        use std::collections::BTreeMap;
+        let mut scalars = BTreeMap::new();
+        for key in [
+            "validation.file-state.hash-matches.severity",
+            "validation.file-state.severity",
+            "validation.commit-rendering.line-limit-subject.severity",
+        ] {
+            scalars.insert(key.to_owned(), "blocking".to_owned());
+        }
+        crate::cascade::PackDefaultLayer::new("dev-pack", "0.1.0", scalars, Vec::new())
+    }
+
+    /// The M6 post-pass (T2): severity is assigned over the aggregated findings at
+    /// `ValidationReport::new`, overriding **only** when the resolved cascade carries
+    /// a `scalar-set` for the finding's `(probe, check)` key. A per-check `scalar-set`
+    /// flips a blocking finding to advisory *and* an advisory finding to blocking, and
+    /// `has_blocking()` reflects the **assigned** severities (`validation.md` →
+    /// Severity assignment — the M6 post-pass; the per-check, three-step lookup).
+    #[test]
+    fn post_pass_flips_severity_on_a_per_check_scalar_set() {
+        // `file-state.hash-matches` (emitted blocking) is demoted to advisory;
+        // `commit-rendering.line-limit-subject` (emitted advisory) is promoted to
+        // blocking — both per-check `scalar-set`s on the closed knob surface.
+        let project = crate::cascade::OverrideLayer::empty()
+            .scalar_set("validation.file-state.hash-matches.severity", "advisory")
+            .scalar_set(
+                "validation.commit-rendering.line-limit-subject.severity",
+                "blocking",
+            );
+        let resolved =
+            crate::cascade::resolve(&severity_pack(), None, Some(&project)).expect("resolves");
+
+        let drift = Finding::graded(
+            Severity::Blocking,
+            "file-state.hash-matches",
+            "on-disk content drifted",
+            None,
+            None,
+        );
+        let line_limit = Finding::graded(
+            Severity::Advisory,
+            "commit-rendering.line-limit-subject",
+            "subject is 73 chars",
+            None,
+            None,
+        );
+
+        let report = ValidationReport::new(vec![drift, line_limit], &resolved);
+
+        // The demoted blocking check is now advisory; the promoted advisory check is
+        // now blocking — assignment is keyed on the finding's `(probe, check)`.
+        let by_check = |check: &str| {
+            report
+                .findings
+                .iter()
+                .find(|f| f.check == check)
+                .map(|f| f.severity)
+        };
+        assert_eq!(
+            by_check("hash-matches"),
+            Some(Severity::Advisory),
+            "a per-check `scalar-set` demotes the blocking finding"
+        );
+        assert_eq!(
+            by_check("line-limit-subject"),
+            Some(Severity::Blocking),
+            "a per-check `scalar-set` promotes the advisory finding"
+        );
+
+        // The gate reflects the *assigned* severities: the promoted line-limit now
+        // blocks (and the demoted drift no longer would on its own).
+        assert!(
+            report.has_blocking(),
+            "has_blocking reflects the post-pass severities, got {:?}",
+            report.findings
+        );
+    }
+
+    /// No-delta byte-identity: over a cascade carrying no `scalar-set`, every finding
+    /// keeps the **emitted** severity the probe produced — the determinism guard the
+    /// milestone's #1 risk turns on (`validation.md` → the no-override path is
+    /// byte-identical). A blocking inventory finding stays blocking; an advisory one
+    /// stays advisory; the gate is unchanged.
+    #[test]
+    fn post_pass_no_delta_leaves_emitted_severity() {
+        let resolved = no_delta_resolved();
+
+        let drift = Finding::graded(
+            Severity::Blocking,
+            "file-state.hash-matches",
+            "on-disk content drifted",
+            None,
+            None,
+        );
+        let line_limit = Finding::graded(
+            Severity::Advisory,
+            "commit-rendering.line-limit-subject",
+            "subject is 73 chars",
+            None,
+            None,
+        );
+
+        let report = ValidationReport::new(vec![drift.clone(), line_limit.clone()], &resolved);
+
+        assert_eq!(
+            report.findings,
+            vec![drift, line_limit],
+            "a no-delta cascade leaves every finding byte-identical"
+        );
+        assert!(
+            report.has_blocking(),
+            "the emitted blocking finding still blocks"
+        );
+    }
+
+    /// Exempt findings are untouched. A finding whose `(probe, check)` is **not** an
+    /// inventory row (`schema-conformance.unknown-type` — a synthetic sibling with no
+    /// row) is exempt from the post-pass even when a per-probe `scalar-set` exists for
+    /// its probe: matching is by inventory membership, never code-prefix
+    /// (`validation.md` → Matched by inventory membership, never by code-prefix). The
+    /// per-probe key must not catch a determinism-boundary code that has no row.
+    #[test]
+    fn post_pass_exempts_a_non_inventory_check_under_a_keyed_probe() {
+        use std::collections::BTreeMap;
+        // Declare a per-probe key for `schema-conformance` and demote it.
+        let mut scalars = BTreeMap::new();
+        scalars.insert(
+            "validation.schema-conformance.severity".to_owned(),
+            "blocking".to_owned(),
+        );
+        let pack = crate::cascade::PackDefaultLayer::new("dev-pack", "0.1.0", scalars, Vec::new());
+        let project = crate::cascade::OverrideLayer::empty()
+            .scalar_set("validation.schema-conformance.severity", "advisory");
+        let resolved = crate::cascade::resolve(&pack, None, Some(&project)).expect("resolves");
+
+        // `unknown-type` is not an inventory row → exempt from the per-probe fallback.
+        let exempt = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.unknown-type",
+            "staged doc has an undefined type",
+            None,
+            None,
+        );
+        let report = ValidationReport::new(vec![exempt], &resolved);
+
+        assert_eq!(
+            report.findings[0].severity,
+            Severity::Blocking,
+            "a non-inventory check is exempt — the per-probe key never catches it"
         );
     }
 }

@@ -365,6 +365,22 @@ mod tests {
     use crate::state;
     use std::path::PathBuf;
 
+    /// A no-delta resolved cascade — the post-pass leaves every emitted severity
+    /// untouched, so a report built over it carries exactly its emitted findings.
+    fn no_delta_resolved() -> crate::cascade::Resolved {
+        crate::cascade::resolve(
+            &crate::cascade::PackDefaultLayer::new(
+                "dev-pack",
+                "0.1.0",
+                std::collections::BTreeMap::new(),
+                Vec::new(),
+            ),
+            None,
+            None,
+        )
+        .expect("resolves")
+    }
+
     /// A throwaway directory that removes itself on drop.
     struct TempRoot(PathBuf);
 
@@ -520,7 +536,7 @@ mod tests {
         let root = TempRoot::new("orders");
         let task_dir = root.path().join("tasks").join("add-rate-limiter");
         let schema = stage_filled_commit(&task_dir, "add-rate-limiter");
-        let clean = ValidationReport::new(Vec::new());
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
 
         // (Preflight) base-pin != supplied HEAD → divergence block, no plan.
         let err = plan_finalize(
@@ -557,7 +573,7 @@ mod tests {
             None,
             None,
         );
-        let report = ValidationReport::new(vec![advisory, blocking.clone()]);
+        let report = ValidationReport::new(vec![advisory, blocking.clone()], &no_delta_resolved());
         let err = plan_finalize(
             &task_dir,
             &base(),
@@ -624,7 +640,7 @@ mod tests {
     fn finalize_planner_rejects_a_missing_task() {
         let root = TempRoot::new("missing");
         let task_dir = root.path().join("tasks").join("nonexistent");
-        let clean = ValidationReport::new(Vec::new());
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
 
         let err = plan_finalize(
             &task_dir,
@@ -653,7 +669,7 @@ mod tests {
         let task_dir = root.path().join("tasks").join("cache-sessions");
         let schema = stage_filled_commit(&task_dir, "cache-sessions");
         let adr_bytes = stage_filled_adr(&task_dir, "single-node-cache");
-        let clean = ValidationReport::new(Vec::new());
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
 
         let plan = plan_finalize(
             &task_dir,

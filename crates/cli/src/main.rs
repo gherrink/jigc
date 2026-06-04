@@ -7,6 +7,7 @@
 // `adapter` ships the embedded profiles + the typed profile model/loader and the
 // host-file injectors; `setup` orchestrates them into the `jigc setup` install.
 mod adapter;
+mod cascade_util;
 mod cli;
 mod config;
 mod doc;

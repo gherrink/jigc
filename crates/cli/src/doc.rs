@@ -92,7 +92,16 @@ impl DocCommand {
         match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(DocFailure::Block(finding)) => {
-                let report = engine::result::ValidationReport::new(vec![finding]);
+                // The write-time block is not an inventory check, so the severity
+                // post-pass is a no-op over it; a no-delta cascade keeps it byte-identical.
+                let resolved = match crate::cascade_util::no_delta_resolved() {
+                    Ok(resolved) => resolved,
+                    Err(err) => {
+                        eprintln!("{err:#}");
+                        return ExitCode::FAILURE;
+                    }
+                };
+                let report = engine::result::ValidationReport::new(vec![finding], &resolved);
                 eprint!("{}", render::validation(format, &report));
                 if format != Format::Json {
                     eprintln!();

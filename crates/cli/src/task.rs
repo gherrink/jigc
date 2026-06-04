@@ -324,6 +324,7 @@ impl TaskArea {
             &self.repo_root,
             &self.jigc_root,
             &head,
+            &crate::cascade_util::no_delta_resolved()?,
         )
         .with_context(|| format!("validating task at {:?}", self.dir))
     }
@@ -367,7 +368,10 @@ impl TaskArea {
         ) {
             Ok(plan) => plan,
             Err(findings) => {
-                let report = engine::result::ValidationReport::new(findings);
+                let report = engine::result::ValidationReport::new(
+                    findings,
+                    &crate::cascade_util::no_delta_resolved()?,
+                );
                 eprint!("{}", render::validation(format, &report));
                 if format != Format::Json {
                     eprintln!();

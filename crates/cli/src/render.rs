@@ -520,22 +520,26 @@ mod tests {
     fn render_validation_lists_findings_or_clean_and_footers_agent_text() {
         use engine::finding::{Finding, Location, Severity};
 
-        let report = ValidationReport::new(vec![
-            Finding::graded(
-                Severity::Blocking,
-                "file-state.hash-matches",
-                "on-disk content of `docs/commit:x.md` differs",
-                Some(Location::addressed("docs/commit:x.md", 1, 1)),
-                Some("reconcile docs/commit:x.md".into()),
-            ),
-            Finding::graded(
-                Severity::Blocking,
-                "schema-conformance.required-slot-present",
-                "required slot in section `summary` is empty",
-                None,
-                None,
-            ),
-        ]);
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let report = ValidationReport::new(
+            vec![
+                Finding::graded(
+                    Severity::Blocking,
+                    "file-state.hash-matches",
+                    "on-disk content of `docs/commit:x.md` differs",
+                    Some(Location::addressed("docs/commit:x.md", 1, 1)),
+                    Some("reconcile docs/commit:x.md".into()),
+                ),
+                Finding::graded(
+                    Severity::Blocking,
+                    "schema-conformance.required-slot-present",
+                    "required slot in section `summary` is empty",
+                    None,
+                    None,
+                ),
+            ],
+            &resolved,
+        );
 
         let agent = validation(Format::Agent, &report);
         insta::assert_snapshot!(agent, @r"
@@ -548,7 +552,7 @@ mod tests {
         assert_eq!(validation(Format::Human, &report), agent);
 
         // A clean report renders the positive line + the footer.
-        let clean = validation(Format::Agent, &ValidationReport::new(Vec::new()));
+        let clean = validation(Format::Agent, &ValidationReport::new(Vec::new(), &resolved));
         insta::assert_snapshot!(clean, @r"
         no findings — the task validates clean
         — jigc · run `jigc start` for orientation; all writes through `jigc`.

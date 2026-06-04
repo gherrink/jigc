@@ -70,7 +70,13 @@ pub(crate) fn upgrade_with_pack(
         },
         pack,
     );
-    Ok(ValidationReport::new(findings))
+    // The engine severity post-pass reads the resolved cascade; T3 threads the
+    // project-resolved one here. A no-delta cascade keeps `override-default`'s
+    // emitted (blocking) severities byte-identical until then.
+    Ok(ValidationReport::new(
+        findings,
+        &crate::cascade_util::no_delta_resolved()?,
+    ))
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the same preamble

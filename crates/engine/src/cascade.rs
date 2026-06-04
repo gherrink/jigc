@@ -657,6 +657,20 @@ impl Resolved {
             })
     }
 
+    /// The resolved value of a key **only if an override layer applied a
+    /// `scalar-set` for it** — `None` for a key left at the pack-default base (even
+    /// when the base declares it). This is the *explicit-delta* surface the M6
+    /// severity post-pass keys on: severity is re-graded **only on an explicit
+    /// `scalar-set`** (`design/validation.md` → Override-only-on-explicit-delta), so
+    /// the no-override path is byte-identical without the knob defaults having to
+    /// mirror the code's emitted literals. Distinct from [`Resolved::scalar`], which
+    /// returns the base value for any declared key.
+    pub fn overridden_scalar(&self, key: &str) -> Option<&str> {
+        self.scalar_provenance
+            .get(key)
+            .and_then(|_| self.scalars.get(key).map(String::as_str))
+    }
+
     /// Each overridden scalar key paired with its resolved value and the layer
     /// that won it — the per-knob provenance the `--explain` tree's layer-1 lines
     /// render (`design/workflow-dialect.md` → `--explain` output contract: "any
