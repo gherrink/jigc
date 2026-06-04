@@ -95,6 +95,96 @@ fn empty_instance(schema: &Schema, slug: &str) -> Instance {
     }
 }
 
+/// The provenance-manifest filename inside a task's `docs/` area — the on-disk record
+/// the by-task-id join reads to classify each staged doc (`storage.md` → The by-task-id
+/// join → classification by provenance; `DECISIONS.md` 2026-06-04 → M7 Increment 2 T1).
+/// It rides **beside** the `.md` bodies (one manifest per `docs/` area), so the doc body
+/// bytes the round-trip writer owns stay byte-for-byte unchanged.
+const PROVENANCE_FILE: &str = "provenance.json";
+
+/// How a doc came to be staged in a task's `docs/` area — the discriminator the
+/// by-task-id join's clash rule needs (`storage.md` → The by-task-id join → classification
+/// by provenance). Recorded at stage time, *before* the join depends on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Provenance {
+    /// The doc was **minted in this sub-task** ([`provision_doc`]) — a brand-new
+    /// instance, not present in the committed store at the milestone base.
+    Created,
+    /// The doc **existed in the committed store at the milestone base** and was copied
+    /// in for editing ([`copy_in`]).
+    EditedFromBase,
+}
+
+/// The per-`docs/`-area **provenance manifest**: a map from a staged doc's
+/// `<type>:<slug>` address to its [`Provenance`] (`storage.md` → The by-task-id join →
+/// classification by provenance). Written atomically beside the `.md` bodies by the two
+/// staging primitives ([`provision_doc`] → [`Provenance::Created`], [`copy_in`] →
+/// [`Provenance::EditedFromBase`]) and read back by the Increment-3 join.
+///
+/// A [`BTreeMap`](std::collections::BTreeMap) so the serialized JSON is **key-sorted and
+/// deterministic** — the byte form is golden-stable, the same convention as
+/// [`RolesRecord`] / `base.json`. The record is task-local working-area state, disposable
+/// with the task, so it carries no schema version of its own.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProvenanceRecord {
+    /// `<type>:<slug>` address → provenance, address-sorted for deterministic output.
+    pub docs: std::collections::BTreeMap<String, Provenance>,
+}
+
+impl ProvenanceRecord {
+    /// The manifest's on-disk location inside a task's `docs/` area.
+    pub fn path_in(task_dir: &Path) -> PathBuf {
+        task_dir.join(DOCS_DIR).join(PROVENANCE_FILE)
+    }
+
+    /// Record `address`'s provenance (overwriting any prior entry — the most recent
+    /// staging of an address wins, the same last-write semantics as a re-provision).
+    pub fn record(&mut self, address: impl Into<String>, provenance: Provenance) {
+        self.docs.insert(address.into(), provenance);
+    }
+
+    /// The provenance recorded for `address`, if any.
+    pub fn get(&self, address: &str) -> Option<Provenance> {
+        self.docs.get(address).copied()
+    }
+
+    /// Serialize to the frozen on-disk byte form: pretty JSON, address-sorted, one
+    /// trailing newline (golden-locked, matching the `base.json` / `roles.json` convention).
+    pub fn to_bytes(&self) -> String {
+        let mut s = serde_json::to_string_pretty(self).expect("ProvenanceRecord serializes");
+        s.push('\n');
+        s
+    }
+
+    /// Load the manifest from `<task_dir>/docs/provenance.json`. A missing file is the
+    /// *nothing-staged-yet* case and yields an empty record, never an error (mirrors
+    /// [`RolesRecord::load`]'s absent-is-empty contract).
+    pub fn load(task_dir: &Path) -> std::io::Result<Self> {
+        match std::fs::read(Self::path_in(task_dir)) {
+            Ok(bytes) => Ok(serde_json::from_slice(&bytes)?),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+/// Load the `docs/` provenance manifest, record `address` → `provenance`, and persist it
+/// atomically — the shared stage-time provenance write the two staging primitives perform
+/// **after** the `.md` body lands (so the body bytes stay byte-for-byte unchanged).
+fn record_provenance(
+    task_dir: &Path,
+    address: &str,
+    provenance: Provenance,
+) -> std::io::Result<()> {
+    let mut record = ProvenanceRecord::load(task_dir)?;
+    record.record(address, provenance);
+    write_atomic(
+        &ProvenanceRecord::path_in(task_dir),
+        record.to_bytes().as_bytes(),
+    )
+}
+
 /// **Provision** a workflow-provisioned empty doc instance into the task working area
 /// (`design/write-commands.md` → Instance provisioning → Workflow-provisioned;
 /// `implementation/parsing.md` → The write pipeline → "Writes land in the task working
@@ -108,6 +198,12 @@ pub fn provision_doc(task_dir: &Path, schema: &Schema, slug: &str) -> std::io::R
     let path = instance_path(task_dir, &schema.ty, slug);
     let bytes = write::render(schema, &empty_instance(schema, slug));
     write_atomic(&path, bytes.as_bytes())?;
+    // A minted-here instance: record `created` beside the body for the join's clash rule.
+    record_provenance(
+        task_dir,
+        &format!("{}:{slug}", schema.ty),
+        Provenance::Created,
+    )?;
     Ok(path)
 }
 
@@ -128,6 +224,12 @@ pub fn copy_in(
     let path = instance_path(task_dir, type_name, slug);
     let canonical = write::first_touch_canonicalize(source);
     write_atomic(&path, canonical.as_bytes())?;
+    // A base-existing instance copied in for editing: record `edited-from-base`.
+    record_provenance(
+        task_dir,
+        &format!("{type_name}:{slug}"),
+        Provenance::EditedFromBase,
+    )?;
     Ok(path)
 }
 
@@ -807,6 +909,62 @@ mod tests {
             write::first_touch_canonicalize(source),
             "copy-in IS first_touch_canonicalize of the source"
         );
+    }
+
+    /// The done-criterion (`storage.md` → The by-task-id join → classification by
+    /// provenance; `DECISIONS.md` 2026-06-04 → M7 Increment 2 T1). Staging one doc via
+    /// [`provision_doc`] (a minted-here **`created`**) and one via [`copy_in`] (a
+    /// base-existing **`edited-from-base`**) into a single task `docs/` area records
+    /// **distinct** provenance for the two slugs in the provenance manifest the join
+    /// reads — golden over the frozen on-disk bytes. The `.md` body bytes the writer
+    /// owns stay byte-for-byte identical to the pre-change staging output (the bit rides
+    /// beside the doc, never in it).
+    #[test]
+    fn staging_records_distinct_provenance_leaving_bodies_unchanged() {
+        let root = TempRoot::new("provenance");
+        let schema = commit_schema();
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+
+        // `provision_doc` stages a minted-here `created` instance.
+        let created_path =
+            provision_doc(&task_dir, &schema, "add-rate-limiter").expect("provision succeeds");
+        // `copy_in` stages a base-existing `edited-from-base` instance.
+        let source = "---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n";
+        let edited_path =
+            copy_in(&task_dir, "adr", "rate-limit", source).expect("copy-in succeeds");
+
+        // The `.md` body bytes are byte-for-byte the pre-change staging output —
+        // the provenance bit rides beside the doc, never in it.
+        let created_body = std::fs::read_to_string(&created_path).expect("read provisioned");
+        assert_eq!(
+            created_body,
+            write::render(&schema, &empty_instance(&schema, "add-rate-limiter")),
+            "provision_doc body is unchanged: write::render of the empty instance"
+        );
+        let edited_body = std::fs::read_to_string(&edited_path).expect("read copied-in");
+        assert_eq!(
+            edited_body,
+            write::first_touch_canonicalize(source),
+            "copy_in body is unchanged: first_touch_canonicalize of the source"
+        );
+
+        // The manifest records distinct provenance for the two slugs, read back.
+        let record = ProvenanceRecord::load(&task_dir).expect("provenance manifest loads");
+        assert_eq!(
+            record.get("commit:add-rate-limiter"),
+            Some(Provenance::Created),
+            "provision_doc records `created`"
+        );
+        assert_eq!(
+            record.get("adr:rate-limit"),
+            Some(Provenance::EditedFromBase),
+            "copy_in records `edited-from-base`"
+        );
+
+        // Golden over the frozen on-disk byte form of the provenance manifest.
+        let bytes = std::fs::read_to_string(ProvenanceRecord::path_in(&task_dir))
+            .expect("provenance manifest on disk");
+        insta::assert_snapshot!("provenance_two_staged_docs", bytes);
     }
 
     /// A schema-set keyed type → `Schema`, the engine-domain-empty contract the

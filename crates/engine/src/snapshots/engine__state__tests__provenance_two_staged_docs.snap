@@ -1,0 +1,10 @@
+---
+source: crates/engine/src/state.rs
+expression: bytes
+---
+{
+  "docs": {
+    "adr:rate-limit": "edited-from-base",
+    "commit:add-rate-limiter": "created"
+  }
+}
