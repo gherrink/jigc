@@ -11,15 +11,6 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 
 ## Before planning — milestone-keyed deferrals
 
-### Before planning M8 (milestone execution — control plane)
-
-*Seeded 2026-06-04 from the M7 run — the topics M7 consciously deferred to M8, surfaced here so M8's Scope pulls them up front rather than rediscovering them.*
-
-- **(D) Commit shape under real sub-agents.** M7 ships **one CLI-synthesized** milestone-finalize commit (no authored prose — [DECISIONS.md](../DECISIONS.md) 2026-06-04, the inc-4 fork). With M8's real sub-agents authoring, does it stay one synthesized commit, or move to the eventual **per-sub-task** model (each sub-task an authored commit doc) gated by the `finalize.fan-out.squash` knob ([finalize.md](../design/finalize.md) → `fan-out` finalize, the "eventual design")? A real fork to settle before cutting M8.
-- **(D) Fan-out progress / resumption.** The standing [workflow-dialect](../design/workflow-dialect.md#open-questions) open question, now **due**: when a partial fan-out dies (k of N sub-agents finished), what does re-entry do — re-spawn only the un-acked, re-spawn all (idempotent), or restart? M7 deferred it ("restarts from scratch"); M8 owns the real spawn, so the policy must be settled.
-- **(D) The spawn re-entry contract.** Reconcile the design's `jigc workflow W --task <id>` (named across [assistant-adapter.md](../design/assistant-adapter.md) / [workflow-dialect.md](../design/workflow-dialect.md)) with the built `jigc start --task` resume (which `conflicts_with --workflow`): add the verb, or render `start --task` and drop the redundant `{{workflow}}`? (The L1 landmine from M7 planning, deferred to M8 where the spawn binding lands.)
-- **(integration seam) The real-write path must satisfy the M7 join's preconditions.** M7's join was proven over **fixture-staged** sub-areas; M8's real `--task`-scoped writes are where the deferred **write-time isolation barrier** and the now-reachable suffix/cross-group edges (the 2 LOW audit fixes guard the *data plane*; the *write path* must feed them correctly) are actually exercised. Spike this seam at M8 Settle — the inc-4 lesson generalized (don't assume the new producer satisfies the existing consumer's preconditions).
-
 ### Before planning M9 (project setup — new & existing)
 
 - **(D) Legacy ingestion / migration.** The `project setup (existing project)` flow must ingest docs in inconsistent states — **research-grade**, flagged hard-not-solved ([VISION.md](../VISION.md) → Open questions). M9's headline risk and likely #1 gap; settle the approach (or consciously bound its scope) before cutting M9.
@@ -61,6 +52,7 @@ Tracked so they're not lost, but honestly *not* milestone-scheduled — assignin
 - **`override-default` content-target check** — checks step-*file* presence, not workflow include-list membership; revisits with a future **multi-workflow pack** ([DECISIONS.md](../DECISIONS.md):1710).
 - **Store/milestone-scope inverse-/min-cardinality enforcement** — designed as "hard-enforced at store/milestone scope," never built (task scope is advisory-only); needs store-scope completeness validation (post-roadmap).
 - **Minor / perf** — the unbound-spec-role "did you mean single-task?" advisory ([DECISIONS.md](../DECISIONS.md):1262); findings recomputed-vs-cached ([validation.md](../design/validation.md) opens).
+- **Never-started fan-out backstop** — the runtime guard that surfaces a sub-task with no recorded CLI activity as a distinct join outcome (catching a launch template that *passes* install-time schema validation but still misfires at runtime). **Deferred at M8 Settle** (2026-06-04): M8 builds install-time template validation only; the runtime misfire of a schema-valid template is an accepted unsurfaced gap ([workflow-dialect.md](../design/workflow-dialect.md) → `fan-out`/`join`; [assistant-adapter.md](../design/assistant-adapter.md) → Bind the spawn mechanism). *Condition:* fires when a real fan-out launch-misfire is observed, or a workflow earns mid-fan-out resumption (pairs with the restart-from-scratch resumption policy). Likewise the **Resume / post-compaction hook** — capability-gated on the assistant exposing a resume event, not M8 ([assistant-adapter.md](../design/assistant-adapter.md) opens).
 
 *(This is the **triage view** of [VISION.md](../VISION.md) → Open questions, not a second copy — VISION stays the full categorized index; this adds each still-open item's trigger. Several VISION opens are already **resolved** and not repeated here: slug-normalization + collision-suffix form (M7), `milestone-execution` orchestration + milestone-worktree (M7), config layout + committed-config-dir (M4), emitted-format micro-syntax (2026-05-28).)*
 

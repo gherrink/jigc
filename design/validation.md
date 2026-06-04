@@ -70,7 +70,7 @@ Because findings are **navigable state**, a `fix-drift` workflow can `fan-out` o
 One uniform interface (`check(target, ctx) → [finding]`), two implementations:
 
 - **Engine-native** — built in, in-process. **The MVP ships two:**
-  - **`workflow-refs`** (target: workflow) — every `placeholder` / `include` / `command-ref` resolves, no include cycles, no `@` on a scalar-resolving path, no step's instruction prose shadows the composer-reserved `Run: ` line-start ([workflow-dialect.md](workflow-dialect.md#emitted-format)), and workflow bodies contain only `{{include}}` lines / blank lines / HTML comments at top level ([workflow-dialect.md](workflow-dialect.md#on-disk-definition-format)).
+  - **`workflow-refs`** (target: workflow) — every `placeholder` / `include` / `command-ref` resolves, no include cycles, no `@` on a scalar-resolving path, no step's instruction prose shadows the composer-reserved `Run: ` or `Spawn: ` line-start ([workflow-dialect.md](workflow-dialect.md#emitted-format)), every `fan-out` step has a matching later `join` step (and vice-versa), and workflow bodies contain only `{{include}}` lines / blank lines / HTML comments at top level ([workflow-dialect.md](workflow-dialect.md#on-disk-definition-format)).
   - **`file-state`** (target: file) — the on-disk content hash matches the recorded state; drift → a `reconcile` finding consumed by the reconciliation classifier ([reconciliation.md](reconciliation.md)). With no recorded hash (first run / fresh checkout), the current on-disk content is adopted as the baseline — absent-hash is not drift.
 
   **Engine-native, full logic in M5:**
@@ -143,6 +143,8 @@ Every MVP check ships with a **declared default severity** and an **intrinsic-or
 | | `include-cycle-absent` | blocking | **yes** | `validation.workflow-refs.include-cycle-absent.severity` |
 | | `at-marker-on-non-scalar` | blocking | **yes** | `validation.workflow-refs.at-marker-on-non-scalar.severity` |
 | | `run-marker-not-shadowed` | blocking | **yes** | `validation.workflow-refs.run-marker-not-shadowed.severity` |
+| | `spawn-marker-not-shadowed` (M8 — no step prose shadows the composer-reserved `Spawn: ` line-start) | blocking | **yes** | `validation.workflow-refs.spawn-marker-not-shadowed.severity` |
+| | `fan-out-join-paired` (M8 — each `fan-out` step has a matching later `join` step, and vice-versa) | blocking | **yes** | `validation.workflow-refs.fan-out-join-paired.severity` |
 | | `body-include-only` (workflow body contains only `{{include}}` / blanks / HTML comments at top level) | blocking | **yes** | `validation.workflow-refs.body-include-only.severity` |
 | **`schema-conformance`** *(synthetic — schema-driven integrity at validate / finalize)* | `ref-resolves` (forward-ref integrity) | blocking | **yes** | `validation.schema-conformance.ref-resolves.severity` |
 | | `required-slot-present` | blocking | **yes** | `validation.schema-conformance.required-slot-present.severity` |
@@ -157,7 +159,7 @@ Every MVP check ships with a **declared default severity** and an **intrinsic-or
 | | `line-limit-body` (72ch wrap) | advisory | no — tunable | `validation.commit-rendering.line-limit-body.severity` |
 | **`doc-code`** *(pack-provided, post-MVP — placeholder)* | TBD per check | TBD | no — tunable | `validation.doc-code.*.severity` |
 
-**18 MVP-shipping checks across 6 categories.** Roughly half intrinsic (load-bearing for composition + integration advantage), half tunable. **This table is the single source of truth** for the check-id set, the per-check default severity, and intrinsic-ness — `knobs.yaml` and the engine's emitted `check` ids must agree with it. The count is **18 checks / 11 intrinsic** — `workflow-refs.*` ×7 + `schema-conformance.*` ×4 (the 11 intrinsic) + `file-state.hash-matches` + `schema-completeness.inverse-cardinality` + `override-default.*` ×3 + `commit-rendering.*` ×2 (the 7 tunable). (Earlier "16/10" then "17/11" tallies were stale as the inventory grew; `knobs.yaml` declares exactly these 18 keys.)
+**20 checks across 6 categories (M8: +2 `workflow-refs`).** Roughly half intrinsic (load-bearing for composition + integration advantage), half tunable. **This table is the single source of truth** for the check-id set, the per-check default severity, and intrinsic-ness — `knobs.yaml` and the engine's emitted `check` ids must agree with it. The count is **20 checks / 13 intrinsic** — `workflow-refs.*` ×9 + `schema-conformance.*` ×4 (the 13 intrinsic) + `file-state.hash-matches` + `schema-completeness.inverse-cardinality` + `override-default.*` ×3 + `commit-rendering.*` ×2 (the 7 tunable). (Earlier "16/10" → "17/11" → "18/11" tallies were stale as the inventory grew; M8 adds `workflow-refs.spawn-marker-not-shadowed` + `workflow-refs.fan-out-join-paired`. `knobs.yaml` declares exactly these 20 keys.)
 
 **Inventory = the keyed (tunable + floored) surface, not every finding the engine emits.** A finding carries a `(probe, check)` only some of which are inventory rows; the rest are **un-keyed and exempt from the post-pass** (they keep their emitted severity). Two distinct kinds of un-keyed finding, not to be conflated:
 - **Informational outcomes — emitted advisory, intentionally not tunable.** `file-state.baseline-adopt` and `reconciliation.absorb`: not pass/fail checks, just routing notes. No row, stay advisory.

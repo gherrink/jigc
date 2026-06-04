@@ -105,25 +105,27 @@ Resolution order: includes expand first (pulling in nested placeholders), then d
 
 ## Emitted format
 
-The composed output is plain Markdown, but the **agent must distinguish at a glance** between four line-classes — and reliably, because this is the surface where the structural-determinism bet either holds or leaks. Four classes, four conventions:
+The composed output is plain Markdown, but the **agent must distinguish at a glance** between five line-classes — and reliably, because this is the surface where the structural-determinism bet either holds or leaks. Five classes, five conventions:
 
 | class | how it's written in the emitted text | source |
 |---|---|---|
 | **Run** — execute exactly | `` Run: `<cmd>` `` at line-start, command in backticks | resolved `{{cli.…}}` command-ref |
 | **Content** — read this material | a Markdown blockquote (`> `) | resolved `{{@…}}` data-value |
 | **Author** — write into this slot | `<<author: <address>>` on its own line | the only surviving slot-author directive |
+| **Spawn** — launch a sub-agent for this id | `` Spawn: `<launch-line>` `` at line-start, command in backticks, **one line per fanned id** | a resolved `fan-out` step over a `{{…}}` collection (M8) |
 | **Reason** — think about this | plain prose, no marker | static `instruction` text |
 
-The two "machine" classes (**Run**, **Author**) carry markers; the two "human-ish" classes (**Content**, **Reason**) lean on existing Markdown semantics or no marker at all. **Reasoning is the default** — anything that isn't one of the other three is reasoning, with no overhead.
+The three "machine" classes (**Run**, **Author**, **Spawn**) carry markers; the two "human-ish" classes (**Content**, **Reason**) lean on existing Markdown semantics or no marker at all. **Reasoning is the default** — anything that isn't one of the other four is reasoning, with no overhead.
 
-The four rules:
+The five rules:
 
 1. **`Run: ` is reserved.** A line whose left margin starts with `Run: ` is a directive the composer emits, never authored by step prose. The command always follows in backticks: `` Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -` ``. Backticks make the command both visually distinct *and* machine-extractable by a strict line-pattern (`` ^Run: `(.+)`$ ``).
 2. **`> ` blockquote is content** — emitted around the resolution of a `{{@…}}` data-value. A multi-line doc-slice is a multi-line blockquote. Renders cleanly in any Markdown viewer; the agent reads it as "this is material I was given," not "this is something to run."
 3. **`<<author: <address>>` is the only thing the agent originates.** Its rules are settled in [Leaves](#leaves-instructions-and-placeholders): exactly one address parameter; the address is the doc slot the agent fills via the write path; the `<<…>>` wrapper survives composition unchanged.
-4. **Everything else is reasoning prose** — no marker, no special handling, no overhead. The agent treats it as instruction it should think with.
+4. **`Spawn: ` is reserved (M8).** A line whose left margin starts with `` Spawn: `` is a fan-out dispatch directive the composer emits, never authored by step prose — exactly the `Run: ` discipline applied to the launch class. A `fan-out` step resolves its `over:` collection (`{{milestone.tasks}}`) and emits **one `` Spawn: `<launch-line>` `` per fanned id**, where `<launch-line>` is the sub-agent launch rendered through the adapter's spawn template (`jigc workflow <run-workflow> --task <sub-id>`, [assistant-adapter.md](assistant-adapter.md) → Bind the spawn mechanism). The command sits in backticks, machine-extractable by the same strict line-pattern as `Run`. The CLI resolves the list and emits the directives deterministically; the adapter performs the launch — *CLI owns the payload, the assistant owns the launch*.
+5. **Everything else is reasoning prose** — no marker, no special handling, no overhead. The agent treats it as instruction it should think with.
 
-**Compose-time conformance.** Because **Run** is the load-bearing marker, instruction prose in a step definition **must not** start a line with `Run: ` — that prefix is the composer's. The `workflow-refs` probe ([validation.md](validation.md)) checks this at compose-time as part of its existing scope: the same probe that validates every placeholder/include/command-ref resolves also validates that `Run: ` at line-start in a step body comes only from a resolved `{{cli.…}}`. A definition that shadows the marker is rejected with a precise pointer (step file + line) before the composed output ever reaches the agent. `> ` and `<<author:` need no such check — blockquotes are legitimately part of reasoning prose, and `<<…>>` is grammatically slot-syntax (already off-limits to definition prose by principle #6).
+**Compose-time conformance.** Because **Run** and **Spawn** are load-bearing markers, instruction prose in a step definition **must not** start a line with `Run: ` or `Spawn: ` — those prefixes are the composer's. The `workflow-refs` probe ([validation.md](validation.md)) checks this at compose-time as part of its existing scope: the same probe that validates every placeholder/include/command-ref resolves also validates that a `Run: ` line-start comes only from a resolved `{{cli.…}}` (`run-marker-not-shadowed`) and a `Spawn: ` line-start comes only from a resolved `fan-out` step (`spawn-marker-not-shadowed`, M8). Both fire against **composed workflow step bodies** (the same surface `run-marker-not-shadowed` already scopes). A definition that shadows either marker is rejected with a precise pointer (step file + line) before the composed output ever reaches the agent. `> ` and `<<author:` need no such check — blockquotes are legitimately part of reasoning prose, and `<<…>>` is grammatically slot-syntax (already off-limits to definition prose by principle #6).
 
 **Routing footer (compaction resilience).** Every composed workflow output in agent-text and human-pretty format ends with a one-line routing footer:
 
@@ -176,10 +178,20 @@ make your consequences explain what changes:
 ---
 fan-out:
   over: "{{ milestone.tasks }}"
-  run:  workflow:single-task
+  run:  workflow:sub-task
 ---
 Spawn a sub-agent per task and implement it.
 ```
+
+```markdown
+# steps/join-tasks.md   — a join step: the barrier, also a front-matter marker
+---
+join: {}
+---
+All sub-tasks are complete and merged by task-id order. Continue.
+```
+
+A **`join` step kind** is the **barrier**: the CLI blocks composition of every following step until the fanned sub-tasks complete, merges their areas by task-id order ([storage.md](storage.md#the-by-task-id-join-m7)), and re-composes the post-join steps against the merged state. A workflow with a `fan-out` step **must** carry a later `join` step — `join` with no preceding `fan-out`, or a `fan-out` with no following `join`, is a `workflow-refs` conformance error. The two step kinds are parsed from front-matter exactly like any other config; the **id is still the filename**, so a `fan-out`/`join` step is reusable across workflows like a plain step. *(The `fan-out`/`join` front-matter must be **parsed and honored**, not stripped — M8 ([DECISIONS.md](../DECISIONS.md) 2026-06-04): pre-M8 `load_step_def` discards all step front-matter, so a `fan-out:` marker today silently composes as inert prose.)*
 
 ```markdown
 # workflows/single-task.md   — front-matter carries the when-to-use hint + create-gate; body is ordered includes
@@ -204,6 +216,21 @@ creates-task: false
 {{ include: step:present-catalog }}
 {{ include: step:route-to-workflow }}
 ```
+
+The **`milestone-execution`** workflow (M8) is the canonical `fan-out`/`join` composition — its body pairs a `fan-out` step with a later `join` step (the `fan-out-join-paired` conformance rule), so the pairing is visibly satisfied:
+
+```markdown
+# workflows/milestone-execution.md   — fans out over the milestone's task list, joins, then finalizes
+---
+when: "Execute a planned milestone's tasks in parallel."
+creates-task: false   # operates on an existing milestone work-unit; mints no task
+---
+{{ include: step:implement-tasks }}   # fan-out: over {{milestone.tasks}}, run workflow:sub-task
+{{ include: step:join-tasks }}         # join: barrier — merge by task-id, then continue
+{{ include: step:milestone-finalize }} # parent finalize is the commit boundary
+```
+
+The fanned **`sub-task`** workflow (the `run:` target) is **fan-out-free by construction** — `{{ include: step:locate }}` / `step:implement` / `step:author-commit`, no `finalize`, no `fan-out` step — which is what structurally guarantees the no-nested-`fan-out` rule (below): a sub-agent's workflow can never itself fan out.
 
 **Workflow body is include-only at top level.** A workflow file's body may contain only `{{include: step:X}}` lines, blank lines, and HTML comments (`<!-- ... -->`, for human notes about why a step is included). Prose, ATX headings, other placeholders, or any other content at body top-level is a **conformance error** caught at compose-time by `workflow-refs.body-include-only` ([validation.md](validation.md) → Severity inventory). Step files carry the prose; the workflow file is purely composition. The physical-order serialization of the include list satisfies [VISION.md](../VISION.md) principle #2: "never positions" bans IDs that *encode* order, not physical-order serialization of a list whose items carry their own non-positional IDs — a line move is a reorder, nothing renumbers, cross-refs to `workflow:single-task#locate` keep resolving regardless of include position.
 
@@ -231,10 +258,10 @@ The single bounded concurrency primitive, assembled from the locked concurrency 
 - Each **sub-agent re-enters the composer** (`jigc workflow W --task <sub>`) and gets the *same deterministic composed workflow* it would get as a main agent — **referenced, not inline** (inline would reintroduce a lossy paraphrase). It writes to its isolated `.jigc/tasks/<sub>/`, acks `status + task_id`, and writes any detail to CLI state; the main agent **re-derives from the CLI, never trusts the message**. A sub-agent never commits (see the join, below).
 - **Sub-task id = the fanned item's id** — the list-source resolves to a collection of managed instances, each carrying a frozen minted id, and that id becomes the sub-task id, so the by-task-id merge is meaningful and deterministic.
 - **`join` is a barrier:** all sub-tasks complete, the CLI merges working areas **by task-id order** (never completion order), and the main workflow re-composes its post-join steps against the merged state. Synchronization is through CLI state, not messages.
-- **The parent task's `finalize` is the commit boundary** — sub-agents may `validate` their own area for early feedback but **never run git**, so there are no races. The parent's `finalize` validates the merged effective state and emits **one commit per sub-task in task-id order** (squash is a cascade knob), plus the parent's own commit. "One task → one logical commit" is preserved per sub-task, deterministically ordered.
+- **The parent task's `finalize` is the commit boundary** — sub-agents author their own commit doc and may `validate` their own area for early feedback but **never run git**, so there are no races. The parent's `finalize` validates the merged effective state and commits per the **`finalize.fan-out.squash`** cascade knob (M8): `true` (default) → **one aggregate commit** whose message is CLI-synthesized from the id-ordered sub-task list; `false` → **one commit per sub-task in task-id order** rendering each sub-task's own authored commit doc, plus the parent's. Either way "one task → one logical commit" is preserved and the committed bytes are deterministic — byte-identical across feed orders ([finalize.md](finalize.md#fan-out-finalize)).
 - **Slug collisions resolve in the merge pass.** Two sub-agents minting the same slug → the join suffixes the loser (task-id order) and **rewrites that area's *local* self-references** to match (the CLI owns wiring — the agent placed nothing). Workflow-provisioned ids are sub-task-derived and can't collide at all.
 - **Cross-area refs are rejected at join, not silently rewritten.** Filesystem isolation prevents a sub-agent from *writing into* a sibling's area, but it does not prevent the sub-agent from *typing* a plausible sibling slug — e.g. sub-task B writes `supersedes: adr:cache` guessing sub-task A's ADR id. The join validates each sub-task's outgoing refs against `(committed store ∪ this sub-task's own working area)` only — **same surface as the cross-task forward-ref policy** ([validation.md](validation.md) → Forward-ref resolution) — and rejects cross-area refs as blocking integrity errors. The dangling ref surfaces; the human routes. Coordinating creates that need to reference each other belong in **sequential steps** before the fan-out splits; ID reservation or provisional refs would land as a separate post-MVP feature with its own design, not as a quiet retarget.
-- **Never-started sub-tasks surface as a distinct outcome.** The join derives every sub-task's state from the CLI ("messages are notifications, CLI state is truth" — [VISION.md](../VISION.md) → Sub-agents). A sub-task with **no recorded CLI activity** — no reads, no writes, no working-area presence — is treated as **never-started**, distinct from "started and failed." This is the runtime backstop for adapter-template corruption: if the assistant's launch template is stale or broken and the sub-agent never invokes `jigc workflow --task <id>`, the join surfaces "never-started" for routing rather than waiting forever or producing a quiet zero-output success ([assistant-adapter.md](assistant-adapter.md) → Bind the spawn mechanism).
+- **Never-started sub-tasks surface as a distinct outcome — *deferred past M8* (2026-06-04).** The intended runtime backstop: the join derives every sub-task's state from the CLI ("messages are notifications, CLI state is truth" — [VISION.md](../VISION.md) → Sub-agents), so a sub-task with **no recorded CLI activity** (no reads, no writes, no working-area presence) is treated as **never-started**, distinct from "started and failed" — catching the case where a launch template *passes* install-time validation but still misfires at runtime. **M8 does not build this** ([DECISIONS.md](../DECISIONS.md) 2026-06-04): install-time template schema validation ([assistant-adapter.md](assistant-adapter.md) → Bind the spawn mechanism) is M8's only line of defence against a broken launch; the *runtime* misfire of a schema-valid template is an accepted, unsurfaced gap until a workflow earns the backstop. Until then a never-started sub-area simply contributes nothing to the join (the missing sub-task shows as absent, not as a routed outcome).
 
 Two bounds, both consistent with prior decisions:
 
@@ -280,6 +307,6 @@ The **`@`-marked data-value** resolved to a doc-slice and emitted as a `> ` bloc
 
 ## Open questions
 
-- **Workflow progress / resumption** — whether "where am I" is purely re-derived from accumulated task effects (idempotent re-compose) or lightly tracked. Leaning re-derived, to match the ephemeral + blackboard model. **Deferred past M7/M8** (2026-06-04): a partial fan-out restarts from scratch; no mid-fan-out resume policy until a workflow earns one.
+- **Workflow progress / resumption** — whether "where am I" is purely re-derived from accumulated task effects (idempotent re-compose) or lightly tracked. Leaning re-derived, to match the ephemeral + blackboard model. **Deferred past M7/M8** (2026-06-04, reconfirmed at M8 Settle): a partial fan-out restarts from scratch; no mid-fan-out resume policy until a workflow earns one.
 - ~~**`milestone-execution` orchestration**~~ — *settled (2026-06-04):* the partition **is** the milestone's task list (`{{milestone.tasks}}`), and recombination **is** the by-task-id join ([storage.md](storage.md#the-by-task-id-join-m7)). Isolation is by directory (`tasks/<sub>/`), **not** git worktrees, for managed docs. The `milestone-execution` workflow itself lands in **M8**.
-- **The spawn-instruction emit class (M8)** — the `fan-out` step emits a *fifth* directive shape ("spawn these task-ids running `W`") beyond the four-class [emitted format](#emitted-format); its exact marker convention + `workflow-refs` shadowing rule are settled when M8 builds the step kind.
+- ~~**The spawn-instruction emit class (M8)**~~ — *settled at M8 Settle (2026-06-04):* the fifth emit class is **`Spawn: `** — a reserved line-start marker mirroring `Run: `, one `` Spawn: `<launch-line>` `` per fanned id, the launch rendered through the adapter spawn template; its shadowing rule is `workflow-refs.spawn-marker-not-shadowed` (intrinsic, scoped to composed step bodies). See [Emitted format](#emitted-format).

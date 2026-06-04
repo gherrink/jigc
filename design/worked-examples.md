@@ -529,7 +529,7 @@ The demoting delta is **soft-rejected**: logged on the resolution tree, *not app
 
 ## 9. Milestone execution — the deterministic join (M7)
 
-The M7 flow that proves the locked concurrency invariant: **the join is a pure function of the *set* of sub-task working areas — same set in, byte-identical committed state out, regardless of completion order** ([storage.md](storage.md#the-by-task-id-join-m7); CLAUDE.md → "merges at a join ordered by task ID, not completion order"). This is the **engine-genuine** proof: the sub-task areas are provisioned and populated as fixtures, then fed to the join in deliberately-scrambled orders. The *real agent spawn* (the adapter launching sub-agents through the Task tool) is **M8** ([flow … M8](#); the `milestone-execution` workflow end-to-end). Proving determinism by **permutation over a fixed area set** is stronger than a single real spawn — it cannot be faked by a sequential-in-process loop (the hollow-spawn trap), and it directly exercises the property a real launch can only sample once. Notation illustrative.
+The M7 flow that proves the locked concurrency invariant: **the join is a pure function of the *set* of sub-task working areas — same set in, byte-identical committed state out, regardless of completion order** ([storage.md](storage.md#the-by-task-id-join-m7); CLAUDE.md → "merges at a join ordered by task ID, not completion order"). This is the **engine-genuine** proof: the sub-task areas are provisioned and populated as fixtures, then fed to the join in deliberately-scrambled orders. The *real agent spawn* (the adapter launching sub-agents through the Task tool) is **M8** ([flow 10](#10-milestone-execution--the-genuine-spawn-m8); the `milestone-execution` workflow end-to-end). Proving determinism by **permutation over a fixed area set** is stronger than a single real spawn — it cannot be faked by a sequential-in-process loop (the hollow-spawn trap), and it directly exercises the property a real launch can only sample once. Notation illustrative.
 
 ### Setup — a milestone with overlapping-by-design sub-tasks
 
@@ -594,3 +594,41 @@ If two sub-tasks both stage an **`edited-from-base`** write to the *same committ
 ```
 
 No section-merge, no last-writer-win (rejected in planning — [DECISIONS.md](../DECISIONS.md) 2026-06-04); overlap of a shared target is an error the human routes. The **mixed case** — one sub-task `created` a slug another `edited-from-base` — is also a blocking clash, never a suffix.
+
+## 10. Milestone execution — the genuine spawn (M8)
+
+Where flow 9 proved the **join** is order-invariant over a fixed *fixture* area set, flow 10 proves the **control plane**: real sub-agents, launched through the assistant's Task tool, populate those areas through the real `--task`-scoped write path, and the M7 join recombines them into one reproducible commit. M8's headline — *parallel sub-agent work stays reproducible under the blackboard model end-to-end* — and the one M7 could not reach (it never spawned). Because the launch is, by the determinism boundary, **not engine-guaranteed** ("the CLI owns the payload; the assistant owns the launch"), the acceptance is deliberately **two halves**, neither of which fakes a spawn.
+
+### The flow
+
+```text
+$ jigc milestone create "Cache hardening"            # → milestone:cache-hardening (shared base)
+$ jigc milestone add-from-spec cache-hardening spec:cache-hardening   # one sub-task per criterion
+$ jigc start --workflow milestone-execution --task cache-hardening    # compose the fan-out
+```
+
+The `milestone-execution` workflow's `fan-out` step resolves `{{milestone.tasks}}` and emits **one `Spawn:` directive per sub-task**, each rendered through the adapter's spawn template:
+
+```text
+Spawn: `jigc workflow sub-task --task add-lru-eviction-adr`
+Spawn: `jigc workflow sub-task --task add-cache-strategy-adr`
+Spawn: `jigc workflow sub-task --task document-the-cache-strategy`
+```
+
+The adapter launches them as **concurrent Task-tool sub-agents**. Each sub-agent runs `jigc workflow sub-task --task <sub>` — which provisions its write-ready area on first entry — implements, authors its own `commit` doc, creates any ADR through the create-gate, and writes only into its own `tasks/<sub>/` area (the **write-time `--task` barrier** refuses anything else). A sub-agent never runs git. It acks `status + task_id`; the orchestrator re-derives all state from the CLI, never the message (the blackboard). Then the barrier-join-finalize sequence from flow 9 runs, gated by `finalize.fan-out.squash` (default `true` → one aggregate commit).
+
+### Half A — the automated determinism + payload gate (a `cargo test`)
+
+Runs in CI against the real binary; the "sub-agents" are the test invoking the CLI N times as separate processes — **honest**, because `jigc workflow --task` is *exactly* what a real sub-agent invokes:
+
+1. **Deterministic emit.** Composing `milestone-execution` over a fixed task list emits the N `Spawn:` directives byte-identically across runs; the rendered launch line is extracted and **executed as a process**, asserting it resolves to the real `jigc workflow … --task` verb (guards the L1 landmine — a template naming a nonexistent command).
+2. **Real write→join.** Each `jigc workflow sub-task --task <sub>` invocation provisions + writes a `created` doc (and, in the edit-staging case, an `edited-from-base` doc via copy-on-first-touch) into its sub-area through the real verbs — producing exactly the `docs/<addr>.md` + `provenance.json` the join consumes (no hand-staging, unlike flow 9's fixtures).
+3. **Byte-identical finalize.** Feeding those real-binary-produced areas to `jigc milestone finalize` under ≥3 divergent orders yields byte-identical committed bytes — the flow-9 determinism assertion, now over real-write inputs.
+
+This half proves the CLI payload + the write→join path. It **cannot** prove the assistant's launch primitive — by construction its "sub-agents" are CLI calls, so it can never witness a real Task-tool spawn or a blackboard violation.
+
+### Half B — the recorded genuine spawn (a milestone-completion audit artifact, **not** a CI gate)
+
+The orchestrator (the **main session** — a headless Workflow/Task subagent *cannot itself spawn the Task tool*, so this half has a named human/main-session owner, never an automated gate) drives a real `milestone-execution` run: the assistant's Task tool **genuinely launches ≥2 concurrent sub-agents** into isolated areas, the join recombines, and the committed **tree-hash is asserted to match Half A's golden** for the same fixture. The recorded transcript also **witnesses the blackboard invariant** — each sub-agent reached state via `jigc` only, with no direct read of a sibling's area. The milestone is **not shippable** until this artifact exists and matches; a missing artifact is a blocking completion finding, never an implicit pass on Half A alone (the **hollow-spawn trap**: passing off the N-process sim as the genuine-spawn proof).
+
+The split is the point: Half A is the fast, deterministic regression gate; Half B is the once-per-milestone proof that the real launch reaches the CLI. Neither is a sequential-in-process loop masquerading as concurrency.
