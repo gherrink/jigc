@@ -871,6 +871,27 @@ mod cli_parse {
     }
 
     #[test]
+    fn milestone_finalize_parses_the_id() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "finalize", "cache-rework"])
+            .expect("`jigc milestone finalize <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Finalize {
+                    milestone_id: "cache-rework".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_finalize_requires_a_milestone_id() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "finalize"])
+            .expect_err("`milestone finalize` with no id must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
     fn milestone_add_from_spec_parses_the_id_and_spec_address() {
         let cli = Cli::try_parse_from([
             "jigc",

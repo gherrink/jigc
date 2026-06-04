@@ -397,148 +397,15 @@ impl TaskArea {
             }
         };
 
-        // Phase 4–6: promote + stage + commit. Write the rendered message to a temp
-        // file, copy each promoted managed doc to its canonical path (`design/finalize.md`
-        // → 4. Promote managed docs — copy, not move), stage the working-tree code
-        // changes + the promoted docs (everything differing from base —
-        // `design/finalize.md` → Dirty-tree policy / 5. Stage), and `git commit -F <tmp>`
-        // (never `--no-verify`). A hook/git rejection surfaces git's stderr verbatim,
-        // rolls back the promoted copies, and lands no commit.
-        let msg_path = self.dir.join("finalize-message.tmp");
-        std::fs::write(&msg_path, &plan.message)
-            .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
-        let commit_result = (|| -> Result<()> {
-            // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
-            self.promote(&plan.promotions)?;
-            // The transient `.jigc/` subdirs (`tasks/`/`index/`/`state/`) are gitignored
-            // via `.jigc/.gitignore` — the working area is never committed
-            // (`design/storage.md` → repository layout). Ensure it exists so the
-            // `git add --all` stage below picks up `config/` + the promoted docs + the
-            // code changes.
-            self.ensure_jigc_gitignore()?;
-            git_run(&self.repo_root, &["add", "--all"])?;
-            git_commit(&self.repo_root, &msg_path)?;
-            Ok(())
-        })();
-        let _ = std::fs::remove_file(&msg_path);
-        if let Err(err) = commit_result {
-            // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore
-            // HEAD content for the promoted paths and delete the promoted copies. The
-            // working area is untouched; the agent re-runs after fixing.
-            self.rollback_promotions(&plan.promotions);
-            eprintln!("{err:#}");
-            return Ok(ExitCode::FAILURE);
-        }
-
-        // Phase 7 — post-commit (best-effort: a failure here is logged, not raised; the
-        // commit is already truth). Advance the file-state hashes for the committed
-        // working set, then remove the working area.
-        self.post_commit(&plan.hash_updates);
-
-        Ok(ExitCode::SUCCESS)
-    }
-
-    /// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged
-    /// managed doc from its working-area source to its canonical repo path
-    /// (`<repo_root>/<destination>`) — **copy, not move**, so rollback is a removal of
-    /// the copies and the working area stays intact. Creates the destination's parent
-    /// directory (e.g. `decisions/`) when absent.
-    fn promote(&self, promotions: &[Promotion]) -> Result<()> {
-        for promotion in promotions {
-            let dest = self.repo_root.join(&promotion.destination);
-            if let Some(parent) = dest.parent() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("could not create {parent:?} to promote into"))?;
-            }
-            std::fs::copy(&promotion.source, &dest).with_context(|| {
-                format!(
-                    "could not promote {:?} to {dest:?}",
-                    promotion.source.display()
-                )
-            })?;
-        }
-        Ok(())
-    }
-
-    /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback
-    /// discipline / 6. Commit). For each promoted path, restore HEAD's content in the
-    /// index + worktree (undoing the stage) and delete the promoted copy. Best-effort:
-    /// a failure is logged, never raised — the commit did not land, so the worst case is
-    /// a stray copy the next `finalize`/`discard` overwrites.
-    fn rollback_promotions(&self, promotions: &[Promotion]) {
-        for promotion in promotions {
-            let _ = git_run(
-                &self.repo_root,
-                &["restore", "--staged", "--worktree", &promotion.destination],
-            );
-            let dest = self.repo_root.join(&promotion.destination);
-            // `git restore` recreates the path only if it existed at HEAD; a freshly
-            // promoted (new) doc has no HEAD content, so remove the copy outright.
-            if !path_at_head(&self.repo_root, &promotion.destination) {
-                let _ = std::fs::remove_file(&dest);
-            }
-        }
-    }
-
-    /// Ensure `.jigc/.gitignore` ignores the transient subdirs (`tasks/`/`index/`/
-    /// `state/`) so a `finalize` stage never commits the working area or the
-    /// rebuildable caches (`design/storage.md` → repository layout: `.jigc/` is one home
-    /// whose `config/` is committed while `tasks/`/`index/`/`state/` are gitignored).
-    /// Idempotent — written only when absent.
-    fn ensure_jigc_gitignore(&self) -> Result<()> {
-        let path = self.jigc_root.join(".gitignore");
-        if path.exists() {
-            return Ok(());
-        }
-        std::fs::create_dir_all(&self.jigc_root)
-            .with_context(|| format!("could not create {:?}", self.jigc_root))?;
-        std::fs::write(&path, "tasks/\nindex/\nstate/\n")
-            .with_context(|| format!("could not write {path:?}"))?;
-        Ok(())
-    }
-
-    /// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Three updates, none
-    /// of which can affect commit truth, all self-healing: advance the `file-state`
-    /// record for every committed file (the plan's managed-doc hash set plus the
-    /// committed working-tree files), **invalidate the edge-index stamp** (lifecycle
-    /// site 5, `design/storage.md` → Edge index lifecycle — remove the persisted index
-    /// so the next read rebuilds against the new HEAD), then remove the working area.
-    /// Each step self-heals on failure — a stale `.jigc/tasks/<id>/` is cleaned by the
-    /// next `discard`/`finalize`, a stale hash re-baselines on the next probe, and the
-    /// edge index re-derives from the committed `.md`s — so a failure is logged to
-    /// stderr, never raised (the commit is already truth).
-    fn post_commit(&self, hash_updates: &BTreeMap<String, String>) {
-        if let Err(err) = self.advance_file_state(hash_updates) {
-            eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
-        }
-        if let Err(err) = engine::index::invalidate(&self.jigc_root) {
-            eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
-        }
-        if let Err(err) = std::fs::remove_dir_all(&self.dir) {
-            eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");
-        }
-    }
-
-    /// Record the committed working set into the `file-state` record and save it. The
-    /// plan's managed-doc hash set is empty in the commit-only case; the committed
-    /// code files (the working-tree changes that just landed) are hashed from `HEAD`'s
-    /// tree so the next `file-state` probe sees them in-sync.
-    fn advance_file_state(&self, hash_updates: &BTreeMap<String, String>) -> Result<()> {
-        let mut record = FileStateRecord::load(&self.jigc_root)
-            .with_context(|| format!("loading the file-state record under {:?}", self.jigc_root))?;
-        for (path, hash) in hash_updates {
-            record.record(path.clone(), hash.clone());
-        }
-        // Hash the files the just-landed commit touched, reading their committed bytes.
-        for path in git_commit_files(&self.repo_root)? {
-            if let Ok(bytes) = git_show_file(&self.repo_root, &path) {
-                record.record(path, file_state::hash_bytes(&bytes));
-            }
-        }
-        record
-            .save(&self.jigc_root)
-            .with_context(|| format!("saving the file-state record under {:?}", self.jigc_root))?;
-        Ok(())
+        // Phases 4–7: the shared plan executor — promote + stage + commit + rollback +
+        // post-commit. The working area is the cleanup dir removed on a landed commit.
+        execute_finalize_plan(
+            &self.repo_root,
+            &self.jigc_root,
+            &self.dir,
+            &plan,
+            &self.dir,
+        )
     }
 
     /// Steps 2–5 of the bind enforcement (`design/write-commands.md` → Binding a
@@ -660,11 +527,175 @@ impl TaskArea {
     }
 }
 
+/// Execute a [`FinalizePlan`]'s commit phases 4–7 (`design/finalize.md` → 4. Promote /
+/// 5. Stage / 6. Commit / 7. Post-commit) — the **shared** executor the per-task
+/// [`TaskArea::finalize`] and the milestone single-commit boundary
+/// (`crate::milestone`) both drive, so the promote/stage/commit/rollback/hash logic is
+/// implemented once, never divergently (the inc-4 doc-elaboration pin, `DECISIONS.md`
+/// 2026-06-04). The engine planner already decided *what* lands *where*; this owns only
+/// the git I/O.
+///
+/// `msg_tmp_dir` is where the rendered message temp file is written (the task working
+/// area / the milestone staging area — both gitignored); `cleanup_dir` is the working
+/// area removed on a landed commit (the task dir / the milestone area). The flow: write
+/// the message to a temp file, copy each promoted doc to its canonical repo path, ensure
+/// `.jigc/.gitignore`, `git add --all`, `git commit -F <tmp>` (**never** `--no-verify`).
+/// A hook/git rejection surfaces git's stderr verbatim, rolls back the promoted copies,
+/// and lands no commit (exit `FAILURE`). On success, post-commit (best-effort: advance
+/// the file-state hashes, invalidate the edge-index stamp, remove the working area).
+pub(crate) fn execute_finalize_plan(
+    repo_root: &Path,
+    jigc_root: &Path,
+    msg_tmp_dir: &Path,
+    plan: &engine::finalize::FinalizePlan,
+    cleanup_dir: &Path,
+) -> Result<ExitCode> {
+    let msg_path = msg_tmp_dir.join("finalize-message.tmp");
+    std::fs::write(&msg_path, &plan.message)
+        .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
+    let commit_result = (|| -> Result<()> {
+        // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
+        promote(repo_root, &plan.promotions)?;
+        // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
+        // working area is never committed (`design/storage.md` → repository layout).
+        // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
+        // docs + the code changes.
+        ensure_jigc_gitignore(jigc_root)?;
+        git_run(repo_root, &["add", "--all"])?;
+        git_commit(repo_root, &msg_path)?;
+        Ok(())
+    })();
+    let _ = std::fs::remove_file(&msg_path);
+    if let Err(err) = commit_result {
+        // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore HEAD
+        // content for the promoted paths and delete the promoted copies; no commit landed.
+        rollback_promotions(repo_root, &plan.promotions);
+        eprintln!("{err:#}");
+        return Ok(ExitCode::FAILURE);
+    }
+    // Phase 7 — post-commit (best-effort; the commit is already truth).
+    post_commit(repo_root, jigc_root, cleanup_dir, &plan.hash_updates);
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged managed
+/// doc from its source to its canonical repo path (`<repo_root>/<destination>`) —
+/// **copy, not move**, so rollback is a removal of the copies and the working area stays
+/// intact. Creates the destination's parent directory (e.g. `decisions/`) when absent.
+fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<()> {
+    for promotion in promotions {
+        let dest = repo_root.join(&promotion.destination);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("could not create {parent:?} to promote into"))?;
+        }
+        std::fs::copy(&promotion.source, &dest).with_context(|| {
+            format!(
+                "could not promote {:?} to {dest:?}",
+                promotion.source.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+/// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /
+/// 6. Commit). For each promoted path, restore HEAD's content in the index + worktree
+/// (undoing the stage) and delete the promoted copy. Best-effort: a failure is logged,
+/// never raised — the commit did not land, so the worst case is a stray copy the next
+/// `finalize`/`discard` overwrites.
+fn rollback_promotions(repo_root: &Path, promotions: &[Promotion]) {
+    for promotion in promotions {
+        let _ = git_run(
+            repo_root,
+            &["restore", "--staged", "--worktree", &promotion.destination],
+        );
+        let dest = repo_root.join(&promotion.destination);
+        // `git restore` recreates the path only if it existed at HEAD; a freshly promoted
+        // (new) doc has no HEAD content, so remove the copy outright.
+        if !path_at_head(repo_root, &promotion.destination) {
+            let _ = std::fs::remove_file(&dest);
+        }
+    }
+}
+
+/// Ensure `.jigc/.gitignore` ignores the transient subdirs so a `finalize` stage never
+/// commits the working area or the rebuildable caches (`design/storage.md` → repository
+/// layout: `.jigc/` is one home whose `config/` is committed while `tasks/`/`index/`/
+/// `state/`/`milestones/` are gitignored). Idempotent — (re)written only when absent or
+/// not already listing `milestones/` (so an adapter-written `.gitignore` predating the
+/// milestone area is amended once, matching `crate::milestone::ensure_jigc_gitignore`).
+fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
+    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\n";
+    let path = jigc_root.join(".gitignore");
+    let needs_write = match std::fs::read_to_string(&path) {
+        Ok(existing) => !existing.lines().any(|l| l.trim() == "milestones/"),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
+        Err(err) => return Err(err).with_context(|| format!("could not read {path:?}")),
+    };
+    if needs_write {
+        std::fs::create_dir_all(jigc_root)
+            .with_context(|| format!("could not create {jigc_root:?}"))?;
+        std::fs::write(&path, ENTRIES).with_context(|| format!("could not write {path:?}"))?;
+    }
+    Ok(())
+}
+
+/// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Three updates, none of
+/// which can affect commit truth, all self-healing: advance the `file-state` record for
+/// every committed file (the plan's managed-doc hash set plus the committed working-tree
+/// files), **invalidate the edge-index stamp** (lifecycle site 5, `design/storage.md` →
+/// Edge index lifecycle — remove the persisted index so the next read rebuilds against
+/// the new HEAD), then remove the `cleanup_dir` working area. Each step self-heals on
+/// failure, so a failure is logged to stderr, never raised (the commit is already truth).
+fn post_commit(
+    repo_root: &Path,
+    jigc_root: &Path,
+    cleanup_dir: &Path,
+    hash_updates: &BTreeMap<String, String>,
+) {
+    if let Err(err) = advance_file_state(repo_root, jigc_root, hash_updates) {
+        eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
+    }
+    if let Err(err) = engine::index::invalidate(jigc_root) {
+        eprintln!("note: post-commit edge-index invalidation failed (self-heals): {err:#}");
+    }
+    if let Err(err) = std::fs::remove_dir_all(cleanup_dir) {
+        eprintln!("note: post-commit working-area removal failed (self-heals): {err:#}");
+    }
+}
+
+/// Record the committed working set into the `file-state` record and save it. The plan's
+/// managed-doc hash set is empty in the commit-only case; the committed code files (the
+/// working-tree changes that just landed) are hashed from `HEAD`'s tree so the next
+/// `file-state` probe sees them in-sync.
+fn advance_file_state(
+    repo_root: &Path,
+    jigc_root: &Path,
+    hash_updates: &BTreeMap<String, String>,
+) -> Result<()> {
+    let mut record = FileStateRecord::load(jigc_root)
+        .with_context(|| format!("loading the file-state record under {jigc_root:?}"))?;
+    for (path, hash) in hash_updates {
+        record.record(path.clone(), hash.clone());
+    }
+    // Hash the files the just-landed commit touched, reading their committed bytes.
+    for path in git_commit_files(repo_root)? {
+        if let Ok(bytes) = git_show_file(repo_root, &path) {
+            record.record(path, file_state::hash_bytes(&bytes));
+        }
+    }
+    record
+        .save(jigc_root)
+        .with_context(|| format!("saving the file-state record under {jigc_root:?}"))?;
+    Ok(())
+}
+
 /// Run `git diff <base>` in `repo_root`, returning the unified diff of the working
 /// tree against the pinned base commit (`storage.md` → CLI and git: "CLI
 /// orchestrates, git executes"). Shells out to the user's `git`
 /// (`DECISIONS.md` 2026-05-31 → Git invocation).
-fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
+pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
     let out = Command::new("git")
         .args(["diff", base_sha])
         .current_dir(repo_root)
@@ -682,7 +713,7 @@ fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
 /// List untracked, non-ignored files via `git ls-files --others --exclude-standard`.
 /// `git diff <base>` never reports these, but the finalize stage (`git add --all`)
 /// commits them — so the empty-commit guard counts them as a diff signal.
-fn git_untracked(repo_root: &Path) -> Result<String> {
+pub(crate) fn git_untracked(repo_root: &Path) -> Result<String> {
     let out = Command::new("git")
         .args(["ls-files", "--others", "--exclude-standard"])
         .current_dir(repo_root)
@@ -700,7 +731,7 @@ fn git_untracked(repo_root: &Path) -> Result<String> {
 /// Read HEAD's full SHA via `git rev-parse HEAD` (the supplied HEAD the planner
 /// checks the base pin against — `design/finalize.md` → 1. Preflight). Shells out to
 /// the user's `git` (`DECISIONS.md` 2026-05-31 → Git invocation).
-fn git_head(repo_root: &Path) -> Result<String> {
+pub(crate) fn git_head(repo_root: &Path) -> Result<String> {
     git_capture(repo_root, &["rev-parse", "HEAD"])
 }
 

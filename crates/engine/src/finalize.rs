@@ -211,6 +211,62 @@ pub fn plan_finalize(
     ))
 }
 
+/// Plan the **milestone** `finalize` transaction — the thin sibling of
+/// [`plan_finalize`] for the fan-out single-commit boundary (`design/finalize.md` →
+/// `fan-out` finalize, single-commit form; `DECISIONS.md` 2026-06-04 → the inc-4
+/// fork resolution: M7 ships one synthesized commit).
+///
+/// It shares [`plan_finalize`]'s phases — the preflight (`staging_dir` exists, `base`
+/// == `head_sha`), the empty-commit guard, and the phase-4 promote / phase-7 hash sweep
+/// ([`plan_promotions`]) — with **two** structural differences a milestone forces:
+///
+/// - **No commit-doc render.** A milestone has no `commit:<slug>` doc to render (the
+///   commit doc is per-task); its message is the **CLI-synthesized** structural
+///   projection of the milestone id + its id-ordered sub-task list
+///   ([`crate::milestone::synthesized_message`]). The caller passes that pre-rendered
+///   `message` in and the planner carries it verbatim — substituting it for phase 3.
+/// - **No validate report.** The join already adjudicated the merge (a same-doc clash
+///   is a blocking finding the CLI blocks on *before* materializing, the `materialize`
+///   precedent), so the planner takes no `report` — by the time it runs, the merged
+///   overlay has been materialized into `staging_dir/docs/` clean.
+///
+/// `staging_dir` is the materialized parent staging area
+/// ([`crate::milestone::MaterializeOutcome::docs_dir`]'s parent — the `merged/` dir),
+/// whose `docs/` holds the suffix-resolved bodies in the same staging form a single
+/// task's working area uses, so the shared promote sweep reads it unchanged. Performs
+/// no git and no commit; reads only `staging_dir`.
+pub fn plan_milestone_finalize(
+    staging_dir: &Path,
+    base: &BasePin,
+    head_sha: &str,
+    message: String,
+    has_diff: bool,
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<FinalizePlan, Vec<Finding>> {
+    // Preflight (shared): the staging area exists, base pin == supplied HEAD.
+    if !staging_dir.exists() {
+        return Err(vec![task_missing_finding(staging_dir)]);
+    }
+    if base.sha != head_sha {
+        return Err(vec![base_mismatch_finding(base, head_sha)]);
+    }
+
+    // Empty-commit guard (shared): validate-equivalent passed (the join adjudicated),
+    // but a materialized-but-empty diff still aborts — no empty commits.
+    if !has_diff {
+        return Err(vec![empty_commit_finding()]);
+    }
+
+    // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
+    // promote + phase 7 hashes are the SHARED sweep over the materialized `docs/`.
+    let promote = plan_promotions(staging_dir, schemas)?;
+    Ok(FinalizePlan::new(
+        message,
+        promote.promotions,
+        promote.hash_updates,
+    ))
+}
+
 /// The phase-4 promote decision: the staged docs to copy plus their phase-7 hashes.
 struct PromotePlan {
     promotions: Vec<Promotion>,
@@ -739,6 +795,96 @@ mod tests {
             },
         )
         "#
+        );
+    }
+
+    /// The **milestone** planner ([`plan_milestone_finalize`]) is the thin sibling
+    /// of [`plan_finalize`] for the fan-out single-commit boundary: it shares the
+    /// preflight (staging area exists, base == HEAD), the empty-commit guard, and the
+    /// phase-4 promote/phase-7 hash sweep, but **substitutes** the caller-supplied
+    /// pre-rendered (T1-synthesized) message for the commit-doc render a milestone has
+    /// no doc for (planner-note (b)), and adjudicates no validate report (the join's
+    /// findings — a same-doc clash — are blocked CLI-side before materialize, per
+    /// planner-note (c)).
+    #[test]
+    fn milestone_finalize_planner_shares_promote_substitutes_message_and_aborts() {
+        let root = TempRoot::new("milestone-finalize");
+        // The staging area is the materialized `merged/` dir whose `docs/` holds the
+        // suffix-resolved bodies — the same staging form `plan_promotions` already reads.
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        let adr_bytes = stage_filled_adr(&staging, "cache-strategy");
+        let message = "Finalize milestone cache-rework (2 sub-tasks)\n\n- area-low\n- area-zed\n";
+
+        // (Preflight) base != supplied HEAD → the SAME divergence-routing block, no plan.
+        let err = plan_milestone_finalize(
+            &staging,
+            &base(),
+            "ffffffffffffffffffffffffffffffffffffffff",
+            message.to_string(),
+            true,
+            &schemas(),
+        )
+        .expect_err("a base mismatch aborts preflight");
+        assert_eq!(err.len(), 1);
+        assert_eq!(err[0].code, "finalize.base-mismatch");
+
+        // (Preflight) a missing staging area aborts before anything.
+        let err = plan_milestone_finalize(
+            &root.path().join("milestones").join("none").join("merged"),
+            &base(),
+            &base().sha,
+            message.to_string(),
+            true,
+            &schemas(),
+        )
+        .expect_err("a missing staging area aborts preflight");
+        assert_eq!(err[0].code, "finalize.no-task");
+
+        // (Empty-commit guard) base matches but no diff → produced-no-diff abort.
+        let err = plan_milestone_finalize(
+            &staging,
+            &base(),
+            &base().sha,
+            message.to_string(),
+            false,
+            &schemas(),
+        )
+        .expect_err("an empty diff aborts");
+        assert_eq!(err[0].code, "finalize.empty-commit");
+
+        // (Clean) the plan carries the SUBSTITUTED synthesized message verbatim (never a
+        // commit-doc render) and the SHARED promote/hash set over the materialized doc.
+        let plan = plan_milestone_finalize(
+            &staging,
+            &base(),
+            &base().sha,
+            message.to_string(),
+            true,
+            &schemas(),
+        )
+        .expect("a clean milestone staging area yields a plan");
+        assert_eq!(
+            plan.message, message,
+            "the milestone plan carries the synthesized message verbatim, not a commit-doc render",
+        );
+        assert_eq!(plan.promotions.len(), 1, "the materialized ADR is promoted");
+        assert_eq!(
+            plan.promotions[0].destination, "decisions/cache-strategy.md",
+            "the materialized ADR lands at its canonical path",
+        );
+        assert_eq!(
+            plan.promotions[0].source,
+            staging.join("docs").join("adr:cache-strategy.md"),
+            "the source is the materialized staging body (the shared promote sweep)",
+        );
+        assert_eq!(
+            plan.hash_updates.get("decisions/cache-strategy.md"),
+            Some(&hash_bytes(&adr_bytes)),
+            "the hash is over the materialized body bytes (the shared phase-7 set)",
         );
     }
 }

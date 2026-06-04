@@ -22,12 +22,14 @@
 use crate::cli::Format;
 use crate::pack::make_pack;
 use crate::render;
+use crate::task::{git_diff, git_head, git_untracked};
 use anyhow::{Context, Result, bail};
+use engine::finalize::plan_milestone_finalize;
 use engine::finding::Finding;
 use engine::index::load_committed;
 use engine::milestone::{
-    JoinOutcome, add_from_spec, add_task, join, milestone_dir, mint_milestone, read_base_pin,
-    read_task_list,
+    JoinOutcome, add_from_spec, add_task, join, materialize, milestone_dir, mint_milestone,
+    read_base_pin, read_task_list, synthesized_message,
 };
 use engine::packsource::PackResourceKind;
 use engine::schema::{Schema, load_schema};
@@ -90,6 +92,17 @@ pub enum MilestoneCommand {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
+    /// The milestone commit boundary (`design/finalize.md` → `fan-out` finalize,
+    /// single-commit form): run the by-task-id join, **materialize** its
+    /// suffix-resolved doc bodies into the parent staging area, and commit them as
+    /// **one** logical boundary with a CLI-synthesized message (a structural
+    /// projection of the milestone id + its id-ordered sub-task list). A blocking
+    /// join finding (a same-doc clash, an unknown milestone) routes to stderr and
+    /// **commits nothing** (`design/storage.md` → one logical commit boundary).
+    Finalize {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+    },
 }
 
 impl MilestoneCommand {
@@ -104,6 +117,12 @@ impl MilestoneCommand {
         if let MilestoneCommand::Join { milestone_id } = self {
             return dispatch_join(cwd, format, &milestone_id);
         }
+        // `finalize` is the commit boundary: it materializes the join and drives the
+        // shared finalize-plan executor (git I/O), returning a process exit code rather
+        // than a one-line summary — so it, too, has its own dispatch arm.
+        if let MilestoneCommand::Finalize { milestone_id } = self {
+            return dispatch_finalize(cwd, &milestone_id);
+        }
         let result = match self {
             MilestoneCommand::Create { title } => run_create(cwd, &title),
             MilestoneCommand::AddTask {
@@ -116,6 +135,7 @@ impl MilestoneCommand {
             } => run_add_from_spec(cwd, &milestone_id, &spec_addr),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
             MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
+            MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
         };
         match result {
             Ok(summary) => {
@@ -308,6 +328,103 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
     let committed = load_committed(&repo_root, &jigc_root, &schemas, &head);
 
     join(&jigc_root, &repo_root, milestone_id, &schemas, &committed).map_err(finding_to_err)
+}
+
+/// Dispatch `jigc milestone finalize <milestone-id>`: run the materialized join +
+/// single-commit boundary and map it to the exit code. A blocking join finding (a
+/// same-doc clash, an unknown milestone) or an orchestration error routes to stderr and
+/// exits non-zero **before** any commit. A landed commit prints a summary and exits 0.
+/// `design/finalize.md` → `fan-out` finalize (single-commit form).
+fn dispatch_finalize(cwd: &Path, milestone_id: &str) -> ExitCode {
+    match run_milestone_finalize(cwd, milestone_id) {
+        Ok(code) => code,
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `jigc milestone finalize <milestone-id>` — the milestone commit boundary
+/// (`design/finalize.md` → `fan-out` finalize, single-commit form; `design/storage.md` →
+/// one logical commit boundary).
+///
+/// The flow reuses the engine primitives end-to-end: (1) [`materialize`] runs the
+/// by-task-id join and writes the suffix-resolved doc bodies into the parent staging area
+/// `<.jigc>/milestones/<id>/merged/docs/` — **blocking** (surfacing the routed finding,
+/// committing nothing) if the join holds any blocking finding (a same-doc clash, an
+/// unknown milestone), the `dispatch_join` precedent; (2) the message is the
+/// CLI-[`synthesized_message`] structural projection of the milestone id + its id-ordered
+/// sub-task list (a milestone has no commit doc to render — planner-note (b)); (3)
+/// [`plan_milestone_finalize`] runs the shared preflight (`base` == HEAD) + empty-commit
+/// guard + promote/hash sweep over the materialized staging area; (4) the **shared**
+/// [`crate::task::execute_finalize_plan`] executor promotes, stages, and commits in **one**
+/// boundary, removing the milestone area on success. The engine performs no git; the CLI
+/// reads HEAD and locates `.jigc/`.
+fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_root = repo_root.join(".jigc");
+    let schemas = shipped_schemas()?;
+
+    let dir = milestone_dir(&jigc_root, milestone_id);
+    if !dir.is_dir() {
+        bail!(
+            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
+        );
+    }
+
+    // The committed edge index is keyed to the milestone's shared base (the commit every
+    // sub-task inherited) — the cross-area ref walk inside the join resolves against the
+    // store as it stood at that base.
+    let base = read_base_pin(&dir).with_context(|| {
+        format!("could not read the shared base pin for milestone `{milestone_id}`")
+    })?;
+    let committed = load_committed(&repo_root, &jigc_root, &schemas, &base.sha);
+
+    // Step 1 — materialize the join's suffix-resolved bodies. A blocking join finding (a
+    // same-doc clash) surfaces here and commits nothing (the materialize blocks before it
+    // writes — the `dispatch_join` precedent, planner-note (c)).
+    let materialized = materialize(&jigc_root, &repo_root, milestone_id, &schemas, &committed)
+        .map_err(finding_to_err)?;
+
+    // Step 2 — the CLI-synthesized message (a milestone has no commit doc to render).
+    let list = read_task_list(&dir)
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    let message = synthesized_message(milestone_id, &list);
+
+    // The diff-presence signal the planner's empty-commit guard needs: the materialized
+    // docs that will be promoted, plus any working-tree change / untracked file from base.
+    let head = git_head(&repo_root)?;
+    let has_diff = !materialized.addresses.is_empty()
+        || !git_diff(&repo_root, &base.sha)?.trim().is_empty()
+        || !git_untracked(&repo_root)?.trim().is_empty();
+
+    // Step 3 — the thin sibling planner over the materialized staging area (the parent of
+    // `merged/docs/`): shared preflight + empty-commit guard + promote/hash sweep.
+    let staging_dir = materialized
+        .docs_dir
+        .parent()
+        .expect("the materialized docs dir has a parent staging area")
+        .to_path_buf();
+    let plan =
+        match plan_milestone_finalize(&staging_dir, &base, &head, message, has_diff, &schemas) {
+            Ok(plan) => plan,
+            Err(findings) => {
+                for finding in &findings {
+                    eprintln!("{}", finding.message);
+                    if let Some(route) = &finding.route {
+                        eprintln!("  route: {route}");
+                    }
+                }
+                return Ok(ExitCode::FAILURE);
+            }
+        };
+
+    // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
+    // The message temp file is written into the (gitignored) milestone area; the milestone
+    // area is the cleanup dir removed on a landed commit.
+    crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)
 }
 
 /// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including

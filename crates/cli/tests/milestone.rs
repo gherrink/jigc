@@ -653,6 +653,232 @@ fn milestone_join_same_doc_clash_blocks_and_commits_nothing() {
     );
 }
 
+/// The number of commits reachable from HEAD (`git rev-list --count HEAD`) — the
+/// "EXACTLY ONE new commit" assertion compares this before/after the finalize.
+fn rev_list_count(repo: &Path) -> u32 {
+    let out = Command::new("git")
+        .args(["rev-list", "--count", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("git rev-list");
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("count parses")
+}
+
+/// HEAD's full commit message (`git log -1 --format=%B`) — the synthesized-message
+/// assertion reads it verbatim off the landed commit.
+fn head_message(repo: &Path) -> String {
+    let out = Command::new("git")
+        .args(["log", "-1", "--format=%B"])
+        .current_dir(repo)
+        .output()
+        .expect("git log");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
+    let repo = TempDir::new("finalize-ok");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Mint the milestone + two sub-tasks, added NON-id-order (zed before low) so the
+    // suffix-by-task-id is not an accident of insertion order. id-sorted: [area-low,
+    // area-zed], so `area-low` keeps the bare slug and `area-zed` takes the `-2` suffix.
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    // `area-low`: a clean disjoint persisted doc + a `created` collision (self-ref).
+    // `area-zed`: the same created slug → suffixed `-2`, self-ref rewritten in lockstep.
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:eviction-policy",
+        &adr_plain("Eviction policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:cache-strategy",
+        &adr_superseding("Cache strategy", "adr:cache-strategy"),
+        "created",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:cache-strategy",
+        &adr_superseding("Cache strategy", "adr:cache-strategy"),
+        "created",
+    );
+
+    let before_count = rev_list_count(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize cache-rework` must exit 0; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // EXACTLY ONE new commit.
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before_count + 1,
+        "finalize must land exactly one new commit",
+    );
+
+    // The synthesized message: subject names the milestone + its 2 sub-tasks, body lists
+    // them id-sorted (`area-low` before `area-zed`).
+    let message = head_message(repo.path());
+    assert!(
+        message.contains("Finalize milestone cache-rework (2 sub-tasks)"),
+        "the commit message must be the synthesized projection; got:\n{message}",
+    );
+    let low_at = message.find("- area-low").expect("body lists area-low");
+    let zed_at = message.find("- area-zed").expect("body lists area-zed");
+    assert!(
+        low_at < zed_at,
+        "the synthesized body must list sub-tasks id-sorted; got:\n{message}",
+    );
+
+    // The promoted suffix-resolved docs landed at their canonical `decisions/` paths.
+    let decisions = repo.path().join("decisions");
+    for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
+        assert!(
+            decisions.join(format!("{slug}.md")).is_file(),
+            "the promoted `{slug}` doc must land at decisions/{slug}.md",
+        );
+    }
+    // The suffixed instance's self-ref was rewritten in lockstep to its `-2` slug.
+    let suffixed =
+        fs::read_to_string(decisions.join("cache-strategy-2.md")).expect("read suffixed");
+    assert!(
+        suffixed.contains("supersedes: adr:cache-strategy-2"),
+        "the `-2` instance's self-ref must be rewritten to its suffixed slug; got:\n{suffixed}",
+    );
+    // The promoted docs are genuinely committed (in HEAD's tree), not just on disk.
+    let tracked = Command::new("git")
+        .args(["ls-files", "decisions/"])
+        .current_dir(repo.path())
+        .output()
+        .expect("git ls-files");
+    let tracked = String::from_utf8(tracked.stdout).unwrap();
+    for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
+        assert!(
+            tracked.contains(&format!("decisions/{slug}.md")),
+            "decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
+        );
+    }
+
+    // The working tree is clean after the commit (everything staged landed) and the
+    // milestone area was removed.
+    let (_, status) = git_state(repo.path());
+    assert!(
+        status.trim().is_empty(),
+        "the working tree must be clean after the finalize commit; got:\n{status}",
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("milestones")
+            .join("cache-rework")
+            .exists(),
+        "the milestone area must be removed after a landed commit",
+    );
+}
+
+#[test]
+fn milestone_finalize_same_doc_clash_blocks_and_commits_nothing() {
+    let repo = TempDir::new("finalize-clash");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    // Both areas edit the SAME committed-at-base slug — a same-doc clash (a blocking
+    // finding inside the join's Ok outcome), so finalize must block BEFORE materializing
+    // or committing (planner-note (c)).
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:cache-strategy",
+        &adr_plain("Cache strategy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:cache-strategy",
+        &adr_plain("Cache strategy"),
+        "edited-from-base",
+    );
+
+    let before = git_state(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let stderr = String::from_utf8(finalized.stderr).expect("utf-8 stderr");
+    assert!(
+        !finalized.status.success(),
+        "a same-doc clash finalize must exit non-zero; got {:?}",
+        finalized.status,
+    );
+    assert!(
+        stderr.contains("same-doc clash") && stderr.contains("route:"),
+        "the clash block must carry the `join.same-doc-clash` message + a route; got:\n{stderr}",
+    );
+
+    // NO new commit and the working tree is unchanged — a clash routes, never mutates.
+    let after = git_state(repo.path());
+    assert_eq!(
+        before, after,
+        "a clash must commit nothing and leave HEAD + the working tree unchanged",
+    );
+    // No decisions/ doc was promoted.
+    assert!(
+        !repo.path().join("decisions").exists(),
+        "a blocked finalize must promote nothing",
+    );
+}
+
 #[test]
 fn add_task_to_an_unknown_milestone_rejects() {
     let repo = TempDir::new("unknown");
