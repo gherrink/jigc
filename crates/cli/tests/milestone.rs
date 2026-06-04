@@ -6,8 +6,10 @@
 //! the done-criterion: `milestone create "Cache rework"` mints
 //! `milestone:cache-rework` (exit 0, named in output); two `add-task`s under it
 //! (`"Zebra fix"`, then `"Alpha fix"`) mint sub-tasks pinned to the **milestone's
-//! shared base** in isolated `tasks/<sub>/` areas; the milestone's task list
-//! enumerates **id-sorted** `[alpha-fix, zebra-fix]` regardless of add order; a
+//! shared base** in isolated `tasks/<sub>/` areas; `tasks.json` records the
+//! sub-tasks in **insertion order** `[zebra-fix, alpha-fix]` (the audit trail),
+//! while the binary's `list-tasks` enumeration surfaces them **id-sorted**
+//! `[alpha-fix, zebra-fix]` regardless of add order (the order the join reads); a
 //! duplicate add-task intent **rejects** non-zero with a routed finding; and
 //! `.jigc/milestones/` is gitignored.
 //!
@@ -137,8 +139,10 @@ fn milestone_create_then_add_tasks_through_the_binary() {
         );
     }
 
-    // The task list enumerates id-sorted `[alpha-fix, zebra-fix]`, never the
-    // `[zebra-fix, alpha-fix]` add order — the deterministic order the join reads.
+    // `tasks.json` is the recorded backing state: it keeps the `[zebra-fix,
+    // alpha-fix]` insertion order as the audit trail. The deterministic id-sorted
+    // `[alpha-fix, zebra-fix]` order the join reads is surfaced through the binary's
+    // `list-tasks` (asserted below), never read off this backing file.
     let tasks_json =
         fs::read_to_string(milestone_dir.join("tasks.json")).expect("task list written");
     let list: serde_json::Value = serde_json::from_str(&tasks_json).expect("task list parses");
