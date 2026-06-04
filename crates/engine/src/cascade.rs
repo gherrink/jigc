@@ -27,7 +27,7 @@
 use std::collections::BTreeMap;
 use thiserror::Error;
 
-use crate::finding::{Finding, Location};
+use crate::finding::{Finding, Location, Severity};
 
 /// The scheme every `structural-op` definition-target carries — the literal
 /// `workflow` in `workflow:<id>`. This parser handles the **workflow include
@@ -504,10 +504,17 @@ pub struct PackDefaultLayer {
     scalars: BTreeMap<String, String>,
     /// File ids this layer provides (workflow / step / schema ids).
     files: Vec<String>,
+    /// The demotion-lock floor per floored knob key — only floored (intrinsic)
+    /// keys appear. A `scalar-set` ranking *below* a key's floor is soft-rejected
+    /// at resolution (`design/overrides.md` → Soft-rejection). Empty unless fed via
+    /// [`PackDefaultLayer::with_floors`], so the floor-less resolve sites are inert.
+    floors: BTreeMap<String, String>,
 }
 
 impl PackDefaultLayer {
     /// Build the base layer from its identity, base scalars, and base file ids.
+    /// The floor surface is empty; the production sites that hold a `KnobSet` feed
+    /// it via [`PackDefaultLayer::with_floors`].
     pub fn new(
         pack_id: impl Into<String>,
         pack_version: impl Into<String>,
@@ -519,7 +526,19 @@ impl PackDefaultLayer {
             pack_version: pack_version.into(),
             scalars,
             files,
+            floors: BTreeMap::new(),
         }
+    }
+
+    /// Attach the demotion-lock floors (per floored knob key) read off the
+    /// `KnobSet` — additive over [`PackDefaultLayer::new`], defaulting to empty, so
+    /// only the production resolve sites that hold a `KnobSet` carry floors and the
+    /// other (test) sites stay floor-less (`design/overrides.md` → Soft-rejection;
+    /// the per-key floor is a `KnobDecl` field).
+    #[must_use]
+    pub fn with_floors(mut self, floors: BTreeMap<String, String>) -> Self {
+        self.floors = floors;
+        self
     }
 }
 
@@ -648,8 +667,26 @@ pub struct Resolved {
     /// (`overrides applied: N`, the winning layer per key). Additive: the
     /// resolved values in [`Resolved::scalars`] are unchanged by its presence.
     scalar_provenance: BTreeMap<String, LayerKind>,
+    /// The `scalar-set` deltas soft-rejected by a key's `floor` — dropped (not
+    /// applied), resolution continued. Each records the attempted value, the floor
+    /// it ranked below, and the source layer, in key order. The third resolution
+    /// outcome beyond "applied" / "hard error" (`design/overrides.md` →
+    /// Soft-rejection, not abort), surfaced via `--explain`. Additive: the resolved
+    /// values in [`Resolved::scalars`] are unchanged by its presence.
+    rejected_scalar_sets: BTreeMap<String, RejectedScalarSet>,
     file_owners: BTreeMap<String, LayerKind>,
     provenance: Provenance,
+}
+
+/// One soft-rejected `scalar-set`: the attempted value, the floor it ranked below,
+/// and the layer that attempted it — the record `--explain` renders the rejected
+/// line from (`design/overrides.md` → Soft-rejection; `design/workflow-dialect.md`
+/// → `--explain` output contract, the attempted value / floor / source layer).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RejectedScalarSet {
+    attempted: String,
+    floor: String,
+    layer: LayerKind,
 }
 
 impl Resolved {
@@ -697,6 +734,23 @@ impl Resolved {
         })
     }
 
+    /// Each soft-rejected `scalar-set` as `(key, attempted, floor, layer)` — the
+    /// demotion a knob's `floor` dropped, in key order, mirroring
+    /// [`Resolved::scalar_overrides`]. The `--explain` tree renders the rejected
+    /// line distinctly from the applied overrides (`design/workflow-dialect.md` →
+    /// `--explain` output contract; `design/overrides.md` → Soft-rejection). Empty
+    /// when no floored key was set below its floor.
+    pub fn rejected_scalar_sets(&self) -> impl Iterator<Item = (&str, &str, &str, LayerKind)> {
+        self.rejected_scalar_sets.iter().map(|(key, rejected)| {
+            (
+                key.as_str(),
+                rejected.attempted.as_str(),
+                rejected.floor.as_str(),
+                rejected.layer,
+            )
+        })
+    }
+
     /// Which layer owns the file with this id after shadowing, or `None` if no
     /// layer provides it.
     pub fn file_owner(&self, id: &str) -> Option<LayerKind> {
@@ -729,6 +783,7 @@ pub fn resolve(
     // and its provenance. Keys left at the base never enter this map.
     let mut scalars = pack.scalars.clone();
     let mut scalar_provenance: BTreeMap<String, LayerKind> = BTreeMap::new();
+    let mut rejected_scalar_sets: BTreeMap<String, RejectedScalarSet> = BTreeMap::new();
     for (layer_kind, layer) in [(LayerKind::Team, team), (LayerKind::Project, project)] {
         let Some(layer) = layer else { continue };
         for (key, value) in &layer.scalar_sets {
@@ -738,8 +793,29 @@ pub fn resolve(
                     key: key.clone(),
                 });
             }
+            // Soft-rejection: a `scalar-set` ranking *below* the key's floor is
+            // dropped (logged, not applied) — resolution continues as if the delta
+            // were absent, so the value resolves from the remaining layers, never a
+            // synthetic floor literal (`design/overrides.md` → Soft-rejection). An
+            // unfloored key, or a value at/above the floor, applies normally.
+            if let Some(floor) = pack.floors.get(key)
+                && is_below_floor(value, floor)
+            {
+                rejected_scalar_sets.insert(
+                    key.clone(),
+                    RejectedScalarSet {
+                        attempted: value.clone(),
+                        floor: floor.clone(),
+                        layer: layer_kind,
+                    },
+                );
+                continue;
+            }
             scalars.insert(key.clone(), value.clone());
             scalar_provenance.insert(key.clone(), layer_kind);
+            // A later layer applying an at/above-floor value clears any earlier
+            // below-floor rejection it now supersedes for the same key.
+            rejected_scalar_sets.remove(key);
         }
     }
 
@@ -766,15 +842,28 @@ pub fn resolve(
     Ok(Resolved {
         scalars,
         scalar_provenance,
+        rejected_scalar_sets,
         file_owners,
         provenance,
     })
 }
 
+/// Whether `value` ranks **below** `floor` in the severity total order
+/// `blocking > warning > advisory` (`design/overrides.md` → Soft-rejection). A
+/// value or floor that is not a severity token (no severity knob carries one) is
+/// treated as *not below* — the floor only locks the severity surface, so a
+/// non-severity value is left to apply (its own type adjudication is the write
+/// path's job, not the cascade's).
+fn is_below_floor(value: &str, floor: &str) -> bool {
+    match (Severity::from_token(value), Severity::from_token(floor)) {
+        (Some(value), Some(floor)) => value.rank() < floor.rank(),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::finding::Severity;
 
     /// The `#<step-id>` form parses to a [`Anchor::At`] target (replace / remove),
     /// carrying the workflow id and the step id from the fragment.
@@ -1229,6 +1318,180 @@ mod tests {
         assert_eq!(base.scalar_required("default-workflow"), Ok("single-task"));
         assert_eq!(overridden.scalar("default-workflow"), Some("router"));
         assert_eq!(overridden.scalar_required("default-workflow"), Ok("router"));
+    }
+
+    /// A pack-default layer floored on an intrinsic key (`with_floors`). Floors a
+    /// `validation.workflow-refs.severity`-style key at `blocking`; the base value
+    /// is `blocking`, so a demotion below the floor is soft-rejected.
+    fn pack_default_floored() -> PackDefaultLayer {
+        let mut scalars = BTreeMap::new();
+        scalars.insert("default-workflow".to_owned(), "single-task".to_owned());
+        scalars.insert(
+            "validation.workflow-refs.severity".to_owned(),
+            "blocking".to_owned(),
+        );
+        scalars.insert(
+            "validation.file-state.hash-matches.severity".to_owned(),
+            "blocking".to_owned(),
+        );
+        let mut floors = BTreeMap::new();
+        floors.insert(
+            "validation.workflow-refs.severity".to_owned(),
+            "blocking".to_owned(),
+        );
+        PackDefaultLayer::new("dev-pack", "0.1.0", scalars, Vec::new()).with_floors(floors)
+    }
+
+    /// Soft-rejection: a project `scalar-set` of an intrinsic (floored) key to a
+    /// below-floor severity is **dropped, not applied** — the key resolves from
+    /// the remaining layers (here the pack-default base `blocking`), resolution
+    /// returns `Ok`, and the dropped delta is recorded on the rejected surface with
+    /// `(attempted, floor, layer)` (`design/overrides.md` → Soft-rejection, not abort).
+    #[test]
+    fn below_floor_scalar_set_is_soft_rejected() {
+        let pack = pack_default_floored();
+        let project =
+            OverrideLayer::empty().scalar_set("validation.workflow-refs.severity", "advisory");
+
+        let resolved = resolve(&pack, None, Some(&project)).expect("resolution does not abort");
+
+        // The value resolves from the remaining layers — the base blocking stands,
+        // not a synthetic floor literal and not the dropped advisory.
+        assert_eq!(
+            resolved.scalar("validation.workflow-refs.severity"),
+            Some("blocking"),
+        );
+        // The drop is not an applied override.
+        assert_eq!(resolved.scalar_overrides().count(), 0);
+        // The drop is recorded on the rejected surface with attempted/floor/layer.
+        let rejected: Vec<_> = resolved.rejected_scalar_sets().collect();
+        assert_eq!(
+            rejected,
+            vec![(
+                "validation.workflow-refs.severity",
+                "advisory",
+                "blocking",
+                LayerKind::Project,
+            )],
+        );
+    }
+
+    /// A below-floor `warning` on a `blocking`-floor key is also dropped — the
+    /// total order is `blocking > warning > advisory`, so any value ranking below
+    /// the floor is soft-rejected, not just the strictest demotion.
+    #[test]
+    fn below_floor_warning_is_soft_rejected() {
+        let pack = pack_default_floored();
+        let project =
+            OverrideLayer::empty().scalar_set("validation.workflow-refs.severity", "warning");
+
+        let resolved = resolve(&pack, None, Some(&project)).expect("resolution does not abort");
+
+        assert_eq!(
+            resolved.scalar("validation.workflow-refs.severity"),
+            Some("blocking"),
+        );
+        let rejected: Vec<_> = resolved.rejected_scalar_sets().collect();
+        assert_eq!(
+            rejected,
+            vec![(
+                "validation.workflow-refs.severity",
+                "warning",
+                "blocking",
+                LayerKind::Project,
+            )],
+        );
+    }
+
+    /// A tunable (unfloored) key's demotion still applies — the demotion-lock is
+    /// floored-key-only, so a `scalar-set` on a key with no floor wins normally and
+    /// is an applied override, never a rejected one.
+    #[test]
+    fn tunable_key_demotion_still_applies() {
+        let pack = pack_default_floored();
+        let project = OverrideLayer::empty()
+            .scalar_set("validation.file-state.hash-matches.severity", "advisory");
+
+        let resolved = resolve(&pack, None, Some(&project)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("validation.file-state.hash-matches.severity"),
+            Some("advisory"),
+        );
+        let overrides: Vec<_> = resolved.scalar_overrides().collect();
+        assert_eq!(
+            overrides,
+            vec![(
+                "validation.file-state.hash-matches.severity",
+                "advisory",
+                LayerKind::Project,
+            )],
+        );
+        assert_eq!(resolved.rejected_scalar_sets().count(), 0);
+    }
+
+    /// An undeclared key still hard-errors — soft-rejection is for a *declared*
+    /// key set below its floor; an undeclared key (a typo) stays a hard
+    /// [`CascadeError::UndeclaredScalar`] (`design/overrides.md` → Soft-rejection:
+    /// distinct from setting an undeclared key).
+    #[test]
+    fn undeclared_key_still_hard_errors_with_floors_present() {
+        let pack = pack_default_floored();
+        let project = OverrideLayer::empty().scalar_set("not-a-knob", "advisory");
+
+        let err = resolve(&pack, None, Some(&project)).expect_err("undeclared key hard-errors");
+
+        assert_eq!(
+            err,
+            CascadeError::UndeclaredScalar {
+                layer: "project",
+                key: "not-a-knob".to_owned(),
+            },
+        );
+    }
+
+    /// At-floor and above-floor values apply normally — a `scalar-set` setting a
+    /// floored key *to* its floor (here `blocking`) is not a demotion, so it
+    /// applies and is an ordinary override, never rejected.
+    #[test]
+    fn at_floor_scalar_set_applies() {
+        let pack = pack_default_floored();
+        let project =
+            OverrideLayer::empty().scalar_set("validation.workflow-refs.severity", "blocking");
+
+        let resolved = resolve(&pack, None, Some(&project)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("validation.workflow-refs.severity"),
+            Some("blocking"),
+        );
+        let overrides: Vec<_> = resolved.scalar_overrides().collect();
+        assert_eq!(
+            overrides,
+            vec![(
+                "validation.workflow-refs.severity",
+                "blocking",
+                LayerKind::Project,
+            )],
+        );
+        assert_eq!(resolved.rejected_scalar_sets().count(), 0);
+    }
+
+    /// No floors (the default `PackDefaultLayer::new` with no `with_floors`):
+    /// every demotion applies — the soft-rejection channel is inert when no key
+    /// carries a floor, so the 16 floor-less resolve sites are unperturbed.
+    #[test]
+    fn no_floors_leaves_every_demotion_applied() {
+        let pack = pack_default();
+        let project = OverrideLayer::empty().scalar_set("validation.doc-code.severity", "advisory");
+
+        let resolved = resolve(&pack, None, Some(&project)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar("validation.doc-code.severity"),
+            Some("advisory"),
+        );
+        assert_eq!(resolved.rejected_scalar_sets().count(), 0);
     }
 
     /// Populated external layers add `Project config:` / `Team config:` segments

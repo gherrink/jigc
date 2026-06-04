@@ -54,6 +54,33 @@ pub enum Severity {
     Advisory,
 }
 
+impl Severity {
+    /// The strictness rank in the total order `blocking > warning > advisory`
+    /// (`design/overrides.md` → Soft-rejection: severities are totally ordered).
+    /// A higher rank is stricter; the cascade soft-rejects a `scalar-set` whose
+    /// value ranks below a key's `floor`. `Severity` derives no `Ord` (its variant
+    /// order is not a severity claim), so the order is this explicit ranking.
+    pub fn rank(self) -> u8 {
+        match self {
+            Severity::Advisory => 0,
+            Severity::Warning => 1,
+            Severity::Blocking => 2,
+        }
+    }
+
+    /// Parse a severity from its kebab-case token (`"blocking"` / `"warning"` /
+    /// `"advisory"`), or `None` for any other string. Lets the cascade rank an
+    /// opaque scalar value against a floor without a serde round-trip.
+    pub fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "blocking" => Some(Severity::Blocking),
+            "warning" => Some(Severity::Warning),
+            "advisory" => Some(Severity::Advisory),
+            _ => None,
+        }
+    }
+}
+
 /// Where a [`Finding`] points: an optional managed-artifact `address` plus the
 /// source `line`/`col` it was raised at.
 ///
@@ -323,6 +350,20 @@ mod tests {
         );
         let back: Location = serde_json::from_value(json).expect("deserializes");
         assert_eq!(back, addressed);
+    }
+
+    /// The severity total order `blocking > warning > advisory` (`design/overrides.md`
+    /// → Soft-rejection): `rank` is strictly decreasing across the three, and
+    /// `from_token` round-trips each kebab-case token while rejecting any other.
+    #[test]
+    fn severity_total_order_and_token_round_trip() {
+        assert!(Severity::Blocking.rank() > Severity::Warning.rank());
+        assert!(Severity::Warning.rank() > Severity::Advisory.rank());
+
+        assert_eq!(Severity::from_token("blocking"), Some(Severity::Blocking));
+        assert_eq!(Severity::from_token("warning"), Some(Severity::Warning));
+        assert_eq!(Severity::from_token("advisory"), Some(Severity::Advisory));
+        assert_eq!(Severity::from_token("nonsense"), None);
     }
 
     /// A hard block is a blocking finding that carries a route — not a new type.
