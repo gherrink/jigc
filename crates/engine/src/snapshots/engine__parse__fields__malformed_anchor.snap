@@ -4,6 +4,8 @@ expression: f
 ---
 Finding {
     severity: Blocking,
+    probe: "conformance",
+    check: "item-anchor-malformed",
     code: "conformance.item-anchor-malformed",
     message: "malformed `{#id}` anchor `{#Bad Id}` (must be a slug `[a-z0-9-]`)",
     location: Some(

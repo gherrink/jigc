@@ -4,6 +4,8 @@ expression: ceiling
 ---
 Finding {
     severity: Blocking,
+    probe: "conformance",
+    check: "slot-heading-depth",
     code: "conformance.slot-heading-depth",
     message: "heading at schema-reserved depth `###` in slot prose at line 11; use `####` or rephrase",
     location: Some(

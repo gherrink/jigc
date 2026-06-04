@@ -288,79 +288,75 @@ fn plan_promotions(
 /// A blocking finding for an I/O failure walking the staged docs or reading a staged
 /// doc during the promote phase.
 fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "finalize.promote-io".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.promote-io",
+        format!(
             "could not read the staged managed doc `{}` to promote it: {err}",
             path.display()
         ),
-        location: None,
-        route: None,
-    }
+        None,
+        None,
+    )
 }
 
 /// The phase-1 task-missing reject (`finalize.md` → 1. Preflight: "Task exists").
 fn task_missing_finding(task_dir: &Path) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "finalize.no-task".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.no-task",
+        format!(
             "no task working area at `{}` — nothing to finalize",
             task_dir.display()
         ),
-        location: None,
-        route: Some("start a task with `jigc start \"<intent>\"`".to_string()),
-    }
+        None,
+        Some("start a task with `jigc start \"<intent>\"`".to_string()),
+    )
 }
 
 /// The phase-1 base-pin-divergence reject (`finalize.md` → 1. Preflight: "Base pin
 /// matches HEAD"). A blocking finding carrying the divergence-routing prompt — the
 /// CLI never operates a task off its pinned base.
 fn base_mismatch_finding(base: &BasePin, head_sha: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "finalize.base-mismatch".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.base-mismatch",
+        format!(
             "the task was started at base `{}` but HEAD is now `{head_sha}`",
             base.short
         ),
-        location: None,
-        route: Some(format!(
+        None,
+        Some(format!(
             "switch back to `{}` or discard the task with `jigc task discard`",
             base.short
         )),
-    }
+    )
 }
 
 /// The empty-commit abort (`finalize.md` → Commit-doc rendering → Empty commit):
 /// validate passed but the staged diff is empty. No empty commits.
 fn empty_commit_finding() -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "finalize.empty-commit".to_string(),
-        message: "task validated but produced no diff — nothing to finalize".to_string(),
-        location: None,
-        route: Some("make a change, then re-run `jigc task finalize`".to_string()),
-    }
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.empty-commit",
+        "task validated but produced no diff — nothing to finalize",
+        None,
+        Some("make a change, then re-run `jigc task finalize`".to_string()),
+    )
 }
 
 /// A blocking finding for an I/O failure reading the staged commit doc during render.
 fn render_io_finding(path: &Path, err: &std::io::Error) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "finalize.render-io".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.render-io",
+        format!(
             "could not read the staged commit doc `{}`: {err}",
             path.display()
         ),
-        location: Some(Location {
-            address: None,
-            line: 1,
-            col: 1,
-        }),
-        route: None,
-    }
+        Some(Location::at(1, 1)),
+        None,
+    )
 }
 
 #[cfg(test)]
@@ -547,20 +543,20 @@ mod tests {
         );
 
         // (Phase 2) blocking validate findings → abort with exactly those.
-        let blocking = Finding {
-            severity: Severity::Blocking,
-            code: "schema-conformance.required-slot-present".into(),
-            message: "required slot `body` is empty".into(),
-            location: None,
-            route: None,
-        };
-        let advisory = Finding {
-            severity: Severity::Advisory,
-            code: "commit-rendering.line-limit-subject".into(),
-            message: "subject is 71 chars".into(),
-            location: None,
-            route: None,
-        };
+        let blocking = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-slot-present",
+            "required slot `body` is empty",
+            None,
+            None,
+        );
+        let advisory = Finding::graded(
+            Severity::Advisory,
+            "commit-rendering.line-limit-subject",
+            "subject is 71 chars",
+            None,
+            None,
+        );
         let report = ValidationReport::new(vec![advisory, blocking.clone()]);
         let err = plan_finalize(
             &task_dir,

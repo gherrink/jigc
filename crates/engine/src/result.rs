@@ -372,13 +372,13 @@ mod tests {
         );
 
         // Advisory-only: surfaced but does not block.
-        let advisory = Finding {
-            severity: Severity::Advisory,
-            code: "file-state.baseline-adopt".into(),
-            message: "baseline adopted".into(),
-            location: Some(Location::addressed("docs/note:ok.md", 1, 1)),
-            route: None,
-        };
+        let advisory = Finding::graded(
+            Severity::Advisory,
+            "file-state.baseline-adopt",
+            "baseline adopted",
+            Some(Location::addressed("docs/note:ok.md", 1, 1)),
+            None,
+        );
         let report = ValidationReport::new(vec![advisory.clone()]);
         assert!(
             !report.has_blocking(),
@@ -386,13 +386,13 @@ mod tests {
         );
 
         // A blocking finding flips the gate.
-        let blocking = Finding {
-            severity: Severity::Blocking,
-            code: "schema-conformance.required-slot-present".into(),
-            message: "required slot is empty".into(),
-            location: None,
-            route: None,
-        };
+        let blocking = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-slot-present",
+            "required slot is empty",
+            None,
+            None,
+        );
         let report = ValidationReport::new(vec![advisory, blocking]);
         assert!(
             report.has_blocking(),

@@ -8,6 +8,15 @@ edition = "2024"
 rust-version = "1.95"
 publish = false
 
+# The one `Finding` envelope is the engine's error type, returned by value through
+# many `Result<_, Finding>` signatures (the "one finding shape" contract,
+# `finding.rs`). M6 grew `Finding` with the structured `(probe, check)` severity
+# handle, tipping it past clippy's `result_large_err` 128-byte threshold; boxing
+# every propagation site would be cross-cutting churn that fights the by-value
+# envelope design, so the lint is allowed workspace-wide.
+[workspace.lints.clippy]
+result_large_err = "allow"
+
 # Load-bearing crates (language-runtime.md). Declared centrally; each member
 # opts in per-increment with `<crate>.workspace = true` when it actually needs them.
 [workspace.dependencies]

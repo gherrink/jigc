@@ -4,6 +4,8 @@ expression: f
 ---
 Finding {
     severity: Blocking,
+    probe: "conformance",
+    check: "item-anchor-duplicate",
     code: "conformance.item-anchor-duplicate",
     message: "duplicate `{#id}` anchor `{#dup}` in repeatable section",
     location: Some(

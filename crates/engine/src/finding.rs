@@ -18,9 +18,19 @@
 //! located message and no route — projects to:
 //!
 //! ```json
-//! { "severity": "blocking", "code": "…", "message": "…",
-//!   "location": { "line": 1, "col": 1 }, "route": null }
+//! { "severity": "blocking", "probe": "…", "check": "…", "code": "…",
+//!   "message": "…", "location": { "line": 1, "col": 1 }, "route": null }
 //! ```
+//!
+//! `probe` / `check` are the **structured severity handle** the M6 post-pass keys on
+//! ([validation.md](../../../design/validation.md) → Severity assignment — the M6
+//! post-pass: *a `Finding` carries `(probe, check)`*). They are made **explicit
+//! fields** rather than re-parsed from `code` on the read path, because the built
+//! codes do not all split cleanly to `<probe>.<check>` — the `override-default`
+//! classifier emits five descriptive codes that collapse onto three inventory checks
+//! (`validation.md` → Code-id reconciliation). For every other producer the handle is
+//! exactly the code's `<prefix>.<suffix>` split (populated once at construction); the
+//! dotted `code` is retained for rendering but is no longer the severity handle.
 
 use serde::{Deserialize, Serialize};
 
@@ -103,6 +113,20 @@ impl Location {
 pub struct Finding {
     /// How serious this finding is.
     pub severity: Severity,
+    /// The probe (or synthetic category) that raised this finding — the prefix half of
+    /// the structured severity handle the M6 post-pass keys on
+    /// ([validation.md](../../../design/validation.md) → Severity assignment). For
+    /// every producer except `override-default` this equals the `code`'s prefix; the
+    /// classifier sets it explicitly. `#[serde(default)]` so older / hand-built JSON
+    /// round-trips.
+    #[serde(default)]
+    pub probe: String,
+    /// The check within the probe — the suffix half of the `(probe, check)` severity
+    /// handle. For `override-default` this is the **canonical inventory check id**
+    /// (`validation.md` → Code-id reconciliation: five codes → three checks), so it may
+    /// differ from the `code` suffix; for every other producer it is the `code` suffix.
+    #[serde(default)]
+    pub check: String,
     /// A stable, machine-actionable identifier for the kind of problem.
     pub code: String,
     /// A human-readable description, always present.
@@ -114,21 +138,48 @@ pub struct Finding {
     pub route: Option<String>,
 }
 
+/// Split a dotted `code` into its `(probe, check)` handle on the **first** `.` — the
+/// derivation every producer except `override-default` uses (`validation.md` →
+/// Code-id reconciliation: for all probes except `override-default` the check is the
+/// code suffix and the probe the prefix). A code with no `.` (none ship today)
+/// degenerates to `(code, "")`.
+fn split_code(code: &str) -> (String, String) {
+    match code.split_once('.') {
+        Some((probe, check)) => (probe.to_string(), check.to_string()),
+        None => (code.to_string(), String::new()),
+    }
+}
+
 impl Finding {
     /// A blocking conformance finding at a [`Location`], with no route — the
-    /// inc-2 parser's only producer.
+    /// inc-2 parser's only producer. `probe` / `check` derive from the `code`'s
+    /// `<prefix>.<suffix>` split ([`split_code`]).
     pub fn blocking(
         code: impl Into<String>,
         message: impl Into<String>,
         location: Location,
     ) -> Self {
+        let code = code.into();
+        let (probe, check) = split_code(&code);
         Self {
             severity: Severity::Blocking,
-            code: code.into(),
+            probe,
+            check,
+            code,
             message: message.into(),
             location: Some(location),
             route: None,
         }
+    }
+
+    /// Override this finding's `check` to the **canonical inventory check id**, leaving
+    /// the descriptive `code` (and everything else) untouched — the `override-default`
+    /// rename surface where the emitted `code` does not equal its inventory check
+    /// (`validation.md` → Code-id reconciliation). The only producer that needs it.
+    #[must_use]
+    pub fn with_check(mut self, check: impl Into<String>) -> Self {
+        self.check = check.into();
+        self
     }
 
     /// A hard block: a [`Severity::Blocking`] finding carrying a `route` (the
@@ -141,12 +192,42 @@ impl Finding {
         message: impl Into<String>,
         route: impl Into<String>,
     ) -> Self {
+        let code = code.into();
+        let (probe, check) = split_code(&code);
         Self {
             severity: Severity::Blocking,
-            code: code.into(),
+            probe,
+            check,
+            code,
             message: message.into(),
             location: None,
             route: Some(route.into()),
+        }
+    }
+
+    /// A finding at an arbitrary [`Severity`] with an optional [`Location`] and
+    /// `route`, deriving `probe` / `check` from the `code`'s `<prefix>.<suffix>` split
+    /// ([`split_code`]) — the general constructor for producers that are not blocking,
+    /// no-route conformance ([`Finding::blocking`]) or routed hard blocks
+    /// ([`Finding::block`]). Centralizes handle population so no `Finding { … }` literal
+    /// in the engine has to spell `probe` / `check`.
+    pub fn graded(
+        severity: Severity,
+        code: impl Into<String>,
+        message: impl Into<String>,
+        location: Option<Location>,
+        route: Option<String>,
+    ) -> Self {
+        let code = code.into();
+        let (probe, check) = split_code(&code);
+        Self {
+            severity,
+            probe,
+            check,
+            code,
+            message: message.into(),
+            location,
+            route,
         }
     }
 }
@@ -155,13 +236,16 @@ impl Finding {
 mod tests {
     use super::*;
 
-    /// The pinned envelope (`DECISIONS.md` 2026-05-31 → Finding shape): a blocking
-    /// finding with a `code`, a located `message`, and no route projects to exactly
-    /// `{severity:"blocking", code, message, location:{line,col}, route:null}` — in
-    /// that field order, no stray keys, `address` omitted when absent, `route` kept
-    /// as `null`. The golden pins the serialized string (not a key-sorted value), so
-    /// it also locks field *order*; a rename, a reorder, or a serde-attribute slip
-    /// breaks it. That is the contract.
+    /// The pinned envelope (`DECISIONS.md` 2026-05-31 → Finding shape; re-pinned M6
+    /// for the `(probe, check)` handle): a blocking finding with a `code`, a located
+    /// `message`, and no route projects to exactly `{severity:"blocking", probe, check,
+    /// code, message, location:{line,col}, route:null}` — in that field order, no stray
+    /// keys, `address` omitted when absent, `route` kept as `null`. The `probe`/`check`
+    /// handle derives from the `code`'s `<prefix>.<suffix>` split (here the exempt
+    /// parser code `conformance.heading-missing` → `("conformance", "heading-missing")`
+    /// — it still *carries* a handle, it is merely not post-passed). The golden pins
+    /// the serialized string (not a key-sorted value), so it also locks field *order*;
+    /// a rename, a reorder, or a serde-attribute slip breaks it. That is the contract.
     #[test]
     fn finding_json_projection_is_the_pinned_envelope() {
         let finding = Finding::blocking(
@@ -175,6 +259,8 @@ mod tests {
         insta::assert_snapshot!(json, @r#"
         {
           "severity": "blocking",
+          "probe": "conformance",
+          "check": "heading-missing",
           "code": "conformance.heading-missing",
           "message": "required section heading `## Decision` is missing",
           "location": {
@@ -184,6 +270,24 @@ mod tests {
           "route": null
         }
         "#);
+    }
+
+    /// The exempt-code handle (`validation.md` → Severity inventory: membership is the
+    /// keyed surface, not every emitted code). A finding whose `(probe, check)` is *not*
+    /// an inventory row — here the synthetic `schema-conformance.unknown-type`, exempt
+    /// from the M6 post-pass — still *carries* a `(probe, check)`, split from its code
+    /// prefix/suffix. The post-pass (T2) matches on membership, never code-prefix, so an
+    /// exempt sibling under a keyed probe is left untouched; this pins that it nonetheless
+    /// carries a derivable handle.
+    #[test]
+    fn exempt_code_still_carries_probe_check() {
+        let finding = Finding::blocking(
+            "schema-conformance.unknown-type",
+            "staged doc has a type the resolved cascade does not define",
+            Location::addressed("docs/wat:x.md", 1, 1),
+        );
+        assert_eq!(finding.probe, "schema-conformance");
+        assert_eq!(finding.check, "unknown-type");
     }
 
     /// `Severity` projects to kebab-case strings and round-trips through serde.
@@ -225,13 +329,13 @@ mod tests {
     /// It round-trips through serde with the route preserved.
     #[test]
     fn finding_with_route_round_trips() {
-        let block = Finding {
-            severity: Severity::Blocking,
-            code: "finalize.forward-ref-dangling".into(),
-            message: "`supersedes` target `adr:cache` does not exist".into(),
-            location: Some(Location::addressed("adr:new#decision", 5, 3)),
-            route: Some("order the task that creates `adr:cache` first".into()),
-        };
+        let block = Finding::graded(
+            Severity::Blocking,
+            "finalize.forward-ref-dangling",
+            "`supersedes` target `adr:cache` does not exist",
+            Some(Location::addressed("adr:new#decision", 5, 3)),
+            Some("order the task that creates `adr:cache` first".into()),
+        );
 
         let json = serde_json::to_value(&block).expect("serializes");
         let back: Finding = serde_json::from_value(json).expect("deserializes");

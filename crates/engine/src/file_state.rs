@@ -443,45 +443,45 @@ pub fn detect_rename(
 /// suspect, routed to revert the suspected `git mv`. Referrer refs are untouched —
 /// the route hands the identity change back to the human.
 fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "reconciliation.rename".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "reconciliation.rename",
+        format!(
             "tracked managed doc {from} ({path}) is missing; {suspect} has the same content hash — likely renamed via `git mv`"
         ),
-        location: Some(Location::addressed(path, 1, 1)),
-        route: Some(format!(
+        Some(Location::addressed(path, 1, 1)),
+        Some(format!(
             "revert the move: `git mv {suspect} {path}` (post-MVP: `jigc doc rename` will re-key file-state and rewrite referrer refs)"
         )),
-    }
+    )
 }
 
 /// The blocking **weak-signal** rename finding (`reconciliation.md` → Rename
 /// detection → weak signal): the tracked doc is simply gone, no content-matching
 /// suspect, routed to restore the file.
 fn rename_weak_finding(path: &str, from: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "reconciliation.rename".to_string(),
-        message: format!("tracked managed doc {from} ({path}) is missing"),
-        location: Some(Location::addressed(path, 1, 1)),
-        route: Some(format!(
+    Finding::graded(
+        Severity::Blocking,
+        "reconciliation.rename",
+        format!("tracked managed doc {from} ({path}) is missing"),
+        Some(Location::addressed(path, 1, 1)),
+        Some(format!(
             "restore {path} (post-MVP: `jigc doc delete {from}` to confirm deletion)"
         )),
-    }
+    )
 }
 
 /// The advisory **absorb** finding (`reconciliation.md` → OOB edit → absorb: "external
 /// edit absorbed: `<doc>`"). Informational, no route — a clean external edit is honored,
 /// not a problem to repair; the absorb already re-hashed + updated the edge index.
 fn absorb_finding(path: &str) -> Finding {
-    Finding {
-        severity: Severity::Advisory,
-        code: "reconciliation.absorb".to_string(),
-        message: format!("external edit absorbed: `{path}`"),
-        location: Some(Location::addressed(path, 1, 1)),
-        route: None,
-    }
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.absorb",
+        format!("external edit absorbed: `{path}`"),
+        Some(Location::addressed(path, 1, 1)),
+        None,
+    )
 }
 
 /// The blocking **conformance-block** finding (`reconciliation.md` → OOB edit →
@@ -496,13 +496,13 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
         ),
         None => ("the edit is not schema-conformant".to_string(), 1),
     };
-    Finding {
-        severity: Severity::Blocking,
-        code: "reconciliation.conformance-block".to_string(),
-        message: format!("nonconformant edit on `{path}`: {detail}"),
-        location: Some(Location::addressed(path, line, 1)),
-        route: Some("fix the file to restore conformance, or revert the edit".to_string()),
-    }
+    Finding::graded(
+        Severity::Blocking,
+        "reconciliation.conformance-block",
+        format!("nonconformant edit on `{path}`: {detail}"),
+        Some(Location::addressed(path, line, 1)),
+        Some("fix the file to restore conformance, or revert the edit".to_string()),
+    )
 }
 
 /// The blocking **conflict-block** finding (`reconciliation.md` → Conflict — block at
@@ -510,30 +510,30 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
 /// granularity, explicit-discard route, never a silent merge (three-way merge is
 /// deferred).
 fn conflict_block_finding(path: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "reconciliation.conflict-block".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "reconciliation.conflict-block",
+        format!(
             "conflict on `{path}`: an external edit and this task's staged writes both changed it"
         ),
-        location: Some(Location::addressed(path, 1, 1)),
-        route: Some(format!(
+        Some(Location::addressed(path, 1, 1)),
+        Some(format!(
             "discard the task's writes (`jigc task discard-write {path}`) or revert the file on disk"
         )),
-    }
+    )
 }
 
 /// The informational baseline-adopt finding (`reconciliation.md` → Baseline
 /// adoption: "baseline adopted: `<doc>`"). Advisory, no route — first encounter
 /// is the normal case, not a problem to repair.
 fn baseline_adopt_finding(path: &str) -> Finding {
-    Finding {
-        severity: Severity::Advisory,
-        code: "file-state.baseline-adopt".to_string(),
-        message: format!("baseline adopted: `{path}`"),
-        location: Some(Location::addressed(path, 1, 1)),
-        route: None,
-    }
+    Finding::graded(
+        Severity::Advisory,
+        "file-state.baseline-adopt",
+        format!("baseline adopted: `{path}`"),
+        Some(Location::addressed(path, 1, 1)),
+        None,
+    )
 }
 
 /// The drift block: the on-disk content no longer matches the recorded hash. A
@@ -541,13 +541,13 @@ fn baseline_adopt_finding(path: &str) -> Finding {
 /// route the engine never executes (`validation.md` → Findings: the `reconcile`
 /// route; severity inventory: `hash-matches` default blocking).
 fn drift_finding(path: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "file-state.hash-matches".to_string(),
-        message: format!("on-disk content of `{path}` differs from the recorded state"),
-        location: Some(Location::addressed(path, 1, 1)),
-        route: Some(format!("reconcile {path}")),
-    }
+    Finding::graded(
+        Severity::Blocking,
+        "file-state.hash-matches",
+        format!("on-disk content of `{path}` differs from the recorded state"),
+        Some(Location::addressed(path, 1, 1)),
+        Some(format!("reconcile {path}")),
+    )
 }
 
 #[cfg(test)]

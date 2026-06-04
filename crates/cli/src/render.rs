@@ -521,20 +521,20 @@ mod tests {
         use engine::finding::{Finding, Location, Severity};
 
         let report = ValidationReport::new(vec![
-            Finding {
-                severity: Severity::Blocking,
-                code: "file-state.hash-matches".into(),
-                message: "on-disk content of `docs/commit:x.md` differs".into(),
-                location: Some(Location::addressed("docs/commit:x.md", 1, 1)),
-                route: Some("reconcile docs/commit:x.md".into()),
-            },
-            Finding {
-                severity: Severity::Blocking,
-                code: "schema-conformance.required-slot-present".into(),
-                message: "required slot in section `summary` is empty".into(),
-                location: None,
-                route: None,
-            },
+            Finding::graded(
+                Severity::Blocking,
+                "file-state.hash-matches",
+                "on-disk content of `docs/commit:x.md` differs",
+                Some(Location::addressed("docs/commit:x.md", 1, 1)),
+                Some("reconcile docs/commit:x.md".into()),
+            ),
+            Finding::graded(
+                Severity::Blocking,
+                "schema-conformance.required-slot-present",
+                "required slot in section `summary` is empty",
+                None,
+                None,
+            ),
         ]);
 
         let agent = validation(Format::Agent, &report);

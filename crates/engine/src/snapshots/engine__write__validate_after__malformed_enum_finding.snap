@@ -4,6 +4,8 @@ expression: "serde_json::to_string_pretty(&finding).unwrap()"
 ---
 {
   "severity": "blocking",
+  "probe": "write",
+  "check": "malformed-value",
   "code": "write.malformed-value",
   "message": "write rejected: \"rejected\" is not a member of enum \"status\" (allowed: proposed, accepted, superseded)",
   "location": {

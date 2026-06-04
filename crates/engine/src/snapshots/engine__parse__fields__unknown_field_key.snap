@@ -4,6 +4,8 @@ expression: f
 ---
 Finding {
     severity: Blocking,
+    probe: "conformance",
+    check: "unknown-field",
     code: "conformance.unknown-field",
     message: "unknown field key `nonsense`",
     location: Some(

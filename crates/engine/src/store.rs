@@ -138,17 +138,13 @@ pub fn read_slice(
 
 /// Build a blocking store-read [`Finding`] with a located message and a route.
 fn block(code: &str, message: String, address: &str, route: String) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: code.to_string(),
+    Finding::graded(
+        Severity::Blocking,
+        code,
         message,
-        location: Some(Location {
-            address: Some(address.to_string()),
-            line: 1,
-            col: 1,
-        }),
-        route: Some(route),
-    }
+        Some(Location::addressed(address, 1, 1)),
+        Some(route),
+    )
 }
 
 /// Slice the `#unit` fragment of a parsed `doc` to its section content over

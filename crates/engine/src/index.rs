@@ -402,10 +402,10 @@ fn target_reachable(
 /// A blocking `schema-conformance.ref-resolves` [`Finding`] for a dangling forward
 /// edge — located at the source doc's identity, naming the three routing options.
 fn dangling(edge: &Edge) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "schema-conformance.ref-resolves".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "schema-conformance.ref-resolves",
+        format!(
             "forward-ref integrity — `{from}#{relation}` target `{to}` resolves in \
              neither the committed store nor this task's working area; resolution: \
              fix the reference to an existing target, create the target in this task, \
@@ -414,11 +414,9 @@ fn dangling(edge: &Edge) -> Finding {
             relation = edge.relation,
             to = edge.to,
         ),
-        location: Some(Location::addressed(edge.from.clone(), 1, 1)),
-        route: Some(
-            "fix the reference, create the target in this task, or drop the field".to_string(),
-        ),
-    }
+        Some(Location::addressed(edge.from.clone(), 1, 1)),
+        Some("fix the reference, create the target in this task, or drop the field".to_string()),
+    )
 }
 
 /// Emit the forward edges a single parsed doc contributes: one per present schema

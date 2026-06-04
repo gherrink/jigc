@@ -190,15 +190,15 @@ fn conformance_for(
 ) -> Vec<Finding> {
     let ty = filename.split(':').next().unwrap_or(filename);
     let Some(schema) = schemas.get(ty) else {
-        return vec![Finding {
-            severity: Severity::Blocking,
-            code: "schema-conformance.unknown-type".to_string(),
-            message: format!(
+        return vec![Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.unknown-type",
+            format!(
                 "staged doc `{rel_key}` has type `{ty}`, which the resolved cascade does not define"
             ),
-            location: Some(Location::addressed(rel_key, 1, 1)),
-            route: None,
-        }];
+            Some(Location::addressed(rel_key, 1, 1)),
+            None,
+        )];
     };
     match parse_sections(schema, source) {
         Ok(doc) => schema_conformance(schema, source, &doc),
@@ -349,13 +349,7 @@ fn slot_location(parsed: &ParsedSection) -> Option<Location> {
 /// severity). These intrinsic checks carry no `route` — the agent fills the slot /
 /// field directly.
 fn blocking_conformance(code: &str, message: String, location: Option<Location>) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: code.to_string(),
-        message,
-        location,
-        route: None,
-    }
+    Finding::graded(Severity::Blocking, code, message, location, None)
 }
 
 #[cfg(test)]

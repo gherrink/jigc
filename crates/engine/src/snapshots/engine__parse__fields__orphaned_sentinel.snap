@@ -4,6 +4,8 @@ expression: f
 ---
 Finding {
     severity: Blocking,
+    probe: "conformance",
+    check: "orphaned-sentinel",
     code: "conformance.orphaned-sentinel",
     message: "`<!-- fields -->` sentinel without a following bullet list",
     location: Some(

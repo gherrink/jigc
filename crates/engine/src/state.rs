@@ -318,19 +318,15 @@ fn render_base_pin(base: &BasePin) -> String {
 /// routing the agent to resume or discard (`write-commands.md` → Task-id collision
 /// & resume).
 fn collision_finding(id: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "task.serial-collision".to_string(),
-        message: format!("task `{id}` is already active"),
-        location: Some(Location {
-            address: Some(format!("task:{id}")),
-            line: 1,
-            col: 1,
-        }),
-        route: Some(format!(
+    Finding::graded(
+        Severity::Blocking,
+        "task.serial-collision",
+        format!("task `{id}` is already active"),
+        Some(Location::addressed(format!("task:{id}"), 1, 1)),
+        Some(format!(
             "resume with `jigc start --task {id}` or abandon with `jigc task discard {id}`"
         )),
-    }
+    )
 }
 
 /// The task's **bound context roles** — a map from a workflow-declared role name
@@ -505,32 +501,28 @@ pub fn create_gated(
 /// routing the agent to list the known types (`write-commands.md` → The create-gate,
 /// step 3). Route-bearing per the settled block-payload shape.
 fn unknown_doctype_finding(type_name: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "create.unknown-doctype".to_string(),
-        message: format!("unknown doctype `{type_name}`"),
-        location: None,
-        route: Some("list the available doctypes with `jigc doc types`".to_string()),
-    }
+    Finding::graded(
+        Severity::Blocking,
+        "create.unknown-doctype",
+        format!("unknown doctype `{type_name}`"),
+        None,
+        Some("list the available doctypes with `jigc doc types`".to_string()),
+    )
 }
 
 /// The serial-collision block for an existing instance id: a blocking finding naming
 /// the colliding address, routing the agent to edit the existing instance instead
 /// (`structural-grammar.md` → minting: serial mints reject, never silently reused).
 fn instance_collision_finding(address: &str) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "create.serial-collision".to_string(),
-        message: format!("instance `{address}` already exists in the working area"),
-        location: Some(Location {
-            address: Some(address.to_string()),
-            line: 1,
-            col: 1,
-        }),
-        route: Some(format!(
+    Finding::graded(
+        Severity::Blocking,
+        "create.serial-collision",
+        format!("instance `{address}` already exists in the working area"),
+        Some(Location::addressed(address, 1, 1)),
+        Some(format!(
             "edit the existing `{address}` instead of re-creating it"
         )),
-    }
+    )
 }
 
 /// The structured create-gate block (`write-commands.md` → The create-gate, step 5):
@@ -538,33 +530,29 @@ fn instance_collision_finding(address: &str) -> Finding {
 /// loosen `run-command` route (the cascade-set config delta the agent can act on).
 fn gate_blocked_finding(type_name: &str, gate: &[crate::compose::AllowsCreate]) -> Finding {
     let allowed: Vec<&str> = gate.iter().map(|e| e.doc_type.as_str()).collect();
-    Finding {
-        severity: Severity::Blocking,
-        code: "create.gate-blocked".to_string(),
-        message: format!(
+    Finding::graded(
+        Severity::Blocking,
+        "create.gate-blocked",
+        format!(
             "the workflow does not allow `jigc doc create {type_name}` in-task; allowed doctypes: [{}]",
             allowed.join(", ")
         ),
-        location: None,
-        route: Some(format!(
+        None,
+        Some(format!(
             "to loosen, add `{type_name}` to `allows-create` in project config"
         )),
-    }
+    )
 }
 
 /// A blocking finding for a working-area I/O failure during minting.
 fn io_finding(id: &str, doing: &str, err: &std::io::Error) -> Finding {
-    Finding {
-        severity: Severity::Blocking,
-        code: "task.working-area-io".to_string(),
-        message: format!("could not {doing} for task `{id}`: {err}"),
-        location: Some(Location {
-            address: Some(format!("task:{id}")),
-            line: 1,
-            col: 1,
-        }),
-        route: None,
-    }
+    Finding::graded(
+        Severity::Blocking,
+        "task.working-area-io",
+        format!("could not {doing} for task `{id}`: {err}"),
+        Some(Location::addressed(format!("task:{id}"), 1, 1)),
+        None,
+    )
 }
 
 #[cfg(test)]

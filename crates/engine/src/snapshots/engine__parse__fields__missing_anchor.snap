@@ -4,6 +4,8 @@ expression: f
 ---
 Finding {
     severity: Blocking,
+    probe: "conformance",
+    check: "item-anchor-missing",
     code: "conformance.item-anchor-missing",
     message: "repeatable item `A criterion with no anchor` has no `{#id}` anchor",
     location: Some(

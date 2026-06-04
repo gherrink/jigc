@@ -1136,16 +1136,18 @@ fn at_id(anchor: &Anchor) -> &str {
 /// delta"). The block is located *and* routed — the settled block envelope keeps
 /// both (`finding.rs`).
 fn anchor_position(ids: &[String], anchor_id: &str) -> Result<usize, Finding> {
-    ids.iter().position(|id| id == anchor_id).ok_or_else(|| Finding {
-        severity: crate::finding::Severity::Blocking,
-        code: "workflow-refs.structural-anchor-resolves".to_owned(),
-        message: format!(
-            "structural-op anchor `{anchor_id}` resolves to no entry in the include list (orphaned)"
-        ),
-        location: Some(Location::at(1, 1)),
-        route: Some(format!(
-            "remove or re-target the structural-op anchored at `{anchor_id}` with `jigc config` (the anchor it names is not in the include list)"
-        )),
+    ids.iter().position(|id| id == anchor_id).ok_or_else(|| {
+        Finding::graded(
+            crate::finding::Severity::Blocking,
+            "workflow-refs.structural-anchor-resolves",
+            format!(
+                "structural-op anchor `{anchor_id}` resolves to no entry in the include list (orphaned)"
+            ),
+            Some(Location::at(1, 1)),
+            Some(format!(
+                "remove or re-target the structural-op anchored at `{anchor_id}` with `jigc config` (the anchor it names is not in the include list)"
+            )),
+        )
     })
 }
 
@@ -1806,19 +1808,19 @@ pub fn workflow_refs_with_fills(
             .step(&delta.target.step_id)
             .is_some_and(|step| fill_ids_in(&step.body).contains(&delta.target.fill_id.as_str()));
         if !declares_point {
-            findings.push(Finding {
-                severity: crate::finding::Severity::Blocking,
-                code: "workflow-refs.slot-fill-orphan".to_owned(),
-                message: format!(
+            findings.push(Finding::graded(
+                crate::finding::Severity::Blocking,
+                "workflow-refs.slot-fill-orphan",
+                format!(
                     "slot-fill targets `step:{}#{}`, a `{{{{fill:}}}}` point no resolved step body declares (orphaned)",
                     delta.target.step_id, delta.target.fill_id
                 ),
-                location: Some(Location::at(1, 1)),
-                route: Some(format!(
+                Some(Location::at(1, 1)),
+                Some(format!(
                     "remove or re-target the slot-fill on `step:{}#{}` with `jigc config fill` (the `{{{{fill:}}}}` point it names is not in the resolved step body)",
                     delta.target.step_id, delta.target.fill_id
                 )),
-            });
+            ));
         }
     }
 

@@ -23,6 +23,15 @@
 //! Findings ship **blocking-by-default** in M5 (cascade-tunability is M6) and carry a
 //! human-readable `String` route; each delta is identified by its **target string**
 //! `workflow:<id>#<step-id>` — a delta has no stable id, so its target is its identity.
+//!
+//! **M6 `(probe, check)` handle.** Every emitted finding carries a structured
+//! `(probe, check)` the M6 severity post-pass keys on ([validation.md](../../../design/validation.md)
+//! → Code-id reconciliation). The classifier is the **one rename surface**: its five
+//! descriptive `code`s collapse onto **three** canonical inventory checks under the
+//! `override-default` probe — `target-exists` (`scalar-set-orphaned` / `slot-fill-orphaned`
+//! / structural `target-exists`), `target-unchanged` (`content-changed`), and
+//! `basis-recorded` (`needs-rebasing`). Each emitter sets its canonical `check` via
+//! [`Finding::with_check`]; the descriptive `code` is retained for rendering.
 
 use crate::cascade::{
     Anchor, SlotFillDelta, StructuralBasis, StructuralDelta, StructuralTarget, TrackedForkDelta,
@@ -201,6 +210,7 @@ fn scalar_set_orphaned(key: &str) -> Finding {
         ),
         format!("drop this delta, or re-target `{target_str}` to a current knob key"),
     )
+    .with_check("target-exists")
 }
 
 /// The slot's-existence question (`overrides.md` → Upgrade reconciliation,
@@ -249,6 +259,7 @@ fn slot_fill_orphaned(delta: &SlotFillDelta) -> Finding {
         ),
         format!("drop this delta, or re-target `{target_str}` to a current `{{{{fill:}}}}` point"),
     )
+    .with_check("target-exists")
 }
 
 /// The recorded [`StructuralBasis::base_hash`] for a `replace`/`remove` target, if one
@@ -301,6 +312,7 @@ fn conflict(target: &StructuralTarget) -> Finding {
             "review the change on `{target_str}`: keep your override, re-target it, or drop it"
         ),
     )
+    .with_check("target-unchanged")
 }
 
 /// One blocking `needs-rebasing` [`Finding`] (`overrides.md` → Upgrade reconciliation,
@@ -320,6 +332,7 @@ fn needs_rebasing(target: &StructuralTarget) -> Finding {
             "re-record the delta on `{target_str}` (e.g. `jigc config replace-step …`) to pin a basis against the current pack"
         ),
     )
+    .with_check("basis-recorded")
 }
 
 /// Question 1 for a content-bearing target: a blocking `orphaned` [`Finding`] when the
@@ -346,6 +359,7 @@ fn orphaned(target: &StructuralTarget) -> Finding {
         format!("override target `{target_str}` no longer exists in the current pack"),
         format!("remove or re-target the delta on `{target_str}`"),
     )
+    .with_check("target-exists")
 }
 
 /// The `#<step-id>` of a content-bearing target — its [`Anchor::At`] step id. Content
@@ -1103,6 +1117,67 @@ mod tests {
             assert!(
                 route.contains(target_str),
                 "the route names the target string: {route}"
+            );
+        }
+    }
+
+    /// **The M6 `(probe, check)` reconciliation — five codes collapse onto three
+    /// checks** (`validation.md` → Code-id reconciliation). Each emitter keeps its
+    /// descriptive `code` for rendering but carries the **canonical inventory `check`**:
+    /// the three orphan emissions (`scalar-set-orphaned`, `slot-fill-orphaned`, the
+    /// structural `target-exists` code) → `target-exists`; `content-changed` →
+    /// `target-unchanged`; `needs-rebasing` → `basis-recorded`. All carry probe
+    /// `override-default`. This is the handle the post-pass keys on, so the rename must
+    /// hold at the emit site.
+    #[test]
+    fn emitted_codes_reconcile_to_three_canonical_checks() {
+        let target = StructuralTarget {
+            workflow_id: "single-task".to_owned(),
+            anchor: Anchor::At("locate".to_owned()),
+        };
+
+        // (probe, code → canonical check) for each of the five emitters.
+        let cases: Vec<(Finding, &str, &str)> = vec![
+            (
+                scalar_set_orphaned("legacy-knob"),
+                "override-default.scalar-set-orphaned",
+                "target-exists",
+            ),
+            (
+                slot_fill_orphaned(&slot_fill("locate", "hints")),
+                "override-default.slot-fill-orphaned",
+                "target-exists",
+            ),
+            (
+                orphaned(&target),
+                "override-default.target-exists",
+                "target-exists",
+            ),
+            (
+                conflict(&target),
+                "override-default.content-changed",
+                "target-unchanged",
+            ),
+            (
+                needs_rebasing(&target),
+                "override-default.needs-rebasing",
+                "basis-recorded",
+            ),
+        ];
+
+        for (finding, expected_code, expected_check) in cases {
+            assert_eq!(
+                finding.code, expected_code,
+                "the descriptive code is retained for rendering"
+            );
+            assert_eq!(
+                finding.probe, "override-default",
+                "every override-default finding carries the probe handle"
+            );
+            assert_eq!(
+                finding.check, expected_check,
+                "`{}` reconciles to canonical check `{expected_check}`",
+                finding.code
             );
         }
     }
