@@ -379,11 +379,12 @@ mod tests {
     /// increment) seeds the `PackDefaultLayer` scalar surface from it: the
     /// closed key set + each knob's materialized default. Golden over the bytes
     /// pins the canonical declared surface — `default-workflow` (enum, default
-    /// `router`) + the `validation.*.severity` keys for the two engine-native
-    /// MVP probes. `pack-id` is **not** a knob (it is pack identity, read for
-    /// the provenance header) — it stays in `defaults.yaml`, asserted absent
-    /// here. See overrides.md → Scalar knobs (On-disk declaration —
-    /// config/knobs.yaml); storage.md → Config layout.
+    /// `router`) + the full per-check `validation.*.severity` surface (the 17
+    /// inventory rows, validation.md → MVP check inventory) plus the two M4
+    /// per-probe keys retained as additive defaults. `pack-id` is **not** a knob
+    /// (it is pack identity, read for the provenance header) — it stays in
+    /// `defaults.yaml`, asserted absent here. See overrides.md → Scalar knobs
+    /// (On-disk declaration — config/knobs.yaml); storage.md → Config layout.
     #[test]
     fn embedded_pack_config_declares_the_knob_surface() {
         let pack = EmbeddedPack::new();
@@ -403,11 +404,19 @@ mod tests {
         # closed key set (what `scalar-set` may target) + each knob's
         # materialized default. `pack-id` is NOT a knob — it is pack identity,
         # not a project-overridable value, so it stays in defaults.yaml.
-        # See overrides.md → Scalar knobs; storage.md → Config layout.
+        # The `validation.*.severity` keys are the per-check severity surface; their
+        # defaults + intrinsic-ness are governed by the single source of truth,
+        # validation.md → MVP check inventory (17 checks across 6 categories). The two
+        # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
+        # per-probe *defaults* (never a rename) so an M4-authored manifest still
+        # resolves; they sit alongside the per-check keys.
+        # See overrides.md → Scalar knobs / Soft-rejection; storage.md → Config layout.
         default-workflow:
           type: enum
           of: [router, single-task, quick-fix, plan, implement-from-spec]
           default: router
+
+        # --- per-probe severity defaults (M4, retained — additive) ---
         validation.workflow-refs.severity:
           type: enum
           of: [blocking, warning, advisory]
@@ -416,6 +425,90 @@ mod tests {
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+
+        # --- workflow-refs.* (7, intrinsic) ---
+        validation.workflow-refs.placeholder-resolves.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.workflow-refs.include-resolves.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.workflow-refs.command-ref-resolves.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.workflow-refs.include-cycle-absent.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.workflow-refs.at-marker-on-non-scalar.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.workflow-refs.run-marker-not-shadowed.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.workflow-refs.body-include-only.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+
+        # --- schema-conformance.* (4, intrinsic) ---
+        validation.schema-conformance.ref-resolves.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.schema-conformance.required-slot-present.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.schema-conformance.required-field-present.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.schema-conformance.field-value-conformant.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+
+        # --- file-state.hash-matches (1, tunable) ---
+        validation.file-state.hash-matches.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+
+        # --- schema-completeness.inverse-cardinality (1, tunable; advisory at task scope) ---
+        validation.schema-completeness.inverse-cardinality.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: advisory
+
+        # --- override-default.* (3, tunable from M6; blocking-by-default) ---
+        validation.override-default.target-exists.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.override-default.target-unchanged.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.override-default.basis-recorded.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+
+        # --- commit-rendering.* (2, tunable; advisory-by-default convention checks) ---
+        validation.commit-rendering.line-limit-subject.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: advisory
+        validation.commit-rendering.line-limit-body.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: advisory
         "###);
 
         // `pack-id` is a non-knob identity field — it lives in defaults.yaml,

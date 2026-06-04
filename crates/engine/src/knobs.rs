@@ -128,11 +128,14 @@ mod tests {
     /// test pins exactly the bytes that ship.
     const KNOBS_YAML: &[u8] = include_bytes!("../../cli/pack/config/knobs.yaml");
 
-    /// The T2 done-criterion: loading the embedded `knobs.yaml`, building the
-    /// pack-default layer from its base scalars, and resolving yields the declared
-    /// default for `default-workflow` — and the resolved key set is **exactly** the
-    /// declared knob keys (the closed surface). No team/project layer is present,
-    /// so resolution returns the materialized base values verbatim.
+    /// Loading the embedded `knobs.yaml`, building the pack-default layer from its
+    /// base scalars, and resolving yields each key's declared default — and the
+    /// resolved key set is **exactly** the declared knob keys (the closed surface):
+    /// the full per-check severity surface (17 inventory rows, per
+    /// `validation.md` → MVP check inventory) plus the two retained M4 per-probe
+    /// keys (additive defaults, never a rename) and `default-workflow`. No
+    /// team/project layer is present, so resolution returns the materialized base
+    /// values verbatim.
     #[test]
     fn loaded_knobs_seed_the_pack_default_scalar_surface() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
@@ -140,28 +143,102 @@ mod tests {
         let pack = PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new());
         let resolved = cascade::resolve(&pack, None, None).expect("resolves");
 
-        // The materialized default surfaces through the cascade read.
-        assert_eq!(resolved.scalar("default-workflow"), Some("router"));
-        assert_eq!(
-            resolved.scalar("validation.workflow-refs.severity"),
-            Some("blocking"),
-        );
-        assert_eq!(
-            resolved.scalar("validation.file-state.severity"),
-            Some("blocking"),
-        );
+        // Each declared key resolves to its inventory default through the cascade.
+        // `(key, default)` in sorted-key order — the closed surface is exactly
+        // this list, no more, no less.
+        let expected: Vec<(&str, &str)> = vec![
+            ("default-workflow", "router"),
+            // commit-rendering (2, advisory-by-default convention checks).
+            (
+                "validation.commit-rendering.line-limit-body.severity",
+                "advisory",
+            ),
+            (
+                "validation.commit-rendering.line-limit-subject.severity",
+                "advisory",
+            ),
+            // file-state: the M4 per-probe default (retained, additive) + the
+            // hash-matches per-check key (tunable).
+            ("validation.file-state.hash-matches.severity", "blocking"),
+            ("validation.file-state.severity", "blocking"),
+            // override-default (3, blocking-by-default, tunable from M6).
+            (
+                "validation.override-default.basis-recorded.severity",
+                "blocking",
+            ),
+            (
+                "validation.override-default.target-exists.severity",
+                "blocking",
+            ),
+            (
+                "validation.override-default.target-unchanged.severity",
+                "blocking",
+            ),
+            // schema-completeness (1, advisory at task scope by design).
+            (
+                "validation.schema-completeness.inverse-cardinality.severity",
+                "advisory",
+            ),
+            // schema-conformance (4, intrinsic).
+            (
+                "validation.schema-conformance.field-value-conformant.severity",
+                "blocking",
+            ),
+            (
+                "validation.schema-conformance.ref-resolves.severity",
+                "blocking",
+            ),
+            (
+                "validation.schema-conformance.required-field-present.severity",
+                "blocking",
+            ),
+            (
+                "validation.schema-conformance.required-slot-present.severity",
+                "blocking",
+            ),
+            // workflow-refs (7, intrinsic) + the M4 per-probe default (retained).
+            (
+                "validation.workflow-refs.at-marker-on-non-scalar.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.body-include-only.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.command-ref-resolves.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.include-cycle-absent.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.include-resolves.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.placeholder-resolves.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.run-marker-not-shadowed.severity",
+                "blocking",
+            ),
+            ("validation.workflow-refs.severity", "blocking"),
+        ];
 
         // The closed surface is exactly the declared keys — no more, no less.
         let base = knobs.base_scalars();
         let keys: Vec<&str> = base.keys().map(String::as_str).collect();
-        assert_eq!(
-            keys,
-            vec![
-                "default-workflow",
-                "validation.file-state.severity",
-                "validation.workflow-refs.severity",
-            ],
-        );
+        let expected_keys: Vec<&str> = expected.iter().map(|(k, _)| *k).collect();
+        assert_eq!(keys, expected_keys);
+
+        // Each key resolves to its inventory default through the cascade read.
+        for (key, default) in &expected {
+            assert_eq!(resolved.scalar(key), Some(*default), "key `{key}`");
+        }
+
         // `pack-id` is pack identity, never a knob — it is not in the surface.
         assert!(knobs.field("pack-id").is_none());
     }
