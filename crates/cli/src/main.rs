@@ -12,6 +12,7 @@ mod cli;
 mod config;
 mod doc;
 mod locate;
+mod milestone;
 mod orient;
 mod pack;
 mod render;

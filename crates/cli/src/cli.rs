@@ -9,6 +9,7 @@
 
 use crate::config::ConfigCommand;
 use crate::doc::DocCommand;
+use crate::milestone::MilestoneCommand;
 use crate::orient;
 use crate::render;
 use crate::setup;
@@ -109,6 +110,16 @@ pub enum Command {
         verb: ConfigCommand,
     },
 
+    /// The `milestone` work-unit surface — `jigc milestone <verb>` mints a
+    /// milestone (`create "<title>"`) and populates its task list (`add-task
+    /// <milestone-id> "<intent>"`), the substrate the by-task-id join consumes
+    /// (`design/write-commands.md` → Minting a milestone + its task list;
+    /// `design/storage.md` → The by-task-id join).
+    Milestone {
+        #[command(subcommand)]
+        verb: MilestoneCommand,
+    },
+
     /// The adapter install. Generates the Claude Code adapter from the embedded
     /// profile: writes the managed `.jigc/AGENT.md` bootstrap and a bare
     /// `@.jigc/AGENT.md` reference into `CLAUDE.md`, initializes the project layer
@@ -184,6 +195,7 @@ impl Cli {
             Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
             Command::Config { verb } => run_config(verb),
+            Command::Milestone { verb } => run_milestone(self.format, verb),
             Command::Setup => run_setup(self.format),
             Command::Upgrade => run_upgrade(self.format),
         }
@@ -247,6 +259,22 @@ fn run_config(verb: ConfigCommand) -> ExitCode {
         }
     };
     verb.dispatch(&cwd)
+}
+
+/// Dispatch a `jigc milestone <verb>` action against the current working
+/// directory. `create` reads HEAD and mints the milestone area; `add-task` mints a
+/// sub-task pinned to the milestone's shared base and appends it. A blocking finding
+/// (serial collision, unknown milestone) surfaces on stderr with its route and
+/// exits non-zero (`design/write-commands.md` → Minting a milestone).
+fn run_milestone(format: Format, verb: MilestoneCommand) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    verb.dispatch(&cwd, format)
 }
 
 /// Run `jigc upgrade` against the current working directory: locate the project
@@ -761,6 +789,57 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "config", "set", "default-workflow"])
             .expect_err("`config set` with no value must be rejected");
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn milestone_create_parses_the_title() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "create", "Cache rework"])
+            .expect("`jigc milestone create <title>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Create {
+                    title: "Cache rework".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_create_requires_a_title() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "create"])
+            .expect_err("`milestone create` with no title must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn milestone_add_task_parses_the_id_and_intent() {
+        let cli =
+            Cli::try_parse_from(["jigc", "milestone", "add-task", "cache-rework", "Zebra fix"])
+                .expect("`jigc milestone add-task <id> <intent>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::AddTask {
+                    milestone_id: "cache-rework".to_string(),
+                    intent: "Zebra fix".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_add_task_requires_both_id_and_intent() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "add-task", "cache-rework"])
+            .expect_err("`milestone add-task` with no intent must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn milestone_rejects_an_unknown_verb() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "destroy", "cache-rework"])
+            .expect_err("an unknown milestone verb must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::InvalidSubcommand);
     }
 
     #[test]

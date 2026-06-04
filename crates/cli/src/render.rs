@@ -295,6 +295,24 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
     }
 }
 
+/// Render a successful `jigc milestone <verb>` action to the surface `format`
+/// selects: `agent` / `human` emit the action summary line (e.g. `minted
+/// milestone:<id> …`) followed by the routing footer; `json` emits a generic
+/// object carrying the summary text, with no footer (tooling-consumed). The
+/// determinism boundary is unaffected — the engine mints; the CLI only formats the
+/// summary it returns (`design/write-commands.md` → Minting a milestone).
+pub fn milestone(format: Format, summary: &str) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({ "text": summary })),
+        Format::Agent | Format::Human => {
+            let mut out = String::from(summary);
+            out.push('\n');
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
 /// Render the **unset project** orientation (`design/bootstrap.md` → Orientation
 /// output examples, state 1): no project layer is set up, so route the agent to
 /// `jigc setup` and end with the universal routing footer.
