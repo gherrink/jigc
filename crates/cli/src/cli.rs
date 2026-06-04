@@ -1043,6 +1043,99 @@ mod cli_parse {
     }
 
     #[test]
+    fn doc_verbs_take_an_optional_task_selector() {
+        // `--task <id>` parses on all three `doc` verbs and is optional (its
+        // absence parses too) — the write-time barrier selector
+        // (`design/write-commands.md` → The write-time `--task`-scoped barrier).
+        let create = Cli::try_parse_from([
+            "jigc",
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Pick redis",
+            "--task",
+            "move-cache",
+        ])
+        .expect("`doc create … --task <id>` parses");
+        assert_eq!(
+            create.command,
+            Command::Doc {
+                verb: DocCommand::Create {
+                    r#type: "adr".to_string(),
+                    title: "Pick redis".to_string(),
+                    task: Some("move-cache".to_string()),
+                },
+            }
+        );
+
+        let set_field = Cli::try_parse_from([
+            "jigc",
+            "doc",
+            "set-field",
+            "commit:move-cache#type",
+            "--value",
+            "feat",
+            "--task",
+            "move-cache",
+        ])
+        .expect("`doc set-field … --task <id>` parses");
+        assert_eq!(
+            set_field.command,
+            Command::Doc {
+                verb: DocCommand::SetField {
+                    addr: "commit:move-cache#type".to_string(),
+                    value: "feat".to_string(),
+                    task: Some("move-cache".to_string()),
+                },
+            }
+        );
+
+        let set_slot = Cli::try_parse_from([
+            "jigc",
+            "doc",
+            "set-slot",
+            "commit:move-cache#summary",
+            "--from-file",
+            "-",
+            "--task",
+            "move-cache",
+        ])
+        .expect("`doc set-slot … --task <id>` parses");
+        assert_eq!(
+            set_slot.command,
+            Command::Doc {
+                verb: DocCommand::SetSlot {
+                    addr: "commit:move-cache#summary".to_string(),
+                    from_file: "-".to_string(),
+                    task: Some("move-cache".to_string()),
+                },
+            }
+        );
+
+        // The selector is optional: omitting it parses, leaving `task: None`.
+        let no_task = Cli::try_parse_from([
+            "jigc",
+            "doc",
+            "set-field",
+            "commit:x#type",
+            "--value",
+            "feat",
+        ])
+        .expect("`doc set-field` with no `--task` parses");
+        assert_eq!(
+            no_task.command,
+            Command::Doc {
+                verb: DocCommand::SetField {
+                    addr: "commit:x#type".to_string(),
+                    value: "feat".to_string(),
+                    task: None,
+                },
+            }
+        );
+    }
+
+    #[test]
     fn start_help_runs_cleanly() {
         let err = Cli::try_parse_from(["jigc", "start", "--help"])
             .expect_err("--help short-circuits parsing");

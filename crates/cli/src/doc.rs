@@ -43,6 +43,11 @@ pub enum DocCommand {
         /// form; `--title "…"` is the MVP surface for the title-slugged types).
         #[arg(long)]
         title: String,
+        /// The active task to scope the write to (`design/write-commands.md` →
+        /// The write-time `--task`-scoped barrier). Optional: explicit wins; else
+        /// the single active task; else (zero / more-than-one) the write rejects.
+        #[arg(long)]
+        task: Option<String>,
     },
     /// Set a field leaf's value (inline, adjudicated at write time).
     SetField {
@@ -51,6 +56,9 @@ pub enum DocCommand {
         /// The new value (inline — fields are short + escaping-safe).
         #[arg(long)]
         value: String,
+        /// The active task to scope the write to (see `Create::task`).
+        #[arg(long)]
+        task: Option<String>,
     },
     /// Set a slot leaf's prose (multi-line, via stdin or a file).
     SetSlot {
@@ -59,6 +67,9 @@ pub enum DocCommand {
         /// The prose source: a path, or `-` for stdin (prose never inline).
         #[arg(long)]
         from_file: String,
+        /// The active task to scope the write to (see `Create::task`).
+        #[arg(long)]
+        task: Option<String>,
     },
 }
 
@@ -85,9 +96,19 @@ impl DocCommand {
     /// an orchestration error to plain stderr.
     pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
         let result = match self {
-            DocCommand::Create { r#type, title } => run_create(cwd, &r#type, &title),
-            DocCommand::SetField { addr, value } => run_set_field(cwd, &addr, &value),
-            DocCommand::SetSlot { addr, from_file } => run_set_slot(cwd, &addr, &from_file),
+            DocCommand::Create {
+                r#type,
+                title,
+                task,
+            } => run_create(cwd, &r#type, &title, task.as_deref()),
+            DocCommand::SetField { addr, value, task } => {
+                run_set_field(cwd, &addr, &value, task.as_deref())
+            }
+            DocCommand::SetSlot {
+                addr,
+                from_file,
+                task,
+            } => run_set_slot(cwd, &addr, &from_file, task.as_deref()),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -117,8 +138,13 @@ impl DocCommand {
 }
 
 /// `jigc doc set-field <addr> --value <v>` — adjudicate + splice a field value.
-fn run_set_field(cwd: &Path, addr: &str, value: &str) -> Result<(), DocFailure> {
-    let task = ActiveTask::resolve(cwd)?;
+fn run_set_field(
+    cwd: &Path,
+    addr: &str,
+    value: &str,
+    task_id: Option<&str>,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let (section_id, field_key) = field_target(&schema, &address)
@@ -141,8 +167,13 @@ fn run_set_field(cwd: &Path, addr: &str, value: &str) -> Result<(), DocFailure> 
 }
 
 /// `jigc doc set-slot <addr> --from-file <path|->` — splice slot prose (stdin/file).
-fn run_set_slot(cwd: &Path, addr: &str, from_file: &str) -> Result<(), DocFailure> {
-    let task = ActiveTask::resolve(cwd)?;
+fn run_set_slot(
+    cwd: &Path,
+    addr: &str,
+    from_file: &str,
+    task_id: Option<&str>,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let section_id =
@@ -161,8 +192,13 @@ fn run_set_slot(cwd: &Path, addr: &str, from_file: &str) -> Result<(), DocFailur
 }
 
 /// `jigc doc create <type> --title <…>` — agent-initiated, create-gated mint.
-fn run_create(cwd: &Path, type_name: &str, title: &str) -> Result<(), DocFailure> {
-    let task = ActiveTask::resolve(cwd)?;
+fn run_create(
+    cwd: &Path,
+    type_name: &str,
+    title: &str,
+    task_id: Option<&str>,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
     let created = state::create_gated(&task.dir, &schemas, &gate.allows_create, type_name, title)
@@ -179,15 +215,29 @@ struct ActiveTask {
 }
 
 impl ActiveTask {
-    /// Resolve the active task from `cwd` (`design/write-commands.md` → The
-    /// create-gate, step 1: "`.jigc/tasks/<id>/` from cwd"). MVP: the single
-    /// active task directory under `<repo>/.jigc/tasks/`; **none** rejects with
-    /// the start-a-task route, **more than one** rejects asking for `--task` (the
-    /// explicit selector lands with `jigc task`).
-    fn resolve(cwd: &Path) -> Result<Self> {
+    /// Resolve the active task from `cwd` + an optional explicit `--task <id>`
+    /// (`design/write-commands.md` → The write-time `--task`-scoped barrier:
+    /// active-task resolution). **Explicit `--task <id>` wins** — it resolves
+    /// `<repo>/.jigc/tasks/<id>/` directly, rejecting `no task <id>` if absent
+    /// (mirroring `start::reenter_in_repo`). Else: the **single** active task
+    /// directory under `<repo>/.jigc/tasks/`; **none** rejects with the start-a-task
+    /// route, **more than one** with no `--task` rejects asking for the selector.
+    fn resolve(cwd: &Path, task_id: Option<&str>) -> Result<Self> {
         let repo_root = discover_repo_root(cwd)
             .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
         let tasks = repo_root.join(".jigc").join("tasks");
+
+        if let Some(id) = task_id {
+            let dir = tasks.join(id);
+            if !dir.is_dir() {
+                bail!("no task `{id}` — list live tasks with `jigc start`");
+            }
+            return Ok(Self {
+                dir,
+                pack: make_pack(),
+            });
+        }
+
         let mut dirs: Vec<PathBuf> = match std::fs::read_dir(&tasks) {
             Ok(entries) => entries
                 .filter_map(std::result::Result::ok)
