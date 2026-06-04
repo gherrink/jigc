@@ -5359,6 +5359,76 @@ Follow the house rule.
         );
     }
 
+    /// Validation hardening #7, fed into the unit under test (not through the
+    /// already-proven `enumerate()` sort): drive the public `compose` API with a
+    /// **non-id-sorted** `ctx.milestone` directly and assert the emitted `Spawn:`
+    /// directives come out **id-ordered** regardless. This is the genuine #7 proof —
+    /// the divergent orders reach `compose`/`emit_fan_out_spawns`, so the emit path's
+    /// own order-invariance (not the caller's boundary sort) is what is exercised. If
+    /// the emit path leaked feed order, the directives would read `zebra-fix` before
+    /// `alpha-fix` and this would fail.
+    #[test]
+    fn fan_out_spawns_id_ordered_from_unsorted_ctx() {
+        let source = MapSource::new(&[
+            (
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn a sub-agent per task and implement it.\n",
+            ),
+            (
+                "join-tasks",
+                "---\njoin: {}\n---\nAll sub-tasks complete and merged by task-id order. Continue.\n",
+            ),
+        ]);
+        let def = t5_fan_out_def();
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // A milestone ctx whose ids are NOT id-sorted — fed straight to `compose`,
+        // bypassing `TaskList::enumerate()`. Two divergent feed orders of the same set.
+        let ctx_for = |order: &[&str]| ComposeContext {
+            task: None,
+            catalog: Vec::new(),
+            store: std::collections::BTreeMap::new(),
+            milestone: order.iter().map(|s| (*s).to_owned()).collect(),
+        };
+        let forward = compose(
+            &def,
+            &source,
+            &catalog,
+            &ctx_for(&["zebra-fix", "alpha-fix", "mid-fix"]),
+        )
+        .expect("composes forward");
+        let reversed = compose(
+            &def,
+            &source,
+            &catalog,
+            &ctx_for(&["mid-fix", "alpha-fix", "zebra-fix"]),
+        )
+        .expect("composes reversed");
+
+        let spawns = |w: &ComposedWorkflow| -> Vec<String> {
+            w.text
+                .lines()
+                .filter(|l| l.starts_with("Spawn: "))
+                .map(str::to_owned)
+                .collect()
+        };
+        let expected = vec![
+            "Spawn: `jigc workflow sub-task --task alpha-fix`".to_owned(),
+            "Spawn: `jigc workflow sub-task --task mid-fix`".to_owned(),
+            "Spawn: `jigc workflow sub-task --task zebra-fix`".to_owned(),
+        ];
+        assert_eq!(
+            spawns(&forward),
+            expected,
+            "emit path must id-order Spawns even from an unsorted ctx feed"
+        );
+        assert_eq!(spawns(&forward), spawns(&reversed));
+        assert_eq!(
+            forward.text, reversed.text,
+            "compose output byte-identical across divergent unsorted feed orders"
+        );
+    }
+
     /// The M8 #5 face: a marker that parses but leaves compose output unchanged is
     /// parsed-but-ignored. The same step body composed **with** the `fan-out:`
     /// front-matter emits N `Spawn:` lines; composed with the marker **removed** (the

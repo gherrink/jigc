@@ -224,13 +224,16 @@ pub struct ComposeContext {
     /// from the map (no committed instances) resolves to the empty collection —
     /// empty text, not a finding.
     pub store: BTreeMap<String, Vec<Address>>,
-    /// The engine-native `milestone` work-unit root — the live, **id-sorted**
-    /// sub-task ids of the milestone being composed (`{{milestone.tasks}}`, the
-    /// `fan-out` step's list-source; [workflow-dialect.md](../../../design/workflow-dialect.md)
+    /// The engine-native `milestone` work-unit root — the live sub-task ids of the
+    /// milestone being composed (`{{milestone.tasks}}`, the `fan-out` step's
+    /// list-source; [workflow-dialect.md](../../../design/workflow-dialect.md)
     /// → data-value roots). The CLI feeds the `TaskList::enumerate()` output
-    /// (already canonically id-sorted); the resolver does **no** work-unit I/O (the
-    /// determinism boundary), mirroring how `catalog`/`store` are fed. Empty when
-    /// the composition has no milestone (no fan-out) or the milestone has no
+    /// (already canonically id-sorted) and the resolver does **no** work-unit I/O
+    /// (the determinism boundary), mirroring how `catalog`/`store` are fed; the
+    /// resolver also **sorts on resolve** so the emitted `fan-out` directive
+    /// sequence is id-ordered regardless of feed order — the engine's determinism
+    /// does not depend on the caller pre-sorting (Validation hardening #7). Empty
+    /// when the composition has no milestone (no fan-out) or the milestone has no
     /// sub-tasks — the empty collection, not a finding.
     pub milestone: Vec<String>,
 }
@@ -299,7 +302,9 @@ pub enum Resolution {
     /// hop, `#fragment`, or `@` past it is a structural error. An empty milestone
     /// resolves to the empty collection (no finding).
     Milestone {
-        /// The milestone's sub-task ids, in canonical id-sorted order (as fed).
+        /// The milestone's sub-task ids in **canonical id-sorted order** — the
+        /// resolver sorts here, so the order is a pure function of the id *set* and
+        /// never depends on the caller's feed order (Validation hardening #7).
         ids: Vec<String>,
     },
 }
@@ -419,9 +424,15 @@ impl Path {
                     Location::at(1, 1),
                 ));
             }
-            return Ok(Resolution::Milestone {
-                ids: ctx.milestone.clone(),
-            });
+            // Sort here so the emitted `fan-out` directive sequence is id-ordered
+            // regardless of the feed order the caller hands in — the engine's
+            // determinism does not silently depend on the caller pre-sorting
+            // (Validation hardening #7). The CLI feeds `TaskList::enumerate()`
+            // output (already id-sorted), so this is a no-op on the production path;
+            // it closes the order leak when any other caller feeds an unsorted set.
+            let mut ids = ctx.milestone.clone();
+            ids.sort();
+            return Ok(Resolution::Milestone { ids });
         }
 
         if root != "task" {
@@ -966,14 +977,29 @@ mod tests {
 
     /// Core done-criterion: a bare `milestone.tasks` (the fixed `.tasks` leaf hop,
     /// no `#fragment`, no `@` marker) resolves to [`Resolution::Milestone`] carrying
-    /// the fed sub-task ids verbatim — the collection the `fan-out` step fans over.
-    /// An empty milestone resolves to the **empty** collection (no finding).
+    /// the sub-task ids in **canonical id-sorted order** — the collection the
+    /// `fan-out` step fans over. An empty milestone resolves to the **empty**
+    /// collection (no finding).
     #[test]
     fn bare_milestone_tasks_resolves_to_milestone_collection() {
         let ctx = two_task_milestone_ctx();
 
         assert_eq!(
             resolve("milestone.tasks", &ctx).expect("bare `milestone.tasks` resolves"),
+            Resolution::Milestone {
+                ids: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
+            }
+        );
+
+        // The resolver sorts: an unsorted feed resolves id-ordered, so the emit
+        // path's order is a pure function of the id set, not the caller's feed
+        // order (Validation hardening #7).
+        let unsorted = ComposeContext {
+            milestone: vec!["zebra-fix".to_owned(), "alpha-fix".to_owned()],
+            ..ComposeContext::default()
+        };
+        assert_eq!(
+            resolve("milestone.tasks", &unsorted).expect("unsorted milestone resolves"),
             Resolution::Milestone {
                 ids: vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()],
             }
