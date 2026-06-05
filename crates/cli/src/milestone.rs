@@ -519,14 +519,40 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
     // advance HEAD, and the parent aggregate that follows re-checks nothing — the boundary's
     // base invariant was the planner's call). On `true` this is skipped, leaving the single
     // CLI-synthesized aggregate exactly as M7 shipped it (the default-path determinism guard).
+    //
+    // The N sub-task commits advance HEAD BEFORE the parent aggregate lands, so the boundary
+    // would not be all-or-nothing unless we can undo them: capture the pre-finalize HEAD here
+    // (before any sub-task commit moves it). If the aggregate finalize fails, `git reset
+    // --hard` to this sha returns HEAD + index + working tree to as-if-finalize-was-never-
+    // called — no orphaned sub-task commits (`CLAUDE.md` "Writes are transactional";
+    // `design/finalize.md` → Rollback discipline). `execute_finalize_plan` already rolls back
+    // its own promotions; this reset additionally undoes the per-sub-task commits the
+    // milestone boundary laid down ahead of it.
     if !squash {
+        let pre_finalize_head = git_head(&repo_root)?;
         commit_per_subtask_messages(&repo_root, &dir, milestone_id, &list, &schemas)?;
-    }
 
-    // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
-    // The message temp file is written into the (gitignored) milestone area; the milestone
-    // area is the cleanup dir removed on a landed commit.
-    crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)
+        // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
+        match crate::task::try_execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)? {
+            Ok(()) => Ok(ExitCode::SUCCESS),
+            // Aggregate rejected (a commit/hook rejection). The executor already rolled
+            // back its promotions; now undo the per-sub-task commits + any staging so HEAD
+            // returns to the pre-finalize sha (all-or-nothing), then surface git's stderr
+            // verbatim and exit `FAILURE` — the same signal `execute_finalize_plan` gives.
+            Err(err) => {
+                crate::task::git_reset_hard(&repo_root, &pre_finalize_head)?;
+                eprintln!("{err:#}");
+                Ok(ExitCode::FAILURE)
+            }
+        }
+    } else {
+        // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
+        // The message temp file is written into the (gitignored) milestone area; the milestone
+        // area is the cleanup dir removed on a landed commit. The `squash: true` default path
+        // lands only the single CLI-synthesized aggregate (no per-sub-task commits), so it is
+        // byte-identical to what M7 shipped — left untouched.
+        crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)
+    }
 }
 
 /// The `commit` doc type the per-sub-task render addresses — a sub-task's authored

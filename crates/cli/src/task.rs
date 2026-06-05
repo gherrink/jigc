@@ -550,6 +550,32 @@ pub(crate) fn execute_finalize_plan(
     plan: &engine::finalize::FinalizePlan,
     cleanup_dir: &Path,
 ) -> Result<ExitCode> {
+    // Map the landed/failed `Result` onto the historic `Ok(ExitCode)` contract the
+    // per-task and `squash: true` milestone callers expect (a failure surfaces git's
+    // stderr verbatim and exits `FAILURE`; success exits `SUCCESS`).
+    match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir)? {
+        Ok(()) => Ok(ExitCode::SUCCESS),
+        Err(err) => {
+            eprintln!("{err:#}");
+            Ok(ExitCode::FAILURE)
+        }
+    }
+}
+
+/// The transactional core of [`execute_finalize_plan`]: promote + stage + commit +
+/// post-commit, returning `Ok(())` when the aggregate landed and `Ok(Err(_))` when the
+/// commit was rejected (the promotions already rolled back). The outer `Result` carries
+/// only setup I/O errors (writing the message temp file). The `squash: false` milestone
+/// boundary calls this directly so it can detect the aggregate failure and undo the
+/// per-sub-task commits it laid down ahead of the aggregate (`git_reset_hard`); the
+/// `Ok(Err(_))` carries the original error so the caller can still surface it.
+pub(crate) fn try_execute_finalize_plan(
+    repo_root: &Path,
+    jigc_root: &Path,
+    msg_tmp_dir: &Path,
+    plan: &engine::finalize::FinalizePlan,
+    cleanup_dir: &Path,
+) -> Result<Result<()>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
         .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
@@ -570,12 +596,11 @@ pub(crate) fn execute_finalize_plan(
         // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore HEAD
         // content for the promoted paths and delete the promoted copies; no commit landed.
         rollback_promotions(repo_root, &plan.promotions);
-        eprintln!("{err:#}");
-        return Ok(ExitCode::FAILURE);
+        return Ok(Err(err));
     }
     // Phase 7 — post-commit (best-effort; the commit is already truth).
     post_commit(repo_root, jigc_root, cleanup_dir, &plan.hash_updates);
-    Ok(ExitCode::SUCCESS)
+    Ok(Ok(()))
 }
 
 /// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged managed
@@ -733,6 +758,15 @@ pub(crate) fn git_untracked(repo_root: &Path) -> Result<String> {
 /// the user's `git` (`DECISIONS.md` 2026-05-31 → Git invocation).
 pub(crate) fn git_head(repo_root: &Path) -> Result<String> {
     git_capture(repo_root, &["rev-parse", "HEAD"])
+}
+
+/// `git reset --hard <sha>` in `repo_root` — restore HEAD, the index, and the working
+/// tree to `sha`. The `squash: false` milestone boundary uses this to undo the N
+/// per-sub-task commits (and any staging) when the parent aggregate fails, returning
+/// the repo to as-if-finalize-was-never-called (`design/finalize.md` → Rollback
+/// discipline; `CLAUDE.md` "Writes are transactional").
+pub(crate) fn git_reset_hard(repo_root: &Path, sha: &str) -> Result<()> {
+    git_run(repo_root, &["reset", "--hard", sha])
 }
 
 /// Run `git <args>` in `repo_root` for its side effect (e.g. `add`), bailing with

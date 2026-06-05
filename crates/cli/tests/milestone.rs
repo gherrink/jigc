@@ -878,6 +878,16 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
 /// Two callers feed divergent add orders to prove the committed sequence is
 /// order-invariant. id-sorted sub-tasks: [area-low, area-zed].
 fn finalize_squash_false(repo: &Path, home: &Path, add_order: &[&str]) -> std::process::Output {
+    setup_squash_false(repo, home, add_order);
+    run_milestone(repo, home, &["finalize", "cache-rework"])
+}
+
+/// The `finalize_squash_false` setup WITHOUT the terminating `finalize` call: opt into
+/// `squash: false`, mint the milestone + two sub-tasks in `add_order`, and stage in each
+/// sub-area a clean disjoint persisted ADR + that sub-task's authored `commit:<sub>` doc.
+/// Split out so a caller can capture the pre-finalize HEAD/tree state between setup and
+/// the `finalize` invocation (the transactionality assertion's baseline).
+fn setup_squash_false(repo: &Path, home: &Path, add_order: &[&str]) {
     set_squash_false(repo);
     assert!(
         run_milestone(repo, home, &["create", "Cache rework"])
@@ -911,8 +921,6 @@ fn finalize_squash_false(repo: &Path, home: &Path, add_order: &[&str]) -> std::p
         "edited-from-base",
     );
     stage_subtask_commit(repo, "area-zed", "rework the zed cache path");
-
-    run_milestone(repo, home, &["finalize", "cache-rework"])
 }
 
 #[test]
@@ -1007,6 +1015,84 @@ fn milestone_finalize_squash_false_sequence_is_byte_identical_across_feed_orders
         head_tree_paths(forward.path()),
         head_tree_paths(reverse.path()),
         "the committed tree must be byte-identical across divergent feed orders",
+    );
+}
+
+/// Install a `pre-commit` hook in `repo` that rejects any commit which stages a path
+/// under `decisions/` (the promoted ADRs the parent aggregate stages via `git add
+/// --all`). The `squash: false` per-sub-task commits run `git commit --allow-empty`
+/// staging nothing, so they pass; only the parent aggregate trips the hook — a clean,
+/// controllable failure point AFTER the N sub-task commits have landed.
+fn install_aggregate_rejecting_hook(repo: &Path) {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        "#!/bin/sh\nif git diff --cached --name-only | grep -q '^decisions/'; then\n  echo 'aggregate rejected by test hook' >&2\n  exit 1\nfi\nexit 0\n",
+    )
+    .expect("write pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook).expect("hook metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook, perms).expect("chmod hook");
+    }
+}
+
+#[test]
+fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head() {
+    // The `squash: false` boundary must be all-or-nothing: the N per-sub-task commits
+    // advance HEAD BEFORE the parent aggregate lands. If the aggregate commit fails
+    // (here: a `pre-commit` hook rejects the staged ADRs), HEAD must reset to the
+    // pre-finalize sha — no orphaned sub-task commits, clean tree, as-if-finalize-was-
+    // never-called (`CLAUDE.md`: "Writes are transactional"; `finalize.md` rollback
+    // discipline). RED before the fix (HEAD left advanced by N), GREEN after.
+    let repo = TempDir::new("finalize-squash-false-reset");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    install_aggregate_rejecting_hook(repo.path());
+
+    // Set up the milestone + two sub-tasks + staged docs, then capture the pre-finalize
+    // HEAD + status JUST before the `finalize` call — the "as-if-never-called" baseline
+    // (the staged `.jigc/` working area is part of this baseline, left intact on failure).
+    setup_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+    let (before_head, before_status) = git_state(repo.path());
+    let before_count = rev_list_count(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+
+    // The aggregate commit was rejected, so the boundary fails (no parent aggregate).
+    assert!(
+        !finalized.status.success(),
+        "the aggregate-rejecting hook must make `jigc milestone finalize` fail; got success\nstdout:\n{}",
+        String::from_utf8_lossy(&finalized.stdout),
+    );
+
+    // HEAD is back at the pre-finalize sha — the N sub-task commits were rolled back,
+    // not left orphaned on HEAD.
+    let (after_head, after_status) = git_state(repo.path());
+    assert_eq!(
+        after_head, before_head,
+        "on aggregate failure HEAD must reset to the pre-finalize sha (no orphaned sub-task commits)",
+    );
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before_count,
+        "on aggregate failure the commit count must be unchanged (the N sub-task commits are gone)",
+    );
+
+    // The working tree is restored to the pre-finalize state — no dangling staging from
+    // the sub-task commits and no leftover promoted ADR from the failed aggregate. The
+    // staged `.jigc/` working area is left intact (the executor's "working area intact on
+    // failure" guarantee), so the status matches the pre-finalize baseline byte-for-byte.
+    assert_eq!(
+        after_status, before_status,
+        "on aggregate failure the working tree must match the pre-finalize state (as-if-finalize-was-never-called)",
+    );
+    assert!(
+        !repo.path().join("decisions").exists(),
+        "on aggregate failure no promoted ADR may be left in `decisions/`",
     );
 }
 
