@@ -23,8 +23,9 @@
 //!     a reconstruction.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -331,5 +332,264 @@ fn the_rendered_spawn_line_resolves_to_the_real_reentry_verb() {
     assert!(
         !stderr.contains("Usage:") && !stderr.to_lowercase().contains("unrecognized"),
         "the rendered command must not trip a clap parse error; stderr:\n{stderr}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Half-A step 2 — the real write→join seam (`implementation/roadmap.md` → inc-6
+// bullet 1; `design/worked-examples.md` → flow 10 Half-A step 2;
+// `increment-workflow.md` → hardening #4).
+//
+// Where flow-9's `flow9_milestone_join.rs` hand-staged `tasks/<sub>/docs/<addr>.md`
+// + `provenance.json` directly, flow 10 closes the **whole control plane**: each
+// sub-area is provisioned and populated by invoking `jigc workflow sub-task --task
+// <id>` as a **separate binary process** — *exactly* what a real fanned sub-agent
+// runs (`worked-examples.md` → flow 10: "the 'sub-agents' are the test invoking the
+// CLI N times as separate processes"). Then real `jigc doc create adr` + `set-slot`
+// writes (incl. ≥1 `edited-from-base` via copy-on-first-touch) produce the
+// `docs/<addr>.md` + `provenance.json` the M7 join consumes, and `jigc milestone
+// join` merges those real-written inputs clean (exit 0, both addresses in the
+// overlay). No hand-staging — the bytes/manifest the join reads were produced by the
+// binary, so a regression in copy-on-first-touch, the `--task` selector, or the
+// provenance record fails these assertions rather than being masked by a fixture.
+
+/// Run `git` in `repo`, asserting success.
+fn git(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("utf-8 git stdout")
+}
+
+/// Run `jigc doc <args>` with `cwd = repo`, `$HOME = home`, optionally piping `stdin`.
+fn run_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command.arg("doc").args(args);
+    command.current_dir(repo).env("HOME", home);
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn the jigc binary");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// A canonical committed ADR (the `write::render` form), so a first-touch copy-in is
+/// byte-stable. Committed at `decisions/<slug>.md` — the base copy-on-first-touch
+/// pulls in for the `edited-from-base` path.
+fn committed_adr(title: &str) -> String {
+    format!(
+        "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n"
+    )
+}
+
+/// Initialize a git repo with one commit + the `.jigc/config/` project layer + a
+/// committed ADR at `decisions/eviction-policy.md` — the base the `edited-from-base`
+/// sub-area edits via copy-on-first-touch.
+fn init_repo_with_base_adr(root: &Path) {
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    fs::write(root.join("README.md"), "hello\n").expect("write file");
+    fs::create_dir_all(root.join("decisions")).expect("create decisions/");
+    fs::write(
+        root.join("decisions").join("eviction-policy.md"),
+        committed_adr("Eviction policy"),
+    )
+    .expect("write committed adr");
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
+}
+
+/// A sub-task's `docs/` working area: `.jigc/tasks/<sub>/docs/`.
+fn docs_area(repo: &Path, sub: &str) -> PathBuf {
+    repo.join(".jigc").join("tasks").join(sub).join("docs")
+}
+
+/// **Half-A step 2 — the real write→join seam.** A `cache-hardening` milestone with
+/// two `sub-task` sub-areas, each provisioned by invoking `jigc workflow sub-task
+/// --task <id>` as a **separate binary process** (what a real fanned sub-agent runs),
+/// then populated through the real `jigc doc create adr` + `set-slot --task` verbs:
+/// subA `created`s a fresh ADR; subB `edited-from-base` the committed
+/// `adr:eviction-policy` (copy-on-first-touch). Their slugs are distinct, so `jigc
+/// milestone join` consumes the real-written `docs/<addr>.md` + `provenance.json` of
+/// each area and reports a clean merge (exit 0, both addresses in the overlay) — the
+/// flow-9 hand-staging replaced by the genuine N-process write path.
+#[test]
+fn real_n_process_writes_feed_a_clean_milestone_join() {
+    let repo = TempDir::new("seam");
+    let home = TempDir::new("seam-home");
+    init_repo_with_base_adr(repo.path());
+
+    expect_ok(
+        &run(
+            repo.path(),
+            home.path(),
+            &["milestone", "create", "Cache hardening"],
+        ),
+        "milestone create",
+    );
+
+    let sub_a = "move-cache-to-redis".to_string();
+    let sub_b = "evict-stale-keys".to_string();
+    for intent in ["Move cache to redis", "Evict stale keys"] {
+        expect_ok(
+            &run(
+                repo.path(),
+                home.path(),
+                &[
+                    "milestone",
+                    "add-task",
+                    "cache-hardening",
+                    intent,
+                    "--workflow",
+                    "sub-task",
+                ],
+            ),
+            "milestone add-task",
+        );
+    }
+
+    // Each `jigc workflow sub-task --task <sub>` is a SEPARATE binary process — exactly
+    // the re-entry verb a real fanned sub-agent runs — and provisions that sub-area's
+    // write-ready commit doc on first entry. No hand-staging.
+    for sub in [&sub_a, &sub_b] {
+        expect_ok(
+            &run(
+                repo.path(),
+                home.path(),
+                &["workflow", "sub-task", "--task", sub],
+            ),
+            "fanned sub-agent re-entry provisions the write-ready sub-area",
+        );
+    }
+
+    // subA: a `created` ADR through the front door (the `sub-task` create-gate's
+    // `{type: adr}`), then a real slot write — records `created` provenance.
+    expect_ok(
+        &run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "create",
+                "adr",
+                "--title",
+                "Cache strategy",
+                "--task",
+                &sub_a,
+            ],
+            None,
+        ),
+        "doc create adr in subA",
+    );
+    expect_ok(
+        &run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-slot",
+                "adr:cache-strategy#decision",
+                "--from-file",
+                "-",
+                "--task",
+                &sub_a,
+            ],
+            Some(b"Use a write-through cache.\n"),
+        ),
+        "set-slot on the created ADR in subA",
+    );
+
+    // subB: a first `set-slot --task` against the base-committed `adr:eviction-policy`
+    // — copy-on-first-touch pulls the committed body in, splices, records
+    // `edited-from-base` (the ≥1 edited-from-base the done-criterion requires).
+    expect_ok(
+        &run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-slot",
+                "adr:eviction-policy#decision",
+                "--from-file",
+                "-",
+                "--task",
+                &sub_b,
+            ],
+            Some(b"Evict on a TTL sweep.\n"),
+        ),
+        "edit the base-committed ADR in subB (copy-on-first-touch)",
+    );
+
+    // Sanity — these are REAL N-process writes, not hand-staged: the bodies + manifests
+    // the join reads were produced by the binary. subA's manifest says `created`;
+    // subB's says `edited-from-base`; subB's body carries the copied-in committed slice.
+    let prov_a = fs::read_to_string(docs_area(repo.path(), &sub_a).join("provenance.json"))
+        .expect("subA provenance.json");
+    assert!(
+        prov_a.contains("\"adr:cache-strategy\": \"created\""),
+        "subA's real-written manifest must record `created`; got:\n{prov_a}",
+    );
+    let prov_b = fs::read_to_string(docs_area(repo.path(), &sub_b).join("provenance.json"))
+        .expect("subB provenance.json");
+    assert!(
+        prov_b.contains("\"adr:eviction-policy\": \"edited-from-base\""),
+        "subB's real-written manifest must record `edited-from-base`; got:\n{prov_b}",
+    );
+    let body_b = fs::read_to_string(docs_area(repo.path(), &sub_b).join("adr:eviction-policy.md"))
+        .expect("subB copied-in body");
+    assert!(
+        body_b.contains("Forces.") && body_b.contains("Evict on a TTL sweep."),
+        "subB's body must be the copied-in committed body with the spliced decision; got:\n{body_b}",
+    );
+
+    // The join consumes those real-written inputs and reports a clean merge: the
+    // disjoint slugs are both in the overlay, no blocking finding, exit 0 — and it
+    // commits nothing (the join only reports; finalize materializes).
+    let before_head = git(repo.path(), &["rev-parse", "HEAD"]);
+    let joined = run(
+        repo.path(),
+        home.path(),
+        &["milestone", "join", "cache-hardening"],
+    );
+    expect_ok(
+        &joined,
+        "the join over real N-process-written disjoint areas must merge clean",
+    );
+    let stdout = String::from_utf8_lossy(&joined.stdout);
+    assert!(
+        stdout.contains("adr:cache-strategy") && stdout.contains("adr:eviction-policy"),
+        "the clean merge must report both real-written addresses in the overlay; got:\n{stdout}",
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        before_head,
+        "the join only reports the overlay; it commits nothing",
     );
 }
