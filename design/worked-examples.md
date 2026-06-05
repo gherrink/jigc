@@ -604,7 +604,7 @@ Where flow 9 proved the **join** is order-invariant over a fixed *fixture* area 
 ```text
 $ jigc milestone create "Cache hardening"            # → milestone:cache-hardening (shared base)
 $ jigc milestone add-from-spec cache-hardening spec:cache-hardening   # one sub-task per criterion
-$ jigc start --workflow milestone-execution --task cache-hardening    # compose the fan-out
+$ jigc milestone execute cache-hardening              # compose the fan-out over the milestone
 ```
 
 The `milestone-execution` workflow's `fan-out` step resolves `{{milestone.tasks}}` and emits **one `Spawn:` directive per sub-task**, each rendered through the adapter's spawn template:
