@@ -191,13 +191,13 @@ fn session_start_runs_jigc_start(settings: &serde_json::Value) -> bool {
 /// install path on every `jigc setup`, and a valid template does not block it.
 ///
 /// The complementary "several rejected templates each fail install" half is proven
-/// at the `install()` function boundary the binary calls — `setup.rs`'s unit module
-/// (`install_rejects_broken_spawn_template_with_clause_route`, exercising the
-/// blocking `setup.spawn-template` finding) plus T2's full clause-coverage table —
-/// because the binary loads only the embedded (valid) profile and the MVP ships no
-/// profile-source override (the `FilesystemPack` seam is pack-scoped, not adapter;
-/// `design/overrides.md` → the `FilesystemPack` seam). A net-new adapter-profile
-/// override seam is out of this increment's grounded surface (planner SCOPE-HONESTY).
+/// through the binary over the `JIGC_ADAPTERS_DIR` adapter-profile-source seam
+/// (`tests/adapter_source_setup.rs`; `DECISIONS.md` 2026-06-05) — the adapter
+/// analogue of `JIGC_PACK_DIR` — which drives a deliberately-broken spawn template
+/// through this same install path and observes the blocking `setup.spawn-template`
+/// finding with no host write. It is also unit-proven at the `install()` boundary
+/// (`setup.rs`'s `install_rejects_broken_spawn_template_with_clause_route`) plus
+/// T2's full clause-coverage table.
 #[test]
 fn setup_with_valid_spawn_template_installs_clean() {
     let repo = TempDir::new("spawn-gate");

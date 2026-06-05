@@ -25,8 +25,9 @@
 
 use include_dir::{Dir, include_dir};
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The built-in adapter profiles, embedded at compile time from
 /// `crates/cli/adapters/`. Mirrors `pack::PACK` (`include_dir`, decided
@@ -343,6 +344,16 @@ pub enum ProfileError {
         /// The underlying deserialization error.
         source: serde_yaml_ng::Error,
     },
+
+    /// A `JIGC_ADAPTERS_DIR`-selected profile file could not be read from disk
+    /// (e.g. the directory or `<assistant>.yaml` is absent). Only reachable when
+    /// the override is set; the embedded path never hits the filesystem.
+    Io {
+        /// The assistant whose profile failed to read.
+        assistant: String,
+        /// The underlying IO error.
+        source: std::io::Error,
+    },
 }
 
 impl fmt::Display for ProfileError {
@@ -357,6 +368,9 @@ impl fmt::Display for ProfileError {
             ProfileError::Malformed { assistant, source } => {
                 write!(f, "malformed adapter profile for `{assistant}`: {source}")
             }
+            ProfileError::Io { assistant, source } => {
+                write!(f, "cannot read adapter profile for `{assistant}`: {source}")
+            }
         }
     }
 }
@@ -365,6 +379,7 @@ impl std::error::Error for ProfileError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             ProfileError::Malformed { source, .. } => Some(source),
+            ProfileError::Io { source, .. } => Some(source),
             _ => None,
         }
     }
@@ -642,18 +657,52 @@ const BOOTSTRAP_IMPORT_LINE: &str = "@.jigc/AGENT.md";
 /// part of the sentence.
 const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.";
 
-/// Load the embedded adapter profile for `assistant` (its file stem under
-/// `adapters/`).
+/// The env var that selects a directory adapter-profile source over the
+/// binary-embedded default. The adapter analogue of [`crate::pack`]'s
+/// `JIGC_PACK_DIR` (`DECISIONS.md` 2026-06-05 → the `JIGC_ADAPTERS_DIR` seam).
+const ADAPTERS_DIR_ENV: &str = "JIGC_ADAPTERS_DIR";
+
+/// Load the adapter profile for `assistant` (its file stem under `adapters/`).
+///
+/// The **single** production profile-load point — the adapter analogue of
+/// `pack::make_pack`. With `JIGC_ADAPTERS_DIR` set to a directory, the profile
+/// YAML is read live from `<dir>/<assistant>.yaml`; unset, the binary-embedded
+/// profile is used, so output is byte-identical to a build without the seam.
+/// Routing every production load through this one seam makes the obligation
+/// "every load honors the env," not a per-site count (the `JIGC_PACK_DIR`
+/// lesson). The seam exists so a deliberately-broken spawn template can be driven
+/// through the real `jigc setup` and observed to reject.
 ///
 /// An unknown assistant name yields [`ProfileError::NotFound`]; malformed bytes
 /// yield a typed error, never a panic — the profile is fed in exactly like a
 /// pack resource, off the engine's presentation-free surface.
 pub fn load_profile(assistant: &str) -> Result<AdapterProfile, ProfileError> {
+    load_profile_from(assistant, std::env::var_os(ADAPTERS_DIR_ENV))
+}
+
+/// The testable core of [`load_profile`]: select on an already-read env value
+/// rather than reading the process environment, so the selection logic is
+/// exercised without mutating global state (parallel-test-safe). A set, non-empty
+/// directory reads `<dir>/<assistant>.yaml` from disk; otherwise the embedded
+/// bytes are used.
+fn load_profile_from(
+    assistant: &str,
+    adapters_dir: Option<OsString>,
+) -> Result<AdapterProfile, ProfileError> {
     let file_name = format!("{assistant}.yaml");
-    let file = ADAPTERS
-        .get_file(&file_name)
-        .ok_or_else(|| ProfileError::NotFound(assistant.to_owned()))?;
-    let text = std::str::from_utf8(file.contents()).map_err(|_| ProfileError::NotUtf8 {
+    let bytes = match adapters_dir {
+        Some(dir) if !dir.is_empty() => std::fs::read(PathBuf::from(dir).join(&file_name))
+            .map_err(|source| ProfileError::Io {
+                assistant: assistant.to_owned(),
+                source,
+            })?,
+        _ => ADAPTERS
+            .get_file(&file_name)
+            .ok_or_else(|| ProfileError::NotFound(assistant.to_owned()))?
+            .contents()
+            .to_vec(),
+    };
+    let text = std::str::from_utf8(&bytes).map_err(|_| ProfileError::NotUtf8 {
         assistant: assistant.to_owned(),
     })?;
     serde_yaml_ng::from_str(text).map_err(|source| ProfileError::Malformed {
@@ -1235,6 +1284,69 @@ mod tests {
         assert!(
             matches!(&err, ProfileError::NotFound(name) if name == "nonexistent"),
             "expected NotFound(\"nonexistent\"), got {err:?}",
+        );
+    }
+
+    /// The selection core of [`load_profile`], exercised without mutating the
+    /// process environment (parallel-test-safe; the `make_pack_from` idiom). With
+    /// the env value unset, the profile loads from the embedded bytes — equal to
+    /// what `load_profile` reads with no override, so a no-env build is inert.
+    #[test]
+    fn load_profile_from_unset_reads_the_embedded_profile() {
+        let embedded = load_profile_from("claude-code", None).expect("embedded profile loads");
+        assert_eq!(embedded.assistant, "claude-code");
+        validate_spawn_template(&embedded.spawn().expect("spawn target").template)
+            .expect("the embedded template passes the rule");
+    }
+
+    /// An empty `JIGC_ADAPTERS_DIR=` falls through to the embedded default rather
+    /// than reading an empty path (an unset-equivalent value is inert).
+    #[test]
+    fn load_profile_from_empty_env_reads_the_embedded_profile() {
+        let profile =
+            load_profile_from("claude-code", Some(OsString::new())).expect("embedded loads");
+        assert_eq!(profile.assistant, "claude-code");
+    }
+
+    /// With a directory value set, the profile is read live from
+    /// `<dir>/<assistant>.yaml` — a profile seeded only on disk loads back, proving
+    /// an alternate profile drives the loader (the seam the install-time reject
+    /// proof rides on).
+    #[test]
+    fn load_profile_from_dir_reads_the_on_disk_profile() {
+        let dir = TempDir::new();
+        std::fs::write(
+            dir.path().join("claude-code.yaml"),
+            b"assistant: claude-code\n\
+              inject:\n\
+              \x20 - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }\n\
+              allowlist:\n\
+              \x20 file: .claude/settings.json\n\
+              \x20 permit: [\"jigc *\"]\n\
+              spawn:\n\
+              \x20 template: \"on-disk only `jigc workflow {{workflow}} --task {{task_id}}`\"\n",
+        )
+        .expect("seed on-disk profile");
+
+        let profile = load_profile_from("claude-code", Some(OsString::from(dir.path())))
+            .expect("the on-disk profile loads via the seam");
+        assert_eq!(
+            profile.spawn().expect("spawn target").template,
+            "on-disk only `jigc workflow {{workflow}} --task {{task_id}}`",
+            "the set-env loader must read the on-disk profile, not the embedded one",
+        );
+    }
+
+    /// A set directory that lacks the requested profile file is a typed IO error
+    /// (only reachable on the override path), never a panic.
+    #[test]
+    fn load_profile_from_dir_missing_file_is_io_error() {
+        let dir = TempDir::new();
+        let err = load_profile_from("claude-code", Some(OsString::from(dir.path())))
+            .expect_err("a missing on-disk profile errors");
+        assert!(
+            matches!(&err, ProfileError::Io { assistant, .. } if assistant == "claude-code"),
+            "expected Io {{ assistant: \"claude-code\", .. }}, got {err:?}",
         );
     }
 }
