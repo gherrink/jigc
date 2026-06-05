@@ -235,7 +235,15 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
         .map(str::to_owned)
         .map_err(anyhow::Error::from)?;
     let source = CascadeStepSource::new(pack, &resolved, &project_config);
-    compose_drained(&repo_root, intent, pack, &workflow_id, &source, &overrides)
+    compose_drained(
+        &repo_root,
+        intent,
+        pack,
+        &workflow_id,
+        &source,
+        &overrides,
+        &[],
+    )
 }
 
 /// Compose the workflow named by `workflow_id` from `intent` — the explicit
@@ -266,7 +274,89 @@ pub fn compose_named_in_repo(
     // override or slot-fill applies to a `--workflow <X>`-composed workflow too.
     let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
     let source = CascadeStepSource::new(pack, &resolved, &project_config);
-    compose_drained(&repo_root, intent, pack, workflow_id, &source, &overrides)
+    compose_drained(
+        &repo_root,
+        intent,
+        pack,
+        workflow_id,
+        &source,
+        &overrides,
+        &[],
+    )
+}
+
+/// Execute a milestone work-unit — compose the **explicitly-named**
+/// `creates-task: false` `workflow_id` over the milestone's id-sorted sub-task list,
+/// feeding `milestone_ids` into `{{milestone.tasks}}` so the workflow's `fan-out`
+/// step resolves it (one `` Spawn: `jigc workflow <run> --task <id>` `` per id, in
+/// id-sorted order). **Mints nothing** — the milestone and its sub-tasks already
+/// exist (`write-commands.md` → Executing the milestone — `jigc milestone execute
+/// <id>`). The lone production site feeding [`ComposeContext::milestone`] non-empty;
+/// `milestone.rs` resolves the work-unit + reads `TaskList::enumerate()` and calls
+/// in. Bypasses the cascade `default-workflow` knob (the workflow is named, like
+/// Form D) but still resolves the cascade for phase-2/4/5 owners.
+pub fn execute_milestone_in_repo(
+    start: &Path,
+    workflow_id: &str,
+    milestone_ids: &[String],
+) -> Result<ComposedWorkflow> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let pack = make_pack();
+    let pack = pack.as_ref();
+    let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
+    let source = CascadeStepSource::new(pack, &resolved, &project_config);
+    // No `intent` — a milestone execution mints no task, so `{{task.intent}}` is
+    // never resolved (the workflow is `creates-task: false`); pass empty.
+    compose_drained(
+        &repo_root,
+        "",
+        pack,
+        workflow_id,
+        &source,
+        &overrides,
+        milestone_ids,
+    )
+}
+
+/// The milestone-feeding compose seam — compose the no-task `workflow_id` over an
+/// **injected** `pack` + `source` with `milestone_ids` fed into `{{milestone.tasks}}`,
+/// no cascade overrides (the structural-only shape `compose_core`'s no-override path
+/// reads the pack unchanged). The `pub(crate)` boundary lets the `milestone.rs`
+/// dispatch test drive the feeding contract over a `FixturePack` fan-out workflow
+/// (the idiom the `start.rs` compose tests use) without the embedded pack or a real
+/// milestone-execution workflow (T3). The production [`execute_milestone_in_repo`]
+/// reaches the same `compose_core` no-task arm through the live cascade source — so
+/// this seam is a `#[cfg(test)]` test affordance, not a production code path.
+#[cfg(test)]
+pub(crate) fn execute_milestone_core(
+    repo_root: &Path,
+    pack: &dyn PackSource,
+    workflow_id: &str,
+    source: &dyn StepSource,
+    milestone_ids: &[String],
+) -> Result<ComposedWorkflow> {
+    let overrides = ComposeOverrides {
+        deltas: Vec::new(),
+        slot_fills: Vec::new(),
+        fills: ResolvedFills::new(),
+    };
+    compose_core(
+        repo_root,
+        "",
+        pack,
+        workflow_id,
+        source,
+        &overrides,
+        milestone_ids,
+    )
 }
 
 /// Run [`compose_core`] over the layer-aware [`CascadeStepSource`], then prefer the
@@ -282,8 +372,17 @@ fn compose_drained(
     workflow_id: &str,
     source: &CascadeStepSource<'_>,
     overrides: &ComposeOverrides,
+    milestone_ids: &[String],
 ) -> Result<ComposedWorkflow> {
-    let result = compose_core(repo_root, intent, pack, workflow_id, source, overrides);
+    let result = compose_core(
+        repo_root,
+        intent,
+        pack,
+        workflow_id,
+        source,
+        overrides,
+        milestone_ids,
+    );
     if result.is_err()
         && let Some(located) = source.take_error()
     {
@@ -329,6 +428,7 @@ fn compose_core(
     workflow_id: &str,
     source: &dyn StepSource,
     overrides: &ComposeOverrides,
+    milestone_ids: &[String],
 ) -> Result<ComposedWorkflow> {
     let workflow_bytes = read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
@@ -385,10 +485,12 @@ fn compose_core(
             task: None,
             catalog: selectable,
             store,
-            // No milestone in this single-`start` compose path — the fan-out
-            // list-source is fed only by the milestone-execution wiring (a later
-            // increment); empty here, the empty collection.
-            milestone: Vec::new(),
+            // The `fan-out` list-source (`{{milestone.tasks}}`). Empty for the
+            // single-`start` no-task path (the router); fed the milestone's
+            // id-sorted sub-task list by the `jigc milestone execute` dispatch —
+            // the lone production site feeding this non-empty (`milestone.rs`
+            // `run_execute`; `write-commands.md` → Executing the milestone).
+            milestone: milestone_ids.to_vec(),
         }
     };
     // Compose-time `workflow-refs` gate over the **post-phase-4** include list +
@@ -1150,8 +1252,8 @@ fn build_context(
 /// A [`StepSource`] that resolves step ids against the embedded pack. The MVP
 /// cascade has no project step overrides, so the pack-default layer owns every
 /// step — the engine consumes this mapping and stays a pure function of it.
-struct PackStepSource<'a> {
-    pack: &'a dyn PackSource,
+pub(crate) struct PackStepSource<'a> {
+    pub(crate) pack: &'a dyn PackSource,
 }
 
 impl StepSource for PackStepSource<'_> {
@@ -2010,6 +2112,7 @@ mod tests {
             "router",
             &source,
             &ComposeOverrides::structural(Vec::new()),
+            &[],
         )
         .expect("no-task compose");
 
@@ -2112,6 +2215,7 @@ mod tests {
             "flow",
             &source,
             &ComposeOverrides::structural(deltas),
+            &[],
         )
         .expect_err("the insert's anchor was removed by the earlier delta");
 
@@ -2169,6 +2273,7 @@ mod tests {
             "flow",
             &source,
             &ComposeOverrides::structural(deltas),
+            &[],
         )
         .expect_err("the delta introduces an include cycle");
 
@@ -2224,6 +2329,7 @@ mod tests {
             "flow",
             &source,
             &ComposeOverrides::structural(deltas),
+            &[],
         )
         .expect("flow 3a's different-id re-include composes clean");
 
@@ -2337,6 +2443,7 @@ mod tests {
                 "flow",
                 &source,
                 &ComposeOverrides::structural(deltas),
+                &[],
             )
             .expect("flow composes under the replace delta")
             .text
@@ -2405,6 +2512,7 @@ mod tests {
             "single-task",
             &source,
             &ComposeOverrides::structural(Vec::new()),
+            &[],
         )
         .expect("Form-D compose of a creates-task workflow");
 
@@ -2441,6 +2549,7 @@ mod tests {
             "does-not-exist",
             &source,
             &ComposeOverrides::structural(Vec::new()),
+            &[],
         )
         .expect_err("an unknown --workflow id must reject");
 

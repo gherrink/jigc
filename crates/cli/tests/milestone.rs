@@ -902,6 +902,34 @@ fn add_task_to_an_unknown_milestone_rejects() {
     );
 }
 
+#[test]
+fn execute_an_unknown_milestone_routes_a_block_and_composes_nothing() {
+    let repo = TempDir::new("execute-unknown");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `jigc milestone execute <unknown>` must reject before any compose: the
+    // unknown-milestone block routes to stderr, exits non-zero, and emits no
+    // composed view on stdout (`design/write-commands.md` → Executing the milestone).
+    let out = run_milestone(repo.path(), home.path(), &["execute", "no-such-milestone"]);
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        !out.status.success(),
+        "execute against an unknown milestone must exit non-zero; got {:?}",
+        out.status,
+    );
+    assert!(
+        stderr.contains("no-such-milestone") && stderr.contains("route:"),
+        "the unknown-milestone block must name it and carry a route; got:\n{stderr}",
+    );
+    // Composed nothing — no `Spawn:` directive, no composed view reached stdout.
+    assert!(
+        stdout.trim().is_empty(),
+        "an unknown-milestone execute must compose nothing (empty stdout); got:\n{stdout}",
+    );
+}
+
 /// Read the persisted minting-workflow id of a sub-task from its isolated working
 /// area (`.jigc/tasks/<sub>/workflow`) — the `read_workflow_id` companion of the
 /// engine mint, surfaced through the on-disk file the CLI threads `--workflow` into.

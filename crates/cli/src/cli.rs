@@ -128,10 +128,12 @@ pub enum Command {
     },
 
     /// The `milestone` work-unit surface — `jigc milestone <verb>` mints a
-    /// milestone (`create "<title>"`) and populates its task list (`add-task
-    /// <milestone-id> "<intent>"`), the substrate the by-task-id join consumes
-    /// (`design/write-commands.md` → Minting a milestone + its task list;
-    /// `design/storage.md` → The by-task-id join).
+    /// milestone (`create "<title>"`), populates its task list (`add-task
+    /// <milestone-id> "<intent>"`), and **executes** it (`execute <milestone-id>`
+    /// composes the `milestone-execution` workflow's fan-out over the id-sorted
+    /// sub-task list), the substrate the by-task-id join consumes
+    /// (`design/write-commands.md` → Minting a milestone + its task list / Executing
+    /// the milestone; `design/storage.md` → The by-task-id join).
     Milestone {
         #[command(subcommand)]
         verb: MilestoneCommand,
@@ -918,6 +920,27 @@ mod cli_parse {
                 },
             }
         );
+    }
+
+    #[test]
+    fn milestone_execute_parses_the_id() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "execute", "cache-rework"])
+            .expect("`jigc milestone execute <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Execute {
+                    milestone_id: "cache-rework".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_execute_requires_a_milestone_id() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "execute"])
+            .expect_err("`milestone execute` with no id must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

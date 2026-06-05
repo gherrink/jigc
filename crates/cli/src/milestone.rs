@@ -47,6 +47,13 @@ use std::process::{Command, ExitCode};
 /// sub-task is the caller's; here we only record it.
 const DEFAULT_SUB_TASK_WORKFLOW: &str = "sub-task";
 
+/// The workflow `jigc milestone execute` composes over a milestone work-unit. The
+/// pack's single `creates-task: false` milestone work-workflow today; a cascade knob
+/// can choose among several when a second one earns it — the same evolution
+/// `default-workflow`/the router followed (`design/write-commands.md` → Executing the
+/// milestone — `jigc milestone execute <id>`).
+const MILESTONE_EXECUTION_WORKFLOW: &str = "milestone-execution";
+
 /// The `jigc milestone <verb>` subcommand tree (`design/write-commands.md` →
 /// Minting a milestone + its task list).
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -86,6 +93,16 @@ pub enum MilestoneCommand {
     /// deterministic order the by-task-id join enumerates, surfaced through the
     /// binary (`design/storage.md` → The by-task-id join).
     ListTasks {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+    },
+    /// Compose the `creates-task: false` `milestone-execution` workflow over the
+    /// milestone work-unit, feeding its **id-sorted** sub-task list into
+    /// `{{milestone.tasks}}` so the `fan-out` step resolves it (one `Spawn:` directive
+    /// per sub-task, id-ordered). **Mints nothing** — the milestone and its sub-tasks
+    /// already exist; an unknown milestone routes a blocking finding before any
+    /// compose (`design/write-commands.md` → Executing the milestone).
+    Execute {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
@@ -132,6 +149,11 @@ impl MilestoneCommand {
         if let MilestoneCommand::Finalize { milestone_id } = self {
             return dispatch_finalize(cwd, &milestone_id);
         }
+        // `execute` composes a workflow and emits the composed view (not a one-line
+        // summary), so — like `join`/`finalize` — it has its own dispatch arm.
+        if let MilestoneCommand::Execute { milestone_id } = self {
+            return dispatch_execute(cwd, format, &milestone_id);
+        }
         let result = match self {
             MilestoneCommand::Create { title } => run_create(cwd, &title),
             MilestoneCommand::AddTask {
@@ -145,6 +167,7 @@ impl MilestoneCommand {
                 workflow,
             } => run_add_from_spec(cwd, &milestone_id, &spec_addr, &workflow),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
+            MilestoneCommand::Execute { .. } => unreachable!("`Execute` is handled above"),
             MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
             MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
         };
@@ -276,6 +299,49 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
         ids.len(),
         ids.join(", ")
     ))
+}
+
+/// Dispatch `jigc milestone execute <milestone-id>`: compose the milestone-execution
+/// workflow over the milestone's id-sorted sub-task list, render the composed view on
+/// stdout, and map it to the exit code. An unknown milestone (no area) or a blocking
+/// compose finding routes to stderr **before** any output and exits non-zero
+/// (`design/write-commands.md` → Executing the milestone).
+fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
+    match run_execute(cwd, milestone_id) {
+        Ok(view) => {
+            println!("{}", render::composed(format, &view));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// `jigc milestone execute <milestone-id>` — resolve the milestone work-unit (an
+/// unknown id routes a blocking finding **before** any compose, the `dispatch_finalize`
+/// precedent), read its **id-sorted** `TaskList::enumerate()`, and compose the
+/// `creates-task: false` `milestone-execution` workflow over it — feeding the id-sorted
+/// list into `{{milestone.tasks}}` so the `fan-out` step resolves it (one `Spawn:`
+/// directive per sub-task, id-ordered). The lone production site feeding
+/// [`ComposeContext::milestone`] non-empty; **mints nothing** (the milestone and its
+/// sub-tasks already exist).
+fn run_execute(cwd: &Path, milestone_id: &str) -> Result<engine::compose::ComposedWorkflow> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_root = repo_root.join(".jigc");
+    let dir = milestone_dir(&jigc_root, milestone_id);
+    if !dir.is_dir() {
+        bail!(
+            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
+        );
+    }
+    let list = read_task_list(&dir)
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    // Enumeration is id-sorted — the order the fan-out emits its `Spawn:` directives.
+    let ids = list.enumerate();
+    crate::start::execute_milestone_in_repo(&repo_root, MILESTONE_EXECUTION_WORKFLOW, &ids)
 }
 
 /// Dispatch `jigc milestone join <milestone-id>`: run the by-task-id join, render the
@@ -507,5 +573,148 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
     match finding.route {
         Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
         None => anyhow::anyhow!("{}", finding.message),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::start::{PackStepSource, execute_milestone_core};
+    use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
+    use std::collections::HashMap;
+    use std::path::Path;
+
+    /// An in-memory [`PackSource`] seeded from `(kind, id, bytes)` triples — the
+    /// `FixturePack` idiom the `start.rs` compose tests use, lets the milestone-feeding
+    /// dispatch drive [`execute_milestone_core`] over a fixture `fan-out` workflow with
+    /// no embedded pack and no real `milestone-execution` workflow (T3).
+    struct FixturePack(HashMap<(PackResourceKind, ResourceId), Vec<u8>>);
+
+    impl FixturePack {
+        fn with(triples: Vec<(PackResourceKind, &str, &str)>) -> Self {
+            FixturePack(
+                triples
+                    .into_iter()
+                    .map(|(kind, id, body)| {
+                        ((kind, ResourceId::from(id)), body.as_bytes().to_vec())
+                    })
+                    .collect(),
+            )
+        }
+    }
+
+    impl PackSource for FixturePack {
+        fn pack_version(&self) -> String {
+            "0.0.0".to_owned()
+        }
+
+        fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+            let mut ids: Vec<ResourceId> = self
+                .0
+                .keys()
+                .filter(|(k, _)| *k == kind)
+                .map(|(_, id)| id.clone())
+                .collect();
+            ids.sort();
+            ids
+        }
+
+        fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
+            self.0
+                .get(&(kind, id.clone()))
+                .cloned()
+                .ok_or_else(|| PackError::NotFound {
+                    kind,
+                    id: id.clone(),
+                })
+        }
+    }
+
+    /// A `creates-task: false` fixture workflow whose lone step is a `fan-out` over
+    /// `{{ milestone.tasks }}` running `workflow:sub-task` — the surface the
+    /// milestone-feeding dispatch composes, the M8 idiom for the (not-yet-built, T3)
+    /// real `milestone-execution` workflow.
+    fn fanout_pack() -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                "pack-id: dev\ndefault-workflow: milestone-execution\n",
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "milestone-execution",
+                "---\nwhen: fan out over a milestone's sub-tasks\ncreates-task: false\n---\n{{ include: step:implement-tasks }}\n{{ include: step:join-tasks }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "implement-tasks",
+                "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run:  workflow:sub-task\n---\nSpawn one sub-agent per sub-task.\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "join-tasks",
+                "---\njoin: true\n---\nMerge the fanned sub-task areas by task id.\n",
+            ),
+        ])
+    }
+
+    /// The T1 milestone-feeding contract: composing the `creates-task: false`
+    /// `milestone-execution` fixture workflow through [`execute_milestone_core`] with a
+    /// milestone's id-sorted sub-task list fed into `{{milestone.tasks}}` emits **one**
+    /// `` Spawn: `jigc workflow sub-task --task <id>` `` per id, **in id-sorted order**.
+    /// The feed is given in NON-id order (zebra before alpha) so the id-sorted emit is
+    /// not an accident of feed order — and (Validation hardening #7) the **reversed**
+    /// feed emits the byte-identical block, proving the resolver sorts on resolve, not a
+    /// caller pre-sort. The emit is read straight off the composed bytes the agent runs
+    /// — never a reconstructed equivalent.
+    #[test]
+    fn milestone_feeding_emits_one_id_sorted_spawn_per_subtask() {
+        let pack = fanout_pack();
+        let source = PackStepSource { pack: &pack };
+        // `repo_root` is unused on the no-task arm (it never reads HEAD); a throwaway
+        // path suffices — the compose feeds only the injected milestone list.
+        let repo_root = Path::new("/nonexistent-milestone-execute-repo");
+
+        // The id-sorted sub-task list, FED in non-id order.
+        let fed = vec!["zebra-fix".to_owned(), "alpha-fix".to_owned()];
+        let composed =
+            execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &fed)
+                .expect("milestone-execution composes over the fed sub-task list");
+
+        // Exactly one Spawn line per sub-task, naming the bare re-entry workflow + id.
+        let alpha = "Spawn: `jigc workflow sub-task --task alpha-fix`";
+        let zebra = "Spawn: `jigc workflow sub-task --task zebra-fix`";
+        assert!(
+            composed.text.contains(alpha) && composed.text.contains(zebra),
+            "the fan-out must emit one Spawn directive per sub-task; got:\n{}",
+            composed.text,
+        );
+        assert_eq!(
+            composed.text.matches("Spawn: `jigc workflow").count(),
+            2,
+            "exactly one Spawn per sub-task (no duplicates / extras); got:\n{}",
+            composed.text,
+        );
+        // id-sorted: alpha-fix must precede zebra-fix in the emitted bytes, even though
+        // it was fed zebra-then-alpha.
+        let alpha_at = composed.text.find(alpha).expect("alpha Spawn present");
+        let zebra_at = composed.text.find(zebra).expect("zebra Spawn present");
+        assert!(
+            alpha_at < zebra_at,
+            "the Spawn directives must be id-sorted (alpha before zebra), not in feed order; got:\n{}",
+            composed.text,
+        );
+
+        // Order-invariance (Validation hardening #7): the REVERSED feed emits the
+        // byte-identical composed output — the resolver sorts on resolve.
+        let reversed = vec!["alpha-fix".to_owned(), "zebra-fix".to_owned()];
+        let composed_rev =
+            execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &reversed)
+                .expect("the reversed feed composes");
+        assert_eq!(
+            composed.text, composed_rev.text,
+            "the fan-out emit must be byte-identical across divergent feed orders (id-sorted on resolve)",
+        );
     }
 }
