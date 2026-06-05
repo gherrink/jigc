@@ -189,6 +189,137 @@ pub fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
         .replace("{{task_id}}", task_id)
 }
 
+/// Which clause of the decidable spawn-template rule a template violated —
+/// the typed pointer the install error surfaces.
+///
+/// A small typed enum (not a `String` message) so the install path can route a
+/// precise pointer to the violated clause and the unit table can assert the
+/// *specific* clause (`DECISIONS.md` inc-4 planning pin (ii) — typed reason vs a
+/// `Result<(), String>`). The rule is purely lexical and decidable
+/// (`design/assistant-adapter.md` → Bind the spawn mechanism); each variant is one
+/// clause of that rule. `Display` carries the human pointer the install surfaces.
+/// Consumed by the install path (this increment's later task T3); exercised here
+/// by the unit clause-coverage table.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpawnTemplateReason {
+    /// The template does not literally contain the `{{task_id}}` placeholder.
+    MissingTaskIdPlaceholder,
+
+    /// The template does not literally contain the `{{workflow}}` placeholder.
+    MissingWorkflowPlaceholder,
+
+    /// The template carries no `jigc workflow … --task …` invocation.
+    MissingInvocation,
+
+    /// The template contains more than one newline (the ceiling is ≤ 1).
+    TooManyNewlines,
+
+    /// The template does not contain exactly one backticked span.
+    NotExactlyOneBacktickSpan,
+
+    /// The template carries a forbidden marker — a `<<author:` slot-author marker,
+    /// an ATX heading (`#`/`##` at a line start), or a `Run:`/`Spawn:`/`> `
+    /// directive marker — signalling re-authored workflow-body prose.
+    ForbiddenMarker,
+}
+
+impl fmt::Display for SpawnTemplateReason {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let pointer = match self {
+            SpawnTemplateReason::MissingTaskIdPlaceholder => {
+                "missing the required `{{task_id}}` placeholder"
+            }
+            SpawnTemplateReason::MissingWorkflowPlaceholder => {
+                "missing the required `{{workflow}}` placeholder"
+            }
+            SpawnTemplateReason::MissingInvocation => {
+                "missing the required `jigc workflow … --task …` invocation"
+            }
+            SpawnTemplateReason::TooManyNewlines => {
+                "contains more than one newline (the launch line must be a single line)"
+            }
+            SpawnTemplateReason::NotExactlyOneBacktickSpan => {
+                "must contain exactly one backticked span (the invocation)"
+            }
+            SpawnTemplateReason::ForbiddenMarker => {
+                "contains a forbidden marker (`<<author:`, an ATX heading, or a `Run:`/`Spawn:`/`> ` directive)"
+            }
+        };
+        write!(f, "spawn template {pointer}")
+    }
+}
+
+/// Validate a spawn launch template against the **decidable** install-time rule
+/// (`design/assistant-adapter.md` → Bind the spawn mechanism; `DECISIONS.md`
+/// 2026-06-04 — install-time launch-template validation = full, a decidable
+/// forbidden-pattern rule, not a heuristic).
+///
+/// A pure function of the **whole** (unrendered) template string — no I/O. The
+/// rule in one place, purely lexical and decidable (no judgement):
+///
+/// 1. both `{{task_id}}` and `{{workflow}}` literally present;
+/// 2. a `jigc workflow … --task …` invocation present;
+/// 3. **≤ 1 newline** total, **exactly one** backticked span, and **no** forbidden
+///    marker — a `<<author:` slot-author marker, an ATX heading (`#`/`##` at a line
+///    start), or a `Run:`/`Spawn:`/`> ` directive marker — anywhere.
+///
+/// On failure returns the [`SpawnTemplateReason`] naming the violated clause (the
+/// install error's precise pointer). Clauses are checked in rule order, so the
+/// first violated clause is reported.
+///
+/// Consumed by the install path (this increment's later task T3); exercised here
+/// by the unit clause-coverage table.
+#[allow(dead_code)]
+pub fn validate_spawn_template(template: &str) -> Result<(), SpawnTemplateReason> {
+    // (1) required placeholders, literally present.
+    if !template.contains("{{task_id}}") {
+        return Err(SpawnTemplateReason::MissingTaskIdPlaceholder);
+    }
+    if !template.contains("{{workflow}}") {
+        return Err(SpawnTemplateReason::MissingWorkflowPlaceholder);
+    }
+
+    // (2) the required invocation pattern: `jigc workflow` … `--task` (in order).
+    let invokes = template
+        .find("jigc workflow")
+        .and_then(|wf| template[wf..].find("--task").map(|_| ()))
+        .is_some();
+    if !invokes {
+        return Err(SpawnTemplateReason::MissingInvocation);
+    }
+
+    // (3a) ≤ 1 newline total.
+    if template.matches('\n').count() > 1 {
+        return Err(SpawnTemplateReason::TooManyNewlines);
+    }
+
+    // (3b) exactly one backticked span — an even, nonzero count of backticks with
+    // exactly one opening one (2 backticks = one span).
+    if template.matches('`').count() != 2 {
+        return Err(SpawnTemplateReason::NotExactlyOneBacktickSpan);
+    }
+
+    // (3c) no forbidden marker anywhere.
+    if template.contains("<<author:") || template.lines().any(line_carries_forbidden_marker) {
+        return Err(SpawnTemplateReason::ForbiddenMarker);
+    }
+
+    Ok(())
+}
+
+/// Whether a single line opens with an ATX heading (`#`/`##` …) or a
+/// `Run:`/`Spawn:`/`> ` directive marker, after stripping leading whitespace —
+/// the line-anchored half of the forbidden-marker clause of
+/// [`validate_spawn_template`].
+fn line_carries_forbidden_marker(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    trimmed.starts_with('#')
+        || trimmed.starts_with("Run:")
+        || trimmed.starts_with("Spawn:")
+        || trimmed.starts_with("> ")
+}
+
 /// Why loading an adapter profile failed.
 ///
 /// A small typed enum (not an `anyhow` message) because the caller must
@@ -536,6 +667,94 @@ pub fn load_profile(assistant: &str) -> Result<AdapterProfile, ProfileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shipped Claude Code spawn template **passes** `validate_spawn_template`:
+    /// it carries both placeholders, the `jigc workflow … --task` invocation, sits
+    /// on one line, and wraps exactly one backticked span in free prose with no
+    /// forbidden marker. This is the canonical-pass anchor for the decidable rule.
+    #[test]
+    fn shipped_spawn_template_passes_validation() {
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        validate_spawn_template(&profile.spawn().expect("spawn target").template)
+            .expect("the shipped template passes the decidable rule");
+    }
+
+    /// Each broken template **fails on the expected clause** — the full clause
+    /// coverage. A precise typed reason (the violated clause) is the install
+    /// error's pointer; the table asserts the *specific* clause, not merely that it
+    /// failed, so a clause swap can't pass by failing on a sibling clause.
+    #[test]
+    fn broken_spawn_templates_fail_on_their_clause() {
+        use SpawnTemplateReason::*;
+
+        let cases: &[(&str, SpawnTemplateReason)] = &[
+            // (1) missing {{task_id}}.
+            (
+                "Use your Task tool to run: `jigc workflow {{workflow}} --task X`",
+                MissingTaskIdPlaceholder,
+            ),
+            // (2) missing {{workflow}}.
+            (
+                "Use your Task tool to run: `jigc workflow W --task {{task_id}}`",
+                MissingWorkflowPlaceholder,
+            ),
+            // (3) no `jigc workflow … --task …` invocation (placeholders present so
+            //     the earlier clauses pass; the invocation verb is absent).
+            (
+                "Run the task `{{workflow}} for {{task_id}}` somewhere",
+                MissingInvocation,
+            ),
+            // (4) two newlines (one newline is allowed; two is over the ceiling).
+            (
+                "Use your Task tool to run:\n`jigc workflow {{workflow}} --task {{task_id}}`\n",
+                TooManyNewlines,
+            ),
+            // (5) zero backtick spans.
+            (
+                "Use your Task tool to run: jigc workflow {{workflow}} --task {{task_id}}",
+                NotExactlyOneBacktickSpan,
+            ),
+            // (6) two backtick spans.
+            (
+                "Use `your` Task tool: `jigc workflow {{workflow}} --task {{task_id}}`",
+                NotExactlyOneBacktickSpan,
+            ),
+            // (7) a <<author: slot-author marker.
+            (
+                "<<author: note >> `jigc workflow {{workflow}} --task {{task_id}}`",
+                ForbiddenMarker,
+            ),
+            // (8) an ATX heading at a line start.
+            (
+                "# Heading `jigc workflow {{workflow}} --task {{task_id}}`",
+                ForbiddenMarker,
+            ),
+            // (9a) a Run: directive marker.
+            (
+                "Run: `jigc workflow {{workflow}} --task {{task_id}}`",
+                ForbiddenMarker,
+            ),
+            // (9b) a Spawn: directive marker.
+            (
+                "Spawn: `jigc workflow {{workflow}} --task {{task_id}}`",
+                ForbiddenMarker,
+            ),
+            // (9c) a blockquote `> ` directive marker.
+            (
+                "> `jigc workflow {{workflow}} --task {{task_id}}`",
+                ForbiddenMarker,
+            ),
+        ];
+
+        for (template, expected) in cases {
+            let err = validate_spawn_template(template)
+                .expect_err(&format!("template should fail: {template:?}"));
+            assert_eq!(
+                &err, expected,
+                "template {template:?} failed on {err:?}, expected {expected:?}",
+            );
+        }
+    }
 
     /// Golden over the embedded `claude-code.yaml` bytes — the canonical profile
     /// contract. The file *is* the source of truth (no serializer here), so the
