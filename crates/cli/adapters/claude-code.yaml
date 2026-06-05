@@ -5,3 +5,5 @@ inject:
 allowlist:
   file: .claude/settings.json
   permit: ["jigc *"]
+spawn:
+  template: "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`"

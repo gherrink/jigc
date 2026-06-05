@@ -1,8 +1,8 @@
 //! Assistant-adapter generation from embedded profiles + the engine catalog.
 //!
-//! MVP scope: the bootstrap floor (by reference) + the `SessionStart` hook (the
-//! primary injection) + the `jigc` allowlist (the `Resume` hook and the spawn
-//! binding are post-MVP). See `design/assistant-adapter.md`.
+//! Scope: the bootstrap floor (by reference) + the `SessionStart` hook (the
+//! primary injection) + the `jigc` allowlist + the **spawn** launch template (the
+//! `Resume` hook is post-MVP). See `design/assistant-adapter.md`.
 //!
 //! Adapter **profiles** are embedded config-family data, the same pattern as the
 //! pack (`implementation/module-layout.md` → Adapter (in `cli`): "Profiles are
@@ -12,10 +12,10 @@
 //! surfaces: the inject **reference** target (the universal floor — a managed
 //! bootstrap file plus an `@`-import pointer), the inject **hook** target (the
 //! primary injection — a `SessionStart` event running the front door), and the
-//! **allowlist** target (the path-of-least-resistance the bootstrap depends on);
-//! the `Resume` hook and the **spawn** binding are post-MVP and intentionally
-//! absent from both the model and the shipped profile bytes, so what we test is
-//! what ships.
+//! **allowlist** target (the path-of-least-resistance the bootstrap depends on),
+//! and the **spawn** launch template (the assistant-specific fan-out launch line);
+//! the `Resume` hook is post-MVP and intentionally absent from both the model and
+//! the shipped profile bytes, so what we test is what ships.
 //!
 //! The bootstrap floor is **by reference, not inlined** (`DECISIONS.md`
 //! 2026-05-31 → adapter install reworked): `jigc setup` writes the canonical
@@ -37,9 +37,8 @@ static ADAPTERS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/adapters");
 /// and how* to wire into one coding assistant.
 ///
 /// Deserialized from the config-family YAML at `adapters/<assistant>.yaml`. The
-/// MVP surface is the inject **reference** floor + the **hook** + the
-/// **allowlist**; the `Resume` hook and the spawn launch template are post-MVP
-/// and absent here.
+/// surface is the inject **reference** floor + the **hook** + the **allowlist** +
+/// the **spawn** launch template; the `Resume` hook is post-MVP and absent here.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AdapterProfile {
@@ -55,6 +54,13 @@ pub struct AdapterProfile {
 
     /// Where and what to allowlist so `jigc` runs without friction.
     pub allowlist: Allowlist,
+
+    /// The **spawn** launch template — the assistant-specific bit the CLI renders
+    /// its fan-out dispatch (`workflow` + `task_id`) through to reach the
+    /// assistant's launch primitive (for Claude Code, a Task-tool invocation
+    /// running `jigc workflow … --task …`). The locked seam: CLI owns the payload,
+    /// the adapter owns the launch.
+    pub spawn: SpawnTarget,
 }
 
 impl AdapterProfile {
@@ -74,6 +80,16 @@ impl AdapterProfile {
             InjectTarget::Hook { hook } => Some(hook),
             InjectTarget::Reference { .. } => None,
         })
+    }
+
+    /// The profile's **spawn** launch template — the fan-out launch line the CLI
+    /// renders through to reach the assistant's launch primitive. Mirrors
+    /// [`reference`](Self::reference)/[`hook`](Self::hook) as the accessor for the
+    /// spawn surface (always present: `spawn` is a required field). Consumed by
+    /// the install-time validation + launch path (this increment's later tasks).
+    #[allow(dead_code)]
+    pub fn spawn(&self) -> Option<&SpawnTarget> {
+        Some(&self.spawn)
     }
 }
 
@@ -142,6 +158,35 @@ pub struct Allowlist {
 
     /// The command patterns to permit (e.g. `["jigc *"]`).
     pub permit: Vec<String>,
+}
+
+/// The spawn launch target: the launch `template` the CLI renders its fan-out
+/// dispatch through. The template carries the two lexical placeholders
+/// `{{workflow}}` and `{{task_id}}` (plain template tokens, **not** the engine
+/// `{{…}}` data-value grammar) wrapped in the assistant's launch primitive
+/// (`design/assistant-adapter.md` → Bind the spawn mechanism).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SpawnTarget {
+    /// The launch template — one line of wrapping prose around a backticked
+    /// `jigc workflow {{workflow}} --task {{task_id}}` invocation.
+    pub template: String,
+}
+
+/// Render the spawn launch line: a lexical two-token substitution of the
+/// `{{workflow}}` and `{{task_id}}` placeholders in `template` with `workflow`
+/// and `task_id`, leaving every other byte verbatim.
+///
+/// Plain string replacement, **not** the engine `{{…}}` data-value grammar — the
+/// spawn template's tokens are launch-line placeholders the adapter fills, never
+/// data-value refs (`design/assistant-adapter.md` → Bind the spawn mechanism). So
+/// it does not route through `data_value`/`compose`. Consumed by the launch path
+/// (this increment's later tasks).
+#[allow(dead_code)]
+pub fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
+    template
+        .replace("{{workflow}}", workflow)
+        .replace("{{task_id}}", task_id)
 }
 
 /// Why loading an adapter profile failed.
@@ -494,9 +539,9 @@ mod tests {
 
     /// Golden over the embedded `claude-code.yaml` bytes — the canonical profile
     /// contract. The file *is* the source of truth (no serializer here), so the
-    /// golden pins exactly the MVP bytes that ship: the inject reference floor +
-    /// the `SessionStart` hook + the allowlist, and nothing else (no `Resume`
-    /// hook / spawn — those are post-MVP).
+    /// golden pins exactly the bytes that ship: the inject reference floor + the
+    /// `SessionStart` hook + the allowlist + the **spawn** launch template, and
+    /// nothing else (no `Resume` hook — that stays post-MVP).
     #[test]
     fn claude_code_profile_bytes_are_canonical() {
         let bytes = include_str!("../adapters/claude-code.yaml");
@@ -508,14 +553,17 @@ mod tests {
         allowlist:
           file: .claude/settings.json
           permit: ["jigc *"]
+        spawn:
+          template: "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`"
         "###);
     }
 
-    /// The loader deserializes the shipped profile and exposes the MVP surfaces:
-    /// the inject **reference** target points `CLAUDE.md` at the managed
+    /// The loader deserializes the shipped profile and exposes its surfaces: the
+    /// inject **reference** target points `CLAUDE.md` at the managed
     /// `.jigc/AGENT.md` (the universal floor), the inject **hook** binds
     /// `SessionStart` to `jigc start` (the primary injection), the **allowlist**
-    /// file is `.claude/settings.json`, and the permit pattern is `jigc *`.
+    /// file is `.claude/settings.json` with the `jigc *` permit, and the **spawn**
+    /// launch template is the shipped one-line Claude Code template.
     #[test]
     fn claude_code_profile_loads_with_inject_and_allowlist_targets() {
         let profile = load_profile("claude-code").expect("the shipped profile loads");
@@ -555,6 +603,39 @@ mod tests {
             profile.allowlist.permit,
             vec!["jigc *".to_string()],
             "the allowlist permits the `jigc *` command pattern",
+        );
+
+        let spawn = profile
+            .spawn()
+            .expect("the profile declares a spawn launch template");
+        assert_eq!(
+            spawn.template,
+            "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`",
+            "the spawn template is the shipped one-line Claude Code launch template",
+        );
+    }
+
+    /// [`render_spawn`] is a lexical two-token substitution: it replaces both
+    /// `{{workflow}}` and `{{task_id}}` with the given values, leaving the rest of
+    /// the template (the wrapping prose and the backticks) verbatim. The rendered
+    /// launch line carries the backticked `jigc workflow … --task …` invocation
+    /// with no residual placeholder tokens.
+    #[test]
+    fn render_spawn_substitutes_both_tokens() {
+        let template = "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`";
+        let rendered = render_spawn(template, "sub-task", "alpha-fix");
+
+        assert_eq!(
+            rendered, "Use your Task tool to run: `jigc workflow sub-task --task alpha-fix`",
+            "both tokens are substituted, wrapping prose preserved",
+        );
+        assert!(
+            rendered.contains("`jigc workflow sub-task --task alpha-fix`"),
+            "the backticked invocation is present, got:\n{rendered}",
+        );
+        assert!(
+            !rendered.contains("{{workflow}}") && !rendered.contains("{{task_id}}"),
+            "no residual placeholder tokens, got:\n{rendered}",
         );
     }
 
