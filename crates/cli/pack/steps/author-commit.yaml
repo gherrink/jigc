@@ -1,0 +1,5 @@
+Author this sub-task's own commit prose. The parent milestone's finalize is
+the only commit boundary — never run git here. Stage the commit summary:
+
+{{ cli.set-commit-summary }}
+<<author: {{ task.commit#summary }}>>

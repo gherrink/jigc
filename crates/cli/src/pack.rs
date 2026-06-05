@@ -281,9 +281,10 @@ mod tests {
     /// order). The composer's includes resolve against exactly these — the four
     /// `single-task` steps, `implement-quick` (the ADR-free variant `quick-fix`
     /// includes), the router's `present-catalog` / `route-to-workflow`,
-    /// `author-spec` (the `plan` workflow's create-gated spec-authoring step), plus
+    /// `author-spec` (the `plan` workflow's create-gated spec-authoring step),
     /// `locate-from-spec` (the `implement-from-spec` workflow's spec-driven locate,
-    /// distinct from the shared `locate`).
+    /// distinct from the shared `locate`), plus `author-commit` (the fanned
+    /// `sub-task` workflow's finalize-free commit-authoring step).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -291,6 +292,7 @@ mod tests {
         assert_eq!(
             steps,
             vec![
+                ResourceId::from("author-commit"),
                 ResourceId::from("author-spec"),
                 ResourceId::from("finalize"),
                 ResourceId::from("implement"),

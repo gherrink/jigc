@@ -64,6 +64,7 @@ These are the selectable work-workflows, each with the situation it fits:
 - plan — draft the specification for upcoming work before writing any code
 - quick-fix — apply a small commit-only fix with no decision to record
 - single-task — implement one scoped change end-to-end
+- sub-task — deliver one fanned sub-agent unit within a parallel milestone
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:
@@ -1060,5 +1061,75 @@ fn serial_re_run_of_the_same_intent_blocks() {
     assert!(
         stderr.contains("add-rate-limiter"),
         "the serial-collision block must name the task; got:\n{stderr}",
+    );
+}
+
+#[test]
+fn form_d_sub_task_mints_and_composes_fan_out_free_without_finalize() {
+    let repo = TempDir::new("form-d-sub-task");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `--workflow sub-task <intent>`: the fanned target the `milestone-execution`
+    // fan-out references (Increment 5, T2). It is `creates-task: true`, so Form D
+    // mints + composes it — but it is **fan-out-free by construction**: its body is
+    // `locate` / `implement` / `author-commit` and carries **no `finalize` step**
+    // (the parent's `jigc milestone finalize` is the only commit boundary), so a
+    // sub-agent's workflow can never itself fan out
+    // (`workflow-dialect.md` → On-disk definition format — the fan-out-free sub-task).
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "sub-task", "add rate limiter"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow sub-task \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // sub-task is `creates-task: true`: Form D minted a working area + base pin.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("add-rate-limiter");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "sub-task is creates-task: true, so it must open .jigc/tasks/add-rate-limiter/ with a base pin",
+    );
+
+    // It emits the `locate` body (the intent reasoning) ...
+    assert!(
+        stdout.contains("Reason about the change. The intent is:")
+            && stdout.contains("add rate limiter"),
+        "the composed sub-task view must carry the locate body with the resolved intent; got:\n{stdout}",
+    );
+    // ... the `implement` body (the commit-summary authoring) ...
+    assert!(
+        stdout.contains("Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`"),
+        "the composed sub-task view must carry the implement step's commit-summary authoring; got:\n{stdout}",
+    );
+    // ... and the net-new `author-commit` body (authoring the commit prose).
+    assert!(
+        stdout.to_lowercase().contains("commit"),
+        "the composed sub-task view must carry the author-commit body; got:\n{stdout}",
+    );
+
+    // Fan-out-free, on the EMITTED bytes — the contract is what the agent runs.
+    // No `finalize` step: the composed view carries no `jigc task finalize` Run line
+    // (the parent's `jigc milestone finalize` is the only commit boundary).
+    assert!(
+        !stdout.contains("jigc task finalize"),
+        "sub-task is finalize-free — its composed view must emit no `jigc task finalize` Run line; got:\n{stdout}",
+    );
+    // No `fan-out`/`join` step: a sub-agent's workflow can never itself fan out, so
+    // the composed view emits no `Spawn:` directive (the fan-out emit class).
+    assert!(
+        !stdout.lines().any(|l| l.starts_with("Spawn:")),
+        "sub-task is fan-out-free — its composed view must emit no `Spawn:` directive; got:\n{stdout}",
     );
 }

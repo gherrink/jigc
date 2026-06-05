@@ -1,0 +1,8 @@
+---
+when: deliver one fanned sub-agent unit within a parallel milestone
+creates-task: true
+allows-create: [{type: adr, as: decision}]
+---
+{{ include: step:locate }}
+{{ include: step:implement }}
+{{ include: step:author-commit }}

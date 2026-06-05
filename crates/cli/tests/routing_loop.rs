@@ -117,6 +117,7 @@ const QUICK_FIX_WHEN: &str = "apply a small commit-only fix with no decision to 
 const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
 const IMPLEMENT_FROM_SPEC_WHEN: &str =
     "build from a committed spec whose acceptance criteria already exist";
+const SUB_TASK_WHEN: &str = "deliver one fanned sub-agent unit within a parallel milestone";
 
 // ─────────────────── the routing-loop acceptance path ───────────────────
 
@@ -274,6 +275,7 @@ fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
         ("quick-fix", words(QUICK_FIX_WHEN)),
         ("plan", words(PLAN_WHEN)),
         ("implement-from-spec", words(IMPLEMENT_FROM_SPEC_WHEN)),
+        ("sub-task", words(SUB_TASK_WHEN)),
     ];
     for (i, (a_id, a)) in selectables.iter().enumerate() {
         for (b_id, b) in &selectables[i + 1..] {
@@ -306,13 +308,15 @@ fn live_catalog(repo: &Path, home: &Path) -> Vec<(String, String)> {
 }
 
 #[test]
-fn step_5_the_live_router_catalog_lists_exactly_the_four_real_work_workflows() {
-    // The deliverable: "The router lists four work-workflows." A TEST-FIXTURE
+fn step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows() {
+    // The deliverable: the router lists the real work-workflows. A TEST-FIXTURE
     // workflow shipped in the embedded pack (`creates-task: true`) would leak into
     // this production orientation surface — invisible to the hand-listed sweeps
     // above, which never iterate the live catalog. Drive the REAL binary and assert
-    // the catalog the agent actually sees is exactly the four real workflows, with
-    // pairwise non-overlapping `when` hints over the LIVE list.
+    // the catalog the agent actually sees is exactly the real workflows, with
+    // pairwise non-overlapping `when` hints over the LIVE list. Increment 5 (T2) adds
+    // the fanned `sub-task` (`creates-task: true`), so it joins the catalog
+    // automatically per the settled selection rule — the list grows to FIVE.
     let repo = TempDir::new("live-catalog");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -324,8 +328,14 @@ fn step_5_the_live_router_catalog_lists_exactly_the_four_real_work_workflows() {
     sorted_ids.sort_unstable();
     assert_eq!(
         sorted_ids,
-        ["implement-from-spec", "plan", "quick-fix", "single-task"],
-        "the live router must list EXACTLY the four real work-workflows — no TEST-FIXTURE \
+        [
+            "implement-from-spec",
+            "plan",
+            "quick-fix",
+            "single-task",
+            "sub-task",
+        ],
+        "the live router must list EXACTLY the real work-workflows — no TEST-FIXTURE \
          leak; got:\n{ids:?}",
     );
 

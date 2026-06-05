@@ -200,22 +200,25 @@ fn workflow_reentry_composes_w_with_the_equality_guard() {
     );
 
     // (d) `jigc workflow sub-task --task <default>` — `<W>` (sub-task) == the recorded
-    //     mint workflow, so the equality guard passes; but the `sub-task` pack
-    //     workflow ships only in increment 5, so the compose surfaces the existing
-    //     `workflow-refs.unknown-workflow` block (fail-loud, exits non-zero).
-    let absent = run(
+    //     mint workflow, so the equality guard passes; with the `sub-task` pack
+    //     workflow now shipped (increment 5, T2) the compose succeeds, emitting the
+    //     fan-out-free sub-task view (locate / implement / author-commit) — and,
+    //     crucially, **no `jigc task finalize` line**, since the parent milestone's
+    //     finalize is the only commit boundary.
+    let composed_sub = run(
         repo.path(),
         home.path(),
         &["workflow", "sub-task", "--task", default_sub],
     );
     assert!(
-        !absent.status.success(),
-        "composing the not-yet-shipped `sub-task` pack workflow must exit non-zero",
+        composed_sub.status.success(),
+        "`jigc workflow sub-task --task <default>` must exit 0 now sub-task ships; stderr:\n{}",
+        String::from_utf8_lossy(&composed_sub.stderr),
     );
-    let absent_err = String::from_utf8_lossy(&absent.stderr);
+    let composed_sub_out = String::from_utf8(composed_sub.stdout).expect("utf-8 stdout");
     assert!(
-        absent_err.contains("sub-task"),
-        "the unknown-workflow block must name the missing `sub-task` workflow; got:\n{absent_err}",
+        !composed_sub_out.contains("jigc task finalize"),
+        "the fan-out-free sub-task view must emit no `jigc task finalize` line; got:\n{composed_sub_out}",
     );
 }
 
