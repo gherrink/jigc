@@ -65,6 +65,12 @@ pub struct WorkflowDef {
     /// Whether running this workflow mints a task. Default `true` when the
     /// front-matter omits the key (`workflow-dialect.md` → On-disk format).
     pub creates_task: bool,
+    /// Whether this workflow is selectable from the router/orientation catalog.
+    /// Default `true` when omitted. A `creates-task: true` workflow that can
+    /// never reach a commit boundary on its own (e.g. the fan-out `sub-task`,
+    /// whose only commit boundary is the parent milestone's `finalize`) sets
+    /// this `false` so the router never offers it as a top-level pick.
+    pub selectable: bool,
     /// The doctypes the agent may create during the task (default empty).
     pub allows_create: Vec<AllowsCreate>,
     /// The context roles bound from existing committed docs (default empty).
@@ -81,15 +87,17 @@ pub struct WorkflowDef {
 #[derive(Deserialize)]
 struct WorkflowFrontMatter {
     when: Option<String>,
-    #[serde(rename = "creates-task", default = "default_creates_task")]
+    #[serde(rename = "creates-task", default = "default_true")]
     creates_task: bool,
+    #[serde(default = "default_true")]
+    selectable: bool,
     #[serde(rename = "allows-create", default)]
     allows_create: Vec<AllowsCreate>,
     #[serde(default)]
     reads: Vec<Reads>,
 }
 
-fn default_creates_task() -> bool {
+fn default_true() -> bool {
     true
 }
 
@@ -1078,6 +1086,7 @@ pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
     Ok(WorkflowDef {
         when: meta.when.filter(|w| !w.trim().is_empty()),
         creates_task: meta.creates_task,
+        selectable: meta.selectable,
         allows_create: meta.allows_create,
         reads: meta.reads,
         includes,
@@ -2533,6 +2542,7 @@ Slightly higher write latency for resilience.
         WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: Vec::new(),
             reads: vec![Reads {
                 role: "spec".to_owned(),
@@ -3087,6 +3097,7 @@ allows-create: [{type: adr, as: decision}]
         {
           "when": "implement one scoped change end-to-end",
           "creates_task": true,
+          "selectable": true,
           "allows_create": [
             {
               "type": "adr",
@@ -3620,6 +3631,7 @@ reference — make your consequences explain what changes:
         let dangling = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["locate".to_owned(), "not-a-step".to_owned()],
@@ -3636,6 +3648,7 @@ reference — make your consequences explain what changes:
         let cyclic = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["a".to_owned()],
@@ -3675,6 +3688,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: false,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["fan".to_owned(), "join".to_owned(), "plain".to_owned()],
@@ -3720,6 +3734,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: false,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["outer".to_owned()],
@@ -3751,6 +3766,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["parent".to_owned()],
@@ -3786,6 +3802,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["parent".to_owned()],
@@ -3828,6 +3845,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["project-implement".to_owned()],
@@ -3858,6 +3876,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["a".to_owned()],
@@ -3885,6 +3904,7 @@ reference — make your consequences explain what changes:
         let def = WorkflowDef {
             when: None,
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["a".to_owned()],
@@ -3922,6 +3942,7 @@ reference — make your consequences explain what changes:
             let def = WorkflowDef {
                 when: None,
                 creates_task: true,
+                selectable: true,
                 allows_create: vec![],
                 reads: vec![],
                 includes: ids.clone(),
@@ -5209,6 +5230,7 @@ Follow the house rule.
         let def = WorkflowDef {
             when: None,
             creates_task: false,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
@@ -5261,6 +5283,7 @@ Follow the house rule.
         let def = WorkflowDef {
             when: None,
             creates_task: false,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],
@@ -5287,6 +5310,7 @@ Follow the house rule.
         WorkflowDef {
             when: None,
             creates_task: false,
+            selectable: true,
             allows_create: vec![],
             reads: vec![],
             includes: vec!["implement-tasks".to_owned(), "join-tasks".to_owned()],

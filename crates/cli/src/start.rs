@@ -115,7 +115,7 @@ fn provision_on_first_entry(
     dir: &Path,
     id: &str,
 ) -> Result<()> {
-    if !def.creates_task {
+    if !def.creates_task || !def.selectable {
         return Ok(());
     }
     // The skeleton's presence marks the area already-provisioned: a re-entry never
@@ -846,14 +846,19 @@ fn load_fills(project_config: &Path, slot_fills: &[SlotFillDelta]) -> Result<Res
 /// selection hint, in the pack's `list` order — the deterministic `catalog`
 /// data-value root (`workflow-dialect.md` → data-value roots / Workflow
 /// selection). A `creates-task: false` workflow (the router itself) is never a
-/// selectable entry, so the router never lists itself. A selectable workflow that
-/// declares no `when` is a definition bug, surfaced as a clear, id-bearing error.
+/// selectable entry, so the router never lists itself. A `creates-task: true`
+/// workflow that opts out with `selectable: false` (the fan-out `sub-task`, which
+/// can never reach a commit boundary on its own — its only `finalize` is the
+/// parent milestone's) is likewise excluded, so the router never offers a pick
+/// that cannot commit. A *selectable* workflow that declares no `when` is a
+/// definition bug, surfaced as a clear, id-bearing error; a non-selectable one
+/// need carry no `when`.
 pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogEntry>> {
     let mut entries = Vec::new();
     for id in pack.list(PackResourceKind::Workflows) {
         let bytes = read_pack(pack, PackResourceKind::Workflows, id.as_str())?;
         let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
-        if !def.creates_task {
+        if !def.creates_task || !def.selectable {
             continue;
         }
         let when = def.when.filter(|w| !w.trim().is_empty()).with_context(|| {
@@ -2059,6 +2064,59 @@ mod tests {
         }
     }
 
+    /// The fan-out `sub-task` ships `creates-task: true` (so a `jigc workflow
+    /// <W> --task` re-entry can compose it) but `selectable: false` (it ships no
+    /// finalize step — its only commit boundary is the parent milestone's). It
+    /// must therefore NOT appear in the router's selectable catalog over the REAL
+    /// embedded pack, while every legitimate selectable work-workflow still does.
+    #[test]
+    fn selectable_catalog_excludes_the_non_selectable_sub_task_over_the_embedded_pack() {
+        let pack = crate::pack::EmbeddedPack::new();
+        let catalog = selectable_workflows(&pack).expect("catalog builds");
+        let ids: Vec<&str> = catalog.iter().map(|e| e.id.as_str()).collect();
+
+        assert!(
+            !ids.contains(&"sub-task"),
+            "the finalize-less `sub-task` is `selectable: false` and must NOT be a \
+             selectable catalog entry; got {ids:?}",
+        );
+        for expected in ["single-task", "quick-fix", "plan", "implement-from-spec"] {
+            assert!(
+                ids.contains(&expected),
+                "selectable work-workflow `{expected}` must still appear; got {ids:?}",
+            );
+        }
+    }
+
+    /// A `selectable: false` workflow that carries no `when` hint must be skipped
+    /// silently — the "selectable workflow missing `when`" error applies only to a
+    /// workflow that is actually selectable. This guards the relaxation that lets
+    /// `sub-task` drop its now-unneeded `when:`.
+    #[test]
+    fn non_selectable_workflow_without_when_does_not_trip_the_missing_when_error() {
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Workflows,
+                "single-task",
+                "---\nwhen: implement one scoped change\ncreates-task: true\n---\n{{ include: step:noop }}\n",
+            ),
+            (
+                PackResourceKind::Workflows,
+                "sub-task",
+                "---\ncreates-task: true\nselectable: false\n---\n{{ include: step:noop }}\n",
+            ),
+        ]);
+        let catalog = selectable_workflows(&pack).expect(
+            "a `selectable: false` workflow with no `when` must not trip the missing-`when` error",
+        );
+        let ids: Vec<&str> = catalog.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            ["single-task"],
+            "only the selectable workflow is listed; the no-`when` non-selectable is skipped",
+        );
+    }
+
     /// The T4 done-criterion: composing a `creates-task: false` default workflow
     /// (a router whose body interpolates `{{catalog}}`) mints **nothing** — no
     /// `.jigc/tasks/<id>/` working area appears — and its output lists exactly the
@@ -2578,6 +2636,7 @@ mod tests {
         let def = WorkflowDef {
             when: Some("implement from a spec".to_owned()),
             creates_task: true,
+            selectable: true,
             allows_create: vec![],
             reads: vec![Reads {
                 role: "spec".to_owned(),

@@ -1,6 +1,6 @@
 ---
-when: deliver one fanned sub-agent unit within a parallel milestone
 creates-task: true
+selectable: false
 allows-create: [{type: adr, as: decision}]
 ---
 {{ include: step:locate }}

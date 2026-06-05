@@ -117,7 +117,6 @@ const QUICK_FIX_WHEN: &str = "apply a small commit-only fix with no decision to 
 const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
 const IMPLEMENT_FROM_SPEC_WHEN: &str =
     "build from a committed spec whose acceptance criteria already exist";
-const SUB_TASK_WHEN: &str = "deliver one fanned sub-agent unit within a parallel milestone";
 
 // ─────────────────── the routing-loop acceptance path ───────────────────
 
@@ -261,7 +260,8 @@ fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
     // workflows: the `when` hints must share no word longer than a stop-word, so
     // the agent has a real signal to pick on. With `plan` (Increment 3 T2) and
     // `implement-from-spec` (Increment 4 T4) joining the catalog the property must
-    // hold pairwise across all FOUR selectables.
+    // hold pairwise across all FOUR selectables. (`sub-task` is `selectable: false`
+    // — never a router pick — so it is not part of this property.)
     let lower = |s: &str| s.to_lowercase();
     let words = |s: &str| -> std::collections::HashSet<String> {
         lower(s)
@@ -275,7 +275,6 @@ fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
         ("quick-fix", words(QUICK_FIX_WHEN)),
         ("plan", words(PLAN_WHEN)),
         ("implement-from-spec", words(IMPLEMENT_FROM_SPEC_WHEN)),
-        ("sub-task", words(SUB_TASK_WHEN)),
     ];
     for (i, (a_id, a)) in selectables.iter().enumerate() {
         for (b_id, b) in &selectables[i + 1..] {
@@ -315,8 +314,9 @@ fn step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows() {
     // above, which never iterate the live catalog. Drive the REAL binary and assert
     // the catalog the agent actually sees is exactly the real workflows, with
     // pairwise non-overlapping `when` hints over the LIVE list. Increment 5 (T2) adds
-    // the fanned `sub-task` (`creates-task: true`), so it joins the catalog
-    // automatically per the settled selection rule — the list grows to FIVE.
+    // the fanned `sub-task` — but it is `selectable: false` (it ships no finalize
+    // step; its only commit boundary is the parent milestone's `finalize`), so it
+    // must NOT join the router catalog. The selectable list stays FOUR.
     let repo = TempDir::new("live-catalog");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -324,19 +324,18 @@ fn step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows() {
     let catalog = live_catalog(repo.path(), home.path());
 
     let ids: Vec<&str> = catalog.iter().map(|(id, _)| id.as_str()).collect();
+    assert!(
+        !ids.contains(&"sub-task"),
+        "the finalize-less `sub-task` is `selectable: false` and must NOT appear in \
+         the live router catalog; got:\n{ids:?}",
+    );
     let mut sorted_ids = ids.clone();
     sorted_ids.sort_unstable();
     assert_eq!(
         sorted_ids,
-        [
-            "implement-from-spec",
-            "plan",
-            "quick-fix",
-            "single-task",
-            "sub-task",
-        ],
-        "the live router must list EXACTLY the real work-workflows — no TEST-FIXTURE \
-         leak; got:\n{ids:?}",
+        ["implement-from-spec", "plan", "quick-fix", "single-task",],
+        "the live router must list EXACTLY the real selectable work-workflows — no \
+         TEST-FIXTURE and no non-selectable `sub-task` leak; got:\n{ids:?}",
     );
 
     // The non-overlap property must hold over the LIVE catalog, not a hand-picked

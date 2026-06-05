@@ -835,7 +835,6 @@ These are the selectable work-workflows, each with the situation it fits:
 - plan — draft the specification for upcoming work before writing any code
 - quick-fix — apply a small commit-only fix with no decision to record
 - single-task — implement one scoped change end-to-end
-- sub-task — deliver one fanned sub-agent unit within a parallel milestone
 
 Pick the workflow whose situation best fits the intent, then re-run with that
 choice and the original intent:
