@@ -16,6 +16,22 @@
 // rounds at validate) stop the run and surface a structured reason — prior
 // committed work stands.
 //
+// RESUMING — FIRST distinguish a HALT from an INTERRUPTION (they resume differently):
+//   - INTERRUPTION (the run was killed mid-flight — process died, session dropped):
+//     the in-flight agent() call never returned, so it is NOT cached — it is a natural
+//     cache-miss that re-runs live on a plain resume. But a killed agent may have left a
+//     DIRTY TREE (a partial write it hadn't committed, e.g. a planner's uncommitted
+//     DECISIONS entry). Before resuming: inspect `git status`, REVERT the partial/
+//     uncommitted work (the agent re-does it from a clean base), then plain-resume
+//     `Workflow({scriptPath: <snapshot>, resumeFromRunId})` — NO script surgery (the
+//     killed call cache-misses on its own; the committed prefix replays from cache).
+//   - HALT (the run returned `{status:'halted'}` cleanly, tree CLEAN): the halted call
+//     COMPLETED and its halt-result IS cached — a plain resume replays the cached halt
+//     and re-halts. This case needs the script-snapshot surgery in steps 1–5 below.
+//   (Tell them apart: a halt left a clean tree + a returned halt report; an interruption
+//   left no return value and often a dirty tree. M8 hit both — an interruption mid-inc-5
+//   planner, then later a genuine halt at inc-5 Plan.)
+//
 // RESUMING AFTER A HALT (read this before re-invoking — there is a sharp edge):
 //   1. Resolve the blocker ON MAIN, outside the workflow, but DELEGATE — the
 //      orchestrator decides, it does not code. The orchestrator (with the human)
