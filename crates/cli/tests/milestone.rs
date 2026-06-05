@@ -930,6 +930,165 @@ fn execute_an_unknown_milestone_routes_a_block_and_composes_nothing() {
     );
 }
 
+/// Extract every `` Spawn: `<launch-line>` `` directive's backtick-wrapped launch
+/// line from a composed view's bytes, **in emit order** — the agent-facing artifact
+/// (the bytes the adapter launches), never a reconstructed equivalent.
+fn spawn_lines(composed: &str) -> Vec<String> {
+    composed
+        .lines()
+        .filter_map(|l| l.strip_prefix("Spawn: `"))
+        .filter_map(|rest| rest.strip_suffix('`'))
+        .map(str::to_owned)
+        .collect()
+}
+
+#[test]
+fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
+    let repo = TempDir::new("execute-real");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    // `execute` resolves the cascade (phase-2/4/5 owners + pack defaults), so the
+    // project must be set up — an empty `.jigc/config/` layer is the marker.
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk config layer");
+
+    // Mint a milestone + two sub-tasks added in NON-id order (zebra before alpha) so the
+    // id-sorted Spawn emit is not an accident of insertion order.
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Zebra fix", "Alpha fix"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    let out = run_milestone(repo.path(), home.path(), &["execute", "cache-rework"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "`jigc milestone execute cache-rework` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The fan-out emits EXACTLY N (=2) `Spawn:` directives, one per sub-task, read
+    // straight off the composed bytes the agent runs — never a hand-built equivalent.
+    let spawns = spawn_lines(&stdout);
+    assert_eq!(
+        spawns,
+        vec![
+            "jigc workflow sub-task --task alpha-fix".to_owned(),
+            "jigc workflow sub-task --task zebra-fix".to_owned(),
+        ],
+        "the real `milestone-execution` workflow must emit one id-sorted `Spawn:` directive \
+         per sub-task (alpha before zebra, not add order); got:\n{stdout}",
+    );
+
+    // The join barrier prose sits AFTER the spawns and BEFORE the finalize Run line.
+    let join_at = stdout
+        .find("merged by task-id order")
+        .expect("the join-tasks step's barrier prose must compose into the view");
+    let last_spawn_at = stdout
+        .rfind("Spawn: `jigc workflow")
+        .expect("at least one Spawn directive");
+    let run_at = stdout
+        .find("Run: `jigc milestone finalize <MILESTONE_ID>`")
+        .expect("the milestone-finalize step must resolve a `Run:` line");
+    assert!(
+        last_spawn_at < join_at && join_at < run_at,
+        "the view must be fan-out → join barrier → finalize Run, in that order; got:\n{stdout}",
+    );
+
+    // Composition is fan-out-join-paired — a paired workflow raises no
+    // `workflow-refs.fan-out-join-paired` block on stdout/stderr.
+    assert!(
+        !stdout.contains("fan-out-join-paired"),
+        "a paired fan-out/join workflow must not raise the pairing block; got:\n{stdout}",
+    );
+}
+
+/// Mint `milestone` under `repo` with its sub-tasks added in `add_order`, set up the
+/// cascade layer, then run `jigc milestone execute` and return the composed stdout.
+/// Two callers feed divergent add orders to prove the Spawn emit is order-invariant.
+fn execute_with_add_order(repo: &Path, home: &Path, milestone: &str, add_order: &[&str]) -> String {
+    fs::create_dir_all(repo.join(".jigc").join("config")).expect("mk config layer");
+    assert!(
+        run_milestone(repo, home, &["create", milestone])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    let slug = milestone.to_lowercase().replace(' ', "-");
+    for intent in add_order {
+        assert!(
+            run_milestone(repo, home, &["add-task", &slug, intent])
+                .status
+                .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    let out = run_milestone(repo, home, &["execute", &slug]);
+    assert!(
+        out.status.success(),
+        "execute must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout).expect("utf-8 stdout")
+}
+
+#[test]
+fn milestone_execute_spawn_emit_is_byte_identical_across_divergent_add_orders() {
+    // Validation hardening #7: the same three sub-tasks added in two DIVERGENT orders
+    // (id-order and its reverse) must emit a byte-identical id-sorted `Spawn:` block —
+    // the enumeration sorts on resolve, never leaking add/read order into the output.
+    let home = TempDir::new("home");
+
+    let forward = TempDir::new("exec-order-fwd");
+    init_repo(forward.path());
+    let fwd_stdout = execute_with_add_order(
+        forward.path(),
+        home.path(),
+        "Cache rework",
+        &["Alpha fix", "Mid fix", "Zebra fix"],
+    );
+
+    let reverse = TempDir::new("exec-order-rev");
+    init_repo(reverse.path());
+    let rev_stdout = execute_with_add_order(
+        reverse.path(),
+        home.path(),
+        "Cache rework",
+        &["Zebra fix", "Mid fix", "Alpha fix"],
+    );
+
+    let fwd_spawns = spawn_lines(&fwd_stdout);
+    let rev_spawns = spawn_lines(&rev_stdout);
+    assert_eq!(
+        fwd_spawns,
+        vec![
+            "jigc workflow sub-task --task alpha-fix".to_owned(),
+            "jigc workflow sub-task --task mid-fix".to_owned(),
+            "jigc workflow sub-task --task zebra-fix".to_owned(),
+        ],
+        "the forward add order must emit id-sorted Spawn directives",
+    );
+    assert_eq!(
+        fwd_spawns, rev_spawns,
+        "the `Spawn:` block must be byte-identical across divergent add orders (id-sorted on \
+         resolve); forward:\n{fwd_stdout}\nreverse:\n{rev_stdout}",
+    );
+}
+
 /// Read the persisted minting-workflow id of a sub-task from its isolated working
 /// area (`.jigc/tasks/<sub>/workflow`) — the `read_workflow_id` companion of the
 /// engine mint, surfaced through the on-disk file the CLI threads `--workflow` into.

@@ -1,0 +1,7 @@
+---
+when: execute a planned milestone's sub-tasks in parallel, then commit as one boundary
+creates-task: false
+---
+{{ include: step:implement-tasks }}
+{{ include: step:join-tasks }}
+{{ include: step:milestone-finalize }}

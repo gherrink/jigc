@@ -54,6 +54,14 @@ commands:
       - { from: "task.id" }
     hint: "Bind the spec this work implements to the task's spec role."
 
+  - id: milestone-finalize
+    command: jigc
+    args:
+      - "milestone"
+      - "finalize"
+      - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
+    hint: "The milestone commit boundary — validate the merged join + commit per the squash knob."
+
   - id: recompose-task
     command: jigc
     args:

@@ -1,0 +1,7 @@
+---
+fan-out:
+  over: "{{ milestone.tasks }}"
+  run:  workflow:sub-task
+---
+Spawn a sub-agent per sub-task and implement it. Each runs in its own isolated
+working area keyed by task id.
