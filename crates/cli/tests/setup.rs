@@ -183,6 +183,41 @@ fn session_start_runs_jigc_start(settings: &serde_json::Value) -> bool {
         })
 }
 
+/// `jigc setup` over the SHIPPED profile (a valid spawn launch template) installs
+/// clean and exits 0 — the install-time spawn-template gate
+/// (`crate::setup::install` step 0; `design/assistant-adapter.md` → Bind the spawn
+/// mechanism) lets the good template through. This is the binary-level proof of the
+/// Deliverable's "setup with a good template" half: the gate runs in the real
+/// install path on every `jigc setup`, and a valid template does not block it.
+///
+/// The complementary "several rejected templates each fail install" half is proven
+/// at the `install()` function boundary the binary calls — `setup.rs`'s unit module
+/// (`install_rejects_broken_spawn_template_with_clause_route`, exercising the
+/// blocking `setup.spawn-template` finding) plus T2's full clause-coverage table —
+/// because the binary loads only the embedded (valid) profile and the MVP ships no
+/// profile-source override (the `FilesystemPack` seam is pack-scoped, not adapter;
+/// `design/overrides.md` → the `FilesystemPack` seam). A net-new adapter-profile
+/// override seam is out of this increment's grounded surface (planner SCOPE-HONESTY).
+#[test]
+fn setup_with_valid_spawn_template_installs_clean() {
+    let repo = TempDir::new("spawn-gate");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_setup(repo.path(), home.path());
+    assert!(
+        out.status.success(),
+        "`jigc setup` over the shipped (valid) spawn template must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("setup.spawn-template"),
+        "a valid spawn template must not trip the install-time gate; got stderr:\n{stderr}",
+    );
+}
+
 #[test]
 fn start_renders_clean_orientation_after_setup() {
     let repo = TempDir::new("orient");

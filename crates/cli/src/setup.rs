@@ -79,6 +79,22 @@ pub fn run(start: &Path) -> Result<SetupSummary, Finding> {
 /// to a blocking `setup.*` finding with a route. The testable core of [`run`]
 /// (no location step).
 fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, Finding> {
+    // 0. Gate the spawn launch template against the decidable install-time rule
+    //    *before* any write, so a broken template fails install touching nothing
+    //    (`design/assistant-adapter.md` → Bind the spawn mechanism: "A broken
+    //    template is an install-time error … the install does not complete"). The
+    //    violated clause's pointer rides as the route.
+    if let Err(reason) = adapter::validate_spawn_template(&profile.spawn.template) {
+        return Err(Finding::block(
+            "setup.spawn-template",
+            format!(
+                "the `{}` adapter profile's spawn launch template is invalid: {reason}",
+                profile.assistant
+            ),
+            reason.to_string(),
+        ));
+    }
+
     let reference = profile.reference().ok_or_else(|| {
         Finding::block(
             "setup.profile-incomplete",
@@ -198,6 +214,56 @@ mod tests {
         assert!(
             dir.path().join(".claude/settings.json").exists(),
             "install must write .claude/settings.json",
+        );
+    }
+
+    /// Install over the SHIPPED profile (a valid spawn template) does not trip the
+    /// spawn-template gate — the success path is unbroken (this asserts the gate
+    /// lets the shipped template through; the full write success is covered above).
+    #[test]
+    fn install_accepts_shipped_spawn_template() {
+        let dir = TempDir::new();
+        let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
+
+        install(dir.path(), &profile).expect("the shipped valid spawn template installs clean");
+    }
+
+    /// Install over a profile whose spawn template violates the decidable rule
+    /// fails *before* any write with a single blocking `setup.spawn-template`
+    /// finding whose route names the violated clause (the `SpawnTemplateReason`
+    /// pointer). The gate runs ahead of the host-file writes, so a broken template
+    /// touches nothing on disk.
+    #[test]
+    fn install_rejects_broken_spawn_template_with_clause_route() {
+        use engine::finding::Severity;
+
+        let dir = TempDir::new();
+        let mut profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
+        // Strip the `{{task_id}}` placeholder — the first decidable clause.
+        profile.spawn.template =
+            "Use your Task tool to run: `jigc workflow {{workflow}} --task X`".to_string();
+
+        let finding =
+            install(dir.path(), &profile).expect_err("a broken spawn template must fail install");
+
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.code, "setup.spawn-template",
+            "the block must be the spawn-template family code; got `{}`",
+            finding.code,
+        );
+        let route = finding
+            .route
+            .as_deref()
+            .expect("a hard block must carry a route");
+        assert!(
+            route.contains(&adapter::SpawnTemplateReason::MissingTaskIdPlaceholder.to_string()),
+            "the route must name the violated clause; got `{route}`",
+        );
+        // Nothing was written: the gate runs before the host-file writes.
+        assert!(
+            !dir.path().join("CLAUDE.md").exists(),
+            "a rejected template must touch no host files",
         );
     }
 

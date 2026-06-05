@@ -198,9 +198,8 @@ pub fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
 /// `Result<(), String>`). The rule is purely lexical and decidable
 /// (`design/assistant-adapter.md` → Bind the spawn mechanism); each variant is one
 /// clause of that rule. `Display` carries the human pointer the install surfaces.
-/// Consumed by the install path (this increment's later task T3); exercised here
-/// by the unit clause-coverage table.
-#[allow(dead_code)]
+/// Consumed by the install path (`setup::install`); exercised here by the unit
+/// clause-coverage table.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpawnTemplateReason {
     /// The template does not literally contain the `{{task_id}}` placeholder.
@@ -268,9 +267,8 @@ impl fmt::Display for SpawnTemplateReason {
 /// install error's precise pointer). Clauses are checked in rule order, so the
 /// first violated clause is reported.
 ///
-/// Consumed by the install path (this increment's later task T3); exercised here
-/// by the unit clause-coverage table.
-#[allow(dead_code)]
+/// Consumed by the install path (`setup::install`); exercised here by the unit
+/// clause-coverage table.
 pub fn validate_spawn_template(template: &str) -> Result<(), SpawnTemplateReason> {
     // (1) required placeholders, literally present.
     if !template.contains("{{task_id}}") {
