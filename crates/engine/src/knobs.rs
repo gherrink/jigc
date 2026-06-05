@@ -238,6 +238,9 @@ mod tests {
         // this list, no more, no less.
         let expected: Vec<(&str, &str)> = vec![
             ("default-workflow", "router"),
+            // finalize.fan-out.squash — the milestone commit-shaping knob (M8),
+            // bool, default true (the M7 single-aggregate form).
+            ("finalize.fan-out.squash", "true"),
             // commit-rendering (2, advisory-by-default convention checks).
             (
                 "validation.commit-rendering.line-limit-body.severity",
@@ -356,6 +359,53 @@ mod tests {
             .expect("a declared enum member passes");
         check_value(field, &Value::Scalar("not-a-workflow".to_owned()))
             .expect_err("a non-member is rejected");
+    }
+
+    /// The `finalize.fan-out.squash` knob (M8) is a `bool` that resolves `true` by
+    /// default through the cascade and is **settable to `false`** by a project
+    /// `scalar-set` — the read-side knob the milestone commit boundary reads to
+    /// choose one aggregate commit (`true`) vs per-sub-task commits (`false`). A
+    /// tunable knob (no floor), adjudicated by the same `check_value` (a bool
+    /// accepts `true`/`false`, rejects anything else).
+    #[test]
+    fn squash_knob_defaults_true_and_is_settable_to_false() {
+        use crate::cascade::OverrideLayer;
+        use crate::field_block::Value;
+
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        // It is a declared `bool` knob with no floor (tunable).
+        let field = knobs
+            .field("finalize.fan-out.squash")
+            .expect("squash is a declared knob");
+        assert_eq!(field.ty, FieldType::Bool);
+        assert!(
+            knobs.floors().get("finalize.fan-out.squash").is_none(),
+            "squash is tunable — it carries no demotion-lock floor",
+        );
+
+        // Default: resolves `true` with no override layer (the M7 aggregate form).
+        let pack = PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new());
+        let default = cascade::resolve(&pack, None, None).expect("resolves");
+        assert_eq!(
+            default.scalar("finalize.fan-out.squash"),
+            Some("true"),
+            "squash resolves true by default",
+        );
+
+        // Settable: a project `scalar-set finalize.fan-out.squash false` resolves false.
+        let project = OverrideLayer::empty().scalar_set("finalize.fan-out.squash", "false");
+        let overridden =
+            cascade::resolve(&pack, None, Some(&project)).expect("a settable knob resolves");
+        assert_eq!(
+            overridden.scalar("finalize.fan-out.squash"),
+            Some("false"),
+            "squash is settable to false via a project scalar-set",
+        );
+
+        // The bool type adjudicates via the same `check_value`: true/false pass, else reject.
+        check_value(field, &Value::Scalar("false".to_owned())).expect("`false` is a valid bool");
+        check_value(field, &Value::Scalar("maybe".to_owned())).expect_err("a non-bool is rejected");
     }
 
     /// A knob declaration with no `default` cannot seed the base surface, so it is

@@ -679,6 +679,68 @@ fn head_message(repo: &Path) -> String {
     String::from_utf8(out.stdout).unwrap()
 }
 
+/// The subject line (first line) of each of the most recent `n` commits, **oldest
+/// first** — the committed message *sequence* the `squash: false` determinism
+/// assertion compares across feed orders. `%s` is the subject; `--reverse` flips
+/// `git log`'s newest-first order so the list reads in commit (id-sorted) order.
+fn recent_subjects(repo: &Path, n: u32) -> Vec<String> {
+    let out = Command::new("git")
+        .args(["log", &format!("-{n}"), "--reverse", "--format=%s"])
+        .current_dir(repo)
+        .output()
+        .expect("git log subjects");
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The `git ls-tree -r --name-only HEAD` listing — every path in HEAD's tree, sorted
+/// — the committed *tree* the `squash: false` determinism assertion compares across
+/// feed orders (paired with the message sequence).
+fn head_tree_paths(repo: &Path) -> Vec<String> {
+    let out = Command::new("git")
+        .args(["ls-tree", "-r", "--name-only", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("git ls-tree");
+    let mut paths: Vec<String> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    paths.sort();
+    paths
+}
+
+/// Write `.jigc/config/manifest.yaml` setting the `finalize.fan-out.squash` knob to
+/// `false` — the project override that opts a milestone finalize into per-sub-task
+/// commits (the `scalar:` block shape `load_project_layer` reads).
+fn set_squash_false(repo: &Path) {
+    let config = repo.join(".jigc").join("config");
+    fs::create_dir_all(&config).expect("mk config layer");
+    fs::write(
+        config.join("manifest.yaml"),
+        "scalar:\n  finalize.fan-out.squash: false\n",
+    )
+    .expect("write manifest");
+}
+
+/// Stage a sub-task's **authored** `commit:<sub>` doc body in its working area
+/// `.jigc/tasks/<sub>/docs/commit:<sub>.md` — the transient doc a fanned-out sub-agent
+/// authors (a `feat` header + a per-sub-task summary), the prose the `squash: false`
+/// per-sub-task render reads. The commit doc is workflow-provisioned `created` (the
+/// `provision_commit_doc` precedent, `DECISIONS.md` 2026-06-04), so its provenance bit
+/// is recorded like any staged doc — it is transient (no `location:`), so the join
+/// never promotes it.
+fn stage_subtask_commit(repo: &Path, sub: &str, summary: &str) {
+    let body = format!(
+        "---\ntype: feat\n---\n\n# {sub}\n\n## Summary\n\n{summary}\n\n## Body\n\n\n\n## Trailers\n"
+    );
+    stage_doc(repo, sub, &format!("commit:{sub}"), &body, "created");
+}
+
 #[test]
 fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
     let repo = TempDir::new("finalize-ok");
@@ -806,6 +868,145 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
             .join("cache-rework")
             .exists(),
         "the milestone area must be removed after a landed commit",
+    );
+}
+
+/// Mint `Cache rework` + two sub-tasks under `repo` in the given `add_order`, opt the
+/// project into `squash: false`, stage in each sub-area a clean disjoint persisted ADR
+/// (so the parent aggregate has a real tree diff) + that sub-task's **authored**
+/// `commit:<sub>` doc, then run `jigc milestone finalize`. Returns the finalize output.
+/// Two callers feed divergent add orders to prove the committed sequence is
+/// order-invariant. id-sorted sub-tasks: [area-low, area-zed].
+fn finalize_squash_false(repo: &Path, home: &Path, add_order: &[&str]) -> std::process::Output {
+    set_squash_false(repo);
+    assert!(
+        run_milestone(repo, home, &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in add_order {
+        assert!(
+            run_milestone(repo, home, &["add-task", "cache-rework", intent])
+                .status
+                .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    // Each sub-task: a clean disjoint persisted ADR (distinct slugs — no collision) +
+    // its own authored commit doc with distinct prose.
+    stage_doc(
+        repo,
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+        "edited-from-base",
+    );
+    stage_subtask_commit(repo, "area-low", "rework the low cache path");
+    stage_doc(
+        repo,
+        "area-zed",
+        "adr:zed-policy",
+        &adr_plain("Zed policy"),
+        "edited-from-base",
+    );
+    stage_subtask_commit(repo, "area-zed", "rework the zed cache path");
+
+    run_milestone(repo, home, &["finalize", "cache-rework"])
+}
+
+#[test]
+fn milestone_finalize_squash_false_lands_n_plus_one_commits_in_id_order() {
+    let repo = TempDir::new("finalize-squash-false");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let before = rev_list_count(repo.path());
+    let finalized = finalize_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize` (squash:false) must exit 0; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // N+1 = 3 new commits: one per sub-task (2) + the parent aggregate.
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 3,
+        "squash:false must land N+1 commits (2 sub-task + 1 parent)",
+    );
+
+    // The committed SEQUENCE (oldest first): the two sub-task authored subjects in
+    // id-sorted order (area-low before area-zed, NOT add order), then the parent's
+    // synthesized aggregate subject.
+    let subjects = recent_subjects(repo.path(), 3);
+    assert_eq!(
+        subjects,
+        vec![
+            "feat: rework the low cache path".to_owned(),
+            "feat: rework the zed cache path".to_owned(),
+            "Finalize milestone cache-rework (2 sub-tasks)".to_owned(),
+        ],
+        "the commit sequence must be the id-sorted sub-task messages then the parent aggregate",
+    );
+
+    // The parent aggregate landed the merged tree: both promoted ADRs are committed.
+    let tracked = head_tree_paths(repo.path());
+    assert!(
+        tracked.contains(&"decisions/low-policy.md".to_owned())
+            && tracked.contains(&"decisions/zed-policy.md".to_owned()),
+        "the parent aggregate must commit the merged persisted docs; got:\n{tracked:?}",
+    );
+
+    // Clean tree + the milestone area removed after the boundary.
+    let (_, status) = git_state(repo.path());
+    assert!(
+        status.trim().is_empty(),
+        "the working tree must be clean after the squash:false boundary; got:\n{status}",
+    );
+}
+
+#[test]
+fn milestone_finalize_squash_false_sequence_is_byte_identical_across_feed_orders() {
+    // Validation hardening #7: the SAME two sub-tasks (each authoring its own commit doc)
+    // finalized under two DIVERGENT add orders (id-order and its reverse) must land a
+    // byte-identical committed sequence — the per-sub-task commit messages AND the parent
+    // tree, ordered by task id, never by add/feed order.
+    let home = TempDir::new("home");
+
+    let forward = TempDir::new("squash-false-fwd");
+    init_repo(forward.path());
+    let fwd = finalize_squash_false(forward.path(), home.path(), &["Area low", "Area zed"]);
+    assert!(fwd.status.success(), "forward finalize must exit 0");
+
+    let reverse = TempDir::new("squash-false-rev");
+    init_repo(reverse.path());
+    let rev = finalize_squash_false(reverse.path(), home.path(), &["Area zed", "Area low"]);
+    assert!(rev.status.success(), "reverse finalize must exit 0");
+
+    // The message sequence (subjects, oldest first) is byte-identical across feed orders.
+    let fwd_subjects = recent_subjects(forward.path(), 3);
+    let rev_subjects = recent_subjects(reverse.path(), 3);
+    assert_eq!(
+        fwd_subjects,
+        vec![
+            "feat: rework the low cache path".to_owned(),
+            "feat: rework the zed cache path".to_owned(),
+            "Finalize milestone cache-rework (2 sub-tasks)".to_owned(),
+        ],
+        "the forward feed must land the id-sorted commit sequence",
+    );
+    assert_eq!(
+        fwd_subjects, rev_subjects,
+        "the committed message sequence must be byte-identical across divergent feed orders",
+    );
+
+    // The committed tree (the parent aggregate's promoted docs) is identical too.
+    assert_eq!(
+        head_tree_paths(forward.path()),
+        head_tree_paths(reverse.path()),
+        "the committed tree must be byte-identical across divergent feed orders",
     );
 }
 

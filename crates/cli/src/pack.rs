@@ -438,6 +438,17 @@ mod tests {
           of: [router, single-task, quick-fix, plan, implement-from-spec]
           default: router
 
+        # --- finalize.fan-out.* — the milestone commit-shaping knob (M8) ---
+        # squash: how a fan-out (milestone) finalize shapes the commit. `true`
+        # (default) = ONE aggregate commit with the CLI-synthesized structural
+        # message (the M7 form, byte-identical to the no-knob path). `false` = one
+        # commit per sub-task in id-sorted order rendering each sub-task's authored
+        # commit doc, plus the parent's synthesized aggregate. A tunable knob (no
+        # floor). See finalize.md → `fan-out` finalize (the two squash modes).
+        finalize.fan-out.squash:
+          type: bool
+          default: "true"
+
         # --- per-probe severity defaults (M4, retained — additive) ---
         validation.workflow-refs.severity:
           type: enum

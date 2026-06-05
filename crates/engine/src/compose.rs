@@ -2916,6 +2916,25 @@ A failed charge retries with exponential backoff, capped at five attempts.
               ],
               "hint": "Run validate + commit. One task → one commit."
             },
+            "milestone-finalize": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "milestone"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "finalize"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "milestone_id",
+                  "hint": "the milestone:<slug> id being executed"
+                }
+              ],
+              "hint": "The milestone commit boundary — validate the merged join + commit per the squash knob."
+            },
             "recompose-task": {
               "command": "jigc",
               "args": [

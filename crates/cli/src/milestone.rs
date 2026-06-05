@@ -474,6 +474,18 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
     let message = synthesized_message(milestone_id, &list);
 
+    // The `finalize.fan-out.squash` knob (`design/finalize.md` → `fan-out` finalize) shapes
+    // the commit. Resolve it from the project cascade (a missing `.jigc/config/` layer
+    // yields the pack-default base — `squash` defaults `true`, the M7 single-aggregate form
+    // whose bytes stay byte-identical to today, the read-side determinism guard). `false`
+    // lays down one commit per sub-task in **id-sorted order** (rendering each sub-task's
+    // own authored `commit:<sub-id>` doc) BEFORE the parent's synthesized aggregate — the
+    // commit *sequence* is a pure function of the id set (hardening #7), even though each
+    // sub-task message carries the sub-agent's authored prose (the CLI owns the ordering).
+    // Read here (before any sub-task commit moves HEAD); the per-sub-task commits are laid
+    // down only AFTER the planner's preflight validates base == HEAD below.
+    let squash = resolve_squash(&repo_root)?;
+
     // The diff-presence signal the planner's empty-commit guard needs: the materialized
     // docs that will be promoted, plus any working-tree change / untracked file from base.
     let head = git_head(&repo_root)?;
@@ -502,10 +514,80 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
             }
         };
 
+    // `squash: false` — lay down the per-sub-task commits in id order now (the planner's
+    // preflight has validated base == HEAD against the pre-boundary HEAD; these commits then
+    // advance HEAD, and the parent aggregate that follows re-checks nothing — the boundary's
+    // base invariant was the planner's call). On `true` this is skipped, leaving the single
+    // CLI-synthesized aggregate exactly as M7 shipped it (the default-path determinism guard).
+    if !squash {
+        commit_per_subtask_messages(&repo_root, &dir, milestone_id, &list, &schemas)?;
+    }
+
     // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
     // The message temp file is written into the (gitignored) milestone area; the milestone
     // area is the cleanup dir removed on a landed commit.
     crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)
+}
+
+/// The `commit` doc type the per-sub-task render addresses — a sub-task's authored
+/// commit doc is `commit:<sub-id>` (the `commit:<task-id>` provisioning convention),
+/// the transient type whose sink is the git message.
+const COMMIT_TYPE: &str = "commit";
+
+/// Resolve the `finalize.fan-out.squash` knob for the project at `repo_root` —
+/// `true` (the pack default) keeps the single CLI-synthesized aggregate commit; `false`
+/// opts into per-sub-task commits. A missing `.jigc/config/` layer resolves to the
+/// pack-default base (`true`), so the no-knob/default path is byte-identical to today
+/// (`design/overrides.md` → Read-side determinism; the `task validate`/`finalize`
+/// cascade-resolve idiom, `crate::start::resolve_severity_cascade`).
+fn resolve_squash(repo_root: &Path) -> Result<bool> {
+    let project_config = repo_root.join(".jigc").join("config");
+    let pack = make_pack();
+    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    // The knob is a declared `bool`; the closed surface guarantees it resolves. Anything
+    // other than `true` is the opt-in `false` (the knob's enum-of-bool is `true`/`false`).
+    Ok(resolved.scalar_required("finalize.fan-out.squash")? == "true")
+}
+
+/// Lay down **one commit per sub-task in id-sorted order** for the `squash: false` mode
+/// (`design/finalize.md` → `fan-out` finalize). The engine renders each sub-task's
+/// authored `commit:<sub-id>` doc into its message in id order
+/// ([`engine::finalize::render_subtask_messages`] over the **id-sorted**
+/// [`engine::milestone::TaskList::enumerate`] ids); the CLI commits each with
+/// `--allow-empty` (the merged tree lands in the parent aggregate that follows, so a
+/// sub-task commit is intentionally tree-empty yet a real commit in the deterministic
+/// sequence). A sub-task missing its authored commit doc routes the engine's blocking
+/// render finding and commits nothing further.
+fn commit_per_subtask_messages(
+    repo_root: &Path,
+    msg_tmp_dir: &Path,
+    milestone_id: &str,
+    list: &engine::milestone::TaskList,
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<()> {
+    let commit_schema = schemas
+        .get(COMMIT_TYPE)
+        .with_context(|| format!("the embedded pack ships no `{COMMIT_TYPE}` schema"))?;
+    let tasks_root = repo_root.join(".jigc").join("tasks");
+    // Id-sorted ids — the deterministic order the commit sequence is laid down in.
+    let ids = list.enumerate();
+    let messages = engine::finalize::render_subtask_messages(&ids, &tasks_root, commit_schema)
+        .map_err(|findings| {
+            // The first blocking finding carries the route (the `dispatch_finalize` envelope).
+            findings
+                .into_iter()
+                .next()
+                .map(finding_to_err)
+                .unwrap_or_else(|| {
+                    anyhow::anyhow!(
+                        "could not render a sub-task commit for milestone `{milestone_id}`"
+                    )
+                })
+        })?;
+    for message in &messages {
+        crate::task::commit_empty_message(repo_root, msg_tmp_dir, message)?;
+    }
+    Ok(())
 }
 
 /// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including

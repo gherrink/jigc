@@ -267,6 +267,47 @@ pub fn plan_milestone_finalize(
     ))
 }
 
+/// Render the **per-sub-task** authored commit messages for the `squash: false`
+/// fan-out finalize mode (`design/finalize.md` → `fan-out` finalize: "one commit
+/// per sub-task in task-id order … the parent finalize renders each in id order").
+///
+/// Given the sub-task ids (the caller passes them **already id-sorted** —
+/// [`crate::milestone::TaskList::enumerate`] order, the order the commit *sequence*
+/// is laid down in), the `tasks/` namespace root they live under, and the
+/// cascade-resolved `commit` doc schema, read each sub-task's authored
+/// `commit:<sub-id>` doc (`<tasks_root>/<sub-id>/docs/commit:<sub-id>.md` — a
+/// sub-task's commit slug is its own task id, the `commit:<task-id>` provisioning
+/// convention) and render it into its git-message string via
+/// [`crate::write::render_commit_message`]. Returns one message per sub-task in the
+/// **given (id-sorted) order**, so the rendered *sequence* is a pure function of the
+/// sub-task id *set* — byte-identical across feed/completion orders (Validation
+/// hardening #7), even though each message carries the sub-agent's authored prose
+/// (the CLI owns the ordering + placement; the prose is the sub-agent's — the
+/// determinism boundary).
+///
+/// A missing or unparseable authored commit doc for any sub-task is a blocking
+/// [`Finding`] (the `plan_finalize` render precedent) — a sub-task that fanned out
+/// must have authored its commit doc before the parent finalize renders it.
+/// Performs no git and no commit; reads only the sub-task working areas.
+pub fn render_subtask_messages(
+    sub_ids: &[String],
+    tasks_root: &Path,
+    commit_schema: &Schema,
+) -> Result<Vec<String>, Vec<Finding>> {
+    let mut messages = Vec::with_capacity(sub_ids.len());
+    for sub_id in sub_ids {
+        let commit_path = tasks_root
+            .join(sub_id)
+            .join(DOCS_DIR)
+            .join(format!("{}:{sub_id}.md", commit_schema.ty));
+        let source = std::fs::read_to_string(&commit_path)
+            .map_err(|err| vec![render_io_finding(&commit_path, &err)])?;
+        let instance = write::instance_from_source(commit_schema, &source)?;
+        messages.push(write::render_commit_message(commit_schema, &instance));
+    }
+    Ok(messages)
+}
+
 /// The phase-4 promote decision: the staged docs to copy plus their phase-7 hashes.
 struct PromotePlan {
     promotions: Vec<Promotion>,
@@ -796,6 +837,103 @@ mod tests {
         )
         "#
         );
+    }
+
+    /// Stage a filled `commit:<sub-id>` doc in a sub-task working area
+    /// `<tasks_root>/<sub-id>/docs/` (a `feat` type + a per-sub-task summary), the
+    /// authored commit doc a fanned-out sub-task produces. Returns the slug for
+    /// convenience.
+    fn stage_subtask_commit(tasks_root: &Path, sub_id: &str, summary: &str) {
+        use crate::field_block::Value;
+        use crate::write::SectionContent;
+
+        let schema = commit_schema();
+        let instance = write::Instance {
+            title: sub_id.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "header".to_string(),
+                    fields: vec![crate::field_block::Field {
+                        key: "type".to_string(),
+                        value: Value::Scalar("feat".to_string()),
+                    }],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "summary".to_string(),
+                    slot: Some(summary.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "body".to_string(),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "trailers".to_string(),
+                    ..Default::default()
+                },
+            ],
+        };
+        let bytes = write::render(&schema, &instance);
+        let task_dir = tasks_root.join(sub_id);
+        let path = state::instance_path(&task_dir, &schema.ty, sub_id);
+        state::persist(&path, bytes.as_bytes()).expect("persist staged sub-task commit");
+    }
+
+    /// `squash: false` renders **one** authored commit message per sub-task, in the
+    /// **given (id-sorted) order**, each read off that sub-task's own `commit:<sub-id>`
+    /// doc via the shared `render_commit_message`. The rendered *sequence* is a pure
+    /// function of the id *set* — feeding the ids in id-order vs its REVERSE yields the
+    /// **byte-identical** message list (Validation hardening #7), because the caller
+    /// passes id-sorted ids and the renderer preserves that order. A sub-task missing
+    /// its authored commit doc is a blocking finding (the render precedent).
+    #[test]
+    fn render_subtask_messages_is_id_ordered_and_order_invariant() {
+        let root = TempRoot::new("subtask-messages");
+        let tasks_root = root.path().join("tasks");
+        // Two sub-tasks authored distinct commit prose. id-sorted: [area-low, area-zed].
+        stage_subtask_commit(&tasks_root, "area-zed", "rework the zed cache path");
+        stage_subtask_commit(&tasks_root, "area-low", "rework the low cache path");
+
+        let schema = commit_schema();
+        let id_sorted = vec!["area-low".to_string(), "area-zed".to_string()];
+        let messages = render_subtask_messages(&id_sorted, &tasks_root, &schema)
+            .expect("both sub-tasks authored a commit doc");
+        assert_eq!(
+            messages,
+            vec![
+                "feat: rework the low cache path".to_string(),
+                "feat: rework the zed cache path".to_string(),
+            ],
+            "one rendered authored message per sub-task, in id-sorted order",
+        );
+
+        // Order-invariance: the REVERSED id list still renders the SAME (id-keyed) bodies
+        // in the SAME positions the caller feeds — the caller (TaskList::enumerate) sorts,
+        // so the committed sequence is byte-identical across feed orders.
+        let reversed = vec!["area-zed".to_string(), "area-low".to_string()];
+        let rev_messages = render_subtask_messages(&reversed, &tasks_root, &schema)
+            .expect("the reversed feed renders");
+        // Re-sorting the reversed feed reproduces the id-sorted sequence byte-for-byte.
+        let mut paired: Vec<(String, String)> = reversed.into_iter().zip(rev_messages).collect();
+        paired.sort_by(|a, b| a.0.cmp(&b.0));
+        let resorted: Vec<String> = paired.into_iter().map(|(_, m)| m).collect();
+        assert_eq!(
+            messages, resorted,
+            "the rendered messages are id-keyed — re-sorting any feed order reproduces the \
+             byte-identical id-sorted sequence",
+        );
+
+        // A sub-task missing its authored commit doc is a blocking render finding.
+        let missing = render_subtask_messages(
+            &["area-low".to_string(), "no-such-task".to_string()],
+            &tasks_root,
+            &schema,
+        )
+        .expect_err("a sub-task with no authored commit doc blocks");
+        assert_eq!(missing.len(), 1);
+        assert_eq!(missing[0].code, "finalize.render-io");
+        assert_eq!(missing[0].severity, Severity::Blocking);
     }
 
     /// The **milestone** planner ([`plan_milestone_finalize`]) is the thin sibling

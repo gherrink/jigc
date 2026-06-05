@@ -777,6 +777,43 @@ fn git_commit(repo_root: &Path, message_file: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Commit a per-sub-task authored message in the `squash: false` fan-out finalize
+/// mode (`design/finalize.md` → `fan-out` finalize: "one commit per sub-task in
+/// task-id order"). Writes `message` to a temp file under `msg_tmp_dir` (the
+/// gitignored milestone area) and runs `git commit --allow-empty -F <tmp>` — the
+/// sub-task commit carries the authored prose; the merged tree lands in the parent
+/// aggregate that follows, so each sub-task commit is intentionally tree-empty
+/// (`--allow-empty`) yet a real commit in the deterministic id-ordered sequence. As
+/// with [`git_commit`], **never** `--no-verify`: the user's `commit-msg` hook is
+/// policy. A rejection surfaces git's stderr verbatim and lands no commit.
+pub(crate) fn commit_empty_message(
+    repo_root: &Path,
+    msg_tmp_dir: &Path,
+    message: &str,
+) -> Result<()> {
+    let msg_path = msg_tmp_dir.join("finalize-subtask-message.tmp");
+    std::fs::write(&msg_path, message)
+        .with_context(|| format!("could not write the sub-task commit message to {msg_path:?}"))?;
+    let out = Command::new("git")
+        .args(["commit", "--allow-empty", "-F"])
+        .arg(&msg_path)
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git commit` (is git on PATH?)");
+    let _ = std::fs::remove_file(&msg_path);
+    let out = out?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        bail!(
+            "`git commit` for a sub-task message was rejected (no commit was made):\n{}{}",
+            stdout.trim(),
+            stderr.trim()
+        );
+    }
+    Ok(())
+}
+
 /// The paths the just-landed `HEAD` commit touched (`git show --name-only`). Used by
 /// post-commit to advance the `file-state` hashes for the committed working set.
 fn git_commit_files(repo_root: &Path) -> Result<Vec<String>> {
