@@ -593,3 +593,365 @@ fn real_n_process_writes_feed_a_clean_milestone_join() {
         "the join only reports the overlay; it commits nothing",
     );
 }
+
+// ---------------------------------------------------------------------------
+// Half-A step 3 — byte-identical finalize across ≥2 divergent feed orders, the
+// HEADLINE (`implementation/roadmap.md` → inc-6 bullet 1; `design/worked-examples.md`
+// → flow 10 Half-A step 3; `increment-workflow.md` → A second principle (M7) /
+// hardening #7).
+//
+// Where flow-9's `flow9_milestone_join.rs` proved the determinism headline over a
+// HAND-STAGED fixture area set, flow 10 step 3 proves the **same byte-identity over
+// real-binary-produced inputs**: the IDENTICAL populated milestone — seeded through
+// BOTH origination paths (`add-from-spec` AND `add-task`) and populated by the real
+// `jigc workflow sub-task --task <id>` provision + `jigc doc create adr` / `set-slot`
+// write verbs of step 2 — is driven through the full `create`/`add-from-spec` →
+// `jigc milestone execute` → `jigc milestone finalize` arc in independent throwaway
+// repos under deliberately divergent recorded feed orders (id order AND its reverse,
+// reverse MANDATORY, plus a third shuffled), and the committed commit MESSAGE and
+// committed TREE hash are asserted byte-identical across ALL orders.
+//
+// Reverse order is mandatory: an id-ordered feed where completion order trivially
+// equals id order would pass even a completion-ordered (broken) merge. The fixture
+// forces genuine overlap — two sub-tasks each `create` the SAME slug
+// `adr:cache-strategy` (distinguishable only by their `#decision` slot prose, "eager"
+// vs "lazy", since `id-from: title` forces a shared H1), so which body lands at the
+// bare slug vs the `-2` suffix is OBSERVABLE in the committed tree. A suffix keyed on
+// feed order instead of task id would swap which body lands where and diverge the tree
+// hash under the reverse / shuffled orders.
+//
+// THIS PRODUCES THE GOLDEN TREE-HASH the Half-B genuine-spawn audit (T4) must match,
+// so every populating operation is one a real fanned sub-agent performs through the
+// CLI (provision + `create adr` + `set-slot`) — no hand-staging, no hand-injected
+// field a genuine spawn could not reproduce.
+
+/// A committed `spec` with one repeatable `criterion` — the `add-from-spec` seed
+/// substrate so the arc exercises BOTH origination paths feeding the same finalize.
+/// Its single criterion text "Document the cache strategy" slugs to the sub-task id
+/// `document-the-cache-strategy` (the higher-id colliding `created` instance).
+const SEED_SPEC: &str = "\
+# Cache hardening plan
+
+## Goal
+
+Harden the cache layer.
+
+## Context
+
+The cache strategy needs documenting alongside the eviction work.
+
+## Criteria
+
+### Document the cache strategy  {#document-strategy}
+
+The cache strategy is recorded as an ADR.
+";
+
+/// Commit `SEED_SPEC` at `specs/<slug>.md` so `add-from-spec` reads genuinely
+/// committed state, then re-establish the `.jigc/config/` project layer the commit
+/// does not track.
+fn commit_spec(repo: &Path, slug: &str) {
+    let specs = repo.join("specs");
+    fs::create_dir_all(&specs).expect("mk specs/");
+    fs::write(specs.join(format!("{slug}.md")), SEED_SPEC).expect("write spec");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "add spec"]);
+}
+
+/// Overwrite the milestone's recorded `tasks.json` with `order` (the audit-trail feed
+/// order) — the deliberate divergence the headline drives. The join must enumerate
+/// id-sorted regardless of this recorded order, so re-recording it in id / reverse /
+/// shuffled orders must produce byte-identical committed state. The id SET is fixed;
+/// only the recorded order differs (the `flow9_milestone_join.rs` idiom, now over
+/// real-write inputs).
+fn rewrite_task_order(repo: &Path, milestone_id: &str, order: &[&str]) {
+    let path = repo
+        .join(".jigc")
+        .join("milestones")
+        .join(milestone_id)
+        .join("tasks.json");
+    assert!(path.is_file(), "milestone tasks.json must exist to reorder");
+    let value = serde_json::json!({ "tasks": order });
+    let mut bytes = serde_json::to_string_pretty(&value).expect("serialize task list");
+    bytes.push('\n');
+    fs::write(&path, bytes).expect("rewrite tasks.json");
+}
+
+/// HEAD's full commit message (`git log -1 --format=%B`) — the committed MESSAGE half
+/// of the byte-identity assertion, read verbatim off the landed commit.
+fn head_message(repo: &Path) -> String {
+    git(repo, &["log", "-1", "--format=%B"])
+}
+
+/// HEAD's committed tree hash (`git rev-parse HEAD^{tree}`) — the committed TREE half
+/// of the byte-identity assertion (and the golden Half-B must match). Two commits with
+/// the same tree hash have byte-identical committed content (every promoted doc body +
+/// path), independent of author/date.
+fn head_tree(repo: &Path) -> String {
+    git(repo, &["rev-parse", "HEAD^{tree}"]).trim().to_string()
+}
+
+/// Provision a milestone sub-area through the real re-entry verb, then `create` an ADR
+/// at `adr:<slug>` (from `title`) and fill its three prose slots — every operation a
+/// genuine fanned sub-agent performs through the CLI. `decision` is the distinguishing
+/// slot the suffix-by-task-id proof reads back off the committed tree.
+fn populate_created_adr(
+    repo: &Path,
+    home: &Path,
+    sub: &str,
+    title: &str,
+    slug: &str,
+    decision: &[u8],
+) {
+    expect_ok(
+        &run(repo, home, &["workflow", "sub-task", "--task", sub]),
+        "fanned sub-agent re-entry provisions the write-ready sub-area",
+    );
+    expect_ok(
+        &run_doc(
+            repo,
+            home,
+            &["create", "adr", "--title", title, "--task", sub],
+            None,
+        ),
+        "doc create adr in the sub-area",
+    );
+    let set_slot = |section: &str, prose: &[u8]| {
+        expect_ok(
+            &run_doc(
+                repo,
+                home,
+                &[
+                    "set-slot",
+                    &format!("adr:{slug}#{section}"),
+                    "--from-file",
+                    "-",
+                    "--task",
+                    sub,
+                ],
+                Some(prose),
+            ),
+            "set-slot on the created ADR",
+        );
+    };
+    set_slot("context", b"Forces around caching.\n");
+    set_slot("decision", decision);
+    set_slot("consequences", b"Tradeoffs.\n");
+}
+
+/// Build the **identical** populated flow-10 fixture in `repo` via the REAL write path
+/// (no hand-staging), record the milestone's `tasks.json` in `feed_order`, then run the
+/// full `create`/`add-from-spec` → `execute` → `finalize` arc, returning the landed
+/// commit's `(message, tree-hash)`.
+///
+/// The fixture seeds via BOTH origination paths: an `add-from-spec` seed whose single
+/// criterion mints `document-the-cache-strategy`, and two `add-task`s
+/// (`add-a-cache-strategy-adr`, `add-an-eviction-adr`). Both `add-a-cache-strategy-adr`
+/// and `document-the-cache-strategy` `create` the SAME slug `adr:cache-strategy` —
+/// distinguishable only by their `#decision` slot ("eager" vs "lazy"). id-sorted,
+/// `add-a-cache-strategy-adr` < `document-the-cache-strategy`, so the former keeps the
+/// bare slug (the "eager" body) and the latter takes `-2` (the "lazy" body); a disjoint
+/// `add-an-eviction-adr` `create`s `adr:eviction-policy`.
+fn build_and_finalize(repo: &Path, home: &Path, feed_order: &[&str]) -> (String, String) {
+    init_repo(repo);
+    commit_spec(repo, "cache-hardening-plan");
+
+    expect_ok(
+        &run(repo, home, &["milestone", "create", "Cache hardening"]),
+        "milestone create",
+    );
+    // Origination path 1 — `add-from-spec` seeds `document-the-cache-strategy`.
+    expect_ok(
+        &run(
+            repo,
+            home,
+            &[
+                "milestone",
+                "add-from-spec",
+                "cache-hardening",
+                "spec:cache-hardening-plan",
+            ],
+        ),
+        "milestone add-from-spec",
+    );
+    // Origination path 2 — `add-task` for the colliding ADR + a disjoint sub-task,
+    // added in NON-id order so the recorded insertion order already diverges from id
+    // order before the explicit `tasks.json` rewrite below.
+    for intent in ["Add a cache-strategy ADR", "Add an eviction ADR"] {
+        expect_ok(
+            &run(
+                repo,
+                home,
+                &[
+                    "milestone",
+                    "add-task",
+                    "cache-hardening",
+                    intent,
+                    "--workflow",
+                    "sub-task",
+                ],
+            ),
+            "milestone add-task",
+        );
+    }
+
+    // Populate the sub-areas through the REAL write path. The two colliding
+    // `adr:cache-strategy` carry distinguishable `#decision` prose ("eager" vs "lazy"),
+    // so which lands at the bare slug vs `-2` is observable in the committed tree.
+    populate_created_adr(
+        repo,
+        home,
+        "add-a-cache-strategy-adr",
+        "Cache strategy",
+        "cache-strategy",
+        b"Use eager caching.\n",
+    );
+    populate_created_adr(
+        repo,
+        home,
+        "document-the-cache-strategy",
+        "Cache strategy",
+        "cache-strategy",
+        b"Use lazy caching.\n",
+    );
+    populate_created_adr(
+        repo,
+        home,
+        "add-an-eviction-adr",
+        "Eviction policy",
+        "eviction-policy",
+        b"Evict the least-recently-used entry.\n",
+    );
+
+    // The deliberate feed-order divergence (the audit-trail order). The id set is fixed;
+    // only the recorded order differs across repos.
+    rewrite_task_order(repo, "cache-hardening", feed_order);
+
+    // The full arc passes through `execute` (the fan-out emit) before `finalize` (the
+    // join + commit boundary).
+    expect_ok(
+        &run(repo, home, &["milestone", "execute", "cache-hardening"]),
+        "milestone execute",
+    );
+    expect_ok(
+        &run(repo, home, &["milestone", "finalize", "cache-hardening"]),
+        "milestone finalize",
+    );
+
+    (head_message(repo), head_tree(repo))
+}
+
+/// **Flow 10 Half-A step 3 — the HEADLINE.** The IDENTICAL real-binary-produced fixture
+/// is driven through the full `create`/`add-from-spec` → `execute` → `finalize` arc in
+/// three independent throwaway repos under three divergent recorded feed orders (id,
+/// reverse, seed-shuffled); the committed MESSAGE and TREE hash are byte-identical
+/// across all three. A completion-ordered / broken merge — one that let the recorded
+/// feed order reach the suffix assignment or the body bytes — would diverge under the
+/// reverse / shuffled orders and fail this assertion. THIS TREE HASH IS THE GOLDEN the
+/// Half-B genuine-spawn audit must match.
+#[test]
+fn flow10_finalize_is_byte_identical_across_divergent_feed_orders() {
+    // The fixed id set, in canonical id order. The three feed orders below are all
+    // permutations of exactly this set.
+    let id_order = [
+        "add-a-cache-strategy-adr",
+        "add-an-eviction-adr",
+        "document-the-cache-strategy",
+    ];
+    let reverse_order = [
+        "document-the-cache-strategy",
+        "add-an-eviction-adr",
+        "add-a-cache-strategy-adr",
+    ];
+    // A seed-shuffled order distinct from both id and reverse (a third permutation).
+    let shuffled_order = [
+        "add-an-eviction-adr",
+        "document-the-cache-strategy",
+        "add-a-cache-strategy-adr",
+    ];
+
+    // Sanity: the three feed orders are genuinely divergent (a re-execution under a
+    // single order would not exercise hardening #7).
+    assert_ne!(id_order, reverse_order, "id vs reverse must diverge");
+    assert_ne!(id_order, shuffled_order, "id vs shuffled must diverge");
+    assert_ne!(
+        reverse_order, shuffled_order,
+        "reverse vs shuffled must diverge"
+    );
+
+    let home = TempDir::new("step3-home");
+
+    let repo_id = TempDir::new("step3-id");
+    let (msg_id, tree_id) = build_and_finalize(repo_id.path(), home.path(), &id_order);
+    let repo_rev = TempDir::new("step3-rev");
+    let (msg_rev, tree_rev) = build_and_finalize(repo_rev.path(), home.path(), &reverse_order);
+    let repo_shuf = TempDir::new("step3-shuf");
+    let (msg_shuf, tree_shuf) = build_and_finalize(repo_shuf.path(), home.path(), &shuffled_order);
+
+    // ---- The headline: committed MESSAGE is byte-identical across feed orders. ----
+    assert_eq!(
+        msg_id, msg_rev,
+        "the committed message must be byte-identical under id vs reverse feed order;\n\
+         id:\n{msg_id}\nreverse:\n{msg_rev}",
+    );
+    assert_eq!(
+        msg_id, msg_shuf,
+        "the committed message must be byte-identical under id vs shuffled feed order;\n\
+         id:\n{msg_id}\nshuffled:\n{msg_shuf}",
+    );
+    // The message is the CLI-synthesized structural projection — subject + id-ordered body.
+    assert!(
+        msg_id.contains("Finalize milestone cache-hardening (3 sub-tasks)"),
+        "the committed message must be the synthesized projection; got:\n{msg_id}",
+    );
+
+    // ---- The headline: committed TREE hash is byte-identical across feed orders. ----
+    // Equal tree hashes ⇒ every promoted doc body + path is byte-identical, so the
+    // suffix assignment and the merge are a pure function of the area SET, never the
+    // recorded feed order. THIS IS THE GOLDEN the Half-B audit asserts its commit against.
+    assert_eq!(
+        tree_id, tree_rev,
+        "the committed tree must be byte-identical under id vs reverse feed order \
+         ({tree_id} vs {tree_rev})",
+    );
+    assert_eq!(
+        tree_id, tree_shuf,
+        "the committed tree must be byte-identical under id vs shuffled feed order \
+         ({tree_id} vs {tree_shuf})",
+    );
+
+    // ---- Supporting: suffix-by-task-id, read off the committed tree. ----
+    // The tree is identical across all three repos, so reading any one reads the shared
+    // committed bytes.
+    let decisions = repo_id.path().join("decisions");
+    for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
+        assert!(
+            decisions.join(format!("{slug}.md")).is_file(),
+            "the promoted `{slug}` doc must land at decisions/{slug}.md",
+        );
+    }
+    // The lower task id (`add-a-cache-strategy-adr`, the "eager" body) kept the BARE
+    // slug. Asserting the distinguishing decision prose proves suffix-BY-TASK-ID (not
+    // merely "a suffix happened"): a completion-ordered suffix would land "lazy" here.
+    let bare = fs::read_to_string(decisions.join("cache-strategy.md")).expect("read bare");
+    assert!(
+        bare.contains("Use eager caching."),
+        "the lower task id's body must keep the bare slug; got:\n{bare}",
+    );
+    // The higher task id (`document-the-cache-strategy`, the "lazy" body) took `-2`.
+    let suffixed =
+        fs::read_to_string(decisions.join("cache-strategy-2.md")).expect("read suffixed");
+    assert!(
+        suffixed.contains("Use lazy caching."),
+        "the higher task id's body must take the `-2` suffix; got:\n{suffixed}",
+    );
+
+    // The promoted docs are genuinely committed (tracked in HEAD's tree).
+    let tracked = git(repo_id.path(), &["ls-files", "decisions/"]);
+    for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
+        assert!(
+            tracked.contains(&format!("decisions/{slug}.md")),
+            "decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
+        );
+    }
+}
