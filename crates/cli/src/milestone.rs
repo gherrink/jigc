@@ -534,11 +534,18 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
 
         // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
         match crate::task::try_execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)? {
-            Ok(()) => Ok(ExitCode::SUCCESS),
+            Ok(()) => {
+                // The boundary landed — clean up the per-sub-task working areas too (the
+                // executor only removed the milestone area). On a failure (below) the areas
+                // survive for retry.
+                cleanup_subtask_areas(&jigc_root, &list);
+                Ok(ExitCode::SUCCESS)
+            }
             // Aggregate rejected (a commit/hook rejection). The executor already rolled
             // back its promotions; now undo the per-sub-task commits + any staging so HEAD
             // returns to the pre-finalize sha (all-or-nothing), then surface git's stderr
             // verbatim and exit `FAILURE` — the same signal `execute_finalize_plan` gives.
+            // The sub-task areas are left intact (not cleaned) so a retry works.
             Err(err) => {
                 crate::task::git_reset_hard(&repo_root, &pre_finalize_head)?;
                 eprintln!("{err:#}");
@@ -551,7 +558,36 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
         // area is the cleanup dir removed on a landed commit. The `squash: true` default path
         // lands only the single CLI-synthesized aggregate (no per-sub-task commits), so it is
         // byte-identical to what M7 shipped — left untouched.
-        crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)
+        let code = crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)?;
+        // On a landed commit, clean up the per-sub-task working areas too (the executor only
+        // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves
+        // the areas intact for retry.
+        if code == ExitCode::SUCCESS {
+            cleanup_subtask_areas(&jigc_root, &list);
+        }
+        Ok(code)
+    }
+}
+
+/// Remove each sub-task's working area (`.jigc/tasks/<sub-id>/`) after a **landed**
+/// milestone finalize — the gitignored runtime state the executor's milestone-area
+/// cleanup leaves behind (it removes only the milestone area). Mirrors the single-task
+/// post-commit cleanup discipline ([`crate::task::post_commit`]): best-effort,
+/// logged-not-raised — a cleanup failure must not fail a commit that already landed (the
+/// "self-heal" stance). Called ONLY on the success path, so a failed/rolled-back finalize
+/// leaves the areas intact for a retry (respecting the F1 rollback path). Enumerates the
+/// milestone's id-sorted sub-task list, so the set cleaned is exactly its sub-tasks.
+fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
+    let tasks_root = jigc_root.join("tasks");
+    for sub_id in list.enumerate() {
+        let area = tasks_root.join(&sub_id);
+        if area.exists()
+            && let Err(err) = std::fs::remove_dir_all(&area)
+        {
+            eprintln!(
+                "note: post-commit sub-task working-area removal for `{sub_id}` failed (self-heals): {err:#}"
+            );
+        }
     }
 }
 

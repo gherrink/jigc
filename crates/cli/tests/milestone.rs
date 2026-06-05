@@ -1097,6 +1097,91 @@ fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head
 }
 
 #[test]
+fn milestone_finalize_removes_every_sub_task_working_area_on_a_landed_commit() {
+    // A landed milestone finalize must clean up the per-sub-task working areas
+    // (`.jigc/tasks/<sub>/`) in addition to the milestone area — they are gitignored
+    // runtime state that otherwise accumulates across milestone runs and can trip a
+    // later top-level `jigc doc`'s ">1 active task" bail. Cleanup is best-effort and
+    // happens ONLY after the commit boundary succeeds (a failed/rolled-back finalize
+    // leaves the areas intact for retry — proven by the reset test above). RED before
+    // the fix (the sub-task areas persist), GREEN after.
+    let repo = TempDir::new("finalize-subtask-cleanup");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    // Each sub-task stages a clean, disjoint persisted ADR (distinct slugs — no
+    // collision), so the parent aggregate has a real tree diff and the boundary lands.
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:zed-policy",
+        &adr_plain("Zed policy"),
+        "edited-from-base",
+    );
+
+    // Both sub-task working areas exist before the finalize.
+    let tasks = repo.path().join(".jigc").join("tasks");
+    for sub in ["area-low", "area-zed"] {
+        assert!(
+            tasks.join(sub).is_dir(),
+            "sub-task `{sub}` working area must exist before finalize",
+        );
+    }
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize cache-rework` must exit 0; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // The milestone area was removed (as before)...
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("milestones")
+            .join("cache-rework")
+            .exists(),
+        "the milestone area must be removed after a landed commit",
+    );
+    // ...AND every sub-task working area is removed too.
+    for sub in ["area-low", "area-zed"] {
+        assert!(
+            !tasks.join(sub).exists(),
+            "sub-task `{sub}` working area must be removed after a landed milestone finalize",
+        );
+    }
+}
+
+#[test]
 fn milestone_finalize_same_doc_clash_blocks_and_commits_nothing() {
     let repo = TempDir::new("finalize-clash");
     init_repo(repo.path());
