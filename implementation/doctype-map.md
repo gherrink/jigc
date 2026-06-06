@@ -11,7 +11,7 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 | `commit` | the change description for one task | transient → git commit message | M1 | ✅ shipped |
 | `adr` | one architecture decision | persisted → `decisions/` | M1 | ✅ shipped |
 | `spec` | the "what" a task implements | persisted → `specs/` | M3 | planned |
-| `prd` | product requirements above specs | persisted | driver TBD | named, unscheduled |
+| `prd` | product requirements above specs | persisted → `prds/` | M9 | planned |
 | `arch-doc` | living architecture documentation | persisted | driver TBD | named, unscheduled |
 
 VISION's starting set is commit · arch-doc · prd · adr · spec ([VISION.md](../VISION.md) → Document model). `commit` + `adr` are built, `spec` is next (M3), `prd` + `arch-doc` await a driving workflow.
@@ -39,5 +39,6 @@ prd ──decomposes-into──▶ spec ──decided-by──▶ adr ◀──s
 
 ## Unsettled
 
-- **`prd` / `arch-doc` drivers.** Both are named in VISION but have no scheduled workflow; each earns its schema only when a workflow creates or reads it — plausibly the idea-development setup (M8) for `prd`, a yet-undesigned arch workflow for `arch-doc`. Until then they stay here as intent, in no pack.
+- **`prd` driver — settled M9.** The new-project idea-development setup workflow drives `prd`, earning its schema from that real creator ([project-setup.md](../design/project-setup.md) → Flow 1; [DECISIONS.md](../DECISIONS.md) 2026-06-06). M9's `prd` uses **fixed prose slots** (single-word section ids), so the `prd —decomposes-into→ spec` edge stays intent (no per-requirement anchors to author from) until a flow needs structured, individually-addressable requirements.
+- **`arch-doc` driver.** Named in VISION but no scheduled workflow; earns its schema only when a yet-undesigned arch workflow creates or reads it. Until then it stays here as intent, in no pack.
 - **doc↔code edges** (`spec`/`arch-doc` → code) are pack-provided validation *probes*, not structural relations — they land after the docs they check exist (post-M3), per [VISION.md](../VISION.md) → principle #6.

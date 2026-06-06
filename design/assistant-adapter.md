@@ -17,7 +17,7 @@ The profile is a **config-family artifact** (YAML, like schemas and manifests): 
 
 ## Generated, minimal, regenerated
 
-`jigc setup` (or `jigc adapter install --assistant claude-code`) **generates** the adapter from the profile and **regenerates it on upgrade**, so the integration stays current and can't rot — the thesis applied to integration itself: structure is CLI-owned, not hand-maintained.
+`jigc setup` (or `jigc adapter install --assistant claude-code`) **generates** the adapter from the profile and **regenerates it on upgrade**, so the integration stays current and can't rot — the thesis applied to integration itself: structure is CLI-owned, not hand-maintained. *(Built today: `jigc setup`, single embedded profile. The `jigc adapter install --assistant <X>` / `adapter regenerate` verb surface + multi-assistant selection is the designed shape, not yet built — it lands with profiles-beyond-Claude-Code, [Open questions](#open-questions).)*
 
 `jigc setup` also **initializes the in-repo project layer** (`.jigc/config/`) when absent — so the project resolves as *set up* (orientation's clean state, [bootstrap.md](bootstrap.md) → Orientation output examples — keyed on the project layer's presence) and the cascade has a committed project layer to record deltas into ([overrides.md](overrides.md)). A fresh layer is empty (no customizations yet); it exists so the project reads as configured and is ready to carry deltas.
 

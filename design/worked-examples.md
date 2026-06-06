@@ -647,3 +647,91 @@ Half B is the once-per-milestone proof that the real assistant launch reaches th
 **The shippability gate.** The milestone is **not shippable** until this recorded artifact exists *and* its tree-hash matches *and* its transcript witnesses the blackboard invariant. A missing artifact is a **blocking completion finding** — never an implicit pass on Half A alone (the **hollow-spawn trap**: passing off the N-process sim as the genuine-spawn proof). Because a headless subagent cannot produce it, this gate is tracked to its named owner — the orchestrator at milestone completion — and never punted to "a later task."
 
 The split is the point: Half A is the fast, deterministic regression gate; Half B is the once-per-milestone proof that the real launch reaches the CLI. Neither is a sequential-in-process loop masquerading as concurrency.
+
+## 11. New project + idea development (M9)
+
+The M9 greenfield acceptance: `jigc` wires into a **brand-new** repo and the agent develops a raw idea into the project's first managed document — a `prd`. Proves the new-project on-ramp end-to-end over the proven create-gate → code-less-finalize → promote substrate ([project-setup.md](project-setup.md) → Flow 1; the `prd` doctype earns its schema from this, its real driver). The new surface over flow 6 (`plan` authoring a `spec`) is the **idea-development altitude** (a `prd` above specs) and the **command→workflow handoff** (install, then orient-to-the-workflow). Notation illustrative.
+
+### Setup — install into a fresh repo
+
+```text
+$ git init my-product && cd my-product
+$ jigc setup
+  bootstrap reference → CLAUDE.md
+  jigc allowlist      → .claude/settings.json
+  (SessionStart hook installed · .jigc/config/ initialized)
+```
+
+Before `setup`, bare `jigc start` renders the **unset-project** orientation (`This project isn't set up. Run: jigc setup`). After `setup`, the project reads as **clean** ([bootstrap.md](bootstrap.md) → orientation states; the discriminator is `.jigc/config/` presence) and the catalog lists `project-setup` among the workflows.
+
+### The flow — develop the idea, author the prd, finalize
+
+```text
+$ jigc start --workflow project-setup "a CLI that compiles context for coding agents"
+# composes project-setup (creates-task: true) — mints the task, emits:
+#   step:develop-idea  — reason about vision / requirements / context (prose)
+#   step:author-prd    — Run: jigc doc create prd --title "..." --task <id>
+#                        <<author: prd:<slug>#vision>>  /  #requirements  /  #context
+#   step:project-finalize — Run: jigc task finalize <id>
+
+$ jigc doc create prd --title "Context Compiler" --task <id>
+  → prd:context-compiler   (staged at .jigc/tasks/<id>/docs/prd:context-compiler.md)
+$ jigc doc set-slot prd:context-compiler#vision       --from-file - --task <id>
+$ jigc doc set-slot prd:context-compiler#requirements --from-file - --task <id>
+$ jigc doc set-slot prd:context-compiler#context      --from-file - --task <id>
+$ jigc task finalize <id>
+  → docs(prd): add the Context Compiler product brief        # one commit
+  → promoted: prds/context-compiler.md
+```
+
+### What it asserts (the acceptance bar)
+
+1. **The command→workflow handoff.** `jigc setup` flips orientation unset→clean; `project-setup` is then a composable catalog workflow (it composes cleanly on the already-"clean" project — nothing assumes "set up" is terminal).
+2. **`prd` is authored end-to-end as pure pack data.** `create prd` → three `set-slot` writes (fixed prose slots, single-word section ids) → finalize, with **no engine change** (the schema is `schemas/prd.yaml` only). The create-gate admits `prd` (in `allows-create`) and rejects any doctype not gated.
+3. **Code-less finalize lands one `docs(prd)` commit** promoting `prds/<slug>.md` (the promoted doc is the non-empty diff; empty-commit guard satisfied) — the flow-6 spec-only finalize shape, now for `prd`.
+
+## 12. Existing project — bounded detect-and-route ingestion (M9)
+
+The M9 brownfield acceptance: `jigc` ingests an **existing** repo whose docs are in inconsistent states, classifying each candidate against the managed schemas and **routing the verdict** — adopting what conforms, routing what doesn't to a human, ignoring the unmanaged. Proves the existing-project on-ramp **without auto-migration** (the research-grade core, deferred — [project-setup.md](project-setup.md) → Flow 2). The new surface is **repo-wide discovery + the N-candidate classifier** over the proven `parse_sections` + `schema_conformance` substrate, and **closing the silent `baseline-adopt` hole** (adopt only what is schema-checked). Notation illustrative — the exact `jigc ingest` verb surface + adopt-confirmation are pinned at the build's acceptance-flow spike against the built command grammar.
+
+### Setup — an existing repo with docs in mixed states
+
+```text
+my-legacy-repo/
+  CLAUDE.md                       # pre-existing house rules (must survive setup)
+  .claude/settings.json           # a pre-existing hook (must survive setup)
+  decisions/rate-limit.md         # a CONFORMANT adr at its location → adoptable
+  decisions/auth-choice.md        # a NON-CONFORMANT near-miss in decisions/ → needs-reconcile
+  docs/old-adr.md                 # a CONFORMANT adr at the WRONG location → needs-reconcile
+  docs/notes.md                   # freeform, outside every location dir → unmanaged
+$ jigc setup                      # merges into CLAUDE.md / settings.json, never clobbers
+```
+
+### The flow — scan, classify, route
+
+*(The `jigc ingest` verb + its output shape are **illustrative and net-new** — pinned at the build's acceptance-flow spike against the built command grammar, the way flow 10 handled unbuilt surfaces. `jigc setup` / `jigc start` are built.)*
+
+```text
+$ jigc start --workflow ingest-existing "bring this repo under jigc management"
+# composes ingest-existing (creates-task: false) — orient + route; emits:
+#   Run: jigc ingest        — scan, classify, report the triage verdicts
+#   <review the verdicts; adopt the conformant; route the non-conformant to a human>
+
+$ jigc ingest
+  ingest — 4 candidates classified  (sorted — deterministic report order)
+
+  adoptable       decisions/rate-limit.md   → adr   (conformant, at location)
+  needs-reconcile decisions/auth-choice.md  → adr   · routed (non-conformant in decisions/)
+    > reconciliation · blocking
+    > section heading "Why" does not match required section `consequences`
+  needs-reconcile docs/old-adr.md           → adr   · routed (conformant, WRONG location)
+    > reconciliation · blocking
+    > conformant adr outside decisions/ — relocate to adopt (jigc never auto-moves)
+  unmanaged       docs/notes.md             → (parses against no schema — left untouched)
+```
+
+### What it asserts (the acceptance bar)
+
+1. **Repo-wide discovery + location-aware N-candidate classification.** All four candidates are discovered (beyond the declared `location:` dirs, sorted for deterministic report order) and classified against every persisted schema (`adr`/`spec`/`prd`) via `parse_sections` + `schema_conformance` — a **binary** parses-conformant-or-not verdict with **location as the discriminator**: `adoptable` requires conformant *and* already at the schema's `location:`; a conformant-but-misplaced doc is `needs-reconcile`, not silently adopted in place (which would make it invisible to every later store sweep). No fuzzy mapping.
+2. **Adopt is net-new + schema-gated; the `baseline-adopt` hole is closed.** Adopting `rate-limit.md` **parses + conformance-gates + populates the edge index (`index.absorb_doc`) + records the file-state hash** — *not* reconciliation's silent `baseline-adopt` (which schema-checks nothing and indexes nothing). It is **register-only — no file is moved or rewritten**. The non-conformant `auth-choice.md` and the misplaced `old-adr.md` are **routed, not adopted**; `notes.md` is **left untouched** — *nothing is adopted without a schema check at its correct location*.
+3. **No auto-migration, no clobber, idempotent setup.** `jigc ingest` **rewrites no prose** (detect-and-route only). The **binary-level irreversibility test**: seed `CLAUDE.md` with prior house rules + `.claude/settings.json` with a pre-existing hook, run `jigc setup` **twice**, and assert (a) the human content is preserved **verbatim** (structure-aware merge, never clobber), and (b) the second run's tree hash equals the first's (idempotent no-op). The `needs-reconcile` rows route to a human exactly as an OOB conflict does ([reconciliation.md](reconciliation.md)).

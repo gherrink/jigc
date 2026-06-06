@@ -33,11 +33,11 @@ Concrete shapes the four orientation states render to. All are read-only — bar
 ```text
 jigc — orientation
 
-This project isn't set up. No domain pack is installed; the cascade has only engine defaults.
+This project isn't set up. No project config layer is present; the cascade has only pack defaults.
 
 Run: `jigc setup`
 
-The setup workflow walks the pack choice, the project config dir, and the first workflow.
+`jigc setup` installs jigc into this project (the adapter, the `jigc` allowlist, the `.jigc/config/` layer). Then `jigc start` orients you to the setup workflows — `project-setup` (develop a new project's idea into its first requirements) or `ingest-existing` (bring an existing repo's docs under management). See [project-setup.md](project-setup.md).
 ```
 
 **2. Clean project, no active task** — pack installed, no in-progress work:
@@ -49,7 +49,7 @@ Pack: dev/v0.3.0 · Project config: .jigc/config/ · Branch: main (HEAD a3f9c2)
 
 Available workflows:
   - single-task    — Implement one well-scoped change against an existing spec.
-  - project-setup  — Set up the development pack on a fresh repo.
+  - project-setup  — Bootstrap a brand-new project — develop the idea into its first requirements.
 
 Recent: 3 finalizations on this branch · last: add-rate-limiter (2026-05-27)
 
