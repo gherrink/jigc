@@ -12,7 +12,7 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 | `adr` | one architecture decision | persisted → `decisions/` | M1 | ✅ shipped |
 | `spec` | the "what" a task implements | persisted → `specs/` | M3 | planned |
 | `prd` | product requirements above specs | persisted → `prds/` | M9 | planned |
-| `arch-doc` | living architecture documentation | persisted | driver TBD | named, unscheduled |
+| `arch-doc` | living architecture documentation | persisted | M13 | planned |
 
 VISION's starting set is commit · arch-doc · prd · adr · spec ([VISION.md](../VISION.md) → Document model). `commit` + `adr` are built, `spec` is next (M3), `prd` + `arch-doc` await a driving workflow.
 
@@ -40,5 +40,5 @@ prd ──decomposes-into──▶ spec ──decided-by──▶ adr ◀──s
 ## Unsettled
 
 - **`prd` driver — settled M9.** The new-project idea-development setup workflow drives `prd`, earning its schema from that real creator ([project-setup.md](../design/project-setup.md) → Flow 1; [DECISIONS.md](../DECISIONS.md) 2026-06-06). M9's `prd` uses **fixed prose slots** (single-word section ids), so the `prd —decomposes-into→ spec` edge stays intent (no per-requirement anchors to author from) until a flow needs structured, individually-addressable requirements.
-- **`arch-doc` driver.** Named in VISION but no scheduled workflow; earns its schema only when a yet-undesigned arch workflow creates or reads it. Until then it stays here as intent, in no pack.
+- **`arch-doc` driver — scheduled M13.** *Living architecture documentation* earns its schema from a general architecture-documentation workflow at M13 (doctype & surface completion), which also activates `arch-doc↔code` over M10's probe mechanism ([roadmap.md](roadmap.md) → M13; [DECISIONS.md](../DECISIONS.md) 2026-06-06).
 - **doc↔code edges** (`spec`/`arch-doc` → code) are pack-provided validation *probes*, not structural relations — they land after the docs they check exist (post-M3), per [VISION.md](../VISION.md) → principle #6.

@@ -13,15 +13,18 @@ This is a *decision/discussion* backlog, not a *task* backlog — tasks are stil
 
 *(The spine's milestone-keyed deferrals are all graduated — M9 was the last spine milestone and its two `(D)` items are settled at M9 planning, 2026-06-06: legacy ingestion **bounded** to detect-and-route (the research-grade auto-migrate core deferred below), and profiles-beyond-Claude-Code **confirmed deferred** since M9 targets only Claude Code. Post-spine items below + the condition-keyed backlog are what remain.)*
 
-### After the spine completes (post-M9 — these need a milestone *created* for them)
+### The post-spine arc (M10–M14) — now scheduled (2026-06-06)
 
-The roadmap spine ends at M9; these are real, locked-direction items with **no home milestone on the current spine** — listed so they get one, rather than drifting:
+The foundational spine ended at M9; the post-spine cluster that previously had *no home milestone* is now **created and ordered** as the post-spine arc, shaped suggestion-by-suggestion ([roadmap.md](roadmap.md) → The post-spine arc; [DECISIONS.md](../DECISIONS.md) 2026-06-06). Each is milestone-level only — decomposed when picked up. Mapping:
 
-- **Legacy auto-migration** — the research-grade core of existing-project ingestion: *rewriting* a non-conformant foreign doc into conformant shape (vs M9's bounded **detect-and-route**, which classifies + routes but never rewrites — [project-setup.md](../design/project-setup.md) → Flow 2). Needs tolerant/fuzzy heading-mapping machinery the strict canonical parser deliberately withholds ([VISION.md](../VISION.md) → Open questions). *Trigger:* a real foreign-doc corpus + a measured migration-quality baseline justifying the machinery (and a willingness to relax the determinism boundary around the parse). Wants its own post-spine milestone.
-- **Self-hosting** — distill the harness into a jigc pack + dogfood it ([ideas/self-hosting.md](../ideas/self-hosting.md)); the designed terminus, presupposing M7 (done) + M8 + workflow-as-artifact machinery.
-- **`describe` / introspection surface** — parked post-MVP, direction locked ([ideas/describe.md](../ideas/describe.md)); candidate home `design/introspection.md`.
-- **The `doc↔code` pack-probe family** — pack-probe sandboxing, `doc-code` logic, the subprocess probe contract ([validation.md](../design/validation.md) / [module-layout.md](module-layout.md) → Open questions); lands after the doc-creation flows exist (VISION principle #6). Wants its own pack-probe milestone.
-- **Multi-pack composition** — a second domain pack + cascade composition ([VISION.md](../VISION.md)); blocked on a real second pack (the "not a second domain yet" non-goal).
+- **`doc↔code` pack-probe family → M10** — the first pack-provided probes (subprocess + determinism contract) + the `code-anchor` field type; VISION #6 "validate against reality." OS-level sandboxing stays deferred.
+- **`describe` / introspection → M11** — the prose-projection self-description surface ([ideas/describe.md](../ideas/describe.md)); design locked, the open thread (which definitions carry `description:`/`usage:` + cascade merge) is its planning work.
+- **Self-hosting → M12** *(exploratory)* — distill the harness into a methodology pack + dogfood ([ideas/self-hosting.md](../ideas/self-hosting.md)); mints the second pack. May reveal a workflow-dialect-extension milestone mid-encode.
+- **Doctype & surface completion → M13** — `arch-doc` earns its driver + the methodology's own docs (roadmap / deferral-ledger / decisions-log) become managed doctypes; the self-hosting fold-back.
+- **Multi-pack composition → M14** — compose our two packs (dev + methodology) in the cascade; blocked until M12 mints the second pack, so last. Bounded to our-two-packs, **not** a public pack-authoring API.
+
+**Still genuinely unscheduled (deferred beyond the arc):**
+- **Legacy auto-migration** — the research-grade core of existing-project ingestion: *rewriting* a non-conformant foreign doc into conformant shape (vs M9's bounded **detect-and-route**, which classifies + routes but never rewrites — [project-setup.md](../design/project-setup.md) → Flow 2). Needs tolerant/fuzzy heading-mapping machinery the strict canonical parser deliberately withholds ([VISION.md](../VISION.md) → Open questions). *Trigger:* a real foreign-doc corpus + a measured migration-quality baseline justifying the machinery (and a willingness to relax the determinism boundary around the parse). Wants its own milestone, not yet created.
 
 ### Document shapes — discuss when a workflow drives each
 
