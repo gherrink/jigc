@@ -292,3 +292,173 @@ fn symbol_exists_blocks_when_file_absent() {
     );
     assert_eq!(findings[0].code, "doc-code.symbol-exists");
 }
+
+// ----- T3: the `criterion-maps-to-test` is-a-test predicate + determinism -----
+
+/// Drive the probe over the invoker against a working tree with one real `.rs` file and
+/// return the **raw `ProbeResponse` stdout bytes** (before ingestion) — what T3's
+/// determinism assertion compares byte-for-byte across repeated runs. Reuses the same
+/// build + snapshot + request shape as [`run_symbol_fixture`].
+fn raw_stdout_for_fixture(file_body: &str, anchors: Vec<TargetAnchor>) -> Vec<u8> {
+    let probe = build_doc_code_probe();
+
+    let root = TempDir::new("dettree");
+    fs::create_dir_all(root.path().join("crates/engine/src")).expect("mk tree");
+    fs::write(
+        root.path().join("crates/engine/src/lib.rs"),
+        file_body.as_bytes(),
+    )
+    .expect("write fixture .rs");
+
+    let scratch = TempDir::new("detscratch");
+    let snapshot = EffectiveStateSnapshot::new(anchors, root.path().to_path_buf());
+    let snapshot_path = scratch.path().join("snapshot.json");
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+
+    let request = ProbeRequest::new(
+        "doc-code",
+        "spec:x#criteria/c/maps-to-test",
+        snapshot_path,
+        serde_json::Map::new(),
+    );
+    let request_bytes = serde_json::to_vec(&request).expect("serialize request");
+
+    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
+        .expect("invoker drives the doc-code probe");
+    assert_eq!(
+        outcome.status,
+        ProbeStatus::Exited { code: Some(0) },
+        "a well-behaved probe exits 0: stdout={}",
+        String::from_utf8_lossy(&outcome.stdout),
+    );
+    outcome.stdout
+}
+
+/// A `maps-to-test` anchor whose `#symbol` names a real `#[test]`-attributed fn resolves
+/// — **no** finding (symbol exists AND the is-a-test predicate holds).
+#[test]
+fn criterion_maps_to_test_resolves_real_test_fn() {
+    let findings = run_symbol_fixture(
+        "#[test]\nfn covers_limit() {}\nfn helper() {}\n",
+        vec![TargetAnchor {
+            address: "spec:rate-limiting#criteria/limit/maps-to-test".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#covers_limit".to_string(),
+            check_id: "criterion-maps-to-test".to_string(),
+        }],
+    );
+    assert!(
+        findings.is_empty(),
+        "a real #[test] fn satisfies criterion-maps-to-test: {findings:?}",
+    );
+}
+
+/// A `maps-to-test` anchor whose `#symbol` resolves to a real fn that is **not** a
+/// `#[test]` (a plain fn) → **one** blocking `doc-code.criterion-maps-to-test` finding:
+/// the symbol exists but fails the is-a-test predicate.
+#[test]
+fn criterion_maps_to_test_blocks_non_test_fn() {
+    let findings = run_symbol_fixture(
+        // `covers_limit` exists but carries no `#[test]` attribute.
+        "fn covers_limit() {}\n#[test]\nfn other() {}\n",
+        vec![TargetAnchor {
+            address: "spec:rate-limiting#criteria/limit/maps-to-test".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#covers_limit".to_string(),
+            check_id: "criterion-maps-to-test".to_string(),
+        }],
+    );
+    assert_eq!(
+        findings.len(),
+        1,
+        "a non-#[test] fn fails criterion-maps-to-test: {findings:?}",
+    );
+    let finding = &findings[0];
+    assert_eq!(finding.code, "doc-code.criterion-maps-to-test");
+    assert_eq!(
+        finding.location.as_ref().and_then(|l| l.address.as_deref()),
+        Some("spec:rate-limiting#criteria/limit/maps-to-test"),
+        "the finding names the target address",
+    );
+}
+
+/// A `maps-to-test` anchor whose `#symbol` names a non-existent fn → **one** blocking
+/// `doc-code.criterion-maps-to-test` finding (symbol existence is the floor of the check).
+#[test]
+fn criterion_maps_to_test_blocks_missing_fn() {
+    let findings = run_symbol_fixture(
+        "#[test]\nfn other() {}\n",
+        vec![TargetAnchor {
+            address: "spec:rate-limiting#criteria/limit/maps-to-test".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#covers_limit".to_string(),
+            check_id: "criterion-maps-to-test".to_string(),
+        }],
+    );
+    assert_eq!(
+        findings.len(),
+        1,
+        "a non-existent fn fails criterion-maps-to-test: {findings:?}",
+    );
+    assert_eq!(findings[0].code, "doc-code.criterion-maps-to-test");
+}
+
+/// A `symbol-exists` anchor is **unaffected** by the is-a-test predicate: a plain
+/// (non-`#[test]`) fn resolves for `symbol-exists` and yields no finding — the predicate
+/// applies only to `criterion-maps-to-test`.
+#[test]
+fn symbol_exists_unaffected_by_test_predicate() {
+    let findings = run_symbol_fixture(
+        "fn covers_limit() {}\n",
+        vec![TargetAnchor {
+            address: "adr:x#status/cites-code".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#covers_limit".to_string(),
+            check_id: "symbol-exists".to_string(),
+        }],
+    );
+    assert!(
+        findings.is_empty(),
+        "symbol-exists ignores the is-a-test predicate: {findings:?}",
+    );
+}
+
+/// Determinism by re-execution (increment-workflow.md → hardening #7): a static parse is
+/// a pure function of (code + anchors), so the same request + snapshot driven **twice**
+/// yields **byte-identical** `ProbeResponse` stdout. A mixed fixture (a passing test fn, a
+/// failing non-test fn, a `symbol-exists` anchor) exercises every emission path.
+#[test]
+fn doc_code_response_is_byte_identical_across_runs() {
+    let anchors = vec![
+        TargetAnchor {
+            address: "spec:rate-limiting#criteria/limit/maps-to-test".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#covers_limit".to_string(),
+            check_id: "criterion-maps-to-test".to_string(),
+        },
+        TargetAnchor {
+            address: "spec:rate-limiting#criteria/burst/maps-to-test".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#helper".to_string(),
+            check_id: "criterion-maps-to-test".to_string(),
+        },
+        TargetAnchor {
+            address: "adr:x#status/cites-code".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#helper".to_string(),
+            check_id: "symbol-exists".to_string(),
+        },
+    ];
+    let body = "#[test]\nfn covers_limit() {}\nfn helper() {}\n";
+
+    let first = raw_stdout_for_fixture(body, anchors.clone());
+    let second = raw_stdout_for_fixture(body, anchors);
+    assert_eq!(
+        first, second,
+        "the same request + snapshot must yield byte-identical ProbeResponse stdout",
+    );
+    // Guard against a vacuous pass: the response must carry the one expected finding
+    // (the non-test `helper` fails maps-to-test; the test fn and symbol-exists pass).
+    let text = String::from_utf8(first).expect("utf8 stdout");
+    assert!(
+        text.contains("\"doc-code.criterion-maps-to-test\""),
+        "the mixed fixture must surface the one blocking finding: {text}",
+    );
+}

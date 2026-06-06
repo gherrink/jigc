@@ -25,7 +25,16 @@
 //! (the Rust grammar, chosen by file extension) and `<symbol>` is resolved against the
 //! file's **top-level** named items. An unresolvable symbol yields one blocking
 //! `doc-code.<check_id>` finding ([resolve]). An absent file still blocks (file-existence
-//! subsumed — no AST to resolve against). The is-a-test predicate stays **T3**.
+//! subsumed — no AST to resolve against).
+//!
+//! ## T3 scope — the `criterion-maps-to-test` is-a-test predicate
+//!
+//! For a `criterion-maps-to-test` anchor the resolved `#symbol` must additionally satisfy
+//! the **is-a-test predicate** — a `#[test]`-attributed top-level `fn` ([resolve]). A
+//! symbol that resolves but is not a `#[test]` fn yields one blocking
+//! `doc-code.criterion-maps-to-test` finding; a `symbol-exists` anchor is unaffected by
+//! the predicate. Resolution is static parse only — no `cargo`/build/network/wall-clock —
+//! so the response is a pure function of (code + anchors) and identical across runs.
 
 mod resolve;
 
@@ -143,6 +152,19 @@ impl Finding {
         )
     }
 
+    /// One blocking `doc-code.criterion-maps-to-test` finding for an anchor whose `#symbol`
+    /// resolves to a real top-level symbol that is **not** a `#[test]` fn — the is-a-test
+    /// predicate failed (T3).
+    fn not_a_test(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
+        Self::dangling(
+            anchor,
+            format!(
+                "anchor `{}` maps to no test (`{symbol}` in `{file}` is not a `#[test]` fn)",
+                anchor.anchor_value,
+            ),
+        )
+    }
+
     /// The common blocking-finding shape: `doc-code.<check_id>` keyed on the target.
     fn dangling(anchor: &TargetAnchor, message: String) -> Self {
         Self {
@@ -188,11 +210,19 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
                 return None;
             }
             let src = std::fs::read_to_string(&path).ok()?;
-            if resolve::symbol_exists_in_rust(&src, symbol) {
-                None
-            } else {
-                Some(Finding::dangling_symbol(anchor, file, symbol))
+            if !resolve::symbol_exists_in_rust(&src, symbol) {
+                // The symbol is absent — the floor of every `#symbol` check, including
+                // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
+                return Some(Finding::dangling_symbol(anchor, file, symbol));
             }
+            // The symbol resolves. `criterion-maps-to-test` additionally requires the
+            // is-a-test predicate (a `#[test]` fn); `symbol-exists` is satisfied here.
+            if anchor.check_id == "criterion-maps-to-test"
+                && !resolve::test_fn_exists_in_rust(&src, symbol)
+            {
+                return Some(Finding::not_a_test(anchor, file, symbol));
+            }
+            None
         })
         .collect()
 }
