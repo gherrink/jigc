@@ -568,6 +568,111 @@ mod tests {
 
     /// The shipped `commit` schema, loaded from the embedded pack source tree.
     const COMMIT_YAML: &[u8] = include_bytes!("../pack/schemas/commit.yaml");
+    /// The shipped `prd` schema (M9 new-project doc-type), loaded from the
+    /// embedded pack source tree so the round-trip pins exactly the bytes that ship.
+    const PRD_YAML: &[u8] = include_bytes!("../pack/schemas/prd.yaml");
+
+    /// A throwaway directory that removes itself on drop — keeps the prd round-trip
+    /// off any real repo tree.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            let unique = format!(
+                "jigc-prd-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            );
+            path.push(unique);
+            std::fs::create_dir_all(&path).expect("create temp root");
+            TempRoot(path)
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// RED STEP (G2, DECISIONS.md 2026-06-06): the `prd` schema loads, and a
+    /// hand-authored `prd` instance with all three **single-word** prose slots
+    /// (`vision`/`requirements`/`context`) filled **canonical-writes then re-parses
+    /// idempotently** — proving the single-word-id constraint holds for the new
+    /// shape, never trusting it. The round-trip is `write::render` → write to the
+    /// canonical `prds/<slug>.md` → `store::read_slice` (which re-parses the
+    /// committed bytes against the real schema and slices each section by its id):
+    /// a multi-word id would trip the logged title-case reparse defect — the writer
+    /// emits a title-cased `## <Heading>` the parser's flat id-compare misses, so the
+    /// slice would fail. Single-word ids route around it, so every slot resolves
+    /// byte-for-byte to its source prose.
+    #[test]
+    fn prd_schema_loads_and_single_word_slots_round_trip() {
+        let schema = load_schema(PRD_YAML).expect("prd.yaml loads");
+        assert_eq!(schema.ty, "prd");
+        assert_eq!(schema.location.as_deref(), Some("prds/"));
+        assert_eq!(schema.id_from.as_deref(), Some("title"));
+
+        let vision = "A deterministic context compiler for coding agents.";
+        let requirements =
+            "- Assemble exactly the slices a task needs.\n\n- Own every structural write.";
+        let context = "Static rules files drift; this replaces them.";
+
+        let instance = engine::write::Instance {
+            title: "Context compiler".to_string(),
+            sections: vec![
+                engine::write::SectionContent {
+                    id: "vision".to_string(),
+                    slot: Some(vision.to_string()),
+                    ..Default::default()
+                },
+                engine::write::SectionContent {
+                    id: "requirements".to_string(),
+                    slot: Some(requirements.to_string()),
+                    ..Default::default()
+                },
+                engine::write::SectionContent {
+                    id: "context".to_string(),
+                    slot: Some(context.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+
+        let bytes = engine::write::render(&schema, &instance);
+
+        // Commit the rendered bytes at the prd's canonical path, then re-read.
+        let root = TempRoot::new("round-trip");
+        let path = root.0.join("prds").join("context-compiler.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk prds/");
+        std::fs::write(&path, &bytes).expect("write committed prd");
+
+        let mut schemas = BTreeMap::new();
+        schemas.insert("prd".to_string(), schema);
+
+        for (section, expected) in [
+            ("vision", vision),
+            ("requirements", requirements),
+            ("context", context),
+        ] {
+            let address =
+                Address::parse(&format!("prd:context-compiler#{section}")).expect("valid address");
+            let got = engine::store::read_slice(root.0.as_path(), &schemas, &address)
+                .expect("conformant prd slice re-parses and resolves");
+            // The writer trim_ends prose and the parser trims the span, so the
+            // recorded slot bytes are the trimmed prose; the canonical render places
+            // it contiguously, so trimmed == the prose itself.
+            assert_eq!(
+                got,
+                expected.trim(),
+                "the `{section}` single-word slot round-trips byte-for-byte",
+            );
+        }
+    }
 
     /// The `implements` ref on `commit` resolves through `field_target` by both
     /// addressing forms: the canonical section-qualified `commit:<slug>#header/implements`
