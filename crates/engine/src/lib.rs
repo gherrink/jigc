@@ -19,6 +19,7 @@ pub mod file_state;
 pub mod finalize;
 pub mod finding;
 pub mod index;
+pub mod ingest;
 pub mod knobs;
 pub mod milestone;
 pub mod override_default;
