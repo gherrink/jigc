@@ -141,6 +141,14 @@ pub enum KnobError {
     /// (`overrides.md` → Locked keys).
     #[error("intrinsic check `{0}` must be declared (with `floor: blocking`) but is absent")]
     UndeclaredIntrinsic(String),
+
+    /// A knob declared a non-engine-native `type` (a pack-declared field type).
+    /// Knobs reuse only the engine-native field-type vocabulary; a pack type is
+    /// never a knob, so it is rejected at load rather than folded in as an
+    /// opaque value. (Before M10 opened the type vocabulary this was a serde
+    /// error against the closed enum; now it is this typed error.)
+    #[error("knob `{0}` declares a non-native type `{1}` (knobs reuse only engine-native types)")]
+    NonNativeType(String, String),
 }
 
 /// Parse the closed knob surface from raw `config/knobs.yaml` bytes.
@@ -162,6 +170,9 @@ pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
     let mut defaults = BTreeMap::new();
     let mut floors = BTreeMap::new();
     for (key, decl) in decls {
+        if let crate::schema::FieldType::Pack(pack) = &decl.ty {
+            return Err(KnobError::NonNativeType(key, pack.name.clone()));
+        }
         let default = decl
             .default
             .ok_or_else(|| KnobError::MissingDefault(key.clone()))?;
@@ -428,6 +439,22 @@ mod tests {
         let yaml = b"some-knob:\n  type: string\n  defualt: x\n";
         let err = load_knobs(yaml).expect_err("unknown body key errors");
         assert!(matches!(err, KnobError::Malformed(_)), "got {err:?}");
+    }
+
+    /// A knob declaring a non-engine-native type is rejected with a typed error.
+    /// Knobs reuse only the native field-type vocabulary; once M10 opened the
+    /// vocabulary, a non-native `type:` deserializes to a pack-declared type
+    /// rather than a serde error, so the knob loader rejects it explicitly — a
+    /// pack field type is never a knob.
+    #[test]
+    fn non_native_knob_type_is_a_typed_error() {
+        let yaml = b"some-knob:\n  type: code-anchor\n  default: x\n";
+        let err = load_knobs(yaml).expect_err("non-native knob type errors");
+        assert!(
+            matches!(&err, KnobError::NonNativeType(key, ty)
+                if key == "some-knob" && ty == "code-anchor"),
+            "expected NonNativeType, got {err:?}",
+        );
     }
 
     /// The embedded pack floors **exactly** the 13 intrinsic checks at `blocking`

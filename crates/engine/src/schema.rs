@@ -139,17 +139,26 @@ pub struct Slot {
 
 /// A CLI-adjudicated typed field, with the relation metadata a `ref` carries.
 ///
-/// `id` is the on-disk key; `ty` selects the engine-native or pack-provided
+/// `id` is the on-disk key; `ty` selects the engine-native or pack-declared
 /// type. `ref`-specific keys (`to` / `card` / `inverse` / `inverse-card`) and
 /// type-specific keys (`of` / `default` / `set`) ride alongside, per
 /// `design/document-type-schema.md` → Field / Cross-references.
+///
+/// The `type` key deserializes into a *raw* [`RawFieldType`] string (a closed
+/// native name, or any other string left unresolved); [`load_schema`] then
+/// resolves it against the supplied pack-declared type set into the typed
+/// [`Field::ty`] — promoting a declared name to a [`FieldType::Pack`] carrying
+/// its adjudicator binding, and rejecting an undeclared name with a typed
+/// [`SchemaError::UnknownFieldType`] (never a panic). This two-step resolve is
+/// why the engine ships **no** pack field type yet admits one a pack declares
+/// (the engine-empty invariant).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Field {
     /// The field id (and the on-disk key).
     pub id: String,
 
-    /// The field's type.
+    /// The field's type, resolved against the pack-declared type set at load.
     #[serde(rename = "type")]
     pub ty: FieldType,
 
@@ -186,14 +195,23 @@ pub struct Field {
     pub inverse_card: Option<String>,
 }
 
-/// The field type vocabulary. Engine-native types are enumerated; `code-anchor`
-/// is the one MVP pack-provided type whose adjudicator ships in a pack.
+/// The field type vocabulary — **engine-native variants + a pack-declared
+/// variant** (the M10 extension axis). Native types are a closed set the engine
+/// owns; [`FieldType::Pack`] carries a type a *pack* declares (its spelling +
+/// the adjudicator probe bound to it). The engine ships **no** pack type itself
+/// (the engine-empty invariant): `code-anchor` lives in the dev pack, declared
+/// as a `(name, adjudicator)` pair (`design/document-type-schema.md` →
+/// Pack-declared field types).
 ///
-/// An undeclared type name is a typed [`SchemaError::UnknownFieldType`] at load,
-/// never a panic — `deny_unknown_fields` rejects the *shape*; this rejects the
-/// *value*.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
+/// **Deserialization is two-step.** Serde maps a known kebab string to its
+/// native variant; **any other string** deserializes to an *unresolved*
+/// [`FieldType::Pack`] (`adjudicator: None`). [`load_schema`] then resolves each
+/// unresolved `Pack` against the supplied pack-declared type set — promoting a
+/// **declared** name to carry its adjudicator binding, and rejecting an
+/// **undeclared** name with a typed [`SchemaError::UnknownFieldType`], never a
+/// panic. This is why the engine admits a pack-supplied type while shipping
+/// none: the *name→adjudicator* binding rides in from the pack at load.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FieldType {
     /// A controlled-choice member set (`of:` + optional `default:`).
     Enum,
@@ -207,8 +225,93 @@ pub enum FieldType {
     Int,
     /// A cross-reference carrying relation metadata.
     Ref,
-    /// A pack-provided pointer at a module / symbol / test.
-    CodeAnchor,
+    /// A pack-declared type: its declared spelling plus the adjudicator probe
+    /// bound to it. `adjudicator` is `None` until [`load_schema`] resolves the
+    /// name against the supplied pack-declared set; an unresolved `Pack`
+    /// surviving to resolution with an undeclared name is the
+    /// [`SchemaError::UnknownFieldType`] case.
+    Pack(PackFieldType),
+}
+
+impl FieldType {
+    /// The closed set of engine-native type spellings (kebab on disk). A
+    /// `type:` string outside this set is a pack-declared candidate.
+    const NATIVE: &'static [(&'static str, FieldType)] = &[
+        ("enum", FieldType::Enum),
+        ("string", FieldType::String),
+        ("date", FieldType::Date),
+        ("bool", FieldType::Bool),
+        ("int", FieldType::Int),
+        ("ref", FieldType::Ref),
+    ];
+
+    /// The on-disk spelling of this type (the inverse of [`Self::NATIVE`]).
+    fn as_str(&self) -> &str {
+        match self {
+            FieldType::Enum => "enum",
+            FieldType::String => "string",
+            FieldType::Date => "date",
+            FieldType::Bool => "bool",
+            FieldType::Int => "int",
+            FieldType::Ref => "ref",
+            FieldType::Pack(p) => &p.name,
+        }
+    }
+}
+
+// On disk a field type is a bare string. A native spelling maps to its variant;
+// any other string becomes an *unresolved* `Pack` (`adjudicator: None`) that
+// `load_schema` then resolves against the pack-declared set (or rejects with a
+// typed `UnknownFieldType`). Serializing emits the bare spelling back.
+impl Serialize for FieldType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for FieldType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = std::string::String::deserialize(deserializer)?;
+        Ok(Self::NATIVE
+            .iter()
+            .find(|(spelling, _)| *spelling == name)
+            .map(|(_, ty)| ty.clone())
+            .unwrap_or(FieldType::Pack(PackFieldType {
+                name,
+                adjudicator: None,
+            })))
+    }
+}
+
+/// A pack-declared field type: a `(name, adjudicator-probe)` pair.
+///
+/// The pack declares the type's spelling (`code-anchor`) and the **probe** that
+/// adjudicates it (`doc-code`); the binding falls out of the type — a leaf of
+/// this type *means* its bound probe applies, exactly as a `ref` leaf means
+/// `ref-resolves` applies. `adjudicator` is `None` for a freshly-deserialized
+/// (still-unresolved) type and `Some(probe)` once [`load_schema`] has resolved
+/// the name against the supplied pack-declared set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PackFieldType {
+    /// The type's declared spelling (the on-disk `type:` value, e.g.
+    /// `code-anchor`).
+    pub name: String,
+
+    /// The probe bound to adjudicate this type (e.g. `doc-code`). `None` until
+    /// resolved against the pack-declared set at load.
+    pub adjudicator: Option<String>,
+}
+
+/// A pack's field-type declaration: the `(name, adjudicator-probe)` pair a pack
+/// supplies so a schema field may name it. The engine ships none; the dev pack
+/// declares `code-anchor` → `doc-code`. Threaded into [`load_schema_with_types`]
+/// as the set against which an unresolved [`FieldType::Pack`] is resolved.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PackTypeDecl {
+    /// The type's spelling (e.g. `code-anchor`).
+    pub name: String,
+    /// The probe bound to adjudicate it (e.g. `doc-code`).
+    pub adjudicator: String,
 }
 
 /// Why loading a schema from raw YAML failed.
@@ -219,25 +322,106 @@ pub enum SchemaError {
     NotUtf8,
 
     /// The YAML did not match the schema model: an unknown key, a missing
-    /// required key, a malformed value, or an **undeclared field type**.
+    /// required key, or a malformed value.
     #[error("malformed schema YAML: {0}")]
     Malformed(#[from] serde_yaml_ng::Error),
+
+    /// A field named a type that is **neither engine-native nor pack-declared**.
+    /// The `type:` string parsed fine but resolves to nothing — the M10
+    /// extension axis rejects an undeclared name loudly here, never a panic.
+    #[error("field `{field}` names undeclared type `{ty}` (not engine-native, not pack-declared)")]
+    UnknownFieldType {
+        /// The field id whose type is undeclared.
+        field: String,
+        /// The undeclared type spelling the field named.
+        ty: String,
+    },
 }
 
-/// Parse a doc-type [`Schema`] from raw config-family YAML bytes.
+/// Parse a doc-type [`Schema`] from raw config-family YAML bytes, with **no**
+/// pack-declared types in scope — engine-native field types only.
+///
+/// A schema field naming a non-native type (e.g. `code-anchor`) is therefore a
+/// typed [`SchemaError::UnknownFieldType`] here: a pack type loads **only** when
+/// its declaration is threaded in via [`load_schema_with_types`]. The engine
+/// compiles in no schema content nor any pack type (the engine-empty invariant);
+/// the `commit` / `adr` / `spec` definitions and the `code-anchor` declaration
+/// ride in the pack.
+pub fn load_schema(bytes: &[u8]) -> Result<Schema, SchemaError> {
+    load_schema_with_types(bytes, &[])
+}
+
+/// Parse a doc-type [`Schema`], resolving each field's type against the supplied
+/// **pack-declared** type set (the `(name, adjudicator-probe)` pairs the pack
+/// declares — the M10 extension axis).
 ///
 /// The whole model deserializes through serde: an unknown key, a missing
-/// required key, or an undeclared field type is a typed [`SchemaError`], never a
-/// panic. The engine compiles in no schema content — the bytes are fed in (the
-/// `commit` / `adr` definitions ride in the pack).
-pub fn load_schema(bytes: &[u8]) -> Result<Schema, SchemaError> {
+/// required key, or a malformed value is a typed [`SchemaError::Malformed`]. A
+/// field whose `type:` is not engine-native deserializes to an unresolved
+/// [`FieldType::Pack`]; this pass then resolves it:
+///
+/// - a name **present** in `pack_types` is promoted to carry its adjudicator
+///   binding (so a `code-anchor` leaf *means* its `doc-code` probe applies),
+/// - a name **absent** from both the native set and `pack_types` is a typed
+///   [`SchemaError::UnknownFieldType`], never a panic.
+///
+/// The engine ships no pack type itself; `pack_types` comes from the pack.
+pub fn load_schema_with_types(
+    bytes: &[u8],
+    pack_types: &[PackTypeDecl],
+) -> Result<Schema, SchemaError> {
     let text = std::str::from_utf8(bytes).map_err(|_| SchemaError::NotUtf8)?;
-    let schema = serde_yaml_ng::from_str(text)?;
+    let mut schema: Schema = serde_yaml_ng::from_str(text)?;
+    for section in &mut schema.sections {
+        match &mut section.body {
+            SectionBody::Simple { fields, .. } => {
+                for field in fields {
+                    resolve_field_type(field, pack_types)?;
+                }
+            }
+            SectionBody::Repeatable { repeatable } => {
+                for leaf in &mut repeatable.block {
+                    if let Leaf::Field(field) = leaf {
+                        resolve_field_type(field, pack_types)?;
+                    }
+                }
+            }
+        }
+    }
     Ok(schema)
+}
+
+/// Resolve one field's (possibly unresolved) [`FieldType::Pack`] against the
+/// pack-declared set: bind the adjudicator if declared, else
+/// [`SchemaError::UnknownFieldType`]. Native types are already resolved.
+fn resolve_field_type(field: &mut Field, pack_types: &[PackTypeDecl]) -> Result<(), SchemaError> {
+    if let FieldType::Pack(pack) = &mut field.ty {
+        match pack_types.iter().find(|d| d.name == pack.name) {
+            Some(decl) => pack.adjudicator = Some(decl.adjudicator.clone()),
+            None => {
+                return Err(SchemaError::UnknownFieldType {
+                    field: field.id.clone(),
+                    ty: pack.name.clone(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn is_false(b: &bool) -> bool {
     !*b
+}
+
+/// Test-only: the dev pack's single M10 field-type declaration (`code-anchor` →
+/// `doc-code`). The engine ships none; cross-module test fixtures that load an
+/// inline schema carrying a `code-anchor` leaf thread this in to resolve it.
+#[cfg(test)]
+pub(crate) fn dev_pack_field_types() -> Vec<PackTypeDecl> {
+    vec![PackTypeDecl {
+        name: "code-anchor".to_owned(),
+        adjudicator: "doc-code".to_owned(),
+    }]
 }
 
 #[cfg(test)]
@@ -372,10 +556,13 @@ mod tests {
         assert!(matches!(&repeatable.block[1], Leaf::Slot { id, .. } if id == "statement"));
     }
 
+    use super::dev_pack_field_types as code_anchor_decl;
+
     /// A repeatable section round-trips through the model: id-source field +
     /// block leaves (slot and field). Exercises the `repeatable` shape the MVP
     /// schemas don't yet use, so the model is proven against the design's
-    /// SPEC-criteria example.
+    /// SPEC-criteria example — including a pack-declared `code-anchor` leaf,
+    /// which loads only when the type is threaded in.
     #[test]
     fn repeatable_section_models_an_item_block() {
         let yaml = b"\
@@ -389,7 +576,8 @@ sections:
         - { id: statement, slot: { hint: \"The criterion, testably phrased.\" } }
         - { id: maps-to-test, type: code-anchor }
 ";
-        let schema = load_schema(yaml).expect("repeatable schema loads");
+        let schema =
+            load_schema_with_types(yaml, &code_anchor_decl()).expect("repeatable schema loads");
         let SectionBody::Repeatable { repeatable } = &schema.sections[0].body else {
             panic!("criteria is repeatable");
         };
@@ -399,11 +587,77 @@ sections:
         let Leaf::Field(anchor) = &repeatable.block[2] else {
             panic!("maps-to-test is a field");
         };
-        assert_eq!(anchor.ty, FieldType::CodeAnchor);
+        // The leaf in a repeatable block resolves against the declared set too:
+        // it carries the pack name AND its bound adjudicator through the model.
+        assert_eq!(
+            anchor.ty,
+            FieldType::Pack(PackFieldType {
+                name: "code-anchor".to_owned(),
+                adjudicator: Some("doc-code".to_owned()),
+            })
+        );
     }
 
-    /// An undeclared field type is a typed error, not a panic — the core
-    /// malformed-schema done-criterion.
+    /// (i) A field typed `code-anchor` loads **only when** `code-anchor` is in
+    /// the supplied pack-declared set, and the resolved type carries its
+    /// `doc-code` adjudicator binding through the model — the M10 extension-axis
+    /// done-criterion. The engine itself ships no such type (the set is fed in).
+    #[test]
+    fn pack_declared_field_type_loads_with_its_adjudicator_binding() {
+        let yaml = b"\
+type: adr
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: cites-code, type: code-anchor }
+";
+        let schema =
+            load_schema_with_types(yaml, &code_anchor_decl()).expect("declared pack type loads");
+        let SectionBody::Simple { fields, .. } = &schema.sections[0].body else {
+            panic!("status is a simple header section");
+        };
+        let cites = fields.iter().find(|f| f.id == "cites-code").unwrap();
+        let FieldType::Pack(pack) = &cites.ty else {
+            panic!(
+                "cites-code resolves to a pack-declared type, got {:?}",
+                cites.ty
+            );
+        };
+        assert_eq!(pack.name, "code-anchor");
+        assert_eq!(
+            pack.adjudicator.as_deref(),
+            Some("doc-code"),
+            "the resolved pack type carries its bound adjudicator probe",
+        );
+    }
+
+    /// A `code-anchor` field is undeclared when **no** pack type set is supplied
+    /// — the engine-empty invariant in action: the engine knows no `code-anchor`
+    /// of its own, so the bare loader rejects it loudly with the typed
+    /// `UnknownFieldType` (never a panic, never a silent native fallback).
+    #[test]
+    fn pack_type_absent_from_set_is_unknown_field_type() {
+        let yaml = b"\
+type: adr
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: cites-code, type: code-anchor }
+";
+        let err = load_schema(yaml).expect_err("undeclared code-anchor errors");
+        assert!(
+            matches!(&err, SchemaError::UnknownFieldType { field, ty }
+                if field == "cites-code" && ty == "code-anchor"),
+            "expected UnknownFieldType for cites-code/code-anchor, got {err:?}",
+        );
+    }
+
+    /// (ii) A field typed with an **undeclared** name fails loudly with a typed
+    /// `SchemaError::UnknownFieldType` — never a panic, never a generic serde
+    /// `Malformed` (the `type:` string parses fine; it resolves to nothing). The
+    /// error names the offending field and type for diagnosis.
     #[test]
     fn unknown_field_type_is_a_typed_error() {
         let yaml = b"\
@@ -414,10 +668,12 @@ sections:
     fields:
       - { id: x, type: wormhole }
 ";
-        let err = load_schema(yaml).expect_err("undeclared field type errors");
+        let err =
+            load_schema_with_types(yaml, &code_anchor_decl()).expect_err("undeclared type errors");
         assert!(
-            matches!(err, SchemaError::Malformed(_)),
-            "expected a typed Malformed error, got {err:?}",
+            matches!(&err, SchemaError::UnknownFieldType { field, ty }
+                if field == "x" && ty == "wormhole"),
+            "expected a typed UnknownFieldType error, got {err:?}",
         );
     }
 

@@ -413,7 +413,9 @@ sections:
         - { id: statement, slot: { hint: \"x\" } }
         - { id: maps-to-test, type: code-anchor }
 ";
-        let schema = load_schema(yaml).expect("spec schema loads");
+        let schema =
+            crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+                .expect("spec schema loads");
         let instance = Instance {
             title: "Auth flow".to_string(),
             sections: vec![
@@ -634,7 +636,11 @@ sections:
         - { id: statement, slot: { hint: \"x\" } }
         - { id: maps-to-test, type: code-anchor }
 ";
-            let schema = load_schema(yaml).expect("spec schema loads");
+            let schema = crate::schema::load_schema_with_types(
+                yaml,
+                &crate::schema::dev_pack_field_types(),
+            )
+            .expect("spec schema loads");
             let fields = match &test_value {
                 Some(v) => vec![Field { key: "maps-to-test".into(), value: Value::Scalar(v.clone()) }],
                 None => vec![],
@@ -1628,7 +1634,8 @@ sections:
         - { id: statement, slot: { hint: \"x\" } }
         - { id: maps-to-test, type: code-anchor }
 ";
-        load_schema(yaml).expect("spec schema loads")
+        crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+            .expect("spec schema loads")
     }
 
     /// A canonical ADR fixture (the frozen byte form).
@@ -1942,7 +1949,8 @@ sections:
         - { id: statement, slot: { hint: \"x\" } }
         - { id: maps-to-test, type: code-anchor }
 ";
-        load_schema(yaml).expect("spec schema loads")
+        crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+            .expect("spec schema loads")
     }
 
     /// A schema with a body section (`detail`) that declares both a slot and a typed
@@ -2334,7 +2342,7 @@ fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
         // Non-empty, single-line opaque value; deeper adjudication is a finalize /
         // pack concern. Control chars (newline/tab/…) are rejected so a value can
         // never inject a second field line when spliced onto its `- key: value` line.
-        FieldType::String | FieldType::Ref | FieldType::CodeAnchor => {
+        FieldType::String | FieldType::Ref | FieldType::Pack(_) => {
             if value.is_empty() {
                 Err(format!("{:?} must not be empty", field.id))
             } else if value.chars().any(|c| c.is_control()) {

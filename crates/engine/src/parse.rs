@@ -1132,7 +1132,8 @@ sections:
         - { id: statement, slot: { hint: \"The criterion, testably phrased.\" } }
         - { id: maps-to-test, type: code-anchor }
 ";
-        load_schema(yaml).expect("spec schema loads")
+        crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+            .expect("spec schema loads")
     }
 
     /// Golden: an ADR fixture parses to its front-matter fields — `status` enum,
