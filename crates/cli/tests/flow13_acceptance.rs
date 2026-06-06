@@ -531,6 +531,89 @@ fn flow13_passing_walk_resolves_both_anchors_and_lands_one_commit() {
     );
 }
 
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and **no `JIGC_DOC_CODE_PROBE`
+/// override** — so the `doc-code` probe is resolved through the **production default**
+/// path (`<jigc-bin-dir>/doc-code`, a sibling of the running binary). This is what a real
+/// install hits; it works only if a normal `cargo build` produced the probe next to
+/// `jigc`. `env_remove` guards against an env var leaking in from the test runner.
+fn jigc_production_resolution(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_DOC_CODE_PROBE")
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// The passing walk through the **production default probe resolution** — finalize must
+/// resolve `doc-code` as a sibling of the `jigc` binary (`<bin-dir>/doc-code`) with **no**
+/// `JIGC_DOC_CODE_PROBE` override, proving a normal `cargo build` ships the probe into the
+/// build tree at the production-resolved location. On a tree where the probe is missing,
+/// `Command::spawn` errors and the engine raises a floor-locked
+/// `pack-probe-integrity.crash` meta-finding, blocking finalize permanently — the failure
+/// this guards against. The passing walk (both anchors resolve) must land exactly ONE
+/// commit, promote the adr, and carry NO `pack-probe-integrity` block.
+#[test]
+fn flow13_passing_walk_resolves_via_production_default_probe_path() {
+    let repo = TempDir::new("prod-pass-repo");
+    let home = TempDir::new("prod-pass-home");
+    init_repo(repo.path());
+
+    commit_spec_with_maps_to_test(repo.path(), home.path(), MAPS_TO_TEST);
+
+    let task = "enforce-the-rate-limit-at-the-gateway";
+    let slug = mint_bind_and_author_adr(
+        repo.path(),
+        home.path(),
+        "enforce the rate limit at the gateway",
+        task,
+        CITES_CODE,
+    );
+
+    let before = head_count(repo.path());
+    // The probe-bearing finalize runs through production resolution — no env override.
+    let out = jigc_production_resolution(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // A missing probe would surface here as a floor-locked crash meta-finding.
+    assert!(
+        !rendered.contains("pack-probe-integrity"),
+        "production resolution must find a runnable `doc-code` sibling — a missing probe \
+         raises a floor-locked pack-probe-integrity meta-finding; got:\n{rendered}",
+    );
+    assert_ok(
+        &out,
+        &format!("finalize via production probe resolution must pass; got:\n{rendered}"),
+    );
+    let after = head_count(repo.path());
+    assert_eq!(
+        after,
+        before + 1,
+        "the production-resolution passing walk must land exactly ONE commit"
+    );
+
+    // The probe really ran and both anchors resolved — no doc-code block in the report.
+    assert!(
+        !rendered.contains("doc-code"),
+        "both anchors resolve, so the report must carry no doc-code block; got:\n{rendered}",
+    );
+    // The created adr was promoted as part of the one commit.
+    let promoted = Command::new("git")
+        .args(["show", &format!("HEAD:decisions/{slug}.md")])
+        .current_dir(repo.path())
+        .output()
+        .expect("git show");
+    assert!(
+        promoted.status.success(),
+        "the created adr must be promoted to decisions/{slug}.md in the landed commit",
+    );
+}
+
 /// The blocking walk — a dangling `maps-to-test` anchor (the test renamed away) blocks
 /// finalize: non-zero exit, the finding names the dangling target + a route, and no
 /// commit lands. Exercises the **repeatable-block-leaf** anchor shape.
