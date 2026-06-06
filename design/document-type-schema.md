@@ -36,7 +36,7 @@ The CLI's only checks on a slot are presence and the integrity of any references
 A CLI-adjudicated typed value. Field **types** split along the engine/pack seam, mirroring the validation-probe split and keeping the engine empty of domain content:
 
 - **Engine-native:** `enum`, `string` (constrained: maxlen / pattern — also the id-source for slugging), `date`, `bool`, `int`, `ref` (a reference to a managed document or fragment; carries relation metadata — see [Cross-references](#cross-references--ref-fields-with-relation-metadata)).
-- **Pack-provided:** domain types such as `code-anchor` (points at a module / symbol / test). Their **adjudicator is pack-supplied** — "does this symbol exist? does this test cover this criterion?" is exactly the development pack's `doc ↔ code` probe. The meta-schema permits field types whose adjudicator ships in a pack.
+- **Pack-provided:** domain types such as `code-anchor` (points at a file / symbol / test). Their **adjudicator is pack-supplied** — "does this symbol exist? does a test cover this criterion?" is exactly the development pack's `doc ↔ code` probe. The meta-schema permits field types whose adjudicator ships in a pack — the mechanism is [Pack-declared field types](#pack-declared-field-types-m10) below, built in M10 (`code-anchor` is the first).
 
 Field **provenance** (who supplies the value) is partly implied by type:
 
@@ -44,6 +44,16 @@ Field **provenance** (who supplies the value) is partly implied by type:
 - **Controlled-choice** — `enum`; the LLM or human picks, the CLI validates membership.
 - **Referential** — `ref` / `code-anchor`; proposed by LLM or human, integrity-validated by the CLI or a pack probe.
 - **Free-but-typed** — a constrained `string`; written by LLM or human, shape-validated by the CLI.
+
+### Pack-declared field types (M10)
+
+The split above is a *seam*, not a closed enum. Until M10 it was aspirational — `code-anchor` existed only as a hardcoded engine variant adjudicated as a bare string, and a pack could not supply a field type at all (the M10 planning audit, [DECISIONS.md](../DECISIONS.md) 2026-06-06). M10 makes it a **genuine extension axis** (the human chose the real axis over a bound-to-engine-native shortcut), with `code-anchor` as the **first pack-declared field type**:
+
+- **A pack declares a field type** — a `(name, adjudicator)` pair: the type's spelling (`code-anchor`) and the **probe** that adjudicates it. The engine's field-type model opens from a closed enum to *engine-native variants + a pack-declared variant* carrying the declared name and its adjudicator binding. The engine ships **no** pack-declared types itself (the engine-empty invariant holds); `code-anchor` lives in the dev pack.
+- **Adjudication splits write-time vs finalize-time.** A pack-declared type may carry an optional **write-time shape check** (cheap, local — e.g. "non-empty, single-line, parses as `path#symbol`") that runs in the same `check_value` path the engine-native types use. Its **real adjudicator is the bound probe at finalize** — for `code-anchor`, the `doc-code` probe ([validation.md](validation.md) → The `doc-code` probe) which reaches real code. This is why a `code-anchor` authored by an out-of-band edit (the M10 acceptance authors `spec` criteria through the editable channel) is still caught: the probe, not a write-time gate, is the adjudicator.
+- **The binding falls out of the type, no separate declaration** — a `code-anchor` leaf *means* `doc-code` applies, exactly as a `ref` leaf means `ref-resolves` applies and a relation's `card` is enforced. The pack declares the type→probe binding once; every doctype that uses the type inherits the adjudicator.
+
+**`code-anchor` value grammar:** `<repo-relative-path>#<symbol>` (a bare `<path>` is a file-existence check) — see [validation.md](validation.md) → The anchor grammar. The two shipped M10 uses: `adr.cites-code` (a header field — the floor) and `spec` `criteria/<id>/maps-to-test` (a repeatable-block leaf — the headline). Both **optional**; the probe blocks on a *dangling* anchor, never on absence.
 
 ## Sections and repetition
 

@@ -735,3 +735,77 @@ $ jigc ingest
 1. **Repo-wide discovery + location-aware N-candidate classification.** All four candidates are discovered (beyond the declared `location:` dirs, sorted for deterministic report order) and classified against every persisted schema (`adr`/`spec`/`prd`) via `parse_sections` + `schema_conformance` — a **binary** parses-conformant-or-not verdict with **location as the discriminator**: `adoptable` requires conformant *and* already at the schema's `location:`; a conformant-but-misplaced doc is `needs-reconcile`, not silently adopted in place (which would make it invisible to every later store sweep). No fuzzy mapping.
 2. **Adopt is net-new + schema-gated; the `baseline-adopt` hole is closed.** Adopting `rate-limit.md` **parses + conformance-gates + populates the edge index (`index.absorb_doc`) + records the file-state hash** — *not* reconciliation's silent `baseline-adopt` (which schema-checks nothing and indexes nothing). It is **register-only — no file is moved or rewritten**. The non-conformant `auth-choice.md` and the misplaced `old-adr.md` are **routed, not adopted**; `notes.md` is **left untouched** — *nothing is adopted without a schema check at its correct location*.
 3. **No auto-migration, no clobber, idempotent setup.** `jigc ingest` **rewrites no prose** (detect-and-route only). The **binary-level irreversibility test**: seed `CLAUDE.md` with prior house rules + `.claude/settings.json` with a pre-existing hook, run `jigc setup` **twice**, and assert (a) the human content is preserved **verbatim** (structure-aware merge, never clobber), and (b) the second run's tree hash equals the first's (idempotent no-op). The `needs-reconcile` rows route to a human exactly as an OOB conflict does ([reconciliation.md](reconciliation.md)).
+
+## 13. doc↔code validation — the integration advantage (M10)
+
+The M10 acceptance: **documentation drift caught deterministically at the task boundary** — a `code-anchor` that no longer resolves to real code **blocks `finalize`**. This is VISION principle #6's headline (*validate against reality*) and the differentiator deferred since the MVP shipped only the engine-native probes. The new surface is the first **pack-provided probe** (`doc-code`, a subprocess behind the [determinism contract](validation.md#pack-probe-determinism-contract)) and the first **pack-declared field type** (`code-anchor` — [document-type-schema.md](document-type-schema.md#pack-declared-field-types-m10)). The **floor** is symbol/file existence (`adr.cites-code`); the **headline** is criterion→test mapping (`spec` `maps-to-test`). The proof is the **blocking** case — a happy-path-only acceptance would be a masking test ([validation.md](validation.md#the-doc-code-probe-m10) → Blocking semantics). Notation illustrative; the command spellings below were **spiked against the built grammar** at planning ([DECISIONS.md](../DECISIONS.md) 2026-06-06) — the *new* surfaces (`doc-code`, code-anchor resolution) are pinned at the build's acceptance spike, the scaffolding (`plan` / `implement-from-spec` / `bind` / `finalize`) is built.
+
+### What `doc-code` checks, and how each anchor gets authored
+
+`doc-code` enumerates `code-anchor` leaves over the task's **effective-state docs** — docs the task **created/edited** (working deltas) ∪ docs **bound** into its read roles — and resolves each against the working tree ([validation.md](validation.md#the-doc-code-probe-m10) → Target surface; a code-anchor is a probe-checked *field, not an edge*, so it is reached by direct enumeration, never the edge-index blast-radius). Both M10 targets are placed to sit in that surface:
+
+- **Headline — the `spec` criterion** is a **bound** read-role doc. Its `maps-to-test` anchor lives in the `criteria` repeatable block and is authored through the **editable channel** (raw git edit → reconcile absorb, the M3 flow-6 precedent) — `add-item` / in-CLI repeatable authoring stays deferred ([decisions-pending.md](../implementation/decisions-pending.md)). Seeded *before* the work task is minted (the resume re-compose pins to base; committing after mint advances HEAD and blocks — the spiked constraint).
+- **Floor — the `adr`** is **created in-task** via the work workflow's create-gate (`allows-create: [{type: adr, as: decision}]`), so it is a **working delta** in scope. Its `cites-code` header anchor is authored in-CLI via `jigc doc set-field` — which needs the small wiring of the existing `insert_front_matter_field` engine primitive to the verb (an absent optional header field is not settable today — the planning spike's writer-limitation finding; this is scoped into M10's build, distinct from the deferred `add-item`).
+
+Either way the **probe, not a write-time gate, is the adjudicator** (at finalize) — so an editable-channel anchor is caught exactly as a CLI-authored one is, which *is* the reconcile-then-validate property worth proving. The `path#symbol` value is write-safe (only control chars are rejected).
+
+### Setup — a `spec` whose criterion carries a `maps-to-test`, committed *before* the work task
+
+```text
+# (1) author + commit a spec via the plan workflow
+$ jigc start --workflow plan "the rate-limiter spec"
+$ jigc doc create spec --title "Gateway rate limiting" --task <plan-id>
+$ jigc doc set-slot "spec:gateway-rate-limiting#goal"    --from-file - --task <plan-id>
+$ jigc doc set-slot "spec:gateway-rate-limiting#context" --from-file - --task <plan-id>
+$ jigc doc set-field "commit:<plan-id>#type" --value docs --task <plan-id>   # + scope/summary/body
+$ jigc task finalize <plan-id>                          # → specs/gateway-rate-limiting.md
+
+# (2) editable channel: add a criterion carrying a maps-to-test anchor — committed on the
+#     base branch BEFORE minting the work task (the spiked pin-to-base constraint).
+#  specs/gateway-rate-limiting.md  ← append under ## criteria:
+#     ### Burst limit  {#burst-limit}
+#     Requests beyond 100/min are rejected.
+#     - maps-to-test: `crates/engine/tests/rate_limit.rs#burst_rejected`
+$ git add -A && git commit -m "seed criterion with maps-to-test anchor"
+```
+
+### The passing walk — both anchors resolve, finalize commits
+
+```text
+$ jigc start --workflow implement-from-spec "implement the rate limiter"
+$ jigc task bind spec spec:gateway-rate-limiting <impl-id>     # ROLE ADDR ID — spec enters effective state
+$ jigc start --task <impl-id>                                  # {{@task.spec#criteria}} resolves
+# … agent implements; creates an adr recording the choice, citing the code it affects:
+$ jigc doc create adr --title "Token-bucket limiter" --task <impl-id>     # create-gate → working delta
+$ jigc doc set-field "adr:token-bucket-limiter#cites-code" \
+        --value "crates/engine/src/limiter.rs#TokenBucket" --task <impl-id>
+# … the test rate_limit.rs#burst_rejected and the symbol limiter.rs#TokenBucket both exist …
+$ jigc task finalize <impl-id>
+  ✓ doc-code · symbol-exists            adr:token-bucket-limiter#cites-code → resolves     (created doc)
+  ✓ doc-code · criterion-maps-to-test   spec:…#criteria/burst-limit/maps-to-test → resolves (bound doc)
+  → one commit lands (code + the promoted adr).
+```
+
+### The blocking walk — a dangling anchor blocks (the headline proof)
+
+```text
+# the agent renames the test away (or never writes it): rate_limit.rs#burst_rejected no longer exists
+$ jigc task finalize <impl-id>
+  ✗ doc-code · criterion-maps-to-test · blocking
+    target:  spec:gateway-rate-limiting#criteria/burst-limit/maps-to-test
+    message: criterion maps to no test — `crates/engine/tests/rate_limit.rs#burst_rejected`
+             resolves to no test in the working tree
+    route:   add the test, re-point the anchor, or drop it
+  finalize blocked — no commit created.
+```
+
+…and symmetrically for the floor: the created `adr:token-bucket-limiter#cites-code` points at `limiter.rs#TokenBucket`; rename the symbol away and `finalize` blocks with `doc-code · symbol-exists`. The block shape mirrors flow-5/6's `ref-resolves` (probe · check · blocking · target · message · route; non-zero exit; `git rev-list --count HEAD` unchanged).
+
+### What it asserts (the acceptance bar)
+
+1. **The blocking case is the proof.** `finalize` **blocks** on a *dangling* `code-anchor` (present, resolves to no file/symbol/test) and **passes** when it resolves — the `ref-resolves` "blocks when it dangles" pattern, now over real code. A happy-path-only test is rejected as masking.
+   - **The check must be asserted to have *run*** — not merely that finalize blocked. The passing walk asserts the report contains the `doc-code.symbol-exists` (on the created adr) and `doc-code.criterion-maps-to-test` (on the bound spec) findings *resolving*; a report with **zero `doc-code` findings** is the masking failure (the target-surface enumeration silently skipped the docs) and fails the bar as hard as a missed block.
+2. **The contract is satisfied, not waived.** The `doc-code` subprocess runs under the [six rules](validation.md#the-six-rules); a probe that **times out / crashes / returns malformed output** surfaces as an **intrinsic-blocking `pack-probe-integrity.*` meta-finding**, not a silent pass. Assert at least the timeout + malformed-output meta-findings fire (e.g. a probe stub that sleeps past budget / emits non-JSON). OS-level sandboxing + `sandbox-violation` are out (trusted-pack).
+3. **Both extension axes are real.** `code-anchor` is **pack-declared** (the dev pack supplies the type + binds `doc-code` as its adjudicator — the engine ships no pack field type), and `doc-code` is a **pack-provided subprocess probe** reached over the reshaped, serializable `Probe` seam. Asserting the floor (`adr`) + headline (`spec` criterion) exercises both a header-field anchor and a repeatable-block-leaf anchor.
+4. **Reads working-tree code + the task's effective-state docs.** The probe resolves anchors against the **working tree** (the bytes about to be committed); the docs carrying those anchors come from the task's effective state — the **bound** `spec` (committed store) and the **created** `adr` (the task's working area). The combination closes the "resolved at compose, code changed before finalize" gap by construction.
+5. **Severity tunes through the cascade.** Demoting `validation.doc-code.criterion-maps-to-test.severity: warning` makes the dangling criterion **surface but not block** (the M6 post-pass, no code change); the intrinsic `pack-probe-integrity.*` meta-findings **cannot** be demoted below blocking (floor-rejected at resolution).
