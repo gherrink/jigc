@@ -176,3 +176,119 @@ fn doc_code_probe_blocks_missing_file_passes_present_and_bare_path() {
         "the finding is keyed on the absent anchor's address",
     );
 }
+
+/// Drive the probe over the invoker + ingestion path against a working tree with one
+/// real `.rs` file, returning the ingested findings.
+fn run_symbol_fixture(
+    file_body: &str,
+    anchors: Vec<TargetAnchor>,
+) -> Vec<engine::finding::Finding> {
+    let probe = build_doc_code_probe();
+
+    let root = TempDir::new("symtree");
+    fs::create_dir_all(root.path().join("crates/engine/src")).expect("mk tree");
+    fs::write(
+        root.path().join("crates/engine/src/lib.rs"),
+        file_body.as_bytes(),
+    )
+    .expect("write fixture .rs");
+
+    let scratch = TempDir::new("symscratch");
+    let snapshot = EffectiveStateSnapshot::new(anchors, root.path().to_path_buf());
+    let snapshot_path = scratch.path().join("snapshot.json");
+    fs::write(
+        &snapshot_path,
+        serde_json::to_vec(&snapshot).expect("serialize snapshot"),
+    )
+    .expect("write snapshot");
+
+    let request = ProbeRequest::new(
+        "doc-code",
+        "adr:x#status/cites-code",
+        snapshot_path,
+        serde_json::Map::new(),
+    );
+    let request_bytes = serde_json::to_vec(&request).expect("serialize request");
+
+    let outcome = invoke::invoke_probe(&probe, &request_bytes, Duration::from_secs(60))
+        .expect("invoker drives the doc-code probe");
+    assert_eq!(
+        outcome.status,
+        ProbeStatus::Exited { code: Some(0) },
+        "a well-behaved probe exits 0: stdout={}",
+        String::from_utf8_lossy(&outcome.stdout),
+    );
+
+    let findings = ingest_probe_run("doc-code", &into_run(outcome));
+    assert!(
+        findings.iter().all(|f| f.probe != "pack-probe-integrity"),
+        "a well-behaved probe synthesizes no meta-finding: {findings:?}",
+    );
+    findings
+}
+
+/// A `symbol-exists` anchor whose `#symbol` names a real top-level `fn` in a present
+/// `.rs` file resolves — **no** finding.
+#[test]
+fn symbol_exists_resolves_present_top_level_fn() {
+    let findings = run_symbol_fixture(
+        "fn alpha() {}\nfn beta() {}\n",
+        vec![TargetAnchor {
+            address: "adr:x#status/cites-code".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#beta".to_string(),
+            check_id: "symbol-exists".to_string(),
+        }],
+    );
+    assert!(
+        findings.is_empty(),
+        "a resolvable top-level fn yields no finding: {findings:?}",
+    );
+}
+
+/// A `symbol-exists` anchor whose `#symbol` names no top-level symbol in a present file
+/// (the symbol was deleted / renamed) → **one** blocking `doc-code.symbol-exists` finding
+/// keyed on the target address.
+#[test]
+fn symbol_exists_blocks_deleted_symbol_in_present_file() {
+    let findings = run_symbol_fixture(
+        // `beta` was renamed to `gamma`; the anchor still cites `beta`.
+        "fn alpha() {}\nfn gamma() {}\n",
+        vec![TargetAnchor {
+            address: "adr:single-node-cache#status/cites-code".to_string(),
+            anchor_value: "crates/engine/src/lib.rs#beta".to_string(),
+            check_id: "symbol-exists".to_string(),
+        }],
+    );
+    assert_eq!(
+        findings.len(),
+        1,
+        "a deleted symbol blocks once: {findings:?}",
+    );
+    let finding = &findings[0];
+    assert_eq!(finding.code, "doc-code.symbol-exists");
+    assert_eq!(
+        finding.location.as_ref().and_then(|l| l.address.as_deref()),
+        Some("adr:single-node-cache#status/cites-code"),
+        "the finding names the target address",
+    );
+}
+
+/// A `#symbol` anchor whose **file** is absent still blocks (file-existence subsumed —
+/// no file means no AST to resolve the symbol against).
+#[test]
+fn symbol_exists_blocks_when_file_absent() {
+    let findings = run_symbol_fixture(
+        "fn alpha() {}\n",
+        vec![TargetAnchor {
+            address: "adr:x#status/cites-code".to_string(),
+            anchor_value: "crates/engine/src/gone.rs#alpha".to_string(),
+            check_id: "symbol-exists".to_string(),
+        }],
+    );
+    assert_eq!(
+        findings.len(),
+        1,
+        "an absent file blocks even with a #symbol: {findings:?}",
+    );
+    assert_eq!(findings[0].code, "doc-code.symbol-exists");
+}

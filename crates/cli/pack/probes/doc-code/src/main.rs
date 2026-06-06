@@ -19,8 +19,15 @@
 //!    to a file-existence check).
 //! 4. Write a valid [`ProbeResponse`] JSON to **stdout** and exit `0`.
 //!
-//! **No tree-sitter, no symbol resolution** — `#symbol` resolution is T2,
-//! the is-a-test predicate is T3. T1 resolves only the *file* before the `#`.
+//! ## T2 scope — tree-sitter `#symbol` resolution
+//!
+//! When an anchor carries a `#symbol`, a present `.rs` file is parsed via tree-sitter
+//! (the Rust grammar, chosen by file extension) and `<symbol>` is resolved against the
+//! file's **top-level** named items. An unresolvable symbol yields one blocking
+//! `doc-code.<check_id>` finding ([resolve]). An absent file still blocks (file-existence
+//! subsumed — no AST to resolve against). The is-a-test predicate stays **T3**.
+
+mod resolve;
 
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -111,19 +118,39 @@ struct Location {
 }
 
 impl Finding {
-    /// One blocking `doc-code.<check_id>` finding for a dangling anchor, addressed at
-    /// the target the engine enumerated. `probe` / `check` split from the dotted code.
+    /// One blocking `doc-code.<check_id>` finding for an anchor whose **file** is absent,
+    /// addressed at the target the engine enumerated. `probe` / `check` split from the
+    /// dotted code.
     fn dangling_file(anchor: &TargetAnchor, file: &str) -> Self {
-        let code = format!("doc-code.{}", anchor.check_id);
+        Self::dangling(
+            anchor,
+            format!(
+                "anchor `{}` resolves to no file (`{file}` is absent from the working tree)",
+                anchor.anchor_value,
+            ),
+        )
+    }
+
+    /// One blocking `doc-code.<check_id>` finding for an anchor whose file is present but
+    /// whose `#symbol` resolves to no top-level symbol.
+    fn dangling_symbol(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
+        Self::dangling(
+            anchor,
+            format!(
+                "anchor `{}` resolves to no symbol (`{symbol}` is absent from `{file}`)",
+                anchor.anchor_value,
+            ),
+        )
+    }
+
+    /// The common blocking-finding shape: `doc-code.<check_id>` keyed on the target.
+    fn dangling(anchor: &TargetAnchor, message: String) -> Self {
         Self {
             severity: Severity::Blocking,
             probe: "doc-code".to_string(),
             check: anchor.check_id.clone(),
-            code,
-            message: format!(
-                "anchor `{}` resolves to no file (`{file}` is absent from the working tree)",
-                anchor.anchor_value,
-            ),
+            code: format!("doc-code.{}", anchor.check_id),
+            message,
             location: Some(Location {
                 address: anchor.address.clone(),
                 line: 1,
@@ -134,24 +161,37 @@ impl Finding {
     }
 }
 
-/// The file portion of an anchor value — everything before the first `#` (a bare path
-/// has no `#`, so it is the whole value).
-fn anchor_file(anchor_value: &str) -> &str {
-    anchor_value.split('#').next().unwrap_or("")
+/// Split an anchor value into its file portion (before the first `#`) and an optional
+/// `#symbol` (a bare path has no `#`, so the symbol is `None`).
+fn split_anchor(anchor_value: &str) -> (&str, Option<&str>) {
+    match anchor_value.split_once('#') {
+        Some((file, symbol)) => (file, Some(symbol)),
+        None => (anchor_value, None),
+    }
 }
 
-/// Resolve every anchor's file against the working-tree root, emitting one blocking
-/// finding per missing file and none for a present one.
+/// Resolve every anchor against the working tree: the file before any `#` must exist; a
+/// `#symbol` on a present `.rs` file must additionally resolve to a top-level symbol via
+/// tree-sitter. Each unresolvable anchor emits one blocking finding.
 fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
     snapshot
         .anchors
         .iter()
         .filter_map(|anchor| {
-            let file = anchor_file(&anchor.anchor_value);
-            if snapshot.working_tree_root.join(file).exists() {
+            let (file, symbol) = split_anchor(&anchor.anchor_value);
+            let path = snapshot.working_tree_root.join(file);
+            if !path.exists() {
+                return Some(Finding::dangling_file(anchor, file));
+            }
+            let symbol = symbol?;
+            if !resolve::is_rust_file(&path) {
+                return None;
+            }
+            let src = std::fs::read_to_string(&path).ok()?;
+            if resolve::symbol_exists_in_rust(&src, symbol) {
                 None
             } else {
-                Some(Finding::dangling_file(anchor, file))
+                Some(Finding::dangling_symbol(anchor, file, symbol))
             }
         })
         .collect()
