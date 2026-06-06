@@ -65,16 +65,19 @@ pub(crate) fn upgrade_with_pack(
     // `(recorded deltas, pack)`, not a task working area — `validation.md` → The
     // non-task `Probe` seam). The seam delegates to the M5 `classify` logic; severity
     // stays engine-owned, assigned by the post-pass at `ValidationReport::new` below.
-    let findings = OverrideDefaultProbe.check(OverrideCtx {
-        deltas: RecordedDeltas {
-            structural: &structural,
-            forks: &forks,
-            bases: &bases,
-            slot_fills: &slot_fills,
-            scalars: &scalars,
+    let findings = OverrideDefaultProbe.check(
+        &(),
+        OverrideCtx {
+            deltas: RecordedDeltas {
+                structural: &structural,
+                forks: &forks,
+                bases: &bases,
+                slot_fills: &slot_fills,
+                scalars: &scalars,
+            },
+            pack,
         },
-        pack,
-    });
+    );
     // The engine severity post-pass reads the resolved cascade: a recorded
     // `validation.override-default.*.severity` scalar-set tunes the classifier's
     // findings (`design/validation.md` → Every finding-emitting entry point must

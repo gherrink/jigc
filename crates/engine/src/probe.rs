@@ -1,20 +1,30 @@
-//! The non-task `Probe` seam — a first-class entry point for a probe whose ctx is
-//! `(recorded deltas, pack)` rather than a task working area
-//! ([validation.md](../../../design/validation.md) → The non-task `Probe` seam).
+//! The `Probe` seam — the read-only `check(target, ctx) -> [finding]` interface every
+//! probe rides ([validation.md](../../../design/validation.md) → The engine / probe
+//! boundary, The wire contract).
 //!
-//! M6 stands this up **minimally** — shaped to fit `override-default`, not as a
-//! universal trait forced over every existing probe. `validate_task`'s proven inline
-//! probes (`file-state`, `schema-conformance`, `ref-resolves`) stay wired as they are;
-//! they become severity-tunable purely via the engine post-pass at
-//! [`crate::result::ValidationReport::new`], with no rewrite of the byte-stable task
-//! path. This seam's job is narrower: give a **non-task-scoped** probe a first-class
-//! entry point so it participates in aggregation + that post-pass.
+//! **M10 reshapes the seam.** The M6 seam shipped `check(&self, ctx)` with **no
+//! `target`** and a single, live, non-serializable ctx ([`OverrideCtx`] — a borrowed
+//! `(deltas, pack)` handle), sized to its one consumer (`override-default`). The wire
+//! contract the subprocess (pack-probe) seam rides requires a **`target`** and an
+//! **effective-state ctx the engine can serialize** (a live graph in-process, its
+//! serialized read-only projection + a path-ref out-of-process — `validation.md` → The
+//! wire contract). M10 reshapes the seam to `check(target, ctx)` so the doc-code shape
+//! is admissible, **without** coercing `override-default`'s live non-task ctx into a
+//! serializable form it has no need to be ([DECISIONS.md](../../../DECISIONS.md)
+//! 2026-06-06, M10 inc-2 / T1).
 //!
-//! **Two ctx shapes, not one trait over both** (`validation.md` → The non-task `Probe`
-//! seam). Task-scoped and override-scoped probes consume structurally different inputs;
-//! this seam admits the **non-task** shape ([`OverrideCtx`] — `(deltas, pack)`) rather
-//! than coercing both into a single generic ctx (the over-generalization trap M3 paid
-//! for). A future store-scoped probe extends the seam then, when a real consumer exists.
+//! **The carrier: a `target` parameter + two associated types** (`Target`, `Ctx<'_>`).
+//! Each probe declares *exactly* its own target shape and ctx shape, so the seam admits
+//! both shapes with no coercion (the over-generalization trap M3 paid for is avoided by
+//! per-probe associated types, never one generic ctx forced over both):
+//! - `override-default` is **non-task**: `Target = ()` (target-less) and `Ctx<'a> =
+//!   OverrideCtx<'a>` (a live, non-serializable handle) — its M5 reconciliation is
+//!   unchanged; the reshape moves only the *call shape*.
+//! - the doc-code probe (M10 inc 3+) declares `Target` an [`crate::address::Address`]
+//!   and `Ctx` a **serializable** effective-state snapshot (built in inc 3), so an
+//!   in-process and a subprocess impl consume the *same logical input* (`validation.md`
+//!   → The wire contract). `Ctx<'_>` is a GAT so a borrowing ctx (`OverrideCtx<'a>`) and
+//!   a borrowed-snapshot ctx are both expressible.
 //!
 //! **Severity stays engine-owned, assigned once at the post-pass.** A [`Probe`] only
 //! *emits* findings (each carrying its `(probe, check)` handle); the resolved-cascade
@@ -23,10 +33,6 @@
 //! probe site (`validation.md` → severity is assigned in one engine-owned pass). So the
 //! seam carries no `Resolved`: routing through it changes nothing about how `upgrade`'s
 //! findings already tune.
-//!
-//! The subprocess (pack-probe) seam is post-MVP; this trait must admit it with zero
-//! engine change. See `design/validation.md` → the engine/probe boundary and the
-//! pack-probe determinism contract.
 
 use crate::finding::Finding;
 use crate::override_default::{RecordedDeltas, classify};
@@ -36,7 +42,8 @@ use crate::packsource::PackSource;
 /// reconcile and the current (env-selected) pack to reconcile them against — the
 /// `(recorded deltas, pack)` shape `override-default` consumes (`validation.md` → one
 /// whose ctx is `(recorded deltas, pack)`). This is the **non-task** ctx; the seam
-/// admits it without coercing the task-scoped shape into the same generic.
+/// admits it as `OverrideDefaultProbe`'s associated `Ctx` without coercing it into the
+/// serializable effective-state shape the doc-code probe declares.
 pub struct OverrideCtx<'a> {
     /// The project layer's recorded deltas, borrowed for the duration of the check.
     pub deltas: RecordedDeltas<'a>,
@@ -44,25 +51,41 @@ pub struct OverrideCtx<'a> {
     pub pack: &'a dyn PackSource,
 }
 
-/// A non-task-scoped probe: `check(ctx) -> Vec<Finding>`, read-only. The seam's single
-/// method, shaped to the [`OverrideCtx`] non-task ctx — the engine assigns final
-/// severity downstream (the post-pass), so a probe only *suggests* by emitting findings
-/// carrying their `(probe, check)` handle ("the engine assigns, the probe suggests").
+/// A probe: a read-only `check(target, ctx) -> [finding]` (`validation.md` → The engine
+/// / probe boundary). Each probe declares its own [`Target`](Probe::Target) shape and
+/// [`Ctx`](Probe::Ctx) shape via associated types, so the seam admits both the non-task
+/// `(deltas, pack)` ctx and a serializable effective-state ctx without forcing one
+/// generic over both. The engine assigns final severity downstream (the post-pass), so a
+/// probe only *suggests* by emitting findings carrying their `(probe, check)` handle
+/// ("the engine assigns, the probe suggests").
 pub trait Probe {
-    /// Check the context, returning one [`Finding`] per problem found (none for a clean
-    /// context). Read-only: a probe reads its ctx and writes nothing.
-    fn check(&self, ctx: OverrideCtx<'_>) -> Vec<Finding>;
+    /// The address surface this probe checks — an [`crate::address::Address`] for a
+    /// targeted probe (doc-code), or `()` for a non-task probe (`override-default`)
+    /// whose ctx already names what it reconciles.
+    type Target;
+    /// The read-only context this probe checks. A GAT so a borrowing ctx
+    /// ([`OverrideCtx`]) and a borrowed serializable-snapshot ctx are both expressible.
+    type Ctx<'a>;
+
+    /// Check `target` against `ctx`, returning one [`Finding`] per problem found (none
+    /// for a clean context). Read-only: a probe reads its inputs and writes nothing.
+    fn check<'a>(&self, target: &Self::Target, ctx: Self::Ctx<'a>) -> Vec<Finding>;
 }
 
-/// The `override-default` probe routed onto the seam — the seam's first (and M6's only)
-/// real consumer, the proof it is non-hollow. It delegates to the M5 [`classify`]
-/// logic: routing changes the *call shape* (a `Probe` entry point that participates in
-/// aggregation + the post-pass), not the reconciliation, so the byte-stable upgrade
-/// path is unaffected (`validation.md` → `override-default` is the retrofit).
+/// The `override-default` probe routed onto the seam — the seam's first (and, pre-M10,
+/// only) real consumer. It delegates to the M5 [`classify`] logic: the reshape changes
+/// the *call shape* (a `target` it ignores — its ctx already names what it reconciles),
+/// not the reconciliation, so the byte-stable upgrade path is unaffected (`validation.md`
+/// → `override-default` is the retrofit).
 pub struct OverrideDefaultProbe;
 
 impl Probe for OverrideDefaultProbe {
-    fn check(&self, ctx: OverrideCtx<'_>) -> Vec<Finding> {
+    /// Target-less: `override-default`'s ctx (`deltas`) already names the override
+    /// surface it reconciles, so the seam's `target` is the unit type.
+    type Target = ();
+    type Ctx<'a> = OverrideCtx<'a>;
+
+    fn check<'a>(&self, _target: &(), ctx: OverrideCtx<'a>) -> Vec<Finding> {
         classify(ctx.deltas, ctx.pack)
     }
 }
@@ -126,10 +149,13 @@ mod tests {
             scalars: &[],
         };
 
-        let via_seam = OverrideDefaultProbe.check(OverrideCtx {
-            deltas: mk(),
-            pack: &pack,
-        });
+        let via_seam = OverrideDefaultProbe.check(
+            &(),
+            OverrideCtx {
+                deltas: mk(),
+                pack: &pack,
+            },
+        );
         let direct = classify(mk(), &pack);
 
         assert_eq!(
