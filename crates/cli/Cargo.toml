@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 publish = false
 
+[lib]
+name = "cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "jigc"
 path = "src/main.rs"
