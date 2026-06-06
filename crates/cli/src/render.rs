@@ -324,6 +324,12 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                     }
                     None => out.push_str(" → (parses against no schema — left untouched)"),
                 }
+                // The adopt-confirmation marker (pinned shape): a schema-gated,
+                // register-only adoption indexed the doc's edges + recorded its
+                // file-state baseline. Only an adopted row carries it.
+                if row.adopted {
+                    out.push_str("  (adopted — indexed + baselined, no file moved)");
+                }
                 out.push('\n');
                 if let Some(finding) = &row.finding {
                     out.push_str("  ");
@@ -845,11 +851,12 @@ mod tests {
     }
 
     /// The `jigc ingest` triage report renders in sorted candidate order: one row
-    /// per candidate (`<verdict> <file> → <type>`), an `adoptable` row with no
-    /// finding, a `needs-reconcile` row carrying its indented routed finding
-    /// (`blocking · code — message` + the `route:` line — the OOB-conflict envelope),
-    /// and an `unmanaged` row naming the untouched candidate; ends with the routing
-    /// footer. JSON is the generic projection with no footer.
+    /// per candidate (`<verdict> <file> → <type>`), an **adopted** `adoptable` row
+    /// carrying the adopt-confirmation marker (no finding), a `needs-reconcile` row
+    /// carrying its indented routed finding (`blocking · code — message` + the
+    /// `route:` line — the OOB-conflict envelope), and an `unmanaged` row naming the
+    /// untouched candidate; ends with the routing footer. JSON is the generic
+    /// projection with no footer.
     #[test]
     fn render_ingest_lists_rows_with_routed_finding_and_footer() {
         use crate::ingest::{IngestReport, TriageRow};
@@ -868,18 +875,21 @@ mod tests {
                         Some(Location::addressed("decisions/auth-choice.md", 1, 1)),
                         Some("reconcile decisions/auth-choice.md against the `adr` schema".into()),
                     )),
+                    adopted: false,
                 },
                 TriageRow {
                     file: "decisions/rate-limit.md".to_string(),
                     best_match: Some("adr".to_string()),
                     verdict: "adoptable",
                     finding: None,
+                    adopted: true,
                 },
                 TriageRow {
                     file: "docs/notes.md".to_string(),
                     best_match: None,
                     verdict: "unmanaged",
                     finding: None,
+                    adopted: false,
                 },
             ],
         };
@@ -891,7 +901,7 @@ mod tests {
         needs-reconcile decisions/auth-choice.md → adr
           blocking · conformance.section-missing — required section heading `## context` is missing
           route: reconcile decisions/auth-choice.md against the `adr` schema
-        adoptable decisions/rate-limit.md → adr
+        adoptable decisions/rate-limit.md → adr  (adopted — indexed + baselined, no file moved)
         unmanaged docs/notes.md → (parses against no schema — left untouched)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
@@ -904,6 +914,7 @@ mod tests {
         assert!(!json_out.contains(ROUTING_FOOTER));
         assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
         assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
+        assert!(json_out.contains("\"adopted\": true"));
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and

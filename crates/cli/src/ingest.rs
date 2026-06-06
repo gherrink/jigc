@@ -53,6 +53,10 @@ pub struct TriageRow {
     pub verdict: &'static str,
     /// The routed finding for a `needs-reconcile` row; `None` otherwise.
     pub finding: Option<Finding>,
+    /// Whether this `adoptable` candidate was actually adopted on this run —
+    /// schema-re-gated, indexed, and baselined (register-only). Always `false` for a
+    /// `needs-reconcile` / `unmanaged` row; the render marks an adopted row distinctly.
+    pub adopted: bool,
 }
 
 /// The triage report — the discovered candidates classified, in sorted candidate
@@ -62,33 +66,64 @@ pub struct IngestReport {
     pub rows: Vec<TriageRow>,
 }
 
-/// Run the read-only ingestion scan against `cwd`: locate the repo + project layer,
-/// load the schemas + committed index + file-state record (the report substrate),
-/// discover + classify every candidate, and assemble the triage report. Adopts
-/// nothing; rewrites nothing.
+/// Run the ingestion scan against `cwd`: locate the repo + project layer, load the
+/// schemas + committed index + file-state record (the adopt substrate), discover +
+/// classify every candidate, **adopt every `adoptable` candidate** (schema-re-gate →
+/// index → baseline, register-only), then persist the advanced index + record and
+/// assemble the triage report. Adopt never moves or rewrites a candidate file.
 pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     let repo_root = require_project_layer(cwd)?;
     let pack = make_pack();
     let schemas = load_schemas(pack.as_ref())?;
 
-    // The report substrate (done-criterion): the committed edge index keyed to the
-    // current HEAD and the file-state record. T1 is read-only, so these are loaded as
-    // the substrate T2 layers adopt onto; the scan itself classifies on
-    // location + conformance, so the loaded surfaces are not yet consulted here.
+    // The adopt substrate: the committed edge index keyed to the current HEAD and the
+    // file-state record. Adopt advances these in memory (`adopt` persists nothing
+    // itself), then `run` saves the result — register-only, no candidate file touched.
     let jigc_root = repo_root.join(".jigc");
     let head = git_head(&repo_root)?;
-    let schema_map = schemas.iter().map(|s| (s.ty.clone(), s.clone())).collect();
-    let _committed = index::load_committed(&repo_root, &jigc_root, &schema_map, &head);
-    let _file_state = FileStateRecord::load(&jigc_root)
+    let schema_map: std::collections::BTreeMap<String, Schema> =
+        schemas.iter().map(|s| (s.ty.clone(), s.clone())).collect();
+    let mut index = index::load_committed(&repo_root, &jigc_root, &schema_map, &head);
+    let mut record = FileStateRecord::load(&jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
 
     let candidates = discover_candidates(&repo_root, &schemas);
     let mut rows = Vec::with_capacity(candidates.len());
+    let mut adopted_any = false;
     for rel_path in candidates {
-        let source = read_candidate(&repo_root, &rel_path)?;
-        let row = classify_row(&rel_path, &source, &schemas);
+        let bytes = read_candidate_bytes(&repo_root, &rel_path)?;
+        let source = String::from_utf8_lossy(&bytes).into_owned();
+        let mut row = classify_row(&rel_path, &source, &schemas);
+
+        // Adopt every `adoptable` candidate (schema-gated, register-only). The verdict
+        // already named the conformant-at-location type; `adopt` re-gates over the same
+        // substrate and refuses anything non-conformant — so a row is only marked
+        // `adopted` when the re-gate *also* passes (nothing adopted without a schema
+        // check). A refusal leaves the row un-adopted, never erroring the whole scan.
+        if row.verdict == "adoptable"
+            && let Some(ty) = row.best_match.as_deref()
+            && let Some(schema) = schema_map.get(ty)
+            && engine::ingest::adopt(&mut record, &mut index, schema, &rel_path, &bytes).is_ok()
+        {
+            row.adopted = true;
+            adopted_any = true;
+        }
+
         rows.push(row);
     }
+
+    // Persist the advanced index + record once, after the whole scan, iff anything was
+    // adopted — adopt is register-only (it touches no candidate file); the caller saves
+    // the surfaces it mutated.
+    if adopted_any {
+        index
+            .save(&jigc_root)
+            .with_context(|| format!("could not save the edge index under {jigc_root:?}"))?;
+        record
+            .save(&jigc_root)
+            .with_context(|| format!("could not save the file-state record under {jigc_root:?}"))?;
+    }
+
     Ok(IngestReport { rows })
 }
 
@@ -103,12 +138,15 @@ fn classify_row(rel_path: &str, source: &str, schemas: &[Schema]) -> TriageRow {
             best_match: Some(ty),
             verdict: "adoptable",
             finding: None,
+            // The caller adopts the row (re-gate → index → baseline) and flips this.
+            adopted: false,
         },
         Verdict::Unmanaged => TriageRow {
             file: rel_path.to_string(),
             best_match: None,
             verdict: "unmanaged",
             finding: None,
+            adopted: false,
         },
         Verdict::NeedsReconcile => {
             // Split the two needs-reconcile shapes the same way the engine's verdict
@@ -121,6 +159,7 @@ fn classify_row(rel_path: &str, source: &str, schemas: &[Schema]) -> TriageRow {
                     best_match: Some(home.ty.clone()),
                     verdict: "needs-reconcile",
                     finding: Some(finding),
+                    adopted: false,
                 }
             } else {
                 let conformant = schemas.iter().find(|s| conforms(s, source));
@@ -131,6 +170,7 @@ fn classify_row(rel_path: &str, source: &str, schemas: &[Schema]) -> TriageRow {
                     best_match: ty,
                     verdict: "needs-reconcile",
                     finding: Some(finding),
+                    adopted: false,
                 }
             }
         }
@@ -217,14 +257,13 @@ fn conforms(schema: &Schema, source: &str) -> bool {
     }
 }
 
-/// Read a discovered candidate's bytes as lossy UTF-8 text — the source the engine
-/// classifier and the finding re-derivation parse. A read failure (a file that
-/// vanished between discovery and classification) surfaces as a routed error.
-fn read_candidate(repo_root: &Path, rel_path: &str) -> Result<String> {
+/// Read a discovered candidate's raw on-disk bytes — the exact bytes `adopt` hashes
+/// for the file-state baseline, and (lossy-decoded by the caller) the source the
+/// classifier + finding re-derivation parse. A read failure (a file that vanished
+/// between discovery and classification) surfaces as a routed error.
+fn read_candidate_bytes(repo_root: &Path, rel_path: &str) -> Result<Vec<u8>> {
     let path = repo_root.join(rel_path);
-    let bytes = std::fs::read(&path)
-        .with_context(|| format!("could not read the candidate at {path:?}"))?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
+    std::fs::read(&path).with_context(|| format!("could not read the candidate at {path:?}"))
 }
 
 /// Load every shipped schema from the embedded pack — the persisted set the

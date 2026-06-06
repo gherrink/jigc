@@ -104,11 +104,14 @@ fn write(repo: &Path, rel: &str, body: &str) {
 }
 
 /// A conformant ADR body — the human-editable bytes the committed-store fixtures
-/// use (front-matter `status`/`date`, the three required prose sections).
+/// use (front-matter `status`/`date` + the optional `supersedes` ref, the three
+/// required prose sections). The `supersedes` edge is what the adopt path must
+/// populate in the index on adoption.
 const CONFORMANT_ADR: &str = "\
 ---
 status: accepted
 date: 2026-05-23
+supersedes: adr:naive-throttle
 ---
 
 # Rate limiting
@@ -256,4 +259,152 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
         let after = fs::read(repo.path().join(rel)).expect("re-read");
         assert_eq!(*bytes, after, "ingest must not rewrite `{rel}` (read-only)");
     }
+}
+
+#[test]
+fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only() {
+    let repo = TempDir::new("adopt");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // ── on-ramp: wire jigc into the fresh repo ───────────────────────────────────
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // ── seed the four flow-12 candidates ─────────────────────────────────────────
+    write(repo.path(), "decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
+    write(
+        repo.path(),
+        "decisions/auth-choice.md",
+        NON_CONFORMANT_NEAR_MISS,
+    ); // needs-reconcile (near-miss, under a location dir)
+    write(repo.path(), "docs/old-adr.md", CONFORMANT_ADR); // needs-reconcile (wrong location)
+    write(repo.path(), "docs/notes.md", NON_CONFORMANT_NEAR_MISS); // unmanaged
+
+    // Snapshot every candidate's bytes — adopt is register-only: nothing rewritten.
+    let candidates = [
+        "decisions/rate-limit.md",
+        "decisions/auth-choice.md",
+        "docs/old-adr.md",
+        "docs/notes.md",
+    ];
+    let before: Vec<(String, Vec<u8>)> = candidates
+        .iter()
+        .map(|rel| {
+            (
+                rel.to_string(),
+                fs::read(repo.path().join(rel)).expect("read"),
+            )
+        })
+        .collect();
+
+    // ── run the scan (adopt path) ────────────────────────────────────────────────
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+
+    // The adoptable row renders the adopt-confirmation marker; the routed/unmanaged
+    // rows do not (only the schema-checked, at-location doc is adopted).
+    let row = |rel: &str| -> &str {
+        report
+            .lines()
+            .find(|l| l.contains(rel) && !l.trim_start().starts_with("route:"))
+            .unwrap_or_else(|| panic!("`{rel}` row must appear in the report:\n{report}"))
+    };
+    assert!(
+        row("decisions/rate-limit.md").contains("adopted"),
+        "the conformant-at-location row renders the adopt-confirmation marker:\n{report}",
+    );
+    assert!(
+        !report.contains("decisions/auth-choice.md")
+            || !row("decisions/auth-choice.md").contains("adopted"),
+        "the near-miss row must NOT render an adopt-confirmation:\n{report}",
+    );
+    assert!(
+        !row("docs/old-adr.md").contains("adopted"),
+        "the wrong-location row must NOT render an adopt-confirmation:\n{report}",
+    );
+    assert!(
+        !row("docs/notes.md").contains("adopted"),
+        "the unmanaged row must NOT render an adopt-confirmation:\n{report}",
+    );
+
+    // ── (a) the conformant-at-location adr adopts: index + baseline gain it ───────
+    let edges = fs::read_to_string(repo.path().join(".jigc/index/edges.json"))
+        .expect("the edge index is persisted after an adopt");
+    assert!(
+        edges.contains("\"from\": \"adr:rate-limit\"")
+            && edges.contains("\"relation\": \"supersedes\"")
+            && edges.contains("\"to\": \"adr:naive-throttle\""),
+        "the adopted adr's supersedes forward edge must be persisted in the index:\n{edges}",
+    );
+
+    let baseline = fs::read_to_string(repo.path().join(".jigc/state/file-state.json"))
+        .expect("the file-state record is persisted after an adopt");
+    assert!(
+        baseline.contains("\"decisions/rate-limit.md\""),
+        "the adopted adr's rel-path must gain a file-state baseline:\n{baseline}",
+    );
+
+    // ── (b) the two needs-reconcile docs + the unmanaged doc are NOT adopted ──────
+    // Absent from both the index (no forward edge) and the baseline (no hash).
+    for rel in [
+        "decisions/auth-choice.md",
+        "docs/old-adr.md",
+        "docs/notes.md",
+    ] {
+        assert!(
+            !baseline.contains(rel),
+            "`{rel}` must NOT gain a file-state baseline (not adopted):\n{baseline}",
+        );
+    }
+    // The wrong-location doc shares the conformant bytes (slug `old-adr`); its edge
+    // must be absent — only the at-location `rate-limit` was registered.
+    assert!(
+        !edges.contains("\"from\": \"adr:old-adr\""),
+        "the wrong-location adr must NOT enter the index (not adopted):\n{edges}",
+    );
+    assert!(
+        !edges.contains("\"from\": \"adr:auth-choice\"")
+            && !edges.contains("\"from\": \"adr:notes\""),
+        "no routed/unmanaged candidate enters the index:\n{edges}",
+    );
+
+    // ── (c) register-only: every candidate's bytes are byte-identical, no move ────
+    for (rel, bytes) in &before {
+        let after = fs::read(repo.path().join(rel)).expect("re-read");
+        assert_eq!(
+            *bytes, after,
+            "adopt must not rewrite `{rel}` (register-only)"
+        );
+    }
+    // No file was relocated/duplicated: each candidate's directory holds the same set.
+    let decisions: Vec<_> = fs::read_dir(repo.path().join("decisions"))
+        .expect("read decisions/")
+        .flatten()
+        .map(|e| e.file_name())
+        .collect();
+    assert_eq!(
+        decisions.len(),
+        2,
+        "adopt moves/creates no file in decisions/: {decisions:?}",
+    );
+
+    // ── (d) nothing adopted without a schema check: the non-conformant near-miss ──
+    // under a location dir (`decisions/auth-choice.md`) is never adopted (the hole
+    // closed end-to-end) — already asserted absent from index + baseline above, and
+    // it carries the routed finding rather than an adopt-confirmation.
+    assert!(
+        report.contains("needs-reconcile decisions/auth-choice.md"),
+        "the non-conformant near-miss routes, never adopts:\n{report}",
+    );
 }
