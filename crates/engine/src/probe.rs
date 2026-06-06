@@ -189,6 +189,106 @@ impl EffectiveStateSnapshot {
     }
 }
 
+/// How a probe subprocess ended, observed from the invoker boundary — the engine-side
+/// mirror of the CLI invoker's raw status ([invoke.rs](../../cli/src/invoke.rs) →
+/// `ProbeStatus`). The engine owns response parse + meta-finding synthesis but **never
+/// shells out** ([finalize.md](../../../design/finalize.md); the engine is shell-free),
+/// so the CLI invoker produces the live outcome and translates it into this engine type
+/// at the inc-5 wiring seam — the synthesis fn ([`ingest_probe_run`]) is proven in
+/// isolation against it here (T3). It mirrors the invoker's shape exactly: an
+/// `Exited { code }` (`None` when terminated by signal with no code) or a `TimedOut`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProbeRunStatus {
+    /// The child exited on its own within the budget, carrying its exit code (`None`
+    /// when terminated by signal with no code). A zero code is the clean candidate; a
+    /// non-zero code (or `None`) is a `crash` candidate.
+    Exited {
+        /// The process exit code, or `None` if terminated without one (e.g. a signal).
+        code: Option<i32>,
+    },
+    /// The child exceeded the wall-clock budget and was killed by the invoker — the
+    /// `timeout` meta-finding ([validation.md](../../../design/validation.md) → Failure
+    /// semantics).
+    TimedOut,
+}
+
+/// The raw outcome of one probe invocation as the engine consumes it — the engine-side
+/// mirror of the CLI invoker's `ProbeOutcome`: the child's stdout bytes (verbatim,
+/// **unclassified** — may be a valid response, garbage, or empty) and how it ended.
+/// [`ingest_probe_run`] is the sole consumer; it decides what each shape means.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProbeRun {
+    /// The bytes the probe wrote to stdout, captured verbatim (empty if it wrote none).
+    pub stdout: Vec<u8>,
+    /// How the process ended.
+    pub status: ProbeRunStatus,
+}
+
+/// Ingest one probe invocation's raw outcome into the findings the engine carries into
+/// the [`crate::result::ValidationReport`] — the response-ingestion + meta-finding
+/// synthesis step ([validation.md](../../../design/validation.md) → Failure semantics —
+/// meta-findings, lines 114-125). The four outcome shapes the invoker (T2) produces map:
+///
+/// - **well-behaved** (exit 0 + parseable [`ProbeResponse`]) → the probe's own
+///   `findings`, **unchanged** (severity is left for the engine's post-pass — this fn
+///   does not grade); **no** meta-finding.
+/// - **timed out** → exactly one blocking `timeout` meta-finding (partial stdout is
+///   discarded — a timed-out probe is untrusted).
+/// - **non-zero exit** (or signal-terminated, `code: None`) → one blocking `crash`
+///   meta-finding (the exit code rides the descriptive message).
+/// - **exit 0 but unparseable** (garbage / empty / valid-JSON-but-not-a-response) → one
+///   blocking `malformed-output` meta-finding (the parse error rides the message).
+///
+/// Each meta-finding's **severity handle** is the canonical `(probe, check) =
+/// ("pack-probe-integrity", <reason>)` — set via [`Finding::with_check`] over a
+/// descriptive `probe-failure` `code` (a **code-id reconciliation** exactly like
+/// `override-default`'s: the post-pass + floor key on `(probe, check)`, the descriptive
+/// `code` is rendering-only — `validation.md` → Code-id reconciliation). The synthesized
+/// severity is `Blocking`, the intrinsic floor these checks are locked to (T4); the fn
+/// **never panics** on any stdout shape or status.
+pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
+    match run.status {
+        ProbeRunStatus::TimedOut => vec![meta_finding(
+            "timeout",
+            format!("probe `{probe_id}` exceeded its time budget and was killed"),
+        )],
+        ProbeRunStatus::Exited { code: Some(0) } => {
+            match serde_json::from_slice::<ProbeResponse>(&run.stdout) {
+                Ok(response) => response.findings,
+                Err(err) => vec![meta_finding(
+                    "malformed-output",
+                    format!("probe `{probe_id}` exited 0 but emitted unparseable output: {err}"),
+                )],
+            }
+        }
+        ProbeRunStatus::Exited { code } => {
+            let exit = code.map_or_else(|| "signal".to_string(), |c| c.to_string());
+            vec![meta_finding(
+                "crash",
+                format!(
+                    "probe `{probe_id}` exited non-zero (exit-code {exit}) with no usable output"
+                ),
+            )]
+        }
+    }
+}
+
+/// Build one intrinsic-blocking `pack-probe-integrity` meta-finding: a descriptive
+/// `probe-failure` `code` carrying the human reason, re-keyed via [`Finding::with_check`]
+/// onto the canonical `(probe, check) = ("pack-probe-integrity", <reason>)` handle the
+/// post-pass + floor lock on. No [`Location`] — a misbehaving subprocess has no source
+/// coordinate the engine can cite.
+fn meta_finding(reason: &str, message: String) -> Finding {
+    Finding::graded(
+        crate::finding::Severity::Blocking,
+        "pack-probe-integrity.probe-failure",
+        message,
+        None,
+        None,
+    )
+    .with_check(reason)
+}
+
 /// The read-only context an override-scoped [`Probe`] checks: the recorded deltas to
 /// reconcile and the current (env-selected) pack to reconcile them against — the
 /// `(recorded deltas, pack)` shape `override-default` consumes (`validation.md` → one
@@ -566,6 +666,214 @@ mod tests {
                     kind,
                     id: id.clone(),
                 })
+        }
+    }
+
+    /// **Well-behaved** (zero exit + parseable JSON): the probe's own findings ingest
+    /// into the report **unchanged** (severity left for the post-pass — T3 does not
+    /// grade), and **no** meta-finding is synthesized. The fixture's response is the
+    /// bytes a well-behaved probe writes to stdout (a `ProbeResponse` serialized), so the
+    /// ingestion path reads exactly the wire shape an inc-4 probe will emit.
+    #[test]
+    fn well_behaved_outcome_ingests_findings_and_synthesizes_no_meta_finding() {
+        let emitted = Finding::graded(
+            Severity::Blocking,
+            "doc-code.symbol-exists",
+            "anchor `crates/engine/src/missing.rs#nope` resolves to no symbol",
+            Some(Location::addressed(
+                "adr:single-node-cache#status/cites-code",
+                1,
+                1,
+            )),
+            None,
+        );
+        let stdout = serde_json::to_vec(&ProbeResponse::new(vec![emitted.clone()])).unwrap();
+
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout,
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            },
+        );
+
+        assert_eq!(
+            findings,
+            vec![emitted],
+            "the probe's findings ingest verbatim, no meta-finding, severity untouched",
+        );
+        assert!(
+            findings.iter().all(|f| f.probe != "pack-probe-integrity"),
+            "a well-behaved probe synthesizes no meta-finding: {findings:?}",
+        );
+    }
+
+    /// A well-behaved probe with an **empty** `findings` array (a clean adjudication)
+    /// ingests as **no findings at all** — proving zero-exit + parseable-empty is the
+    /// clean case, never a crash or malformed-output meta-finding.
+    #[test]
+    fn well_behaved_empty_findings_ingest_as_clean() {
+        let stdout = serde_json::to_vec(&ProbeResponse::new(vec![])).unwrap();
+
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout,
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            },
+        );
+
+        assert!(
+            findings.is_empty(),
+            "a clean probe (zero exit, empty findings) ingests nothing: {findings:?}",
+        );
+    }
+
+    /// **Timed out**: exactly one **blocking** meta-finding keyed `(probe,
+    /// check)=("pack-probe-integrity","timeout")`, regardless of any partial stdout (a
+    /// timed-out probe is untrusted, so its output — here garbage — is discarded). The
+    /// `(probe, check)` is the post-pass + floor handle; the descriptive `code`
+    /// (`probe-failure`) is for rendering only.
+    #[test]
+    fn timed_out_synthesizes_one_blocking_timeout_meta_finding() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: b"partial junk before the kill".to_vec(),
+                status: ProbeRunStatus::TimedOut,
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.probe, "pack-probe-integrity");
+        assert_eq!(f.check, "timeout");
+        assert!(
+            f.message.contains("doc-code"),
+            "the meta-finding names the offending probe: {}",
+            f.message,
+        );
+    }
+
+    /// **Crash** (non-zero exit, no parseable JSON): one **blocking** meta-finding keyed
+    /// `(probe, check)=("pack-probe-integrity","crash")`. The exit code rides the
+    /// descriptive message (`probe-failure { … exit-code }`, `validation.md`:121), the
+    /// handle stays the canonical `crash`.
+    #[test]
+    fn non_zero_exit_synthesizes_one_blocking_crash_meta_finding() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::Exited { code: Some(2) },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.probe, "pack-probe-integrity");
+        assert_eq!(f.check, "crash");
+        assert!(
+            f.message.contains('2'),
+            "the exit code rides the message: {}",
+            f.message,
+        );
+    }
+
+    /// A child terminated **by signal** (no exit code) with no JSON is a **crash** too —
+    /// `code: None` is non-zero by construction (not a clean exit). The engine must not
+    /// panic on the `None` code, and must not mistake it for a clean run.
+    #[test]
+    fn signal_terminated_no_output_synthesizes_crash() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::Exited { code: None },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        assert_eq!(findings[0].probe, "pack-probe-integrity");
+        assert_eq!(findings[0].check, "crash");
+    }
+
+    /// **Malformed output** (zero exit, but stdout is **unparseable** JSON): one
+    /// **blocking** meta-finding keyed `(probe, check)=("pack-probe-integrity",
+    /// "malformed-output")`. A probe that exited cleanly but emitted garbage cannot be
+    /// trusted to have validated anything — distinct from `crash` (which exited
+    /// non-zero). The parse error rides the descriptive message (`validation.md`:122).
+    #[test]
+    fn zero_exit_unparseable_json_synthesizes_one_blocking_malformed_output_meta_finding() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: b"this is not json {".to_vec(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        let f = &findings[0];
+        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(f.probe, "pack-probe-integrity");
+        assert_eq!(f.check, "malformed-output");
+    }
+
+    /// A probe that exits **zero** but writes **no output at all** is malformed-output,
+    /// not clean — empty stdout is not a valid `{ findings, schema_version }` response.
+    /// (A clean adjudication emits `{"findings":[],…}`, never an empty stream.)
+    #[test]
+    fn zero_exit_empty_output_synthesizes_malformed_output() {
+        let findings = ingest_probe_run(
+            "doc-code",
+            &ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            },
+        );
+
+        assert_eq!(findings.len(), 1, "exactly one meta-finding: {findings:?}");
+        assert_eq!(findings[0].probe, "pack-probe-integrity");
+        assert_eq!(findings[0].check, "malformed-output");
+    }
+
+    /// The engine **never panics** on any misbehavior — sweep every adversarial shape
+    /// (each invoker outcome, plus boundary stdout: empty, valid-but-not-a-response JSON,
+    /// truncated, binary) and assert ingestion always returns (never unwinds). The
+    /// done-criterion's hard floor: a misbehaving probe degrades to a meta-finding, never
+    /// a crash of the engine itself.
+    #[test]
+    fn ingestion_never_panics_on_any_misbehavior() {
+        let stdouts: Vec<Vec<u8>> = vec![
+            Vec::new(),
+            b"".to_vec(),
+            b"{".to_vec(),
+            b"not json".to_vec(),
+            b"[]".to_vec(),
+            b"42".to_vec(),
+            b"{\"unexpected\":true}".to_vec(),
+            vec![0x00, 0xff, 0x80, 0x01],
+            serde_json::to_vec(&ProbeResponse::new(vec![])).unwrap(),
+        ];
+        let statuses = [
+            ProbeRunStatus::Exited { code: Some(0) },
+            ProbeRunStatus::Exited { code: Some(1) },
+            ProbeRunStatus::Exited { code: None },
+            ProbeRunStatus::TimedOut,
+        ];
+        for stdout in &stdouts {
+            for status in &statuses {
+                let _ = ingest_probe_run(
+                    "doc-code",
+                    &ProbeRun {
+                        stdout: stdout.clone(),
+                        status: status.clone(),
+                    },
+                );
+            }
         }
     }
 
