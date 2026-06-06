@@ -215,7 +215,7 @@ impl PackSource for FilesystemPack {
     }
 }
 
-/// The YAML for the 13 intrinsic per-check severity knobs, each floored at
+/// The YAML for the 16 intrinsic per-check severity knobs, each floored at
 /// `blocking`, generated from [`engine::knobs::INTRINSIC_CHECK_KEYS`]. A minimal
 /// test pack appends this to its `config/knobs.yaml` so it satisfies the engine's
 /// load-time intrinsic-floored assertion ([`engine::knobs::load_knobs`]) without
@@ -541,6 +541,27 @@ mod tests {
           default: blocking
           floor: blocking
         validation.workflow-refs.body-include-only.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+
+        # --- pack-probe-integrity.* (3, intrinsic — the enforced meta-findings) ---
+        # A probe that timed out, crashed, or returned malformed output cannot be
+        # trusted to have validated anything; demoting these would let a misbehaving
+        # probe pass silently (validation.md → What 'intrinsic' means mechanically).
+        # `sandbox-violation` is NOT declared — deferred with OS-level sandboxing.
+        validation.pack-probe-integrity.timeout.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        validation.pack-probe-integrity.crash.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        validation.pack-probe-integrity.malformed-output.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking

@@ -41,7 +41,8 @@ struct KnobDecl {
 /// The engine-owned set of intrinsic check cascade keys — the checks whose
 /// demotion would break a load-bearing invariant of the system itself
 /// (`validation.md` → What "intrinsic" means mechanically: the nine
-/// `workflow-refs.*` checks and the four `schema-conformance.*` checks). The
+/// `workflow-refs.*` checks, the four `schema-conformance.*` checks, and the three
+/// `pack-probe-integrity.*` meta-findings). The
 /// engine asserts at pack-load that every one of these knobs is **declared** and
 /// floored at `blocking`, so a mis-declared pack cannot silently un-lock the
 /// determinism boundary by leaving an intrinsic check absent or demotable. This
@@ -61,6 +62,9 @@ pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.schema-conformance.required-slot-present.severity",
     "validation.schema-conformance.required-field-present.severity",
     "validation.schema-conformance.field-value-conformant.severity",
+    "validation.pack-probe-integrity.timeout.severity",
+    "validation.pack-probe-integrity.crash.severity",
+    "validation.pack-probe-integrity.malformed-output.severity",
 ];
 
 /// The parsed knob surface: the declared knobs as `(key, Field)` in sorted key
@@ -232,8 +236,9 @@ mod tests {
     /// Loading the embedded `knobs.yaml`, building the pack-default layer from its
     /// base scalars, and resolving yields each key's declared default — and the
     /// resolved key set is **exactly** the declared knob keys (the closed surface):
-    /// the full per-check severity surface (20 inventory rows, per
-    /// `validation.md` → MVP check inventory) plus the two retained M4 per-probe
+    /// the full per-check severity surface (the inventory rows live this
+    /// increment, per `validation.md` → MVP check inventory — including the three
+    /// `pack-probe-integrity.*` meta-findings) plus the two retained M4 per-probe
     /// keys (additive defaults, never a rename) and `default-workflow`. No
     /// team/project layer is present, so resolution returns the materialized base
     /// values verbatim.
@@ -276,6 +281,16 @@ mod tests {
             ),
             (
                 "validation.override-default.target-unchanged.severity",
+                "blocking",
+            ),
+            // pack-probe-integrity (3, intrinsic — the enforced meta-findings).
+            ("validation.pack-probe-integrity.crash.severity", "blocking"),
+            (
+                "validation.pack-probe-integrity.malformed-output.severity",
+                "blocking",
+            ),
+            (
+                "validation.pack-probe-integrity.timeout.severity",
                 "blocking",
             ),
             // schema-completeness (1, advisory at task scope by design).
@@ -457,7 +472,7 @@ mod tests {
         );
     }
 
-    /// The embedded pack floors **exactly** the 13 intrinsic checks at `blocking`
+    /// The embedded pack floors **exactly** the 16 intrinsic checks at `blocking`
     /// — the `floors` accessor exposes them, and the set is precisely the
     /// engine-owned intrinsic id set (`validation.md` → What 'intrinsic' means
     /// mechanically). The assertion-only load-time guard passes for the shipped
@@ -478,6 +493,60 @@ mod tests {
         for key in INTRINSIC_CHECK_KEYS {
             assert_eq!(floors.get(*key).map(String::as_str), Some("blocking"));
         }
+    }
+
+    /// A project `scalar-set validation.pack-probe-integrity.timeout.severity
+    /// advisory` is **soft-rejected at cascade resolution** over the embedded knob
+    /// surface: the meta-finding's `floor: blocking` drops the below-floor demotion,
+    /// the key resolves from the remaining layers (the pack-default base `blocking`),
+    /// and the dropped delta surfaces as a `RejectedDemotion` line with `(attempted,
+    /// floor, layer)`. A misbehaving probe's meta-finding cannot be demoted below
+    /// `blocking` (`validation.md` → What 'intrinsic' means mechanically;
+    /// `overrides.md` → Soft-rejection). Driven over the *embedded* bytes through
+    /// the production floor-wiring path (`with_floors`), so the proof is against the
+    /// shipped surface, not a synthetic one.
+    #[test]
+    fn pack_probe_integrity_timeout_demotion_is_soft_rejected() {
+        use crate::cascade::{LayerKind, OverrideLayer};
+
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        let key = "validation.pack-probe-integrity.timeout.severity";
+
+        // The meta-finding is a declared, blocking-floored knob (intrinsic).
+        assert_eq!(
+            knobs.floors().get(key).map(String::as_str),
+            Some("blocking"),
+            "the timeout meta-finding is floored at blocking",
+        );
+
+        // Production floor-wiring: seed the base from the embedded knobs and attach
+        // the embedded floors — the path `cli::start` takes.
+        let pack = PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new())
+            .with_floors(knobs.floors().clone());
+
+        // A project tries to demote the timeout meta-finding to advisory.
+        let project = OverrideLayer::empty().scalar_set(key, "advisory");
+        let resolved = cascade::resolve(&pack, None, Some(&project)).expect("resolution continues");
+
+        // The meta-finding stays blocking — the below-floor demotion was dropped.
+        assert_eq!(
+            resolved.scalar(key),
+            Some("blocking"),
+            "the meta-finding stays blocking; the demotion was not applied",
+        );
+        // And it was *not* recorded as an applied override.
+        assert!(
+            resolved.overridden_scalar(key).is_none(),
+            "a soft-rejected demotion is not an applied override",
+        );
+
+        // The rejection surfaces as a RejectedDemotion line with attempted/floor/layer.
+        let rejected: Vec<_> = resolved.rejected_scalar_sets().collect();
+        assert_eq!(
+            rejected,
+            vec![(key, "advisory", "blocking", LayerKind::Project)],
+            "the dropped demotion surfaces as a RejectedDemotion",
+        );
     }
 
     /// A tunable check carries no floor — the demotion-lock is intrinsic-only, so
