@@ -25,6 +25,9 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use crate::file_state::{FileStateRecord, hash_bytes};
+use crate::finding::Finding;
+use crate::index::EdgeIndex;
 use crate::parse::parse_sections;
 use crate::schema::Schema;
 use crate::validate::schema_conformance;
@@ -185,6 +188,57 @@ fn conforms(schema: &Schema, source: &str) -> bool {
         Ok(doc) => schema_conformance(schema, source, &doc).is_empty(),
         Err(_) => false,
     }
+}
+
+/// **Adopt** an [`Verdict::Adoptable`] candidate — the net-new, schema-gated register
+/// action (`project-setup.md` → Flow 2, bullet 3). Distinct from reconciliation's
+/// `UNKNOWN → baseline-adopt` ([`crate::file_state::file_state`]), which records a hash
+/// with **no schema check and no index population** — exactly the safety hole this
+/// closes: ingestion registers only what re-conforms, and indexes its edges.
+///
+/// `rel_path` is the candidate's forward-slash repo-relative path (its `file-state`
+/// record key); `bytes` are its raw on-disk bytes; `schema` is the matched doc-type the
+/// classifier verdict named. Adopt **re-gates** rather than trusting the verdict:
+///
+/// 1. **parse → conformance** against `schema` (the same binary gate [`classify`] runs);
+///    a non-conformant doc returns `Err(findings)` — **refused, never adopted** (the hole
+///    closed).
+/// 2. **`EdgeIndex::absorb_doc`** for the doc's identity `<type>:<slug>` (the `slug` is
+///    `rel_path`'s filename stem), so an adopted `adr`'s `supersedes` edge enters the
+///    forward index (unlike `baseline-adopt`, which indexes nothing).
+/// 3. **`FileStateRecord::record(rel_path, hash_bytes(bytes))`** — the file-state
+///    baseline for the now-managed doc.
+///
+/// **Register-only — it never moves or rewrites the file.** No I/O of its own: the caller
+/// supplies the bytes already read and persists the advanced `record` + `index`. A
+/// misplaced-but-conformant doc is the classifier's `needs-reconcile`, never adopted
+/// here, so adopt never needs to relocate.
+pub fn adopt(
+    record: &mut FileStateRecord,
+    index: &mut EdgeIndex,
+    schema: &Schema,
+    rel_path: &str,
+    bytes: &[u8],
+) -> Result<(), Vec<Finding>> {
+    let mut source = String::from_utf8_lossy(bytes).into_owned();
+    crate::parse::strip_leading_bom(&mut source);
+
+    // Re-gate: parse → conformance. A non-conformant doc is refused (the hole closed).
+    let doc = parse_sections(schema, &source)?;
+    let conformance = schema_conformance(schema, &source, &doc);
+    if !conformance.is_empty() {
+        return Err(conformance);
+    }
+
+    // The `<type>:<slug>` identity — slug is the candidate's filename stem.
+    let slug = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    let slug = slug.strip_suffix(".md").unwrap_or(slug);
+    let from = format!("{}:{slug}", schema.ty);
+
+    // Index the doc's forward edges, then baseline the file-state hash (register-only).
+    index.absorb_doc(schema, &from, &doc);
+    record.record(rel_path, hash_bytes(bytes));
+    Ok(())
 }
 
 #[cfg(test)]
@@ -383,6 +437,153 @@ A few thoughts that are not an ADR at all.
         );
         assert_eq!(off_home, Verdict::NeedsReconcile);
         assert_ne!(at_home, off_home);
+    }
+
+    use crate::file_state::{FileStateRecord, hash_bytes};
+    use crate::finding::Severity;
+    use crate::index::{Edge, EdgeIndex};
+
+    /// A conformant ADR carrying `supersedes: adr:single-node-cache` — the adopt
+    /// fixture whose forward edge must enter the index on adoption.
+    const CONFORMANT_ADR_SUPERSEDES: &str = "\
+---
+status: accepted
+date: 2026-05-30
+supersedes: adr:single-node-cache
+---
+
+# Distributed session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+";
+
+    /// Adopt re-gates a conformant adr (carrying `supersedes: adr:single-node-cache`)
+    /// and (a) populates the `(adr:<slug>, supersedes, adr:single-node-cache)` forward
+    /// edge in the index + (b) records the file-state baseline hash for the rel-path.
+    /// The slug is the candidate's filename stem.
+    #[test]
+    fn adopt_indexes_the_supersedes_edge_and_records_the_baseline() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+
+        let rel_path = "decisions/distributed-cache.md";
+        let bytes = CONFORMANT_ADR_SUPERSEDES.as_bytes();
+
+        adopt(&mut record, &mut index, &schema, rel_path, bytes).expect("conformant adr adopts");
+
+        // (a) The forward supersedes edge is indexed under the slug-derived identity.
+        assert_eq!(
+            index.edges,
+            vec![Edge {
+                from: "adr:distributed-cache".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }],
+            "adopt populates the forward supersedes edge"
+        );
+
+        // (b) The file-state baseline hash for the rel-path is the raw-byte hash.
+        assert_eq!(
+            record.get(rel_path),
+            Some(hash_bytes(bytes).as_str()),
+            "adopt records the raw-byte file-state baseline keyed by rel-path"
+        );
+    }
+
+    /// Register-only: adopt reads the file's bytes but **never moves or rewrites** it —
+    /// the on-disk bytes are byte-identical before and after, and no new file appears.
+    #[test]
+    fn adopt_leaves_the_file_bytes_unchanged_on_disk() {
+        let root = TempRoot::new("register-only");
+        let rel_path = "decisions/distributed-cache.md";
+        write(root.path(), rel_path, CONFORMANT_ADR_SUPERSEDES);
+
+        let on_disk = root.path().join(rel_path);
+        let before = std::fs::read(&on_disk).expect("read before");
+
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+        adopt(&mut record, &mut index, &schema, rel_path, &before).expect("adopts");
+
+        // The file's bytes on disk are unchanged (register-only — no move, no rewrite).
+        let after = std::fs::read(&on_disk).expect("read after");
+        assert_eq!(before, after, "adopt never rewrites the adopted file");
+
+        // No relocated/duplicated file: the decisions/ dir holds exactly the one file.
+        let entries: Vec<_> = std::fs::read_dir(root.path().join("decisions"))
+            .expect("read decisions/")
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
+        assert_eq!(entries.len(), 1, "adopt moves/creates no file: {entries:?}");
+    }
+
+    /// An ADR that parses but **fails conformance** (a malformed `date` value) — the
+    /// fixture proving the conformance re-gate (not just the parse gate) refuses.
+    const ADR_BAD_DATE: &str = "\
+---
+status: accepted
+date: 2026/13/01
+---
+
+# Distributed session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+";
+
+    /// The hole closed: a non-conformant doc dropped under a `location:` dir is
+    /// **never adopted** — adopt re-gates and refuses, returning blocking findings, and
+    /// touches neither the index nor the file-state record (no silent baseline-adopt).
+    /// Both refusal paths are covered: a parse failure (a freeform near-miss) and a
+    /// schema-conformance failure (a parseable doc with a malformed value).
+    #[test]
+    fn adopt_refuses_a_non_conformant_doc() {
+        let schema = adr_schema();
+
+        for (rel_path, source) in [
+            ("decisions/notes.md", NON_CONFORMANT_NEAR_MISS), // fails parse
+            ("decisions/bad-date.md", ADR_BAD_DATE),          // parses, fails conformance
+        ] {
+            let mut record = FileStateRecord::new();
+            let mut index = EdgeIndex::default();
+            let bytes = source.as_bytes();
+
+            let err = adopt(&mut record, &mut index, &schema, rel_path, bytes)
+                .expect_err("a non-conformant doc is refused, never adopted");
+            assert!(!err.is_empty(), "refusal carries the conformance findings");
+            assert!(
+                err.iter().any(|f| f.severity == Severity::Blocking),
+                "the refusal is blocking for {rel_path}: {err:?}"
+            );
+
+            // The hole closed: neither the index nor the file-state record was touched.
+            assert!(
+                index.edges.is_empty(),
+                "a refused doc populates no edges for {rel_path}: {:?}",
+                index.edges
+            );
+            assert_eq!(
+                record.get(rel_path),
+                None,
+                "a refused doc records no file-state baseline for {rel_path} (no silent adopt)"
+            );
+        }
     }
 
     /// A `docs/` dir that is *also* a declared `location:` yields each file once —
