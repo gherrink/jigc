@@ -183,9 +183,12 @@ fn new_project_arc_finalizes_into_one_docs_prd_commit() {
         );
         assert_ok(&out, &format!("set-slot {addr}"));
     };
+    // Deliberately NO trailing newline on a non-terminal slot (requirements + context
+    // follow it): the canonical writer must still separate the prose from the next `##`
+    // heading, so flow-11 can't silently mask a fuse-onto-heading regression.
     set_slot(
         "prd:habit-tracker#vision",
-        b"A tracker that turns intentions into daily streaks.\n",
+        b"A tracker that turns intentions into daily streaks.",
     );
     set_slot(
         "prd:habit-tracker#requirements",

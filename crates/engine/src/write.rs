@@ -2861,6 +2861,47 @@ Each service drops its local limiter.
         assert_eq!(finding.code, "write.target-escape");
     }
 
+    /// Round-trip: filling a **non-terminal** slot whose body is currently empty (a
+    /// freshly-created doc — every slot a zero-width span sitting at the next `##`
+    /// heading) with prose that lacks a trailing newline must produce a **reparseable**
+    /// buffer. The canonical writer is the parser's inverse: valid slot prose round-trips
+    /// regardless of a trailing newline. Reproduces the pre-existing defect where the
+    /// prose was glued directly onto the following heading (`Prose.## Decision`), so the
+    /// result misaligned on reparse and `set_slot_validated` wrongly rejected it with
+    /// `write.non-reparseable`.
+    #[test]
+    fn fill_empty_nonterminal_slot_without_trailing_newline_reparses() {
+        // The shape `doc create adr` emits: a header plus every body slot empty (the
+        // blank line after each heading is the whole slot region).
+        let empty = "\
+---
+status: proposed
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+## Decision
+
+## Consequences
+";
+        // `context` is a non-terminal slot (Decision + Consequences follow it). The
+        // prose deliberately lacks a trailing newline.
+        let out = set_slot_validated(&adr_schema(), empty, "context", "Per-client limits.")
+            .expect("filling an empty non-terminal slot must round-trip, trailing LF or not");
+        // The buffer re-parses and the prose landed in `context`, not fused to the next
+        // heading.
+        let doc = parse::parse_sections(&adr_schema(), &out).expect("result re-parses");
+        let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["status", "context", "decision", "consequences"]);
+        assert!(
+            out.contains("\n## Decision\n"),
+            "the `## Decision` heading must survive as a heading, not be glued to prose:\n{out}"
+        );
+    }
+
     /// (a) The re-parse gate rejects a buffer that no longer parses — a write that
     /// produced a non-conformant result aborts with a Blocking [`Finding`].
     #[test]

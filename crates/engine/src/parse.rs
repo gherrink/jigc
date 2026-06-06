@@ -863,8 +863,21 @@ fn trim_span(source: &str, start: usize, end: usize) -> Span {
     let slice = &source[start..end];
     let leading = slice.len() - slice.trim_start().len();
     let trimmed_len = slice.trim_end().len();
+    if trimmed_len == 0 {
+        // An empty slot (the whole region is the blank line(s) after the heading): the
+        // insertion point sits at the **leading** edge, so the canonical separating
+        // whitespace before the next boundary stays *after* the span. This makes the
+        // writer the parser's inverse — filling the slot yields `<prose>\n\n## Next`
+        // (reparseable) rather than gluing prose onto the following heading.
+        let new_start = start;
+        return Span {
+            start: new_start,
+            end: new_start,
+            start_line: line_of(source, new_start),
+        };
+    }
     let new_start = start + leading;
-    let new_end = start + trimmed_len.max(leading);
+    let new_end = start + trimmed_len;
     Span {
         start: new_start,
         end: new_end,
