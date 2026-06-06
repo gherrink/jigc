@@ -192,6 +192,8 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("override-default", "basis-recorded"),
     ("commit-rendering", "line-limit-subject"),
     ("commit-rendering", "line-limit-body"),
+    ("doc-code", "symbol-exists"),
+    ("doc-code", "criterion-maps-to-test"),
 ];
 
 /// Whether a `(probe, check)` is a keyed inventory row — the membership test that

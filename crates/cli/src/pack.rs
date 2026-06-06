@@ -624,6 +624,19 @@ mod tests {
           type: enum
           of: [blocking, warning, advisory]
           default: advisory
+
+        # --- doc-code.* (2, tunable; M10 — the pack-provided doc↔code probe) ---
+        # blocking-by-default (a dangling anchor is a real integrity failure) but
+        # cascade-tunable, NOT floored — a project may rationally demote to warning.
+        # Unlike the floor-locked pack-probe-integrity.* meta-findings above.
+        validation.doc-code.symbol-exists.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+        validation.doc-code.criterion-maps-to-test.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
         "###);
 
         // `pack-id` is a non-knob identity field — it lives in defaults.yaml,

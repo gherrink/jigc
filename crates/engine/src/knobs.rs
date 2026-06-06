@@ -266,6 +266,13 @@ mod tests {
                 "validation.commit-rendering.line-limit-subject.severity",
                 "advisory",
             ),
+            // doc-code (2, tunable; M10 — the pack-provided doc↔code probe,
+            // blocking-by-default, NOT floored).
+            (
+                "validation.doc-code.criterion-maps-to-test.severity",
+                "blocking",
+            ),
+            ("validation.doc-code.symbol-exists.severity", "blocking"),
             // file-state: the M4 per-probe default (retained, additive) + the
             // hash-matches per-check key (tunable).
             ("validation.file-state.hash-matches.severity", "blocking"),
@@ -546,6 +553,101 @@ mod tests {
             rejected,
             vec![(key, "advisory", "blocking", LayerKind::Project)],
             "the dropped demotion surfaces as a RejectedDemotion",
+        );
+    }
+
+    /// The shipped per-check severity surface reconciles to the
+    /// [`design/validation.md`] Severity inventory (the single source of truth):
+    /// **25 per-check `validation.<probe>.<check>.severity` keys — 16 intrinsic
+    /// (floored at `blocking`) + 9 tunable (no floor)** (`validation.md`:210). The
+    /// 16 intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is
+    /// every other per-check key, including the two M10 `doc-code.*` rows. Counted
+    /// over the *embedded* bytes, so the count is the shipped surface — not a
+    /// synthetic one.
+    ///
+    /// [`design/validation.md`]: ../../../design/validation.md
+    #[test]
+    fn per_check_severity_surface_reconciles_to_the_25_16_9_inventory() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        // The per-check keys are the inventory rows: keyed by check, never by
+        // probe — a per-probe `validation.<probe>.severity` default is not a row.
+        let per_check: Vec<&str> = knobs
+            .keys()
+            .filter(|k| {
+                k.starts_with("validation.")
+                    && k.ends_with(".severity")
+                    && k.matches('.').count() == 3
+            })
+            .collect();
+        assert_eq!(
+            per_check.len(),
+            25,
+            "the inventory totals 25 checks (validation.md:210); got:\n{per_check:#?}",
+        );
+
+        // 16 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
+        let intrinsic = per_check
+            .iter()
+            .filter(|k| knobs.floors().get(**k).map(String::as_str) == Some("blocking"))
+            .count();
+        assert_eq!(intrinsic, 16, "16 intrinsic checks (floored at blocking)");
+        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 16);
+
+        // The remaining 9 are tunable (no floor) — 25 - 16.
+        let tunable = per_check
+            .iter()
+            .filter(|k| knobs.floors().get(**k).is_none())
+            .count();
+        assert_eq!(tunable, 9, "9 tunable checks (unfloored)");
+    }
+
+    /// A project `scalar-set validation.doc-code.criterion-maps-to-test.severity
+    /// warning` **resolves applied** over the embedded surface — the demotion is
+    /// honored, *not* floor-rejected — because the `doc-code.*` checks are tunable
+    /// (no floor), unlike the floor-locked `pack-probe-integrity.*` meta-findings
+    /// (the tunable counterpart to `pack_probe_integrity_timeout_demotion_is_soft_rejected`).
+    /// Driven through the production floor-wiring (`with_floors`) over the shipped
+    /// bytes.
+    #[test]
+    fn doc_code_criterion_demotion_resolves_applied() {
+        use crate::cascade::OverrideLayer;
+
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        let key = "validation.doc-code.criterion-maps-to-test.severity";
+
+        // It is a declared, *tunable* knob — no floor.
+        assert!(
+            knobs.field(key).is_some(),
+            "doc-code check is a declared knob"
+        );
+        assert!(
+            knobs.floors().get(key).is_none(),
+            "the doc-code check is tunable — it carries no demotion-lock floor",
+        );
+
+        // Production floor-wiring over the embedded bytes.
+        let pack = PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new())
+            .with_floors(knobs.floors().clone());
+
+        // A project demotes the check to warning — honored, not floor-rejected.
+        let project = OverrideLayer::empty().scalar_set(key, "warning");
+        let resolved = cascade::resolve(&pack, None, Some(&project)).expect("resolves");
+
+        assert_eq!(
+            resolved.scalar(key),
+            Some("warning"),
+            "the tunable doc-code demotion is applied",
+        );
+        assert_eq!(
+            resolved.overridden_scalar(key),
+            Some("warning"),
+            "the demotion is recorded as an applied override (not soft-rejected)",
+        );
+        assert_eq!(
+            resolved.rejected_scalar_sets().count(),
+            0,
+            "a tunable demotion is never soft-rejected",
         );
     }
 
