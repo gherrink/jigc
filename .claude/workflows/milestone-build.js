@@ -232,10 +232,45 @@ function e2ePrompt() {
   return ['Milestone: ' + milestone + '.', '', 'Drive the milestone acceptance flows end-to-end through the real binary in throwaway repos per your e2e role.'].join('\n')
 }
 
+// agentR — run an agent() call, retrying on a TRANSIENT failure (API overload /
+// a subagent that finished without emitting its StructuredOutput — usually a momentary
+// 529 inside the agent loop). A single transient blip should not forfeit a multi-hour
+// run (M10 lost a ~69-min run to one 529 at a planner's first API call). This AUTOMATES
+// the documented INTERRUPTION recovery above: each retry tells the agent to restore a
+// clean committed base first (discard the failed attempt's uncommitted partial work),
+// then re-do its task from that base — exactly what a manual revert-then-resume does, so
+// it is no riskier than the resume mechanism the harness already relies on. The "if your
+// commit already landed, don't duplicate it" clause covers the rare commit-then-fail edge.
+// Read-only agents (reader/validator/code-reviewer/e2e) treat the reset as a harmless no-op.
+// Domain-agnostic: no milestone/project specifics — keep it that way (this harness is the
+// self-hosting distill target).
+const TRANSIENT_RETRIES = 2
+async function agentR(prompt, opts) {
+  let lastErr
+  for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
+    // attempt 0 uses the prompt verbatim, so its (prompt, opts) stays cache-key-identical
+    // on resume; only live retries carry the reset note (and are inherently uncached).
+    const note = attempt === 0 ? '' : (
+      '\n\nRETRY after a transient failure (API overload / no StructuredOutput) of a prior attempt. ' +
+      'FIRST restore a clean committed base — discard any uncommitted partial work the failed attempt left ' +
+      '(`git reset --hard HEAD` then `git clean -fd`) — then proceed from that clean base as if starting fresh. ' +
+      'If your task\'s commit ALREADY exists at HEAD (the failure struck after committing), do NOT duplicate it: ' +
+      're-derive and report your structured result from the existing commit.'
+    )
+    try {
+      return await agent(prompt + note, opts)
+    } catch (e) {
+      lastErr = e
+      log('transient failure on ' + (opts && opts.label ? opts.label : 'agent') + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ') — ' + ((e && e.message) || e))
+    }
+  }
+  throw lastErr
+}
+
 // ---- read the milestone's increments from the roadmap ----
 phase('Read milestone')
 log('Reading ' + milestone + ' increment decomposition from implementation/roadmap.md')
-const read = await agent('Enumerate the ordered increments of milestone "' + milestone + '" from implementation/roadmap.md.', { label: 'read:' + milestone, phase: 'Read milestone', agentType: 'milestone-reader', schema: INCREMENTS_SCHEMA })
+const read = await agentR('Enumerate the ordered increments of milestone "' + milestone + '" from implementation/roadmap.md.', { label: 'read:' + milestone, phase: 'Read milestone', agentType: 'milestone-reader', schema: INCREMENTS_SCHEMA })
 const increments = read && read.increments ? read.increments : []
 if (increments.length === 0) {
   return { status: 'halted', halted: { phase: 'read', reason: 'no roadmap decomposition for ' + milestone + ' — run the milestone-planning workflow first.' }, note: read ? read.note : null }
@@ -249,7 +284,7 @@ for (const inc of increments) {
   phase('Build increments')
 
   log('Increment ' + inc.n + ' — planning (' + inc.title + ')')
-  const plan = await agent(planPrompt(inc), { label: 'plan:inc' + inc.n, phase: 'Build increments', agentType: 'build-planner', schema: PLAN_SCHEMA })
+  const plan = await agentR(planPrompt(inc), { label: 'plan:inc' + inc.n, phase: 'Build increments', agentType: 'build-planner', schema: PLAN_SCHEMA })
   if (!plan || plan.status === 'halted' || !plan.tasks || plan.tasks.length === 0) {
     halted = { increment: inc.n, phase: 'plan', halt: plan && plan.halt ? plan.halt : { root_cause: plan ? 'planner produced no tasks' : 'planner returned no result', tree_state: 'clean (planner writes only the DECISIONS entry, nothing on halt)' } }
     incrementReports.push({ increment: inc.n, plan })
@@ -260,7 +295,7 @@ for (const inc of increments) {
   const execResults = []
   for (const task of plan.tasks) {
     log('Increment ' + inc.n + ' — execute ' + task.id + ': ' + task.subject)
-    const r = await agent(execPrompt(inc, task, plan.tasks), { label: 'exec:inc' + inc.n + ':' + task.id, phase: 'Build increments', agentType: 'build-executor', schema: EXEC_TASK_SCHEMA })
+    const r = await agentR(execPrompt(inc, task, plan.tasks), { label: 'exec:inc' + inc.n + ':' + task.id, phase: 'Build increments', agentType: 'build-executor', schema: EXEC_TASK_SCHEMA })
     execResults.push({ task: task.id, result: r })
     if (!r || r.status === 'halted') {
       halted = { increment: inc.n, phase: 'execute', task: task.id, halt: r && r.halt ? r.halt : { root_cause: r ? 'executor halted without detail' : 'executor returned no result' } }
@@ -273,7 +308,7 @@ for (const inc of increments) {
   let lastValidation = null
   while (true) {
     log('Increment ' + inc.n + ' — independent validation (after ' + round + ' fix round(s))')
-    const v = await agent(validatePrompt(inc), { label: 'validate:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'increment-validator', schema: VALIDATION_SCHEMA })
+    const v = await agentR(validatePrompt(inc), { label: 'validate:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'increment-validator', schema: VALIDATION_SCHEMA })
     lastValidation = v
     const blocking = v && v.blocking ? v.blocking : []
     if (blocking.length === 0 && v && v.gate_green) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
@@ -281,7 +316,7 @@ for (const inc of increments) {
     round++
     log('Increment ' + inc.n + ' — fix round ' + round + ': ' + blocking.length + ' blocking finding(s)')
     for (const f of blocking) {
-      await agent(fixPrompt(inc, f), { label: 'fix:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'build-fixer', schema: FIX_SCHEMA })
+      await agentR(fixPrompt(inc, f), { label: 'fix:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'build-fixer', schema: FIX_SCHEMA })
     }
   }
 
@@ -298,8 +333,8 @@ phase('Milestone audit')
 const baseRef = base || "the commit immediately before this milestone's first increment (find it via git log)"
 log('All increments validated clean — running the milestone-completion audit (code review + e2e)')
 const audit = await parallel([
-  () => agent(reviewPrompt(baseRef), { label: 'audit:code-review', phase: 'Milestone audit', agentType: 'milestone-code-reviewer', schema: REVIEW_SCHEMA }),
-  () => agent(e2ePrompt(), { label: 'audit:e2e', phase: 'Milestone audit', agentType: 'milestone-e2e-tester', schema: E2E_SCHEMA }),
+  () => agentR(reviewPrompt(baseRef), { label: 'audit:code-review', phase: 'Milestone audit', agentType: 'milestone-code-reviewer', schema: REVIEW_SCHEMA }),
+  () => agentR(e2ePrompt(), { label: 'audit:e2e', phase: 'Milestone audit', agentType: 'milestone-e2e-tester', schema: E2E_SCHEMA }),
 ])
 
 return {
