@@ -16,6 +16,17 @@
 //! that `jigc start` renders the *clean* orientation after setup (the project
 //! reads as set up).
 //!
+//! The **no-clobber + idempotency** acceptance (`design/worked-examples.md` →
+//! flow 11 / flow 12 assertion 3; `design/project-setup.md` → Idempotency &
+//! irreversibility; roadmap M9 Increment 1 scope bullet 4) lifts today's
+//! unit-only structure-aware-merge coverage to the binary: a repo seeded with a
+//! non-trivial `CLAUDE.md` (house-rules prose) and a `.claude/settings.json`
+//! carrying a pre-existing non-jigc hook + unrelated permit + unrelated key has
+//! `jigc setup` run **twice**, asserting the seeded human content survives
+//! **verbatim** (structure-aware merge, never clobber), the jigc reference /
+//! allowlist / SessionStart hook were added, and the second run is a
+//! byte-identical no-op on `CLAUDE.md` + `.claude/settings.json` + `.jigc/AGENT.md`.
+//!
 //! No external test crates: the binary path comes from Cargo's
 //! `CARGO_BIN_EXE_jigc`, the temp repo is built with `std::fs`, and a
 //! self-cleaning `TempDir` keeps the test off the developer's real repo.
@@ -243,4 +254,149 @@ fn start_renders_clean_orientation_after_setup() {
         stdout.contains("Pack:"),
         "after setup, `jigc start` must render the clean provenance header; got:\n{stdout}",
     );
+}
+
+/// The binary-level no-clobber + idempotency acceptance (`design/worked-examples.md`
+/// → flow 11 / flow 12 assertion 3; `design/project-setup.md` → Idempotency &
+/// irreversibility). Today's `setup.rs` idempotency assertions run only on a FRESH
+/// repo (no pre-existing host content); the no-clobber-of-seeded-content +
+/// verbatim-preservation case is uncovered at the binary. This seeds a non-trivial
+/// `CLAUDE.md` (house-rules prose) + a `.claude/settings.json` carrying a
+/// pre-existing non-jigc hook, an unrelated permit, and an unrelated top-level key,
+/// runs `jigc setup` **twice**, and asserts the seeded human content survives
+/// verbatim, the jigc additions land, and the second run is a byte-identical no-op.
+#[test]
+fn setup_preserves_seeded_host_content_and_is_idempotent() {
+    let repo = TempDir::new("noclobber");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Seed a non-trivial CLAUDE.md with house-rules prose the human owns.
+    let seeded_claude = "# House rules\n\n\
+        - Always run the linter before committing.\n\
+        - Prefer small, focused PRs.\n\n\
+        ## Architecture\n\n\
+        The gateway owns rate limiting; do not duplicate it downstream.\n";
+    fs::write(repo.path().join("CLAUDE.md"), seeded_claude).expect("seed CLAUDE.md");
+
+    // Seed a .claude/settings.json with a pre-existing NON-jigc hook (a
+    // PreToolUse matcher running a house command), an unrelated permit, and an
+    // unrelated top-level key — all of which the structure-aware merge must
+    // preserve while it adds the jigc allowlist + SessionStart hook.
+    fs::create_dir_all(repo.path().join(".claude")).expect("seed .claude dir");
+    let seeded_settings = serde_json::json!({
+        "model": "claude-sonnet-4",
+        "permissions": { "allow": ["git status"] },
+        "hooks": {
+            "PreToolUse": [
+                { "hooks": [ { "type": "command", "command": "house-precheck.sh" } ] }
+            ]
+        }
+    });
+    fs::write(
+        repo.path().join(".claude/settings.json"),
+        format!(
+            "{}\n",
+            serde_json::to_string_pretty(&seeded_settings).unwrap()
+        ),
+    )
+    .expect("seed .claude/settings.json");
+
+    // First run.
+    let out = run_setup(repo.path(), home.path());
+    assert!(
+        out.status.success(),
+        "`jigc setup` over seeded host content must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // (a) The seeded human content survives VERBATIM.
+    let claude_md =
+        fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md present after setup");
+    assert!(
+        claude_md.contains(seeded_claude),
+        "the seeded house-rules CLAUDE.md prose must survive verbatim; got:\n{claude_md}",
+    );
+
+    let settings_raw = fs::read_to_string(repo.path().join(".claude/settings.json"))
+        .expect(".claude/settings.json present after setup");
+    let settings: serde_json::Value =
+        serde_json::from_str(&settings_raw).expect(".claude/settings.json must be valid JSON");
+    assert_eq!(
+        settings["model"], "claude-sonnet-4",
+        "an unrelated top-level key must survive the merge; got:\n{settings_raw}",
+    );
+    assert!(
+        settings["permissions"]["allow"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|v| v == "git status")),
+        "the pre-existing unrelated permit must survive the merge; got:\n{settings_raw}",
+    );
+    assert!(
+        pretool_runs_house_precheck(&settings),
+        "the pre-existing non-jigc PreToolUse hook must survive the merge; got:\n{settings_raw}",
+    );
+
+    // (b) The jigc reference / allowlist / SessionStart hook were ADDED.
+    assert!(
+        claude_md.contains("@.jigc/AGENT.md"),
+        "setup must add the `@.jigc/AGENT.md` reference to the seeded CLAUDE.md; got:\n{claude_md}",
+    );
+    assert!(
+        settings["permissions"]["allow"]
+            .as_array()
+            .is_some_and(|a| a.iter().any(|v| v == "jigc *")),
+        "setup must add the `jigc *` permit alongside the seeded one; got:\n{settings_raw}",
+    );
+    assert!(
+        session_start_runs_jigc_start(&settings),
+        "setup must add the SessionStart hook running `jigc start`; got:\n{settings_raw}",
+    );
+    let agent_md = fs::read_to_string(repo.path().join(".jigc/AGENT.md"))
+        .expect(".jigc/AGENT.md written by setup");
+
+    // (c) The second run is a byte-identical no-op on all three managed files.
+    let out2 = run_setup(repo.path(), home.path());
+    assert!(
+        out2.status.success(),
+        "the second `jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        out2.status,
+        String::from_utf8_lossy(&out2.stderr),
+    );
+    let claude_md2 =
+        fs::read_to_string(repo.path().join("CLAUDE.md")).expect("CLAUDE.md still present");
+    let settings_raw2 = fs::read_to_string(repo.path().join(".claude/settings.json"))
+        .expect(".claude/settings.json still present");
+    let agent_md2 = fs::read_to_string(repo.path().join(".jigc/AGENT.md"))
+        .expect(".jigc/AGENT.md still present");
+    assert_eq!(
+        claude_md, claude_md2,
+        "a second `jigc setup` must leave CLAUDE.md byte-identical",
+    );
+    assert_eq!(
+        settings_raw, settings_raw2,
+        "a second `jigc setup` must leave .claude/settings.json byte-identical",
+    );
+    assert_eq!(
+        agent_md, agent_md2,
+        "a second `jigc setup` must leave .jigc/AGENT.md byte-identical",
+    );
+}
+
+/// Whether `settings` carries a `hooks.PreToolUse[*].hooks[*]` entry running the
+/// seeded `house-precheck.sh` command — the pre-existing non-jigc hook the merge
+/// must preserve.
+fn pretool_runs_house_precheck(settings: &serde_json::Value) -> bool {
+    settings["hooks"]["PreToolUse"]
+        .as_array()
+        .is_some_and(|matchers| {
+            matchers.iter().any(|matcher| {
+                matcher["hooks"].as_array().is_some_and(|hooks| {
+                    hooks
+                        .iter()
+                        .any(|hook| hook["command"] == "house-precheck.sh")
+                })
+            })
+        })
 }
