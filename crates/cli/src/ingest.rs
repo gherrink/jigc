@@ -1,12 +1,15 @@
 //! `jigc ingest` — the existing-project ingestion scan (M9 Increment 3, T1).
 //!
-//! **Read-only** discover → classify → triage report. Locates the repo root +
+//! Discover → classify → **adopt** → triage report. Locates the repo root +
 //! project layer, loads the persisted schemas + the committed edge index
 //! ([`index::load_committed`]) + the file-state record ([`FileStateRecord::load`]),
 //! runs the engine's [`engine::ingest::discover_candidates`] then
-//! [`engine::ingest::classify`] per candidate (in sorted candidate order), and
-//! assembles the triage report (`file × best-match type × verdict`) the dispatch
-//! renders through the global `--format`. No adopt yet — it rewrites nothing.
+//! [`engine::ingest::classify`] per candidate (in sorted candidate order), adopts
+//! every conformant `adoptable` candidate **register-only** (records it into the
+//! edge index + file-state baseline; it never moves or rewrites any candidate
+//! file), and assembles the triage report (`file × best-match type × verdict`) the
+//! dispatch renders through the global `--format`. Non-conformant / misplaced
+//! candidates route to a human.
 //!
 //! ## Why the routed finding is net-new command-layer report-assembly
 //!

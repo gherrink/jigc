@@ -158,12 +158,15 @@ pub enum Command {
 
     /// The existing-project ingestion scan. Discovers candidate markdown beyond the
     /// declared `location:` dirs (repo root, `docs/`, the location dirs), classifies
-    /// each against the persisted schemas, and renders the **triage report** (`file ×
-    /// best-match type × verdict`, in sorted candidate order) through the global
-    /// `--format`; `needs-reconcile` rows carry a routed finding (blocking severity +
-    /// located message + route). **Read-only — it adopts nothing and rewrites
-    /// nothing** (`design/project-setup.md` → Flow 2; `design/worked-examples.md` →
-    /// flow 12). The `ingest-existing` workflow orients the agent to run it.
+    /// each against the persisted schemas, **adopts** every conformant `adoptable`
+    /// candidate **register-only** (records it into the edge index + file-state
+    /// baseline — it never moves or rewrites any candidate file), and renders the
+    /// **triage report** (`file × best-match type × verdict`, in sorted candidate
+    /// order) through the global `--format`; non-conformant / misplaced
+    /// (`needs-reconcile`) rows carry a routed finding (blocking severity + located
+    /// message + route) for a human (`design/project-setup.md` → Flow 2;
+    /// `design/worked-examples.md` → flow 12). The `ingest-existing` workflow orients
+    /// the agent to run it.
     Ingest,
 }
 
@@ -343,10 +346,11 @@ fn run_upgrade(format: Format) -> ExitCode {
 }
 
 /// Run `jigc ingest` against the current working directory: locate the repo root,
-/// discover candidate markdown, classify each against the persisted schemas, and
-/// render the triage report through the selected `format`. **Read-only** — it
-/// adopts nothing and rewrites nothing, so a clean scan always exits 0; a locator
-/// error (no repo / no project layer) routes to stderr and exits non-zero
+/// discover candidate markdown, classify each against the persisted schemas, adopt
+/// every conformant `adoptable` candidate **register-only** (record it into the edge
+/// index + file-state baseline — never moving or rewriting a candidate file), and
+/// render the triage report through the selected `format`. A clean scan exits 0; a
+/// locator error (no repo / no project layer) routes to stderr and exits non-zero
 /// (`design/project-setup.md` → Flow 2; `design/worked-examples.md` → flow 12).
 fn run_ingest(format: Format) -> ExitCode {
     let cwd = match std::env::current_dir() {

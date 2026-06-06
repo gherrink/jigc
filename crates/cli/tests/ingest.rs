@@ -1,5 +1,7 @@
 //! Acceptance spine (M9 Increment 3, T1) — `jigc ingest` discover → classify →
-//! triage report, **read-only**, end-to-end through the built binary.
+//! adopt → triage report, end-to-end through the built binary. Adopt is
+//! **register-only**: it records conformant candidates into the edge index +
+//! file-state baseline but never moves or rewrites a candidate file.
 //!
 //! Drives the real `jigc` binary against a throwaway git repo seeded with the four
 //! flow-12 candidates (after `jigc setup`):
@@ -12,8 +14,9 @@
 //! and asserts: (a) all four candidates listed in sorted candidate order with the
 //! verdicts adoptable / needs-reconcile / needs-reconcile / unmanaged, and (b) at
 //! least one `needs-reconcile` row renders a routed finding — blocking severity,
-//! a located message, and a route. No adopt yet (read-only): the candidate files
-//! are byte-unchanged on disk after the scan.
+//! a located message, and a route. Adopt is register-only: the candidate files are
+//! byte-unchanged on disk after the scan (the adopt touches only the edge index +
+//! file-state baseline, never a candidate file).
 //!
 //! See `design/worked-examples.md` → flow 12; `design/project-setup.md` → Flow 2.
 //!
@@ -158,7 +161,7 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
     write(repo.path(), "docs/old-adr.md", CONFORMANT_ADR); // needs-reconcile (wrong location)
     write(repo.path(), "docs/notes.md", NON_CONFORMANT_NEAR_MISS); // unmanaged
 
-    // Snapshot the candidate bytes — read-only: nothing rewritten.
+    // Snapshot the candidate bytes — adopt is register-only: no candidate file is rewritten.
     let before: Vec<(String, Vec<u8>)> = [
         "decisions/rate-limit.md",
         "decisions/auth-choice.md",
@@ -254,10 +257,14 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
         "a needs-reconcile row must render its route:\n{report}"
     );
 
-    // Read-only: the candidate bytes are unchanged on disk (no adopt, no rewrite).
+    // Register-only adopt: the candidate bytes are unchanged on disk (adopt records
+    // into the edge index + file-state baseline; it never moves or rewrites a candidate).
     for (rel, bytes) in &before {
         let after = fs::read(repo.path().join(rel)).expect("re-read");
-        assert_eq!(*bytes, after, "ingest must not rewrite `{rel}` (read-only)");
+        assert_eq!(
+            *bytes, after,
+            "ingest adopt must be register-only — it must not rewrite `{rel}`"
+        );
     }
 }
 

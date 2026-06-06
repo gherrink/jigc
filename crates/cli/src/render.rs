@@ -303,8 +303,10 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
 /// its routed finding indented beneath (the `severity · code — message` line + the
 /// `route:` line — the same envelope OOB conflicts route through). `json` emits the
 /// **generic** projection of the report with **no** footer (tooling-consumed). This
-/// is the read-only triage surface (`design/project-setup.md` → Flow 2; `design/
-/// worked-examples.md` → flow 12); adopt is a later increment.
+/// is the adopt-and-triage surface — adopt is register-only (the edge index +
+/// file-state baseline; no candidate file is moved or rewritten), an adopted row is
+/// marked distinctly (`design/project-setup.md` → Flow 2; `design/worked-examples.md`
+/// → flow 12).
 pub fn ingest(format: Format, report: &IngestReport) -> String {
     match format {
         Format::Json => json(report),
