@@ -27,7 +27,7 @@
 //! ([DECISIONS.md](../../../DECISIONS.md) 2026-06-06, M10 inc-3 / T2 elaboration pin).
 
 use std::io::{self, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -35,6 +35,40 @@ use std::time::{Duration, Instant};
 /// How long the main thread sleeps between [`Child::try_wait`] polls — small enough that
 /// the enforced budget is a tight bound, large enough not to spin.
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// The wall-clock budget the invoker enforces over the `doc-code` probe
+/// ([validation.md](../../../design/validation.md) → The wire contract, line 129 — the
+/// budget the CLI invoker enforces). A static parse of a task's anchors is sub-second;
+/// this is the generous ceiling a runaway / hung probe trips into the `timeout`
+/// meta-finding.
+pub const DOC_CODE_BUDGET: Duration = Duration::from_secs(30);
+
+/// The env var that overrides the `doc-code` probe program path — the production
+/// override knob (the `JIGC_PACK_DIR` precedent; `DECISIONS.md` 2026-06-06, M10 inc-5 /
+/// T2 elaboration pin). Set it to an absolute path to a `doc-code` executable.
+const DOC_CODE_ENV: &str = "JIGC_DOC_CODE_PROBE";
+
+/// The documented production default for the `doc-code` probe program, resolved relative
+/// to the running `jigc` binary's directory (`<bin-dir>/doc-code`) — a probe shipped
+/// alongside the CLI in the install tree. `JIGC_DOC_CODE_PROBE` overrides it (a dev /
+/// test build, or a relocated install); when neither the env nor a sibling binary is
+/// usable the invocation surfaces a `crash` meta-finding (a missing program is an
+/// unresolvable invocation, never a silent pass).
+fn doc_code_default() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join("doc-code")))
+        .unwrap_or_else(|| PathBuf::from("doc-code"))
+}
+
+/// Resolve the `doc-code` probe program: the `JIGC_DOC_CODE_PROBE` override if set,
+/// else the documented [`doc_code_default`] (a `doc-code` sibling of the `jigc` binary).
+pub fn doc_code_program() -> PathBuf {
+    match std::env::var_os(DOC_CODE_ENV) {
+        Some(path) if !path.is_empty() => PathBuf::from(path),
+        _ => doc_code_default(),
+    }
+}
 
 /// How a probe subprocess ended, observed from the invoker boundary — **raw**, never
 /// classified. The engine (T3) maps these onto the `pack-probe-integrity.*`

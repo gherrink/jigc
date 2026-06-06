@@ -37,6 +37,7 @@ use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{Promotion, plan_finalize};
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
 use engine::schema::Schema;
 use engine::state::{self, BasePin, RolesRecord};
 use engine::store::canonical_path;
@@ -234,6 +235,41 @@ fn run_finalize(cwd: &Path, id: &str, format: Format) -> ExitCode {
     }
 }
 
+/// The CLI side of the `doc-code` probe seam (`engine::validate::ProbeInvoker`): run the
+/// resolved `doc-code` program over the engine-built [`ProbeRequest`] and report the raw
+/// [`ProbeRun`] (`design/validation.md` → Architecture — the CLI owns the subprocess
+/// invoker; the engine stays shell-free). The engine enumerated the surface, materialized
+/// the snapshot, and built the request; this serializes it to the child's stdin, enforces
+/// the wall-clock budget via [`::cli::invoke::invoke_probe`], and maps the raw outcome
+/// into the engine type the engine ingests.
+///
+/// A **spawn failure** (the program is missing / not executable) maps to a `crash`
+/// candidate ([`ProbeRunStatus::Exited`] with `code: None`) so a misconfigured probe
+/// surfaces a blocking `pack-probe-integrity.crash` meta-finding rather than silently
+/// passing or aborting the whole validate — an unresolvable invocation is never a clean
+/// run. A serialization failure of the engine-built request is the only `Err` raised (an
+/// internal fault, not a probe outcome).
+fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
+    let bytes = serde_json::to_vec(request)
+        .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
+    let program = ::cli::invoke::doc_code_program();
+    match ::cli::invoke::invoke_probe(&program, &bytes, ::cli::invoke::DOC_CODE_BUDGET) {
+        Ok(outcome) => Ok(ProbeRun {
+            stdout: outcome.stdout,
+            status: match outcome.status {
+                ::cli::invoke::ProbeStatus::Exited { code } => ProbeRunStatus::Exited { code },
+                ::cli::invoke::ProbeStatus::TimedOut => ProbeRunStatus::TimedOut,
+            },
+        }),
+        // The program could not be spawned (absent / not executable) — a crash candidate,
+        // not an orchestration error: the engine synthesizes the blocking meta-finding.
+        Err(_) => Ok(ProbeRun {
+            stdout: Vec::new(),
+            status: ProbeRunStatus::Exited { code: None },
+        }),
+    }
+}
+
 /// A named task's working area: the repo root, the `.jigc/` home, and the task dir.
 struct TaskArea {
     repo_root: PathBuf,
@@ -344,6 +380,7 @@ impl TaskArea {
             &self.jigc_root,
             &head,
             &self.severity_cascade()?,
+            &doc_code_invoker,
         )
         .with_context(|| format!("validating task at {:?}", self.dir))
     }

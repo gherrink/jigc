@@ -40,8 +40,10 @@ use crate::field_block::Field;
 use crate::file_state::{FileStateRecord, file_state};
 use crate::finding::{Finding, Location, Severity};
 use crate::parse::{Document, ParsedSection, parse_sections};
+use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, ingest_probe_run};
 use crate::result::ValidationReport;
 use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
+use crate::target_surface::enumerate_target_surface;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -49,6 +51,28 @@ use std::path::Path;
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
 const DOCS_DIR: &str = "docs";
+
+/// The pack probe the `code-anchor` field type binds to (`validation.md` → The
+/// `doc-code` probe). The engine names it on the wire request; the CLI invoker resolves
+/// the program. The engine ships no probe content (the engine-empty invariant) — this is
+/// only the wire `probe_id`, never an embedded adjudicator.
+const DOC_CODE_PROBE: &str = "doc-code";
+
+/// The filename the engine materializes the effective-state snapshot to, under the task
+/// working area — the path-ref the [`ProbeRequest`] carries to the subprocess probe
+/// (`validation.md` → The wire contract: the engine materializes a read-only snapshot in
+/// the probe's read scope and the request names its path). It rides in the gitignored
+/// working area, never committed.
+const SNAPSHOT_FILE: &str = "probe-snapshot.json";
+
+/// The seam the engine drives a subprocess pack probe over — a `Fn(&ProbeRequest) ->
+/// io::Result<ProbeRun>` the **CLI** supplies (the engine stays shell-free;
+/// `module-layout.md` → Probe boundary). The engine enumerates the target surface,
+/// materializes the snapshot, and builds the [`ProbeRequest`]; the invoker runs the
+/// program and reports the raw outcome; the engine ingests it ([`ingest_probe_run`]).
+/// This mirrors the `head` precedent — a capability the engine cannot produce
+/// (shelling out) is passed in from the CLI (`DECISIONS.md` 2026-06-06, M10 inc-5 / T2).
+pub type ProbeInvoker<'a> = dyn Fn(&ProbeRequest) -> std::io::Result<ProbeRun> + 'a;
 
 /// Validate one task working area — the single engine both `task validate` and
 /// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
@@ -85,6 +109,12 @@ const DOCS_DIR: &str = "docs";
 /// severity. A no-delta cascade leaves every emitted severity untouched (the
 /// byte-identical no-override path).
 ///
+/// `invoke_doc_code` is the CLI-supplied subprocess seam ([`ProbeInvoker`]) the engine
+/// drives the `doc-code` probe over — the engine enumerates the effective-state
+/// `code-anchor` surface, materializes the snapshot, and ingests the outcome, but the
+/// invoke step (which shells out) is the CLI's, keeping the engine shell-free. A task
+/// with no `code-anchor` leaf never calls it (the omitting-context inert path).
+///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
 /// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
@@ -95,6 +125,12 @@ const DOCS_DIR: &str = "docs";
 /// area) is a blocking finding (`validation.md` → Forward-ref resolution). So `finalize`
 /// — which gates on exactly what `validate` reports — blocks on a dangling `supersedes`
 /// and passes on a resolvable one (`worked-examples.md` → Superseding decision).
+// Every parameter is a distinct determinism-boundary input the CLI threads in (the
+// engine produces none of them): the working area, the resolved schemas/cascade, the
+// committed-store + `.jigc/` roots, the git HEAD stamp, and the shell-free probe seam.
+// Bundling them into a struct would only relocate the same arity, so the lint is allowed
+// at this one composition point.
+#[allow(clippy::too_many_arguments)]
 pub fn validate_task(
     dir: &Path,
     schemas: &BTreeMap<String, Schema>,
@@ -103,6 +139,7 @@ pub fn validate_task(
     jigc_root: &Path,
     head: &str,
     resolved: &crate::cascade::Resolved,
+    invoke_doc_code: &ProbeInvoker<'_>,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for entry in staged_instances(dir)? {
@@ -144,11 +181,68 @@ pub fn validate_task(
         &overlay, repo_root, dir, schemas,
     ));
 
+    // `doc-code` — the pack-provided doc↔code probe (`validation.md` → The `doc-code`
+    // probe). The engine enumerates the task's effective-state `code-anchor` leaves,
+    // materializes the serializable snapshot, builds the wire request, and ingests the
+    // probe's findings; the CLI-supplied invoker runs the subprocess (the engine stays
+    // shell-free). A task whose effective state carries **no** anchor produces zero
+    // pairs, so the whole block is skipped — the invoker is never called and no snapshot
+    // is written, leaving the no-anchor path byte-identical to the pre-wiring sweep (the
+    // omitting-context guard, hardening #5).
+    findings.extend(schedule_doc_code(dir, repo_root, schemas, invoke_doc_code)?);
+
     // Severity assignment is the engine-owned post-pass at report construction
     // (`validation.md` → Severity assignment — the M6 post-pass): `resolved` is the
     // cascade the caller resolved, read per-finding by inventory `(probe, check)`
     // membership. A no-delta cascade leaves every emitted severity untouched.
     Ok(ValidationReport::new(findings, resolved))
+}
+
+/// Schedule the `doc-code` probe over the task's effective-state target surface
+/// (`validation.md` → The `doc-code` probe → Target surface). The engine owns three of
+/// the four steps — **enumerate** ([`enumerate_target_surface`]), **materialize** the
+/// serializable [`EffectiveStateSnapshot`] (written to `<dir>/probe-snapshot.json`, the
+/// path-ref the wire carries), and **ingest** ([`ingest_probe_run`]) — and hands the
+/// **invoke** step to the CLI-supplied `invoke` closure (the engine never shells out).
+///
+/// One probe invocation covers the whole surface: the snapshot itemizes every anchor,
+/// and the probe adjudicates each against `working_tree_root` (`repo_root` — the
+/// working-tree code the about-to-be-committed bytes live in). The wire request names a
+/// representative `target` (the first anchor's address) so the envelope is well-formed;
+/// the probe reads the full anchor set from the snapshot, not the request's `target`.
+///
+/// **Inert when the surface is empty** — a task carrying no `code-anchor` leaf yields no
+/// pairs, so the invoker is never called and no snapshot is written: the returned findings
+/// are empty and the sweep is byte-identical to the pre-wiring path (the omitting-context
+/// guard, hardening #5). `config` is the empty object — doc-code reads no cascade config
+/// beyond severity, which the engine assigns downstream in its post-pass.
+fn schedule_doc_code(
+    dir: &Path,
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    invoke: &ProbeInvoker<'_>,
+) -> std::io::Result<Vec<Finding>> {
+    let anchors = enumerate_target_surface(dir, repo_root, schemas)?;
+    if anchors.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // The representative target the wire envelope carries (the probe reads the full set
+    // from the snapshot). `anchors` is non-empty here, so the first is always present.
+    let target = anchors[0].address.clone();
+
+    let snapshot = EffectiveStateSnapshot::new(anchors, repo_root.to_path_buf());
+    let snapshot_path = dir.join(SNAPSHOT_FILE);
+    std::fs::write(&snapshot_path, serde_json::to_vec(&snapshot)?)?;
+
+    let request = ProbeRequest::new(
+        DOC_CODE_PROBE,
+        target,
+        snapshot_path,
+        serde_json::Map::new(),
+    );
+    let run = invoke(&request)?;
+    Ok(ingest_probe_run(DOC_CODE_PROBE, &run))
 }
 
 /// One staged doc instance under `<dir>/docs/`: its `docs/<filename>` record key
@@ -672,6 +766,14 @@ kind: memo
         .expect("resolves")
     }
 
+    /// An invoker that **must not run** — these fixtures (the `note` schema) carry no
+    /// `code-anchor`, so the target surface is empty and the doc-code block is skipped
+    /// before any invocation (the omitting-context inert path, hardening #5). A call
+    /// here would be a scope bug, so it panics.
+    fn unused_invoker() -> impl Fn(&ProbeRequest) -> std::io::Result<ProbeRun> {
+        |_req| panic!("doc-code invoker must not run when the surface is empty")
+    }
+
     /// The done-criterion. Over a working area with **one drifted file** and **one
     /// conformance-broken instance**, `validate_task` returns *both* findings and
     /// `has_blocking() == true`; over a **clean** area it returns an empty report and
@@ -699,6 +801,7 @@ kind: memo
             area.dir(),
             "HEAD",
             &no_delta_resolved(),
+            &unused_invoker(),
         )
         .expect("sweep runs");
 
@@ -731,6 +834,7 @@ kind: memo
             clean.dir(),
             "HEAD",
             &no_delta_resolved(),
+            &unused_invoker(),
         )
         .expect("clean sweep runs");
 
@@ -816,6 +920,13 @@ mod ref_resolves_in_sweep_tests {
             None,
         )
         .expect("resolves")
+    }
+
+    /// An invoker that **must not run** — these ADR fixtures carry no `cites-code`
+    /// anchor, so the doc-code surface is empty and the block is skipped (the inert
+    /// path). A call would be a scope bug, so it panics.
+    fn unused_invoker() -> impl Fn(&ProbeRequest) -> std::io::Result<ProbeRun> {
+        |_req| panic!("doc-code invoker must not run when the surface is empty")
     }
 
     /// A committed ADR `A` (the supersede target), with no outgoing ref. Its required
@@ -906,6 +1017,7 @@ Slightly higher write latency for resilience.
             &jigc,
             "HEAD",
             &no_delta_resolved(),
+            &unused_invoker(),
         )
         .expect("sweep runs");
 
@@ -957,6 +1069,7 @@ Slightly higher write latency for resilience.
             &jigc,
             "HEAD",
             &no_delta_resolved(),
+            &unused_invoker(),
         )
         .expect("sweep runs");
 
