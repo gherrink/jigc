@@ -2282,11 +2282,14 @@ use crate::schema::{Field as SchemaField, FieldType};
 ///
 /// Engine-native checks: an `enum` value must be a declared member (`of`); a `date`
 /// must be ISO `YYYY-MM-DD`; a `bool` must be `true`/`false`; an `int` must parse as
-/// a signed integer. `string`, `ref`, and `code-anchor` accept any non-empty opaque
-/// value — full `ref` resolution is a `finalize` (edge-index) concern and the
-/// `code-anchor` adjudicator ships in a pack, so neither is typed here. A
-/// [`Value::List`] is checked element-wise. Returns a human-readable description of
-/// the malformation on failure (the [`Finding`] message the caller surfaces).
+/// a signed integer. `string` and `ref` accept any non-empty single-line opaque value
+/// — full `ref` resolution is a `finalize` (edge-index) concern. A **pack-declared**
+/// type ([`FieldType::Pack`]) runs its optional *write-time shape check* (for
+/// `code-anchor`: non-empty, single-line, parses as `path#symbol`); its real
+/// adjudication is the bound finalize-time probe (`design/document-type-schema.md` →
+/// Pack-declared field types). A [`Value::List`] is checked element-wise. Returns a
+/// human-readable description of the malformation on failure (the [`Finding`] message
+/// the caller surfaces).
 pub fn check_value(field: &SchemaField, value: &Value) -> Result<(), String> {
     match value {
         Value::Scalar(s) => check_scalar(field, s),
@@ -2301,7 +2304,7 @@ pub fn check_value(field: &SchemaField, value: &Value) -> Result<(), String> {
 
 /// Type-check a single scalar value against `field`'s declared type.
 fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
-    match field.ty {
+    match &field.ty {
         FieldType::Enum => {
             let members = field.of.as_deref().unwrap_or(&[]);
             if members.iter().any(|m| m == value) {
@@ -2342,12 +2345,54 @@ fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
         // Non-empty, single-line opaque value; deeper adjudication is a finalize /
         // pack concern. Control chars (newline/tab/…) are rejected so a value can
         // never inject a second field line when spliced onto its `- key: value` line.
-        FieldType::String | FieldType::Ref | FieldType::Pack(_) => {
-            if value.is_empty() {
-                Err(format!("{:?} must not be empty", field.id))
-            } else if value.chars().any(|c| c.is_control()) {
+        FieldType::String | FieldType::Ref => check_opaque_scalar(field, value),
+        // A pack-declared type. Its **real** adjudicator is the bound finalize-time
+        // probe (built in a later increment); here we run only the type's optional,
+        // cheap *write-time shape check* — the `String | Ref` arm above split out so
+        // a pack type can add constraints without touching the engine-native arms
+        // (`design/document-type-schema.md` → Pack-declared field types: Adjudication
+        // splits write-time vs finalize-time).
+        FieldType::Pack(pack) => match pack.name.as_str() {
+            "code-anchor" => check_code_anchor(field, value),
+            // A pack-declared type with no write-time shape check defers entirely to
+            // its finalize-time probe; the opaque non-empty/single-line floor still
+            // applies so a value can never inject a second field line on splice.
+            _ => check_opaque_scalar(field, value),
+        },
+    }
+}
+
+/// The opaque-scalar floor shared by `string` / `ref` (and any pack type lacking a
+/// shape check): non-empty and single-line (no control char — newline/tab/… would
+/// inject a second field line when spliced onto its `- key: value` line). Deeper
+/// adjudication is a `finalize` / pack concern.
+fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
+    if value.is_empty() {
+        Err(format!("{:?} must not be empty", field.id))
+    } else if value.chars().any(|c| c.is_control()) {
+        Err(format!(
+            "{:?} must not contain control characters",
+            field.id
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+/// The `code-anchor` write-time *shape* check: non-empty, single-line, and parses
+/// as `path#symbol` — a bare `path` (no `#`) is the file-existence form and also
+/// passes. This is the cheap local gate; the real adjudication is the bound
+/// `doc-code` probe at finalize (`design/validation.md` → The anchor grammar).
+fn check_code_anchor(field: &SchemaField, value: &str) -> Result<(), String> {
+    // Floor first: non-empty + single-line (control chars rejected).
+    check_opaque_scalar(field, value)?;
+    // At most one `#`; if present, both `path` and `symbol` are non-empty.
+    match value.split_once('#') {
+        None => Ok(()), // bare `path` — file-existence form.
+        Some((path, symbol)) => {
+            if path.is_empty() || symbol.is_empty() || symbol.contains('#') {
                 Err(format!(
-                    "{:?} must not contain control characters",
+                    "{:?} is not a code-anchor (expected `path#symbol` or a bare `path`)",
                     field.id
                 ))
             } else {
@@ -2833,17 +2878,53 @@ Each service drops its local limiter.
         assert!(check_value(&count, &scalar("-7")).is_ok());
         assert!(check_value(&count, &scalar("4.2")).is_err());
 
-        // string / ref / code-anchor: any non-empty value
+        // string / ref: any non-empty value (byte-identical pre/post the arm split)
         let name = field(FieldType::String, None);
         assert!(check_value(&name, &scalar("anything goes")).is_ok());
         assert!(check_value(&name, &scalar("")).is_err());
         let r = field(FieldType::Ref, None);
         assert!(check_value(&r, &scalar("adr:single-node-cache")).is_ok());
+        // a `ref` value carrying `#`/`/` (no code-anchor parse) stays accepted —
+        // String/Ref are *not* subject to the code-anchor shape check.
+        assert!(check_value(&r, &scalar("adr:auth#criteria/rate-limit")).is_ok());
         // scalar values are single-line: a control char (newline/tab) is rejected,
         // so a value can never inject a second field line on splice.
         assert!(check_value(&name, &scalar("line one\nline two")).is_err());
         assert!(check_value(&r, &scalar("adr:a\nadr:b")).is_err());
         assert!(check_value(&r, &scalar("adr:a\tb")).is_err());
+
+        // code-anchor (a pack-declared type): non-empty + single-line + parses as
+        // `path#symbol` (a bare path is the file-existence form and also passes).
+        // The real adjudication is the bound `doc-code` finalize-time probe; this
+        // is only the cheap write-time *shape* check.
+        let anchor = field(
+            FieldType::Pack(crate::schema::PackFieldType {
+                name: "code-anchor".into(),
+                adjudicator: Some("doc-code".into()),
+            }),
+            None,
+        );
+        // `path#symbol` with `#` and `/` passes.
+        assert!(
+            check_value(
+                &anchor,
+                &scalar("crates/engine/src/validate.rs#validate_task")
+            )
+            .is_ok()
+        );
+        // a bare path (no `#`) is the file-existence form — passes.
+        assert!(check_value(&anchor, &scalar("crates/engine/src/validate.rs")).is_ok());
+        // empty is rejected.
+        assert!(check_value(&anchor, &scalar("")).is_err());
+        // multi-line is rejected (the newly-added single-line constraint).
+        assert!(check_value(&anchor, &scalar("a.rs#one\nb.rs#two")).is_err());
+        // an interior control char (tab) is rejected.
+        assert!(check_value(&anchor, &scalar("a.rs#sym\tbol")).is_err());
+        // a value that does not parse as `path#symbol` is rejected: a trailing `#`
+        // with an empty symbol, an empty path before `#`, and more than one `#`.
+        assert!(check_value(&anchor, &scalar("crates/engine/src/validate.rs#")).is_err());
+        assert!(check_value(&anchor, &scalar("#validate_task")).is_err());
+        assert!(check_value(&anchor, &scalar("a.rs#one#two")).is_err());
     }
 
     /// (b) The only-intended-target gate rejects a buffer whose byte-diff escapes the
