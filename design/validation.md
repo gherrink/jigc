@@ -110,6 +110,7 @@ response:  { findings: [ { target: <address>, severity?, message, route? } ], sc
 - **`target`** (request and each finding) uses the one address grammar ([structural-grammar.md](structural-grammar.md#addressing)).
 - **`severity?`** is advisory and usually omitted — the engine assigns the final severity via the cascade (severity is engine-owned, never baked into a probe). Each finding is the engine's one `finding` shape ([Findings](#findings)).
 - **`schema_version`** on both sides is present *as a field* now so the contract can evolve without silently breaking a probe built against an older engine; the *versioning policy* itself is deferred (below).
+- **A no-findings adjudication MUST emit `{ findings: [], schema_version }`** — a clean run is an *empty findings array*, never empty stdout. On a zero exit, **empty or unparseable stdout is treated as `malformed-output`** (a blocking meta-finding), not as "no findings": an empty stream is indistinguishable from a probe that silently did nothing, so the contract fails safe rather than masking a non-adjudication. The dev pack's `doc-code` always prints a response; a third-party probe must too.
 
 ### Failure semantics — meta-findings
 

@@ -253,6 +253,10 @@ pub fn ingest_probe_run(probe_id: &str, run: &ProbeRun) -> Vec<Finding> {
             format!("probe `{probe_id}` exceeded its time budget and was killed"),
         )],
         ProbeRunStatus::Exited { code: Some(0) } => {
+            // Wire contract (validation.md → The wire contract): a clean run MUST emit
+            // `{findings: [], schema_version}` — empty/unparseable stdout on a zero exit
+            // is `malformed-output`, never "no findings", so a probe that silently did
+            // nothing cannot masquerade as a pass.
             match serde_json::from_slice::<ProbeResponse>(&run.stdout) {
                 Ok(response) => response.findings,
                 Err(err) => vec![meta_finding(
