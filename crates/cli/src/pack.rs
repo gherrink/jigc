@@ -283,8 +283,10 @@ mod tests {
     /// includes), the router's `present-catalog` / `route-to-workflow`,
     /// `author-spec` (the `plan` workflow's create-gated spec-authoring step),
     /// `locate-from-spec` (the `implement-from-spec` workflow's spec-driven locate,
-    /// distinct from the shared `locate`), plus `author-commit` (the fanned
-    /// `sub-task` workflow's finalize-free commit-authoring step).
+    /// distinct from the shared `locate`), `author-commit` (the fanned
+    /// `sub-task` workflow's finalize-free commit-authoring step), plus the
+    /// `project-setup` trio `develop-idea` / `author-prd` / `project-finalize`
+    /// (the M9 new-project on-ramp).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -293,7 +295,9 @@ mod tests {
             steps,
             vec![
                 ResourceId::from("author-commit"),
+                ResourceId::from("author-prd"),
                 ResourceId::from("author-spec"),
+                ResourceId::from("develop-idea"),
                 ResourceId::from("finalize"),
                 ResourceId::from("implement"),
                 ResourceId::from("implement-quick"),
@@ -303,6 +307,7 @@ mod tests {
                 ResourceId::from("locate-from-spec"),
                 ResourceId::from("milestone-finalize"),
                 ResourceId::from("present-catalog"),
+                ResourceId::from("project-finalize"),
                 ResourceId::from("route-to-workflow"),
                 ResourceId::from("superseded-context"),
             ],

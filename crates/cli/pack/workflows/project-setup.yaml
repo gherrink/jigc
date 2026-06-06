@@ -1,0 +1,8 @@
+---
+when: bootstrap a brand-new project by developing the idea into its first product requirements
+creates-task: true
+allows-create: [{type: prd, as: brief}]
+---
+{{ include: step:develop-idea }}
+{{ include: step:author-prd }}
+{{ include: step:project-finalize }}

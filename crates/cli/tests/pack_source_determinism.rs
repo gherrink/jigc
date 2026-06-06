@@ -63,6 +63,7 @@ These are the selectable work-workflows, each with the situation it fits:
 
 - implement-from-spec — build from a committed spec whose acceptance criteria already exist
 - plan — draft the specification for upcoming work before writing any code
+- project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix with no decision to record
 - single-task — implement one scoped change end-to-end
 

@@ -117,6 +117,8 @@ const QUICK_FIX_WHEN: &str = "apply a small commit-only fix with no decision to 
 const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
 const IMPLEMENT_FROM_SPEC_WHEN: &str =
     "build from a committed spec whose acceptance criteria already exist";
+const PROJECT_SETUP_WHEN: &str =
+    "bootstrap a brand-new project by developing the idea into its first product requirements";
 
 // ─────────────────── the routing-loop acceptance path ───────────────────
 
@@ -163,6 +165,13 @@ fn step_1_bare_intent_composes_the_router_listing_both_workflows_without_minting
             "- implement-from-spec — {IMPLEMENT_FROM_SPEC_WHEN}"
         )),
         "the router must list implement-from-spec with its `when` hint; got:\n{stdout}",
+    );
+    // `project-setup` is `creates-task: true`, so it joins the selectable catalog
+    // automatically (M9 Increment 1 T2 — the new-project on-ramp). With it the router
+    // lists all FIVE work-workflows.
+    assert!(
+        stdout.contains(&format!("- project-setup — {PROJECT_SETUP_WHEN}")),
+        "the router must list project-setup with its `when` hint; got:\n{stdout}",
     );
 
     // It carries the literal agent-substitution re-run prose.
@@ -275,6 +284,7 @@ fn step_3_the_work_workflow_when_hints_are_pairwise_non_overlapping() {
         ("quick-fix", words(QUICK_FIX_WHEN)),
         ("plan", words(PLAN_WHEN)),
         ("implement-from-spec", words(IMPLEMENT_FROM_SPEC_WHEN)),
+        ("project-setup", words(PROJECT_SETUP_WHEN)),
     ];
     for (i, (a_id, a)) in selectables.iter().enumerate() {
         for (b_id, b) in &selectables[i + 1..] {
@@ -333,7 +343,13 @@ fn step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows() {
     sorted_ids.sort_unstable();
     assert_eq!(
         sorted_ids,
-        ["implement-from-spec", "plan", "quick-fix", "single-task",],
+        [
+            "implement-from-spec",
+            "plan",
+            "project-setup",
+            "quick-fix",
+            "single-task",
+        ],
         "the live router must list EXACTLY the real selectable work-workflows — no \
          TEST-FIXTURE and no non-selectable `sub-task` leak; got:\n{ids:?}",
     );

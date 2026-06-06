@@ -62,6 +62,7 @@ These are the selectable work-workflows, each with the situation it fits:
 
 - implement-from-spec — build from a committed spec whose acceptance criteria already exist
 - plan — draft the specification for upcoming work before writing any code
+- project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
 - quick-fix — apply a small commit-only fix with no decision to record
 - single-task — implement one scoped change end-to-end
 
@@ -800,6 +801,79 @@ fn form_d_plan_mints_on_workflow_plan_and_emits_the_create_spec_gate() {
     assert!(
         stdout.contains("Run: `jigc doc create spec"),
         "the plan workflow's author-spec step must emit the `jigc doc create spec` create-gate; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn form_d_project_setup_mints_and_emits_the_create_prd_gate_with_three_author_slots() {
+    let repo = TempDir::new("form-d-project-setup");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // `--workflow project-setup <idea>`: the M9 new-project on-ramp work-workflow.
+    // It is `creates-task: true` with `allows-create: [{type: prd, as: brief}]`, so
+    // Form D mints + composes it end-to-end. Its `author-prd` step carries the
+    // create-gate, which the composer emits as a `Run: jigc doc create prd` line,
+    // followed by the three `<<author: …>>` slot lines for prd's fixed prose slots
+    // (vision / requirements / context). `{{task.intent}}` interpolates the idea.
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "project-setup", "build a recipe sharing app"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow project-setup \"<idea>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The work-workflow minted under .jigc/tasks/<slug>/, recording its own id.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("build-a-recipe-sharing-app");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "project-setup is creates-task: true, so it must open .jigc/tasks/build-a-recipe-sharing-app/ with a base pin",
+    );
+    let recorded =
+        fs::read_to_string(task_dir.join("workflow")).expect("read recorded workflow id");
+    assert_eq!(
+        recorded.trim(),
+        "project-setup",
+        "the minted task must record `workflow: project-setup`",
+    );
+
+    // `{{task.intent}}` interpolated the idea into the develop-idea body.
+    assert!(
+        stdout.contains("build a recipe sharing app"),
+        "the composed view must embed the resolved `{{task.intent}}`; got:\n{stdout}",
+    );
+
+    // The create-gate emits as a machine-extractable `Run:` line for `prd` ...
+    assert!(
+        stdout.contains("Run: `jigc doc create prd"),
+        "the author-prd step must emit the `jigc doc create prd` create-gate; got:\n{stdout}",
+    );
+
+    // ... and the three fixed prose slots emit as three `<<author: …>>` lines (the
+    // prd is not created yet, so each slot address resolves empty — `<<author: >>`).
+    let author_lines = stdout
+        .lines()
+        .filter(|l| l.trim_start().starts_with("<<author:"))
+        .count();
+    assert_eq!(
+        author_lines, 3,
+        "author-prd must emit exactly three `<<author: …>>` slot lines (vision/requirements/context); got:\n{stdout}",
+    );
+
+    assert!(
+        stdout.trim_end().ends_with(ROUTING_FOOTER),
+        "Form-D agent-text composition must end with the routing footer; got:\n{stdout}",
     );
 }
 

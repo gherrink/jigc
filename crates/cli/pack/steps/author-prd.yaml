@@ -1,0 +1,6 @@
+Create the prd, then author its slots:
+
+{{ cli.create-prd }}
+<<author: {{ task.brief#vision }}>>
+<<author: {{ task.brief#requirements }}>>
+<<author: {{ task.brief#context }}>>

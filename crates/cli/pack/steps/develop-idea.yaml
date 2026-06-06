@@ -1,0 +1,6 @@
+Develop the idea into a product direction. The idea is:
+{{ task.intent }}
+
+Reason about the vision, the requirements it implies, and the context that
+shapes it — audience, constraints, and what is out of scope — before authoring
+the prd below.
