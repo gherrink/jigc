@@ -9,6 +9,7 @@
 
 use crate::config::ConfigCommand;
 use crate::doc::DocCommand;
+use crate::ingest;
 use crate::milestone::MilestoneCommand;
 use crate::orient;
 use crate::render;
@@ -154,6 +155,16 @@ pub enum Command {
     /// human resolves each route by re-running the `jigc config` verbs
     /// (`design/overrides.md` → The `jigc upgrade` command).
     Upgrade,
+
+    /// The existing-project ingestion scan. Discovers candidate markdown beyond the
+    /// declared `location:` dirs (repo root, `docs/`, the location dirs), classifies
+    /// each against the persisted schemas, and renders the **triage report** (`file ×
+    /// best-match type × verdict`, in sorted candidate order) through the global
+    /// `--format`; `needs-reconcile` rows carry a routed finding (blocking severity +
+    /// located message + route). **Read-only — it adopts nothing and rewrites
+    /// nothing** (`design/project-setup.md` → Flow 2; `design/worked-examples.md` →
+    /// flow 12). The `ingest-existing` workflow orients the agent to run it.
+    Ingest,
 }
 
 impl Cli {
@@ -218,6 +229,7 @@ impl Cli {
             Command::Milestone { verb } => run_milestone(self.format, verb),
             Command::Setup => run_setup(self.format),
             Command::Upgrade => run_upgrade(self.format),
+            Command::Ingest => run_ingest(self.format),
         }
     }
 }
@@ -322,6 +334,32 @@ fn run_upgrade(format: Format) -> ExitCode {
             } else {
                 ExitCode::SUCCESS
             }
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Run `jigc ingest` against the current working directory: locate the repo root,
+/// discover candidate markdown, classify each against the persisted schemas, and
+/// render the triage report through the selected `format`. **Read-only** — it
+/// adopts nothing and rewrites nothing, so a clean scan always exits 0; a locator
+/// error (no repo / no project layer) routes to stderr and exits non-zero
+/// (`design/project-setup.md` → Flow 2; `design/worked-examples.md` → flow 12).
+fn run_ingest(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match ingest::run(&cwd) {
+        Ok(report) => {
+            println!("{}", render::ingest(format, &report));
+            ExitCode::SUCCESS
         }
         Err(err) => {
             eprintln!("{err:#}");
@@ -659,6 +697,27 @@ mod cli_parse {
     fn upgrade_takes_no_positional() {
         let err = Cli::try_parse_from(["jigc", "upgrade", "extra"])
             .expect_err("`jigc upgrade` takes no positional argument");
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn ingest_parses() {
+        let cli = Cli::try_parse_from(["jigc", "ingest"]).expect("`jigc ingest` parses");
+        assert_eq!(cli.command, Command::Ingest);
+    }
+
+    #[test]
+    fn ingest_format_json_is_selected() {
+        let cli = Cli::try_parse_from(["jigc", "ingest", "--format", "json"])
+            .expect("`jigc ingest --format json` parses");
+        assert_eq!(cli.format, Format::Json);
+        assert_eq!(cli.command, Command::Ingest);
+    }
+
+    #[test]
+    fn ingest_takes_no_positional() {
+        let err = Cli::try_parse_from(["jigc", "ingest", "extra"])
+            .expect_err("`jigc ingest` takes no positional argument");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 

@@ -11,6 +11,7 @@ mod cascade_util;
 mod cli;
 mod config;
 mod doc;
+mod ingest;
 mod locate;
 mod milestone;
 mod orient;

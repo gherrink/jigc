@@ -10,6 +10,7 @@
 //! resilience and `design/workflow-dialect.md` → Routing footer.
 
 use crate::cli::Format;
+use crate::ingest::IngestReport;
 use crate::setup::SetupSummary;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
@@ -290,6 +291,45 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
         Format::Json => json(finding),
         Format::Agent | Format::Human => {
             let mut out = finding_line(finding);
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// Render a [`IngestReport`] to the surface `format` selects: `agent` / `human`
+/// emit one row per discovered candidate (`<verdict> <file> → <type>`, in sorted
+/// candidate order) followed by the routing footer; a `needs-reconcile` row carries
+/// its routed finding indented beneath (the `severity · code — message` line + the
+/// `route:` line — the same envelope OOB conflicts route through). `json` emits the
+/// **generic** projection of the report with **no** footer (tooling-consumed). This
+/// is the read-only triage surface (`design/project-setup.md` → Flow 2; `design/
+/// worked-examples.md` → flow 12); adopt is a later increment.
+pub fn ingest(format: Format, report: &IngestReport) -> String {
+    match format {
+        Format::Json => json(report),
+        Format::Agent | Format::Human => {
+            let mut out = format!(
+                "jigc ingest — {} candidate(s) classified  (sorted — deterministic report order)\n\n",
+                report.rows.len(),
+            );
+            for row in &report.rows {
+                out.push_str(row.verdict);
+                out.push(' ');
+                out.push_str(&row.file);
+                match &row.best_match {
+                    Some(ty) => {
+                        out.push_str(" → ");
+                        out.push_str(ty);
+                    }
+                    None => out.push_str(" → (parses against no schema — left untouched)"),
+                }
+                out.push('\n');
+                if let Some(finding) = &row.finding {
+                    out.push_str("  ");
+                    out.push_str(&finding_line(finding));
+                }
+            }
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -802,6 +842,68 @@ mod tests {
         assert!(!json_out.contains(ROUTING_FOOTER));
         let back: JoinOutcome = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, outcome);
+    }
+
+    /// The `jigc ingest` triage report renders in sorted candidate order: one row
+    /// per candidate (`<verdict> <file> → <type>`), an `adoptable` row with no
+    /// finding, a `needs-reconcile` row carrying its indented routed finding
+    /// (`blocking · code — message` + the `route:` line — the OOB-conflict envelope),
+    /// and an `unmanaged` row naming the untouched candidate; ends with the routing
+    /// footer. JSON is the generic projection with no footer.
+    #[test]
+    fn render_ingest_lists_rows_with_routed_finding_and_footer() {
+        use crate::ingest::{IngestReport, TriageRow};
+        use engine::finding::{Finding, Location, Severity};
+
+        let report = IngestReport {
+            rows: vec![
+                TriageRow {
+                    file: "decisions/auth-choice.md".to_string(),
+                    best_match: Some("adr".to_string()),
+                    verdict: "needs-reconcile",
+                    finding: Some(Finding::graded(
+                        Severity::Blocking,
+                        "conformance.section-missing",
+                        "required section heading `## context` is missing",
+                        Some(Location::addressed("decisions/auth-choice.md", 1, 1)),
+                        Some("reconcile decisions/auth-choice.md against the `adr` schema".into()),
+                    )),
+                },
+                TriageRow {
+                    file: "decisions/rate-limit.md".to_string(),
+                    best_match: Some("adr".to_string()),
+                    verdict: "adoptable",
+                    finding: None,
+                },
+                TriageRow {
+                    file: "docs/notes.md".to_string(),
+                    best_match: None,
+                    verdict: "unmanaged",
+                    finding: None,
+                },
+            ],
+        };
+
+        let agent = ingest(Format::Agent, &report);
+        insta::assert_snapshot!(agent, @r"
+        jigc ingest — 3 candidate(s) classified  (sorted — deterministic report order)
+
+        needs-reconcile decisions/auth-choice.md → adr
+          blocking · conformance.section-missing — required section heading `## context` is missing
+          route: reconcile decisions/auth-choice.md against the `adr` schema
+        adoptable decisions/rate-limit.md → adr
+        unmanaged docs/notes.md → (parses against no schema — left untouched)
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        assert!(agent.ends_with(ROUTING_FOOTER));
+        // Human renders identically to agent in the MVP.
+        assert_eq!(ingest(Format::Human, &report), agent);
+
+        // JSON is the generic projection — parseable, no footer.
+        let json_out = ingest(Format::Json, &report);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
+        assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and
