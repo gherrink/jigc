@@ -391,11 +391,11 @@ fn suffix_of(
 pub fn orientation_unset() -> String {
     let mut out = String::from("jigc — orientation\n\n");
     out.push_str(
-        "This project isn't set up. No domain pack is installed; the cascade has only engine defaults.\n\n",
+        "This project isn't set up. No project config layer is present; the cascade has only pack defaults.\n\n",
     );
     out.push_str("Run: `jigc setup`\n\n");
     out.push_str(
-        "The setup workflow walks the pack choice, the project config dir, and the first workflow.\n",
+        "`jigc setup` installs jigc into this project (the adapter, the `jigc` allowlist, the `.jigc/config/` layer). Then `jigc start` orients you to the setup workflows — `project-setup` (develop a new project's idea into its first requirements) or `ingest-existing` (bring an existing repo's docs under management).\n",
     );
     out.push_str(ROUTING_FOOTER);
     out
@@ -478,14 +478,24 @@ mod tests {
         insta::assert_snapshot!(text, @r"
         jigc — orientation
 
-        This project isn't set up. No domain pack is installed; the cascade has only engine defaults.
+        This project isn't set up. No project config layer is present; the cascade has only pack defaults.
 
         Run: `jigc setup`
 
-        The setup workflow walks the pack choice, the project config dir, and the first workflow.
+        `jigc setup` installs jigc into this project (the adapter, the `jigc` allowlist, the `.jigc/config/` layer). Then `jigc start` orients you to the setup workflows — `project-setup` (develop a new project's idea into its first requirements) or `ingest-existing` (bring an existing repo's docs under management).
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
 
+        assert!(text.contains("project-setup"), "got:\n{text}");
+        assert!(text.contains("ingest-existing"), "got:\n{text}");
+        assert!(
+            !text.contains("domain pack is installed"),
+            "stale over-promise copy; got:\n{text}",
+        );
+        assert!(
+            !text.contains("walks the pack choice"),
+            "stale over-promise copy; got:\n{text}",
+        );
         assert!(text.ends_with(ROUTING_FOOTER));
     }
 
