@@ -559,7 +559,8 @@ mod tests {
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// A committed ADR `B` (superseding nothing) — the recorded baseline before any

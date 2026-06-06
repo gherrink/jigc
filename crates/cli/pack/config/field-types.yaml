@@ -1,0 +1,11 @@
+# pack/config/field-types.yaml — the dev pack's pack-declared field types (the
+# M10 extension axis). Each entry binds a type spelling to the probe that
+# adjudicates it; a schema field naming the spelling resolves to a
+# `FieldType::Pack` carrying that adjudicator, exactly as a `ref` field means
+# `ref-resolves` applies. The engine ships NONE of these (the engine-empty
+# invariant); the CLI reads this file and threads the set into `load_schema`.
+# `code-anchor` is the first pack-declared field type — its `doc-code` adjudicator
+# (the file/symbol-existence + criterion→test probe) is built later in the arc.
+# See document-type-schema.md → Pack-declared field types;
+# DECISIONS.md 2026-06-06 → M10 Increment 1 / T1 + T3.
+- { name: code-anchor, adjudicator: doc-code }

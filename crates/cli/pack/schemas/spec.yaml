@@ -24,3 +24,4 @@ sections:
       block:
         - { id: title, type: string }
         - { id: statement, slot: { hint: "The criterion, testably phrased." } }
+        - { id: maps-to-test, type: code-anchor }

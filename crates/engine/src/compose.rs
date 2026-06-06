@@ -2334,7 +2334,8 @@ If your decision supersedes an earlier one, here is that decision:
         let mut m = BTreeMap::new();
         m.insert(
             "adr".to_string(),
-            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads"),
         );
         m
     }

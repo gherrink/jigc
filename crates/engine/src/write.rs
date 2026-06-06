@@ -301,16 +301,16 @@ mod canonical {
     use super::*;
     use crate::field_block::Value;
     use crate::parse::parse_sections;
-    use crate::schema::load_schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
     fn commit_schema() -> Schema {
-        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
     }
 
     fn scalar(key: &str, value: &str) -> Field {
@@ -494,6 +494,72 @@ sections:
         );
     }
 
+    /// M10 inc-1 round-trip clause: a hand-authored `adr` carrying the optional
+    /// pack-declared `cites-code: <path>#<symbol>` anchor in its `status` header
+    /// **canonical-writes then re-parses idempotently** — `write → parse → write`
+    /// byte-identical — and the parsed `cites-code` value is the exact `path#symbol`
+    /// text (the writer places a `code-anchor` field on the splice path like any
+    /// header scalar; the `#`/`/` are opaque to the writer/parser, the bound
+    /// `doc-code` probe adjudicates them later). The schema loads only because the
+    /// `code-anchor → doc-code` set is threaded in (`adr_schema`).
+    #[test]
+    fn adr_with_a_cites_code_anchor_round_trips_byte_identical() {
+        let schema = adr_schema();
+        let anchor = "crates/engine/src/schema.rs#FieldType";
+        let instance = Instance {
+            title: "Rate-limit at the gateway".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "status".to_string(),
+                    fields: vec![
+                        scalar("status", "accepted"),
+                        scalar("date", "2026-05-23"),
+                        scalar("cites-code", anchor),
+                    ],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "context".to_string(),
+                    slot: Some("Forces at play.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "decision".to_string(),
+                    slot: Some("We centralize.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "consequences".to_string(),
+                    slot: Some("Local limiters retired.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        let first = render(&schema, &instance);
+        let doc = parse_sections(&schema, &first).expect("rendered adr parses");
+        // The parsed `cites-code` value is the verbatim `path#symbol` anchor.
+        let status = doc
+            .sections
+            .iter()
+            .find(|s| s.id == "status")
+            .expect("status header present");
+        let cites = status
+            .fields
+            .iter()
+            .find(|f| f.key == "cites-code")
+            .expect("cites-code parsed");
+        assert_eq!(
+            cites.value,
+            Value::Scalar(anchor.to_string()),
+            "the code-anchor value round-trips verbatim",
+        );
+        let second = render(&schema, &reparse_to_instance(&schema, &first));
+        assert_eq!(
+            first, second,
+            "an adr carrying cites-code is byte-identical across write → parse → write",
+        );
+    }
+
     /// Re-derive an [`Instance`] from a parsed [`crate::parse::Document`] over
     /// `source`, owning the slot prose (re-slicing the spans). The bridge that lets
     /// the property assert `write → parse → write`.
@@ -537,13 +603,13 @@ mod prop_tests {
     use super::*;
     use crate::field_block::Value;
     use crate::parse::parse_sections;
-    use crate::schema::load_schema;
     use proptest::prelude::*;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// Opaque slot prose: arbitrary heading-free, sentinel-free paragraphs joined by
@@ -1609,12 +1675,13 @@ mod splice {
 
     use super::*;
     use crate::parse::parse_sections;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     fn spec_schema() -> Schema {
@@ -1817,13 +1884,14 @@ mod splice_prop_tests {
 
     use super::*;
     use crate::parse::parse_sections;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
     use proptest::prelude::*;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// Heading-free, sentinel-free slot prose paragraphs (so the canonical fixture
@@ -1924,12 +1992,13 @@ mod generate {
     use super::*;
     use crate::field_block::Value;
     use crate::parse::parse_sections;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     fn spec_schema() -> Schema {
@@ -1970,7 +2039,7 @@ sections:
     fields:
       - { id: owner, type: string }
 ";
-        load_schema(yaml).expect("fielded schema loads")
+        crate::schema::load_schema(yaml).expect("fielded schema loads")
     }
 
     fn scalar(key: &str, value: &str) -> Field {
@@ -2208,7 +2277,7 @@ sections:
       - { id: owner, type: string }
       - { id: area, type: string }
 ";
-        let schema = load_schema(yaml).expect("schema loads");
+        let schema = crate::schema::load_schema(yaml).expect("schema loads");
         let src = "\
 ---
 title: A note
@@ -2737,12 +2806,13 @@ mod validate_after {
 
     use super::*;
     use crate::field_block::Value;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// A canonical ADR with a typed `status` enum and a `date` field present.
@@ -3027,12 +3097,12 @@ mod set_field_generate {
 
     use super::*;
     use crate::field_block::Value;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
 
     fn commit_schema() -> Schema {
-        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
     }
 
     /// A staged `commit` whose fillable form OMITS the optional `implements` ref — only
@@ -3118,12 +3188,13 @@ mod set_slot_validated {
     //! block.
 
     use super::*;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     const CANONICAL_ADR: &str = "\
@@ -3224,13 +3295,14 @@ mod validate_after_prop_tests {
 
     use super::*;
     use crate::field_block::Value;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
     use proptest::prelude::*;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     fn prose() -> impl Strategy<Value = String> {
@@ -3301,13 +3373,14 @@ mod generate_prop_tests {
 
     use super::*;
     use crate::parse::parse_sections;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
     use proptest::prelude::*;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// Build a conformant ADR containing exactly the body sections in `present` (a
@@ -3408,17 +3481,18 @@ mod roundtrip {
 
     use super::*;
     use crate::parse::parse_sections;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
     use proptest::prelude::*;
 
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn commit_schema() -> Schema {
-        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
     }
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// One generated arbitrary conformant document plus its known-canonical LF form
@@ -3739,12 +3813,13 @@ mod spec_roundtrip {
     //! content), and (b) `write → parse → write` byte-identical.
 
     use super::*;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
 
     fn spec_schema() -> Schema {
-        load_schema(SPEC_YAML).expect("spec.yaml loads")
+        crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("spec.yaml loads")
     }
 
     /// A canonical `spec` instance over the shipped schema: the `# H1` title (the
@@ -3841,12 +3916,12 @@ mod commit_render {
 
     use super::*;
     use crate::field_block::Value;
-    use crate::schema::{Schema, load_schema};
+    use crate::schema::Schema;
 
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
 
     fn commit_schema() -> Schema {
-        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
     }
 
     fn scalar(key: &str, value: &str) -> Field {

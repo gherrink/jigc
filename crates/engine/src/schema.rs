@@ -306,7 +306,12 @@ pub struct PackFieldType {
 /// supplies so a schema field may name it. The engine ships none; the dev pack
 /// declares `code-anchor` → `doc-code`. Threaded into [`load_schema_with_types`]
 /// as the set against which an unresolved [`FieldType::Pack`] is resolved.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Deserializes directly from the pack's config-family declaration file (a YAML
+/// sequence of `{ name, adjudicator }` entries) — the on-disk form the dev pack
+/// supplies at `config/field-types.yaml`, the CLI reads, and threads in here.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PackTypeDecl {
     /// The type's spelling (e.g. `code-anchor`).
     pub name: String,
@@ -446,11 +451,14 @@ mod tests {
 
     /// Golden: the parsed `adr` schema projection. Pins `location: decisions/`,
     /// `id-from: title`, the `status` enum members + default, the `date` field,
-    /// the `supersedes` ref's `to: adr` / `card` / `inverse`, and the three
-    /// prose slot sections in order.
+    /// the `supersedes` ref's `to: adr` / `card` / `inverse`, the optional
+    /// `cites-code` pack-declared `code-anchor` field (M10 inc-1, resolved with its
+    /// `doc-code` adjudicator), and the three prose slot sections in order. The
+    /// `cites-code` row is the justified, intended output-adding snapshot diff.
     #[test]
     fn schema_adr_golden() {
-        let schema = load_schema(ADR_YAML).expect("adr.yaml loads");
+        let schema =
+            load_schema_with_types(ADR_YAML, &dev_pack_field_types()).expect("adr.yaml loads");
         let json = serde_json::to_string_pretty(&schema).expect("serializes");
         insta::assert_snapshot!("schema_adr", json);
     }
@@ -460,7 +468,8 @@ mod tests {
     /// inverse, and `status` is an enum over the three members.
     #[test]
     fn adr_status_section_models_the_ref_relation() {
-        let schema = load_schema(ADR_YAML).expect("adr.yaml loads");
+        let schema =
+            load_schema_with_types(ADR_YAML, &dev_pack_field_types()).expect("adr.yaml loads");
         assert_eq!(schema.ty, "adr");
         assert_eq!(schema.location.as_deref(), Some("decisions/"));
         assert_eq!(schema.id_from.as_deref(), Some("title"));
@@ -500,7 +509,8 @@ mod tests {
     /// are cut from the MVP spec.
     #[test]
     fn schema_spec_golden() {
-        let schema = load_schema(SPEC_YAML).expect("spec.yaml loads");
+        let schema =
+            load_schema_with_types(SPEC_YAML, &dev_pack_field_types()).expect("spec.yaml loads");
         let json = serde_json::to_string_pretty(&schema).expect("serializes");
         insta::assert_snapshot!("schema_spec", json);
     }
@@ -512,7 +522,8 @@ mod tests {
     /// absent.
     #[test]
     fn spec_criteria_block_carries_statement_as_a_slot() {
-        let schema = load_schema(SPEC_YAML).expect("spec.yaml loads");
+        let schema =
+            load_schema_with_types(SPEC_YAML, &dev_pack_field_types()).expect("spec.yaml loads");
         assert_eq!(schema.ty, "spec");
         assert_eq!(schema.location.as_deref(), Some("specs/"));
         assert_eq!(schema.id_from.as_deref(), Some("title"));
@@ -675,6 +686,28 @@ sections:
                 if field == "x" && ty == "wormhole"),
             "expected a typed UnknownFieldType error, got {err:?}",
         );
+    }
+
+    /// The loop with T1, closed over the **shipped** bytes: the real `adr.yaml` /
+    /// `spec.yaml` (which now carry the pack-declared `code-anchor` anchors)
+    /// **load** when the `code-anchor → doc-code` set is supplied, and **fail to
+    /// load** with the bare loader (no pack types) — the engine ships no
+    /// `code-anchor` of its own (the engine-empty invariant), so the bare path
+    /// rejects the shipped anchor loudly with `UnknownFieldType`. This is the M10
+    /// inc-1 done-criterion over the bytes that ship, not an inline fixture.
+    #[test]
+    fn shipped_adr_and_spec_load_with_the_pack_set_and_fail_without_it() {
+        for (bytes, field) in [(ADR_YAML, "cites-code"), (SPEC_YAML, "maps-to-test")] {
+            load_schema_with_types(bytes, &dev_pack_field_types())
+                .expect("loads when code-anchor is declared");
+
+            let err = load_schema(bytes).expect_err("the bare loader rejects code-anchor");
+            assert!(
+                matches!(&err, SchemaError::UnknownFieldType { field: f, ty }
+                    if f == field && ty == "code-anchor"),
+                "expected UnknownFieldType for {field}/code-anchor, got {err:?}",
+            );
+        }
     }
 
     /// An unknown top-level key is rejected (the `deny_unknown_fields` guard),

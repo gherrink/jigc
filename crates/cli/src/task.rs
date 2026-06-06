@@ -37,7 +37,7 @@ use engine::file_state::{self, FileStateRecord};
 use engine::finalize::{Promotion, plan_finalize};
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::schema::{Schema, load_schema};
+use engine::schema::Schema;
 use engine::state::{self, BasePin, RolesRecord};
 use engine::store::canonical_path;
 use engine::validate::validate_task;
@@ -299,7 +299,7 @@ impl TaskArea {
                 .pack
                 .read(PackResourceKind::Schemas, &id)
                 .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-            let schema = load_schema(&bytes)
+            let schema = crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
                 .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
             out.insert(schema.ty.clone(), schema);
         }

@@ -326,13 +326,20 @@ fn check_field_value(
 }
 
 /// A field is author-required iff the author must supply it — no `default:`, no
-/// `set:` (CLI-derived), and not an **optional `ref`** (forward `card:` with a minimum
-/// of 0, e.g. the ADR `supersedes` relation's `0..1`). An optional ref carries no
-/// author obligation: its presence is the agent's choice and its *resolution*, not its
-/// presence, is what `ref-resolves` adjudicates at finalize (`design/validation.md` →
-/// the synthetic `ref-resolves` check; `document-type-schema.md` → `ref` cardinality).
+/// `set:` (CLI-derived), not an **optional `ref`** (forward `card:` with a minimum
+/// of 0, e.g. the ADR `supersedes` relation's `0..1`), and not a **pack-declared
+/// field type** (e.g. `code-anchor`). An optional ref and a pack-declared anchor
+/// both carry no author obligation: presence is the agent's choice and its
+/// *adjudication* — not its presence — is the finalize-time probe's job (`ref-resolves`
+/// for a ref, the type's bound adjudicator for a pack type, e.g. `code-anchor` → `doc-code`).
+/// (`design/validation.md` → the synthetic `ref-resolves` check; `document-type-schema.md`
+/// → `ref` cardinality + Pack-declared field types; `DECISIONS.md 2026-06-06` → M10 inc-1:
+/// both shipped anchors are optional.)
 fn is_author_required(field: &SchemaField) -> bool {
     if field.ty == FieldType::Ref && ref_min_cardinality_zero(field) {
+        return false;
+    }
+    if matches!(field.ty, FieldType::Pack(_)) {
         return false;
     }
     field.default.is_none() && field.set.is_none()
@@ -371,7 +378,6 @@ mod schema_conformance_tests {
 
     use super::*;
     use crate::parse::parse_sections;
-    use crate::schema::load_schema;
 
     /// A purpose-built schema with the three things the checks adjudicate: a header
     /// with one author-required enum field (`kind`, no default/set) plus one
@@ -391,7 +397,7 @@ sections:
   - id: body
     slot: { hint: \"The note body.\" }
 ";
-        load_schema(yaml).expect("note schema loads")
+        crate::schema::load_schema(yaml).expect("note schema loads")
     }
 
     /// Parse a fixture against the schema, panicking (with the parse findings) if it
@@ -501,6 +507,54 @@ The note body prose.
             );
         }
     }
+
+    /// A pack-declared field type (`code-anchor`) is **author-optional**: its
+    /// presence is the agent's choice and its *adjudication* is the bound
+    /// finalize-time probe (`doc-code`), exactly as an optional `ref`'s resolution
+    /// is `ref-resolves`' job — never its presence. So an instance that **omits**
+    /// the optional `cites-code` anchor yields **zero** `required-field-present`
+    /// findings (M10 inc-1: both shipped anchors are optional;
+    /// `DECISIONS.md 2026-06-06`). The red step proving the exemption: without it,
+    /// the shipped `adr` (whose `cites-code` is always absent at create) would
+    /// blocking-fail conformance on every task.
+    #[test]
+    fn an_omitted_pack_anchor_field_is_not_author_required() {
+        let yaml = b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: cites-code, type: code-anchor }
+  - id: body
+    slot: { hint: \"The note body.\" }
+";
+        let schema =
+            crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+                .expect("note schema with a pack anchor loads");
+
+        // No `cites-code` line in the front-matter — the optional anchor is absent.
+        let source = "\
+---
+title: A note
+---
+
+# A note
+
+## Body
+
+The note body prose.
+";
+        let doc = parse_sections(&schema, source)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, source, &doc);
+        assert!(
+            findings.is_empty(),
+            "an omitted optional `code-anchor` field must yield no findings, got {findings:?}",
+        );
+    }
 }
 
 #[cfg(test)]
@@ -511,7 +565,6 @@ mod validate_task_tests {
 
     use super::*;
     use crate::file_state::hash_bytes;
-    use crate::schema::load_schema;
     use std::path::PathBuf;
 
     /// A throwaway working-area root that removes itself on drop.
@@ -567,7 +620,7 @@ sections:
   - id: body
     slot: { hint: \"The note body.\" }
 ";
-        load_schema(yaml).expect("note schema loads")
+        crate::schema::load_schema(yaml).expect("note schema loads")
     }
 
     /// A fully-conformant `note` instance: slot filled, required field present.
@@ -707,7 +760,6 @@ mod ref_resolves_in_sweep_tests {
     //! Superseding decision, the `[2 validate]` line and its dangling variant).
 
     use super::*;
-    use crate::schema::load_schema;
     use std::path::PathBuf;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
@@ -744,7 +796,8 @@ mod ref_resolves_in_sweep_tests {
         let mut m = BTreeMap::new();
         m.insert(
             "adr".to_string(),
-            load_schema(ADR_YAML).expect("adr.yaml loads"),
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads"),
         );
         m
     }

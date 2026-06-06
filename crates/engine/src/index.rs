@@ -524,7 +524,8 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             "adr".to_string(),
-            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads"),
         );
         m
     }
@@ -755,7 +756,8 @@ mod overlay_tests {
         let mut m = BTreeMap::new();
         m.insert(
             "adr".to_string(),
-            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads"),
         );
         m
     }
@@ -1004,7 +1006,11 @@ mod commit_overlay_tests {
         );
         m.insert(
             "spec".to_string(),
-            crate::schema::load_schema(SPEC_YAML).expect("spec.yaml loads"),
+            crate::schema::load_schema_with_types(
+                SPEC_YAML,
+                &crate::schema::dev_pack_field_types(),
+            )
+            .expect("spec.yaml loads"),
         );
         m
     }
@@ -1174,7 +1180,8 @@ mod prop_tests {
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     fn schemas() -> BTreeMap<String, Schema> {

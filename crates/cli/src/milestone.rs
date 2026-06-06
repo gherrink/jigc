@@ -32,7 +32,7 @@ use engine::milestone::{
     read_base_pin, read_task_list, synthesized_message,
 };
 use engine::packsource::PackResourceKind;
-use engine::schema::{Schema, load_schema};
+use engine::schema::Schema;
 use engine::state::BasePin;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -266,8 +266,8 @@ fn shipped_schemas() -> Result<BTreeMap<String, Schema>> {
         let bytes = pack
             .read(PackResourceKind::Schemas, &id)
             .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-        let schema =
-            load_schema(&bytes).with_context(|| format!("the `{}` schema parses", id.as_str()))?;
+        let schema = crate::pack::load_pack_schema(pack.as_ref(), &bytes)
+            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
         out.insert(schema.ty.clone(), schema);
     }
     Ok(out)

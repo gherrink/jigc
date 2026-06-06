@@ -279,7 +279,8 @@ mod tests {
     }
 
     fn adr_schema() -> Schema {
-        crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     fn write(root: &Path, rel: &str, body: &str) {

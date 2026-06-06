@@ -938,16 +938,16 @@ fn ceiling_violations(blocks: &[Block], start: usize, end: usize) -> Vec<Finding
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema::load_schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
     fn commit_schema() -> Schema {
-        load_schema(COMMIT_YAML).expect("commit.yaml loads")
+        crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
     }
 
     /// Project each parsed section to `(id, Option<(start, end, opaque prose)>)` for
@@ -1104,12 +1104,12 @@ mod fields {
 
     use super::*;
     use crate::field_block::Value;
-    use crate::schema::load_schema;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
 
     fn adr_schema() -> Schema {
-        load_schema(ADR_YAML).expect("adr.yaml loads")
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
     }
 
     /// A `spec`-shaped schema with one header section and one repeatable
@@ -1457,7 +1457,6 @@ Fine.
 mod item_prop_tests {
     use super::*;
     use crate::field_block::Value;
-    use crate::schema::load_schema;
     use proptest::prelude::*;
 
     fn spec_schema() -> Schema {
@@ -1476,7 +1475,7 @@ sections:
         - { id: statement, slot: { hint: \"x\" } }
         - { id: weight, type: int }
 ";
-        load_schema(yaml).expect("spec schema loads")
+        crate::schema::load_schema(yaml).expect("spec schema loads")
     }
 
     /// One generated conformant item: a **well-formed** slug id (run through
@@ -1533,7 +1532,6 @@ sections:
 #[cfg(test)]
 mod prop_tests {
     use super::*;
-    use crate::schema::load_schema;
     use proptest::prelude::*;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
@@ -1562,7 +1560,7 @@ mod prop_tests {
             decision in slot_prose_strategy(),
             consequences in slot_prose_strategy(),
         ) {
-            let schema = load_schema(ADR_YAML).expect("adr.yaml loads");
+            let schema = crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types()).expect("adr.yaml loads");
             let src = format!(
                 "---\nstatus: proposed\ndate: 2026-05-31\n---\n\n# Title\n\n\
                  ## Context\n{context}\n\n## Decision\n{decision}\n\n## Consequences\n{consequences}\n"

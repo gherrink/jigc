@@ -35,7 +35,7 @@ use engine::finding::{Finding, Location, Severity};
 use engine::index;
 use engine::ingest::{Verdict, classify, discover_candidates};
 use engine::parse::parse_sections;
-use engine::schema::{Schema, load_schema};
+use engine::schema::Schema;
 use engine::validate::schema_conformance;
 
 use crate::pack::make_pack;
@@ -279,8 +279,8 @@ fn load_schemas(pack: &dyn engine::packsource::PackSource) -> Result<Vec<Schema>
         let bytes = pack
             .read(PackResourceKind::Schemas, &id)
             .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-        let schema =
-            load_schema(&bytes).with_context(|| format!("the `{}` schema parses", id.as_str()))?;
+        let schema = crate::pack::load_pack_schema(pack, &bytes)
+            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
         out.push(schema);
     }
     Ok(out)

@@ -10,9 +10,41 @@
 //! See `implementation/module-layout.md` → The dev pack's home.
 
 use engine::packsource::{PackError, PackResourceKind, PackSource, ResourceId};
+use engine::schema::{PackTypeDecl, Schema, SchemaError, load_schema_with_types};
 use include_dir::{Dir, include_dir};
 use std::ffi::OsString;
 use std::path::PathBuf;
+
+/// The `config/` resource id of the pack's field-type declarations (the M10
+/// extension axis). A pack listing `(name, adjudicator)` entries here makes those
+/// type spellings nameable by its schemas; the dev pack declares `code-anchor` →
+/// `doc-code`. The engine ships none (the engine-empty invariant) — the CLI reads
+/// this file and threads the set into schema loading.
+const FIELD_TYPES_ID: &str = "field-types";
+
+/// The pack-declared field types, read from `config/field-types.yaml` (a YAML
+/// sequence of `{ name, adjudicator }`). An absent file is **no** declared types
+/// (an empty set), never an error — a pack need not declare any. This is the set
+/// every CLI schema load threads in via [`load_pack_schema`], so a pack-declared
+/// `code-anchor` field resolves (and an undeclared type is rejected loudly by the
+/// engine). See `document-type-schema.md` → Pack-declared field types.
+pub fn pack_field_types(pack: &dyn PackSource) -> Result<Vec<PackTypeDecl>, SchemaError> {
+    let Ok(bytes) = pack.read(PackResourceKind::Config, &ResourceId::from(FIELD_TYPES_ID)) else {
+        return Ok(Vec::new());
+    };
+    let text = std::str::from_utf8(&bytes).map_err(|_| SchemaError::NotUtf8)?;
+    Ok(serde_yaml_ng::from_str(text)?)
+}
+
+/// Load a doc-type schema from `bytes`, resolving its fields against the pack's own
+/// field-type declarations — the single CLI entry point that replaces the bare
+/// engine `load_schema` everywhere a *shipped* pack schema is parsed, so a
+/// pack-declared `code-anchor` field (`adr.cites-code`, `spec.criteria/maps-to-test`)
+/// resolves with its bound adjudicator. The engine stays domain-empty; the CLI feeds
+/// the pack's declared set in here.
+pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, SchemaError> {
+    load_schema_with_types(bytes, &pack_field_types(pack)?)
+}
 
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
 static PACK: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");

@@ -22,7 +22,7 @@ use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::field_block::Value;
 use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::schema::{Schema, SectionBody, load_schema};
+use engine::schema::{Schema, SectionBody};
 use engine::state;
 use engine::write::{set_field_validated, set_slot_validated};
 use std::collections::BTreeMap;
@@ -323,7 +323,8 @@ impl ActiveTask {
             .pack
             .read(PackResourceKind::Schemas, &ResourceId::from(type_name))
             .with_context(|| format!("unknown doctype `{type_name}`"))?;
-        load_schema(&bytes).with_context(|| format!("the `{type_name}` schema is malformed"))
+        crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
+            .with_context(|| format!("the `{type_name}` schema is malformed"))
     }
 
     /// Load every shipped schema, keyed by doctype — the set `create_gated`
@@ -335,7 +336,7 @@ impl ActiveTask {
                 .pack
                 .read(PackResourceKind::Schemas, &id)
                 .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-            let schema = load_schema(&bytes)
+            let schema = crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
                 .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
             out.insert(schema.ty.clone(), schema);
         }
@@ -565,6 +566,7 @@ fn discover_repo_root(start: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::schema::load_schema;
 
     /// The shipped `commit` schema, loaded from the embedded pack source tree.
     const COMMIT_YAML: &[u8] = include_bytes!("../pack/schemas/commit.yaml");

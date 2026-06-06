@@ -1,5 +1,6 @@
 ---
 source: crates/engine/src/schema.rs
+assertion_line: 515
 expression: json
 ---
 {
@@ -33,6 +34,10 @@ expression: json
             "slot": {
               "hint": "The criterion, testably phrased."
             }
+          },
+          {
+            "id": "maps-to-test",
+            "type": "code-anchor"
           }
         ]
       }

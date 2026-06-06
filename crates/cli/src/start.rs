@@ -35,7 +35,7 @@ use engine::finding::{Finding, Severity};
 use engine::index;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::result::CatalogEntry;
-use engine::schema::{Schema, load_schema};
+use engine::schema::Schema;
 use engine::state::{self, BasePin, MintedTask, RolesRecord};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -79,7 +79,7 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
 /// fillable-form provisioning.)
 fn provision_commit_doc(pack: &dyn PackSource, dir: &Path, id: &str) -> Result<()> {
     let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
-    let schema = engine::schema::load_schema(&bytes)
+    let schema = crate::pack::load_pack_schema(pack, &bytes)
         .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))?;
     let instance = fillable_form(&schema, id);
     let path = state::instance_path(dir, &schema.ty, id);
@@ -1183,7 +1183,7 @@ fn all_schemas(pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
     let mut out = BTreeMap::new();
     for id in pack.list(PackResourceKind::Schemas) {
         let bytes = read_pack(pack, PackResourceKind::Schemas, id.as_str())?;
-        let schema = load_schema(&bytes)
+        let schema = crate::pack::load_pack_schema(pack, &bytes)
             .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
         out.insert(schema.ty.clone(), schema);
     }

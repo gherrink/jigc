@@ -1,8 +1,11 @@
 # adr — the MVP persisted doc-type (structural skeleton; the create-gate +
 # promotion wiring is inc-5). Persisted to decisions/; the `status` header
-# section + prose slots, with the optional `supersedes` adr→adr relation.
-# See document-type-schema.md → On-disk definition format,
-# DECISIONS.md 2026-05-31 → Schema model + commit/adr schema YAML.
+# section + prose slots, with the optional `supersedes` adr→adr relation and the
+# optional `cites-code` pack-declared `code-anchor` (M10 inc-1; adjudicated by the
+# `doc-code` probe at finalize — see config/field-types.yaml).
+# See document-type-schema.md → On-disk definition format + Pack-declared field
+# types; DECISIONS.md 2026-05-31 → Schema model + commit/adr schema YAML,
+# DECISIONS.md 2026-06-06 → M10 Increment 1 / T3.
 type: adr
 location: decisions/
 id-from: title
@@ -14,6 +17,7 @@ sections:
       - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
       - { id: date, type: date, set: on-create }
       - { id: supersedes, type: ref, to: adr, card: "0..1", inverse: superseded-by }
+      - { id: cites-code, type: code-anchor }
   - id: context
     slot: { hint: "Why a decision was needed — the forces at play." }
   - id: decision

@@ -1517,7 +1517,11 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             "spec".to_string(),
-            crate::schema::load_schema(SPEC_YAML).expect("spec.yaml loads"),
+            crate::schema::load_schema_with_types(
+                SPEC_YAML,
+                &crate::schema::dev_pack_field_types(),
+            )
+            .expect("spec.yaml loads"),
         );
         m
     }
@@ -1762,7 +1766,8 @@ Context without any acceptance criteria.
         );
         m.insert(
             "adr".to_string(),
-            crate::schema::load_schema(ADR_YAML).expect("adr.yaml loads"),
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads"),
         );
         m
     }

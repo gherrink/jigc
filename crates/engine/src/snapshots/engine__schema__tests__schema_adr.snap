@@ -1,5 +1,6 @@
 ---
 source: crates/engine/src/schema.rs
+assertion_line: 463
 expression: json
 ---
 {
@@ -32,6 +33,10 @@ expression: json
           "to": "adr",
           "card": "0..1",
           "inverse": "superseded-by"
+        },
+        {
+          "id": "cites-code",
+          "type": "code-anchor"
         }
       ]
     },
