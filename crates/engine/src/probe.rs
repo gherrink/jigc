@@ -37,6 +37,50 @@
 use crate::finding::Finding;
 use crate::override_default::{RecordedDeltas, classify};
 use crate::packsource::PackSource;
+use crate::target_surface::TargetAnchor;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+/// The read-only **effective-state snapshot** the engine materializes for a doc-code
+/// probe — the serializable ctx the wire contract carries **by path-ref**
+/// (`validation.md` → The wire contract; line 103: "What the snapshot must carry for
+/// `doc-code`"). It is built from the [`crate::target_surface`] enumeration: the
+/// `(target-address, anchor-value, check-id)` pairs to adjudicate plus the
+/// **working-tree root** the anchors resolve against.
+///
+/// The snapshot carries **no code** — by rule 4 of the determinism contract the
+/// probe reads the cited code directly from the repo at [`working_tree_root`](Self::working_tree_root)
+/// (`validation.md`:103: "the code is read directly from the repo per rule 4, not
+/// copied into the snapshot"). So an in-process and a subprocess probe consume the
+/// *same logical input*: the in-process probe holds the live struct, the subprocess
+/// probe reads its serialized form from the path-ref (inc 3) — the serde form is the
+/// shared contract, unit-proven by [`tests::snapshot_round_trips_through_serde`].
+///
+/// **Field order is pinned** (`anchors` then `working_tree_root`) — a doc-elaboration
+/// pin within the locked snapshot model ([DECISIONS.md](../../../DECISIONS.md)
+/// 2026-06-06, M10 inc-2 / T3): the serialized form is a stable contract a probe is
+/// built against, so a reorder is a breaking change a golden must catch.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectiveStateSnapshot {
+    /// The enumerated target surface — every `code-anchor` leaf over the task's
+    /// effective-state docs, address-sorted ([`crate::target_surface::enumerate_target_surface`]).
+    pub anchors: Vec<TargetAnchor>,
+    /// The working-tree root the anchors' `<path>#<symbol>` values resolve against
+    /// (the code is read from here directly, never copied into the snapshot).
+    pub working_tree_root: PathBuf,
+}
+
+impl EffectiveStateSnapshot {
+    /// Build the snapshot from the enumerated `anchors` and the `working_tree_root`
+    /// they resolve against — the engine's materialization step (the wire carries it
+    /// by path-ref out-of-process; inc 3 writes the path-ref hand-off).
+    pub fn new(anchors: Vec<TargetAnchor>, working_tree_root: PathBuf) -> Self {
+        Self {
+            anchors,
+            working_tree_root,
+        }
+    }
+}
 
 /// The read-only context an override-scoped [`Probe`] checks: the recorded deltas to
 /// reconcile and the current (env-selected) pack to reconcile them against — the
@@ -93,9 +137,158 @@ impl Probe for OverrideDefaultProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::address::Address;
     use crate::cascade::{Anchor, StructuralDelta, StructuralTarget};
     use crate::packsource::{PackError, PackResourceKind, ResourceId};
     use std::collections::HashMap;
+
+    /// Two enumerated anchors — a header `cites-code` (`symbol-exists`) and a criterion
+    /// `maps-to-test` (`criterion-maps-to-test`) — the same two shapes T2 enumerates.
+    fn sample_anchors() -> Vec<TargetAnchor> {
+        vec![
+            TargetAnchor {
+                address: "adr:single-node-cache#status/cites-code".to_string(),
+                anchor_value: "crates/engine/src/validate.rs#validate_task".to_string(),
+                check_id: "symbol-exists".to_string(),
+            },
+            TargetAnchor {
+                address: "spec:rate-limiting#criteria/rate-limit/maps-to-test".to_string(),
+                anchor_value: "crates/engine/src/missing.rs#nope".to_string(),
+                check_id: "criterion-maps-to-test".to_string(),
+            },
+        ]
+    }
+
+    /// Serialization is unit-proven (the T3 done-criterion): the snapshot serialises and
+    /// **deserialises back equal** (serialize → deserialize → equal), and its JSON pins
+    /// the field order (`anchors` then `working_tree_root`) the wire contract carries —
+    /// a reorder or a serde-attribute slip breaks the golden. This is the shared form an
+    /// in-process and a subprocess probe both consume.
+    #[test]
+    fn snapshot_round_trips_through_serde() {
+        let snapshot = EffectiveStateSnapshot::new(sample_anchors(), PathBuf::from("/repo/root"));
+
+        let json = serde_json::to_string_pretty(&snapshot).expect("serialises");
+        let back: EffectiveStateSnapshot = serde_json::from_str(&json).expect("deserialises");
+
+        assert_eq!(
+            back, snapshot,
+            "the snapshot round-trips serialize -> deserialize -> equal",
+        );
+
+        insta::assert_snapshot!(json, @r#"
+        {
+          "anchors": [
+            {
+              "address": "adr:single-node-cache#status/cites-code",
+              "anchor_value": "crates/engine/src/validate.rs#validate_task",
+              "check_id": "symbol-exists"
+            },
+            {
+              "address": "spec:rate-limiting#criteria/rate-limit/maps-to-test",
+              "anchor_value": "crates/engine/src/missing.rs#nope",
+              "check_id": "criterion-maps-to-test"
+            }
+          ],
+          "working_tree_root": "/repo/root"
+        }
+        "#);
+    }
+
+    /// An **in-process** doc-code probe test double (an `impl Probe`, NOT a subprocess):
+    /// it declares `Target = Address` (the doc-code target shape) and `Ctx` a borrowed
+    /// [`EffectiveStateSnapshot`], and emits one finding per snapshot anchor whose
+    /// `anchor_value` names a file the working tree lacks — a stand-in for the real
+    /// tree-sitter resolve (inc 4). It reads **only** the snapshot's enumerated pairs;
+    /// it never re-parses a doc.
+    struct InProcessDocCodeProbe;
+
+    impl Probe for InProcessDocCodeProbe {
+        type Target = Address;
+        type Ctx<'a> = &'a EffectiveStateSnapshot;
+
+        fn check(&self, _target: &Address, ctx: &EffectiveStateSnapshot) -> Vec<Finding> {
+            ctx.anchors
+                .iter()
+                .filter(|anchor| {
+                    // Resolve the anchor's `<path>#<symbol>` file against the snapshot's
+                    // working-tree root; a missing file is a dangling anchor.
+                    let path = anchor.anchor_value.split('#').next().unwrap_or("");
+                    !ctx.working_tree_root.join(path).exists()
+                })
+                .map(|anchor| {
+                    Finding::graded(
+                        crate::finding::Severity::Blocking,
+                        format!("doc-code.{}", anchor.check_id),
+                        format!("anchor `{}` resolves to no file", anchor.anchor_value),
+                        Some(crate::finding::Location::addressed(
+                            anchor.address.clone(),
+                            1,
+                            1,
+                        )),
+                        None,
+                    )
+                })
+                .collect()
+        }
+    }
+
+    /// The reshaped seam admits a probe consuming the **serialized** effective-state ctx
+    /// end-to-end (the T3 done-criterion): the engine materializes the snapshot, it is
+    /// round-tripped through serialization (serialize -> deserialize — the exact bytes
+    /// the wire carries by path-ref), and the in-process probe is handed a `(target,
+    /// ctx)` over the *deserialized* snapshot. It returns findings derived from the pairs
+    /// it reads — one for the anchor naming a file the working tree lacks, none for the
+    /// anchor naming a present file — proving the probe consumes the serialized snapshot,
+    /// not a live handle.
+    #[test]
+    fn in_process_probe_consumes_serialized_snapshot_end_to_end() {
+        // A working tree where the first anchor's file EXISTS and the second's does not.
+        let root = std::env::temp_dir().join(format!(
+            "jigc-snapshot-probe-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        std::fs::create_dir_all(root.join("crates/engine/src")).expect("mk tree");
+        std::fs::write(
+            root.join("crates/engine/src/validate.rs"),
+            b"fn validate_task() {}\n",
+        )
+        .expect("present file");
+
+        let snapshot = EffectiveStateSnapshot::new(sample_anchors(), root.clone());
+
+        // Cross the wire: materialized -> serialized -> deserialized (the bytes the
+        // path-ref carries). The probe consumes the DESERIALIZED snapshot, never the live one.
+        let bytes = serde_json::to_vec(&snapshot).expect("serialises");
+        let over_wire: EffectiveStateSnapshot =
+            serde_json::from_slice(&bytes).expect("deserialises");
+
+        let target: Address = "adr:single-node-cache#status/cites-code"
+            .parse()
+            .expect("address parses");
+        let findings = InProcessDocCodeProbe.check(&target, &over_wire);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "exactly the dangling anchor surfaces (the present one is clean): {findings:?}",
+        );
+        assert_eq!(findings[0].code, "doc-code.criterion-maps-to-test");
+        assert_eq!(
+            findings[0]
+                .location
+                .as_ref()
+                .and_then(|l| l.address.as_deref()),
+            Some("spec:rate-limiting#criteria/rate-limit/maps-to-test"),
+            "the finding is derived from the snapshot pair the probe read",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// A trivial in-memory `PackSource` carrying step bodies — the engine test-double
     /// pattern, here seeded as the "current pack" the seam classifies deltas against.
