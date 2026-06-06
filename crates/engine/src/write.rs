@@ -1372,13 +1372,48 @@ pub fn insert_front_matter_field(
 }
 
 /// The inner content range of the front-matter `---` block, if present.
+///
+/// A populated front matter parses to a [`Block::Metadata`] whose content is the
+/// `key: value` lines between the fences. An **empty** fence pair (`---\n---`) carries
+/// no inner text, so pulldown-cmark emits no metadata block — yet the structural home
+/// for a header field *does* exist (the create flow renders this fence pair before any
+/// header field is materialized; `parsing.md` → Absent structural homes). We detect that
+/// degenerate case directly and return the **zero-width** content range just inside the
+/// opening fence, so a first header field inserts between the fences rather than failing
+/// with "no front-matter block".
 fn front_matter_content(source: &str) -> Option<Range<usize>> {
-    parse::scan_blocks(source)
+    if let Some(content) = parse::scan_blocks(source)
         .into_iter()
         .find_map(|b| match b {
             Block::Metadata { content } => Some(content),
             _ => None,
         })
+    {
+        return Some(content);
+    }
+    empty_front_matter_content(source)
+}
+
+/// The zero-width inner-content range of an **empty** front-matter fence pair — a
+/// leading `---` fence immediately followed by a closing `---` fence with nothing
+/// between them. Returns the offset just past the opening fence's newline (where a
+/// first header field line slots in), or `None` when the source has no such empty
+/// fence pair at its head.
+fn empty_front_matter_content(source: &str) -> Option<Range<usize>> {
+    // The opening fence must be the very first line (front matter is top-of-file).
+    let mut lines = source.split_inclusive('\n');
+    let first = lines.next()?;
+    if first.trim_end_matches(['\r', '\n']) != "---" {
+        return None;
+    }
+    let second = lines.next()?;
+    if second.trim_end_matches(['\r', '\n']) != "---" {
+        return None;
+    }
+    // Inner content is the empty span between the fences: the offset just after the
+    // opening fence line (== the closing fence's start).
+    let at = first.len();
+    Some(at..at)
 }
 
 /// The byte offset at which to insert a new front-matter field line so the present
@@ -3153,6 +3188,63 @@ Centralize limiting at the gateway.
             out.replace("implements: spec:gateway-rate-limiting\n", ""),
             COMMIT_NO_IMPLEMENTS,
             "only the implements line was inserted"
+        );
+    }
+
+    /// The `adr` schema, loaded with the dev-pack field types so `cites-code`'s
+    /// `code-anchor` type resolves (the empty-fence absent-insert is the M10 inc-1 T4
+    /// path; the `create` flow renders the adr's front matter as an EMPTY `---\n---`
+    /// fence pair before any header field is materialized).
+    fn adr_schema() -> Schema {
+        const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
+    }
+
+    /// A freshly-`create`d `adr`: its header fields are all absent, so the front
+    /// matter is an EMPTY `---\n---` fence pair (the create flow does not materialize
+    /// defaults). pulldown-cmark emits no metadata block for this, so the absent-insert
+    /// must detect the empty fence directly.
+    const ADR_EMPTY_FRONT_MATTER: &str = "\
+---
+---
+
+# Anchor decision
+
+## Context
+
+## Decision
+
+## Consequences
+";
+
+    /// Absent optional `code-anchor` into an EMPTY front-matter fence pair: `set-field`
+    /// on `adr#status/cites-code` materializes the `cites-code:` line *inside* the
+    /// previously-empty fence, the buffer re-parses, and the diff is confined to the
+    /// one inserted line (the M10 inc-1 T4 empty-fence absent-insert).
+    #[test]
+    fn absent_field_materializes_into_empty_front_matter_fence() {
+        let out = set_field_validated(
+            &adr_schema(),
+            ADR_EMPTY_FRONT_MATTER,
+            "status",
+            "cites-code",
+            &scalar("src/engine/write.rs#set_field_validated"),
+        )
+        .expect("an absent field materializes into an empty front-matter fence");
+
+        // The line landed inside the fence (between the opening and closing `---`).
+        assert!(
+            out.contains("---\ncites-code: src/engine/write.rs#set_field_validated\n---"),
+            "the field line lands inside the previously-empty fence; got:\n{out}"
+        );
+        // The buffer re-parses against the schema.
+        parse::parse_sections(&adr_schema(), &out).expect("the materialized buffer re-parses");
+        // The diff is confined to the one inserted line.
+        assert_eq!(
+            out.replace("cites-code: src/engine/write.rs#set_field_validated\n", ""),
+            ADR_EMPTY_FRONT_MATTER,
+            "only the cites-code line was inserted"
         );
     }
 
