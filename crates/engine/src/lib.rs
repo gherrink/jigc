@@ -29,6 +29,7 @@ pub mod schema;
 pub mod slug;
 pub mod state;
 pub mod store;
+pub mod target_surface;
 pub mod validate;
 pub mod write;
 
