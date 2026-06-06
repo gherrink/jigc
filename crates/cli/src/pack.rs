@@ -286,7 +286,8 @@ mod tests {
     /// distinct from the shared `locate`), `author-commit` (the fanned
     /// `sub-task` workflow's finalize-free commit-authoring step), plus the
     /// `project-setup` trio `develop-idea` / `author-prd` / `project-finalize`
-    /// (the M9 new-project on-ramp).
+    /// (the M9 new-project on-ramp), plus the `ingest-existing` pair `run-scan` /
+    /// `review-verdicts` (the M9 existing-project on-ramp).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -308,7 +309,9 @@ mod tests {
                 ResourceId::from("milestone-finalize"),
                 ResourceId::from("present-catalog"),
                 ResourceId::from("project-finalize"),
+                ResourceId::from("review-verdicts"),
                 ResourceId::from("route-to-workflow"),
+                ResourceId::from("run-scan"),
                 ResourceId::from("superseded-context"),
             ],
         );

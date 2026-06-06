@@ -79,3 +79,8 @@ commands:
       - "--task"
       - { from: "task.id" }
     hint: "Re-compose the task to pick up the freshly bound slice."
+
+  - id: run-ingest
+    command: jigc
+    args: ["ingest"]
+    hint: "Scan the repo, classify candidate docs, and report the triage verdicts."

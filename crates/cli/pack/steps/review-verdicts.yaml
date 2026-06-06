@@ -1,0 +1,11 @@
+Read the triage verdicts:
+
+- adoptable docs are conformant at their location — jigc has adopted them
+  (indexed + baselined, no file moved).
+- needs-reconcile docs each carry a routed finding — a non-conformant near-miss
+  or a conformant doc at the wrong location. Hand each to a human to resolve;
+  jigc never auto-migrates or relocates.
+- unmanaged docs parse against no schema — leave them untouched.
+
+Do not rewrite any prose. Route the needs-reconcile findings; adopt nothing that
+was not schema-checked.

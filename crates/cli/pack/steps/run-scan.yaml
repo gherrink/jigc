@@ -1,0 +1,7 @@
+Scan the repo for documents jigc can manage:
+
+{{ cli.run-ingest }}
+
+This discovers candidate documents across the repo, classifies each against the
+managed doc-types, and reports a triage verdict per file (adoptable /
+needs-reconcile / unmanaged) in deterministic order.

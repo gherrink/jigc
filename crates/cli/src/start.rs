@@ -2088,6 +2088,85 @@ mod tests {
         }
     }
 
+    /// T3 done-criterion (catalog-absence, the M8-leak pin): `ingest-existing`
+    /// ships `creates-task: false` (orient/route shape like `router`), so it must
+    /// NOT appear in the selectable router catalog over the REAL embedded pack —
+    /// admitting it would re-introduce the M8 sub-task catalog leak
+    /// (`increment-workflow.md` → #4). The legitimate selectable work-workflows
+    /// still appear; `ingest-existing` and `router` (both `creates-task: false`)
+    /// do not.
+    #[test]
+    fn selectable_catalog_excludes_ingest_existing_over_the_embedded_pack() {
+        let pack = crate::pack::EmbeddedPack::new();
+        let catalog = selectable_workflows(&pack).expect("catalog builds");
+        let ids: Vec<&str> = catalog.iter().map(|e| e.id.as_str()).collect();
+
+        assert!(
+            !ids.contains(&"ingest-existing"),
+            "the `creates-task: false` `ingest-existing` must NOT be a selectable \
+             catalog entry (the M8-leak pin); got {ids:?}",
+        );
+        assert!(
+            !ids.contains(&"router"),
+            "the router itself (creates-task: false) must never be selectable; got {ids:?}",
+        );
+        for expected in ["single-task", "quick-fix"] {
+            assert!(
+                ids.contains(&expected),
+                "selectable work-workflow `{expected}` must still appear; got {ids:?}",
+            );
+        }
+    }
+
+    /// T3 done-criterion (Form-D composition): `jigc start --workflow
+    /// ingest-existing "<intent>"` composes the `ingest-existing` workflow over the
+    /// REAL embedded pack via Form D (`compose_core` with the named id). Being
+    /// `creates-task: false`, it mints **nothing** (no `.jigc/tasks/` area), and its
+    /// composed body carries the `Run: jigc ingest` line its `run-scan` step emits —
+    /// the orient/route walk that drives the agent into the engine scan. The repo is
+    /// a bare temp dir: the no-task arm never reads HEAD, so no git is needed.
+    #[test]
+    fn ingest_existing_composes_via_form_d_and_emits_run_jigc_ingest() {
+        let repo = TempDir::new("ingest-existing-form-d");
+
+        let pack = crate::pack::EmbeddedPack::new();
+        let source = PackStepSource { pack: &pack };
+        let composed = compose_core(
+            repo.path(),
+            "bring this repo under jigc management",
+            &pack,
+            "ingest-existing",
+            &source,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("Form-D compose of ingest-existing");
+
+        // (a) creates-task: false ⇒ no working area is minted.
+        assert!(
+            !repo.path().join(".jigc").join("tasks").exists(),
+            "a `creates-task: false` ingest-existing compose must not open any \
+             `.jigc/tasks/` dir",
+        );
+
+        // (b) the run-scan step emits the `jigc ingest` Run line. The composer
+        // reserves the `Run: ` marker for resolved command-refs and emits the
+        // command backtick-wrapped (the machine-extractable `^Run: `(.+)`$`
+        // contract), so the emitted artifact is `` Run: `jigc ingest` ``. Extract
+        // the composed line verbatim and assert on the emitted bytes (never a
+        // hand-built equivalent).
+        let run_line = composed
+            .text
+            .lines()
+            .find(|l| l.starts_with("Run: "))
+            .unwrap_or_else(|| panic!("no `Run: ` line in composed body:\n{}", composed.text));
+        assert_eq!(
+            run_line, "Run: `jigc ingest`",
+            "the composed ingest-existing body must emit the `jigc ingest` Run line; got:\n{}",
+            composed.text,
+        );
+    }
+
     /// A `selectable: false` workflow that carries no `when` hint must be skipped
     /// silently — the "selectable workflow missing `when`" error applies only to a
     /// workflow that is actually selectable. This guards the relaxation that lets

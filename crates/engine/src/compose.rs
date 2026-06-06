@@ -2795,6 +2795,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             "create-spec",
             "bind-spec",
             "recompose-task",
+            "run-ingest",
         ] {
             assert!(catalog.get(id).is_some(), "missing command-ref `{id}`");
         }
@@ -2989,6 +2990,16 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 }
               ],
               "hint": "Re-compose the task to pick up the freshly bound slice."
+            },
+            "run-ingest": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "ingest"
+                }
+              ],
+              "hint": "Scan the repo, classify candidate docs, and report the triage verdicts."
             },
             "set-commit-summary": {
               "command": "jigc",

@@ -1,0 +1,6 @@
+---
+when: bring an existing repo's docs under jigc management by scanning and routing
+creates-task: false
+---
+{{ include: step:run-scan }}
+{{ include: step:review-verdicts }}
