@@ -37,9 +37,116 @@
 use crate::finding::Finding;
 use crate::override_default::{RecordedDeltas, classify};
 use crate::packsource::PackSource;
+use crate::result::SCHEMA_VERSION;
 use crate::target_surface::TargetAnchor;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+/// The **request** envelope the engine sends a subprocess pack probe — JSON on the
+/// probe's stdin ([validation.md](../../../design/validation.md) → The wire contract,
+/// line 106: `{ probe_id, target, effective_state: { snapshot_path }, config,
+/// schema_version }`). It is the **concrete Rust projection of the locked envelope**;
+/// the struct shapes + serde form are a doc-elaboration pin within it
+/// ([DECISIONS.md](../../../DECISIONS.md) 2026-06-06, M10 inc-3 / T1).
+///
+/// The snapshot is carried **by path-ref** ([`ProbeEffectiveState::snapshot_path`]),
+/// never inlined — the engine materialized the [`EffectiveStateSnapshot`] in the
+/// probe's read scope (inc 2) and the request names its path (`validation.md`:101:
+/// "the request carries a path-ref to it"). The CLI invoker (T2) writes this to the
+/// probe's stdin; the probe never calls back.
+///
+/// **`target`** is the one address grammar ([structural-grammar.md](../../../design/structural-grammar.md#addressing))
+/// in its **string form** — the wire carries the flat URI a probe reads, not the
+/// engine's internal [`crate::address::Address`] enum (the snapshot already addresses
+/// each anchor as a string, [`TargetAnchor::address`]). **`schema_version`** is present
+/// **as a field** so the contract can evolve without silently breaking a probe built
+/// against an older engine; the *versioning policy itself stays deferred*
+/// (`validation.md`:112; [module-layout.md](../../../implementation/module-layout.md)
+/// → Open questions).
+///
+/// **Field order is pinned** (`probe_id`, `target`, `effective_state`, `config`,
+/// `schema_version`) — the serialized form is the contract a probe is built against, so
+/// a reorder is a breaking change the golden ([`tests::request_json_projection_is_the_pinned_envelope`])
+/// catches.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProbeRequest {
+    /// The probe being invoked (e.g. `doc-code`) — the `probe` half of the `(probe,
+    /// check)` handle the engine keys severity on.
+    pub probe_id: String,
+    /// The address the probe adjudicates, in the one address grammar's string form.
+    pub target: String,
+    /// The read-only effective-state the probe reads — carried **by path-ref**.
+    pub effective_state: ProbeEffectiveState,
+    /// The cascade-resolved probe config (an opaque JSON object the probe interprets);
+    /// empty when the cascade resolves none.
+    pub config: serde_json::Map<String, serde_json::Value>,
+    /// The wire-contract schema version (the contract-evolution marker; policy deferred).
+    pub schema_version: u32,
+}
+
+/// The `effective_state` member of a [`ProbeRequest`]: the **path-ref** to the
+/// materialized [`EffectiveStateSnapshot`] (`validation.md`:101 — a subprocess holds no
+/// live graph handle and reaches the engine over no socket, so the engine materializes
+/// a read-only snapshot in the probe's read scope and the request names its path).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProbeEffectiveState {
+    /// The filesystem path of the materialized snapshot the probe reads.
+    pub snapshot_path: PathBuf,
+}
+
+/// The **response** envelope a subprocess pack probe returns — JSON on the probe's
+/// stdout ([validation.md](../../../design/validation.md) → The wire contract, line
+/// 107: `{ findings: [<Finding>], schema_version }`). The engine deserializes this from
+/// the probe's stdout (T3 ingests `findings` into the [`crate::result::ValidationReport`]).
+///
+/// **`findings`** are the engine's **one [`Finding`] shape** ([finding.rs](finding.rs))
+/// — a probe emits findings; the engine assigns the final severity downstream
+/// (severity is engine-owned, never baked into a probe — `validation.md`:111). A
+/// response **round-trips** serialize → deserialize → equal
+/// ([`tests::response_round_trips_through_serde`]). **`schema_version`** mirrors the
+/// request's contract-evolution marker.
+///
+/// **Field order is pinned** (`findings`, `schema_version`) for the same contract reason
+/// as [`ProbeRequest`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProbeResponse {
+    /// The findings the probe emits — the engine's one [`Finding`] shape.
+    pub findings: Vec<Finding>,
+    /// The wire-contract schema version (mirrors the request's marker).
+    pub schema_version: u32,
+}
+
+impl ProbeRequest {
+    /// Build a request for `probe_id` over `target`, carrying the snapshot by
+    /// `snapshot_path` and the cascade-resolved `config`, stamping the current
+    /// [`SCHEMA_VERSION`]. The engine's request-construction step (the CLI invoker, T2,
+    /// serializes this to the probe's stdin).
+    pub fn new(
+        probe_id: impl Into<String>,
+        target: impl Into<String>,
+        snapshot_path: PathBuf,
+        config: serde_json::Map<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            probe_id: probe_id.into(),
+            target: target.into(),
+            effective_state: ProbeEffectiveState { snapshot_path },
+            config,
+            schema_version: SCHEMA_VERSION,
+        }
+    }
+}
+
+impl ProbeResponse {
+    /// A response carrying `findings`, stamping the current [`SCHEMA_VERSION`] — the
+    /// shape a well-behaved probe emits (T3 deserializes the probe's stdout into this).
+    pub fn new(findings: Vec<Finding>) -> Self {
+        Self {
+            findings,
+            schema_version: SCHEMA_VERSION,
+        }
+    }
+}
 
 /// The read-only **effective-state snapshot** the engine materializes for a doc-code
 /// probe — the serializable ctx the wire contract carries **by path-ref**
@@ -139,8 +246,154 @@ mod tests {
     use super::*;
     use crate::address::Address;
     use crate::cascade::{Anchor, StructuralDelta, StructuralTarget};
+    use crate::finding::{Location, Severity};
     use crate::packsource::{PackError, PackResourceKind, ResourceId};
     use std::collections::HashMap;
+
+    /// The **request** envelope is the pinned wire contract (the T1 done-criterion): a
+    /// request projects to exactly `{ probe_id, target, effective_state: {
+    /// snapshot_path }, config, schema_version }` — in that field order, the snapshot
+    /// carried **by path-ref** (never inlined), `config` an object, `schema_version`
+    /// present. The golden pins the serialized *string* (not a key-sorted value), so it
+    /// also locks field order; a rename, a reorder, an inlined snapshot, or a serde slip
+    /// breaks it. That is the contract both sides bind to.
+    #[test]
+    fn request_json_projection_is_the_pinned_envelope() {
+        let config = serde_json::Map::from_iter([(
+            "is-a-test".to_string(),
+            serde_json::Value::String("rust-first".to_string()),
+        )]);
+        let request = ProbeRequest::new(
+            "doc-code",
+            "adr:single-node-cache#status/cites-code",
+            PathBuf::from("/scratch/snapshot.json"),
+            config,
+        );
+
+        let json = serde_json::to_string_pretty(&request).expect("serializes");
+
+        insta::assert_snapshot!(json, @r#"
+        {
+          "probe_id": "doc-code",
+          "target": "adr:single-node-cache#status/cites-code",
+          "effective_state": {
+            "snapshot_path": "/scratch/snapshot.json"
+          },
+          "config": {
+            "is-a-test": "rust-first"
+          },
+          "schema_version": 2
+        }
+        "#);
+    }
+
+    /// A request with **no resolved config** projects `config` as an empty object `{}`
+    /// (the cascade resolved none) — the wire member is always present, never absent,
+    /// so a probe reads a stable shape. And the request **round-trips** serialize →
+    /// deserialize → equal.
+    #[test]
+    fn request_round_trips_with_empty_config() {
+        let request = ProbeRequest::new(
+            "doc-code",
+            "spec:rate-limiting#criteria/rate-limit/maps-to-test",
+            PathBuf::from("/scratch/snapshot.json"),
+            serde_json::Map::new(),
+        );
+
+        let json = serde_json::to_value(&request).expect("serializes");
+        assert_eq!(
+            json["config"],
+            serde_json::json!({}),
+            "an unresolved config is an empty object, not absent",
+        );
+
+        let back: ProbeRequest = serde_json::from_value(json).expect("deserializes");
+        assert_eq!(
+            back, request,
+            "the request round-trips serialize -> deserialize -> equal"
+        );
+    }
+
+    /// The **response** envelope (the T1 done-criterion): a response carrying the
+    /// engine's one [`Finding`] shape projects to exactly `{ findings: [<Finding>],
+    /// schema_version }` in that field order, and **round-trips** serialize →
+    /// deserialize → equal. The `findings` member deserializes back into the engine's
+    /// one `Finding` shape — proving a probe's emitted findings ingest unchanged (T3).
+    #[test]
+    fn response_round_trips_through_serde() {
+        let response = ProbeResponse::new(vec![Finding::graded(
+            Severity::Blocking,
+            "doc-code.symbol-exists",
+            "anchor `crates/engine/src/missing.rs#nope` resolves to no symbol",
+            Some(Location::addressed(
+                "adr:single-node-cache#status/cites-code",
+                1,
+                1,
+            )),
+            None,
+        )]);
+
+        let json = serde_json::to_string_pretty(&response).expect("serializes");
+        let back: ProbeResponse = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(
+            back, response,
+            "the response round-trips serialize -> deserialize -> equal",
+        );
+
+        insta::assert_snapshot!(json, @r#"
+        {
+          "findings": [
+            {
+              "severity": "blocking",
+              "probe": "doc-code",
+              "check": "symbol-exists",
+              "code": "doc-code.symbol-exists",
+              "message": "anchor `crates/engine/src/missing.rs#nope` resolves to no symbol",
+              "location": {
+                "address": "adr:single-node-cache#status/cites-code",
+                "line": 1,
+                "col": 1
+              },
+              "route": null
+            }
+          ],
+          "schema_version": 2
+        }
+        "#);
+    }
+
+    /// The response's `findings` deserialize into the engine's one [`Finding`] shape
+    /// from a **probe-authored** JSON document (the bytes a subprocess writes to stdout,
+    /// not an engine-built struct) — proving an external probe's output binds to the
+    /// engine's `Finding` envelope. A probe may omit `probe`/`check` (`#[serde(default)]`),
+    /// so this fixture does; they default empty and the engine derives them downstream.
+    #[test]
+    fn response_findings_deserialize_into_the_one_finding_shape() {
+        let wire = r#"{
+          "findings": [
+            {
+              "severity": "blocking",
+              "code": "doc-code.symbol-exists",
+              "message": "dangling anchor",
+              "location": { "address": "adr:cache#status/cites-code", "line": 1, "col": 1 },
+              "route": null
+            }
+          ],
+          "schema_version": 2
+        }"#;
+
+        let response: ProbeResponse =
+            serde_json::from_str(wire).expect("probe-authored JSON deserializes");
+
+        assert_eq!(response.findings.len(), 1);
+        let finding = &response.findings[0];
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(finding.code, "doc-code.symbol-exists");
+        assert_eq!(
+            finding.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("adr:cache#status/cites-code"),
+        );
+    }
 
     /// Two enumerated anchors — a header `cites-code` (`symbol-exists`) and a criterion
     /// `maps-to-test` (`criterion-maps-to-test`) — the same two shapes T2 enumerates.
