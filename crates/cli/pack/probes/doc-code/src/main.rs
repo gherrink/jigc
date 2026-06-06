@@ -23,14 +23,14 @@
 //!
 //! When an anchor carries a `#symbol`, a present `.rs` file is parsed via tree-sitter
 //! (the Rust grammar, chosen by file extension) and `<symbol>` is resolved against the
-//! file's **top-level** named items. An unresolvable symbol yields one blocking
-//! `doc-code.<check_id>` finding ([resolve]). An absent file still blocks (file-existence
-//! subsumed — no AST to resolve against).
+//! file's named items **at any nesting** (top level, `mod` bodies, `impl` blocks). An
+//! unresolvable symbol yields one blocking `doc-code.<check_id>` finding ([resolve]). An
+//! absent file still blocks (file-existence subsumed — no AST to resolve against).
 //!
 //! ## T3 scope — the `criterion-maps-to-test` is-a-test predicate
 //!
 //! For a `criterion-maps-to-test` anchor the resolved `#symbol` must additionally satisfy
-//! the **is-a-test predicate** — a `#[test]`-attributed top-level `fn` ([resolve]). A
+//! the **is-a-test predicate** — a `#[test]`-attributed `fn` at any nesting ([resolve]). A
 //! symbol that resolves but is not a `#[test]` fn yields one blocking
 //! `doc-code.criterion-maps-to-test` finding; a `symbol-exists` anchor is unaffected by
 //! the predicate. Resolution is static parse only — no `cargo`/build/network/wall-clock —
@@ -141,7 +141,7 @@ impl Finding {
     }
 
     /// One blocking `doc-code.<check_id>` finding for an anchor whose file is present but
-    /// whose `#symbol` resolves to no top-level symbol.
+    /// whose `#symbol` resolves to no named item (at any nesting).
     fn dangling_symbol(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
         Self::dangling(
             anchor,
@@ -153,7 +153,7 @@ impl Finding {
     }
 
     /// One blocking `doc-code.criterion-maps-to-test` finding for an anchor whose `#symbol`
-    /// resolves to a real top-level symbol that is **not** a `#[test]` fn — the is-a-test
+    /// resolves to a real named item that is **not** a `#[test]` fn — the is-a-test
     /// predicate failed (T3).
     fn not_a_test(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
         Self::dangling(
@@ -193,8 +193,8 @@ fn split_anchor(anchor_value: &str) -> (&str, Option<&str>) {
 }
 
 /// Resolve every anchor against the working tree: the file before any `#` must exist; a
-/// `#symbol` on a present `.rs` file must additionally resolve to a top-level symbol via
-/// tree-sitter. Each unresolvable anchor emits one blocking finding.
+/// `#symbol` on a present `.rs` file must additionally resolve to a named item (at any
+/// nesting) via tree-sitter. Each unresolvable anchor emits one blocking finding.
 fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
     snapshot
         .anchors

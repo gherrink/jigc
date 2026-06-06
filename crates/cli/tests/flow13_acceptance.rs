@@ -136,16 +136,21 @@ fn init_repo(repo: &Path) {
     git(repo, &["config", "user.name", "Test"]);
     fs::create_dir_all(repo.join("tests")).expect("mk tests");
     fs::create_dir_all(repo.join("src")).expect("mk src");
-    // The criterion's `maps-to-test` target — a real `#[test]`-attributed fn.
+    // The criterion's `maps-to-test` target — a real `#[test]`-attributed fn in the
+    // DOMINANT Rust unit-test layout: nested inside `#[cfg(test)] mod tests { … }` (not a
+    // rare top-level fn), so the acceptance proves the real case the resolver must descend
+    // into, not the layout a top-level-only walk happens to handle.
     fs::write(
         repo.join("tests").join("rate_limit.rs"),
-        "#[test]\nfn burst_rejected() {\n    assert!(true);\n}\n",
+        "pub fn limit() -> u32 {\n    100\n}\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn burst_rejected() {\n        assert_eq!(limit(), 100);\n    }\n}\n",
     )
     .expect("write test fixture");
-    // The adr's `cites-code` target — a real top-level symbol.
+    // The adr's `cites-code` target — a real symbol nested as an `impl` method (also
+    // invisible to a top-level-only walk), so the header anchor exercises impl-method
+    // resolution rather than the top-level struct.
     fs::write(
         repo.join("src").join("limiter.rs"),
-        "pub struct TokenBucket {\n    capacity: u32,\n}\n",
+        "pub struct TokenBucket {\n    capacity: u32,\n}\n\nimpl TokenBucket {\n    pub fn refill(&mut self) {\n        self.capacity += 1;\n    }\n}\n",
     )
     .expect("write src fixture");
     git(repo, &["add", "."]);
@@ -220,10 +225,12 @@ fn set_field(repo: &Path, home: &Path, addr: &str, value: &str) {
 const SPEC_SLUG: &str = "gateway-rate-limiting";
 /// The criterion's anchor id (the literal `{#id}` token seeded via the editable channel).
 const CRITERION_ID: &str = "burst-limit";
-/// The repeatable-block-leaf anchor's `<path>#<test>` value — a real `#[test]` fn.
+/// The repeatable-block-leaf anchor's `<path>#<test>` value — a real `#[test]` fn nested
+/// inside `#[cfg(test)] mod tests` (the dominant layout the resolver must descend into).
 const MAPS_TO_TEST: &str = "tests/rate_limit.rs#burst_rejected";
-/// The header-field anchor's `<path>#<symbol>` value — a real top-level symbol.
-const CITES_CODE: &str = "src/limiter.rs#TokenBucket";
+/// The header-field anchor's `<path>#<symbol>` value — a real symbol nested as an `impl`
+/// method (also invisible to a top-level-only walk).
+const CITES_CODE: &str = "src/limiter.rs#refill";
 
 /// Author + commit a `spec` via the `plan` workflow, then seed its `criteria` block with a
 /// criterion carrying `maps-to-test: <anchor>` through the **editable channel** —
