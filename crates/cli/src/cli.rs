@@ -173,9 +173,10 @@ pub enum Command {
     /// The self-description surface — `jigc describe` (no positional) emits a
     /// **discursive prose** projection of the resolved definitions: every workflow
     /// (the *unfiltered* set, not the selectable catalog) and doc-type with their
-    /// woven `description:` / `usage:` prose, plus the command-ref `hint`s. Reads
-    /// **pack-only** in M11 (cascade reflection is a later increment). The output is
-    /// deliberately **hostile to parsing** — a menu, not an API — so nothing depends
+    /// woven `description:` / `usage:` prose, plus the command-ref `hint`s. Reflects
+    /// the **resolved cascade** (`project > team > pack-default`) — a project
+    /// whole-file definition shadow wins (command-ref `hint`s stay pack-only). The
+    /// output is deliberately **hostile to parsing** — a menu, not an API — so nothing depends
     /// on it (`design/introspection.md` → Command surface / Non-contractual by
     /// design). Whole-menu only: a single-item `describe <id>` form is **not** built.
     Describe,

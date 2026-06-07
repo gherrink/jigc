@@ -168,7 +168,13 @@ fn weave(id: &str, description: Option<&str>, usage: Option<&str>) -> Option<Str
 
     match (description, usage) {
         (Some(description), Some(usage)) => {
-            Some(format!("{id} is {description} Reach for it when {usage}"))
+            // Control the clause boundary ourselves rather than depending on the
+            // authored description ending in a period — a period-less description
+            // would otherwise run on into "Reach for it when". Strip one trailing
+            // period (if any) and always rejoin with ". ", so prose that already
+            // ends in a period is byte-unchanged and prose that doesn't is fixed.
+            let description = description.strip_suffix('.').unwrap_or(description);
+            Some(format!("{id} is {description}. Reach for it when {usage}"))
         }
         (Some(description), None) => Some(format!("{id} is {description}")),
         (None, Some(usage)) => Some(format!("Reach for {id} when {usage}")),
