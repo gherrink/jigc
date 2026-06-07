@@ -1,0 +1,53 @@
+# The methodology pack's command catalog — the {{cli.<id>}} command-refs the
+# dev-task workflow's steps resolve against (self-hosting.md → Verified friction:
+# finalize *renders*, it does not *fill*, so the commit `type`/`scope` fields and
+# the `summary`/`body` slots must be set BEFORE finalize). `set-field --value` (for
+# the `type`/`scope` fields) is a different verb than `set-slot --from-file` (for
+# the `summary`/`body` slots); the finalize step wires a command-ref for each.
+commands:
+  - id: set-commit-type
+    command: jigc
+    args:
+      - "doc"
+      - "set-field"
+      - { from: "task.commit#type" }
+      - "--value"
+      - { agent: type, hint: "the Conventional-Commits type — one of feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert" }
+    hint: "Set the commit header type before finalize."
+
+  - id: set-commit-scope
+    command: jigc
+    args:
+      - "doc"
+      - "set-field"
+      - { from: "task.commit#scope" }
+      - "--value"
+      - { agent: scope, hint: "the Conventional-Commits scope — the area this change touches" }
+    hint: "Set the commit header scope before finalize."
+
+  - id: set-commit-summary
+    command: jigc
+    args:
+      - "doc"
+      - "set-slot"
+      - { from: "task.commit#summary" }
+      - "--from-file"
+      - "-"
+    stdin: "the subject line"
+    hint: "Stage the commit summary slot from stdin."
+
+  - id: set-commit-body
+    command: jigc
+    args:
+      - "doc"
+      - "set-slot"
+      - { from: "task.commit#body" }
+      - "--from-file"
+      - "-"
+    stdin: "the commit body prose"
+    hint: "Stage the commit body slot from stdin."
+
+  - id: finalize-task
+    command: jigc
+    args: ["task", "finalize", { from: "task.id" }]
+    hint: "Run validate + commit. One task → one commit."

@@ -1,0 +1,179 @@
+# pack/config/knobs.yaml — the closed, typed knob surface the cascade
+# resolves. One entry per settable key, reusing the document-type
+# `FieldType` vocabulary (`type` + optional `of`) so a `scalar-set` is
+# adjudicated by the same `check_value` the doc write path uses. The
+# loader seeds the PackDefaultLayer scalar surface from this file: the
+# closed key set (what `scalar-set` may target) + each knob's
+# materialized default. `pack-id` is NOT a knob — it is pack identity,
+# not a project-overridable value, so it stays in defaults.yaml.
+# The `validation.*.severity` keys are the per-check severity surface; their
+# defaults + intrinsic-ness are governed by the single source of truth,
+# validation.md → MVP check inventory (20 checks across 6 categories). The two
+# `validation.<probe>.severity` per-probe keys are retained from M4 as additive
+# per-probe *defaults* (never a rename) so an M4-authored manifest still
+# resolves; they sit alongside the per-check keys.
+# See overrides.md → Scalar knobs / Soft-rejection; storage.md → Config layout.
+default-workflow:
+  type: enum
+  of: [dev-task]
+  default: dev-task
+
+# --- finalize.fan-out.* — the milestone commit-shaping knob (M8) ---
+# squash: how a fan-out (milestone) finalize shapes the commit. `true`
+# (default) = ONE aggregate commit with the CLI-synthesized structural
+# message (the M7 form, byte-identical to the no-knob path). `false` = one
+# commit per sub-task in id-sorted order rendering each sub-task's authored
+# commit doc, plus the parent's synthesized aggregate. A tunable knob (no
+# floor). See finalize.md → `fan-out` finalize (the two squash modes).
+finalize.fan-out.squash:
+  type: bool
+  default: "true"
+
+# --- per-probe severity defaults (M4, retained — additive) ---
+validation.workflow-refs.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+validation.file-state.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+
+# --- workflow-refs.* (9, intrinsic) ---
+validation.workflow-refs.placeholder-resolves.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.include-resolves.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.command-ref-resolves.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.include-cycle-absent.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.at-marker-on-non-scalar.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.run-marker-not-shadowed.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.spawn-marker-not-shadowed.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.fan-out-join-paired.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.workflow-refs.body-include-only.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+
+# --- pack-probe-integrity.* (3, intrinsic — the enforced meta-findings) ---
+# A probe that timed out, crashed, or returned malformed output cannot be
+# trusted to have validated anything; demoting these would let a misbehaving
+# probe pass silently (validation.md → What 'intrinsic' means mechanically).
+# `sandbox-violation` is NOT declared — deferred with OS-level sandboxing.
+validation.pack-probe-integrity.timeout.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.pack-probe-integrity.crash.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.pack-probe-integrity.malformed-output.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+
+# --- schema-conformance.* (4, intrinsic) ---
+validation.schema-conformance.ref-resolves.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.schema-conformance.required-slot-present.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.schema-conformance.required-field-present.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+validation.schema-conformance.field-value-conformant.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+  floor: blocking
+
+# --- file-state.hash-matches (1, tunable) ---
+validation.file-state.hash-matches.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+
+# --- schema-completeness.inverse-cardinality (1, tunable; advisory at task scope) ---
+validation.schema-completeness.inverse-cardinality.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+
+# --- override-default.* (3, tunable from M6; blocking-by-default) ---
+validation.override-default.target-exists.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+validation.override-default.target-unchanged.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+validation.override-default.basis-recorded.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+
+# --- commit-rendering.* (2, tunable; advisory-by-default convention checks) ---
+validation.commit-rendering.line-limit-subject.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+validation.commit-rendering.line-limit-body.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+
+# --- doc-code.* (2, tunable; M10 — the pack-provided doc↔code probe) ---
+# blocking-by-default (a dangling anchor is a real integrity failure) but
+# cascade-tunable, NOT floored — a project may rationally demote to warning.
+# Unlike the floor-locked pack-probe-integrity.* meta-findings above.
+validation.doc-code.symbol-exists.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
+validation.doc-code.criterion-maps-to-test.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: blocking
