@@ -115,6 +115,13 @@ The quantitative "matches/beats the hand-run build-health trend" is **explicitly
 - **A clean run is ambiguous evidence** — "jigc ran it clean" is not "jigc ran it well" without a hard milestone to stress it. The composition-fidelity bar mitigates this (it asks "did it run + stay honest," not "was the run easy").
 - **The dogfood proves fidelity, not the mechanized gate** — by the reduced-linear choice, the gate + doc↔code stay prose/off on a foreign (non-Rust) project. That is the honest bound, stated, not hidden.
 
+## What the M12 run added (2026-06-07) — the two-half dogfood pattern, for the next encode
+
+The first slice ran clean (0 halts / 0 fix-rounds), and the build surfaced one reusable structural lesson the *next* workflow-encode (increment / completion — the dialect-extension milestone) will need:
+
+- **The dogfood splits into two honestly-different halves, and conflating them is the trap.** **Half A — the automatable regression gate:** the deterministic CLI walk (`setup → compose → byte-identical recompose → fill → finalize-lands-one-commit`) over a `/tmp` copy with *fixed inputs* — a `cargo test` a headless validator can re-run. **Half B — the recorded owner-artifact:** the genuine live-agent run exercising the *judgment* slots (real failing test observed before impl, the project's own gate run by hand), which by the determinism boundary a headless subagent can no more author than it can spawn the Task tool — so it is a **recorded milestone-completion artifact** (the bucket-3 shape), *not* an increment-loop test. The **hollow-dogfood trap** is passing Half A's fixed-input walk off as the genuine run — the sibling of M8's hollow-spawn trap. The milestone is not shippable until the Half-B artifact exists. This split is the direct analogue of flow 10's Half-A/Half-B (automated determinism gate vs recorded genuine spawn); the next encode's dogfood reuses it verbatim.
+- **Vendoring a doctype inherits its required-field gates.** Subsuming `commit` meant the workflow's finalize step had to satisfy every required field (`type`/`scope`/`body`) the schema enforces — a happy-path spike misses this; spike the *required-field/error* paths of any vendored doctype, and bake what you learn into the acceptance flow's walk, not just a prose note (the design-review re-spike caught exactly this gap here).
+
 ## Open threads (beyond the bounded slice)
 
 - **Where the line falls** between "jigc composes the *structure* of a judgment step" and "the step is pure agent judgment jigc only points at" — the encode of the *next* workflow (increment/completion) will surface concrete cases.
