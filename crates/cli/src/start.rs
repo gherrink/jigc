@@ -1477,10 +1477,15 @@ type ProjectLayer = (
 /// write are adjudicated by the one path.
 pub(crate) fn load_project_layer(project_config: &Path) -> Result<ProjectLayer> {
     let manifest = project_config.join("manifest.yaml");
-    // Every native `steps/<id>.yaml` basename shadows the pack step by id (phase 2),
-    // independent of the manifest — the `steps/` dir is the project's step layer.
-    let shadowed = project_step_ids(project_config);
-    // Stamp the committed-config path (provenance header) + the shadowed step ids.
+    // Every native `steps/<id>.yaml`, `workflows/<id>.yaml`, and `schemas/<id>.yaml`
+    // basename shadows the pack definition of that id at phase 2, independent of the
+    // manifest — the three dirs *are* the project's definition layer (`overrides.md`
+    // → Authored metadata on a definition resolves by whole-file shadow). All three
+    // feed the **one** `file_owners` map `cascade::resolve` keys by bare id, so a
+    // bare id appearing in more than one dir would silently collapse to a single
+    // owner — that namespace collision is rejected up front (one id, one file).
+    let shadowed = shadowed_definition_ids(project_config)?;
+    // Stamp the committed-config path (provenance header) + the shadowed ids.
     let with_files = |mut layer: OverrideLayer| {
         layer = layer.config_path(project_config.display().to_string());
         for id in &shadowed {
@@ -1591,7 +1596,70 @@ pub(crate) fn resolve_step_body(
 /// (`overrides.md` → Native-file id = filename basename). A missing `steps/` dir is
 /// the empty list (no project shadows), never an error.
 pub(crate) fn project_step_ids(project_config: &Path) -> Vec<String> {
-    let dir = project_config.join("steps");
+    project_native_ids(project_config, "steps")
+}
+
+/// List the native workflow ids the project layer ships — every `<project_config>/
+/// workflows/<id>.yaml` basename. These shadow the pack workflow of the same id at
+/// phase 2 (whole-file definition shadow — `overrides.md` → Authored metadata on a
+/// definition resolves by whole-file shadow). A missing `workflows/` dir is the
+/// empty list (no project shadows), never an error.
+pub(crate) fn project_workflow_ids(project_config: &Path) -> Vec<String> {
+    project_native_ids(project_config, "workflows")
+}
+
+/// List the native schema (doctype) ids the project layer ships — every
+/// `<project_config>/schemas/<id>.yaml` basename. These shadow the pack doctype of
+/// the same id at phase 2 (whole-file definition shadow — `overrides.md` → Authored
+/// metadata on a definition resolves by whole-file shadow). A missing `schemas/`
+/// dir is the empty list (no project shadows), never an error.
+pub(crate) fn project_schema_ids(project_config: &Path) -> Vec<String> {
+    project_native_ids(project_config, "schemas")
+}
+
+/// The merged, deduplicated set of every id the project layer shadows across its
+/// three definition dirs (`steps/`, `workflows/`, `schemas/`) — the `files` surface
+/// fed to [`OverrideLayer::shadow_file`] (`overrides.md` → Authored metadata on a
+/// definition resolves by whole-file shadow).
+///
+/// **Namespace guard.** `cascade::resolve` builds **one** `file_owners` map keyed by
+/// the bare id, shared across step / workflow / schema ids. So the same bare id in
+/// two of these dirs (e.g. `steps/foo.yaml` + `workflows/foo.yaml`) would both
+/// `shadow_file("foo")` and silently collapse to a single owner — an ambiguous
+/// "which definition owns `foo`?". That is rejected here with a routed blocking
+/// `config.shadow-id-collision` [`Finding`] (one id, one file). A disjoint set
+/// merges cleanly, sorted (stable).
+fn shadowed_definition_ids(project_config: &Path) -> Result<Vec<String>> {
+    let mut owner: BTreeMap<String, &'static str> = BTreeMap::new();
+    for (dir, ids) in [
+        ("steps", project_step_ids(project_config)),
+        ("workflows", project_workflow_ids(project_config)),
+        ("schemas", project_schema_ids(project_config)),
+    ] {
+        for id in ids {
+            if let Some(prior) = owner.insert(id.clone(), dir) {
+                return Err(finding_to_err(Finding::block(
+                    "config.shadow-id-collision",
+                    format!(
+                        "project layer shadows id `{id}` in both `{prior}/` and `{dir}/` — definition ids share one namespace, so one id maps to one file"
+                    ),
+                    format!(
+                        "rename one of the two `{id}.yaml` shadow files so each id is owned by a single definition dir, then re-run"
+                    ),
+                )));
+            }
+        }
+    }
+    Ok(owner.into_keys().collect())
+}
+
+/// List the `<id>.yaml` basenames under `<project_config>/<subdir>/` — the shared
+/// lister behind [`project_step_ids`] / [`project_workflow_ids`] /
+/// [`project_schema_ids`] (`overrides.md` → Native-file id = filename basename). A
+/// missing dir is the empty list (no project shadows), never an error; the result
+/// is sorted (stable).
+fn project_native_ids(project_config: &Path, subdir: &str) -> Vec<String> {
+    let dir = project_config.join(subdir);
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
@@ -3584,5 +3652,93 @@ mod tests {
             msg.contains("base-hash"),
             "the error must name the missing `base-hash` field; got: {msg}",
         );
+    }
+
+    /// T1 done-criterion — a project `workflows/<id>.yaml` shadow lands in the
+    /// cascade `files` surface, so `file_owner(<id>)` resolves to `Project`; a
+    /// `schemas/<id>.yaml` shadow does the same; an unshadowed id stays `None`
+    /// (no layer owns it). The whole-file definition shadow that lets a project
+    /// override a workflow / doctype definition (`overrides.md` → Authored metadata
+    /// on a definition resolves by whole-file shadow). Without this wiring the two
+    /// new shadow dirs are inert (only `steps/` feeds the surface today), so the
+    /// `Project` owner assertions fail.
+    #[test]
+    fn project_workflow_and_schema_shadows_resolve_to_project_owner() {
+        let cfg = TempDir::new("def-shadow");
+        let project_config = cfg.path();
+        // Shadow `single-task` (a workflow) and `adr` (a doctype) by writing native
+        // files into the project layer's two new definition dirs.
+        let workflows = project_config.join("workflows");
+        let schemas = project_config.join("schemas");
+        fs::create_dir_all(&workflows).expect("mk workflows dir");
+        fs::create_dir_all(&schemas).expect("mk schemas dir");
+        fs::write(workflows.join("single-task.yaml"), "project single-task\n")
+            .expect("write workflow shadow");
+        fs::write(schemas.join("adr.yaml"), "project adr\n").expect("write schema shadow");
+
+        let pack = make_pack();
+        let (project, _deltas, _slot_fills, _forks, _bases) =
+            load_project_layer(project_config).expect("project layer loads");
+        let resolved = resolve_layers(pack.as_ref(), &project).expect("cascade resolves");
+
+        // The two shadowed definition ids resolve to the project layer.
+        assert_eq!(
+            resolved.file_owner("single-task"),
+            Some(cascade::LayerKind::Project),
+            "a project `workflows/single-task.yaml` must own the `single-task` id",
+        );
+        assert_eq!(
+            resolved.file_owner("adr"),
+            Some(cascade::LayerKind::Project),
+            "a project `schemas/adr.yaml` must own the `adr` id",
+        );
+        // An id no project file shadows stays unowned (the pack ships definitions but
+        // does not feed the cascade `files` surface, so `file_owner` is `None`).
+        assert_eq!(
+            resolved.file_owner("router"),
+            None,
+            "an unshadowed id must not resolve to any owner",
+        );
+    }
+
+    /// T1 namespace-hazard guard — `cascade::resolve` builds **one** `file_owners`
+    /// map keyed by the bare id, shared across step / workflow / schema ids. Two
+    /// project files of the **same bare id** in different dirs (here a `steps/foo.yaml`
+    /// alongside a `workflows/foo.yaml`) would both `shadow_file("foo")` and silently
+    /// collapse to one owner entry — the shared-keyspace hazard. The load must reject
+    /// it with a routed blocking `config.shadow-id-collision` finding, never silently
+    /// absorb it (`overrides.md` → Native-file id = filename basename; one id, one file).
+    #[test]
+    fn same_id_project_step_and_workflow_shadow_is_a_routed_blocking_finding() {
+        let cfg = TempDir::new("shadow-collision");
+        let project_config = cfg.path();
+        let steps = project_config.join("steps");
+        let workflows = project_config.join("workflows");
+        fs::create_dir_all(&steps).expect("mk steps dir");
+        fs::create_dir_all(&workflows).expect("mk workflows dir");
+        // The same bare id `foo` in two definition dirs — the collapse hazard.
+        fs::write(steps.join("foo.yaml"), "step foo\n").expect("write step shadow");
+        fs::write(workflows.join("foo.yaml"), "workflow foo\n").expect("write workflow shadow");
+
+        // The 5-tuple's `OverrideLayer` is not `Debug`, so match the error out.
+        let msg = match load_project_layer(project_config) {
+            Ok(_) => panic!("a same-id step+workflow project shadow must be rejected"),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            msg.contains("route:"),
+            "the rejection must be routed (carry a route line); got: {msg}",
+        );
+        assert!(
+            msg.contains("foo") && msg.contains("steps/") && msg.contains("workflows/"),
+            "the rejection must name the colliding id `foo` + both dirs; got: {msg}",
+        );
+
+        // A disjoint set (the same id in only one dir) loads cleanly.
+        let ok = TempDir::new("shadow-disjoint");
+        let ok_workflows = ok.path().join("workflows");
+        fs::create_dir_all(&ok_workflows).expect("mk workflows dir");
+        fs::write(ok_workflows.join("foo.yaml"), "workflow foo\n").expect("write workflow shadow");
+        load_project_layer(ok.path()).expect("a disjoint shadow set must load cleanly");
     }
 }
