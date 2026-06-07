@@ -8,4 +8,4 @@
 # (the file/symbol-existence + criterion→test probe) is built later in the arc.
 # See document-type-schema.md → Pack-declared field types;
 # DECISIONS.md 2026-06-06 → M10 Increment 1 / T1 + T3.
-- { name: code-anchor, adjudicator: doc-code }
+- { name: code-anchor, adjudicator: doc-code, check: symbol-exists }

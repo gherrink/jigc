@@ -2950,6 +2950,7 @@ Each service drops its local limiter.
             card: None,
             inverse: None,
             inverse_card: None,
+            check: None,
         };
 
         // enum
@@ -3006,6 +3007,7 @@ Each service drops its local limiter.
             FieldType::Pack(crate::schema::PackFieldType {
                 name: "code-anchor".into(),
                 adjudicator: Some("doc-code".into()),
+                check: Some("symbol-exists".into()),
             }),
             None,
         );

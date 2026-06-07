@@ -135,8 +135,9 @@ pub enum Leaf {
         id: String,
         slot: Slot,
     },
-    /// A CLI-adjudicated typed field.
-    Field(Field),
+    /// A CLI-adjudicated typed field. Boxed because [`Field`] is much larger
+    /// than the slot variant (the `large_enum_variant` lint).
+    Field(Box<Field>),
 }
 
 /// An LLM-authored prose slot: the only thing south of the determinism boundary.
@@ -207,6 +208,15 @@ pub struct Field {
         skip_serializing_if = "Option::is_none"
     )]
     pub inverse_card: Option<String>,
+
+    /// Per-field override of the resolved field-type's `check:` predicate (the
+    /// M13 selector). When present, the `doc-code` probe runs this predicate for
+    /// this field instead of the type's declared default — so a repeatable
+    /// `code-anchor` may carry `check: criterion-maps-to-test`. Absent leaves the
+    /// type's check in force. See `design/architecture-documentation.md` → The
+    /// per-field-type predicate selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
 }
 
 /// The field type vocabulary — **engine-native variants + a pack-declared
@@ -293,6 +303,7 @@ impl<'de> Deserialize<'de> for FieldType {
             .unwrap_or(FieldType::Pack(PackFieldType {
                 name,
                 adjudicator: None,
+                check: None,
             })))
     }
 }
@@ -314,6 +325,13 @@ pub struct PackFieldType {
     /// The probe bound to adjudicate this type (e.g. `doc-code`). `None` until
     /// resolved against the pack-declared set at load.
     pub adjudicator: Option<String>,
+
+    /// The predicate the bound adjudicator runs for this type (e.g.
+    /// `symbol-exists`), resolved from the pack declaration. `None` until
+    /// [`load_schema`] resolves the name; a schema field's own `check:` overrides
+    /// it per-field. See `design/architecture-documentation.md` → The
+    /// per-field-type predicate selector.
+    pub check: Option<String>,
 }
 
 /// A pack's field-type declaration: the `(name, adjudicator-probe)` pair a pack
@@ -331,6 +349,13 @@ pub struct PackTypeDecl {
     pub name: String,
     /// The probe bound to adjudicate it (e.g. `doc-code`).
     pub adjudicator: String,
+    /// The predicate the adjudicator runs for this type (e.g. `symbol-exists`).
+    /// **Required — no implicit engine default.** A pack declaring a type must
+    /// spell its predicate; defaulting it would silently strip `spec.criteria`'s
+    /// `criterion-maps-to-test` (the VISION headline check). A schema field may
+    /// override it per-field. See `design/architecture-documentation.md` → The
+    /// per-field-type predicate selector (the absent-default trap).
+    pub check: String,
 }
 
 /// Why loading a schema from raw YAML failed.
@@ -416,7 +441,10 @@ pub fn load_schema_with_types(
 fn resolve_field_type(field: &mut Field, pack_types: &[PackTypeDecl]) -> Result<(), SchemaError> {
     if let FieldType::Pack(pack) = &mut field.ty {
         match pack_types.iter().find(|d| d.name == pack.name) {
-            Some(decl) => pack.adjudicator = Some(decl.adjudicator.clone()),
+            Some(decl) => {
+                pack.adjudicator = Some(decl.adjudicator.clone());
+                pack.check = Some(decl.check.clone());
+            }
             None => {
                 return Err(SchemaError::UnknownFieldType {
                     field: field.id.clone(),
@@ -440,6 +468,7 @@ pub(crate) fn dev_pack_field_types() -> Vec<PackTypeDecl> {
     vec![PackTypeDecl {
         name: "code-anchor".to_owned(),
         adjudicator: "doc-code".to_owned(),
+        check: "symbol-exists".to_owned(),
     }]
 }
 
@@ -619,6 +648,7 @@ sections:
             FieldType::Pack(PackFieldType {
                 name: "code-anchor".to_owned(),
                 adjudicator: Some("doc-code".to_owned()),
+                check: Some("symbol-exists".to_owned()),
             })
         );
     }
@@ -722,6 +752,71 @@ sections:
                 "expected UnknownFieldType for {field}/code-anchor, got {err:?}",
             );
         }
+    }
+
+    /// (M13) The per-field-type `check:` predicate selector. The pack-declared
+    /// type carries its check explicitly (`code-anchor → symbol-exists`); a bare
+    /// field of that type **inherits** the type's check (resolved to
+    /// `Some("symbol-exists")`), while a field declaring an explicit `check:`
+    /// **overrides** it for that one field — both reachable through the model so
+    /// `target_surface.rs` can read `field.check ?? field_type.check`. See
+    /// `design/architecture-documentation.md` → The per-field-type predicate
+    /// selector.
+    #[test]
+    fn pack_field_type_resolves_its_check_and_a_field_check_overrides_it() {
+        let yaml = b"\
+type: adr
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: bare, type: code-anchor }
+      - { id: overridden, type: code-anchor, check: criterion-maps-to-test }
+";
+        let schema = load_schema_with_types(yaml, &dev_pack_field_types())
+            .expect("declared pack type loads");
+        let SectionBody::Simple { fields, .. } = &schema.sections[0].body else {
+            panic!("status is a simple header section");
+        };
+
+        // A bare `code-anchor` field inherits the declared type's check, resolved
+        // onto the `PackFieldType` — `Some("symbol-exists")` — and carries no
+        // field-level override.
+        let bare = fields.iter().find(|f| f.id == "bare").unwrap();
+        let FieldType::Pack(pack) = &bare.ty else {
+            panic!("bare resolves to a pack-declared type, got {:?}", bare.ty);
+        };
+        assert_eq!(pack.check.as_deref(), Some("symbol-exists"));
+        assert_eq!(bare.check, None);
+
+        // The field declaring an explicit `check:` carries that field-level value
+        // in the model — the per-field override the resolver reads first. The
+        // type's own resolved check is untouched.
+        let overridden = fields.iter().find(|f| f.id == "overridden").unwrap();
+        assert_eq!(overridden.check.as_deref(), Some("criterion-maps-to-test"));
+        let FieldType::Pack(pack) = &overridden.ty else {
+            panic!("overridden resolves to a pack-declared type");
+        };
+        assert_eq!(pack.check.as_deref(), Some("symbol-exists"));
+    }
+
+    /// (M13, the no-default pin) A `PackTypeDecl` YAML **missing** `check` fails
+    /// to load: `check` is a required field with no implicit engine default, so a
+    /// pack declaring a type must spell its predicate — picking the default wrong
+    /// would silently strip `spec.criteria`'s `criterion-maps-to-test` (the
+    /// VISION headline check). `deny_unknown_fields` + a required `check` together
+    /// enforce it. See `design/architecture-documentation.md` (no implicit engine
+    /// default).
+    #[test]
+    fn pack_type_decl_missing_check_fails_to_load() {
+        let yaml = b"- { name: code-anchor, adjudicator: doc-code }\n";
+        let err =
+            serde_yaml_ng::from_str::<Vec<PackTypeDecl>>(std::str::from_utf8(yaml).expect("utf8"))
+                .expect_err("a PackTypeDecl missing `check` must fail to load");
+        assert!(
+            err.to_string().contains("check"),
+            "the load error must name the missing `check` field; got {err}",
+        );
     }
 
     /// Authored-prose metadata (M11): a schema carrying top-level

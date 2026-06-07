@@ -231,7 +231,7 @@ fn collect_repeatable(
         .block
         .iter()
         .filter_map(|leaf| match leaf {
-            crate::schema::Leaf::Field(f) if is_code_anchor(&f.ty) => Some(f),
+            crate::schema::Leaf::Field(f) if is_code_anchor(&f.ty) => Some(f.as_ref()),
             _ => None,
         })
         .collect();
