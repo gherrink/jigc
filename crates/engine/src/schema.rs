@@ -44,6 +44,20 @@ pub struct Schema {
     #[serde(rename = "id-from", default, skip_serializing_if = "Option::is_none")]
     pub id_from: Option<String>,
 
+    /// Authored-prose: what this doc-type *is* (its identity, one or two
+    /// sentences). Top-level, optional, human-authored at definition time; the
+    /// `describe` self-description surface projects it. Skip-on-absent: a schema
+    /// that omits it leaves the golden untouched
+    /// (`design/document-type-schema.md` → Authored metadata fields).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+
+    /// Authored-prose: when and why you'd reach for this doc-type. Top-level,
+    /// optional, human-authored at definition time; projected by `describe`.
+    /// Usage, never mechanism (`design/introspection.md`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<String>,
+
     /// The document's sections, in document order.
     pub sections: Vec<Section>,
 }
@@ -708,6 +722,39 @@ sections:
                 "expected UnknownFieldType for {field}/code-anchor, got {err:?}",
             );
         }
+    }
+
+    /// Authored-prose metadata (M11): a schema carrying top-level
+    /// `description:`/`usage:` parses them to `Some(..)` (they are siblings of
+    /// `type`/`location`/`id-from`, NOT inside `sections`), and a schema that
+    /// omits them leaves both `None` with no error — even though `Schema` is
+    /// `deny_unknown_fields`, the struct field admits the keys. This is the
+    /// substrate `describe` projects.
+    #[test]
+    fn description_and_usage_load_as_top_level_fields() {
+        let with_prose = b"\
+type: adr
+description: A dated architectural decision record.
+usage: Reach for it when a choice is worth preserving with its rationale.
+sections: []
+";
+        let schema = load_schema(with_prose).expect("schema with prose loads");
+        assert_eq!(
+            schema.description.as_deref(),
+            Some("A dated architectural decision record.")
+        );
+        assert_eq!(
+            schema.usage.as_deref(),
+            Some("Reach for it when a choice is worth preserving with its rationale.")
+        );
+
+        let without_prose = b"\
+type: commit
+sections: []
+";
+        let schema = load_schema(without_prose).expect("schema without prose loads");
+        assert_eq!(schema.description, None);
+        assert_eq!(schema.usage, None);
     }
 
     /// An unknown top-level key is rejected (the `deny_unknown_fields` guard),
