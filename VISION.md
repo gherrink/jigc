@@ -108,7 +108,7 @@ The CLI guarantees the wiring; it never guarantees the prose.
 
 Documents are a normalized database: **one document, one purpose, small footprint, cross-reference instead of duplicate.** Each document type is *defined* — its purpose, location, sections, required cross-references, template, and validation rules. The file mass that overwhelms GSD users is a non-problem here because **nobody navigates the directory** — the CLI assembles views on read and places content on write.
 
-Document types to define (starting set): commit messages, architecture documentation, PRDs, ADRs, SPECs. **Each is a managed document** — even a commit message is a doc type (hence addresses like `commit:add-rate-limiter`) — so each gets a single clear purpose and explicit cross-reference obligations rather than duplicated context.
+Document types to define (starting set): commit messages, architecture documentation, PRDs, ADRs, SPECs — now **complete, every member ships** (`arch-doc` was the last, driven at M13; see [implementation/doctype-map.md](implementation/doctype-map.md)). **Each is a managed document** — even a commit message is a doc type (hence addresses like `commit:add-rate-limiter`) — so each gets a single clear purpose and explicit cross-reference obligations rather than duplicated context.
 
 ## Primary flows
 

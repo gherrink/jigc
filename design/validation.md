@@ -137,15 +137,18 @@ The development pack's first probe, and the milestone that makes VISION principl
 
 ### What it checks
 
-A `code-anchor` is a structured reference from a doc into the codebase. M10 targets the two shipped persisted doctypes:
+A `code-anchor` is a structured reference from a doc into the codebase. M10 shipped the first two persisted-doctype targets; **M13 adds `arch-doc` as the third** ([architecture-documentation.md](architecture-documentation.md); [roadmap.md](../implementation/roadmap.md) → M13 Increment 5):
 
 - **`adr.cites-code`** (an optional `code-anchor` in the `status` header section) — the **floor**: *does the cited code still exist?*
 - **`spec` `criteria/<id>/maps-to-test`** (an optional `code-anchor` in the `criteria` repeatable block) — the **headline**, the VISION worked example (`⚠ SPEC criterion 'limit=100/min' maps to no test`): *does the criterion map to a real test?*
+- **`arch-doc` `components/<id>/implemented-by`** (a `code-anchor` in the `components` repeatable block — M13) — the **richest** case: a **per-component `symbol-exists`** anchor, *does the documented component still resolve to its implementing symbol?* ([architecture-documentation.md](architecture-documentation.md) → flow 16.)
 
 Two checks (both blocking-default, tunable — they tune through the [M6 post-pass](#severity-assignment--the-m6-post-pass) for free):
 
 - **`doc-code.symbol-exists`** — the `code-anchor` resolves to a real file (and, if a symbol is named, a real symbol).
 - **`doc-code.criterion-maps-to-test`** — the criterion's `maps-to-test` anchor resolves to a real *test* (symbol existence + a test predicate).
+
+**Which check runs (the M13 `check:` predicate selector).** M10 chose the predicate **by position** — a Simple-section anchor got `symbol-exists`, a repeatable-block anchor got `criterion-maps-to-test`. arch-doc broke that coincidence: its repeatable `components/implemented-by` cites *implementation* code and wants `symbol-exists`, so position no longer discriminates. M13 makes the predicate **pack-declared**: the resolution is **`field.check ?? field_type.check`** — a schema field's optional `check:` overrides the field-type's declared `check:`. So bare `code-anchor`s (`adr.cites-code`, `arch-doc.components/implemented-by`) inherit `symbol-exists`, and `spec.criteria/maps-to-test` carries an explicit `check: criterion-maps-to-test` to keep its shipped predicate. The positional constants are deleted ([architecture-documentation.md](architecture-documentation.md) → The per-field-type predicate selector; [document-type-schema.md](document-type-schema.md) → Pack-declared field types).
 
 ### The anchor grammar + resolution
 

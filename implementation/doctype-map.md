@@ -12,9 +12,9 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 | `adr` | one architecture decision | persisted → `decisions/` | M1 | ✅ shipped |
 | `spec` | the "what" a task implements | persisted → `specs/` | M3 | planned |
 | `prd` | product requirements above specs | persisted → `prds/` | M9 | planned |
-| `arch-doc` | living architecture documentation | persisted | M13 | planned |
+| `arch-doc` | living architecture documentation | persisted → `architecture/` | M13 | ✅ shipped |
 
-VISION's starting set is commit · arch-doc · prd · adr · spec ([VISION.md](../VISION.md) → Document model). `commit` + `adr` are built, `spec` is next (M3), `prd` + `arch-doc` await a driving workflow.
+VISION's starting set (commit · arch-doc · prd · adr · spec — [VISION.md](../VISION.md) → Document model) is **complete**: every member ships. `arch-doc` was the last, driven at M13 by the architecture-documentation workflow ([architecture-documentation.md](../design/architecture-documentation.md); [roadmap.md](roadmap.md) → M13).
 
 ## The relations (edges)
 
@@ -24,7 +24,7 @@ Direction reads source → target; cardinality is the rough *intent*, not a lock
 - `commit` —**implements**→ `spec` (**0..1** → 0..1) — **activates with M3.** A task's commit references the spec it satisfies; the M3 `spec` worked example walks this edge at finalize. Cardinality is `0..1` on the commit side (not the `1` of first-draft intent), because spec-less tasks (`single-task`, `quick-fix`) still produce a valid `commit` — the edge is optional, set only by the spec-driven workflow.
 - `spec` —**decided-by**→ `adr` (n → n) — a spec points at the decisions that shaped it. **Deferred past M3** and **re-triaged OUT at M13 planning** (2026-06-07): no workflow in M13's arch-doc scope writes or reads it, so it stays named-unscheduled intent until a workflow drives it (a one-line schema delta when it does).
 - `prd` —**decomposes-into**→ `spec` (1 → n) — a PRD's requirements fan out into specs. **Triaged OUT at M13 planning** (hard): no driver, and structurally blocked on the deferred `prd` repeatable-requirements shape (per-requirement anchors), which itself awaits the item-authoring surface + the multi-word-heading fix.
-- `arch-doc` —**cites**→ `adr` (n → n) — architecture docs reference the decisions behind them. **Driven at M13** ([architecture-documentation.md](../design/architecture-documentation.md)): authored as a doc-level (header) n→n `ref` field by the architecture-documentation workflow and walked at finalize via `ref-resolves` (pass when the cited adr exists, block when it dangles).
+- `arch-doc` —**cites**→ `adr` (n → n) — architecture docs reference the decisions behind them. **Landed M13** ([architecture-documentation.md](../design/architecture-documentation.md)): authored as a doc-level (header) n→n `ref` field by the architecture-documentation workflow and walked at finalize via `ref-resolves` (pass when the cited adr exists, block when it dangles).
 
 Work-units (`task`, `increment`, `milestone`) are **not doctypes** — they're the anchors docs bind to (`task.commit`, `task.spec`, `task.decision`), carrying engine-native data-value roots, not schemas. The `milestone` work-unit activates in **M7** (the deterministic join core — [roadmap](roadmap.md)); its `{{milestone.tasks}}` data-value root lands in **M8** with the fan-out step that consumes it; `increment` minting stays deferred.
 
