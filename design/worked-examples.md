@@ -884,3 +884,73 @@ The override’s prose **replaces** the pack’s for that one definition (whole-
 4. **Facts-not-advice is authoring discipline, not a CLI gate — stated honestly.** The CLI cannot mechanically tell facts from advice (the prose is human-authored), so this constraint is enforced at authoring/review, not by the binary. The acceptance asserts what the binary *can*: the projection is non-contractual and cascade-reflecting. (The shipped pack prose is itself held to facts-not-advice / usage-not-mechanism at review.)
 5. **The floor is workflows + doctypes; the stretch stayed cut.** describe projects every **workflow** (the unfiltered set — not the `creates-task && selectable` catalog) and every **doctype**, plus command-ref `hint`s. **Data-value roots are absent** (no definition substrate — cut at planning); a describe that tried to narrate `{{store.*}}` / `{{catalog}}` roots would be out of scope. `jigc describe` is **whole-menu** (no positional `describe <id>` form).
 6. **Realistic definitions, not renderer-shaped fixtures.** The acceptance authors prose on the **real shipped pack definitions** and asserts over their projection — not a fixture pack shaped to whatever the projector happens to render (the fixture-topology masking face, [increment-workflow.md](../implementation/increment-workflow.md)).
+
+## 15. self-hosting — the methodology pack dogfooded on a fresh project (M12, exploratory)
+
+The M12 acceptance: **jigc composes its own development methodology and runs it on a fresh, unlike-jigc project.** The methodology pack encodes the [dev-workflow](../implementation/dev-workflow.md) **reduced-linear** (scope → implement → gate → commit as flat prose steps), composes as the **sole pack** (it *subsumes* the dev surfaces — vendors a `commit` schema + the full intrinsic-knob surface), and drives a real task end-to-end on a `/tmp` copy of a TypeScript project. The proof is **workflow-composition fidelity** — jigc owns the *structure* (compose deterministically, place the writes, walk the finalize gate), the agent fills the *judgment* (scope-restatement, test-first discipline, running the project's gate). It is **not** the quantitative build-health comparison (that tally lives in the external orchestration harness, not the binary — deferred). And it is honest about what it does **not** prove: the dev-workflow's test-first ordering + the mechanized gate degrade to **un-enforced prose** on a foreign project — that degradation is the milestone's primary finding, the named shape of the dialect-extension milestone, *not* a defect to hide. Notation illustrative; the pack spelling + acceptance flow are pinned at the build's spike (a planning spike, 2026-06-07, already ran this end-to-end on a non-Rust repo — [self-hosting.md](self-hosting.md) → Acceptance flow). The methodology pack is **pure pack authoring** (workflows + steps + schemas + cascade config); **zero engine/dialect code** rides in M12.
+
+### Setup — author the methodology pack, copy the dogfood project to /tmp
+
+```text
+# the methodology pack (pure pack data — no engine changes):
+#  packs/methodology/config/defaults.yaml : pack-id: methodology, default-workflow: dev-task (creates-task: true)
+#  packs/methodology/config/knobs.yaml    : the full intrinsic-check severity surface (floored at blocking) + default-workflow enum
+#  packs/methodology/config/commands.yaml : the command-refs the steps use (set-commit-summary, finalize-task)
+#  packs/methodology/schemas/commit.yaml  : VENDORED (finalize hardcodes COMMIT_TYPE="commit")
+#  packs/methodology/workflows/dev-task.yaml : body = flat {{include: step:scope/implement/gate/finalize}}
+#  packs/methodology/steps/scope.yaml     : restate {{task.intent}} + an observable done-criterion; stop-and-check the human if scope drifted
+#  packs/methodology/steps/implement.yaml : write the FAILING TEST FIRST (confirm it fails for the right reason), THEN minimal green, THEN refactor — PROSE the agent self-polices
+#  packs/methodology/steps/gate.yaml      : "run your project's configured test + lint + build gate; all pass or the task isn't done" — PROSE, no hardcoded `cargo`
+#  packs/methodology/steps/finalize.yaml  : set-field type + scope, set-slot summary + body (a command-ref EACH — the commit schema requires all four), then {{cli.finalize-task}}
+#   (all step ids single-word — the multi-word section-id defect)
+#   (every {{…}} placeholder must be the SOLE content of its line — inline-in-a-sentence emits the literal {{…}})
+
+# the dogfood project — NEVER touched in place:
+$ cp -r ~/Projects/gherrink-galey /tmp/m12-dogfood    # a TypeScript pnpm monorepo (unlike jigc)
+$ cd /tmp/m12-dogfood && git init -q && git add -A && git commit -qm "baseline"   # if not already a repo
+
+$ JIGC_PACK_DIR=<pack> jigc setup        # step 0 — start hard-fails without a .jigc/config/ cascade layer
+$ git add -A && git commit -qm "chore: jigc setup"     # commit setup artifacts BEFORE the work, so the work commit is code-only
+```
+
+### The walk — compose the dev-workflow, work the task, finalize one commit
+
+```text
+$ JIGC_PACK_DIR=<pack> jigc start "add a greeting helper to the utils package"
+  # composes the methodology dev-task workflow → emits the flat prose spine:
+  Scope — restate the intent and state an observable done-criterion.
+    The intent is: add a greeting helper to the utils package
+    … stop and check with the human if the restatement reveals a different problem.
+  Implement — write the failing test FIRST, confirm it fails for the right reason,
+    then the minimal change to make it pass, then refactor while green.
+  Gate — run your project's configured test + lint + build gate; all pass or the task isn't done.
+  Finalize — <<author: the commit summary>> then run: jigc task finalize add-a-greeting-helper…
+
+# determinism: recomposing the SAME task is byte-identical (test via --task, not re-mint):
+#   <first-capture> = the stdout of the ORIGINAL successful `start` above — NOT a re-mint
+#   (re-running `start "<intent>"` correctly fails "already active"; don't diff against that error).
+$ JIGC_PACK_DIR=<pack> jigc start --task add-a-greeting-helper… | diff - <first-capture>   # empty diff
+
+# the agent does the TS work: writes a failing vitest test, implements, runs `pnpm test && pnpm biome` by hand.
+# finalize RENDERS an already-filled commit doc — it does NOT fill the fields. The agent fills all four first:
+$ JIGC_PACK_DIR=<pack> jigc doc set-field commit:add-a-greeting-helper…#type  --value feat
+$ JIGC_PACK_DIR=<pack> jigc doc set-field commit:add-a-greeting-helper…#scope --value utils
+$ JIGC_PACK_DIR=<pack> jigc doc set-slot  commit:add-a-greeting-helper…#summary --from-file -
+$ JIGC_PACK_DIR=<pack> jigc doc set-slot  commit:add-a-greeting-helper…#body    --from-file -
+  #  note: type/scope are FIELDS (set-field --value); summary/body are SLOTS (set-slot). The commit
+  #  schema requires all four non-empty, so the methodology `finalize` step must wire a command-ref
+  #  (or spell the literal call) for each — not just summary as the embedded pack does.
+$ JIGC_PACK_DIR=<pack> jigc task finalize add-a-greeting-helper…
+  # validates, renders the (now-filled) commit doctype → git message, lands ONE commit. Git-only — no cargo.
+$ git log --oneline -1
+  feat(utils): add greet() helper          ← exactly one new commit, code-only
+```
+
+### What it asserts (the acceptance bar)
+
+1. **Composition fidelity is the headline — proven by a real end-to-end run, not by "the pack loads."** On a `/tmp` copy of a **non-Rust** project, the methodology pack composes the dev-workflow **deterministically** (same pack + cascade → byte-identical workflow, tested via the `--task` recompose path) and drives a real task `setup → start → finalize → exactly one git commit`, **git-only** (no `cargo`/`rustc` invoked — verified the finalize path is stack-free). A test that only asserts "the methodology workflow composes" is rejected as masking — it must assert a *task ran through to one commit on the foreign project*.
+2. **The judgment slots stay genuinely exercised, not hollowed — and the prose-washed mechanizables are NAMED, not dropped.** Read the encoded steps: scope-restatement, test-first discipline, and the gate are **agent-authored prose**; the encode mechanized **nothing** that is judgment (the hollow-encode failure). *And* the encode mechanized **nothing** it merely *renamed* as structure: the dev-workflow's test-first **ordering** + the **gate** are mechanizable-but-unencodable-today, so they ride as prose — and that degradation is **recorded as a dialect-extension trigger** with the failure-class each would prevent ([self-hosting.md](self-hosting.md) → named triggers), never silently presented as faithful structure (the prose-wash failure). Both edges of the acceptance bar are asserted.
+3. **The pack composes ALONE and is pure pack data.** The methodology pack is the **sole** composed pack (`JIGC_PACK_DIR`, no second pack layered — that is M14); it **subsumes** the dev surfaces by vendoring the `commit` schema + the full intrinsic-knob surface; and it ships **zero engine/dialect changes** (asserted: the M12 diff touches no `crates/*/src`). The portable gate composed as plain prose — the binary has no opinion about gate content — and `{{task.intent}}` resolved in the composed output.
+4. **The working docs stay plain markdown (the M13 seam holds).** The encoded dev-workflow only **reads** project/methodology docs at fixed paths; it authors **no** managed methodology doctype and places **no** jigc write into the roadmap/ledger/decisions-log. (If a faithful dogfood had needed the Scope step to mechanically consume a *managed* deferral-ledger, that one doctype would promote into M12 — it did not; the dev-workflow only reads.)
+5. **The doc↔code probe is gated off, honestly.** The methodology pack ships **no `code-anchor`** field, so the M10 `doc-code` probe never fires — correct, since it is Rust-grammar-only and would false-block on a TypeScript project. A dogfood that wanted to *prove* doc↔code on a foreign project is out of the reduced slice's scope (named, not attempted).
+6. **Realistic project, not a jigc-shaped toy.** The dogfood runs on a **real, unlike-jigc** project (a TypeScript monorepo) so jigc-shaped gates can't flatter a jigc-shaped target — the portability test the methodology pack exists to pass. The original project is **never modified** (the run is on a `/tmp` copy).
