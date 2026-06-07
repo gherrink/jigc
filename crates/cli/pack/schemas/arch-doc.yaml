@@ -1,0 +1,35 @@
+# arch-doc — the M13 living-architecture doc-type: a persisted description of one
+# part of the system — its overview, the components that compose it (each tied to
+# the code that implements it), and the decisions behind it. Persisted to
+# architecture/; the `meta` header carries the n→n `cites → adr` relation, an
+# `overview` prose slot, and a repeatable `components` section whose every item
+# anchors to its implementing code via a bare `implemented-by` code-anchor
+# (inheriting the type's `symbol-exists` check — no field override; `finalize`
+# blocks if that symbol has vanished). `id-from: title` derives the slug from the
+# document H1 (no declared `title` field), exactly like `adr`/`spec`/`prd`.
+#
+# Section ids are SINGLE WORDS ONLY (`meta`/`overview`/`components`): a multi-word
+# id trips the logged title-case reparse defect, deferred — these ids route around
+# it (component *titles* on `###` item headings are free text, not matched).
+# See architecture-documentation.md → The schema; document-type-schema.md →
+# Pack-declared field types; DECISIONS.md 2026-06-07 → M13 Increment 4 / T1.
+type: arch-doc
+location: architecture/
+id-from: title
+description: Living architecture documentation for one part of the system — its overview, its components and the code that implements them, and the decisions behind it.
+usage: a part of the system is worth a durable description that stays honest against the code, so a later reader (or agent) can orient without reverse-engineering it.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: cites, type: ref, to: adr, card: "0..*", inverse: cited-by }
+  - id: overview
+    slot: { hint: "What this part of the system is and the boundary it owns." }
+  - id: components
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: description, slot: { hint: "The component's responsibility, in prose." } }
+        - { id: implemented-by, type: code-anchor }

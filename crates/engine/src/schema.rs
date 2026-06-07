@@ -872,3 +872,186 @@ sections: []
         assert!(matches!(err, SchemaError::NotUtf8), "got {err:?}");
     }
 }
+
+#[cfg(test)]
+mod arch_doc {
+    //! The shipped `arch-doc` doctype (M13 Increment 4 / T1): the schema loads with
+    //! the `meta` header `cites → adr` (0..*), an `overview` slot, and a repeatable
+    //! `components` block whose bare `implemented-by` resolves to a `code-anchor`
+    //! inheriting the type's `symbol-exists` check (no field override). The shipped
+    //! instance round-trips byte-stably — the #1-risk round-trip over this doctype's
+    //! highest-risk shape (a header list-ref + repeatable items each carrying a
+    //! per-item code-anchor field). See `design/architecture-documentation.md` → The
+    //! schema.
+
+    use super::*;
+
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+
+    fn arch_doc_schema() -> Schema {
+        load_schema_with_types(ARCH_DOC_YAML, &dev_pack_field_types()).expect("arch-doc.yaml loads")
+    }
+
+    /// The schema's identity and the `meta`/`overview`/`components` shape are
+    /// reachable through the model, and the repeatable `implemented-by` resolves to a
+    /// `FieldType::Pack` whose **inherited** check is `Some("symbol-exists")` (no
+    /// per-field override — `field.check == None`). This is what `target_surface.rs`
+    /// reads to select the `doc-code` predicate for the anchor.
+    #[test]
+    fn schema_loads_with_cites_ref_and_a_symbol_exists_anchor() {
+        let schema = arch_doc_schema();
+        assert_eq!(schema.ty, "arch-doc");
+        assert_eq!(schema.location.as_deref(), Some("architecture/"));
+        assert_eq!(schema.id_from.as_deref(), Some("title"));
+
+        // `meta` is the header section carrying the n→n `cites → adr` ref.
+        let meta = &schema.sections[0];
+        assert_eq!(meta.id, "meta");
+        assert!(meta.header);
+        let SectionBody::Simple { slot, fields } = &meta.body else {
+            panic!("meta is a simple header section");
+        };
+        assert!(slot.is_none());
+        let cites = fields.iter().find(|f| f.id == "cites").unwrap();
+        assert_eq!(cites.ty, FieldType::Ref);
+        assert_eq!(cites.to.as_deref(), Some("adr"));
+        assert_eq!(cites.card.as_deref(), Some("0..*"));
+        assert_eq!(cites.inverse.as_deref(), Some("cited-by"));
+
+        // `components` is a repeatable section; its bare `implemented-by` resolves to
+        // a `code-anchor` inheriting the type's `symbol-exists` check, with NO
+        // field-level override.
+        let components = &schema.sections[2];
+        assert_eq!(components.id, "components");
+        let SectionBody::Repeatable { repeatable } = &components.body else {
+            panic!("components is repeatable");
+        };
+        assert_eq!(repeatable.id_from, "title");
+        let Leaf::Field(anchor) = repeatable
+            .block
+            .iter()
+            .find(|l| matches!(l, Leaf::Field(f) if f.id == "implemented-by"))
+            .expect("implemented-by is a field leaf")
+        else {
+            unreachable!();
+        };
+        let FieldType::Pack(pack) = &anchor.ty else {
+            panic!(
+                "implemented-by resolves to a pack-declared type, got {:?}",
+                anchor.ty
+            );
+        };
+        assert_eq!(pack.name, "code-anchor");
+        assert_eq!(pack.adjudicator.as_deref(), Some("doc-code"));
+        assert_eq!(
+            pack.check.as_deref(),
+            Some("symbol-exists"),
+            "the bare anchor inherits the type's symbol-exists check",
+        );
+        assert_eq!(
+            anchor.check, None,
+            "no per-field check override on the bare anchor",
+        );
+    }
+
+    /// A canonical `arch-doc` instance over the shipped schema: the `meta` header
+    /// carrying `cites` over **two** adr targets, the `# H1` title, the `overview`
+    /// slot, and **two** `components` items each with a frozen `{#id}` anchor and an
+    /// `implemented-by` code-anchor. The exact frozen byte form the canonical writer
+    /// emits.
+    fn canonical_arch_doc_source() -> &'static str {
+        "\
+---
+cites: [adr:single-node-cache, adr:distributed-cache]
+---
+
+# The edge index
+
+## Overview
+
+The edge index is a rebuildable map of forward cross-reference edges.
+
+## Components
+
+### The rebuild  {#rebuild}
+
+Walks the committed docs and emits one forward edge per present ref field.
+
+<!-- fields -->
+- implemented-by: crates/engine/src/index.rs#rebuild_committed
+
+### The overlay  {#overlay}
+
+Layers the active task's working-area edges over the committed index in memory.
+
+<!-- fields -->
+- implemented-by: crates/engine/src/index.rs#overlay_working
+"
+    }
+
+    /// The #1-risk round-trip over `arch-doc`: `render(parse(src)) == src` on the
+    /// canonical fixture (a header `cites` list of two adr targets + two `components`
+    /// each carrying an `implemented-by` anchor). The two frozen item anchors survive
+    /// the parse in order; the writer reproduces the source byte-for-byte.
+    #[test]
+    fn arch_doc_render_parse_render_equals_source() {
+        let schema = arch_doc_schema();
+        let src = canonical_arch_doc_source();
+
+        let instance =
+            crate::write::instance_from_source(&schema, src).expect("rendered arch-doc parses");
+
+        // The two cites targets survive on the header, in order.
+        let meta = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "meta")
+            .expect("meta section present");
+        let cites = meta.fields.iter().find(|f| f.key == "cites").unwrap();
+        assert_eq!(
+            cites.value,
+            crate::field_block::Value::List(vec![
+                "adr:single-node-cache".to_string(),
+                "adr:distributed-cache".to_string(),
+            ]),
+            "the cites list parses, in order",
+        );
+
+        // The two frozen component anchors survive the parse, in order.
+        let components = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "components")
+            .expect("components section present");
+        let ids: Vec<&str> = components.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["rebuild", "overlay"], "frozen anchors preserved");
+
+        let rendered = crate::write::render(&schema, &instance);
+        assert_eq!(
+            rendered, src,
+            "render(parse(src)) must equal the source bytes",
+        );
+    }
+
+    /// `write → parse → write` is byte-identical (idempotent on canonical content)
+    /// over the shipped `arch-doc` schema — the repeatable-item + header-list path
+    /// included.
+    #[test]
+    fn arch_doc_write_parse_write_is_byte_identical() {
+        let schema = arch_doc_schema();
+        let src = canonical_arch_doc_source();
+
+        let first = crate::write::render(
+            &schema,
+            &crate::write::instance_from_source(&schema, src).expect("parses"),
+        );
+        let second = crate::write::render(
+            &schema,
+            &crate::write::instance_from_source(&schema, &first).expect("parses"),
+        );
+        assert_eq!(
+            first, second,
+            "write → parse → write must be byte-identical"
+        );
+    }
+}

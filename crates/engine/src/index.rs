@@ -1172,6 +1172,88 @@ Unbounded clients exhaust gateway capacity.
 }
 
 #[cfg(test)]
+mod arch_doc_cites_tests {
+    //! The n→n `arch-doc —cites→ adr` edge (M13 Increment 4 / T1): a header
+    //! `cites` ref list emits **one forward edge per element** through `doc_edges`,
+    //! exactly as `supersedes` does — but list-valued, so the per-element fan-out is
+    //! the contract under test. The repeatable `components` anchors carry
+    //! `implemented-by` (a `code-anchor`, not a `ref`, in a repeatable section), so
+    //! they contribute **no** edges — only the doc-level `cites` does.
+
+    use super::*;
+
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+
+    fn arch_doc_schema() -> Schema {
+        crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("arch-doc.yaml loads")
+    }
+
+    /// A canonical `arch-doc` instance: a `meta` header carrying `cites` over **two**
+    /// adr targets, an `overview` slot, and **two** `components` items each anchoring
+    /// `implemented-by` at distinct code. Authored in the frozen byte form the
+    /// canonical writer emits.
+    const ARCH_DOC_SRC: &str = "\
+---
+cites: [adr:single-node-cache, adr:distributed-cache]
+---
+
+# The edge index
+
+## Overview
+
+The edge index is a rebuildable map of forward cross-reference edges.
+
+## Components
+
+### The rebuild  {#rebuild}
+
+Walks the committed docs and emits one forward edge per present ref field.
+
+<!-- fields -->
+- implemented-by: crates/engine/src/index.rs#rebuild_committed
+
+### The overlay  {#overlay}
+
+Layers the active task's working-area edges over the committed index in memory.
+
+<!-- fields -->
+- implemented-by: crates/engine/src/index.rs#overlay_working
+";
+
+    /// `doc_edges` emits **one** `(arch-doc:<slug>, cites, adr:<t>)` edge per `cites`
+    /// element — and nothing for the repeatable `implemented-by` anchors (a
+    /// repeatable-section non-ref leaf). Two cites elements → exactly two edges, in
+    /// element order.
+    #[test]
+    fn doc_edges_emits_one_cites_edge_per_element() {
+        let schema = arch_doc_schema();
+        let mut src = ARCH_DOC_SRC.to_string();
+        crate::parse::strip_leading_bom(&mut src);
+        let doc = crate::parse::parse_sections(&schema, &src).expect("arch-doc parses");
+
+        let edges = doc_edges(&schema, &doc, "arch-doc:the-edge-index");
+        assert_eq!(
+            edges,
+            vec![
+                Edge {
+                    from: "arch-doc:the-edge-index".to_string(),
+                    relation: "cites".to_string(),
+                    to: "adr:single-node-cache".to_string(),
+                },
+                Edge {
+                    from: "arch-doc:the-edge-index".to_string(),
+                    relation: "cites".to_string(),
+                    to: "adr:distributed-cache".to_string(),
+                },
+            ],
+            "one cites edge per element, in order; the repeatable implemented-by \
+             anchors contribute no edges",
+        );
+    }
+}
+
+#[cfg(test)]
 mod prop_tests {
     use super::*;
     use crate::write::{self, Instance, SectionContent};

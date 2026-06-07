@@ -319,7 +319,7 @@ mod tests {
     /// for front-matter, `load_pack_schema` for the field-type-resolving doctype
     /// path), so this doubles as the clean real-binary pack-load proof: a typo'd
     /// key, a mis-nested field, or a `deny_unknown_fields` violation on any of the
-    /// 9 workflows or 4 doctypes fails here. Asserts presence (`Some`), not the
+    /// 9 workflows or 5 doctypes fails here. Asserts presence (`Some`), not the
     /// prose bytes — wording is review-policed, the per-schema goldens pin the
     /// bytes that ship.
     #[test]
@@ -353,8 +353,8 @@ mod tests {
         let schemas = pack.list(PackResourceKind::Schemas);
         assert_eq!(
             schemas.len(),
-            4,
-            "the shipped pack must carry all 4 doctypes; got {schemas:?}",
+            5,
+            "the shipped pack must carry all 5 doctypes; got {schemas:?}",
         );
         for id in &schemas {
             let bytes = pack
