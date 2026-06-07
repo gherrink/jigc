@@ -1584,6 +1584,134 @@ pub fn insert_field(
     }
 }
 
+/// `set-item-field` (field **absent**, item present): insert the field bullet for
+/// `field` into the repeatable item `item_id`'s trailing field group, materializing
+/// the `<!-- fields -->` sentinel **once** if the item has no field group yet (the
+/// "first field into a freshly-minted empty item" case — [`add_item`] mints items
+/// empty, so the item-leaf write path needs this insert half just as the header path
+/// has [`insert_front_matter_field`]). All scanning is confined to the item's byte
+/// region ([`locate_item_block`]), so a sibling item's identically-keyed bullet is out
+/// of range (the wrong-item write bug, on the insert path). The bullet is appended
+/// after the item's present bullets, mirroring [`insert_field`]. A field key already
+/// present on the item → [`GenerateError::AlreadyPresent`] (route to [`set_item_field`]).
+pub fn insert_item_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_id: &str,
+    field: &Field,
+) -> Result<String, GenerateError> {
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    if !matches!(section.body, SectionBody::Repeatable { .. }) {
+        return Err(GenerateError::WrongShape {
+            what: format!("section {section_id:?} is not repeatable"),
+        });
+    }
+
+    // The item's byte region — every scan below is confined to it, so a sibling item's
+    // identically-keyed bullet is never matched and never appended to.
+    let region = locate_item_block(source, item_id).ok_or_else(|| GenerateError::WrongShape {
+        what: format!("item {item_id:?} in section {section_id:?} not present"),
+    })?;
+    let blocks = parse::scan_blocks(source);
+
+    let bullet = format!("- {}", emit_one_field(field));
+
+    // Is there an existing field group (a sentinel + list) inside the item's region?
+    match field_group_list(&blocks, region.clone()) {
+        Some((list_range, items)) => {
+            // A present key is a surgical set-item-field, not a generation.
+            if field_key_in_list(&blocks, source, &items, &field.key) {
+                return Err(GenerateError::AlreadyPresent {
+                    what: format!("field {:?} on item {item_id:?}", field.key),
+                });
+            }
+            // Append the bullet right after the last present bullet (the list end).
+            Ok(insert_after_line(source, list_range.end, &bullet))
+        }
+        None => {
+            // No field group yet (the freshly-minted empty item): re-render the whole
+            // item via [`render_item`] with the new field appended, then splice it over
+            // the item's located block. Re-rendering (not a bullet-group splice at the
+            // slot-prose end) is what makes this **byte-stable** on a mint-empty item:
+            // an empty slot's canonical form (`### …{#id}\n\n\n\n<!-- fields -->`) is the
+            // writer's, and `render_item` is that writer — so `render(parse(out)) == out`
+            // holds, where a slot-prose-end bullet insert would mis-space the blank lines.
+            let item = parse::parse_sections(schema, source)
+                .ok()
+                .and_then(|doc| {
+                    doc.sections
+                        .into_iter()
+                        .find(|s| s.id == section_id)
+                        .and_then(|s| s.items.into_iter().find(|i| i.id == item_id))
+                })
+                .ok_or_else(|| GenerateError::WrongShape {
+                    what: format!("item {item_id:?} in section {section_id:?} not present"),
+                })?;
+            let mut content = ItemContent {
+                id: item.id.clone(),
+                title: item.title.clone(),
+                slot: item.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+                fields: item.fields.clone(),
+            };
+            content.fields.push(field.clone());
+            // Re-render the item bare, then re-attach the trailing separator the located
+            // block carried (one blank line between items / before the next `##`, or the
+            // single trailing newline at EOF), so the surrounding items stay canonically
+            // spaced — the block region [`locate_item_block`] returns spans that separator.
+            let rendered = render_item(&content);
+            let block_tail = &source[region.clone()];
+            let separator = &block_tail[block_tail.trim_end().len()..];
+            let replacement = format!("{}{}", rendered.trim_end(), separator);
+            Ok(splice(source, region, &replacement))
+        }
+    }
+}
+
+/// The **one entry point** the CLI's `UnitItemLeaf` `set-field` arm calls: write a
+/// repeatable item's field value, **splicing if the bullet is present** (the surgical
+/// [`set_item_field`] edit) **else inserting it absent** (the new [`insert_item_field`]
+/// generation). [`add_item`] mints items *empty* (heading + empty slot span, no field
+/// bullets), so the first write of any declared item field always lands on the
+/// insert-absent half — exactly the header path's splice-or-generate shape
+/// ([`set_field`] ↔ [`insert_front_matter_field`]). This does **not** adjudicate the
+/// value's type or the slot heading-ceiling (the item-leaf adjudication-parity gap is
+/// pinned and deferred by the planner — see `DECISIONS.md` 2026-06-07): it is purely
+/// the byte-level write, generating the absent bullet. A genuinely absent item or a
+/// non-repeatable section surfaces as [`GenerateError::WrongShape`].
+pub fn set_item_field_or_insert(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_id: &str,
+    field_key: &str,
+    new_value: &str,
+) -> Result<String, GenerateError> {
+    match set_item_field(schema, source, section_id, item_id, field_key, new_value) {
+        Ok(edited) => Ok(edited),
+        // The field bullet is absent on a present item ⇒ generate it. (`set_item_field`
+        // returns `NotPresent` both for an absent field *and* an absent item;
+        // `insert_item_field` re-locates the item and routes a truly-absent item to a
+        // `WrongShape`, so the two absence cases stay distinguishable.)
+        Err(SpliceError::NotPresent { .. }) => {
+            let new_field = Field {
+                key: field_key.to_string(),
+                value: Value::Scalar(new_value.to_string()),
+            };
+            insert_item_field(schema, source, section_id, item_id, &new_field)
+        }
+        Err(SpliceError::NotConformant) => Err(GenerateError::WrongShape {
+            what: format!("source does not conform to schema for section {section_id:?}"),
+        }),
+    }
+}
+
 /// Render a body section's canonical block (`## Heading` + slot prose + optional
 /// field group), with **no** surrounding blank lines — the caller's insertion adds
 /// the separating blanks. Mirrors [`render_section`]'s simple-section body but takes
@@ -2716,6 +2844,151 @@ Prose.
         )
         .expect_err("owner already present");
         assert!(matches!(err, GenerateError::AlreadyPresent { .. }));
+    }
+
+    /// A repeatable schema whose item template declares a plain-`string` field
+    /// (`implemented-by`) — the fixture for filling a **freshly-minted empty item**'s
+    /// field through the insert-absent path (no code-anchor validation to obscure the
+    /// byte test).
+    fn linked_spec_schema() -> Schema {
+        let yaml = b"\
+type: spec
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"x\" } }
+        - { id: implemented-by, type: string }
+";
+        crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+            .expect("linked spec schema loads")
+    }
+
+    /// The end-to-end reachability the M13 halt named: `add_item` mints an **empty**
+    /// item (heading + empty slot span, no field bullets), then
+    /// [`set_item_field_or_insert`] **generates** the absent `- implemented-by:` bullet
+    /// (the `<!-- fields -->` sentinel emitted **once**) at the item's field-group
+    /// position with exactly the set value — while a *second* minted item's
+    /// identically-keyed field stays absent (multi-item disambiguation through the
+    /// insert path) — and the result round-trips byte-identical (`render(parse(out)) ==
+    /// out`). This is the insert-absent half that `set_item_field` (splice-only) could
+    /// not reach.
+    #[test]
+    fn set_item_field_generates_absent_bullet_on_minted_item() {
+        let schema = linked_spec_schema();
+        let base = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        // Mint two empty items (mint-empty: heading + empty slot span, no bullets).
+        let one = add_item(&schema, base, "criteria", "Rate limit holds", None, &[])
+            .expect("first item minted empty");
+        let two = add_item(&schema, &one, "criteria", "Burst allowance", None, &[])
+            .expect("second item minted empty");
+        assert!(
+            !two.contains(FIELD_SENTINEL),
+            "minted items carry no field group",
+        );
+
+        // Fill the first item's declared field through the single entry point — the
+        // bullet is absent, so this exercises the insert-absent (generation) half.
+        let out = set_item_field_or_insert(
+            &schema,
+            &two,
+            "criteria",
+            "rate-limit-holds",
+            "implemented-by",
+            "src/gateway.rs",
+        )
+        .expect("absent item field generated");
+
+        // The sentinel is emitted exactly once, the bullet carries the exact value.
+        assert_eq!(out.matches(FIELD_SENTINEL).count(), 1, "one sentinel");
+        assert!(out.contains("- implemented-by: src/gateway.rs"));
+
+        // Multi-item disambiguation: the second item's identically-keyed field is
+        // still absent (untouched by the first item's insert).
+        let doc = parse_sections(&schema, &out).expect("result conforms");
+        let criteria = doc.sections.iter().find(|s| s.id == "criteria").unwrap();
+        let first = criteria
+            .items
+            .iter()
+            .find(|i| i.id == "rate-limit-holds")
+            .unwrap();
+        let second = criteria
+            .items
+            .iter()
+            .find(|i| i.id == "burst-allowance")
+            .unwrap();
+        assert_eq!(first.fields.len(), 1, "first item has the generated field");
+        assert_eq!(first.fields[0].key, "implemented-by");
+        assert_eq!(
+            value_text(&first.fields[0].value),
+            "src/gateway.rs",
+            "the value is exactly as set",
+        );
+        assert!(second.fields.is_empty(), "second item's field stays absent");
+
+        // Round-trips byte-identical: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed), out, "byte-stable insert");
+    }
+
+    /// Regression (the increment-2 behavior): when the item field bullet is **already
+    /// present**, [`set_item_field_or_insert`] splices it (the surgical edit) rather
+    /// than inserting a duplicate — the present half of splice-or-insert. The sentinel
+    /// count stays one and the value is replaced in place.
+    #[test]
+    fn set_item_field_or_insert_splices_a_present_bullet() {
+        let schema = linked_spec_schema();
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit-holds}
+
+The gateway rejects the 101st request.
+
+<!-- fields -->
+- implemented-by: src/gateway.rs
+";
+        let out = set_item_field_or_insert(
+            &schema,
+            src,
+            "criteria",
+            "rate-limit-holds",
+            "implemented-by",
+            "src/gateway_v2.rs",
+        )
+        .expect("present bullet spliced");
+        assert_eq!(out.matches(FIELD_SENTINEL).count(), 1, "no duplicate group");
+        assert_eq!(
+            out.matches("- implemented-by:").count(),
+            1,
+            "no duplicate bullet",
+        );
+        assert!(out.contains("- implemented-by: src/gateway_v2.rs"));
+        assert!(!out.contains("src/gateway.rs"));
+        // Byte-stable.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed), out);
     }
 }
 
