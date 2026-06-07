@@ -1657,8 +1657,13 @@ fn insertion_offset(
 /// (`block\n\n`); at EOF, the block follows the last section (`\nblock\n`).
 fn insert_block(source: &str, at: usize, block: &str) -> String {
     if at >= source.trim_end().len() {
-        // Append at end-of-document: one blank line, the block, one trailing newline.
+        // Append at end-of-document: one blank line, the block, and **exactly one**
+        // trailing newline (the canonical EOF rule). The block is back-trimmed first so
+        // a block that already carries its own trailing newline(s) — an empty repeatable
+        // item renders `### …{#id}\n\n\n` — does not leave trailing blank-line debris,
+        // keeping the EOF-append byte-stable (`render∘parse == id`).
         let head = source.trim_end();
+        let block = block.trim_end_matches('\n');
         return format!("{head}\n\n{block}\n");
     }
     // Insert before a following heading: the block then one blank line then the head.
@@ -2538,6 +2543,70 @@ Holds at 100/min.
         assert!(matches!(err, GenerateError::AlreadyPresent { .. }));
     }
 
+    /// `add-item` into an **empty trailing** repeatable section (the `criteria`
+    /// section is last and has no items yet — the exact shape `jigc doc create spec`
+    /// leaves on disk before the first `add-item`) mint-empty (`--title` only) must be
+    /// **byte-stable**: `render(parse(out)) == out`. The EOF-append path must not leave
+    /// the trailing blank-line debris an un-normalized splice produces — the canonical
+    /// EOF rule (exactly one trailing `\n`) holds across the insert. This is the #1-risk
+    /// round-trip on the `add_item` insert path, which the populated golden masked
+    /// (insta trims trailing whitespace; a raw byte compare does not).
+    #[test]
+    fn add_item_into_empty_trailing_section_is_byte_stable() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        let out = add_item(
+            &spec_schema(),
+            src,
+            "criteria",
+            "Rate limit holds",
+            None,
+            &[],
+        )
+        .expect("item generated into the empty trailing section");
+        assert!(out.contains("### Rate limit holds  {#rate-limit-holds}"));
+        let doc = parse_sections(&spec_schema(), &out).expect("result conforms");
+        let title = out
+            .lines()
+            .find_map(|l| l.strip_prefix("# "))
+            .unwrap_or("")
+            .to_string();
+        let reparsed = Instance {
+            title,
+            sections: doc
+                .sections
+                .iter()
+                .map(|s| SectionContent {
+                    id: s.id.clone(),
+                    slot: s.slot.as_ref().map(|sp| sp.slice(&out).to_string()),
+                    fields: s.fields.clone(),
+                    items: s
+                        .items
+                        .iter()
+                        .map(|it| ItemContent {
+                            id: it.id.clone(),
+                            title: it.title.clone(),
+                            slot: it.slot.as_ref().map(|sp| sp.slice(&out).to_string()),
+                            fields: it.fields.clone(),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        };
+        let rerendered = render(&spec_schema(), &reparsed);
+        assert_eq!(
+            rerendered, out,
+            "add_item into an empty trailing section is byte-stable (render∘parse == id)",
+        );
+    }
+
     /// Golden: a first `set-field` into a **fieldless** section (a `detail` section
     /// whose declared `owner` field has no value on disk yet) materializes the
     /// `<!-- fields -->` sentinel **once** plus the first `- owner: …` bullet, at the
@@ -3064,8 +3133,11 @@ fn locate_slot_span(schema: &Schema, source: &str, section_id: &str) -> Option<R
     Some(span.start..span.end)
 }
 
-/// Render a [`GenerateError`] as the gate's blocking [`Finding`].
-fn generate_error_finding(err: &GenerateError) -> Finding {
+/// Render a [`GenerateError`] as the gate's blocking [`Finding`] — the shared
+/// engine→CLI mapping the create-gate and the `add-item` CLI verb both route their
+/// generation failures through (the expose-vs-replicate pin: one engine-owned
+/// finding shape, never re-derived in the CLI).
+pub fn generate_error_finding(err: &GenerateError) -> Finding {
     let (code, message) = match err {
         GenerateError::AlreadyPresent { what } => (
             "write.already-present",

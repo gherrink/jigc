@@ -55,6 +55,13 @@ impl Drop for TempDir {
 /// default is the `router`, so minting goes through Form D). Returns the repo + a
 /// `$HOME` temp dir.
 fn started_repo(intent: &str) -> (TempDir, TempDir) {
+    started_repo_on("single-task", intent)
+}
+
+/// As [`started_repo`], but minting the task on an explicit `--workflow <id>` — the
+/// `plan` workflow (whose gate `allows-create: [{type: spec, as: spec}]`) is what the
+/// item-authoring path needs to `jigc doc create spec` (`pack/workflows/plan.yaml`).
+fn started_repo_on(workflow: &str, intent: &str) -> (TempDir, TempDir) {
     let repo = TempDir::new("repo");
     let home = TempDir::new("home");
     let git = |args: &[&str]| {
@@ -78,7 +85,7 @@ fn started_repo(intent: &str) -> (TempDir, TempDir) {
     fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("create project layer");
 
     let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
-        .args(["start", "--workflow", "single-task", intent])
+        .args(["start", "--workflow", workflow, intent])
         .current_dir(repo.path())
         .env("HOME", home.path())
         .output()
@@ -268,5 +275,131 @@ fn malformed_field_value_blocks_with_a_routed_finding() {
     assert!(
         !staged.contains("not-a-member"),
         "a rejected write must persist nothing; got:\n{staged}"
+    );
+}
+
+/// The shipped `spec` schema, loaded from the embedded pack source tree with the
+/// dev-pack field types (`code-anchor` on `maps-to-test`), so the byte-stable
+/// round-trip asserts against exactly the bytes that ship.
+fn spec_schema() -> engine::schema::Schema {
+    const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+    // The spec's `maps-to-test` is a pack-declared `code-anchor`, so the schema only
+    // loads with that type threaded in (mirrors the shipped pack's `code-anchor →
+    // doc-code` decl).
+    let types = vec![engine::schema::PackTypeDecl {
+        name: "code-anchor".to_owned(),
+        adjudicator: "doc-code".to_owned(),
+        check: "symbol-exists".to_owned(),
+    }];
+    engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec.yaml loads")
+}
+
+/// The staged `spec:<slug>` instance path in the task working area.
+fn staged_spec(repo: &Path, task: &str, slug: &str) -> String {
+    let path = repo
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("spec:{slug}.md"));
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read staged {path:?}: {e}"))
+}
+
+#[test]
+fn add_item_mints_a_repeatable_item_byte_stable() {
+    let (repo, home) = started_repo_on("plan", "plan the auth flow");
+    let task = "plan-the-auth-flow";
+
+    // Provision a `spec` container via the create-gate (plan allows {type: spec}).
+    let created = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "spec", "--title", "Auth flow"],
+        None,
+    );
+    assert!(
+        created.status.success(),
+        "`jigc doc create spec` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    // Mint a repeatable item into the `criteria` section by title.
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            "spec:auth-flow#criteria",
+            "--title",
+            "Rate limit holds",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "`jigc doc add-item` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    // The minted item address prints verbatim on stdout (the next address an agent
+    // addresses the item's slot/field at).
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout.trim_end_matches('\n'),
+        "spec:auth-flow#criteria/rate-limit-holds",
+        "the minted item address prints on stdout; got:\n{stdout}"
+    );
+
+    // The staged spec carries exactly one item with the minted heading + anchor.
+    let staged = staged_spec(repo.path(), task, "auth-flow");
+    assert!(
+        staged.contains("### Rate limit holds  {#rate-limit-holds}"),
+        "the staged spec carries the minted `### …  {{#id}}` item; got:\n{staged}"
+    );
+
+    // Byte-stable: render(parse(staged)) == staged — the splice path is the parser's
+    // inverse on the minted bytes (the #1-risk round-trip, proven through the binary).
+    let schema = spec_schema();
+    let instance =
+        engine::write::instance_from_source(&schema, &staged).expect("staged spec re-parses");
+    let rerendered = engine::write::render(&schema, &instance);
+    assert_eq!(
+        rerendered, staged,
+        "the minted item is byte-stable across parse → render",
+    );
+}
+
+#[test]
+fn add_item_into_a_non_repeatable_section_blocks_with_a_routed_finding() {
+    let (repo, home) = started_repo_on("plan", "plan the auth flow");
+
+    let created = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "spec", "--title", "Auth flow"],
+        None,
+    );
+    assert!(created.status.success(), "create spec");
+
+    // `goal` is a simple slot section, not repeatable — adding an item must block
+    // with a routed finding, never panic.
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &["add-item", "spec:auth-flow#goal", "--title", "Bogus"],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "an add-item into a non-repeatable section must exit non-zero"
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        stderr.to_lowercase().contains("repeatable") || stderr.contains("goal"),
+        "the block names the wrong-shape reason; got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("route:"),
+        "the block carries a route directing the agent's next action; got:\n{stderr}"
     );
 }

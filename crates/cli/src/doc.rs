@@ -49,6 +49,20 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
+    /// Mint a repeatable item into a section (`<type>:<slug>#<section>`), id-slugged
+    /// from `--title`. The CLI mints the `{#id}` anchor + appends the item block.
+    AddItem {
+        /// The section address — `<type>:<slug>#<section>` (the repeatable section the
+        /// item is minted into).
+        addr: String,
+        /// The item id-source — slugged to the `{#id}` anchor (the MVP surface; the
+        /// item's slot/fields are filled by later `set-slot`/`set-field` writes).
+        #[arg(long)]
+        title: String,
+        /// The active task to scope the write to (see `Create::task`).
+        #[arg(long)]
+        task: Option<String>,
+    },
     /// Set a field leaf's value (inline, adjudicated at write time).
     SetField {
         /// The leaf address — `<type>:<slug>#<field>` (or `#<section>/<field>`).
@@ -101,6 +115,9 @@ impl DocCommand {
                 title,
                 task,
             } => run_create(cwd, &r#type, &title, task.as_deref()),
+            DocCommand::AddItem { addr, title, task } => {
+                run_add_item(cwd, &addr, &title, task.as_deref())
+            }
             DocCommand::SetField { addr, value, task } => {
                 run_set_field(cwd, &addr, &value, task.as_deref())
             }
@@ -188,6 +205,46 @@ fn run_set_slot(
         .map_err(|f| block(&f, "set-slot", addr))?;
 
     persist(&path, &edited)?;
+    Ok(())
+}
+
+/// `jigc doc add-item <addr>#<section> --title <…>` — mint a repeatable item into a
+/// section. Clones the `run_create`/`run_set_slot` shape: resolve the active task,
+/// parse the address, resolve the section from the fragment's leading hop, read (or
+/// copy-in) the staged instance, call the proven engine `add_item` (mint-empty —
+/// `--title` only, no slot/fields yet), persist, and print the minted item address
+/// `<type>:<slug>#<section>/<slug(title)>` (the next address an agent fills the item's
+/// slot/field at). A non-repeatable section / unknown section routes the engine's
+/// [`engine::write::GenerateError`] through the shared blocking [`Finding`] mapping
+/// (`design/write-commands.md`; `architecture-documentation.md` → add-item ergonomics).
+fn run_add_item(
+    cwd: &Path,
+    addr: &str,
+    title: &str,
+    task_id: Option<&str>,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
+    let address = parse_addr(addr)?;
+    let schema = task.schema(address.r#type.as_str())?;
+    let section_id =
+        section_hop(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
+
+    let path = staged_path(&task.dir, &address, &task.id)?;
+    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+
+    let edited = engine::write::add_item(&schema, &source, &section_id, title, None, &[])
+        .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
+
+    persist(&path, &edited)?;
+    // The minted item address — the section hop plus the slugger-minted anchor (the
+    // same slugify the engine mints the `{#id}` from, never re-spelled).
+    println!(
+        "{}:{}#{}/{}",
+        address.r#type.as_str(),
+        address.slug.as_str(),
+        section_id,
+        engine::slug::slugify(title),
+    );
     Ok(())
 }
 
@@ -525,6 +582,19 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<String> {
         SectionBody::Simple { slot: Some(_), .. } if s.id == section_id => Some(s.id.clone()),
         _ => None,
     })
+}
+
+/// Resolve the `section_id` an `add-item` address targets — the fragment's leading
+/// hop. The CLI only extracts the named section; the engine `add_item` adjudicates
+/// the *shape* (a non-repeatable / unknown section surfaces as a routed
+/// [`engine::write::GenerateError`]), so this never re-checks repeatability here.
+fn section_hop(address: &Address) -> Option<String> {
+    match address.fragment.as_ref()? {
+        Fragment::Unit(u) => Some(u.as_str().to_string()),
+        Fragment::UnitLeaf(u, _) | Fragment::UnitItem(u, _) | Fragment::UnitItemLeaf(u, _, _) => {
+            Some(u.as_str().to_string())
+        }
+    }
 }
 
 /// Wrap a blocking [`Finding`] as a [`DocFailure::Block`], ensuring it carries a
