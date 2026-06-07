@@ -20,6 +20,7 @@ pub mod finalize;
 pub mod finding;
 pub mod index;
 pub mod ingest;
+pub mod introspect;
 pub mod knobs;
 pub mod milestone;
 pub mod override_default;
