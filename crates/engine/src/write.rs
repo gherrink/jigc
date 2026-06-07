@@ -871,6 +871,57 @@ pub fn remove_item(
     Ok(splice(source, span, ""))
 }
 
+/// `set-item-field` (item field present): replace the **value** bytes of `field_key`
+/// on the repeatable item `item_id` in `section_id`, scoped to that item's byte
+/// region — so an identically-keyed field on a sibling item is never matched (the
+/// wrong-item write bug). Not a wrapper over [`set_field`]: that scans globally and
+/// would hit the first matching key. Re-parses for conformance, asserts the item and
+/// its `field_key` are present, then locates the value span *within* the item's block
+/// region ([`locate_item_block`]) via [`field_value_in_lines`] over the item's
+/// sentinelled `- key: value` bullets (`bullet = true`). An absent item / field →
+/// [`SpliceError::NotPresent`].
+pub fn set_item_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_id: &str,
+    field_key: &str,
+    new_value: &str,
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    let item = section
+        .items
+        .iter()
+        .find(|i| i.id == item_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("item {item_id:?} in section {section_id:?}"),
+        })?;
+    if !item.fields.iter().any(|f| f.key == field_key) {
+        return Err(SpliceError::NotPresent {
+            what: format!("field {field_key:?} on item {item_id:?}"),
+        });
+    }
+
+    // The item's byte region — restricting the value scan to this item so a
+    // sibling's identically-keyed bullet is out of range.
+    let region = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
+        what: format!("item {item_id:?} block"),
+    })?;
+    let value_span = field_value_in_lines(source, region, field_key, true).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("field {field_key:?} value line on item {item_id:?}"),
+        }
+    })?;
+    Ok(splice(source, value_span, new_value))
+}
+
 /// Locate the **value** byte span of the field `key` — the bytes after `key:` (and
 /// its single separating space) to the end of that physical line. Reuses the block
 /// parse to find the line: a front-matter `key: value` line or a body `- key: value`
@@ -1884,6 +1935,149 @@ A short burst is tolerated.
         assert!(out.contains("### Burst allowance  {#burst-allowance}"));
         assert!(out.contains("A short burst is tolerated."));
         assert!(!out.contains("rate-limit"));
+    }
+
+    /// A repeatable-block schema whose item template carries a plain `string` field
+    /// (`implemented-by`) shared across items — the disambiguation surface for
+    /// item-scoped field writes (no code-anchor validation to obscure the byte test).
+    fn linked_spec_schema() -> Schema {
+        let yaml = b"\
+type: spec
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"x\" } }
+        - { id: implemented-by, type: string }
+";
+        crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+            .expect("linked spec schema loads")
+    }
+
+    /// A two-item repeatable fixture where both items A and B carry an
+    /// identically-keyed `- implemented-by:` field with distinct values — the
+    /// wrong-item disambiguation fixture.
+    const TWO_ITEM_SPEC: &str = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+
+<!-- fields -->
+- implemented-by: src/gateway.rs
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.
+
+<!-- fields -->
+- implemented-by: src/burst.rs
+";
+
+    /// `set_item_field` on item B sets **B's** `implemented-by` to the new value and
+    /// leaves item A's identically-keyed field byte-for-byte untouched — the
+    /// wrong-item write bug retired. Golden pins the full result; the line check
+    /// asserts only B's field-value line differs; the inverse (set on A) proves the
+    /// test is not order-trivial.
+    #[test]
+    fn set_item_field_targets_the_addressed_item() {
+        let schema = linked_spec_schema();
+        let out = set_item_field(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "burst-allowance",
+            "implemented-by",
+            "src/burst_v2.rs",
+        )
+        .expect("item B field present");
+        insta::assert_snapshot!("set_item_field_b", out);
+        // B's value updated; A's identical-keyed field unchanged.
+        assert!(out.contains("- implemented-by: src/burst_v2.rs"));
+        assert!(out.contains("- implemented-by: src/gateway.rs"));
+        // Surgical: only B's `implemented-by` value-line index 22 differs.
+        let b: Vec<&str> = TWO_ITEM_SPEC.lines().collect();
+        let a: Vec<&str> = out.lines().collect();
+        assert_eq!(b.len(), a.len(), "line count unchanged");
+        let b_idx = b
+            .iter()
+            .position(|l| *l == "- implemented-by: src/burst.rs")
+            .unwrap();
+        for (i, (bl, al)) in b.iter().zip(a.iter()).enumerate() {
+            if i == b_idx {
+                assert_ne!(bl, al, "B's value line must change");
+            } else {
+                assert_eq!(bl, al, "line {i} must be byte-identical");
+            }
+        }
+        // The result still round-trips byte-identical: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed), out);
+
+        // Inverse: setting A leaves B untouched — not order-trivial.
+        let out_a = set_item_field(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "rate-limit",
+            "implemented-by",
+            "src/gateway_v2.rs",
+        )
+        .expect("item A field present");
+        assert!(out_a.contains("- implemented-by: src/gateway_v2.rs"));
+        assert!(out_a.contains("- implemented-by: src/burst.rs"));
+        let a_idx = b
+            .iter()
+            .position(|l| *l == "- implemented-by: src/gateway.rs")
+            .unwrap();
+        let aa: Vec<&str> = out_a.lines().collect();
+        for (i, (bl, al)) in b.iter().zip(aa.iter()).enumerate() {
+            if i == a_idx {
+                assert_ne!(bl, al, "A's value line must change");
+            } else {
+                assert_eq!(bl, al, "line {i} must be byte-identical");
+            }
+        }
+    }
+
+    /// An absent item / absent field on an item routes to [`SpliceError::NotPresent`].
+    #[test]
+    fn set_item_field_absent_is_not_present() {
+        let schema = linked_spec_schema();
+        let missing_item = set_item_field(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "ghost",
+            "implemented-by",
+            "x",
+        )
+        .expect_err("no such item");
+        assert!(matches!(missing_item, SpliceError::NotPresent { .. }));
+        let missing_field = set_item_field(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "rate-limit",
+            "nonesuch",
+            "x",
+        )
+        .expect_err("no such field on item");
+        assert!(matches!(missing_field, SpliceError::NotPresent { .. }));
     }
 
     /// An absent target routes to generation: a `set-field` for a field not present

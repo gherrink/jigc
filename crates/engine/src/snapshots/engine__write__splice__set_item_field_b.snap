@@ -1,0 +1,25 @@
+---
+source: crates/engine/src/splice.rs
+expression: out
+---
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+
+<!-- fields -->
+- implemented-by: src/gateway.rs
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.
+
+<!-- fields -->
+- implemented-by: src/burst_v2.rs
