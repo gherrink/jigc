@@ -1,0 +1,22 @@
+Land the change as exactly one logical commit. finalize renders the commit; it
+does not fill it, so set the commit header and prose first.
+
+Set the Conventional-Commits type:
+
+{{ cli.set-commit-type }}
+
+Set the scope — the area this change touches:
+
+{{ cli.set-commit-scope }}
+
+Stage the subject line:
+
+{{ cli.set-commit-summary }}
+
+Stage the body — why this change:
+
+{{ cli.set-commit-body }}
+
+Then validate and commit:
+
+{{ cli.finalize-task }}

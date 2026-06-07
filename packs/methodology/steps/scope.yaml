@@ -1,0 +1,9 @@
+Scope the task before touching code. The intent is:
+
+{{ task.intent }}
+
+Restate that intent in your own words, then name the single observable
+done-criterion — a test, a command that exits cleanly, or a behaviour you can
+point at. If your restatement reveals a different problem than the intent
+asked for, stop and check with the human before proceeding: a clarifying
+question costs less than solving the wrong problem.

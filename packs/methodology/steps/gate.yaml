@@ -1,0 +1,5 @@
+Run your project's own test, lint, and build gate — the commands this project
+already uses to prove a change is sound — and confirm every one passes before
+you finalize. Use whatever the project's configured gate is; do not assume a
+particular toolchain. A green gate is what separates a finished change from one
+that merely compiles in your head.
