@@ -12,9 +12,11 @@
 //!   (a) **Hollowing absent** (FAIL exemplar (a)). A judgment slot must not be
 //!       mechanized into a lint/checklist, and a portable prose gate must not
 //!       hardcode a toolchain. Concretely: `gate.yaml` carries no hardcoded
-//!       `cargo`/`pnpm`/`npm` gate command (it is portable prose), and
-//!       `implement.yaml` carries no ordering-enforcement structure — it is pure
-//!       prose, explicitly handing the test-first ordering back to the agent.
+//!       `cargo`/`pnpm`/`npm` gate command (it is portable prose), `implement.yaml`
+//!       carries no ordering-enforcement structure — it is pure prose, explicitly
+//!       handing the test-first ordering back to the agent — and `scope.yaml` stays
+//!       judgment prose (restate + stop-and-check the human), not a gap-count lint or
+//!       a scored checklist (the scope step is named in FAIL exemplar (a) directly).
 //!
 //!   (b) **Prose-wash-without-naming absent** (FAIL exemplar (b)). Every
 //!       *prose-washed mechanizable* the authored steps actually surface — the
@@ -89,6 +91,40 @@ fn hollowing_absent_gate_is_portable_prose_and_implement_carries_no_ordering_str
          explicitly stating nothing enforces it (self-hosting.md → sort table Red row: \
          prose-washed, not falsely presented as a structural TDD gate); got:\n{implement}",
     );
+}
+
+#[test]
+fn scope_step_is_judgment_prose_not_a_hollowed_checklist() {
+    // FAIL exemplar (a), scope coverage. self-hosting.md success-bar #2 FAIL exemplar
+    // (a) names the scope step explicitly ("the scope step emits a gap-count >= N lint
+    // or a structured checklist"), but the hollowing guard above only covers gate.yaml
+    // + implement.yaml. The scope step is the milestone's primary judgment slot
+    // (restate the intent, name a done-criterion, stop-and-check the human on drift —
+    // irreducibly the agent's), so the falsifiable check must guard it too: a future
+    // edit that mechanizes scope into a scored checklist must go red here.
+    let scope = step_text("scope.yaml");
+    let scope_lc = scope.to_lowercase();
+
+    // (positive) the judgment handback is present — restate in your own words + defer to
+    // the human on scope drift. If scope were hollowed into a CLI-scored gate, this
+    // human-judgment handback would be gone.
+    assert!(
+        scope_lc.contains("your own words") && scope_lc.contains("stop and check"),
+        "scope.yaml must stay judgment prose — restate the intent in your own words and \
+         stop-and-check the human on scope drift (self-hosting.md → sort table Scope rows: \
+         irreducibly the agent's); got:\n{scope}",
+    );
+
+    // (negative) no hollowing into a gap-count / numeric-threshold lint or a scored
+    // checklist (self-hosting.md → success bar #2 FAIL exemplar (a)).
+    for forbidden in ["gap-count", "gap count", ">=", "checklist"] {
+        assert!(
+            !scope_lc.contains(forbidden),
+            "scope.yaml must not be hollowed into a structured `{forbidden}` lint/checklist \
+             — the scope judgment stays the agent's (self-hosting.md → bar #2 FAIL exemplar (a)); \
+             got:\n{scope}",
+        );
+    }
 }
 
 #[test]
