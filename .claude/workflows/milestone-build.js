@@ -69,15 +69,34 @@
 //   5. The RESUME note must state what was fixed (with the commit sha), how it was
 //      verified, and "do NOT re-diagnose" — so the re-run executor writes the test
 //      for the now-working path instead of re-halting on the same diagnosis.
+//   6. IF THE CACHE-REPLAY RESUME DOES NOT FAST-FORWARD (observed M13): a resume that
+//      should replay the committed prefix instead re-ran from the top — the first
+//      increment's planner then correctly HALTS on already-built work ("nothing left
+//      to cut"). Don't fight it. Use the DETERMINISTIC, cache-independent path instead:
+//      (a) if the halted increment is only PARTLY done, finish its remaining tasks on
+//      `main` with direct `build-executor` subagents (Agent tool) + one `increment-
+//      validator`, exactly as the harness would — bringing that increment to fully-
+//      built + validated-clean; (b) then re-invoke a FRESH run (NO resumeFromRunId)
+//      with `args.skipThrough: <highest fully-done+validated increment>`. The harness
+//      skips the done prefix (no re-plan, so no spurious already-built halt) and builds
+//      only the remainder; the audit still diffs from `base` (whole milestone). This
+//      needs NO script surgery and does not depend on the agent-call cache at all.
+//      Prefer steps 1–5 when the cache cooperates (cheaper); fall back to 6 when it
+//      doesn't (reliable).
 //
 // Usage:  Workflow({ name: 'milestone-build', args: { milestone: 'M3', base: '<sha>' } })
 //   milestone — the roadmap milestone id whose decomposition to build (e.g. 'M3').
 //   base      — the commit immediately before this milestone's first increment,
 //               used as the audit diff base. Optional; omit and the auditors find it.
+//   skipThrough — OPTIONAL deterministic resume (note 6): the highest increment number
+//               already built + independently validated CLEAN on `main`. The harness
+//               skips increments 1..skipThrough and starts at skipThrough+1; the audit
+//               still covers the whole milestone via `base`. Use a fresh run (no
+//               resumeFromRunId). Default 0 (build everything).
 
 export const meta = {
   name: 'milestone-build',
-  description: 'Build a whole milestone from its roadmap decomposition: per increment plan -> execute (one agent/task) -> validate -> fix (bounded 3 rounds); then the milestone-completion audit. Args: { milestone, base }.',
+  description: 'Build a whole milestone from its roadmap decomposition: per increment plan -> execute (one agent/task) -> validate -> fix (bounded 3 rounds); then the milestone-completion audit. Args: { milestone, base, skipThrough? }.',
   phases: [
     { title: 'Read milestone' },
     { title: 'Build increments' },
@@ -91,6 +110,13 @@ export const meta = {
 const a = typeof args === 'string' ? { milestone: args } : (args || {})
 const milestone = a.milestone ? String(a.milestone) : 'the next milestone'
 const base = a.base ? String(a.base) : null
+// skipThrough — the deterministic, cache-independent resume (see RESUMING note 6).
+// The highest increment number ALREADY built AND independently validated CLEAN on
+// `main`; the harness skips plan/execute/validate for increments 1..skipThrough and
+// starts real work at skipThrough+1. The audit still diffs from `base` (whole
+// milestone). Use a FRESH run (no resumeFromRunId) — this path does not rely on the
+// agent-call cache at all, so it is immune to a cache-replay that won't fast-forward.
+const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 
 // ---- structured-output schemas ----
 const INCREMENTS_SCHEMA = {
@@ -290,6 +316,14 @@ let halted = null
 const incrementReports = []
 for (const inc of increments) {
   phase('Build increments')
+
+  // Deterministic resume: skip increments already built + validated CLEAN on `main`
+  // (see RESUMING note 6). Cache-independent — the skipped increments never re-plan,
+  // so the planner can't halt on already-built work.
+  if (skipThrough && inc.n <= skipThrough) {
+    log('Increment ' + inc.n + ' — already built + validated on main; skipping (skipThrough=' + skipThrough + ').')
+    continue
+  }
 
   log('Increment ' + inc.n + ' — planning (' + inc.title + ')')
   const plan = await agentR(planPrompt(inc), { label: 'plan:inc' + inc.n, phase: 'Build increments', agentType: 'build-planner', schema: PLAN_SCHEMA })
