@@ -954,3 +954,72 @@ $ git log --oneline -1
 4. **The working docs stay plain markdown (the M13 seam holds).** The encoded dev-workflow only **reads** project/methodology docs at fixed paths; it authors **no** managed methodology doctype and places **no** jigc write into the roadmap/ledger/decisions-log. (If a faithful dogfood had needed the Scope step to mechanically consume a *managed* deferral-ledger, that one doctype would promote into M12 — it did not; the dev-workflow only reads.)
 5. **The doc↔code probe is gated off, honestly.** The methodology pack ships **no `code-anchor`** field, so the M10 `doc-code` probe never fires — correct, since it is Rust-grammar-only and would false-block on a TypeScript project. A dogfood that wanted to *prove* doc↔code on a foreign project is out of the reduced slice's scope (named, not attempted).
 6. **Realistic project, not a jigc-shaped toy.** The dogfood runs on a **real, unlike-jigc** project (a TypeScript monorepo) so jigc-shaped gates can't flatter a jigc-shaped target — the portability test the methodology pack exists to pass. The original project is **never modified** (the run is on a `/tmp` copy).
+
+## 16. arch-doc↔code — architecture prose validated against the code it describes (M13)
+
+The M13 acceptance: **the richest doc↔code case activates** — a task documents a part of jigc's *own* (Rust) architecture as an `arch-doc`, and `finalize` blocks when a documented component's symbol has vanished. This is the doctype-starting-set terminus (`arch-doc` is the last unbuilt member — [doctype-map.md](../implementation/doctype-map.md)) and M10's `doc-code` differentiator turned on its hardest target: unlike `adr` (one header `cites-code`) or `spec` (one `maps-to-test` per criterion), an `arch-doc` carries **one `implemented-by` anchor per component** — a *repeatable*-item code-anchor — so the proof is **per-item disambiguation**: each component's anchor must resolve against *its own* authored value, never a clobbered shared one. The new engine concept is the per-field-type predicate **`check:` selector** (position no longer chooses the `doc-code` predicate, since a repeatable `components` anchor wants `symbol-exists`, not `criterion-maps-to-test`); the new edge is `arch-doc —cites→ adr` (n→n, header-level). The design of record is [architecture-documentation.md](architecture-documentation.md) → The acceptance flow; the workflow, schema, `check:` selector, and item-scoped setters live there and are not restated here. Notation illustrative; the flow below is the shape the acceptance test ([arch-doc↔code](architecture-documentation.md#the-acceptance-flow-flow-16--the-bar)) drives end-to-end through the built binary against the real `doc-code` subprocess.
+
+### Setup — a committed `adr` for the `cites` edge to resolve against
+
+```text
+# author + finalize the decision the PASS half will cite (its canonical decisions/ home):
+$ jigc start --workflow plan "record the cache decision"      # (or any workflow with the adr create-gate)
+$ jigc doc create adr --title "Use a cache" --task <plan-id>
+$ jigc doc set-slot "adr:use-a-cache#context"      --from-file - --task <plan-id>
+$ jigc doc set-slot "adr:use-a-cache#consequences" --from-file - --task <plan-id>
+$ jigc task finalize <plan-id>                                # → decisions/use-a-cache.md
+```
+
+### The walk — author two components, block on a vanished symbol + a dangling cite, fix → one commit
+
+```text
+$ jigc start --workflow architecture-documentation "document the index layer"
+$ jigc doc create arch-doc --title "Index layer" --task <id>          # mints arch-doc:index-layer (bound task.arch-doc)
+$ jigc doc set-slot  "arch-doc:index-layer#overview" --from-file - --task <id>
+
+# the doc-level n→n cites — pointed (for now) at a NON-EXISTENT adr:
+$ jigc doc set-field "arch-doc:index-layer#cites" --value "adr:no-such-decision" --task <id>
+
+# per component: add-item materializes the ## Components home, then set the leaves.
+# the FIRST add-item materializes `## Components` at its schema-ordered position (after ## Overview).
+$ jigc doc add-item  "arch-doc:index-layer#components" --title "Edge index"     --task <id>   # → #components/edge-index
+$ jigc doc set-slot  "arch-doc:index-layer#components/edge-index/description"   --from-file - --task <id>
+$ jigc doc set-field "arch-doc:index-layer#components/edge-index/implemented-by" \
+        --value "crates/engine/src/index.rs#rebuild_committed" --task <id>
+$ jigc doc add-item  "arch-doc:index-layer#components" --title "Target surface" --task <id>   # → #components/target-surface
+$ jigc doc set-slot  "arch-doc:index-layer#components/target-surface/description" --from-file - --task <id>
+$ jigc doc set-field "arch-doc:index-layer#components/target-surface/implemented-by" \
+        --value "crates/engine/src/target_surface.rs#collect_repeatable" --task <id>
+#  two DIFFERENT, independently-resolving anchors — the per-item disambiguation fixture.
+
+# the agent deletes/renames component A's symbol (rebuild_committed) while B's (collect_repeatable) stays valid:
+$ jigc --format json task finalize <id>
+  ✗ doc-code · symbol-exists · blocking
+    location.address: arch-doc:index-layer#components/edge-index/implemented-by      ← A's item address, NOT B's
+    message:          `crates/engine/src/index.rs#rebuild_committed` resolves to no symbol in the working tree
+  ✗ schema-conformance · ref-resolves · blocking
+    target:  arch-doc:index-layer#cites → adr:no-such-decision    ← the dangling cite
+  finalize blocked — HEAD unchanged, nothing promoted.
+```
+
+The `symbol-exists` block naming **A's** address while **B's** anchor (un-deleted) stays silent is the per-item disambiguation proof: were the item-leaf setters clobbering one shared value, B's deletion-free anchor could not stay green while A's named-and-deleted one blocks. Now fix both — restore A's symbol (or re-point its anchor) and re-point `cites` at the committed adr:
+
+```text
+$ jigc doc set-field "arch-doc:index-layer#cites" --value "adr:use-a-cache" --task <id>
+# … A's symbol is back in the working tree …
+$ jigc task finalize <id>
+  ✓ doc-code · symbol-exists   (edge-index, target-surface both resolve)
+  ✓ schema-conformance · ref-resolves   (cites → adr:use-a-cache resolves)
+  → one docs(arch-doc): commit lands; arch-doc:index-layer promotes to architecture/index-layer.md.
+$ git log --oneline -1
+  docs(arch-doc): document the index layer        ← exactly one commit; the doc at the fourth location:
+```
+
+### What it asserts (the acceptance bar)
+
+1. **The blocking case is the proof, named to A's item address.** `finalize` **blocks** on `doc-code.symbol-exists` for component A's *vanished* anchor while component B's *present* anchor stays silent, and the rendered report's `location.address` is **A's** item address (`#components/edge-index/implemented-by`), **never** B's — the per-item disambiguation proof over a repeatable-item anchor (hardening #5: the two-component A-deleted-B-valid fixture is what forces it; a single-component or clobbered fixture proves nothing). A happy-path-only acceptance is rejected as masking — the **block** direction is the mandated half (the PASS for one present item anchor is already proven at increment 4).
+2. **The `## Components` home materializes schema-ordered.** The first `add-item` materializes `## Components` at its schema-ordered position (after `## Overview`) — the create→first-`add-item` path the engine has not produced before, asserted as a named check (T1) so the snapshot-spawn over a repeatable item rides a correctly-placed section.
+3. **The first real finalize snapshot-spawn over a repeatable-item anchor.** The orchestrator that writes the `doc-code` snapshot and spawns the subprocess during `finalize` — golden-tested for shape but unexercised for an *item* anchor until now ([architecture-documentation.md](architecture-documentation.md) → Honest caveats) — is exercised end-to-end against the real Rust-grammar probe, the anchors pointed at jigc's own codebase (sidestepping the probe's Rust-only limit cleanly, as for M12).
+4. **The n→n `cites` edge walks at finalize.** A **dangling** `cites` target blocks `finalize` on `schema-conformance.ref-resolves` (the proven `supersedes`/`implements` walk, now for the M13 edge); re-pointing it at a committed `adr` passes. The block names the dangling target.
+5. **The `check:` selector is real, both predicates preserved.** The repeatable `components` anchor gets `symbol-exists` (not the test predicate) via the explicit per-field-type `check:` selector, while `spec.criteria/maps-to-test` keeps `criterion-maps-to-test` — both flows (13 and 16) are the selector increment's green-bar, not flow 16 alone ([architecture-documentation.md](architecture-documentation.md#the-per-field-type-predicate-selector-check--the-m13-engine-concept)).
+6. **Fix → exactly one commit at a fourth `location:`.** After fixing both blocks, `finalize` lands **exactly one** `docs(arch-doc):` commit (code-less promotion via the generic `plan_promotions` loop), promotes the doc to `architecture/index-layer.md` (the fourth managed `location:`, joining `decisions/`/`specs/`/`prds/`), and cleans the working area.
