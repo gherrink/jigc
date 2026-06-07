@@ -9,11 +9,14 @@
 //! catalog) and hand them to the engine's [`Description::assemble`] whole-menu
 //! projection assembler (`design/introspection.md` → Command surface).
 //!
-//! Read-only by construction: it locates, reads the embedded pack, and assembles —
-//! it composes nothing, mints nothing, and writes nothing. Cascade reflection
-//! (reading workflow/doctype prose through the project layer) is a later increment;
-//! M11 reads pack-only, so the project layer is required only as the "is this
-//! project set up" gate, exactly as `jigc ingest` requires it.
+//! Read-only by construction: it locates, reads the cascade-resolved definitions,
+//! and assembles — it composes nothing, mints nothing, and writes nothing. The
+//! definition reads route through the resolved cascade ([`CascadeDefs`]), so a
+//! project whole-file shadow of a workflow/doctype wins on the projection exactly as
+//! it wins on compose: describe **reflects the resolved cascade** and cannot drift
+//! from it (`overrides.md` → Authored metadata on a definition resolves by whole-file
+//! shadow; `worked-examples.md` → flow 14). The project layer is also the "is this
+//! project set up" setup gate, exactly as `jigc ingest` requires it.
 
 use anyhow::{Context, Result, bail};
 use std::path::{Path, PathBuf};
@@ -25,24 +28,33 @@ use engine::packsource::{PackResourceKind, PackSource};
 use engine::schema::Schema;
 
 use crate::pack::make_pack;
-use crate::start::load_catalog;
+use crate::start::{CascadeDefs, load_catalog, resolve_severity_cascade};
 
 /// Assemble the whole-menu [`Description`] projection for the repo `describe` is run
-/// from — **pack-only**. Locates the repo + project layer (the setup gate), reads
-/// the embedded pack's unfiltered workflows + all doctypes + the command catalog,
-/// and runs the engine's [`Description::assemble`]. Presentation-free — the dispatch
-/// maps the result to the free-prose surface via `Format → render`.
+/// from — **through the resolved cascade**. Locates the repo + project layer (the
+/// setup gate), resolves the cascade, reads the unfiltered workflows + all doctypes
+/// **layer-aware** (a project whole-file shadow wins) + the command catalog, and runs
+/// the engine's [`Description::assemble`]. Presentation-free — the dispatch maps the
+/// result to the free-prose surface via `Format → render`.
 pub(crate) fn run(cwd: &Path) -> Result<Description> {
-    require_project_layer(cwd)?;
+    let repo_root = require_project_layer(cwd)?;
+    let project_config = repo_root.join(".jigc").join("config");
     let pack = make_pack();
     let pack = pack.as_ref();
 
+    // The resolved cascade's by-id `file_owner` surface is what makes the projection
+    // cascade-reflecting: it routes each definition read to the highest-precedence
+    // layer that owns the id (a project `workflows/`/`schemas/` shadow wins at file
+    // granularity, no field-merge).
+    let resolved = resolve_severity_cascade(pack, &project_config)?;
+    let defs = CascadeDefs::new(&resolved, &project_config);
+
     // The unfiltered workflow set — every workflow, not the `creates-task &&
     // selectable` catalog (`introspection.md` → enumeration is over the unfiltered
-    // set). Each id paired with its parsed definition, so the assembler reads the
-    // authored `description:` / `usage:` fields.
-    let workflows: Vec<(String, WorkflowDef)> = load_workflow_defs(pack)?;
-    let schemas: Vec<Schema> = load_schemas(pack)?;
+    // set). Each id paired with its cascade-resolved definition, so the assembler
+    // reads the authored `description:` / `usage:` fields the resolved layer carries.
+    let workflows: Vec<(String, WorkflowDef)> = load_workflow_defs(pack, &defs)?;
+    let schemas: Vec<Schema> = load_schemas(pack, &defs)?;
     let catalog = load_catalog(pack)?;
 
     Ok(Description::assemble(
@@ -52,34 +64,28 @@ pub(crate) fn run(cwd: &Path) -> Result<Description> {
     ))
 }
 
-/// Load every shipped workflow definition from the embedded pack — the **unfiltered**
-/// set (every workflow id the pack lists, parsed for its front-matter). The assembler
-/// skips any that carry neither authored field, so no filtering happens here.
-fn load_workflow_defs(pack: &dyn PackSource) -> Result<Vec<(String, WorkflowDef)>> {
+/// Load every workflow definition through the cascade — the **unfiltered** set (every
+/// workflow id the pack lists, read layer-aware via [`CascadeDefs::read_workflow`] so
+/// a project shadow wins, then parsed for its front-matter). The assembler skips any
+/// that carry neither authored field, so no filtering happens here.
+fn load_workflow_defs(
+    pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
+) -> Result<Vec<(String, WorkflowDef)>> {
     let mut out = Vec::new();
     for id in pack.list(PackResourceKind::Workflows) {
-        let bytes = pack
-            .read(PackResourceKind::Workflows, &id)
-            .with_context(|| format!("the `{}` workflow reads back", id.as_str()))?;
+        let bytes = defs.read_workflow(pack, id.as_str())?;
         let def = load_workflow_def(&bytes).map_err(finding_to_err)?;
         out.push((id.as_str().to_owned(), def));
     }
     Ok(out)
 }
 
-/// Load every shipped doctype schema from the embedded pack — the full doctype set
-/// the projection narrates (the engine stays domain-empty; the CLI feeds the pack in).
-fn load_schemas(pack: &dyn PackSource) -> Result<Vec<Schema>> {
-    let mut out = Vec::new();
-    for id in pack.list(PackResourceKind::Schemas) {
-        let bytes = pack
-            .read(PackResourceKind::Schemas, &id)
-            .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-        let schema = crate::pack::load_pack_schema(pack, &bytes)
-            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
-        out.push(schema);
-    }
-    Ok(out)
+/// Load every doctype schema through the cascade — the full doctype set the projection
+/// narrates, read layer-aware via [`CascadeDefs::all_schemas`] so a project shadow
+/// wins (the engine stays domain-empty; the CLI feeds the cascade-resolved pack in).
+fn load_schemas(pack: &dyn PackSource, defs: &CascadeDefs<'_>) -> Result<Vec<Schema>> {
+    Ok(defs.all_schemas(pack)?.into_values().collect())
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the same setup gate
@@ -113,4 +119,141 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
         .map(|r| format!("\n  route: {r}"))
         .unwrap_or_default();
     anyhow::anyhow!("{}{route}", finding.message)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// A throwaway directory that removes itself on drop.
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            let unique = format!(
+                "jigc-describe-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            );
+            path.push(unique);
+            fs::create_dir_all(&path).expect("create temp dir");
+            TempDir(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// Mark `root` as a git repo + project layer — the setup gate `run` requires.
+    /// Returns the `.jigc/config/` project layer dir the shadows are authored under.
+    fn set_up_repo(root: &Path) -> PathBuf {
+        fs::create_dir_all(root.join(".git")).expect("create .git marker");
+        let config = root.join(".jigc").join("config");
+        fs::create_dir_all(&config).expect("create project layer");
+        config
+    }
+
+    /// The prose narrating a given definition id, or `None` if it is not narrated.
+    fn prose_for<'a>(description: &'a Description, id: &str) -> Option<&'a str> {
+        description
+            .definitions
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| d.prose.as_str())
+    }
+
+    /// T3 done-criterion — a project `workflows/single-task.yaml` whole-file shadow
+    /// carrying an edited `usage:` wins on the describe projection: the narration for
+    /// `single-task` carries the PROJECT prose and NOT the pack prose, while another
+    /// shipped definition (`adr`) still narrates its PACK prose unchanged. The
+    /// override CHANGED the output — a "describe mentions single-task" assertion would
+    /// be masking; what is asserted is the project string in and the pack string out.
+    #[test]
+    fn describe_reflects_the_project_workflow_shadow() {
+        let repo = TempDir::new("shadow");
+        let project_config = set_up_repo(repo.path());
+
+        // The verbatim pack `usage:` clause for single-task — the string that must be
+        // GONE once the project shadow wins.
+        let pack_usage = "the work is one coherent change you can hold in your head";
+        // The project shadow's edited `usage:` — the string that must APPEAR.
+        let project_usage = "you want to prove the cascade visibly reflects in describe";
+
+        let workflows = project_config.join("workflows");
+        fs::create_dir_all(&workflows).expect("mk workflows shadow dir");
+        fs::write(
+            workflows.join("single-task.yaml"),
+            format!(
+                "---\nwhen: a scoped change\ndescription: An end-to-end scoped change.\nusage: {project_usage}\ncreates-task: true\n---\n{{{{ include: step:noop }}}}\n"
+            ),
+        )
+        .expect("write workflow shadow");
+
+        let description = run(repo.path()).expect("describe runs over the shadowed cascade");
+
+        let single_task = prose_for(&description, "single-task")
+            .expect("single-task is still narrated through the cascade");
+        assert!(
+            single_task.contains(project_usage),
+            "the project shadow's usage must win in the projection; got: {single_task:?}"
+        );
+        assert!(
+            !single_task.contains(pack_usage),
+            "the pack usage must NOT survive once the project shadows the definition (whole-file replace); got: {single_task:?}"
+        );
+
+        // An unshadowed definition keeps its pack prose — the shadow is inert for ids
+        // the project does not own.
+        let adr = prose_for(&description, "adr").expect("adr is narrated from the pack");
+        assert!(
+            adr.contains("dated architectural decision record"),
+            "the unshadowed adr doctype must keep its pack prose; got: {adr:?}"
+        );
+    }
+
+    /// A both-fields-absent project shadow leaves that definition NOT narrated:
+    /// skip-on-absent holds THROUGH the cascade (the resolved definition is what the
+    /// assembler reads, so a shadow that strips both authored fields removes the
+    /// narration the pack definition would have produced).
+    #[test]
+    fn describe_skip_on_absent_holds_through_the_shadow() {
+        let repo = TempDir::new("absent");
+        let project_config = set_up_repo(repo.path());
+
+        let workflows = project_config.join("workflows");
+        fs::create_dir_all(&workflows).expect("mk workflows shadow dir");
+        // A whole-file shadow with NEITHER authored field — the resolved single-task
+        // carries no description/usage, so the assembler skips it.
+        fs::write(
+            workflows.join("single-task.yaml"),
+            "---\nwhen: a scoped change\ncreates-task: true\n---\n{{ include: step:noop }}\n",
+        )
+        .expect("write field-stripped shadow");
+
+        let description = run(repo.path()).expect("describe runs over the stripped shadow");
+
+        assert!(
+            prose_for(&description, "single-task").is_none(),
+            "a both-fields-absent shadow must leave single-task un-narrated (skip-on-absent through the cascade)",
+        );
+        // The pack-prose proof: an unshadowed definition is still narrated, so the
+        // skip above is the shadow's doing, not describe narrating nothing at all.
+        assert!(
+            prose_for(&description, "adr").is_some(),
+            "an unshadowed definition is still narrated (the skip is the shadow's effect)",
+        );
+    }
 }
