@@ -184,6 +184,8 @@ Two derived conveniences, no extra source:
 - **`--template` view** — the engine renders the *blank instance* a schema produces (headings + marked slots/fields + relation notes) on demand, like the generated mermaid flow, so "what does this produce" is legible without the source being a template.
 - **Validation needs no separate declaration** — it falls out of the typed leaves + relations + the cascade: a `code-anchor` field means `doc-code` applies, a relation's `card` is enforced, severities are cascade knobs ([validation.md](validation.md)).
 
+**Authored metadata fields (M11).** A schema may carry top-level **`description`** / **`usage`** authored-prose fields (siblings of `type`/`location`/`id-from`, not inside `sections`) — the doc-type-level prose the [`describe`](introspection.md) self-description surface projects. They are a *third* prose category: not a `slot` (write-path, per-instance, LLM-filled) and not a `field` (typed leaf), but human-authored-at-definition-time usage prose, optional and skip-on-absent. Full shape and the boundary (`description` = what it *is*; `usage` = when/why to reach for it; never mechanism) in [introspection.md](introspection.md).
+
 **Overrides** target sections/leaves by ID within the file (`adr#status`); a schema-structural delta's fragment is a small YAML section declaration — the config-family counterpart to a workflow's step-file fragment ([overrides.md](overrides.md)). Notation above is illustrative — the keys are placeholders pending implementation (`id-from` is the YAML spelling of the prose *id-source*; plus `card`, `set`, `of`, `header`, `to`, `inverse`, `inverse-card`).
 
 ## Open questions

@@ -809,3 +809,78 @@ $ jigc task finalize <impl-id>
 3. **Both extension axes are real.** `code-anchor` is **pack-declared** (the dev pack supplies the type + binds `doc-code` as its adjudicator — the engine ships no pack field type), and `doc-code` is a **pack-provided subprocess probe** reached over the reshaped, serializable `Probe` seam. Asserting the floor (`adr`) + headline (`spec` criterion) exercises both a header-field anchor and a repeatable-block-leaf anchor.
 4. **Reads working-tree code + the task's effective-state docs.** The probe resolves anchors against the **working tree** (the bytes about to be committed); the docs carrying those anchors come from the task's effective state — the **bound** `spec` (committed store) and the **created** `adr` (the task's working area). The combination closes the "resolved at compose, code changed before finalize" gap by construction.
 5. **Severity tunes through the cascade.** Demoting `validation.doc-code.criterion-maps-to-test.severity: warning` makes the dangling criterion **surface but not block** (the M6 post-pass, no code change); the intrinsic `pack-probe-integrity.*` meta-findings **cannot** be demoted below blocking (floor-rejected at resolution).
+
+## 14. describe — the self-description surface (M11)
+
+The M11 acceptance: **the document model applied to jigc describing itself** — `jigc describe` projects the **resolved** definitions (`project > team > pack-default`) into discursive prose, the *menu* of what can be composed here and how it's used ([introspection.md](introspection.md)). The proof is **not** "describe prints the workflows" — a clean machine-readable list would be a *parseable catalog*, the failure M11 forbids. The two load-bearing proofs are: a **project override visibly changes the projection** (it reflects the cascade — it can't drift, generated from the same definitions that drive composition), and the output is **provably non-contractual** (discursive prose, hostile to parsing, so nothing depends on it — dissolving the "not a public API" non-goal). The new substrate is the first **human-authored prose carried on definitions** (`description:`/`usage:`) — a third prose category, neither write-path slot nor read-path placeholder. Notation illustrative; `jigc describe` is net-new, so the command spelling + output shape are pinned at the build's acceptance spike. The cascade-resolve + whole-file-shadow scaffolding is proven (à la the step shadow path); the **free-prose renderer and the format-property predicate are net-new** — order them first in the build, since the renderer's output shape *is* what the predicate (bar #2) tests.
+
+### Setup — authored prose on the real pack definitions + a project override
+
+```text
+# pack-default: the shipped dev-pack definitions carry authored description/usage
+#  crates/cli/pack/workflows/single-task.yaml  (front-matter):
+#     when: "implement one scoped change end-to-end"
+#     description: |
+#       single-task takes one well-scoped change all the way from intent to a
+#       committed result — compose, implement, validate, finalize, one commit.
+#     usage: |
+#       Reach for it when the work is a single coherent change you can hold in
+#       your head: a bug fix, one feature, a focused refactor. Not for multi-part
+#       efforts (those plan first) or trivial edits (quick-fix).
+#  crates/cli/pack/schemas/adr.yaml  (top-level, siblings of type/location):
+#     description: |
+#       An architecture decision record — one decision, its context, and consequences.
+#     usage: |
+#       Created in-task when a change embeds a decision worth keeping; later work can
+#       supersede it. Persisted to decisions/.
+
+$ jigc setup                       # fresh repo + embedded pack
+
+# project override: shadow ONE whole workflow definition at the project layer,
+# changing only its usage prose (whole-file shadow — overrides.md, no field-merge).
+#  .jigc/config/workflows/single-task.yaml  ← a full copy with an edited usage:
+#     usage: |
+#       Our house rule makes single-task the default for any change under ~200
+#       lines; anything larger goes through plan first. (project-authored)
+#   (note: authored prose must not BEGIN a line with a colon-term — see bar #2)
+```
+
+### The walk — pack-default projection, then the override changes it
+
+```text
+$ jigc describe
+  This project can compose a handful of workflows, manage a few document types,
+  and run them through jigc. Here's what's on the menu and when each is for.
+
+  Among the workflows, single-task takes one well-scoped change all the way from
+  intent to a committed result — reach for it when the work is a single coherent
+  change you can hold in your head, like a bug fix, one feature, or a focused
+  refactor, rather than a multi-part effort (those plan first) or a trivial edit
+  (quick-fix). The router helps you pick when you're unsure; quick-fix … plan …
+  implement-from-spec … milestone-execution each get their own paragraph.
+
+  The document types it manages include the adr — an architecture decision record
+  capturing one decision, its context, and consequences, which you create in-task
+  when a change embeds a decision worth keeping and later work can supersede. The
+  commit and spec types each get the same treatment.
+
+  As for commands, jigc start orients you and mints a task, jigc task finalize
+  validates and commits, and so on — the authored command-ref hints, woven in as
+  prose rather than listed.
+
+# now with the project override in place:
+$ jigc describe
+  … single-task … Our house rule makes single-task the default for any change
+  under ~200 lines; anything larger goes through plan first. …    ← project prose wins
+```
+
+The override’s prose **replaces** the pack’s for that one definition (whole-file shadow, `file_owner` picks the project layer); every other definition still shows pack-default prose. A definition that carries **no** `description:`/`usage:` is simply **not narrated** (optional, skip-on-absent — not an error).
+
+### What it asserts (the acceptance bar)
+
+1. **Cascade-reflection is the headline — proven by a visible change, not by listing.** With a project-layer **whole-file shadow** of `single-task.yaml` carrying edited `usage:`, `jigc describe` output **contains the project prose and not the pack prose** for that definition, while unshadowed definitions still show pack prose. A test that only asserts "describe mentions single-task" is rejected as masking — it must assert the *override changed the output*. The override-proof shadows a **workflow or doctype** file (the cascade-reflecting surfaces), **never a command-ref** — command-ref `hint` is projected pack-only in M11 (the catalog read path is pack-only; catalog override-deltas are unbuilt), so a hint override is *not* reflected and is not asserted. (Acceptance is `project > pack-default` only; the team layer is unfed in production.)
+2. **Non-contractual is enforced by format — a precise positive predicate, not just a snapshot.** The output (a) is **not valid JSON** and **does not parse as a top-level YAML mapping or sequence** (a bare-scalar parse is fine — prose *is* a YAML scalar); (b) has **no key-shaped line** (no line matches `^\s*[\w-]+:\s`) and **no bullet row** (`^\s*[-*]\s`) — authored prose may contain mid-line colons but must not *begin a line* with a colon-term; (c) exposes **no per-definition extractable key/delimiter** (a consumer cannot pull `single-task`'s `usage` out as a field) — *light unkeyed prose section grouping is permitted* as a non-binding reading aid; (d) meets a **prose-density floor** (reads as paragraphs). A byte-snapshot is kept *additionally* but is necessary-but-insufficient — a snapshot of a bulleted list passes a snapshot while failing this predicate. This is the M11 analogue of M10's "contract satisfied, not waived": the milestone is not built if describe emits a parseable catalog. The predicate must pass on legitimate colon-bearing prose and fail on a structured catalog — both directions are asserted.
+3. **The fields are authored-on-definitions, assembled — never generated.** describe makes **no LLM call**; the prose comes verbatim (assembled, cascade-resolved) from `description:`/`usage:` fields on the workflow/doctype definitions + the existing command-ref `hint`. Assert the rendered prose contains the authored strings.
+4. **Facts-not-advice is authoring discipline, not a CLI gate — stated honestly.** The CLI cannot mechanically tell facts from advice (the prose is human-authored), so this constraint is enforced at authoring/review, not by the binary. The acceptance asserts what the binary *can*: the projection is non-contractual and cascade-reflecting. (The shipped pack prose is itself held to facts-not-advice / usage-not-mechanism at review.)
+5. **The floor is workflows + doctypes; the stretch stayed cut.** describe projects every **workflow** (the unfiltered set — not the `creates-task && selectable` catalog) and every **doctype**, plus command-ref `hint`s. **Data-value roots are absent** (no definition substrate — cut at planning); a describe that tried to narrate `{{store.*}}` / `{{catalog}}` roots would be out of scope. `jigc describe` is **whole-menu** (no positional `describe <id>` form).
+6. **Realistic definitions, not renderer-shaped fixtures.** The acceptance authors prose on the **real shipped pack definitions** and asserts over their projection — not a fixture pack shaped to whatever the projector happens to render (the fixture-topology masking face, [increment-workflow.md](../implementation/increment-workflow.md)).

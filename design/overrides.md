@@ -229,9 +229,13 @@ These were under-specified before; locking them here:
 - **`replace`** swaps which step / section id appears at a position in the structural list. Targets the list entry, addressed by id. The replacement is **another step / section id**, not inline content — when an override layer wants to ship inline content, it ships a step / section file and references its id.
 - **`tracked-fork`** copies a unit's body into a new file at the overriding layer, recording `base-version` and `base-hash`. At compose-time it's just another shadowed file (phase 2 sees it like any other). The recorded base-hash matters only at upgrade-reconciliation time (`override-default` probe — see [Upgrade reconciliation](#upgrade-reconciliation--override-default)).
 
+### Authored metadata on a definition resolves by whole-file shadow
+
+A definition can carry **human-authored metadata prose** — a workflow's `when` hint, and (from M11) the `description:` / `usage:` fields the [`describe`](introspection.md) surface projects. These resolve through the cascade like every *other* field on the definition: by **phase-2 whole-file shadow**. The highest-precedence layer's whole definition file wins, so its metadata wins (replace at file granularity). There is **no** field-level merge of metadata across layers — to override one definition's authored prose, a project shadows that whole `workflows/<id>.yaml` / `schemas/<id>.yaml`. `describe` reading the resolved (shadowed) definitions is exactly what makes its output cascade-reflecting without any new merge mechanism. (Field-granular override of a single metadata field is a deliberately-deferred latent pressure, not built — [decisions-pending.md](../implementation/decisions-pending.md); breaking the no-field-level-merge rule for it is reserved for a recurring, real need.)
+
 ### What the algorithm does NOT do
 
-- **No partial field-level merge across layers.** A doc / step file shadows or it doesn't. The granularity for "change this one thing" is a `scalar-set` (knob) or `structural-op` (insert / replace / remove); never an implicit YAML-deep-merge.
+- **No partial field-level merge across layers.** A doc / step file shadows or it doesn't. The granularity for "change this one thing" is a `scalar-set` (knob) or `structural-op` (insert / replace / remove); never an implicit YAML-deep-merge. (Authored *metadata* prose on a definition — `when`, `description:`, `usage:` — is no exception: it rides whole-file shadow, above.)
 - **No expansion before delta application.** Phases 4–5 always precede phase 7.
 - **No silent cycle handling.** Phase 6 surfaces a cycle as a `workflow-refs` finding; cycles are never broken automatically.
 - **No LLM call.** The algorithm is deterministic — same `(files + deltas)` in, same composition tree out ([VISION.md](../VISION.md) principle #1).

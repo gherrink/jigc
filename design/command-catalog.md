@@ -25,7 +25,7 @@ A catalog is a YAML list of command-refs, one entry per `id`. Each entry:
   command: <string>       # the executable (typically `jigc`)
   args: [<arg>, …]        # ordered list; each arg is literal, from:, or agent:
   stdin: <string>         # optional; documents what stdin carries (renderer ignores)
-  hint: <string>          # one-line documentation surfaced via `--explain` and catalog tooling
+  hint: <string>          # one-line authored documentation of the command-ref; projected by `jigc describe` (M11, its first consumer)
 ```
 
 ### The three arg kinds
