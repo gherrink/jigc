@@ -2734,3 +2734,11 @@ Shipped `DocCommand::AddItem` + `run_add_item` (`crates/cli/src/doc.rs`) cloning
 
 - **Parity gap honored (pinned, not reopened).** Item-leaf field writes carry **no** value-type / heading-ceiling adjudication — a one-line code comment marks the branch; the section-level path keeps its `set_field_validated` gate.
 - Red→green e2e (`crates/cli/tests/doc_write.rs`): `set_slot_and_field_target_the_addressed_item_leaf` — `plan` task → `create spec` → two `add-item`s (A, B) → set the targeted item's `statement` slot + `maps-to-test` field through the binary, asserting (a) the target's leaves are the new values, (b) the sibling's identically-keyed leaves stay untouched (disambiguation through the binary), (c) `render(parse(staged)) == staged` (the mint-empty seam, now byte-stable per the prior fix); run in **both directions** (target B, then A). Full suite green.
+
+## 2026-06-07 — M13 Increment 3 / T3 shipped: end-to-end byte-stable item authoring on the shipped `spec`
+
+**The composed arc proves the repeatable-item surface end-to-end — the long-deferred `spec.criteria` authoring deferral is retired.** M3 left `spec` criteria un-authorable through the binary (`add-from-spec` only *read* them — [decisions-pending.md](implementation/decisions-pending.md)); T1 (`add-item`) + T2 (item-leaf addressing) close it, and T3 is the mandated acceptance on **shipped pack content only** (`spec` doctype + `plan` workflow, no test-only fixture pack).
+
+- New e2e `crates/cli/tests/item_authoring_acceptance.rs` (`item_authoring_arc_on_spec_is_byte_stable_through_the_binary`): `jigc start --workflow plan` → `jigc doc create spec` → `add-item spec:auth-flow#criteria --title …` (×2, two distinct criteria) → per item `set-slot …/statement` + `set-field …/maps-to-test`.
+- **Emitted-bytes-executed-as-emitted (hardening #4):** each `add-item`s minted item-address line is **captured from stdout and run verbatim** as the next `set-*` addr — never reconstructed in test code. Confirmed load-bearing by a momentary mutation (corrupting the emitted slug fails the downstream `set-slot` with `write.not-present`).
+- Asserts each item's leaves resolve to **its own** authored bytes (per-item disambiguation through the binary) and the final staged `spec` is canonical (`render(parse(staged)) == staged`). Gate green (fmt · clippy · full test suite · build).
