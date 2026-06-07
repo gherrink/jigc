@@ -91,8 +91,9 @@ const base = args && args.base ? String(args.base) : null
 // ---- structured-output schemas ----
 const INCREMENTS_SCHEMA = {
   type: 'object',
-  required: ['increments'],
+  required: ['milestone', 'increments'],
   properties: {
+    milestone: { type: 'string', description: 'the canonical milestone id this decomposition belongs to, e.g. "M11" — resolved from the roadmap decomposition heading, even when the request said "the next milestone"' },
     increments: {
       type: 'array',
       items: {
@@ -270,12 +271,15 @@ async function agentR(prompt, opts) {
 // ---- read the milestone's increments from the roadmap ----
 phase('Read milestone')
 log('Reading ' + milestone + ' increment decomposition from implementation/roadmap.md')
-const read = await agentR('Enumerate the ordered increments of milestone "' + milestone + '" from implementation/roadmap.md.', { label: 'read:' + milestone, phase: 'Read milestone', agentType: 'milestone-reader', schema: INCREMENTS_SCHEMA })
+const read = await agentR('Enumerate the ordered increments of milestone "' + milestone + '" from implementation/roadmap.md. If the request is "the next milestone", resolve it to the next milestone whose decomposition is present but status is planned-not-built, and return its canonical id (e.g. "M11") in the `milestone` field.', { label: 'read:' + milestone, phase: 'Read milestone', agentType: 'milestone-reader', schema: INCREMENTS_SCHEMA })
 const increments = read && read.increments ? read.increments : []
+// The id the reader actually resolved — so the result names what was built even
+// when the caller passed no args and the workflow auto-selected the next milestone.
+const builtMilestone = read && read.milestone ? String(read.milestone) : milestone
 if (increments.length === 0) {
   return { status: 'halted', halted: { phase: 'read', reason: 'no roadmap decomposition for ' + milestone + ' — run the milestone-planning workflow first.' }, note: read ? read.note : null }
 }
-log(milestone + ' has ' + increments.length + ' increment(s): ' + increments.map((i) => 'I' + i.n).join(', '))
+log(builtMilestone + ' has ' + increments.length + ' increment(s): ' + increments.map((i) => 'I' + i.n).join(', '))
 
 // ---- per increment: plan -> execute(per task) -> validate -> fix(bounded 3) ----
 let halted = null
@@ -325,7 +329,7 @@ for (const inc of increments) {
 }
 
 if (halted) {
-  return { status: 'halted', halted, message: milestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.', incrementReports }
+  return { status: 'halted', halted, message: builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.', milestone: builtMilestone, incrementReports }
 }
 
 // ---- milestone-completion audit (independent, adversarial, parallel) ----
@@ -339,8 +343,8 @@ const audit = await parallel([
 
 return {
   status: 'built-and-audited',
-  message: milestone + ' fully built and independently validated clean. Milestone-completion audit complete — findings are for human TRIAGE (the human-in-the-loop gate); fixes + re-verify run after triage.',
-  milestone,
+  message: builtMilestone + ' fully built and independently validated clean. Milestone-completion audit complete — fix-now is the default (the dev-workflow gate per finding); the human gate fires only for too-big (→ its own increment) or contested (→ would revise a settled decision) findings.',
+  milestone: builtMilestone,
   base,
   incrementReports,
   audit: { code_review: audit[0], e2e: audit[1] },
