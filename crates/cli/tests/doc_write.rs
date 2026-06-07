@@ -369,6 +369,140 @@ fn add_item_mints_a_repeatable_item_byte_stable() {
     );
 }
 
+/// Item-leaf addressing (M13 Increment 3 / T2): `set-slot`/`set-field` on an
+/// item-scoped leaf (`spec:<slug>#<section>/<item>/<leaf>`) splices **that item's**
+/// leaf, disambiguating between two items that carry identically-keyed leaves —
+/// through the real binary. Two criteria items A + B are minted; B's `statement`
+/// slot + `maps-to-test` field are set; the assertions prove (a) B's leaves are
+/// exactly the new values, (b) A's identically-keyed leaves are byte-for-byte
+/// untouched, (c) the whole authored doc round-trips `render(parse(staged)) ==
+/// staged` (the mint-empty byte-stability the engine seam now holds). The inverse
+/// (targeting A) closes the disambiguation in both directions.
+#[test]
+fn set_slot_and_field_target_the_addressed_item_leaf() {
+    for target_is_b in [true, false] {
+        let (repo, home) = started_repo_on("plan", "plan the auth flow");
+        let task = "plan-the-auth-flow";
+
+        let created = run_doc(
+            repo.path(),
+            home.path(),
+            &["create", "spec", "--title", "Auth flow"],
+            None,
+        );
+        assert!(
+            created.status.success(),
+            "`jigc doc create spec` must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
+
+        // Two criteria items A + B (each carries a `statement` slot + a `maps-to-test`
+        // field — identically-keyed leaves the item hop must disambiguate).
+        for title in ["Criterion A", "Criterion B"] {
+            let out = run_doc(
+                repo.path(),
+                home.path(),
+                &["add-item", "spec:auth-flow#criteria", "--title", title],
+                None,
+            );
+            assert!(
+                out.status.success(),
+                "`jigc doc add-item {title}` must exit 0; stderr:\n{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+
+        // The targeted item + the untouched sibling.
+        let (target, other) = if target_is_b {
+            ("criterion-b", "criterion-a")
+        } else {
+            ("criterion-a", "criterion-b")
+        };
+        let statement = b"The targeted item's statement, set through the item hop.\n";
+        let anchor = "`crates/x.rs#f`";
+
+        // set-slot on the targeted item's `statement` leaf.
+        let slot = run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-slot",
+                &format!("spec:auth-flow#criteria/{target}/statement"),
+                "--from-file",
+                "-",
+            ],
+            Some(statement),
+        );
+        assert!(
+            slot.status.success(),
+            "`set-slot` on an item leaf must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&slot.stderr)
+        );
+
+        // set-field on the targeted item's `maps-to-test` leaf.
+        let field = run_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-field",
+                &format!("spec:auth-flow#criteria/{target}/maps-to-test"),
+                "--value",
+                anchor,
+            ],
+            None,
+        );
+        assert!(
+            field.status.success(),
+            "`set-field` on an item leaf must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&field.stderr)
+        );
+
+        let staged = staged_spec(repo.path(), task, "auth-flow");
+
+        // (a) The targeted item carries exactly the new leaf values.
+        assert!(
+            staged.contains("The targeted item's statement, set through the item hop."),
+            "the targeted item's `statement` slot carries the new prose; got:\n{staged}"
+        );
+        assert!(
+            staged.contains("maps-to-test: `crates/x.rs#f`"),
+            "the targeted item's `maps-to-test` field carries the new value; got:\n{staged}"
+        );
+
+        // (b) The untouched sibling's identically-keyed leaves stay byte-for-byte the
+        // mint-empty form (no statement prose, no maps-to-test value leaked across).
+        let schema = spec_schema();
+        let parsed =
+            engine::write::instance_from_source(&schema, &staged).expect("staged spec re-parses");
+        let crit = parsed
+            .sections
+            .iter()
+            .find(|s| s.id == "criteria")
+            .expect("criteria section");
+        let other_item = crit
+            .items
+            .iter()
+            .find(|i| i.id == other)
+            .unwrap_or_else(|| panic!("sibling item {other} present"));
+        assert!(
+            other_item.slot.as_deref().unwrap_or("").trim().is_empty(),
+            "the sibling item's `statement` slot stays empty (item hop disambiguated); got:\n{staged}"
+        );
+        assert!(
+            !other_item.fields.iter().any(|f| f.key == "maps-to-test"),
+            "the sibling item carries no `maps-to-test` (the field did not leak); got:\n{staged}"
+        );
+
+        // (c) The whole authored doc round-trips byte-for-byte (the mint-empty seam
+        // the engine now holds — render(parse(staged)) == staged).
+        let rerendered = engine::write::render(&schema, &parsed);
+        assert_eq!(
+            rerendered, staged,
+            "the item-leaf-authored spec is byte-stable across parse → render",
+        );
+    }
+}
+
 #[test]
 fn add_item_into_a_non_repeatable_section_blocks_with_a_routed_finding() {
     let (repo, home) = started_repo_on("plan", "plan the auth flow");

@@ -24,7 +24,9 @@ use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{Schema, SectionBody};
 use engine::state;
-use engine::write::{set_field_validated, set_slot_validated};
+use engine::write::{
+    set_field_validated, set_item_field_or_insert, set_item_slot, set_slot_validated,
+};
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
@@ -164,20 +166,35 @@ fn run_set_field(
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let (section_id, field_key) = field_target(&schema, &address)
+    let target = field_target(&schema, &address)
         .with_context(|| format!("no field addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let edited = set_field_validated(
-        &schema,
-        &source,
-        &section_id,
-        &field_key,
-        &Value::Scalar(value.to_string()),
-    )
-    .map_err(|f| block(&f, "set-field", addr))?;
+    let edited = match target {
+        FieldTarget::Section { section, field } => set_field_validated(
+            &schema,
+            &source,
+            &section,
+            &field,
+            &Value::Scalar(value.to_string()),
+        )
+        .map_err(|f| block(&f, "set-field", addr))?,
+        FieldTarget::Item {
+            section,
+            item,
+            field,
+        } => set_item_field_or_insert(&schema, &source, &section, &item, &field, value).map_err(
+            |e| {
+                block(
+                    &engine::write::generate_error_finding(&e),
+                    "set-field",
+                    addr,
+                )
+            },
+        )?,
+    };
 
     persist(&path, &edited)?;
     Ok(())
@@ -193,7 +210,7 @@ fn run_set_slot(
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let section_id =
+    let target =
         slot_target(&schema, &address).with_context(|| format!("no slot addressed by `{addr}`"))?;
 
     let prose = read_handoff(from_file)?;
@@ -201,8 +218,14 @@ fn run_set_slot(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let edited = set_slot_validated(&schema, &source, &section_id, &prose)
-        .map_err(|f| block(&f, "set-slot", addr))?;
+    let edited = match target {
+        SlotTarget::Section(section) => set_slot_validated(&schema, &source, &section, &prose)
+            .map_err(|f| block(&f, "set-slot", addr))?,
+        SlotTarget::Item { section, item } => {
+            set_item_slot(&schema, &source, &section, &item, &prose)
+                .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?
+        }
+    };
 
     persist(&path, &edited)?;
     Ok(())
@@ -542,18 +565,39 @@ pub(crate) fn read_handoff(from_file: &str) -> Result<String> {
     }
 }
 
-/// Resolve the `(section_id, field_key)` a `set-field` address targets.
+/// The resolved destination of a `set-field` address: a **section-level** field
+/// (`(section, field)`, adjudicated via `set_field_validated`) or an **item-level**
+/// field on a repeatable item (`(section, item, field)`, spliced via
+/// `set_item_field_or_insert`). The item hop disambiguates two items that carry
+/// identically-keyed field leaves.
+enum FieldTarget {
+    Section {
+        section: String,
+        field: String,
+    },
+    Item {
+        section: String,
+        item: String,
+        field: String,
+    },
+}
+
+/// Resolve the destination a `set-field` address targets.
 ///
-/// Two address forms: the single-hop `#<field>` (the MVP worked-example surface —
-/// search every section for a field of that id) and the explicit two-hop
-/// `#<section>/<field>`.
-fn field_target(schema: &Schema, address: &Address) -> Option<(String, String)> {
+/// Three address forms: the single-hop `#<field>` (the MVP worked-example surface —
+/// search every section for a field of that id), the explicit two-hop
+/// `#<section>/<field>`, and the item-leaf three-hop `#<section>/<item>/<field>`
+/// (M13 Increment 3 — the per-item field, addressed through the item id).
+fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
     match address.fragment.as_ref()? {
         Fragment::Unit(field) => {
             let field = field.as_str();
             schema.sections.iter().find_map(|s| match &s.body {
                 SectionBody::Simple { fields, .. } if fields.iter().any(|f| f.id == field) => {
-                    Some((s.id.clone(), field.to_string()))
+                    Some(FieldTarget::Section {
+                        section: s.id.clone(),
+                        field: field.to_string(),
+                    })
                 }
                 _ => None,
             })
@@ -564,22 +608,55 @@ fn field_target(schema: &Schema, address: &Address) -> Option<(String, String)> 
                 .sections
                 .iter()
                 .find(|s| s.id == section)
-                .map(|s| (s.id.clone(), field.to_string()))
+                .map(|s| FieldTarget::Section {
+                    section: s.id.clone(),
+                    field: field.to_string(),
+                })
         }
-        _ => None,
+        // The item-leaf field hop. The CLI only extracts the `(section, item, field)`
+        // triple; the engine `set_item_field_or_insert` adjudicates shape (item/section
+        // presence). PARITY GAP (DECISIONS.md 2026-06-07): item-leaf field writes carry
+        // NO value-type / heading-ceiling adjudication — unlike the section-level
+        // `set_field_validated` path — so a malformed item-field value is not rejected here.
+        Fragment::UnitItemLeaf(section, item, field) => Some(FieldTarget::Item {
+            section: section.as_str().to_string(),
+            item: item.as_str().to_string(),
+            field: field.as_str().to_string(),
+        }),
+        // A bare item hop (`#<section>/<item>`) addresses no field leaf.
+        Fragment::UnitItem(_, _) => None,
     }
 }
 
-/// Resolve the `section_id` a `set-slot` address targets — the simple section
-/// whose id is the fragment's leading hop and which declares a `slot`.
-fn slot_target(schema: &Schema, address: &Address) -> Option<String> {
+/// The resolved destination of a `set-slot` address: a **section-level** slot
+/// (spliced via `set_slot_validated`) or an **item-level** per-item slot on a
+/// repeatable item (spliced via `set_item_slot`, addressed through the item id).
+enum SlotTarget {
+    Section(String),
+    Item { section: String, item: String },
+}
+
+/// Resolve the destination a `set-slot` address targets — the simple section whose
+/// id is the fragment's leading hop and which declares a `slot`, or the per-item
+/// slot of a repeatable item (`#<section>/<item>/<slot>`). The CLI extracts the
+/// `(section, item)` pair for the item form; the engine `set_item_slot` adjudicates
+/// item/section presence.
+fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
     let section_id = match address.fragment.as_ref()? {
         Fragment::Unit(u) => u.as_str(),
         Fragment::UnitLeaf(u, _) => u.as_str(),
+        Fragment::UnitItemLeaf(section, item, _) => {
+            return Some(SlotTarget::Item {
+                section: section.as_str().to_string(),
+                item: item.as_str().to_string(),
+            });
+        }
         _ => return None,
     };
     schema.sections.iter().find_map(|s| match &s.body {
-        SectionBody::Simple { slot: Some(_), .. } if s.id == section_id => Some(s.id.clone()),
+        SectionBody::Simple { slot: Some(_), .. } if s.id == section_id => {
+            Some(SlotTarget::Section(s.id.clone()))
+        }
         _ => None,
     })
 }
@@ -755,16 +832,20 @@ mod tests {
         let schema = load_schema(COMMIT_YAML).expect("commit.yaml loads");
 
         let canonical = parse_addr("commit:add-rate-limiter#header/implements").expect("valid");
-        assert_eq!(
-            field_target(&schema, &canonical),
-            Some(("header".to_string(), "implements".to_string())),
+        assert!(
+            matches!(
+                field_target(&schema, &canonical),
+                Some(FieldTarget::Section { section, field }) if section == "header" && field == "implements"
+            ),
             "the canonical section-qualified fragment resolves to (header, implements)",
         );
 
         let alias = parse_addr("commit:add-rate-limiter#implements").expect("valid");
-        assert_eq!(
-            field_target(&schema, &alias),
-            Some(("header".to_string(), "implements".to_string())),
+        assert!(
+            matches!(
+                field_target(&schema, &alias),
+                Some(FieldTarget::Section { section, field }) if section == "header" && field == "implements"
+            ),
             "the flat single-hop alias resolves identically",
         );
     }

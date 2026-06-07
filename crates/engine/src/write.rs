@@ -3623,7 +3623,7 @@ fn field_schema<'a>(
 }
 
 /// Render a [`SpliceError`] as the gate's blocking [`Finding`].
-fn splice_error_finding(err: &SpliceError) -> Finding {
+pub fn splice_error_finding(err: &SpliceError) -> Finding {
     let (code, message) = match err {
         SpliceError::NotPresent { what } => (
             "write.not-present",
