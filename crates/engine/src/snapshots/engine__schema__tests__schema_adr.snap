@@ -7,6 +7,8 @@ expression: json
   "type": "adr",
   "location": "decisions/",
   "id-from": "title",
+  "description": "A dated architectural decision record, capturing the context a choice was made in, the choice itself, and its consequences, with an optional link to the decision it supersedes.",
+  "usage": "Reach for it when a choice is worth preserving with its rationale, so a later reader can recover why the call was made or supersede it on the record.",
   "sections": [
     {
       "id": "status",

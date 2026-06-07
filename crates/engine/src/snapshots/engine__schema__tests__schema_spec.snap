@@ -7,6 +7,8 @@ expression: json
   "type": "spec",
   "location": "specs/",
   "id-from": "title",
+  "description": "A specification of what a task implements — its goal, its context, and a set of testably-phrased acceptance criteria.",
+  "usage": "Reach for it to pin down what a piece of work must deliver before building it, so the criteria are agreed up front and code can be checked against them.",
   "sections": [
     {
       "id": "goal",

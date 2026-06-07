@@ -1,5 +1,7 @@
 ---
 when: bring an existing repo's docs under jigc management by scanning and routing
+description: An onboarding pass that scans an existing repo's documents and routes each to a verdict for jigc management.
+usage: Reach for it when adopting jigc on a repo that already has docs, to bring them under management rather than starting fresh.
 creates-task: false
 ---
 {{ include: step:run-scan }}

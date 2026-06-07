@@ -1,5 +1,7 @@
 ---
 when: apply a small commit-only fix with no decision to record
+description: A small commit-only fix — locate, implement, and commit, with no decision record.
+usage: Reach for it when the change is a quick, low-stakes fix that needs nothing preserved beyond the commit itself.
 creates-task: true
 allows-create: []
 ---

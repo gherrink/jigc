@@ -1,5 +1,7 @@
 ---
 when: bootstrap a brand-new project by developing the idea into its first product requirements
+description: A bootstrap pass that develops a project idea into its first product requirements document and commits it.
+usage: Reach for it at the very start of a brand-new project, before any spec or code, to turn an idea into shared requirements.
 creates-task: true
 allows-create: [{type: prd, as: brief}]
 ---

@@ -299,6 +299,8 @@ mod tests {
         insta::assert_snapshot!(body, @r###"
         ---
         when: implement one scoped change end-to-end
+        description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
+        usage: Reach for it when the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
         creates-task: true
         allows-create: [{type: adr, as: decision}]
         ---
@@ -307,6 +309,70 @@ mod tests {
         {{ include: step:superseded-context }}
         {{ include: step:finalize }}
         "###);
+    }
+
+    /// The shipped dev pack authors `description:`/`usage:` on **every** workflow
+    /// and **every** doctype it ships — the M11 pack-prose deliverable
+    /// (`introspection.md` → Deliverable scope: skip-on-absent is the runtime
+    /// contract, not a license to ship an under-narrated pack). Each definition is
+    /// loaded through the **production** loader the binary uses (`load_workflow_def`
+    /// for front-matter, `load_pack_schema` for the field-type-resolving doctype
+    /// path), so this doubles as the clean real-binary pack-load proof: a typo'd
+    /// key, a mis-nested field, or a `deny_unknown_fields` violation on any of the
+    /// 9 workflows or 4 doctypes fails here. Asserts presence (`Some`), not the
+    /// prose bytes — wording is review-policed, the per-schema goldens pin the
+    /// bytes that ship.
+    #[test]
+    fn shipped_pack_narrates_every_workflow_and_doctype() {
+        let pack = EmbeddedPack::new();
+
+        let workflows = pack.list(PackResourceKind::Workflows);
+        assert_eq!(
+            workflows.len(),
+            9,
+            "the shipped pack must carry all 9 workflows; got {workflows:?}",
+        );
+        for id in &workflows {
+            let bytes = pack
+                .read(PackResourceKind::Workflows, id)
+                .unwrap_or_else(|e| panic!("workflow `{}` reads back: {e}", id.as_str()));
+            let def = engine::compose::load_workflow_def(&bytes)
+                .unwrap_or_else(|e| panic!("workflow `{}` loads: {e:?}", id.as_str()));
+            assert!(
+                def.description.is_some(),
+                "workflow `{}` must author a `description:`",
+                id.as_str(),
+            );
+            assert!(
+                def.usage.is_some(),
+                "workflow `{}` must author a `usage:`",
+                id.as_str(),
+            );
+        }
+
+        let schemas = pack.list(PackResourceKind::Schemas);
+        assert_eq!(
+            schemas.len(),
+            4,
+            "the shipped pack must carry all 4 doctypes; got {schemas:?}",
+        );
+        for id in &schemas {
+            let bytes = pack
+                .read(PackResourceKind::Schemas, id)
+                .unwrap_or_else(|e| panic!("schema `{}` reads back: {e}", id.as_str()));
+            let schema = load_pack_schema(&pack, &bytes)
+                .unwrap_or_else(|e| panic!("schema `{}` loads: {e:?}", id.as_str()));
+            assert!(
+                schema.description.is_some(),
+                "doctype `{}` must author a `description:`",
+                schema.ty,
+            );
+            assert!(
+                schema.usage.is_some(),
+                "doctype `{}` must author a `usage:`",
+                schema.ty,
+            );
+        }
     }
 
     /// list(Steps) yields the MVP step ids, sorted (the pack lists in stem

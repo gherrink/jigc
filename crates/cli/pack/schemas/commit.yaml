@@ -8,6 +8,8 @@
 # not field-slugged, so no `id-from:` — the only id-source candidate (`summary`) is a
 # slot, never a field. See DECISIONS.md 2026-05-31 → inc-4 commit schema.
 type: commit
+description: A Conventional-Commits message — a typed, scoped header over a subject line, an optional body, and trailers — rendered into the git commit rather than persisted as a repo file.
+usage: Reach for it to record what a change does and why at the moment it lands, in the form git and reviewers already read.
 
 sections:
   - id: header
