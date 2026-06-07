@@ -16,6 +16,17 @@
 // rounds at validate) stop the run and surface a structured reason — prior
 // committed work stands.
 //
+// RESUMING — RULE 0 (the M13 root cause, get this right or nothing replays): ALWAYS
+//   re-pass the SAME `args` ({ milestone, base }) on EVERY resume invocation. The
+//   agent-call cache key is a CONTENT HASH that includes each call's prompt, and the
+//   very first agent (the milestone-reader) embeds the milestone id in its prompt. Omit
+//   `args` and `args` is undefined → `milestone` defaults to 'the next milestone' → the
+//   reader's prompt changes → its hash misses the cache at call #1 → the ENTIRE prefix
+//   re-runs live (and the first increment's planner then halts on already-built work).
+//   On M13 this looked like "resume won't fast-forward"; it was actually a dropped-args
+//   cache miss. So every resume below is `Workflow({ scriptPath, args: { milestone, base },
+//   resumeFromRunId })` — args ALWAYS present. (resumeFromRunId does NOT restore args.)
+//
 // RESUMING — FIRST distinguish a HALT from an INTERRUPTION (they resume differently):
 //   - INTERRUPTION (the run was killed mid-flight — process died, session dropped):
 //     the in-flight agent() call never returned, so it is NOT cached — it is a natural
@@ -23,8 +34,9 @@
 //     DIRTY TREE (a partial write it hadn't committed, e.g. a planner's uncommitted
 //     DECISIONS entry). Before resuming: inspect `git status`, REVERT the partial/
 //     uncommitted work (the agent re-does it from a clean base), then plain-resume
-//     `Workflow({scriptPath: <snapshot>, resumeFromRunId})` — NO script surgery (the
-//     killed call cache-misses on its own; the committed prefix replays from cache).
+//     `Workflow({scriptPath: <snapshot>, args: { milestone, base }, resumeFromRunId})`
+//     (args per RULE 0) — NO script surgery (the killed call cache-misses on its own;
+//     the committed prefix replays from cache).
 //   - HALT (the run returned `{status:'halted'}` cleanly, tree CLEAN): the halted call
 //     COMPLETED and its halt-result IS cached — a plain resume replays the cached halt
 //     and re-halts. This case needs the script-snapshot surgery in steps 1–5 below.
@@ -65,24 +77,27 @@
 //   4. KEEP ANY EARLIER RESUME NOTE BYTE-IDENTICAL across re-invocations — a prior
 //      halt's note must stay unchanged or that call cache-misses too and re-runs
 //      (risking re-doing already-committed work). Add the new condition; never edit
-//      the old one. Then: Workflow({ scriptPath: <snapshot>, resumeFromRunId: <id> }).
+//      the old one. Then (args per RULE 0):
+//      Workflow({ scriptPath: <snapshot>, args: { milestone, base }, resumeFromRunId: <id> }).
 //   5. The RESUME note must state what was fixed (with the commit sha), how it was
 //      verified, and "do NOT re-diagnose" — so the re-run executor writes the test
 //      for the now-working path instead of re-halting on the same diagnosis.
-//   6. IF THE CACHE-REPLAY RESUME DOES NOT FAST-FORWARD (observed M13): a resume that
-//      should replay the committed prefix instead re-ran from the top — the first
-//      increment's planner then correctly HALTS on already-built work ("nothing left
-//      to cut"). Don't fight it. Use the DETERMINISTIC, cache-independent path instead:
+//   6. IF THE CACHE-REPLAY RESUME STILL DOES NOT FAST-FORWARD after RULE 0 is satisfied
+//      (it re-runs from the top and the first increment's planner HALTS on already-built
+//      work): RULE 0 — a dropped `args` — is the cause to rule out FIRST (it was the M13
+//      culprit; the resume had been invoked without `args`, so the milestone-reader's
+//      prompt changed and missed the cache at call #1). If args are correctly re-passed
+//      and it STILL won't replay, fall back to the DETERMINISTIC, cache-independent path:
 //      (a) if the halted increment is only PARTLY done, finish its remaining tasks on
 //      `main` with direct `build-executor` subagents (Agent tool) + one `increment-
 //      validator`, exactly as the harness would — bringing that increment to fully-
 //      built + validated-clean; (b) then re-invoke a FRESH run (NO resumeFromRunId)
-//      with `args.skipThrough: <highest fully-done+validated increment>`. The harness
-//      skips the done prefix (no re-plan, so no spurious already-built halt) and builds
-//      only the remainder; the audit still diffs from `base` (whole milestone). This
-//      needs NO script surgery and does not depend on the agent-call cache at all.
-//      Prefer steps 1–5 when the cache cooperates (cheaper); fall back to 6 when it
-//      doesn't (reliable).
+//      with `args: { milestone, base, skipThrough: <highest fully-done+validated
+//      increment> }`. The harness skips the done prefix (no re-plan, so no spurious
+//      already-built halt) and builds only the remainder; the audit still diffs from
+//      `base` (whole milestone). This needs NO script surgery and does not depend on the
+//      agent-call cache at all. Prefer steps 1–5 (cheaper) once RULE 0 is honored;
+//      this skipThrough path is the reliable fallback if cache-replay still misbehaves.
 //
 // Usage:  Workflow({ name: 'milestone-build', args: { milestone: 'M3', base: '<sha>' } })
 //   milestone — the roadmap milestone id whose decomposition to build (e.g. 'M3').
