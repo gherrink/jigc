@@ -952,10 +952,50 @@ pub fn set_item_slot(
         .ok_or_else(|| SpliceError::NotPresent {
             what: format!("item {item_id:?} in section {section_id:?}"),
         })?;
-    let span = item.slot.as_ref().ok_or_else(|| SpliceError::NotPresent {
-        what: format!("slot in item {item_id:?}"),
+    if item.slot.is_none() {
+        return Err(SpliceError::NotPresent {
+            what: format!("slot in item {item_id:?}"),
+        });
+    }
+
+    // Re-render the whole item via [`render_item`] with the new slot prose, then splice
+    // it over the item's located block — the same canonicalization trick
+    // [`insert_item_field`] uses. A bare splice of the recorded slot span is **not**
+    // byte-stable on a **mint-empty** item: [`add_item`] records its empty slot span
+    // *without* the canonical surrounding blank lines, so splicing prose in yields
+    // `### H  {#h}\nprose\n### Next` while [`render_item`] emits the blanks — so
+    // `render(parse(out)) != out`. Mint-empty is the only state an item-leaf set-slot
+    // runs in, so re-rendering (one canonical item-bytes path) is the fix.
+    //
+    // The located block spans `[item.start .. next-heading | EOF)`, so it *includes* the
+    // inter-item gap, which for a mint-empty item is the empty-item form's `\n\n\n\n` —
+    // wider than a *filled* item's canonical one-blank-line gap. So we re-attach the
+    // **canonical** separator, not the recorded one: [`render_section`] joins full
+    // `render_item`s with a single `\n`, and a filled item's render already ends in one
+    // `\n`, so a following item / section gets `render_item(item)` + `\n` (one blank
+    // line); a trailing item (block runs to EOF) gets the full render, EOF-normalized to
+    // one `\n`.
+    let region = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
+        what: format!("item {item_id:?} block"),
     })?;
-    Ok(splice(source, span.start..span.end, new_prose))
+    let content = ItemContent {
+        id: item.id.clone(),
+        title: item.title.clone(),
+        slot: Some(new_prose.to_string()),
+        fields: item.fields.clone(),
+    };
+    let rendered = render_item(&content);
+    let body = rendered.trim_end_matches('\n');
+    let replacement = if region.end < source.len() {
+        // A following `###`/`##` heading: the canonical inter-block gap is one blank
+        // line — `render_section` joins full `render_item`s (each ending in one `\n`)
+        // with a single `\n`, i.e. `body\n\n` before the next heading.
+        format!("{body}\n\n")
+    } else {
+        // Trailing item: the full render normalized to exactly one trailing `\n` (EOF).
+        format!("{body}\n")
+    };
+    Ok(splice(source, region, &replacement))
 }
 
 /// Locate the **value** byte span of the field `key` — the bytes after `key:` (and
@@ -1392,6 +1432,44 @@ pub fn add_item(
                 what: format!("item {id:?} in section {section_id:?}"),
             });
         }
+        // If the section already has a last item, re-render **it** canonically next to
+        // the new item, so the inter-item spacing is exactly [`render_item`]'s — the one
+        // source of truth for item bytes. A fixed `\n\n` join is **not** byte-stable when
+        // the preceding item is mint-empty: its canonical form is `### A {#a}\n\n\n`, so
+        // the canonical join (`render_section` joins full `render_item`s with `\n`) is
+        // `### A {#a}\n\n\n\n### B …`, where a fixed-blank insert leaves a single blank and
+        // `render(parse(out)) != out`. We splice `[last_item_start .. region.end]` with
+        // `render_item(prev)` + `\n` + the new item, re-attaching the region's tail
+        // separator (the blank line / `##` boundary / EOF newline) the located region
+        // carried.
+        if let Some(last) = locate_last_item_block(&blocks, region.clone()) {
+            let prev = parse::parse_sections(schema, source)
+                .ok()
+                .and_then(|doc| {
+                    doc.sections
+                        .into_iter()
+                        .find(|s| s.id == section_id)
+                        .and_then(|s| s.items.into_iter().last())
+                })
+                .ok_or_else(|| GenerateError::WrongShape {
+                    what: format!("section {section_id:?} last item not present"),
+                })?;
+            let prev_content = ItemContent {
+                id: prev.id.clone(),
+                title: prev.title.clone(),
+                slot: prev.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+                fields: prev.fields.clone(),
+            };
+            let tail = &source[last.clone()];
+            let separator = &tail[tail.trim_end().len()..];
+            // The canonical join `render_section` uses: full `render_item`s joined by a
+            // single `\n` (so an empty prev item's `### A {#a}\n\n\n` form keeps its blanks).
+            // Trim the joined block and re-attach the region's tail separator so the
+            // surrounding sections / EOF stay canonically spaced.
+            let joined = format!("{}\n{}", render_item(&prev_content), item);
+            let replacement = format!("{}{}", joined.trim_end(), separator);
+            return Ok(splice(source, last.start..region.end, &replacement));
+        }
         let at = last_item_end(source, region);
         Ok(insert_block(source, at, &item))
     } else {
@@ -1661,14 +1739,19 @@ pub fn insert_item_field(
                 fields: item.fields.clone(),
             };
             content.fields.push(field.clone());
-            // Re-render the item bare, then re-attach the trailing separator the located
-            // block carried (one blank line between items / before the next `##`, or the
-            // single trailing newline at EOF), so the surrounding items stay canonically
-            // spaced — the block region [`locate_item_block`] returns spans that separator.
+            // Re-render the item, then re-attach the **canonical** inter-block separator
+            // (not the recorded one): once a field group is added the item is no longer
+            // empty, so its canonical gap to the next item shrinks from the empty-item
+            // form's `\n\n\n\n` to one blank line. [`render_section`] joins full
+            // `render_item`s (each ending in one `\n`) with a single `\n`, so a following
+            // `###`/`##` heading gets `body\n\n`; a trailing item gets `body\n` (EOF).
             let rendered = render_item(&content);
-            let block_tail = &source[region.clone()];
-            let separator = &block_tail[block_tail.trim_end().len()..];
-            let replacement = format!("{}{}", rendered.trim_end(), separator);
+            let body = rendered.trim_end_matches('\n');
+            let replacement = if region.end < source.len() {
+                format!("{body}\n\n")
+            } else {
+                format!("{body}\n")
+            };
             Ok(splice(source, region, &replacement))
         }
     }
@@ -1829,6 +1912,25 @@ fn section_region(
         .min()
         .unwrap_or(source.len());
     Some(content_start..end)
+}
+
+/// The byte block of the **last** `### …` item in a repeatable section `region`:
+/// `[last_item_heading_start, region.end)`, or `None` when the section has no items
+/// yet. Used by [`add_item`] to re-render the preceding item canonically next to a new
+/// one, so the inter-item spacing is [`render_item`]'s (one source of item bytes).
+fn locate_last_item_block(blocks: &[Block], region: Range<usize>) -> Option<Range<usize>> {
+    let last_start = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading {
+                level: pulldown_cmark::HeadingLevel::H3,
+                range,
+                ..
+            } if range.start >= region.start && range.start < region.end => Some(range.start),
+            _ => None,
+        })
+        .max()?;
+    Some(last_start..region.end)
 }
 
 /// The byte offset at the end of a repeatable section's items: the section region's
@@ -2989,6 +3091,84 @@ The gateway rejects the 101st request.
         // Byte-stable.
         let reparsed = instance_from_source(&schema, &out).expect("result conforms");
         assert_eq!(render(&schema, &reparsed), out);
+    }
+
+    /// Regression (M13 Increment 3): [`set_item_slot`] on a **mint-empty** item must be
+    /// byte-stable. `add_item` mints the empty item whose slot span the parser records
+    /// *bare* (no canonical surrounding blank lines); splicing prose into that bare span
+    /// produced `### H  {#h}\nprose\n### Next` while [`render_item`] emits the blanks —
+    /// so `render(parse(out)) != out`. Mint-empty is the *only* state an item-leaf
+    /// set-slot runs in. Two empty items are minted and the **first** (non-trailing) item
+    /// is filled, so the result exercises a filled non-trailing item against an empty
+    /// trailing one.
+    #[test]
+    fn set_item_slot_on_mint_empty_item_is_byte_stable() {
+        let schema = linked_spec_schema();
+        let base = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        // Mint two empty items (heading + empty slot span, no bullets).
+        let one =
+            add_item(&schema, base, "criteria", "Rate limit holds", None, &[]).expect("first mint");
+        let two =
+            add_item(&schema, &one, "criteria", "Burst allowance", None, &[]).expect("second mint");
+
+        // Fill the FIRST (non-trailing) mint-empty item's slot.
+        let out = set_item_slot(
+            &schema,
+            &two,
+            "criteria",
+            "rate-limit-holds",
+            "The gateway rejects the 101st request.",
+        )
+        .expect("first item slot filled");
+        assert!(out.contains("The gateway rejects the 101st request."));
+
+        // Round-trips byte-identical: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "set_item_slot on a mint-empty item is byte-stable",
+        );
+    }
+
+    /// Regression (M13 Increment 3): two **empty** `add_item`s with no fill must be
+    /// byte-stable. `add_item`'s inter-item join rendered the pair `### A\n\n### B`, but
+    /// [`render_item`]'s empty-item form re-renders the (now non-trailing) empty item A
+    /// as `### A\n\n\n\n### B` — so `render(parse(out)) != out`. Existing tests only ever
+    /// left the *trailing* item empty, so a non-trailing empty item was never
+    /// round-trip-checked.
+    #[test]
+    fn two_empty_add_items_are_byte_stable() {
+        let schema = linked_spec_schema();
+        let base = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        let one =
+            add_item(&schema, base, "criteria", "Rate limit holds", None, &[]).expect("first mint");
+        let out =
+            add_item(&schema, &one, "criteria", "Burst allowance", None, &[]).expect("second mint");
+
+        // Round-trips byte-identical: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "two empty add_items are byte-stable",
+        );
     }
 }
 
