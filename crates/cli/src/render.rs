@@ -14,6 +14,7 @@ use crate::ingest::IngestReport;
 use crate::setup::SetupSummary;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
+use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
 use engine::result::{Orientation, OrientationView, ResolutionTree, ValidationReport};
 use serde::Serialize;
@@ -447,6 +448,73 @@ pub fn orientation_unset() -> String {
     );
     out.push_str(ROUTING_FOOTER);
     out
+}
+
+/// Render a [`Description`] whole-menu projection to the surface `format` selects.
+///
+/// **Free-prose renderer** — net-new, distinct from every other (line-structured)
+/// arm. `agent` / `human` emit the projection as **discursive prose paragraphs**:
+/// the woven definition sentences flow as running prose under light *unkeyed*
+/// section transitions ("The workflows you can compose here …", "The doc-types you
+/// can author …", "And the commands jigc gives you …"), the routing footer last.
+/// The shape is deliberately **hostile to parsing** (the non-contractual format
+/// contract — `introspection.md` → Non-contractual by design): no key-shaped lines,
+/// no bullet rows, no per-definition extractable handle — describe is a menu, not an
+/// API. `json` still routes through the generic serde renderer, but that projection
+/// is **not** the surface this command's contract is about (describe's whole point is
+/// not to be JSON-shaped — `introspection.md` → Command surface); it carries no
+/// footer (tooling-consumed).
+///
+/// The engine has already woven each definition into a full sentence (`X is …. Reach
+/// for it when ….`) and projected each command-ref `hint` verbatim; this renderer
+/// only frames those sentences into paragraphs and appends the footer — it composes
+/// no prose of its own beyond the unkeyed transitions.
+pub fn describe(format: Format, description: &Description) -> String {
+    match format {
+        Format::Json => json(description),
+        Format::Agent | Format::Human => {
+            let mut out = String::from(
+                "jigc describe — a tour of what this project lets you compose and author.\n\n",
+            );
+
+            let workflows: Vec<&str> = description
+                .definitions
+                .iter()
+                .filter(|d| d.kind == DefinitionKind::Workflow)
+                .map(|d| d.prose.as_str())
+                .collect();
+            let doctypes: Vec<&str> = description
+                .definitions
+                .iter()
+                .filter(|d| d.kind == DefinitionKind::Doctype)
+                .map(|d| d.prose.as_str())
+                .collect();
+
+            if !workflows.is_empty() {
+                out.push_str("The workflows you can compose here. ");
+                out.push_str(&workflows.join(" "));
+                out.push_str("\n\n");
+            }
+            if !doctypes.is_empty() {
+                out.push_str("The doc-types you can author. ");
+                out.push_str(&doctypes.join(" "));
+                out.push_str("\n\n");
+            }
+            if !description.commands.is_empty() {
+                out.push_str("And the commands jigc hands you along the way. ");
+                let sentences: Vec<String> = description
+                    .commands
+                    .iter()
+                    .map(|c| format!("{} {}", c.id, c.hint))
+                    .collect();
+                out.push_str(&sentences.join(" "));
+                out.push_str("\n\n");
+            }
+
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
 }
 
 #[cfg(test)]
@@ -917,6 +985,69 @@ mod tests {
         assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
         assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
         assert!(json_out.contains("\"adopted\": true"));
+    }
+
+    /// The free-prose `describe` renderer frames the engine's woven definition
+    /// sentences and projected command `hint`s into discursive paragraphs, carrying
+    /// the authored strings verbatim and ending with the routing footer. This is the
+    /// renderer that *defines* the output shape the T3 format predicate asserts over —
+    /// so this test pins that the authored prose survives into the rendered surface
+    /// (the predicate then pins the shape is hostile-to-parsing). Human renders
+    /// identically to agent in the MVP; JSON carries no footer.
+    #[test]
+    fn render_describe_weaves_authored_prose_with_footer() {
+        use engine::introspect::{CommandHint, DefinitionKind, DefinitionProse, Description};
+        use engine::result::SCHEMA_VERSION;
+
+        let description = Description {
+            schema_version: SCHEMA_VERSION,
+            definitions: vec![
+                DefinitionProse {
+                    kind: DefinitionKind::Workflow,
+                    id: "single-task".to_string(),
+                    prose: "single-task is one end-to-end scoped change. Reach for it when the work is one coherent change you can hold in your head.".to_string(),
+                },
+                DefinitionProse {
+                    kind: DefinitionKind::Doctype,
+                    id: "adr".to_string(),
+                    prose: "adr is a dated architectural decision record. Reach for it when a choice is worth preserving with its rationale.".to_string(),
+                },
+            ],
+            commands: vec![CommandHint {
+                id: "finalize".to_string(),
+                hint: "Validate, render the commit, and commit the task.".to_string(),
+            }],
+        };
+
+        let agent = describe(Format::Agent, &description);
+
+        // The authored prose survives into the rendered surface verbatim.
+        assert!(
+            agent.contains(
+                "single-task is one end-to-end scoped change. Reach for it when the work is one coherent change you can hold in your head."
+            ),
+            "the workflow's woven sentence is carried verbatim; got:\n{agent}",
+        );
+        assert!(
+            agent.contains(
+                "adr is a dated architectural decision record. Reach for it when a choice is worth preserving with its rationale."
+            ),
+            "the doctype's woven sentence is carried verbatim; got:\n{agent}",
+        );
+        assert!(
+            agent.contains("Validate, render the commit, and commit the task."),
+            "the command-ref hint is carried verbatim; got:\n{agent}",
+        );
+        assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+
+        // Human renders identically to agent in the MVP (TUI is post-MVP).
+        assert_eq!(describe(Format::Human, &description), agent);
+
+        // JSON carries no footer (tooling-consumed, not the contract surface).
+        let json_out = describe(Format::Json, &description);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let back: Description = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, description);
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and

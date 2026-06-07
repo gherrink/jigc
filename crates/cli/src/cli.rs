@@ -8,6 +8,7 @@
 //! `design/write-commands.md` → Task origination (bare `jigc start`).
 
 use crate::config::ConfigCommand;
+use crate::describe;
 use crate::doc::DocCommand;
 use crate::ingest;
 use crate::milestone::MilestoneCommand;
@@ -168,6 +169,16 @@ pub enum Command {
     /// `design/worked-examples.md` → flow 12). The `ingest-existing` workflow orients
     /// the agent to run it.
     Ingest,
+
+    /// The self-description surface — `jigc describe` (no positional) emits a
+    /// **discursive prose** projection of the resolved definitions: every workflow
+    /// (the *unfiltered* set, not the selectable catalog) and doc-type with their
+    /// woven `description:` / `usage:` prose, plus the command-ref `hint`s. Reads
+    /// **pack-only** in M11 (cascade reflection is a later increment). The output is
+    /// deliberately **hostile to parsing** — a menu, not an API — so nothing depends
+    /// on it (`design/introspection.md` → Command surface / Non-contractual by
+    /// design). Whole-menu only: a single-item `describe <id>` form is **not** built.
+    Describe,
 }
 
 impl Cli {
@@ -233,6 +244,34 @@ impl Cli {
             Command::Setup => run_setup(self.format),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
+            Command::Describe => run_describe(self.format),
+        }
+    }
+}
+
+/// Run `jigc describe` against the current working directory: locate the repo +
+/// project layer, build the **pack-only** resolved definitions (the unfiltered
+/// workflow set + the full doctype set + the command catalog), assemble the
+/// whole-menu projection, render it through the selected `format`, and print it. A
+/// clean run exits 0; a locator error (no repo / no project layer) routes to stderr
+/// and exits non-zero (`design/introspection.md` → Command surface). Reads-only —
+/// it composes nothing and writes nothing.
+fn run_describe(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match describe::run(&cwd) {
+        Ok(description) => {
+            println!("{}", render::describe(format, &description));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{err:#}");
+            ExitCode::FAILURE
         }
     }
 }
@@ -722,6 +761,29 @@ mod cli_parse {
     fn ingest_takes_no_positional() {
         let err = Cli::try_parse_from(["jigc", "ingest", "extra"])
             .expect_err("`jigc ingest` takes no positional argument");
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn describe_parses() {
+        let cli = Cli::try_parse_from(["jigc", "describe"]).expect("`jigc describe` parses");
+        assert_eq!(cli.command, Command::Describe);
+    }
+
+    #[test]
+    fn describe_format_json_is_selected() {
+        let cli = Cli::try_parse_from(["jigc", "describe", "--format", "json"])
+            .expect("`jigc describe --format json` parses");
+        assert_eq!(cli.format, Format::Json);
+        assert_eq!(cli.command, Command::Describe);
+    }
+
+    #[test]
+    fn describe_rejects_a_positional() {
+        // The whole-menu surface takes no positional — a single-item `describe <id>`
+        // form is not built (`design/introspection.md` → Command surface).
+        let err = Cli::try_parse_from(["jigc", "describe", "single-task"])
+            .expect_err("`jigc describe` takes no positional argument");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 

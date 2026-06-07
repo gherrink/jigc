@@ -1841,7 +1841,7 @@ fn scalar_to_string(value: &serde_yaml_ng::Value) -> String {
 }
 
 /// Load and parse the pack's command catalog (`config/commands`).
-fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
+pub(crate) fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
     let bytes = read_pack(pack, PackResourceKind::Config, "commands")?;
     load_command_catalog(&bytes).map_err(finding_to_err)
 }
