@@ -85,8 +85,12 @@ export const meta = {
   ],
 }
 
-const milestone = args && args.milestone ? String(args.milestone) : 'the next milestone'
-const base = args && args.base ? String(args.base) : null
+// args may arrive as the object { milestone, base } or as a bare milestone string
+// (the /milestone-build slash command passes its positional arg as a string, which
+// would otherwise drop the milestone — and silently take the auto-find base path).
+const a = typeof args === 'string' ? { milestone: args } : (args || {})
+const milestone = a.milestone ? String(a.milestone) : 'the next milestone'
+const base = a.base ? String(a.base) : null
 
 // ---- structured-output schemas ----
 const INCREMENTS_SCHEMA = {
@@ -345,7 +349,7 @@ return {
   status: 'built-and-audited',
   message: builtMilestone + ' fully built and independently validated clean. Milestone-completion audit complete — fix-now is the default (the dev-workflow gate per finding); the human gate fires only for too-big (→ its own increment) or contested (→ would revise a settled decision) findings.',
   milestone: builtMilestone,
-  base,
+  base: base || '(omitted — the auditors auto-discovered it from git log)',
   incrementReports,
   audit: { code_review: audit[0], e2e: audit[1] },
 }
