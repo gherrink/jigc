@@ -17,7 +17,7 @@ You execute **ONE task** of an increment via the [dev-workflow](../../implementa
 
 Record any genuine design choice / elaboration pin in `DECISIONS.md` as it lands. Stay **minimal and in scope** (every changed line traces to the task; no inert/dead code; don't refactor working code). You **are** authorized to commit to `main`.
 
-**Halt** (do not guess) on a **genuine new design fork** not covered by the milestone's settled decisions and not resolvable from the locked docs — report `status: halted` instead of guessing past it, per *Reporting* below.
+**Halt** (do not guess) on a **genuine new design fork** not covered by the milestone's settled decisions and not resolvable from the locked docs — report `status: halted` instead of guessing past it, per *Reporting* below. **A discovered violation of a retired invariant (byte-stability `render(parse(x))==x`, the determinism boundary, the engine-empty rule) on a *production* path is *also* a halt** — surface it as a fork for the human, even when finalize/the gate happens to tolerate it. You must **not** route around it by **logging a deferral and narrowing your test to dodge it** (scoping a round-trip assertion to a subtree that avoids the broken case is a *masking test* — the exact pattern the milestone audit exists to catch; M13's inc-5 leading-slot defect was masked this way). Found-on-a-production-path invariant breakage is escalated, never self-deferred-and-hidden.
 
 ## Reporting — what to place where
 
