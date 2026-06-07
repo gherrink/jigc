@@ -1,7 +1,7 @@
 ---
 when: draft the specification for upcoming work before writing any code
 description: A planning pass that authors the specification for upcoming work and commits it.
-usage: Reach for it when the work needs its goal and acceptance criteria agreed up front, before any code is written.
+usage: the work needs its goal and acceptance criteria agreed up front, before any code is written.
 creates-task: true
 allows-create: [{type: spec, as: spec}]
 ---

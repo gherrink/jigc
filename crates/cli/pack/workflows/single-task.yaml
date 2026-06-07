@@ -1,7 +1,7 @@
 ---
 when: implement one scoped change end-to-end
 description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
-usage: Reach for it when the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
+usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
 creates-task: true
 allows-create: [{type: adr, as: decision}]
 ---

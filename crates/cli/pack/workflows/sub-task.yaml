@@ -1,6 +1,6 @@
 ---
 description: One sub-task of a milestone — locate, implement, and author a commit into an isolated working area for a later join.
-usage: Reach for it as the unit a milestone execution fans out to; it is not selected directly.
+usage: a milestone execution needs the unit it fans out to; it is not selected directly.
 creates-task: true
 selectable: false
 allows-create: [{type: adr, as: decision}]

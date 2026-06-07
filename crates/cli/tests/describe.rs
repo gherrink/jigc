@@ -269,6 +269,27 @@ fn describe_narrates_no_empty_or_dangling_clause() {
 }
 
 #[test]
+fn describe_never_doubles_the_reach_for_it_lead() {
+    // The weave supplies a fixed "Reach for it when " lead (introspect.rs); the
+    // authored `usage:` fields must therefore be **bare clauses**, not carry their
+    // own "Reach for it when/to/at/as …" lead — else every narration doubles the
+    // lead ("Reach for it when Reach for it when …"), the malformed shape this guards
+    // against (`design/introspection.md` → the weave example carries usage WITHOUT
+    // the prefix). The assertion is over the **emitted bytes** of the real binary,
+    // so a pack file that re-introduces the redundant lead fails here.
+    let repo = TempDir::new("nodouble");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = describe_stdout(repo.path(), home.path());
+
+    assert!(
+        !out.contains("Reach for it when Reach for it"),
+        "a doubled 'Reach for it when Reach for it' lead leaked — the authored usage carries a redundant lead the weave then duplicates; got:\n{out}",
+    );
+}
+
+#[test]
 fn predicate_fails_on_a_structured_catalog_and_on_json() {
     // The OTHER direction — the predicate must REJECT a parseable rendering of the
     // SAME definitions. Without this, "passes on real output" proves nothing: a

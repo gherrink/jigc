@@ -16,7 +16,7 @@ type: prd
 location: prds/
 id-from: title
 description: A product requirements document — the vision, the requirements, and the context for a piece of work, the first managed document a fresh project develops its idea into.
-usage: Reach for it at the start of a new project to turn an idea into a shared statement of what to build and why, before any spec or code.
+usage: you are at the start of a new project and want to turn an idea into a shared statement of what to build and why, before any spec or code.
 
 sections:
   - id: vision

@@ -1,7 +1,7 @@
 ---
 when: pick a work-workflow for an intent
 description: A selection pass that presents the available work-workflows and routes an intent to the right one.
-usage: Reach for it when you have an intent but are unsure which work-workflow fits, and want the catalog to choose from.
+usage: you have an intent but are unsure which work-workflow fits, and want the catalog to choose from.
 creates-task: false
 ---
 {{ include: step:present-catalog }}

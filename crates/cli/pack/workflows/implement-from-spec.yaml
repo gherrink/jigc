@@ -1,7 +1,7 @@
 ---
 when: build from a committed spec whose acceptance criteria already exist
 description: An implementation pass driven by a committed spec — locate against it, implement, optionally record a decision, and commit.
-usage: Reach for it when a spec already exists and you are turning its agreed criteria into code.
+usage: a spec already exists and you are turning its agreed criteria into code.
 creates-task: true
 reads: [{role: spec, type: spec}]
 allows-create: [{type: adr, as: decision}]

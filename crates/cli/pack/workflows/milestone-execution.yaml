@@ -1,7 +1,7 @@
 ---
 when: execute a planned milestone's sub-tasks in parallel, then commit as one boundary
 description: A parallel execution of a planned milestone's sub-tasks, joined and committed as one boundary.
-usage: Reach for it when a milestone is decomposed into independent sub-tasks you want run together and landed as a single commit.
+usage: a milestone is decomposed into independent sub-tasks you want run together and landed as a single commit.
 creates-task: false
 ---
 {{ include: step:implement-tasks }}
