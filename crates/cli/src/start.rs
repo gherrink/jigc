@@ -348,12 +348,19 @@ pub(crate) fn execute_milestone_core(
         slot_fills: Vec::new(),
         fills: ResolvedFills::new(),
     };
+    // A no-shadow cascade — the injected `source` is the test affordance, and the
+    // milestone-dispatch test feeds a fan-out workflow over a `FixturePack` with no
+    // project definition shadows, so the definition reads fall through to the pack.
+    let base = cascade::PackDefaultLayer::new("dev", "0.0.0", BTreeMap::new(), Vec::new());
+    let resolved = cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+    let defs = CascadeDefs::new(&resolved, repo_root);
     compose_core(
         repo_root,
         "",
         pack,
         workflow_id,
         source,
+        &defs,
         &overrides,
         milestone_ids,
     )
@@ -380,6 +387,7 @@ fn compose_drained(
         pack,
         workflow_id,
         source,
+        &source.defs(),
         overrides,
         milestone_ids,
     );
@@ -421,16 +429,26 @@ fn compose_drained(
 /// no-delta / no-shadow path resolves the pack include list unchanged and reads
 /// every step's pack body, so the composed bytes stay byte-identical to before
 /// the wiring landed (the read-side determinism guard).
+///
+/// `defs` is the layer-aware definition read surface ([`CascadeDefs`]): the
+/// workflow + schema reads route through the cascade's phase-2 file owners so a
+/// project whole-file shadow wins — the definition-read counterpart of the
+/// layer-aware step `source` (`overrides.md` → whole-file definition shadow).
+// The compose seam threads its inputs positionally: the read surfaces (`source`,
+// `defs`), the cascade override bundle, and the milestone list each pin to one
+// argument; bundling them would obscure the seam more than it would simplify it.
+#[allow(clippy::too_many_arguments)]
 fn compose_core(
     repo_root: &Path,
     intent: &str,
     pack: &dyn PackSource,
     workflow_id: &str,
     source: &dyn StepSource,
+    defs: &CascadeDefs<'_>,
     overrides: &ComposeOverrides,
     milestone_ids: &[String],
 ) -> Result<ComposedWorkflow> {
-    let workflow_bytes = read_workflow(pack, workflow_id)?;
+    let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     // The manifest's `structural-op` deltas scoped to *this* workflow id — a
     // manifest may carry deltas for several workflows; only these apply here.
@@ -450,8 +468,9 @@ fn compose_core(
     let selectable = selectable_workflows(pack)?;
     // The committed managed store both arms feed — the `{{store.<doctype>}}` input,
     // enumerated from the committed `<location>/<slug>.md` instances (CLI locates,
-    // engine resolves).
-    let schemas = all_schemas(pack)?;
+    // engine resolves). Schemas resolve through the cascade so a project
+    // `schemas/<id>.yaml` shadow's `location:` drives the enumeration.
+    let schemas = defs.all_schemas(pack)?;
     let store = committed_store(repo_root, &schemas);
 
     let ctx = if def.creates_task {
@@ -575,10 +594,15 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
 pub(crate) fn build_resolution_tree(
     pack: &dyn PackSource,
     resolved: &cascade::Resolved,
+    project_config: &Path,
     deltas: &[StructuralDelta],
     workflow_id: &str,
 ) -> Result<engine::result::ResolutionTree> {
-    let workflow_bytes = read_workflow(pack, workflow_id)?;
+    // Read the workflow definition through the cascade — a project shadow's include
+    // list drives the explain tree, so `--explain` never drifts from compose
+    // (`overrides.md` → whole-file definition shadow).
+    let workflow_bytes =
+        CascadeDefs::new(resolved, project_config).read_workflow(pack, workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     let scoped = scoped_deltas(workflow_id, deltas);
     let workflow_layer = resolved
@@ -664,7 +688,13 @@ pub fn compose_explain_in_repo(
             .map(str::to_owned)
             .map_err(anyhow::Error::from)?,
     };
-    let tree = build_resolution_tree(pack, &resolved, &overrides.deltas, &workflow_id)?;
+    let tree = build_resolution_tree(
+        pack,
+        &resolved,
+        &project_config,
+        &overrides.deltas,
+        &workflow_id,
+    )?;
     let pack_label = format!("{}/v{}", pack_id_from_config(pack)?, pack.pack_version());
     Ok((tree, pack_label))
 }
@@ -1052,10 +1082,16 @@ fn compose_task_workflow(
 
     let pack = make_pack();
     let pack = pack.as_ref();
+    // Resolve the live cascade up front so the definition reads below route through
+    // the phase-2 file owners (a project `workflows/<id>.yaml` / `schemas/<id>.yaml`
+    // whole-file shadow wins) — resume composes over the *live* cascade exactly as
+    // the fresh front door (`overrides.md` → whole-file definition shadow).
+    let (resolved, overrides) = resolve_cascade(pack, project_config)?;
+    let defs = CascadeDefs::new(&resolved, project_config);
     // A workflow the pack does not provide is the routed `workflow-refs.unknown-
     // workflow` block (not a generic "pack is missing" — the recorded/named id may
     // be a not-yet-shipped pack workflow, e.g. `sub-task` before increment 5).
-    let workflow_bytes = read_workflow(pack, workflow_id)?;
+    let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
     let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
     // Provision-on-first-entry — the sub-agent re-entry's deferred mirror of mint-time
     // provisioning. Gated on `provision` (re-entry only) and idempotent inside (first
@@ -1068,20 +1104,21 @@ fn compose_task_workflow(
     let selectable = selectable_workflows(pack)?;
     // The committed store feed (`{{store.<doctype>}}`), enumerated from the committed
     // `<location>/<slug>.md` instances; the same `schemas` set the edge overlay below
-    // resolves `<type>` prefixes against.
-    let schemas = all_schemas(pack)?;
+    // resolves `<type>` prefixes against — resolved through the cascade so a project
+    // `schemas/<id>.yaml` shadow wins.
+    let schemas = defs.all_schemas(pack)?;
     let store_feed = committed_store(repo_root, &schemas);
 
     let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
     let source = PackStepSource { pack };
 
-    // Resume composes the task's pinned workflow, but still over the *live* cascade —
-    // a project `slot-fill` (or the pack's empty default for an unfilled
+    // Resume composes the task's pinned workflow, but still over the *live* cascade
+    // (`resolved` / `overrides`, resolved up front so the definition reads route
+    // through it) — a project `slot-fill` (or the pack's empty default for an unfilled
     // `{{fill:<id>}}` point) applies at phase 5 on re-compose exactly as on the fresh
     // front door, else a `{{fill:}}` point would survive resume to phase 8 unresolved.
     // The fill-aware gate runs the same M4 orphan + survivor checks (`overrides.md` →
     // The `{{fill:}}` placeholder); a no-fill cascade is the identity.
-    let (_resolved, overrides) = resolve_cascade(pack, project_config)?;
     let findings = compose::workflow_refs_with_fills(
         &workflow_bytes,
         &[],
@@ -1174,20 +1211,6 @@ fn committed_store(
         }
     }
     store
-}
-
-/// Load every shipped schema from the embedded pack, keyed by doctype — the
-/// cascade-resolved schema set the committed store + edge overlay resolve `<type>`
-/// prefixes against (`crate::task` loads the same set for the finalize sweep).
-fn all_schemas(pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
-    let mut out = BTreeMap::new();
-    for id in pack.list(PackResourceKind::Schemas) {
-        let bytes = read_pack(pack, PackResourceKind::Schemas, id.as_str())?;
-        let schema = crate::pack::load_pack_schema(pack, &bytes)
-            .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
-        out.insert(schema.ty.clone(), schema);
-    }
-    Ok(out)
 }
 
 /// Build the [`ComposeContext`] for the composed workflow.
@@ -1354,6 +1377,14 @@ impl<'a> CascadeStepSource<'a> {
     /// because no layer owns the id (a plain dangling include the engine reports).
     fn take_error(&self) -> Option<Finding> {
         self.error.borrow_mut().take()
+    }
+
+    /// The layer-aware **definition** read surface over the same resolved cascade +
+    /// project config dir this step source carries — so `compose_core` reads the
+    /// workflow / schema definitions through the cascade (whole-file shadow) exactly
+    /// as it reads steps (`CascadeDefs`; `overrides.md` → whole-file definition shadow).
+    fn defs(&self) -> CascadeDefs<'a> {
+        CascadeDefs::new(self.resolved, self.project_config)
     }
 
     /// Read + parse a project-owned step file from `<project_config>/steps/<id>.yaml`,
@@ -1914,11 +1945,99 @@ pub(crate) fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
     load_command_catalog(&bytes).map_err(finding_to_err)
 }
 
+/// The layer-aware **definition** read surface: the resolved cascade's phase-2
+/// by-id shadowing ([`cascade::Resolved::file_owner`]) plus the project layer's
+/// committed config dir, so a project `workflows/<id>.yaml` / `schemas/<id>.yaml`
+/// **whole-file shadow** wins over the pack definition (`overrides.md` → Authored
+/// metadata on a definition resolves by whole-file shadow; Resolution algorithm
+/// phase 2). The dual of [`CascadeStepSource`] for the *definition* reads
+/// reads ([`CascadeDefs::read_workflow`] / [`CascadeDefs::all_schemas`]) the way
+/// that source is the dual for the *step* reads — compose must reflect the cascade
+/// or it would drift from `describe`.
+///
+/// **Whole-file REPLACE, never field-merge.** When the project owns the id, the
+/// project file's bytes are read and parsed in full; the pack definition is not
+/// consulted (`overrides.md` → No partial field-level merge across layers).
+///
+/// **Project-owned-but-missing/malformed = located fault**, never a silent
+/// fall-through to the pack: unlike [`CascadeStepSource`] (whose `Option` contract
+/// can't carry a fault) these reads return `Result`, so the fault rides the error
+/// directly — the `CascadeStepSource` located-error precedent without the interior
+/// sink.
+pub(crate) struct CascadeDefs<'a> {
+    resolved: &'a cascade::Resolved,
+    /// The project layer's committed config dir — where `workflows/<id>.yaml` and
+    /// `schemas/<id>.yaml` shadow files live.
+    project_config: &'a Path,
+}
+
+impl<'a> CascadeDefs<'a> {
+    pub(crate) fn new(resolved: &'a cascade::Resolved, project_config: &'a Path) -> Self {
+        Self {
+            resolved,
+            project_config,
+        }
+    }
+
+    /// `true` iff the project layer owns the file with this id after phase-2
+    /// shadowing — the read should come from `<project_config>/<dir>/<id>.yaml`.
+    fn project_owns(&self, id: &str) -> bool {
+        matches!(
+            self.resolved.file_owner(id),
+            Some(cascade::LayerKind::Project)
+        )
+    }
+
+    /// Read a project-owned definition file `<project_config>/<dir>/<id>.yaml`,
+    /// mapping a missing/malformed file to a located fault (the owning layer is
+    /// never silently abandoned for the pack body).
+    fn project_def(&self, dir: &str, id: &str) -> Result<Vec<u8>> {
+        let path = self.project_config.join(dir).join(format!("{id}.yaml"));
+        std::fs::read(&path).with_context(|| {
+            format!(
+                "project layer owns `{id}` but its {dir} shadow {} is unreadable",
+                path.display()
+            )
+        })
+    }
+
+    /// Read a named workflow's bytes through the cascade — the project
+    /// `workflows/<id>.yaml` shadow when the project owns the id, else the pack
+    /// definition (the Form-D unknown-`<X>` rejection rides the pack miss).
+    pub(crate) fn read_workflow(&self, pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> {
+        if self.project_owns(id) {
+            return self.project_def("workflows", id);
+        }
+        read_workflow(pack, id)
+    }
+
+    /// Load every cascade-resolved schema keyed by doctype: for each doctype the
+    /// pack ships, read the project `schemas/<id>.yaml` shadow when the project
+    /// owns the id, else the pack definition (whole-file shadow, no field-merge).
+    pub(crate) fn all_schemas(&self, pack: &dyn PackSource) -> Result<BTreeMap<String, Schema>> {
+        let mut out = BTreeMap::new();
+        for id in pack.list(PackResourceKind::Schemas) {
+            let bytes = if self.project_owns(id.as_str()) {
+                self.project_def("schemas", id.as_str())?
+            } else {
+                read_pack(pack, PackResourceKind::Schemas, id.as_str())?
+            };
+            let schema = crate::pack::load_pack_schema(pack, &bytes)
+                .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+            out.insert(schema.ty.clone(), schema);
+        }
+        Ok(out)
+    }
+}
+
 /// Read a named workflow's bytes, mapping a **missing** workflow to a routed
 /// blocking finding — the Form-D unknown-`<X>` rejection (`write-commands.md`: an
 /// unknown `<X>` is rejected with a routed finding). Membership is the pack read:
 /// a `PackError::NotFound` is the "not in the catalog" rejection. Fires before any
 /// mint, so a typo'd id strands no task dir.
+///
+/// This is the **pack-only** read — the layer-aware definition read that routes a
+/// project whole-file shadow through `file_owner` is [`CascadeDefs::read_workflow`].
 pub(crate) fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> {
     pack.read(PackResourceKind::Workflows, &ResourceId::from(id))
         .map_err(|_| {
@@ -2132,6 +2251,18 @@ mod tests {
         }
     }
 
+    /// A no-shadow resolved cascade — an empty pack-default layer with no project
+    /// overrides, so `file_owner(id)` is `None` for every id and the layer-aware
+    /// definition reads ([`CascadeDefs`]) all fall through to the pack. The default
+    /// `CascadeDefs` for a `compose_core` test that exercises no whole-file shadow
+    /// (the omit-the-target context — hardening #5: the read path stays byte-
+    /// identical to the pack-only baseline when no shadow is present).
+    fn no_shadow_resolved() -> cascade::Resolved {
+        let base =
+            engine::cascade::PackDefaultLayer::new("dev", "0.0.0", BTreeMap::new(), Vec::new());
+        engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves")
+    }
+
     /// The fan-out `sub-task` ships `creates-task: true` (so a `jigc workflow
     /// <W> --task` re-entry can compose it) but `selectable: false` (it ships no
     /// finalize step — its only commit boundary is the parent milestone's). It
@@ -2205,6 +2336,7 @@ mod tests {
             &pack,
             "ingest-existing",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
         )
@@ -2316,6 +2448,7 @@ mod tests {
             &pack,
             "router",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
         )
@@ -2419,6 +2552,7 @@ mod tests {
             &pack,
             "flow",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
         )
@@ -2477,6 +2611,7 @@ mod tests {
             &pack,
             "flow",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
         )
@@ -2533,6 +2668,7 @@ mod tests {
             &pack,
             "flow",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
         )
@@ -2647,6 +2783,7 @@ mod tests {
                 &pack,
                 "flow",
                 &source,
+                &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
                 &ComposeOverrides::structural(deltas),
                 &[],
             )
@@ -2716,6 +2853,7 @@ mod tests {
             &pack,
             "single-task",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
         )
@@ -2753,6 +2891,7 @@ mod tests {
             &pack,
             "does-not-exist",
             &source,
+            &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
         )
@@ -2843,9 +2982,13 @@ mod tests {
         fs::write(specs.join("notes.txt"), "ignore me").expect("w");
 
         // The real pack schemas: `spec` (location `specs/`), `adr` (`decisions/`,
-        // no committed files here), `commit` (transient — no location).
+        // no committed files here), `commit` (transient — no location). Loaded
+        // through a no-shadow cascade — every schema reads its pack definition.
         let pack = crate::pack::EmbeddedPack::new();
-        let schemas = all_schemas(&pack).expect("schemas load");
+        let resolved = no_shadow_resolved();
+        let schemas = CascadeDefs::new(&resolved, repo.path())
+            .all_schemas(&pack)
+            .expect("schemas load");
 
         let store = committed_store(repo.path(), &schemas);
 
@@ -3290,7 +3433,11 @@ mod tests {
         let project = OverrideLayer::empty().shadow_file("implement");
         let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
 
-        let tree = build_resolution_tree(&pack, &resolved, &[], "wf").expect("tree builds");
+        // `wf` is not project-owned (only the `implement` step is shadowed), so the
+        // workflow definition reads from the pack — the project_config path is never
+        // consulted for it.
+        let tree = build_resolution_tree(&pack, &resolved, Path::new("/nonexistent"), &[], "wf")
+            .expect("tree builds");
 
         assert_eq!(tree.workflow, "wf");
         assert_eq!(tree.overrides_applied, 0);
@@ -3360,7 +3507,9 @@ mod tests {
             },
         ];
 
-        let tree = build_resolution_tree(&pack, &resolved, &deltas, "wf").expect("tree builds");
+        let tree =
+            build_resolution_tree(&pack, &resolved, Path::new("/nonexistent"), &deltas, "wf")
+                .expect("tree builds");
 
         assert_eq!(
             tree.overrides_applied, 1,
@@ -3740,5 +3889,253 @@ mod tests {
         fs::create_dir_all(&ok_workflows).expect("mk workflows dir");
         fs::write(ok_workflows.join("foo.yaml"), "workflow foo\n").expect("write workflow shadow");
         load_project_layer(ok.path()).expect("a disjoint shadow set must load cleanly");
+    }
+
+    /// T2 done-criterion — a project `workflows/<id>.yaml` **whole-file shadow**
+    /// changes the composed output: composing the shadowed `flow` reads the
+    /// project definition (a different include list → a different body) rather than
+    /// the pack's, while composing an **unshadowed** `other` workflow stays
+    /// **byte-identical** to the pack-default (hardening #5 — a context that omits
+    /// the shadow target must be inert, never error). Without routing `read_workflow`
+    /// through `file_owner` the project shadow is inert and both compose the pack
+    /// body (`overrides.md` → Authored metadata on a definition resolves by whole-
+    /// file shadow; Resolution algorithm phase 2).
+    #[test]
+    fn compose_routes_workflow_read_through_the_project_file_shadow() {
+        let repo = TempDir::new("wf-shadow-compose");
+        let cfg = TempDir::new("wf-shadow-cfg");
+        let project_config = cfg.path();
+        // The project shadows `flow` with a definition that includes a project-only
+        // step id (`project-body`) the pack workflow never references.
+        let workflows = project_config.join("workflows");
+        fs::create_dir_all(&workflows).expect("mk workflows dir");
+        fs::write(
+            workflows.join("flow.yaml"),
+            "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:project-body }}\n",
+        )
+        .expect("write workflow shadow");
+
+        let pack = FixturePack::with(vec![
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            // The pack `flow` includes the pack `pack-body` step.
+            (
+                PackResourceKind::Workflows,
+                "flow",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:pack-body }}\n",
+            ),
+            // A second workflow the project does NOT shadow — the omit-the-target arm.
+            (
+                PackResourceKind::Workflows,
+                "other",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:pack-body }}\n",
+            ),
+            (PackResourceKind::Steps, "pack-body", "PACK BODY MARKER\n"),
+            (
+                PackResourceKind::Steps,
+                "project-body",
+                "PROJECT BODY MARKER\n",
+            ),
+        ]);
+        let source = PackStepSource { pack: &pack };
+
+        // The cascade: pack declares both workflow ids + both steps; the project
+        // shadows the `flow` workflow file (phase-2 by-id shadowing).
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec![
+                "flow".to_owned(),
+                "other".to_owned(),
+                "pack-body".to_owned(),
+                "project-body".to_owned(),
+            ],
+        );
+        let project = OverrideLayer::empty().shadow_file("flow");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+        let defs = CascadeDefs::new(&resolved, project_config);
+
+        // (a) The shadowed `flow` composes the PROJECT definition's body.
+        let shadowed = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "flow",
+            &source,
+            &defs,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("shadowed flow composes");
+        assert!(
+            shadowed.text.contains("PROJECT BODY MARKER")
+                && !shadowed.text.contains("PACK BODY MARKER"),
+            "the project shadow's whole-file definition must drive compose; got:\n{}",
+            shadowed.text,
+        );
+
+        // (b) The same `flow` over a NO-SHADOW cascade composes the pack body — the
+        // shadow is what changed the output, proven by the divergence.
+        let pack_baseline = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "flow",
+            &source,
+            &CascadeDefs::new(&no_shadow_resolved(), project_config),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("pack-baseline flow composes");
+        assert!(
+            pack_baseline.text.contains("PACK BODY MARKER"),
+            "the no-shadow baseline must read the pack body; got:\n{}",
+            pack_baseline.text,
+        );
+        assert_ne!(
+            shadowed.text, pack_baseline.text,
+            "a whole-file workflow shadow must CHANGE the composed output vs the pack baseline",
+        );
+
+        // (c) The omit-the-target arm: the UNSHADOWED `other` composes byte-identical
+        // under the shadow cascade and the no-shadow cascade (the shadow is inert for
+        // an id it does not own — hardening #5).
+        let other_under_shadow = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "other",
+            &source,
+            &defs,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("unshadowed other composes under the shadow cascade")
+        .text;
+        let other_pack = compose_core(
+            repo.path(),
+            "anything",
+            &pack,
+            "other",
+            &source,
+            &CascadeDefs::new(&no_shadow_resolved(), project_config),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("unshadowed other composes under the no-shadow cascade")
+        .text;
+        assert_eq!(
+            other_under_shadow, other_pack,
+            "an unshadowed workflow must compose byte-identical to pack-default \
+             whether or not another definition is shadowed (the shadow is inert here)",
+        );
+    }
+
+    /// T2 done-criterion (the `all_schemas` half) — a project `schemas/<id>.yaml`
+    /// **whole-file shadow** wins on the `all_schemas` read the compose / finalize /
+    /// validate paths consume: the shadowed doctype carries the project file's
+    /// fields (here a changed `location:`, which `committed_store` reads), while an
+    /// unshadowed doctype keeps its pack definition. Whole-file REPLACE, never a
+    /// field-merge (`overrides.md` → Authored metadata … resolves by whole-file
+    /// shadow). Without routing `all_schemas` through `file_owner` the shadow is
+    /// inert and every doctype reads its pack definition.
+    #[test]
+    fn all_schemas_routes_through_the_project_schema_shadow() {
+        let cfg = TempDir::new("schema-shadow-cfg");
+        let project_config = cfg.path();
+        let schemas_dir = project_config.join("schemas");
+        fs::create_dir_all(&schemas_dir).expect("mk schemas dir");
+        // The project shadows the `note` doctype with a definition whose `location:`
+        // differs from the pack's — the change `committed_store` would observe.
+        fs::write(
+            schemas_dir.join("note.yaml"),
+            "type: note\nlocation: project-notes/\nsections: []\n",
+        )
+        .expect("write schema shadow");
+
+        let pack = FixturePack::with(vec![
+            (
+                PackResourceKind::Schemas,
+                "note",
+                "type: note\nlocation: pack-notes/\nsections: []\n",
+            ),
+            // An unshadowed doctype — its pack definition must survive untouched.
+            (
+                PackResourceKind::Schemas,
+                "memo",
+                "type: memo\nlocation: pack-memos/\nsections: []\n",
+            ),
+        ]);
+
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["note".to_owned(), "memo".to_owned()],
+        );
+        let project = OverrideLayer::empty().shadow_file("note");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let schemas = CascadeDefs::new(&resolved, project_config)
+            .all_schemas(&pack)
+            .expect("schemas load");
+
+        assert_eq!(
+            schemas.get("note").and_then(|s| s.location.as_deref()),
+            Some("project-notes/"),
+            "the project `schemas/note.yaml` shadow must win on the all_schemas read",
+        );
+        assert_eq!(
+            schemas.get("memo").and_then(|s| s.location.as_deref()),
+            Some("pack-memos/"),
+            "an unshadowed doctype must keep its pack definition (the shadow is inert)",
+        );
+
+        // The pack-baseline (no shadow): `note` reads its pack `location:`, proving
+        // the shadow is what changed the output.
+        let pack_baseline = CascadeDefs::new(&no_shadow_resolved(), project_config)
+            .all_schemas(&pack)
+            .expect("pack-baseline schemas load");
+        assert_eq!(
+            pack_baseline
+                .get("note")
+                .and_then(|s| s.location.as_deref()),
+            Some("pack-notes/"),
+            "the no-shadow baseline must read the pack `note` definition",
+        );
+    }
+
+    /// The located-fault precedent (the `CascadeStepSource` rule, extended to
+    /// definition reads): a `file_owner` of `Project` whose on-disk
+    /// `workflows/<id>.yaml` is **missing** is a located fault naming the absent
+    /// file — never a silent fall-through to the pack definition (`overrides.md` →
+    /// whole-file definition shadow; the owning layer is never silently abandoned).
+    #[test]
+    fn project_owned_but_missing_workflow_shadow_is_a_located_fault_not_a_pack_fallthrough() {
+        let cfg = TempDir::new("wf-shadow-missing");
+        let project_config = cfg.path();
+        // The project owns `flow` (the cascade says so) but ships no file for it.
+        let pack = FixturePack::with(vec![(
+            PackResourceKind::Workflows,
+            "flow",
+            "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:pack-body }}\n",
+        )]);
+        let base = engine::cascade::PackDefaultLayer::new(
+            "dev",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["flow".to_owned()],
+        );
+        let project = OverrideLayer::empty().shadow_file("flow");
+        let resolved = engine::cascade::resolve(&base, None, Some(&project)).expect("resolves");
+
+        let err = CascadeDefs::new(&resolved, project_config)
+            .read_workflow(&pack, "flow")
+            .expect_err("a project-owned but missing workflow shadow must fault, not fall through");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("flow") && msg.contains("workflows"),
+            "the located fault must name the absent `flow` workflow shadow; got: {msg}",
+        );
     }
 }
