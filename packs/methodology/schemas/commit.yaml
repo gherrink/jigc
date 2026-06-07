@@ -17,7 +17,6 @@ sections:
     fields:
       - { id: type, type: enum, of: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert] }
       - { id: scope, type: string }
-      - { id: implements, type: ref, to: spec, card: "0..1", inverse: implemented-by }
   - id: summary
     slot: { hint: "The subject line — what changed, imperative mood, <=50 chars." }
   - id: body
