@@ -1050,6 +1050,88 @@ mod tests {
         assert_eq!(back, description);
     }
 
+    /// Skip-on-absent **through the assemble→render path**, plus the renderer-unit
+    /// shape check: a definition that carries *neither* authored field is dropped by
+    /// the engine's [`engine::introspect::Description::assemble`] (never reaching the
+    /// renderer), so its id never appears in the rendered bytes — and the rendered
+    /// prose carries no key-shaped line and no bullet row. This is the colocated
+    /// counterpart to the integration-level format predicate (`tests/describe.rs`):
+    /// the integration test holds the *real binary's* bytes to the full predicate;
+    /// this pins, at the renderer unit, that an absent-field def is skipped end-to-end
+    /// and the rendered surface stays prose-shaped (`introspection.md` → The authored
+    /// fields, skip-on-absent; The operational format contract).
+    #[test]
+    fn render_describe_skips_absent_field_def_and_stays_prose_shaped() {
+        use engine::compose::{CommandCatalog, WorkflowDef};
+        use std::collections::BTreeMap;
+
+        // A minimal `WorkflowDef` carrying only the two authored fields the weave
+        // reads; the rest is inert for this projection.
+        fn workflow(description: Option<&str>, usage: Option<&str>) -> WorkflowDef {
+            WorkflowDef {
+                when: None,
+                description: description.map(str::to_owned),
+                usage: usage.map(str::to_owned),
+                creates_task: true,
+                selectable: true,
+                allows_create: Vec::new(),
+                reads: Vec::new(),
+                includes: Vec::new(),
+            }
+        }
+
+        let narrated = workflow(
+            Some("a narrated workflow you can compose from intent to commit."),
+            None,
+        );
+        let silent = workflow(None, None); // neither field → skip-on-absent
+        let catalog = CommandCatalog {
+            commands: BTreeMap::new(),
+        };
+        let description = Description::assemble(
+            [("narrated", &narrated), ("silent-workflow", &silent)],
+            std::iter::empty(),
+            &catalog,
+        );
+
+        let agent = describe(Format::Agent, &description);
+
+        // The narrated def survives; the both-absent def never appears in the bytes.
+        assert!(
+            agent.contains("a narrated workflow you can compose from intent to commit."),
+            "the narrated definition's prose must render; got:\n{agent}",
+        );
+        assert!(
+            !agent.contains("silent-workflow"),
+            "a both-absent definition must be skipped end-to-end (never rendered); got:\n{agent}",
+        );
+
+        // The rendered surface stays prose-shaped: no key-shaped line, no bullet row
+        // (the renderer-unit echo of the integration format predicate).
+        for line in agent.trim_end().trim_end_matches(ROUTING_FOOTER).lines() {
+            let trimmed = line.trim_start();
+            if let Some(colon) = trimmed.find(':') {
+                let key = &trimmed[..colon];
+                let key_shaped = !key.is_empty()
+                    && key
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                    && trimmed[colon + 1..]
+                        .chars()
+                        .next()
+                        .is_some_and(char::is_whitespace);
+                assert!(
+                    !key_shaped,
+                    "a key-shaped line leaked into the prose: {line:?}"
+                );
+            }
+            let mut chars = trimmed.chars();
+            let bullet = matches!(chars.next(), Some('-') | Some('*'))
+                && chars.next().is_some_and(char::is_whitespace);
+            assert!(!bullet, "a bullet row leaked into the prose: {line:?}");
+        }
+    }
+
     /// The JSON rendering of the same value is valid JSON of the result type and
     /// carries no footer.
     #[test]
