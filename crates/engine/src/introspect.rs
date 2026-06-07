@@ -270,6 +270,50 @@ mod tests {
             prose.starts_with("single-task is "),
             "the weave names the definition first: {prose:?}"
         );
+        // The weave supplies the "Reach for it when " lead itself — exactly once.
+        // The authored `usage:` is a **bare clause** (no own lead), so a single
+        // occurrence is the only well-formed shape. Asserting the *count* (not just
+        // presence) is what would catch a weave that doubled the lead — the
+        // production defect a presence-only `find` masks.
+        assert_eq!(
+            prose.matches("Reach for it when ").count(),
+            1,
+            "the weave supplies the usage lead exactly once: {prose:?}"
+        );
+    }
+
+    /// The weave must not double its own lead when handed real pack-shaped prose.
+    ///
+    /// The pack authors `usage:` as a **bare clause** (`design/introspection.md` →
+    /// the weave example carries usage WITHOUT the "Reach for it when" prefix), and
+    /// the weave prepends the fixed lead. Fed verbatim copies of two real shipped
+    /// `usage:` strings, the woven sentence must carry the lead exactly once and
+    /// must never produce the doubled "Reach for it when Reach for it when …" shape.
+    /// This is the unit-level counterpart of the emitted-bytes guard in
+    /// `crates/cli/tests/describe.rs` — it pins the weave's contract at the source
+    /// so a regression is caught here, not only at the binary boundary.
+    #[test]
+    fn weave_does_not_double_the_lead_on_real_pack_prose() {
+        // Verbatim from the shipped pack (single-task.yaml / adr.yaml `usage:`).
+        let single_task_usage = "the work is one coherent change you can hold in your head and carry from \
+             intent to commit in a single pass.";
+        let adr_usage = "a choice is worth preserving with its rationale, so a later \
+                         reader can recover why the call was made or supersede it on \
+                         the record.";
+
+        for (id, usage) in [("single-task", single_task_usage), ("adr", adr_usage)] {
+            let prose =
+                weave(id, Some("an end-to-end scoped change."), Some(usage)).expect("woven");
+            assert_eq!(
+                prose.matches("Reach for it when ").count(),
+                1,
+                "real pack prose weaves the lead exactly once: {prose:?}"
+            );
+            assert!(
+                !prose.contains("Reach for it when Reach for it"),
+                "the doubled lead must never appear: {prose:?}"
+            );
+        }
     }
 
     /// A description-only definition narrates "X is …" and omits the usage clause.
