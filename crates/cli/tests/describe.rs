@@ -246,6 +246,53 @@ fn describe_carries_the_authored_strings() {
 }
 
 #[test]
+fn describe_carries_the_arch_doc_doctype_and_workflow() {
+    // M13 Increment 4, T3 — the M11 describe surface for the new doctype + workflow.
+    // The arch-doc doc-type and the architecture-documentation workflow each carry
+    // authored `description:`/`usage:` prose (T1/T2); this asserts that prose is woven
+    // into the rendered menu, facts-not-advice, the M11 weave shape
+    // ("X is <description>. Reach for it when <usage>."). Driven over the EMITTED bytes
+    // of the real binary so a pack file that drops or garbles the prose fails here.
+    let repo = TempDir::new("archdoc");
+    set_up_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = describe_stdout(repo.path(), home.path());
+
+    // The new workflow's authored description + usage clauses, woven facts-not-advice.
+    assert!(
+        out.contains(
+            "architecture-documentation is Authors living architecture documentation for one part of the system and commits it."
+        ),
+        "the architecture-documentation workflow's authored description must survive into the projection; got:\n{out}",
+    );
+    assert!(
+        out.contains(
+            "Reach for it when a part of the system needs a durable, code-checked description so a later reader can orient without reverse-engineering it."
+        ),
+        "the architecture-documentation workflow's authored usage must survive into the projection; got:\n{out}",
+    );
+
+    // The new doc-type's authored description + usage clauses, woven facts-not-advice.
+    assert!(
+        out.contains("arch-doc is Living architecture documentation for one part of the system"),
+        "the arch-doc doctype's authored description must survive into the projection; got:\n{out}",
+    );
+    assert!(
+        out.contains(
+            "Reach for it when a part of the system is worth a durable description that stays honest against the code, so a later reader (or agent) can orient without reverse-engineering it."
+        ),
+        "the arch-doc doctype's authored usage must survive into the projection; got:\n{out}",
+    );
+
+    // The new prose must not break the non-contractual format contract — the projection
+    // stays hostile-to-parsing even with the M13 defs woven in.
+    assert_non_contractual_prose(&out).unwrap_or_else(|why| {
+        panic!("the projection with the M13 arch-doc defs must stay non-contractual prose: {why}\n--- output ---\n{out}")
+    });
+}
+
+#[test]
 fn describe_narrates_no_empty_or_dangling_clause() {
     // skip-on-absent at the emitted-bytes level: the projection never narrates a
     // definition that carries no authored field. The real pack authors all defs, so
