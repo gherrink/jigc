@@ -396,7 +396,7 @@ const audit = await parallel([
 
 return {
   status: 'built-and-audited',
-  message: builtMilestone + ' fully built and independently validated clean. Milestone-completion audit complete — fix-now is the default (the dev-workflow gate per finding); the human gate fires only for too-big (→ its own increment) or contested (→ would revise a settled decision) findings.',
+  message: builtMilestone + ' fully built and independently validated clean. Milestone-completion audit complete. NOW: verify each finding is real (reproduce it), then AUTO-FIX every confirmed finding — delegate each to a `build-fixer` subagent (dev-workflow, one commit), the SAME autonomy the build phase has. Do NOT ask the human per finding and do NOT present a fix-vs-defer menu: leaving a confirmed finding unfixed degrades the milestone, so "defer / known-limitation" is NOT a default disposition. The human gate fires for EXACTLY two cases, and only after you have confirmed the finding: (a) too-big — the fix genuinely warrants its own increment (still scheduled, never dropped); (b) contested — the fix would revise a settled decision or change intended behavior. Size, not severity, decides the lane: a HIGH that is a bounded fix is still fix-now, and a pre-existing defect the milestone’s own flow exercises + a builder test masked is fix-now (not defer). Everything else is a tested commit the human reviews AFTER. See milestone-completion-workflow.md → Plan (triage).',
   milestone: builtMilestone,
   base: base || '(omitted — the auditors auto-discovered it from git log)',
   incrementReports,
