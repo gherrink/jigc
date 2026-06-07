@@ -1383,6 +1383,13 @@ pub enum GenerateError {
         /// A human-readable description of the mismatch.
         what: String,
     },
+    /// The `add_item` title has no slug-able content, so it would mint an **empty**
+    /// `{#}` anchor. `slugify` is total (maps such input to `""`), so the mint site
+    /// rejects it rather than emit a malformed item.
+    UnslugableTitle {
+        /// The rejected title, verbatim.
+        title: String,
+    },
 }
 
 /// `set-slot` (section **absent**): materialize the absent body section `section_id`'s
@@ -1454,8 +1461,15 @@ pub fn add_item(
         });
     }
 
-    // Mint the item anchor from the id-source (the title) via slugify.
+    // Mint the item anchor from the id-source (the title) via slugify. `slugify` is
+    // total: a title with no slug-able content maps to `""`, which would emit a
+    // malformed empty `{#}` anchor — reject it here (the only place it can be caught).
     let id = crate::slug::slugify(title);
+    if id.is_empty() {
+        return Err(GenerateError::UnslugableTitle {
+            title: title.to_string(),
+        });
+    }
 
     let item = render_item(&ItemContent {
         id: id.clone(),
@@ -2843,6 +2857,32 @@ Holds at 100/min.
         assert!(matches!(err, GenerateError::AlreadyPresent { .. }));
     }
 
+    /// `add-item` with a title that slugs to `""` (no slug-able content) must
+    /// reject with [`GenerateError::UnslugableTitle`] rather than minting an empty
+    /// `{#}` anchor — `slugify` is total, so the mint site is the only place this
+    /// can be caught. Covers an empty title and a punctuation-only one (M13 audit
+    /// LOW).
+    #[test]
+    fn add_item_unslugable_title_is_rejected() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        for title in ["", "###", "!!!___---"] {
+            let err = add_item(&spec_schema(), src, "criteria", title, Some("x"), &[])
+                .expect_err("an unslugable title must not mint an empty anchor");
+            assert!(
+                matches!(err, GenerateError::UnslugableTitle { .. }),
+                "title {title:?} should be UnslugableTitle, got {err:?}"
+            );
+        }
+    }
+
     /// `add-item` into an **empty trailing** repeatable section (the `criteria`
     /// section is last and has no items yet — the exact shape `jigc doc create spec`
     /// leaves on disk before the first `add-item`) mint-empty (`--title` only) must be
@@ -3678,6 +3718,10 @@ pub fn generate_error_finding(err: &GenerateError) -> Finding {
         GenerateError::WrongShape { what } => {
             ("write.wrong-shape", format!("write rejected: {what}"))
         }
+        GenerateError::UnslugableTitle { title } => (
+            "write.unslugable-title",
+            format!("write rejected: title {title:?} has no slug-able content for an item id"),
+        ),
     };
     Finding::blocking(code, message, Location::at(1, 1))
 }
