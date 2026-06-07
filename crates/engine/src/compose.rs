@@ -62,6 +62,13 @@ pub struct Reads {
 pub struct WorkflowDef {
     /// The one-line `when` selection hint (router/catalog guidance).
     pub when: Option<String>,
+    /// Authored prose: what this workflow *is* (one or two sentences). Optional —
+    /// `None` when the front-matter omits it. Projected by the `describe`
+    /// self-description surface (`introspection.md` → The authored fields).
+    pub description: Option<String>,
+    /// Authored prose: when/why you'd reach for this workflow. Optional — `None`
+    /// when the front-matter omits it. Projected by `describe` (`introspection.md`).
+    pub usage: Option<String>,
     /// Whether running this workflow mints a task. Default `true` when the
     /// front-matter omits the key (`workflow-dialect.md` → On-disk format).
     pub creates_task: bool,
@@ -87,6 +94,10 @@ pub struct WorkflowDef {
 #[derive(Deserialize)]
 struct WorkflowFrontMatter {
     when: Option<String>,
+    #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
+    usage: Option<String>,
     #[serde(rename = "creates-task", default = "default_true")]
     creates_task: bool,
     #[serde(default = "default_true")]
@@ -1085,6 +1096,8 @@ pub fn load_workflow_def(bytes: &[u8]) -> Result<WorkflowDef, Finding> {
 
     Ok(WorkflowDef {
         when: meta.when.filter(|w| !w.trim().is_empty()),
+        description: meta.description,
+        usage: meta.usage,
         creates_task: meta.creates_task,
         selectable: meta.selectable,
         allows_create: meta.allows_create,
@@ -2542,6 +2555,8 @@ Slightly higher write latency for resilience.
     fn reads_spec_def() -> WorkflowDef {
         WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: Vec::new(),
@@ -3135,6 +3150,8 @@ allows-create: [{type: adr, as: decision}]
         insta::assert_snapshot!(json, @r#"
         {
           "when": "implement one scoped change end-to-end",
+          "description": null,
+          "usage": null,
           "creates_task": true,
           "selectable": true,
           "allows_create": [
@@ -3152,6 +3169,37 @@ allows-create: [{type: adr, as: decision}]
           ]
         }
         "#);
+    }
+
+    /// Authored `description:`/`usage:` front-matter prose round-trips onto the
+    /// loaded `WorkflowDef` — the substrate `describe` projects. `WorkflowFrontMatter`
+    /// is **not** `deny_unknown_fields`, so this proves the loader is *wired*
+    /// rather than silently dropping the fields (the "authored it but describe
+    /// shows nothing" trap; `introspection.md` → The authored fields).
+    #[test]
+    fn description_and_usage_round_trip() {
+        let def = load_workflow_def(
+            b"---\nwhen: x\ndescription: one end-to-end scoped change\nusage: when the work is one coherent change\n---\n{{ include: step:locate }}\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            def.description.as_deref(),
+            Some("one end-to-end scoped change")
+        );
+        assert_eq!(
+            def.usage.as_deref(),
+            Some("when the work is one coherent change")
+        );
+    }
+
+    /// Omitting `description:`/`usage:` yields `None` on both — no error
+    /// (skip-on-absent is the runtime contract; `introspection.md`).
+    #[test]
+    fn description_and_usage_default_none_when_omitted() {
+        let def =
+            load_workflow_def(b"---\nwhen: x\n---\n{{ include: step:locate }}\n").expect("loads");
+        assert_eq!(def.description, None);
+        assert_eq!(def.usage, None);
     }
 
     /// A `reads: [{role: spec, type: spec}]`-declaring workflow front-matter
@@ -3669,6 +3717,8 @@ reference — make your consequences explain what changes:
         // A dangling include id (no step file in the cascade) → typed error.
         let dangling = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3686,6 +3736,8 @@ reference — make your consequences explain what changes:
         ]);
         let cyclic = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3726,6 +3778,8 @@ reference — make your consequences explain what changes:
         );
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: false,
             selectable: true,
             allows_create: vec![],
@@ -3772,6 +3826,8 @@ reference — make your consequences explain what changes:
         );
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: false,
             selectable: true,
             allows_create: vec![],
@@ -3804,6 +3860,8 @@ reference — make your consequences explain what changes:
         ]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3840,6 +3898,8 @@ reference — make your consequences explain what changes:
         ]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3883,6 +3943,8 @@ reference — make your consequences explain what changes:
         ]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3914,6 +3976,8 @@ reference — make your consequences explain what changes:
         let source = MapSource::new(&[("a", "loop\n{{ include: step:a }}\n")]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3942,6 +4006,8 @@ reference — make your consequences explain what changes:
         ]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
@@ -3980,6 +4046,8 @@ reference — make your consequences explain what changes:
             let source = MapSource::new(&pairs);
             let def = WorkflowDef {
                 when: None,
+                description: None,
+                usage: None,
                 creates_task: true,
                 selectable: true,
                 allows_create: vec![],
@@ -5268,6 +5336,8 @@ Follow the house rule.
         ]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: false,
             selectable: true,
             allows_create: vec![],
@@ -5321,6 +5391,8 @@ Follow the house rule.
         ]);
         let def = WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: false,
             selectable: true,
             allows_create: vec![],
@@ -5348,6 +5420,8 @@ Follow the house rule.
     fn t5_fan_out_def() -> WorkflowDef {
         WorkflowDef {
             when: None,
+            description: None,
+            usage: None,
             creates_task: false,
             selectable: true,
             allows_create: vec![],

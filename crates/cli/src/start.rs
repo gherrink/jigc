@@ -2714,6 +2714,8 @@ mod tests {
 
         let def = WorkflowDef {
             when: Some("implement from a spec".to_owned()),
+            description: None,
+            usage: None,
             creates_task: true,
             selectable: true,
             allows_create: vec![],
