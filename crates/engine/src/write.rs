@@ -922,6 +922,42 @@ pub fn set_item_field(
     Ok(splice(source, value_span, new_value))
 }
 
+/// `set-item-slot` (item slot present): replace the per-item slot prose of the
+/// repeatable item `item_id` in `section_id` with `new_prose`, leaving every other
+/// byte intact. Scoped to the addressed item by reading **that item's** recorded slot
+/// span — the dual of [`set_slot`]/`locate_slot_span` (which read only a section-level
+/// slot, the wrong-item bug for per-item slots). The parser already records each
+/// item's slot as [`crate::parse::ParsedItem::slot`], so we read the addressed item's
+/// span directly rather than re-scanning bytes. An absent item, a non-repeatable
+/// section, or an item whose template declares no slot → [`SpliceError::NotPresent`].
+pub fn set_item_slot(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_id: &str,
+    new_prose: &str,
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    let item = section
+        .items
+        .iter()
+        .find(|i| i.id == item_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("item {item_id:?} in section {section_id:?}"),
+        })?;
+    let span = item.slot.as_ref().ok_or_else(|| SpliceError::NotPresent {
+        what: format!("slot in item {item_id:?}"),
+    })?;
+    Ok(splice(source, span.start..span.end, new_prose))
+}
+
 /// Locate the **value** byte span of the field `key` — the bytes after `key:` (and
 /// its single separating space) to the end of that physical line. Reuses the block
 /// parse to find the line: a front-matter `key: value` line or a body `- key: value`
@@ -2078,6 +2114,58 @@ A short burst is tolerated.
         )
         .expect_err("no such field on item");
         assert!(matches!(missing_field, SpliceError::NotPresent { .. }));
+    }
+
+    /// `set_item_slot` on item B replaces **B's** per-item slot prose and leaves item
+    /// A's identically-shaped slot prose byte-for-byte untouched — the wrong-item slot
+    /// write bug retired. Golden pins the full result; the inverse (set on A) proves
+    /// the test is not order-trivial; `render(parse(out)) == out` confirms round-trip.
+    #[test]
+    fn set_item_slot_targets_the_addressed_item() {
+        let schema = linked_spec_schema();
+        let out = set_item_slot(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "burst-allowance",
+            "A short burst is tolerated for two seconds.",
+        )
+        .expect("item B slot present");
+        insta::assert_snapshot!("set_item_slot_b", out);
+        // (a) B's slot prose is the new text.
+        assert!(out.contains("A short burst is tolerated for two seconds."));
+        // (b) A's slot prose is byte-for-byte untouched.
+        assert!(out.contains("The gateway rejects the 101st request."));
+        // The old B prose is gone.
+        assert!(!out.contains("A short burst is tolerated.\n"));
+        // (c) The result round-trips byte-identical: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed), out);
+
+        // Inverse: setting A leaves B untouched — not order-trivial.
+        let out_a = set_item_slot(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "rate-limit",
+            "The gateway rejects the 101st request in a 60s window.",
+        )
+        .expect("item A slot present");
+        assert!(out_a.contains("The gateway rejects the 101st request in a 60s window."));
+        // B's original slot prose untouched.
+        assert!(out_a.contains("A short burst is tolerated."));
+        let reparsed_a = instance_from_source(&schema, &out_a).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed_a), out_a);
+    }
+
+    /// An absent item / a section with no per-item slot routes to
+    /// [`SpliceError::NotPresent`].
+    #[test]
+    fn set_item_slot_absent_is_not_present() {
+        let schema = linked_spec_schema();
+        let missing_item =
+            set_item_slot(&schema, TWO_ITEM_SPEC, "criteria", "ghost", "x").expect_err("no item");
+        assert!(matches!(missing_item, SpliceError::NotPresent { .. }));
     }
 
     /// An absent target routes to generation: a `set-field` for a field not present

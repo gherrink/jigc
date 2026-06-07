@@ -1,0 +1,25 @@
+---
+source: crates/engine/src/write.rs
+expression: out
+---
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+
+<!-- fields -->
+- implemented-by: src/gateway.rs
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated for two seconds.
+
+<!-- fields -->
+- implemented-by: src/burst.rs
