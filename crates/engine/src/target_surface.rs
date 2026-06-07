@@ -35,11 +35,15 @@
 //!   leaf is `<type>:<slug>#<section>/<item>/<field>`.
 //! - **`anchor_value`** — the opaque `code-anchor` text the agent authored
 //!   (`<path>#<symbol>`), untouched (the schema, not this layer, interprets it).
-//! - **`check_id`** — `symbol-exists` for a header / simple-section anchor (the
-//!   `adr.cites-code` floor), `criterion-maps-to-test` for a repeatable-item anchor
-//!   (the `spec` `criteria/<id>/maps-to-test` headline). The position *is* the
-//!   discriminator: a criterion's anchor is the only one carrying the test predicate
-//!   (`validation.md` → What it checks).
+//! - **`check_id`** — the resolved field-type's predicate, `field.check` if the
+//!   schema field declares one else the pack-declared field-type's `check`
+//!   (`field.check ?? field_type.check`; M13's per-field-type predicate selector).
+//!   So `adr.cites-code` / `arch-doc.components/implemented-by` (bare `code-anchor`)
+//!   inherit `symbol-exists`, while `spec.criteria/maps-to-test` (an explicit
+//!   `check: criterion-maps-to-test`) keeps the test predicate. **Position is not
+//!   the discriminator** — a repeatable anchor may resolve to `symbol-exists`
+//!   (`architecture-documentation.md` → The per-field-type predicate selector;
+//!   `validation.md` → What it checks).
 //!
 //! The list is **deterministically address-sorted** — the stable order the
 //! serializable snapshot ([`crate::validate`]'s T3 materialization) carries.
@@ -55,14 +59,6 @@ use std::path::Path;
 /// The pack-declared field-type name whose leaves are the target surface.
 const CODE_ANCHOR: &str = "code-anchor";
 
-/// The check id for a header / simple-section `code-anchor` (the `adr.cites-code`
-/// floor): *does the cited code still exist?*
-const SYMBOL_EXISTS: &str = "symbol-exists";
-
-/// The check id for a repeatable-item `code-anchor` (the `spec`
-/// `criteria/<id>/maps-to-test` headline): *does the criterion map to a real test?*
-const CRITERION_MAPS_TO_TEST: &str = "criterion-maps-to-test";
-
 /// One enumerated target-surface anchor: the leaf's [`address`](Self::address), the
 /// opaque [`anchor_value`](Self::anchor_value) the agent authored, and the
 /// [`check_id`](Self::check_id) the `doc-code` probe applies to it.
@@ -76,7 +72,9 @@ pub struct TargetAnchor {
     pub address: String,
     /// The opaque `code-anchor` value the agent authored (`<path>#<symbol>`).
     pub anchor_value: String,
-    /// `symbol-exists` (header/simple anchor) or `criterion-maps-to-test` (item anchor).
+    /// The resolved predicate the `doc-code` probe applies: `field.check` if the
+    /// schema field declares one, else the field-type's pack-declared `check`
+    /// (M13's selector — *not* chosen by section position).
     pub check_id: String,
 }
 
@@ -189,7 +187,8 @@ fn collect_from_source(
     }
 }
 
-/// Collect header / simple-section `code-anchor` fields → `symbol-exists`.
+/// Collect header / simple-section `code-anchor` fields, each carrying the
+/// predicate the M13 selector resolves (`field.check ?? field_type.check`).
 fn collect_simple(
     section: &crate::schema::Section,
     parsed: &ParsedSection,
@@ -211,13 +210,15 @@ fn collect_simple(
             anchors.push(TargetAnchor {
                 address: format!("{ty}:{slug}#{}/{}", section.id, declared.id),
                 anchor_value: value,
-                check_id: SYMBOL_EXISTS.to_string(),
+                check_id: resolve_check_id(declared),
             });
         }
     }
 }
 
-/// Collect repeatable-item `code-anchor` leaves → `criterion-maps-to-test`.
+/// Collect repeatable-item `code-anchor` leaves, each carrying the predicate the
+/// M13 selector resolves (`field.check ?? field_type.check`) — *not* chosen by
+/// position, so a repeatable anchor may resolve to `symbol-exists`.
 fn collect_repeatable(
     repeatable: &crate::schema::Repeatable,
     parsed: &ParsedSection,
@@ -247,11 +248,33 @@ fn collect_repeatable(
                 anchors.push(TargetAnchor {
                     address: format!("{ty}:{slug}#{}/{}/{}", section.id, item.id, declared.id),
                     anchor_value: value,
-                    check_id: CRITERION_MAPS_TO_TEST.to_string(),
+                    check_id: resolve_check_id(declared),
                 });
             }
         }
     }
+}
+
+/// The `doc-code` predicate for one `code-anchor` field: the field's own `check:`
+/// override if it declares one, else the resolved field-type's pack-declared
+/// `check` (M13's per-field-type predicate selector — position no longer
+/// discriminates). Only ever called on a field [`is_code_anchor`] accepted, so the
+/// type is a resolved [`FieldType::Pack`] carrying `check: Some(_)` (the post-T1
+/// invariant); a `None` there is a structurally-impossible mis-resolved schema and
+/// is surfaced as a panic, never a silent default (the absent-default trap).
+fn resolve_check_id(field: &crate::schema::Field) -> String {
+    if let Some(check) = &field.check {
+        return check.clone();
+    }
+    let FieldType::Pack(pack) = &field.ty else {
+        unreachable!(
+            "resolve_check_id is only called on a code-anchor (a resolved pack field type)"
+        );
+    };
+    pack.check.clone().expect(
+        "a resolved pack field type carries check: Some(_) (the post-T1 invariant); \
+         a None here is a mis-resolved schema, not a default to silently fill",
+    )
 }
 
 /// Whether a field's resolved type is the pack-declared `code-anchor`.
@@ -277,13 +300,20 @@ mod tests {
     //! a committed `adr`/`spec` that is **neither edited nor bound** contributes
     //! **zero** pairs (the masking-trap guard, hardening #5); a doc with **no**
     //! `code-anchor` contributes zero pairs.
+    //!
+    //! Each anchor's `check_id` is the **M13 selector** result (`field.check ??
+    //! field_type.check`), *not* a section-position choice: the `adr.cites-code`
+    //! header anchor (bare `code-anchor`) inherits `symbol-exists`; the `spec`
+    //! `maps-to-test` criterion anchor (an explicit `check: criterion-maps-to-test`)
+    //! keeps the test predicate; and a **repeatable** anchor with no field override
+    //! resolves to the type's `symbol-exists` — the position-independence proof
+    //! (`architecture-documentation.md` → The per-field-type predicate selector).
 
     use super::*;
     use crate::schema::{dev_pack_field_types, load_schema_with_types};
     use std::path::PathBuf;
 
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
-    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
 
     /// A throwaway directory tree that removes itself on drop.
     struct TempRoot(PathBuf);
@@ -313,6 +343,29 @@ mod tests {
         }
     }
 
+    /// A `spec` schema whose `criteria/maps-to-test` carries an **explicit**
+    /// `check: criterion-maps-to-test` override — the shipped predicate, now chosen
+    /// by `check:` not position (the post-T2 selector; T3 lands the same override on
+    /// the shipped `spec.yaml`). Inline here so this increment's enumeration proof
+    /// doesn't depend on T3's file edit.
+    const SPEC_WITH_CHECK_OVERRIDE: &[u8] = b"\
+type: spec
+location: specs/
+id-from: title
+sections:
+  - id: goal
+    slot: { hint: One sentence. }
+  - id: context
+    slot: { hint: Forces. }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: Testably phrased. } }
+        - { id: maps-to-test, type: code-anchor, check: criterion-maps-to-test }
+";
+
     fn schemas() -> BTreeMap<String, Schema> {
         let mut m = BTreeMap::new();
         m.insert(
@@ -321,7 +374,8 @@ mod tests {
         );
         m.insert(
             "spec".to_string(),
-            load_schema_with_types(SPEC_YAML, &dev_pack_field_types()).expect("spec.yaml loads"),
+            load_schema_with_types(SPEC_WITH_CHECK_OVERRIDE, &dev_pack_field_types())
+                .expect("spec fixture loads"),
         );
         m
     }
@@ -481,6 +535,70 @@ Effects.
                 .any(|a| a.anchor_value.contains("store.rs#canonical_path")),
             "an unrelated committed doc (neither edited nor bound) must contribute \
              zero pairs, got {anchors:?}",
+        );
+    }
+
+    /// (M13, the position-independence proof) A doctype whose **repeatable**
+    /// section carries a **bare** `code-anchor` leaf (no field `check:` override)
+    /// enumerates to `check_id: symbol-exists` — the type-level `check`, inherited
+    /// via the M13 selector. Pre-T2 the positional constant forced *every*
+    /// repeatable-item anchor to `criterion-maps-to-test`; this is the regression
+    /// that proves the predicate is pack-declared and position-independent (the
+    /// `arch-doc.components/implemented-by` shape — `architecture-documentation.md`
+    /// → The per-field-type predicate selector).
+    #[test]
+    fn repeatable_anchor_inherits_type_level_symbol_exists() {
+        // A doctype whose repeatable items each carry a bare `code-anchor`.
+        const ARCH_SCHEMA: &[u8] = b"\
+type: arch-doc
+location: architecture/
+id-from: title
+sections:
+  - id: components
+    repeatable:
+      id-from: name
+      block:
+        - { id: name, type: string }
+        - { id: implemented-by, type: code-anchor }
+";
+        // One created instance with a single component item carrying the anchor.
+        // No front-matter — the schema declares no header section.
+        const ARCH_INSTANCE: &str = "\
+# The index
+
+## Components
+
+### The edge index  {#edge-index}
+
+<!-- fields -->
+- implemented-by: crates/engine/src/index.rs#overlay_working
+";
+
+        let repo = TempRoot::new("repeatable-symbol-exists");
+        let task_dir = repo.path().join(".jigc").join("tasks").join("arch");
+        stage(&task_dir, "arch-doc:the-index", ARCH_INSTANCE);
+
+        let mut schemas = BTreeMap::new();
+        schemas.insert(
+            "arch-doc".to_string(),
+            load_schema_with_types(ARCH_SCHEMA, &dev_pack_field_types())
+                .expect("arch-doc fixture loads"),
+        );
+
+        let anchors =
+            enumerate_target_surface(&task_dir, repo.path(), &schemas).expect("enumerates");
+
+        // The repeatable-item anchor resolves to the *type-level* `symbol-exists`,
+        // not the deleted positional `criterion-maps-to-test`.
+        assert_eq!(
+            anchors,
+            vec![TargetAnchor {
+                address: "arch-doc:the-index#components/edge-index/implemented-by".to_string(),
+                anchor_value: "crates/engine/src/index.rs#overlay_working".to_string(),
+                check_id: "symbol-exists".to_string(),
+            }],
+            "a repeatable `code-anchor` with no field override inherits the \
+             type-level `symbol-exists` — position is not the discriminator",
         );
     }
 }

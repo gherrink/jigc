@@ -38,7 +38,8 @@ expression: json
           },
           {
             "id": "maps-to-test",
-            "type": "code-anchor"
+            "type": "code-anchor",
+            "check": "criterion-maps-to-test"
           }
         ]
       }
