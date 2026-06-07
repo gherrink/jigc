@@ -60,6 +60,7 @@ const ROUTING_FOOTER: &str =
 const NO_OVERRIDE_ROUTER_GOLDEN: &str = "\
 These are the selectable work-workflows, each with the situation it fits:
 
+- architecture-documentation — document the architecture of a part of the system, tying its components to the code that implements them
 - implement-from-spec — build from a committed spec whose acceptance criteria already exist
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
@@ -874,6 +875,154 @@ fn form_d_project_setup_mints_and_emits_the_create_prd_gate_with_three_author_sl
     assert!(
         stdout.trim_end().ends_with(ROUTING_FOOTER),
         "Form-D agent-text composition must end with the routing footer; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn form_d_architecture_documentation_mints_and_emits_the_create_gate_author_slot_and_item_lines() {
+    // M13 Increment 4 / T2. `--workflow architecture-documentation <intent>`: the
+    // arch-doc-authoring work-workflow. It is `creates-task: true` with
+    // `allows-create: [{type: arch-doc, as: arch-doc}]`, so Form D mints + composes
+    // it end-to-end. Its `author-arch-doc` step carries the create-gate (emitted as a
+    // `Run: jigc doc create arch-doc` line), the `overview` author slot (emitted as a
+    // `<<author: …>>` line bound to `task.arch-doc#overview`, empty pre-create like
+    // prd's slots), the doc-level `cites` set-field guidance, and the per-component
+    // `add-item` / set-slot / set-field guidance lines (the inc-1-3 item verbs).
+    //
+    // This is the `start_compose.rs` home for the binary-driven compose e2e (the
+    // `doc_write.rs`-style — driving the built `jigc` against a throwaway repo); it
+    // mirrors `form_d_project_setup` / `form_d_plan`.
+    let repo = TempDir::new("form-d-arch-doc");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &[
+            "--workflow",
+            "architecture-documentation",
+            "document the compose pipeline",
+        ],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow architecture-documentation \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The work-workflow minted under .jigc/tasks/<slug>/, recording its own id.
+    let task_dir = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("document-the-compose-pipeline");
+    assert!(
+        task_dir.join("base.json").is_file(),
+        "architecture-documentation is creates-task: true, so it must open .jigc/tasks/document-the-compose-pipeline/ with a base pin",
+    );
+    let recorded =
+        fs::read_to_string(task_dir.join("workflow")).expect("read recorded workflow id");
+    assert_eq!(
+        recorded.trim(),
+        "architecture-documentation",
+        "the minted task must record `workflow: architecture-documentation`",
+    );
+
+    // The create-gate emits as a machine-extractable `Run:` line for `arch-doc`.
+    assert!(
+        stdout.contains("Run: `jigc doc create arch-doc"),
+        "the author-arch-doc step must emit the `jigc doc create arch-doc` create-gate; got:\n{stdout}",
+    );
+
+    // The `overview` prose slot emits as exactly one `<<author: …>>` line. The
+    // `arch-doc` role is unbound on this first compose (the doc is not created yet),
+    // so the slot address resolves empty — `<<author: >>` — exactly as prd's slots
+    // do; the load-bearing fact is that the overview author directive composes (one
+    // and only one), not the resolved fragment text.
+    let author_lines = stdout
+        .lines()
+        .filter(|l| l.trim_start().starts_with("<<author:"))
+        .count();
+    assert_eq!(
+        author_lines, 1,
+        "author-arch-doc must emit exactly one `<<author: …>>` slot line (the overview); got:\n{stdout}",
+    );
+
+    // The doc-level `cites` set-field guidance line composes (the n→n cites→adr edge).
+    assert!(
+        stdout.contains("jigc doc set-field arch-doc:<slug>#cites"),
+        "author-arch-doc must carry the doc-level `cites` set-field guidance; got:\n{stdout}",
+    );
+
+    // The per-component item verbs compose: add-item mints a component, then its
+    // description slot + implemented-by code-anchor field are set on the item leaf.
+    assert!(
+        stdout.contains("jigc doc add-item arch-doc:<slug>#components"),
+        "author-arch-doc must carry the per-component `add-item` guidance; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("#components/<id>/description"),
+        "author-arch-doc must carry the per-component `set-slot …/description` guidance; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("#components/<id>/implemented-by"),
+        "author-arch-doc must carry the per-component `set-field …/implemented-by` guidance; got:\n{stdout}",
+    );
+
+    // The finalize line composes (the proven code-less finalize → promote spine).
+    assert!(
+        stdout.contains("Run: `jigc task finalize document-the-compose-pipeline`"),
+        "author-arch-doc → finalize must emit the `jigc task finalize` line; got:\n{stdout}",
+    );
+
+    assert!(
+        stdout.trim_end().ends_with(ROUTING_FOOTER),
+        "Form-D agent-text composition must end with the routing footer; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn bare_intent_router_lists_architecture_documentation_with_its_when() {
+    // M13 Increment 4 / T2. The new `creates-task: true` work-workflow auto-lists in
+    // the router's selectable catalog (`selectable_workflows`, zero code) — bare
+    // `jigc start "<intent>"` composes the no-mint router, which lists
+    // `architecture-documentation` as a `- <id> — <when>` option alongside the
+    // existing work-workflows, and mints NOTHING.
+    let repo = TempDir::new("router-arch-doc");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(repo.path(), home.path(), &["document the compose pipeline"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "bare `jigc start \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The router is `creates-task: false`: no `.jigc/tasks/` working area appears.
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "bare `jigc start` composes the router — no .jigc/tasks/ dir may be minted",
+    );
+
+    // The router lists the new workflow with its `when` hint, alongside the existing
+    // work-workflows (single-task proves the rest of the catalog still composes).
+    assert!(
+        stdout.contains(
+            "- architecture-documentation — document the architecture of a part of the system",
+        ),
+        "the router must list architecture-documentation as a `- <id> — <when>` option; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("- single-task — implement one scoped change end-to-end"),
+        "the router must still list the existing single-task option; got:\n{stdout}",
     );
 }
 

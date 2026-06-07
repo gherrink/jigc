@@ -344,6 +344,7 @@ fn step_5_the_live_router_catalog_lists_exactly_the_real_work_workflows() {
     assert_eq!(
         sorted_ids,
         [
+            "architecture-documentation",
             "implement-from-spec",
             "plan",
             "project-setup",

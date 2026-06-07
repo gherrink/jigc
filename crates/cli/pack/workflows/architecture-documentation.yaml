@@ -1,0 +1,9 @@
+---
+when: document the architecture of a part of the system, tying its components to the code that implements them
+description: Authors living architecture documentation for one part of the system and commits it.
+usage: a part of the system needs a durable, code-checked description so a later reader can orient without reverse-engineering it.
+creates-task: true
+allows-create: [{type: arch-doc, as: arch-doc}]
+---
+{{ include: step:author-arch-doc }}
+{{ include: step:finalize }}

@@ -2898,6 +2898,33 @@ A failed charge retries with exponential backoff, capped at five attempts.
               ],
               "hint": "Create a new ADR in the current task."
             },
+            "create-arch-doc": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "create"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "arch-doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--title"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "title",
+                  "hint": "short declarative title naming the part of the system the arch-doc documents"
+                }
+              ],
+              "hint": "Create a new arch-doc in the current task."
+            },
             "create-prd": {
               "command": "jigc",
               "args": [

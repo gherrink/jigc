@@ -54,6 +54,16 @@ commands:
       - { agent: title, hint: "short declarative title naming the product the prd specifies" }
     hint: "Create a new prd in the current task."
 
+  - id: create-arch-doc
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "arch-doc"
+      - "--title"
+      - { agent: title, hint: "short declarative title naming the part of the system the arch-doc documents" }
+    hint: "Create a new arch-doc in the current task."
+
   - id: bind-spec
     command: jigc
     args:

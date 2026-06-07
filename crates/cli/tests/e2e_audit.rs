@@ -831,6 +831,7 @@ fn scenario_6_nonconformant_oob_edit_to_committed_adr_blocks_finalize() {
 const NO_OVERRIDE_ROUTER_GOLDEN: &str = "\
 These are the selectable work-workflows, each with the situation it fits:
 
+- architecture-documentation — document the architecture of a part of the system, tying its components to the code that implements them
 - implement-from-spec — build from a committed spec whose acceptance criteria already exist
 - plan — draft the specification for upcoming work before writing any code
 - project-setup — bootstrap a brand-new project by developing the idea into its first product requirements
