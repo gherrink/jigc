@@ -785,13 +785,61 @@ pub fn set_slot(
         .ok_or_else(|| SpliceError::NotPresent {
             what: format!("section {section_id:?}"),
         })?;
-    let span = section
-        .slot
-        .as_ref()
-        .ok_or_else(|| SpliceError::NotPresent {
+    if section.slot.is_none() {
+        return Err(SpliceError::NotPresent {
             what: format!("slot in section {section_id:?}"),
-        })?;
-    Ok(splice(source, span.start..span.end, new_prose))
+        });
+    }
+
+    // Re-render the whole section body via [`render_section`] with the new slot prose
+    // (the section's existing fields preserved), then splice it over the section's body
+    // region — the same canonicalization trick [`set_item_slot`] (3afc98a) uses for an
+    // item slot. A bare splice of the recorded slot span is **not** byte-stable on a
+    // **leading** Simple slot (a section followed by another section whose empty form
+    // carries surrounding blanks): the parser records an empty/leading slot's span
+    // *without* the canonical surrounding blank lines, so splicing prose into it yields
+    // `## Goal\nprose\n\n\n## Context` (no blank after the heading, a double blank before
+    // the next section) while [`render_section`] emits one blank line on each side — so
+    // `render(parse(out)) != out`. Re-rendering the body (one canonical section-bytes
+    // path) is the fix; `set_field`'s surgical span-splice is untouched (a field-value
+    // edit must stay byte-surgical on non-canonical input).
+    let schema_section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or(SpliceError::NotConformant)?;
+    let content = SectionContent {
+        id: section.id.clone(),
+        slot: Some(new_prose.to_string()),
+        fields: section.fields.clone(),
+        items: Vec::new(),
+    };
+    // [`render_section`] emits `## Heading\n` then the body; strip that heading line to
+    // get the canonical body bytes (`\n` + prose + field-group / `\n`).
+    let rendered = render_section(schema_section, Some(&content));
+    let body = rendered
+        .split_once('\n')
+        .map(|(_, rest)| rest)
+        .unwrap_or("");
+    let body = body.trim_end_matches('\n');
+
+    let blocks = parse::scan_blocks(source);
+    let present = present_body_sections(schema, source);
+    let region = section_region(&blocks, source, section_id, &present).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("section {section_id:?} body region"),
+        }
+    })?;
+    // Re-attach the **canonical** inter-section separator (not the recorded one): a
+    // following `##` heading gets `body\n\n` (one blank line — [`render`] joins section
+    // blocks with a single `\n` and each block already ends in one `\n`); a trailing
+    // section (region runs to EOF) gets `body\n` (the single EOF newline).
+    let replacement = if region.end < source.len() {
+        format!("{body}\n\n")
+    } else {
+        format!("{body}\n")
+    };
+    Ok(splice(source, region, &replacement))
 }
 
 /// `set-field` (field present): replace the **value** bytes of `field_key` in
@@ -2435,7 +2483,6 @@ mod splice_prop_tests {
     //! located target's recorded span; every other byte is unchanged.
 
     use super::*;
-    use crate::parse::parse_sections;
     use crate::schema::Schema;
     use proptest::prelude::*;
 
@@ -2499,23 +2546,46 @@ mod splice_prop_tests {
             prop_assert_eq!(&out[value_span.start..value_span.start + to.len()], to);
         }
 
-        /// Surgical on a `set-slot`: changing the `decision` slot over an arbitrary
-        /// conformant ADR confines the diff to exactly the recorded slot span.
+        /// Byte-stable on a `set-slot`: changing the `decision` slot over an arbitrary
+        /// conformant ADR yields a **canonical** buffer (`render(parse(out)) == out`)
+        /// carrying the new prose, with every byte *outside* this section's body region
+        /// untouched. Re-pinned (M13 audit HIGH): `set_slot` now re-renders the section
+        /// canonically instead of splicing the bare recorded slot span — so a prior
+        /// `assert_diff_confined_to(recorded-span)` + verbatim-placement assertion no
+        /// longer holds (the canonical render trims trailing slot whitespace and
+        /// canonicalizes surrounding blanks, which the bare-span splice did **not** — the
+        /// defect). Byte-stability is the stronger, correct invariant here.
         #[test]
-        fn set_slot_diff_confined_to_span(
+        fn set_slot_into_decision_is_byte_stable(
             context in prose(),
             decision in prose(),
             consequences in prose(),
             new_prose in prose(),
         ) {
-            let src = build_adr("proposed", &context, &decision, &consequences);
+            // The fixture must be canonical so whole-doc byte-stability is a valid
+            // assertion: the `prose()` strategy can emit trailing whitespace, which the
+            // canonical writer trims — so a fixture section `set_slot` does *not* touch
+            // (context / consequences) would otherwise make `render(parse(out)) != out`
+            // for reasons unrelated to the slot under test. Trim each to its canonical form.
+            let context = context.trim_end();
+            let decision = decision.trim_end();
+            let consequences = consequences.trim_end();
+            let src = build_adr("proposed", context, decision, consequences);
             let schema = adr_schema();
-            let doc = parse_sections(&schema, &src).expect("conformant ADR parses");
-            let span = doc.sections.iter().find(|s| s.id == "decision")
-                .unwrap().slot.as_ref().unwrap().clone();
             let out = set_slot(&schema, &src, "decision", &new_prose).expect("decision present");
-            assert_diff_confined_to(&src, &out, span.start..span.end);
-            prop_assert_eq!(&out[span.start..span.start + new_prose.len()], new_prose.as_str());
+            // The new prose (trimmed, as the canonical writer emits it) is present.
+            let want_prose = new_prose.trim_end();
+            prop_assert!(out.contains(want_prose));
+            // Every byte outside the `## Decision` body region is untouched: the
+            // front-matter, the `## Context` body, and the `## Consequences` heading +
+            // body all survive verbatim.
+            let want_context = format!("## Context\n\n{context}");
+            let want_consequences = format!("## Consequences\n\n{consequences}");
+            prop_assert!(out.contains(&want_context));
+            prop_assert!(out.contains(&want_consequences));
+            // Round-trips byte-identical: render(parse(out)) == out.
+            let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+            prop_assert_eq!(render(&schema, &reparsed), out);
         }
     }
 
@@ -3502,8 +3572,13 @@ pub fn set_slot_validated(
     // generate the section's structural home at its schema-ordered position.
     match set_slot(schema, source, section_id, new_prose) {
         Ok(edited) => {
-            // Locate the (pre-edit) slot span as the validate-after target.
-            let target = locate_slot_span(schema, source, section_id).ok_or_else(|| {
+            // The validate-after target is the **section body region** — the bytes
+            // [`set_slot`] re-renders canonically — not the bare recorded slot span:
+            // `set_slot` no longer splices the bare span (that was the leading-slot
+            // byte-stability defect, M13 audit HIGH), so the confinement check (b) must
+            // bound the same region the canonical re-render touches, or a legitimate
+            // blank-line canonicalization would trip `write.target-escape`.
+            let target = locate_slot_region(schema, source, section_id).ok_or_else(|| {
                 Finding::blocking(
                     "write.not-present",
                     format!("slot in section {section_id:?} is not present"),
@@ -3573,17 +3648,17 @@ fn slot_ceiling_finding(prose: &str) -> Option<Finding> {
     })
 }
 
-/// Locate the byte span of `section_id`'s slot prose in `source` (the parser's
-/// recorded opaque span), the validate-after target for a present-section set-slot.
-fn locate_slot_span(schema: &Schema, source: &str, section_id: &str) -> Option<Range<usize>> {
+/// Locate the **body region** of `section_id` in `source` — `[content_start, next-`
+/// `##`/EOF)`, the bytes [`set_slot`] re-renders canonically — the validate-after
+/// confinement target for a present-section set-slot. Returns `None` when the section
+/// is absent or declares no slot (the surgical-splice precondition `set_slot` enforces).
+fn locate_slot_region(schema: &Schema, source: &str, section_id: &str) -> Option<Range<usize>> {
     let doc = parse::parse_sections(schema, source).ok()?;
-    let span = doc
-        .sections
-        .iter()
-        .find(|s| s.id == section_id)?
-        .slot
-        .as_ref()?;
-    Some(span.start..span.end)
+    let section = doc.sections.iter().find(|s| s.id == section_id)?;
+    section.slot.as_ref()?;
+    let blocks = parse::scan_blocks(source);
+    let present = present_body_sections(schema, source);
+    section_region(&blocks, source, section_id, &present)
 }
 
 /// Render a [`GenerateError`] as the gate's blocking [`Finding`] — the shared
@@ -4717,10 +4792,16 @@ mod spec_roundtrip {
     use crate::schema::Schema;
 
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
 
     fn spec_schema() -> Schema {
         crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
             .expect("spec.yaml loads")
+    }
+
+    fn arch_doc_schema() -> Schema {
+        crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("arch-doc.yaml loads")
     }
 
     /// A canonical `spec` instance over the shipped schema: the `# H1` title (the
@@ -4789,6 +4870,99 @@ The next window admits requests again.
             "render(parse(src)) must equal the source bytes"
         );
         insta::assert_snapshot!("spec_instance", rendered);
+    }
+
+    /// A canonical **empty** `spec` instance: the `# H1` title and the three section
+    /// homes (`## Goal`, `## Context`, `## Criteria`) all present but **unfilled** —
+    /// exactly what the writer emits before any slot is authored. `goal` is a *leading*
+    /// Simple slot whose section is followed by `## Context`, so its empty-slot canonical
+    /// form carries the surrounding blank lines `set_slot` must preserve.
+    fn empty_spec_source() -> String {
+        let schema = spec_schema();
+        let instance = instance_from_source(
+            &schema,
+            "\
+# Gateway rate limiting
+
+## Goal
+
+## Context
+
+## Criteria
+",
+        )
+        .expect("empty spec parses");
+        render(&schema, &instance)
+    }
+
+    /// Regression (M13 audit HIGH): `set_slot` into the shipped `spec`'s **leading**
+    /// `goal` slot (the section is followed by `## Context`) must produce **canonical**
+    /// bytes, so `render(parse(out)) == out`. The parser records a leading empty slot's
+    /// span *bare* (no surrounding blank lines); a bare-span splice yielded
+    /// `## Goal\nLimit…\n\n\n## Context` — no blank after the heading, a double blank
+    /// before the next section — while [`render_section`] emits one blank on each side.
+    /// `set_slot` now re-renders the section canonically (mirroring 3afc98a's item-slot
+    /// fix), so the present-splice path is byte-stable.
+    #[test]
+    fn set_slot_into_leading_goal_slot_is_byte_stable() {
+        let schema = spec_schema();
+        let src = empty_spec_source();
+        let out = set_slot(
+            &schema,
+            &src,
+            "goal",
+            "Bound per-client request volume at the gateway.",
+        )
+        .expect("goal slot present");
+        assert!(out.contains("Bound per-client request volume at the gateway."));
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "set_slot into the leading `goal` slot is byte-stable",
+        );
+    }
+
+    /// Regression (M13 audit HIGH): `set_slot` into the shipped `arch-doc`'s **leading**
+    /// `overview` slot (the section is followed by `## Components`) must produce
+    /// **canonical** bytes, so `render(parse(out)) == out`. This is M13's production
+    /// authoring path — `author-arch-doc.yaml` drives `set-slot arch-doc:<slug>#overview`
+    /// — and the same leading-Simple-slot defect the `spec.goal` case hits.
+    #[test]
+    fn set_slot_into_leading_overview_slot_is_byte_stable() {
+        let schema = arch_doc_schema();
+        let src = render(
+            &schema,
+            &instance_from_source(
+                &schema,
+                "\
+---
+cites:
+---
+
+# Storage layer
+
+## Overview
+
+## Components
+",
+            )
+            .expect("empty arch-doc parses"),
+        );
+        let out = set_slot(
+            &schema,
+            &src,
+            "overview",
+            "The storage layer owns the on-disk task working areas.",
+        )
+        .expect("overview slot present");
+        assert!(out.contains("The storage layer owns the on-disk task working areas."));
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "set_slot into the leading `overview` slot is byte-stable",
+        );
     }
 
     /// Clause (b): `write → parse → write` is byte-identical (idempotent on canonical

@@ -292,18 +292,14 @@ fn first_add_item_materializes_components_after_overview_in_schema_order() {
     );
     assert_ok(&anchor, "`set-field …#components/<id>/implemented-by`");
 
-    // The item-leaf writes (`description` + `implemented-by`) round-trip byte-stable —
-    // the byte-stability the done-criterion names for this arc. We assert it over the
-    // `## Components` region (the item subtree the two writes touch): parse the staged
-    // doc, render it canonically, and require the Components-onward bytes to match
-    // verbatim. (Whole-doc byte-stability is deliberately NOT asserted here: a
-    // pre-existing `set_slot` defect on a leading **Simple** slot — `## Overview`
-    // followed by a section whose empty-slot canonical form carries trailing blanks —
-    // leaves the overview region non-canonical after `set-slot …#overview`; it
-    // reproduces on shipped `spec` too (`set-slot spec:…#goal`) and is orthogonal to
-    // the repeatable-item authoring this task exercises. Scoping to the item subtree
-    // keeps the assertion honest about what the item-leaf writes guarantee without
-    // masking that defect.)
+    // The full authoring chain — `set-slot …#overview` (a leading Simple slot) plus the
+    // item-leaf `description` + `implemented-by` writes — round-trips byte-stable over
+    // the **whole** staged doc: `render(parse(staged)) == staged`. (Previously scoped to
+    // the `## Components` subtree to route around the M13-audit-HIGH leading-Simple-slot
+    // `set_slot` defect — `set-slot …#overview` left `## Overview\n<prose>\n\n\n\n##`
+    // `Components`, non-canonical; that defect is now fixed (`set_slot` re-renders the
+    // section canonically, mirroring the item-slot fix in 3afc98a), so the assertion is
+    // broadened to whole-doc to catch a regression.)
     let staged = staged_arch_doc(repo.path(), task, slug);
     let schema = arch_doc_schema();
     let parsed =
@@ -341,16 +337,9 @@ fn first_add_item_materializes_components_after_overview_in_schema_order() {
     }
 
     let rerendered = engine::write::render(&schema, &parsed);
-    let components_marker = "## Components\n";
-    let staged_components = &staged[staged
-        .find(components_marker)
-        .expect("staged carries the Components heading")..];
-    let rendered_components = &rerendered[rerendered
-        .find(components_marker)
-        .expect("render carries the Components heading")..];
     assert_eq!(
-        rendered_components, staged_components,
-        "the item-leaf authoring (description + implemented-by) is byte-stable across \
-         parse → render over the `## Components` region",
+        rerendered, staged,
+        "the full authoring chain (overview slot + item-leaf description + \
+         implemented-by) is byte-stable across parse → render over the WHOLE doc",
     );
 }
