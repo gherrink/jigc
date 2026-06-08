@@ -2066,7 +2066,18 @@ impl<'a> CascadeDefs<'a> {
             } else {
                 read_pack(pack, PackResourceKind::Schemas, id.as_str())?
             };
-            let schema = crate::pack::load_pack_schema(pack, &bytes)
+            // A schema's field-type names are body-references resolved against the
+            // **origin pack** — the constituent that defines this schema's top-level
+            // id — so a loser-pack doctype's `code-anchor` resolves from ITS OWN
+            // pack's `field-types.yaml`, never the precedence-winner's (which need
+            // not declare it). Same origin lookup the step/command-ref reads perform;
+            // for a single pack (or a project-owned id, whose `field_owner` made the
+            // composite return its only constituent) the origin *is* `pack`, so the
+            // read is byte-identical (`multi-pack.md` → Pack-local body-reference
+            // resolution → Field-types are the same rule, one definition kind over).
+            let origin =
+                pack.origin_pack(PackResourceKind::Schemas, &ResourceId::from(id.as_str()));
+            let schema = crate::pack::load_pack_schema(origin, &bytes)
                 .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
             out.insert(schema.ty.clone(), schema);
         }
@@ -3789,6 +3800,152 @@ mod tests {
         assert_eq!(
             over_composite.text, over_bare.text,
             "a single-pack composite must compose its command-refs byte-identically to the bare pack",
+        );
+    }
+
+    /// A pack whose schema `<schema_id>` declares a `code-anchor` field — a
+    /// pack-provided field type — and whose own `field-types.yaml` defines
+    /// `code-anchor`. The schema id is caller-supplied so two constituents of a
+    /// composite ship **distinct** schema ids (no top-level collision — the
+    /// fixture forces a resolution *miss* via the winner's omitted field-type, not
+    /// a same-id schema collision, which stays deferred). `defaults`/`commands` are
+    /// present so the pack parses on every read path.
+    fn field_type_pack(pack_id: &str, schema_id: &str) -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                &format!("pack-id: {pack_id}\ndefault-workflow: wf\n"),
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Config,
+                "field-types",
+                "- { name: code-anchor, adjudicator: doc-code, check: symbol-exists }\n",
+            ),
+            (
+                PackResourceKind::Schemas,
+                schema_id,
+                &format!(
+                    "type: {schema_id}\nlocation: {schema_id}/\nsections:\n  - id: meta\n    header: true\n    fields:\n      - {{ id: anchor, type: code-anchor, check: symbol-exists }}\n"
+                ),
+            ),
+        ])
+    }
+
+    /// The same pack but shipping a `field-types.yaml` that **omits** `code-anchor`
+    /// — and a schema that uses only a **native** type, so the pack loads its own
+    /// schema. This is the precedence **winner** in the loser test: its catalog of
+    /// field types is what a *non-pack-local* (composite) read would feed every
+    /// schema, so the loser's `code-anchor` would resolve against this omitting
+    /// surface and fail `UnknownFieldType`.
+    fn no_field_type_pack(pack_id: &str, schema_id: &str) -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                &format!("pack-id: {pack_id}\ndefault-workflow: wf\n"),
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            // The omitting field-types.yaml — an empty declared set (`code-anchor`
+            // absent). A composite `read(Config, field-types)` would return THIS
+            // (the precedence winner's), so a loser schema's `code-anchor` would
+            // dangle unless its field-types resolve pack-locally.
+            (PackResourceKind::Config, "field-types", "[]\n"),
+            (
+                PackResourceKind::Schemas,
+                schema_id,
+                &format!(
+                    "type: {schema_id}\nlocation: {schema_id}/\nsections:\n  - id: meta\n    header: true\n    fields:\n      - {{ id: title, type: string }}\n"
+                ),
+            ),
+        ])
+    }
+
+    /// T4 done-criterion — **pack-local field-types**: a loser-pack schema's
+    /// declared field-type names resolve against its **own** pack's
+    /// `field-types.yaml`, even though the precedence-winning pack ships a
+    /// `field-types.yaml` that **omits** the type (`code-anchor`). A non-pack-local
+    /// (composite) field-type read would feed the winner's omitting surface and the
+    /// loser schema would fail `UnknownFieldType`; the pack-of-origin scoping makes
+    /// `lower-doc`'s `code-anchor` resolve against the lower pack (the schema's own
+    /// pack), so it loads (`multi-pack.md` → Pack-local body-reference resolution →
+    /// Field-types are the same rule, one definition kind over).
+    #[test]
+    fn loser_pack_schema_resolves_its_own_field_type() {
+        // Higher (precedence winner) omits `code-anchor`; lower ships it + the
+        // schema that uses it. The schema ids are disjoint (no top-level collision).
+        let higher = no_field_type_pack("higher", "higher-doc");
+        let lower = field_type_pack("lower", "lower-doc");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(higher), Box::new(lower)]);
+
+        let resolved = no_shadow_resolved();
+        let cfg = TempDir::new("t4-loser-fieldtype");
+        let defs = CascadeDefs::new(&resolved, cfg.path());
+
+        let schemas = defs
+            .all_schemas(&composite)
+            .expect("the loser-pack schema must resolve its own pack's `code-anchor` field type");
+        assert!(
+            schemas.contains_key("lower-doc"),
+            "the loser-pack `lower-doc` schema must load (its `code-anchor` resolves from \
+             ITS OWN pack's field-types.yaml, not the winner's omitting surface); got {:?}",
+            schemas.keys().collect::<Vec<_>>(),
+        );
+    }
+
+    /// T4 control — the precedence **winner**'s own schema loads unchanged: its
+    /// origin is itself, so its native-typed `higher-doc` resolves against its own
+    /// field-types regardless of the pack-local scoping (no regression).
+    #[test]
+    fn winner_pack_schema_loads() {
+        let higher = no_field_type_pack("higher", "higher-doc");
+        let lower = field_type_pack("lower", "lower-doc");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(higher), Box::new(lower)]);
+
+        let resolved = no_shadow_resolved();
+        let cfg = TempDir::new("t4-winner-fieldtype");
+        let defs = CascadeDefs::new(&resolved, cfg.path());
+
+        let schemas = defs
+            .all_schemas(&composite)
+            .expect("both packs' schemas load");
+        assert!(
+            schemas.contains_key("higher-doc"),
+            "the winner-pack `higher-doc` schema must load; got {:?}",
+            schemas.keys().collect::<Vec<_>>(),
+        );
+    }
+
+    /// T4 floor — a single-pack `Composite([base])` is byte-identical: origin =
+    /// base = the pack, so the pack-local field-type scoping is inert and the
+    /// loaded schema set matches a load over the bare pack (the cold-start
+    /// regression guard for the field-type read this task moves).
+    #[test]
+    fn single_pack_composite_field_types_are_byte_identical() {
+        let base_pack = field_type_pack("base", "base-doc");
+        let base_pack_clone = field_type_pack("base", "base-doc");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(base_pack)]);
+
+        let resolved = no_shadow_resolved();
+        let cfg = TempDir::new("t4-floor-fieldtype");
+        let defs = CascadeDefs::new(&resolved, cfg.path());
+
+        let over_composite = defs
+            .all_schemas(&composite)
+            .expect("load over the single-pack composite");
+        let over_bare = defs
+            .all_schemas(&base_pack_clone)
+            .expect("load over the bare pack");
+
+        assert_eq!(
+            over_composite.keys().collect::<Vec<_>>(),
+            over_bare.keys().collect::<Vec<_>>(),
+            "a single-pack composite must load the same schema set as the bare pack",
+        );
+        assert!(
+            over_composite.contains_key("base-doc"),
+            "the single-pack schema with a pack-provided field type must load",
         );
     }
 
