@@ -10,7 +10,14 @@
 //! definition's body-references resolve against *its own* pack regardless of which
 //! pack wins a top-level id, so co-composition never silently corrupts the loser's
 //! definitions (the M3-class trap). The M12 `methodology_pack_*` compose-alone tests
-//! stay green untouched.
+//! stay green untouched. **Increment 3** (`flow17_*`, below) lands the **consolidated
+//! flow-17 acceptance** — all SIX acceptance-bar assertions over the real dev ×
+//! methodology pair through the built binary in one walk: 1/2/3 re-assert the
+//! inc-1/inc-2 surfaces; 4 (dev doctypes LOAD + VALIDATE — a `code-anchor` field
+//! resolving from dev's own `field-types.yaml` though methodology, the precedence
+//! winner, ships none), 5 (provenance by path + blake3 content-hash), and 6
+//! (determinism under composition — `--task` recompose + reversed pack-order
+//! invariance, hardening #7) are this increment's net-new acceptance.
 //!
 //! The four observables, each on the EMITTED bytes the agent would actually see
 //! (increment-workflow hardening #4):
@@ -514,4 +521,459 @@ fn pack_local_winner_pack_workflow_resolves_body_refs_in_its_own_pack() {
         "methodology's dev-task must compose with METHODOLOGY's pack-local test-first implement \
          + set-commit-type/scope/summary/body command-refs, not dev's direct-edit implement",
     );
+}
+
+// ---------------------------------------------------------------------------
+// Increment 3 — the consolidated flow-17 acceptance (the headline). Over ONE
+// methodology-primary throwaway repo (the inc-1/inc-2 scaffolding — `init_repo`,
+// `write_packs_yaml`, `methodology_pack_tree`, `run`) driven through the built
+// binary, all SIX flow-17 acceptance-bar assertions on the EMITTED bytes
+// (hardening #4), each forcing genuine cross-pack overlap (hardening #7).
+// Assertions 1/2/3 re-assert the inc-1/inc-2 surfaces IN the consolidated walk;
+// 4/5/6 are this increment's net-new acceptance (`design/worked-examples.md`
+// → flow 17 → the six-part bar; `design/multi-pack.md` → Provenance).
+
+/// Stand up a methodology-primary two-pack repo: a real git repo with the project
+/// layer, `packs.yaml` listing `packs/methodology` (highest) over the embedded dev
+/// base. The shared fixture every flow-17 assertion composes against — the genuine
+/// dev × methodology overlap (`commit`, `default-workflow`, `step:implement` all
+/// owned by BOTH packs).
+fn methodology_primary_repo(tag: &str) -> (TempDir, TempDir) {
+    let repo = TempDir::new(tag);
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    write_packs_yaml(repo.path(), &methodology_pack_tree());
+    (repo, home)
+}
+
+/// A 64-char lowercase-hex blake3 digest (the `--explain` `Pack input:` content-hash
+/// form) — asserted as a SHAPE (not a pinned value: the methodology pack bytes / the
+/// binary version mutate), so the test stays honest about *what* the hash is without
+/// brittling on the exact digest.
+fn is_blake3_hex(s: &str) -> bool {
+    s.len() == 64
+        && s.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+}
+
+/// Flow 17, the consolidated six-part acceptance bar, driven end-to-end through the
+/// built `jigc` binary over the real dev × methodology pair. Each assertion runs on
+/// the EMITTED bytes the agent would see (hardening #4); the fixture forces genuine
+/// cross-pack overlap (both packs own `commit`/`default-workflow`/`step:implement`).
+#[test]
+fn flow17_consolidated_acceptance_over_the_real_dev_x_methodology_pair() {
+    // ===================================================================
+    // Assertion 1 — the single-pack floor stays byte-identical (re-asserted in the
+    // consolidated walk). With NO `packs.yaml` the pack-set is `[base]`, and bare
+    // `jigc start "<intent>"` composes the cascade-default router byte-identical to
+    // the single-pack golden — the composite-of-one adds zero observable change.
+    {
+        let repo = TempDir::new("flow17-floor");
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        let out = run(repo.path(), home.path(), &["start", "add rate limiter"]);
+        assert!(
+            out.status.success(),
+            "(1) the no-packs.yaml floor compose must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+        assert_eq!(
+            stdout, NO_OVERRIDE_ROUTER_GOLDEN,
+            "(1) the composite-of-one floor must stay byte-identical to the single-pack golden",
+        );
+    }
+
+    // ===================================================================
+    // Assertion 2 — both top-level cross-pack collisions resolve deterministically
+    // and the winners are visible in `--explain`: `default-workflow` → dev-task
+    // (methodology's whole `knobs.yaml` wins the precedence shadow), and the `commit`
+    // doctype → methodology's. Asserted on the literal collision-winner lines.
+    let (repo, home) = methodology_primary_repo("flow17-explain");
+    let explain = run(
+        repo.path(),
+        home.path(),
+        &["start", "--explain", "add rate limiter"],
+    );
+    assert!(
+        explain.status.success(),
+        "(2) `jigc start --explain` over the two-pack set must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&explain.stderr),
+    );
+    let explain_out = String::from_utf8(explain.stdout).expect("utf-8 stdout");
+    // `default-workflow` resolves to methodology's `dev-task` — named as the winner.
+    assert!(
+        explain_out.contains("collision: default-workflow → won by methodology/0.1.0"),
+        "(2) `--explain` must name methodology as the `default-workflow` collision winner; got:\n{explain_out}",
+    );
+    // The `commit` doctype resolves to methodology's — named as the winner.
+    assert!(
+        explain_out.contains("collision: doctype:commit → won by methodology/0.1.0"),
+        "(2) `--explain` must name methodology as the `commit` doctype collision winner; got:\n{explain_out}",
+    );
+
+    // ===================================================================
+    // Assertion 3 — body-references are pack-local (re-asserted in the consolidated
+    // walk). Methodology wins every top-level collision, yet each composed workflow
+    // resolves its `{{include:}}` / `{{cli.X}}` in its OWN pack: dev's `single-task`
+    // keeps DEV's direct-edit implement + `{{cli.create-adr}}` (a command-ref
+    // methodology lacks), and methodology's `dev-task` keeps METHODOLOGY's test-first
+    // implement. Asserted byte-identical to each pack's pack-local golden.
+    let dev_st = run(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add a thing"],
+    );
+    assert!(
+        dev_st.status.success(),
+        "(3) dev single-task compose must exit 0"
+    );
+    let dev_st_out = String::from_utf8(dev_st.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        dev_st_out, DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN,
+        "(3) dev's single-task must keep DEV's pack-local implement + create-adr under methodology-primary",
+    );
+    let meth_dt = run(repo.path(), home.path(), &["start", "add rate limiter"]);
+    assert!(
+        meth_dt.status.success(),
+        "(3) methodology dev-task compose must exit 0"
+    );
+    let meth_dt_out = String::from_utf8(meth_dt.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        meth_dt_out, METHODOLOGY_DEV_TASK_GOLDEN,
+        "(3) methodology's dev-task must keep METHODOLOGY's pack-local test-first implement",
+    );
+
+    // ===================================================================
+    // Assertion 4 — dev's doctypes don't just LIST, they LOAD + VALIDATE. The
+    // integration witness for inc-2 T4's schema-pack-local field-type mechanism over
+    // the REAL pair: a dev workflow composes (its steps + `{{cli.X}}` pack-local), a
+    // dev doctype is `create`d, and its `code-anchor` field is `set-field`-set. The
+    // field's TYPE resolves from DEV's own `field-types.yaml` though methodology (the
+    // precedence winner) ships NONE — verified asserted on the VALIDATING outcome:
+    //   - a WELL-FORMED `path#symbol` succeeds (the type resolved + the value passed
+    //     the `code-anchor` write-time adjudicator), AND
+    //   - a MALFORMED `path#a#b` value (two `#`) blocks with the `code-anchor`-specific
+    //     "is not a code-anchor" message — which fires ONLY if the resolved
+    //     `code-anchor` adjudicator RAN (a generic opaque check accepts two-`#`).
+    // The malformed-block discriminator is the validating-outcome proof, NOT a
+    // `describe | grep` (explicitly rejected as masking, worked-examples.md:1097).
+    //
+    // 4a — the `adr` header-field `code-anchor` (`status/cites-code`), authored via
+    // dev's `single-task` create-gate (`allows-create: [{type: adr}]`). This field
+    // routes through `set_field_validated` → the `code-anchor` write-time adjudicator.
+    let started = run(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "land the limiter"],
+    );
+    assert!(
+        started.status.success(),
+        "(4a) `jigc start --workflow single-task` must mint the task; stderr:\n{}",
+        String::from_utf8_lossy(&started.stderr),
+    );
+    let adr_task = "land-the-limiter";
+    let created = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "create",
+            "adr",
+            "--title",
+            "Token bucket",
+            "--task",
+            adr_task,
+        ],
+    );
+    assert!(
+        created.status.success(),
+        "(4a) `jigc doc create adr` (a dev doctype) must mint under methodology-primary; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr),
+    );
+    let adr_addr = String::from_utf8(created.stdout)
+        .expect("utf-8 stdout")
+        .trim()
+        .to_owned();
+    assert_eq!(adr_addr, "adr:token-bucket", "(4a) the created adr address");
+    // The well-formed `code-anchor` value resolves AND validates — set-field succeeds.
+    let cites_field = format!("{adr_addr}#status/cites-code");
+    let good = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &cites_field,
+            "--value",
+            "src/limiter.rs#refill",
+            "--task",
+            adr_task,
+        ],
+    );
+    assert!(
+        good.status.success(),
+        "(4a) set-field on a well-formed `code-anchor` must succeed — dev's `code-anchor` \
+         field-type resolved (methodology, the precedence winner, ships none); stderr:\n{}",
+        String::from_utf8_lossy(&good.stderr),
+    );
+    // The discriminating witness: a two-`#` value passes the generic opaque floor but
+    // is rejected by the `code-anchor` adjudicator — so the block PROVES the resolved
+    // `code-anchor` type's adjudicator actually ran (not an opaque fallback).
+    let bad = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &cites_field,
+            "--value",
+            "src/limiter.rs#a#b",
+            "--task",
+            adr_task,
+        ],
+    );
+    assert!(
+        !bad.status.success(),
+        "(4a) a malformed (two-`#`) `code-anchor` value must block — the resolved \
+         code-anchor adjudicator rejects it; got exit {:?}",
+        bad.status,
+    );
+    let bad_err = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        bad_err.contains("is not a code-anchor"),
+        "(4a) the block must carry the `code-anchor`-specific message (proving the \
+         resolved dev field-type's adjudicator ran, not a generic opaque check); got:\n{bad_err}",
+    );
+
+    // 4b — the `arch-doc` repeatable-item `code-anchor` (`components/<id>/implemented-by`),
+    // authored via dev's `architecture-documentation` create-gate. The item-leaf path
+    // resolves its field-type through the schema load (an unresolved `code-anchor`
+    // would make `task.schema()` fail "the `arch-doc` schema is malformed", blocking
+    // set-field non-zero) — so the set-field SUCCESS is the validating outcome that
+    // dev's `field-types.yaml` resolved the item-leaf field-type under methodology.
+    let arch_started = run(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "architecture-documentation",
+            "document the index layer",
+        ],
+    );
+    assert!(
+        arch_started.status.success(),
+        "(4b) `jigc start --workflow architecture-documentation` (a dev workflow) must compose + mint \
+         under methodology-primary; stderr:\n{}",
+        String::from_utf8_lossy(&arch_started.stderr),
+    );
+    let arch_task = "document-the-index-layer";
+    let arch_created = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "create",
+            "arch-doc",
+            "--title",
+            "Index layer",
+            "--task",
+            arch_task,
+        ],
+    );
+    assert!(
+        arch_created.status.success(),
+        "(4b) `jigc doc create arch-doc` (a dev doctype) must mint; stderr:\n{}",
+        String::from_utf8_lossy(&arch_created.stderr),
+    );
+    // Materialize a component and capture the EMITTED item address (run verbatim,
+    // hardening #4 — never reconstructed).
+    let added = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "add-item",
+            "arch-doc:index-layer#components",
+            "--title",
+            "Edge index",
+            "--task",
+            arch_task,
+        ],
+    );
+    assert!(
+        added.status.success(),
+        "(4b) `jigc doc add-item …#components` must materialize the component; stderr:\n{}",
+        String::from_utf8_lossy(&added.stderr),
+    );
+    let item_addr = String::from_utf8(added.stdout)
+        .expect("utf-8 stdout")
+        .trim_end_matches('\n')
+        .to_owned();
+    assert_eq!(
+        item_addr, "arch-doc:index-layer#components/edge-index",
+        "(4b) the emitted item address is the canonical `#components/<id>` form",
+    );
+    // The item-leaf `code-anchor` resolves + validates: set-field on the EMITTED
+    // address succeeds (the field-type came from DEV's `field-types.yaml`).
+    let anchor = run(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("{item_addr}/implemented-by"),
+            "--value",
+            "crates/engine/src/index.rs#rebuild_committed",
+            "--task",
+            arch_task,
+        ],
+    );
+    assert!(
+        anchor.status.success(),
+        "(4b) set-field on the arch-doc item-leaf `code-anchor` must succeed — dev's \
+         `field-types.yaml` resolved the `implemented-by` field-type though methodology \
+         ships none; stderr:\n{}",
+        String::from_utf8_lossy(&anchor.stderr),
+    );
+
+    // ===================================================================
+    // Assertion 5 — provenance names every composed pack by PATH + content (not just
+    // id/version): `--explain` surfaces one `Pack input:` line per composed pack, each
+    // naming its resolving directory path (methodology = the listed abs path; dev =
+    // the `<embedded>` sentinel) + a blake3 content-hash. Asserted on the literal
+    // emitted line (the path it actually resolved to + a real 64-hex blake3).
+    let meth_path = methodology_pack_tree().display().to_string();
+    let meth_input = explain_out
+        .lines()
+        .find(|l| l.contains("Pack input: methodology/0.1.0"))
+        .unwrap_or_else(|| panic!("(5) a methodology `Pack input:` line; got:\n{explain_out}"));
+    assert!(
+        meth_input.contains(&format!("= {meth_path}  (blake3 ")),
+        "(5) methodology's `Pack input:` must name its resolving path (the listed dir); got:\n{meth_input}",
+    );
+    let meth_hash = meth_input
+        .rsplit("(blake3 ")
+        .next()
+        .and_then(|s| s.strip_suffix(')'))
+        .map(str::trim)
+        .unwrap_or("");
+    assert!(
+        is_blake3_hex(meth_hash),
+        "(5) methodology's content-hash must be a 64-hex blake3 digest; got: {meth_hash:?}",
+    );
+    let dev_input = explain_out
+        .lines()
+        .find(|l| l.contains("Pack input: dev/"))
+        .unwrap_or_else(|| panic!("(5) a dev `Pack input:` line; got:\n{explain_out}"));
+    assert!(
+        dev_input.contains("= <embedded>  (blake3 "),
+        "(5) the embedded dev base's `Pack input:` must name the `<embedded>` sentinel path; got:\n{dev_input}",
+    );
+    let dev_hash = dev_input
+        .rsplit("(blake3 ")
+        .next()
+        .and_then(|s| s.strip_suffix(')'))
+        .map(str::trim)
+        .unwrap_or("");
+    assert!(
+        is_blake3_hex(dev_hash),
+        "(5) the dev base's content-hash must be a 64-hex blake3 digest; got: {dev_hash:?}",
+    );
+
+    // ===================================================================
+    // Assertion 6 — determinism holds under composition. Two facets, both on the
+    // emitted bytes:
+    //   (6a) recomposing the SAME task (`jigc start --task <id>`) twice is byte-identical;
+    //   (6b) a reversed pack-list ORDER over a genuinely-overlapping pack-set leaves the
+    //        composed output byte-identical (re-execution under ≥2 divergent orders,
+    //        hardening #7) — proven separately in `flow17_reversed_pack_order_*`.
+    //
+    // 6a — recompose the methodology dev-task that the bare `start` above minted.
+    let first = run(repo.path(), home.path(), &["start", "--task", adr_task]);
+    assert!(
+        first.status.success(),
+        "(6a) `jigc start --task <id>` recompose must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&first.stderr),
+    );
+    let second = run(repo.path(), home.path(), &["start", "--task", adr_task]);
+    assert!(
+        second.status.success(),
+        "(6a) the second recompose must exit 0"
+    );
+    assert_eq!(
+        String::from_utf8(first.stdout).expect("utf-8"),
+        String::from_utf8(second.stdout).expect("utf-8"),
+        "(6a) recomposing the same task twice must be byte-identical under composition",
+    );
+}
+
+/// Assertion 6b (hardening #7) — composed output is invariant under a reversed
+/// pack-list ORDER over a genuinely-overlapping pack-set. The fixture forces real
+/// overlap: TWO content-identical copies of the methodology pack (so they collide on
+/// EVERY id — `commit`, `default-workflow`, every step), listed in BOTH orders. The
+/// dedup-then-sort union + the precedence-winner read are pure functions of the
+/// pack-set's CONTENTS, so reversing the listing order cannot change the composed
+/// bytes — the order-invariance hardening #7 mandates (≥2 divergent orders →
+/// byte-identical output, over input with forced overlap, not a disjoint set).
+#[test]
+fn flow17_reversed_pack_order_composes_byte_identical() {
+    // Two content-identical methodology copies in self-cleaning temp dirs.
+    let copy_a = TempDir::new("meth-copy-a");
+    let copy_b = TempDir::new("meth-copy-b");
+    let pack_a = copy_a.path().join("methodology");
+    let pack_b = copy_b.path().join("methodology");
+    copy_tree(&methodology_pack_tree(), &pack_a);
+    copy_tree(&methodology_pack_tree(), &pack_b);
+
+    // Compose a bare `jigc start "<intent>"` over the pack-set listed in the given
+    // order, returning the emitted stdout. Each call uses a fresh repo so the only
+    // varying input is the listing order.
+    let compose = |first: &Path, second: &Path| -> String {
+        let repo = TempDir::new("rev-order");
+        init_repo(repo.path());
+        let home = TempDir::new("home");
+        fs::write(
+            repo.path().join(".jigc").join("config").join("packs.yaml"),
+            format!(
+                "packs:\n  - {}\n  - {}\n",
+                first.display(),
+                second.display()
+            ),
+        )
+        .expect("write the two-entry packs.yaml");
+        let out = run(repo.path(), home.path(), &["start", "add rate limiter"]);
+        assert!(
+            out.status.success(),
+            "the reversed-order compose must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8(out.stdout).expect("utf-8 stdout")
+    };
+
+    let forward = compose(&pack_a, &pack_b);
+    let reversed = compose(&pack_b, &pack_a);
+    assert_eq!(
+        forward, reversed,
+        "(6b) composing over a genuinely-overlapping pack-set must be byte-identical \
+         under a reversed pack-list order (hardening #7: ≥2 divergent orders)",
+    );
+}
+
+/// Recursively copy `src` into `dst` (files + sub-dirs) — used to mint two
+/// content-identical methodology copies for the reversed-order order-invariance
+/// fixture. Kept test-local (no external crate).
+fn copy_tree(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).expect("create copy dir");
+    for entry in fs::read_dir(src).expect("read source dir") {
+        let entry = entry.expect("dir entry");
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_tree(&from, &to);
+        } else {
+            fs::copy(&from, &to).expect("copy file");
+        }
+    }
 }
