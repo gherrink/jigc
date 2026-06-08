@@ -253,6 +253,71 @@ impl PackSource for FilesystemPack {
     }
 }
 
+/// An **ordered composite** [`PackSource`] over a pack-set, **highest-precedence
+/// first** (earlier in the `Vec` wins same-id collisions). It is the assembled
+/// `pack-default` layer the cascade resolves over: the listed packs
+/// (`.jigc/config/packs:`) over the base pack (`JIGC_PACK_DIR`/`EmbeddedPack`,
+/// implicitly last/lowest). It hides behind the existing `&dyn PackSource`, so
+/// the ~22 call sites do not ripple.
+///
+/// Top-level **precedence-override** falls out of `read` (no separate
+/// adjudicator): a colliding `knobs.yaml`/`commit`/workflow id resolves to the
+/// winner's whole file. `list` is the **union deduped-by-id then sorted** — the
+/// same stable sorted-by-id contract a single pack's `list()` already honours, so
+/// the `[base]` floor and any union both emit ids in deterministic order
+/// (no `HashSet` iteration order reaches output). `pack_version` is the
+/// highest-precedence pack's. This task does **not** pack-localize body-references
+/// (a *loser*-pack workflow's `{{include: step:X}}` is still mis-resolved here —
+/// fixed in increment 2). See `design/multi-pack.md` → Collision resolution;
+/// Where it sits.
+pub struct CompositePack(Vec<Box<dyn PackSource>>);
+
+impl CompositePack {
+    /// Assemble a composite over `packs`, **highest-precedence first**. A
+    /// single-element `Vec` is the byte-identity floor: its `list`/`read`/
+    /// `pack_version` equal that one pack's.
+    ///
+    /// Exercised by the unit tests now; wired into `make_pack()`'s pack-set
+    /// assembly in T3 of this increment (the production caller).
+    #[allow(dead_code)]
+    pub fn new(packs: Vec<Box<dyn PackSource>>) -> Self {
+        CompositePack(packs)
+    }
+}
+
+impl PackSource for CompositePack {
+    /// The highest-precedence (first) pack's version. An empty pack-set cannot
+    /// arise in production (the base is always present), but the empty-`Vec`
+    /// version is the empty string rather than a panic.
+    fn pack_version(&self) -> String {
+        self.0.first().map(|p| p.pack_version()).unwrap_or_default()
+    }
+
+    /// The union of every pack's ids for `kind`, **deduped-by-id then sorted**.
+    /// A `BTreeSet` keyed by the stable [`ResourceId`] gives both at once — never
+    /// a `HashSet`, whose iteration order would leak into the emitted list
+    /// (increment-workflow hardening #7).
+    fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+        let ids: std::collections::BTreeSet<ResourceId> =
+            self.0.iter().flat_map(|p| p.list(kind)).collect();
+        ids.into_iter().collect()
+    }
+
+    /// The **precedence-winner's** bytes: the first pack (highest-precedence)
+    /// whose `read` succeeds. If no pack owns the id, a clean
+    /// [`PackError::NotFound`] naming the requested `kind`/`id` — never the last
+    /// pack's own error instance.
+    fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
+        self.0
+            .iter()
+            .find_map(|p| p.read(kind, id).ok())
+            .ok_or_else(|| PackError::NotFound {
+                kind,
+                id: id.clone(),
+            })
+    }
+}
+
 /// The YAML for the 16 intrinsic per-check severity knobs, each floored at
 /// `blocking`, generated from [`engine::knobs::INTRINSIC_CHECK_KEYS`]. A minimal
 /// test pack appends this to its `config/knobs.yaml` so it satisfies the engine's
@@ -1164,6 +1229,188 @@ mod tests {
             let pack = FilesystemPack::new(dir.path().to_owned());
             let as_dyn: &dyn PackSource = &pack;
             assert_eq!(as_dyn.list(PackResourceKind::Workflows).len(), 1);
+        }
+    }
+
+    mod composite {
+        use super::super::*;
+        use std::collections::HashMap;
+
+        /// A trivial in-memory `PackSource` — drives the composite without
+        /// touching the filesystem. `resources` is a `HashMap` so its own
+        /// iteration order is *unstable*: a composite that leaked container
+        /// order into `list` would flake against this fixture, which is the
+        /// point (hardening #7 — the emitted union must be sorted, not in
+        /// hash-iteration order).
+        struct MemPack {
+            version: String,
+            resources: HashMap<(PackResourceKind, ResourceId), Vec<u8>>,
+        }
+
+        impl MemPack {
+            fn new(version: &str) -> Self {
+                MemPack {
+                    version: version.to_owned(),
+                    resources: HashMap::new(),
+                }
+            }
+
+            fn with(mut self, kind: PackResourceKind, id: &str, bytes: &[u8]) -> Self {
+                self.resources
+                    .insert((kind, ResourceId::from(id)), bytes.to_vec());
+                self
+            }
+        }
+
+        impl PackSource for MemPack {
+            fn pack_version(&self) -> String {
+                self.version.clone()
+            }
+
+            fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+                let mut ids: Vec<ResourceId> = self
+                    .resources
+                    .keys()
+                    .filter(|(k, _)| *k == kind)
+                    .map(|(_, id)| id.clone())
+                    .collect();
+                ids.sort();
+                ids
+            }
+
+            fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
+                self.resources
+                    .get(&(kind, id.clone()))
+                    .cloned()
+                    .ok_or_else(|| PackError::NotFound {
+                        kind,
+                        id: id.clone(),
+                    })
+            }
+        }
+
+        /// Pack A (highest-precedence): the colliding `commit` doctype (bytes
+        /// `A-commit`) plus a non-colliding `adr`. Pack B (lower): the same
+        /// `commit` id with **divergent** bytes (`B-commit`) plus a
+        /// non-colliding `spec`. The composite is `[A, B]` — A wins.
+        fn two_pack_composite() -> CompositePack {
+            let a = MemPack::new("a-ver")
+                .with(PackResourceKind::Schemas, "commit", b"A-commit")
+                .with(PackResourceKind::Schemas, "adr", b"A-adr");
+            let b = MemPack::new("b-ver")
+                .with(PackResourceKind::Schemas, "commit", b"B-commit")
+                .with(PackResourceKind::Schemas, "spec", b"B-spec");
+            CompositePack::new(vec![Box::new(a), Box::new(b)])
+        }
+
+        /// The colliding id reads the **highest-precedence** pack's bytes — the
+        /// precedence-override that falls out of composite `read`.
+        #[test]
+        fn colliding_id_reads_the_precedence_winner() {
+            let composite = two_pack_composite();
+            assert_eq!(
+                composite
+                    .read(PackResourceKind::Schemas, &ResourceId::from("commit"))
+                    .expect("the colliding id reads back from the winner"),
+                b"A-commit",
+            );
+        }
+
+        /// A non-colliding id owned only by the **lower-precedence** pack still
+        /// reads back — the union read, not just the winner's resources.
+        #[test]
+        fn loser_only_id_reads_back_via_union() {
+            let composite = two_pack_composite();
+            assert_eq!(
+                composite
+                    .read(PackResourceKind::Schemas, &ResourceId::from("spec"))
+                    .expect("the loser-only id reads back"),
+                b"B-spec",
+            );
+        }
+
+        /// `list` is the union deduped-by-id then sorted: the colliding `commit`
+        /// appears **once**, alongside both packs' non-colliding ids, in sorted
+        /// order. The golden pins the exact emitted sequence (adr, commit, spec)
+        /// — the dedup *and* the sort.
+        #[test]
+        fn list_dedups_the_collision_and_sorts_the_union() {
+            let composite = two_pack_composite();
+            assert_eq!(
+                composite.list(PackResourceKind::Schemas),
+                vec![
+                    ResourceId::from("adr"),
+                    ResourceId::from("commit"),
+                    ResourceId::from("spec"),
+                ],
+            );
+        }
+
+        /// An id no pack owns is a clean `NotFound` naming the requested
+        /// kind/id, never a panic.
+        #[test]
+        fn unowned_id_is_not_found() {
+            let composite = two_pack_composite();
+            let err = composite
+                .read(PackResourceKind::Schemas, &ResourceId::from("absent"))
+                .expect_err("an id no pack owns errors");
+            assert_eq!(
+                err,
+                PackError::NotFound {
+                    kind: PackResourceKind::Schemas,
+                    id: ResourceId::from("absent"),
+                },
+            );
+        }
+
+        /// `pack_version` is the highest-precedence (first) pack's.
+        #[test]
+        fn pack_version_is_the_highest_precedence_pack() {
+            let composite = two_pack_composite();
+            assert_eq!(composite.pack_version(), "a-ver");
+        }
+
+        /// The in-isolation **floor**: `Composite([single])` is byte-identical
+        /// to the single pack — `list`/`read`/`pack_version` all equal it. This
+        /// is the headline regression (the one-pack path must be unperturbed by
+        /// the composite wrapper); proven here against an in-memory pack and
+        /// again in-binary against the real embedded pack in later tasks.
+        #[test]
+        fn single_pack_composite_equals_the_pack() {
+            let lone = MemPack::new("only-ver")
+                .with(PackResourceKind::Workflows, "single-task", b"lone-wf")
+                .with(PackResourceKind::Workflows, "router", b"lone-router");
+            let reference = MemPack::new("only-ver")
+                .with(PackResourceKind::Workflows, "single-task", b"lone-wf")
+                .with(PackResourceKind::Workflows, "router", b"lone-router");
+
+            let composite = CompositePack::new(vec![Box::new(lone)]);
+
+            assert_eq!(
+                composite.list(PackResourceKind::Workflows),
+                reference.list(PackResourceKind::Workflows),
+                "Composite([single]).list must equal the single pack's list",
+            );
+            assert_eq!(
+                composite
+                    .read(
+                        PackResourceKind::Workflows,
+                        &ResourceId::from("single-task")
+                    )
+                    .expect("the lone pack's id reads through the composite"),
+                reference
+                    .read(
+                        PackResourceKind::Workflows,
+                        &ResourceId::from("single-task")
+                    )
+                    .expect("the single pack reads its id"),
+                "Composite([single]).read must equal the single pack's read",
+            );
+            assert_eq!(
+                composite.pack_version(),
+                reference.pack_version(),
+                "Composite([single]).pack_version must equal the single pack's",
+            );
         }
     }
 }
