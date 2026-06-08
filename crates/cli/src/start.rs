@@ -618,6 +618,31 @@ fn collision_winners(pack: &dyn PackSource) -> Vec<engine::result::CollisionWinn
         .collect()
 }
 
+/// The composed pack-set's per-pack provenance inputs for `pack` — one
+/// [`PackInput`](engine::result::PackInput) per composed pack, **in precedence
+/// order** (highest-precedence first), zipping each pack's `provenance_segments()`
+/// id/version with its `provenance_entries()` resolving path + blake3 content-hash.
+/// Both accessors enumerate the constituents in the same precedence order, so the
+/// zip is parallel by construction. A single-pack composition yields exactly one
+/// entry (mirroring the one-segment `provenance_segments()` degrade), so the
+/// `--explain` provenance line degrades to one pack — additive, never perturbing the
+/// single-pack surface (`design/multi-pack.md` → Provenance under N packs;
+/// `design/worked-examples.md` → flow 17 assertion 5).
+fn pack_inputs(pack: &dyn PackSource) -> Vec<engine::result::PackInput> {
+    pack.provenance_segments()
+        .into_iter()
+        .zip(pack.provenance_entries())
+        .map(
+            |((pack_id, pack_version), entry)| engine::result::PackInput {
+                pack_id,
+                pack_version,
+                path: entry.path,
+                content_hash: entry.content_hash,
+            },
+        )
+        .collect()
+}
+
 /// Build the `--explain` resolution tree (layers 1–2 — `workflow-dialect.md` →
 /// `--explain` output contract) for `workflow_id` over the resolved cascade —
 /// the seam the `--explain` dispatch (T3) renders.
@@ -748,6 +773,11 @@ pub fn compose_explain_in_repo(
     // single-pack composition, so the tree (and its rendered `--explain`) stays
     // byte-identical (`design/multi-pack.md` → Provenance).
     tree.collision_winners = collision_winners(pack);
+    // The composed pack-set's per-pack provenance inputs (path + content-hash) — one
+    // entry per composed pack, highest-precedence first. A single-pack composition
+    // degrades to one entry (additive provenance), so the `--explain` surface stays
+    // byte-identical but for the one input line (`design/multi-pack.md` → Provenance).
+    tree.pack_inputs = pack_inputs(pack);
     let pack_label = format!("{}/v{}", pack_id_from_config(pack)?, pack.pack_version());
     Ok((tree, pack_label))
 }
@@ -4190,6 +4220,58 @@ mod tests {
             collision_winners(&collision_pack("dev")).is_empty(),
             "a non-composite pack adjudicates no cross-pack collision",
         );
+    }
+
+    /// T2 done-criterion — the `--explain` per-pack provenance inputs: over a
+    /// **two-pack** composite, [`pack_inputs`] yields **one entry per composed pack**,
+    /// **highest-precedence first**, each zipping the pack's `provenance_segments()`
+    /// id/version with its `provenance_entries()` resolving path + blake3 content-hash
+    /// — naming each pack's **own** path/hash, never the precedence-winner's. A
+    /// **single-pack** composite degrades to exactly **one** entry (the byte-identity
+    /// floor; the one-segment `provenance_segments()` degrade) (`design/multi-pack.md`
+    /// → Provenance under N packs; `design/worked-examples.md` → flow 17 assertion 5).
+    #[test]
+    fn pack_inputs_names_each_composed_pack_by_path_and_hash_in_order() {
+        // Two-pack composite: `methodology` highest-precedence (first), `dev` second.
+        let composite = crate::pack::CompositePack::new(vec![
+            Box::new(collision_pack("methodology")),
+            Box::new(collision_pack("dev")),
+        ]);
+        let inputs = pack_inputs(&composite);
+
+        assert_eq!(
+            inputs.len(),
+            2,
+            "one provenance entry per composed pack, in precedence order; got:\n{inputs:?}",
+        );
+        // Highest-precedence first, each naming its OWN id/version.
+        assert_eq!(inputs[0].pack_id, "methodology");
+        assert_eq!(inputs[0].pack_version, "0.0.0");
+        assert_eq!(inputs[1].pack_id, "dev");
+        assert_eq!(inputs[1].pack_version, "0.0.0");
+
+        // The path/hash come from each pack's OWN `provenance_entries()`, zipped
+        // parallel to its segment — so the zip is by-pack, never cross-wired.
+        let entries = composite.provenance_entries();
+        assert_eq!(inputs[0].path, entries[0].path);
+        assert_eq!(inputs[0].content_hash, entries[0].content_hash);
+        assert_eq!(inputs[1].path, entries[1].path);
+        assert_eq!(inputs[1].content_hash, entries[1].content_hash);
+        // A genuine content-hash, not empty (the determinism-visible identity).
+        assert!(
+            !inputs[0].content_hash.is_empty() && !inputs[1].content_hash.is_empty(),
+            "each pack's content-hash must be non-empty; got:\n{inputs:?}",
+        );
+
+        // Single-pack composite: exactly ONE entry (the byte-identity floor).
+        let single = crate::pack::CompositePack::new(vec![Box::new(collision_pack("dev"))]);
+        let single_inputs = pack_inputs(&single);
+        assert_eq!(
+            single_inputs.len(),
+            1,
+            "a single-pack composition yields exactly one provenance input; got:\n{single_inputs:?}",
+        );
+        assert_eq!(single_inputs[0].pack_id, "dev");
     }
 
     /// A non-string scalar value (`bool`) is recorded as its YAML scalar string

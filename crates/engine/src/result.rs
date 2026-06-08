@@ -348,6 +348,31 @@ pub struct CollisionWinner {
     pub pack_version: String,
 }
 
+/// One composed pack's **provenance input** in the `--explain` tree: its id +
+/// version (the `provenance_segments()` segment) paired with its **resolving
+/// directory path** and **blake3 content-hash** (the `provenance_entries()` entry).
+/// `--explain` renders one `Pack input:` line per composed pack — highest-precedence
+/// first — so the human sees the exact pack input behind a deterministic outcome,
+/// because a `.jigc/config/packs:` entry is a literal directory whose `id/version`
+/// is not a sufficient identity (two dirs can share it; contents mutate)
+/// (`design/multi-pack.md` → Provenance under N packs; `design/worked-examples.md` →
+/// flow 17 assertion 5). A single-pack composition carries exactly one entry
+/// (mirroring the one-segment `provenance_segments()` degrade), so the no-collision
+/// projection stays byte-identical but for this additive provenance.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackInput {
+    /// The composed pack's id (its `provenance_segments()` pack-id).
+    pub pack_id: String,
+    /// The composed pack's version (its `provenance_segments()` version).
+    pub pack_version: String,
+    /// The pack's resolving directory path — a directory pack's root, or the
+    /// `<embedded>` sentinel for the binary-embedded base.
+    pub path: String,
+    /// A blake3 content-hash over the pack's bytes — the per-pack content identity
+    /// that distinguishes two packs sharing an `id/version`.
+    pub content_hash: String,
+}
+
 /// The structural slice of the `--explain` resolution tree — layers 1–2 of the
 /// output contract (`design/workflow-dialect.md` → `--explain` output contract):
 /// the workflow's cascade provenance (`overrides applied: N` plus the per-knob
@@ -391,6 +416,15 @@ pub struct ResolutionTree {
     /// projection is byte-identical (`skip_serializing_if`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub collision_winners: Vec<CollisionWinner>,
+    /// The composed pack-set's per-pack provenance inputs — one [`PackInput`] per
+    /// composed pack (id/version + resolving path + blake3 content-hash), in
+    /// precedence order (highest-precedence first). Populated post-construction from
+    /// the pack's `provenance_entries()` + `provenance_segments()`, mirroring how
+    /// `collision_winners` is set. Empty when no pack provenance was attached (the
+    /// structural-only constructors / a tree built without a pack), so the
+    /// no-provenance projection is byte-identical (`skip_serializing_if`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pack_inputs: Vec<PackInput>,
     /// The resolved include steps, in post-phase-4 composed order.
     pub steps: Vec<ResolvedStep>,
 }
@@ -441,6 +475,10 @@ impl ResolutionTree {
             scalar_overrides,
             rejected_demotions,
             collision_winners,
+            // The per-pack provenance inputs are attached post-construction (like
+            // `collision_winners` at the call site), mirroring the multi-pack
+            // `--explain` wiring — empty here is the single-pack / byte-identity floor.
+            pack_inputs: Vec::new(),
             steps,
         }
     }
@@ -507,6 +545,70 @@ mod tests {
         assert!(
             clean_json.get("rejected_demotions").is_none(),
             "an empty rejected_demotions is omitted; got:\n{clean_json:#}",
+        );
+    }
+
+    /// The `--explain` `ResolutionTree` carries the `pack_inputs` provenance field —
+    /// one entry per composed pack (id/version + resolving path + blake3 content-hash),
+    /// the stable surface `--explain` reads to name every composed pack by path +
+    /// content (`design/multi-pack.md` → Provenance under N packs; `design/worked-
+    /// examples.md` → flow 17 assertion 5). A tree with no provenance attached omits
+    /// the key entirely (`skip_serializing_if`), so the no-provenance projection is
+    /// byte-identical.
+    #[test]
+    fn resolution_tree_projects_pack_inputs() {
+        let mut tree = ResolutionTree::new(
+            "dev-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        tree.pack_inputs = vec![
+            PackInput {
+                pack_id: "methodology".to_owned(),
+                pack_version: "0.1.0".to_owned(),
+                path: "/abs/packs/methodology".to_owned(),
+                content_hash: "a3f9".to_owned(),
+            },
+            PackInput {
+                pack_id: "dev".to_owned(),
+                pack_version: "0.0.0".to_owned(),
+                path: "<embedded>".to_owned(),
+                content_hash: "71c2".to_owned(),
+            },
+        ];
+
+        let json = serde_json::to_value(&tree).expect("serializes");
+        let inputs = json["pack_inputs"]
+            .as_array()
+            .expect("pack_inputs is an array");
+        assert_eq!(inputs.len(), 2, "one entry per composed pack, in order");
+        // Highest-precedence first, each naming its own path + hash.
+        assert_eq!(inputs[0]["pack_id"], serde_json::json!("methodology"));
+        assert_eq!(inputs[0]["pack_version"], serde_json::json!("0.1.0"));
+        assert_eq!(
+            inputs[0]["path"],
+            serde_json::json!("/abs/packs/methodology")
+        );
+        assert_eq!(inputs[0]["content_hash"], serde_json::json!("a3f9"));
+        assert_eq!(inputs[1]["pack_id"], serde_json::json!("dev"));
+        assert_eq!(inputs[1]["path"], serde_json::json!("<embedded>"));
+
+        // A tree with no provenance omits the key entirely (skip_serializing_if).
+        let clean = ResolutionTree::new(
+            "dev-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let clean_json = serde_json::to_value(&clean).expect("serializes");
+        assert!(
+            clean_json.get("pack_inputs").is_none(),
+            "an empty pack_inputs is omitted; got:\n{clean_json:#}",
         );
     }
 

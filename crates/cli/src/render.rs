@@ -177,6 +177,19 @@ fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
             winner.collision, winner.pack_id, winner.pack_version,
         ));
     }
+    // The composed pack-set's per-pack provenance inputs — one `Pack input:` line
+    // per composed pack, naming its resolving path + blake3 content-hash (after the
+    // collision-winner lines, highest-precedence first), so the human sees the exact
+    // pack input behind a deterministic outcome — id/version alone is not the
+    // identity (`design/multi-pack.md` → Provenance under N packs;
+    // `design/worked-examples.md` → flow 17 assertion 5). A single-pack composition
+    // carries one entry; a tree with none renders no line, byte-identical to today.
+    for input in &tree.pack_inputs {
+        out.push_str(&format!(
+            "  Pack input: {}/{} = {}  (blake3 {})\n",
+            input.pack_id, input.pack_version, input.path, input.content_hash,
+        ));
+    }
     let total_overrides = tree.overrides_applied;
     if total_overrides == 0 {
         out.push_str("  overrides applied: none\n");
@@ -809,6 +822,115 @@ mod tests {
         assert!(
             !single_json.contains("collision_winners"),
             "an empty collision_winners is omitted; got:\n{single_json}",
+        );
+    }
+
+    /// The `--explain` `Pack input:` provenance line (T2): over a tree carrying
+    /// `pack_inputs` (one entry per composed pack — id/version + resolving path +
+    /// blake3 content-hash), the agent-text body renders **one `Pack input:` line per
+    /// pack** naming its path + hash, **after** the collision-winner lines (the
+    /// inc-2 surface) and highest-precedence first. A single-pack tree (no
+    /// `pack_inputs`) renders **no** `Pack input:` line, so its agent-text is
+    /// byte-identical to today (hardening #5 — the additive line is omitted in the
+    /// omitting context). JSON omits the empty `pack_inputs` (skip-empty) and projects
+    /// the populated one (`design/multi-pack.md` → Provenance under N packs;
+    /// `design/worked-examples.md` → flow 17 assertion 5).
+    #[test]
+    fn render_explain_names_pack_input_path_and_hash_per_composed_pack() {
+        use engine::cascade::LayerKind;
+        use engine::result::{CollisionWinner, PackInput, ResolutionTree};
+
+        // A two-pack composition: both inputs + both collision winners present.
+        let mut tree = ResolutionTree::with_collisions(
+            "dev-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![CollisionWinner {
+                collision: "default-workflow".to_string(),
+                pack_id: "methodology".to_string(),
+                pack_version: "0.1.0".to_string(),
+            }],
+        );
+        tree.pack_inputs = vec![
+            PackInput {
+                pack_id: "methodology".to_string(),
+                pack_version: "0.1.0".to_string(),
+                path: "/abs/packs/methodology".to_string(),
+                content_hash: "a3f9deadbeef".to_string(),
+            },
+            PackInput {
+                pack_id: "dev".to_string(),
+                pack_version: "0.0.0".to_string(),
+                path: "<embedded>".to_string(),
+                content_hash: "71c2cafef00d".to_string(),
+            },
+        ];
+
+        let agent = explain(Format::Agent, &tree, "methodology/v0.1.0 | dev/v0.0.0");
+
+        // One `Pack input:` line per composed pack, naming its path + blake3 hash.
+        assert!(
+            agent.contains(
+                "Pack input: methodology/0.1.0 = /abs/packs/methodology  (blake3 a3f9deadbeef)"
+            ),
+            "the highest-precedence pack's input line names its path + hash; got:\n{agent}",
+        );
+        assert!(
+            agent.contains("Pack input: dev/0.0.0 = <embedded>  (blake3 71c2cafef00d)"),
+            "the embedded base's input line names the `<embedded>` path + its hash; got:\n{agent}",
+        );
+
+        // The `Pack input:` lines render AFTER the collision-winner lines (the inc-2
+        // surface) — the planner's ordering: provenance follows the collision winners.
+        let collision_at = agent
+            .find("collision: default-workflow")
+            .expect("collision-winner line present");
+        let input_at = agent
+            .find("Pack input: methodology/0.1.0")
+            .expect("pack-input line present");
+        assert!(
+            input_at > collision_at,
+            "the `Pack input:` lines must follow the collision-winner lines; got:\n{agent}",
+        );
+        // Highest-precedence first.
+        let dev_at = agent
+            .find("Pack input: dev/0.0.0")
+            .expect("dev input line present");
+        assert!(
+            dev_at > input_at,
+            "the pack inputs render highest-precedence first; got:\n{agent}",
+        );
+        assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+
+        // A single-pack tree carries no `pack_inputs` → NO `Pack input:` line, the
+        // existing agent-text byte-identical to today (the omitting context).
+        let single = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let single_agent = explain(Format::Agent, &single, "dev/v0.0.0");
+        assert!(
+            !single_agent.contains("Pack input:"),
+            "a single-pack tree renders NO `Pack input:` line; got:\n{single_agent}",
+        );
+
+        // JSON: the populated tree projects `pack_inputs`; the single-pack tree omits
+        // it (skip-empty), and both round-trip.
+        let json_out = explain(Format::Json, &tree, "methodology/v0.1.0 | dev/v0.0.0");
+        assert!(json_out.contains("\"path\": \"/abs/packs/methodology\""));
+        let back: ResolutionTree = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, tree);
+        let single_json = explain(Format::Json, &single, "dev/v0.0.0");
+        assert!(
+            !single_json.contains("pack_inputs"),
+            "an empty pack_inputs is omitted; got:\n{single_json}",
         );
     }
 
