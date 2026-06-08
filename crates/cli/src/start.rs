@@ -467,7 +467,16 @@ fn compose_core(
     // order); the gate below re-runs the same pass to validate the post-phase-4
     // list for delta-introduced cycles/dangles.
     def.includes = apply_structural_deltas(&def.includes, &scoped).map_err(finding_to_err)?;
-    let commands = load_catalog(pack)?;
+    // The command catalog is read against the composing workflow's **origin pack**
+    // — the constituent that defines `workflow_id`'s top-level id — so a loser-pack
+    // workflow's `{{cli.X}}` resolves against ITS OWN pack's `commands.yaml`, never
+    // the precedence-winner's catalog (which need not be a superset). This is the
+    // same origin lookup the step source's `scope_to_workflow` performs (one origin
+    // serves both body-reference reads); for a single pack the origin *is* `pack`,
+    // so the read is byte-identical (`multi-pack.md` → Pack-local body-reference
+    // resolution → Command-refs).
+    let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
+    let commands = load_catalog(origin)?;
     // The selectable-workflow list both arms feed to composition — the router's
     // `{{catalog}}` input, filtered to `creates-task: true` so it never lists
     // itself or any other `creates-task: false` workflow.
@@ -3605,6 +3614,181 @@ mod tests {
         assert_eq!(
             over_composite.text, over_bare.text,
             "a single-pack composite must compose byte-identically to the bare pack",
+        );
+    }
+
+    /// A pack whose workflow `wf` includes `step:emit`, whose body renders a
+    /// pack-specific `{{cli.<cmd_id>}}` command-ref, and whose `commands.yaml`
+    /// declares **only** `cmd_id` — so two constituents of a composite carry
+    /// **non-mutual-superset** catalogs (the dev × methodology hazard, hardening
+    /// #7: forced overlap on the workflow/step ids, divergent catalog contents).
+    fn cmd_overlap_pack(pack_id: &str, cmd_id: &str) -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                &format!("pack-id: {pack_id}\ndefault-workflow: wf\n"),
+            ),
+            (
+                PackResourceKind::Config,
+                "commands",
+                // The lone catalog entry: this pack ships only `cmd_id`, so the
+                // other constituent's `{{cli.X}}` is absent here — the
+                // not-mutual-superset condition.
+                &format!(
+                    "commands:\n  - id: {cmd_id}\n    command: jigc\n    args: [\"noop\"]\n    hint: h\n"
+                ),
+            ),
+            (
+                PackResourceKind::Workflows,
+                "wf",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:emit }}\n",
+            ),
+            (
+                PackResourceKind::Steps,
+                "emit",
+                &format!("{{{{ cli.{cmd_id} }}}}\n"),
+            ),
+        ])
+    }
+
+    /// T3 done-criterion — **pack-local command-refs**: a loser-pack workflow's
+    /// `{{cli.X}}` resolves against its **own** pack's `commands.yaml`, even
+    /// though the precedence-winner's catalog **omits** `X` (the catalogs are
+    /// not mutual supersets). A non-pack-local catalog read would feed the
+    /// winner's catalog, and `wf-lower`'s `{{cli.low-cmd}}` would dangle →
+    /// `command-ref-resolves` blocks (`multi-pack.md` → Pack-local body-reference
+    /// resolution → Command-refs; the same hazard, one resource over).
+    #[test]
+    fn loser_pack_workflow_resolves_its_own_command_ref() {
+        let repo = TempDir::new("t3-loser-cmd");
+        let higher = cmd_overlap_pack("higher", "high-cmd");
+        // The lower pack renames its workflow to a non-colliding top-level id,
+        // but keeps the colliding `step:emit` id (whose body now carries the
+        // lower-only `{{cli.low-cmd}}`).
+        let mut lower = cmd_overlap_pack("lower", "low-cmd");
+        let wf_bytes = lower
+            .0
+            .remove(&(PackResourceKind::Workflows, ResourceId::from("wf")))
+            .expect("the base fixture ships `wf`");
+        lower.0.insert(
+            (PackResourceKind::Workflows, ResourceId::from("wf-lower")),
+            wf_bytes,
+        );
+        let composite = crate::pack::CompositePack::new(vec![Box::new(higher), Box::new(lower)]);
+
+        let base = engine::cascade::PackDefaultLayer::new(
+            "higher",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["emit".to_owned()],
+        );
+        let resolved =
+            engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+        let source = CascadeStepSource::new(&composite, &resolved, repo.path());
+
+        let composed = compose_drained(
+            repo.path(),
+            "anything",
+            &composite,
+            "wf-lower",
+            &source,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect(
+            "the loser-pack workflow must resolve its own `{{cli.low-cmd}}` against ITS pack's catalog",
+        );
+
+        assert!(
+            composed.text.contains("Run: `jigc noop`"),
+            "the loser-pack `{{cli.low-cmd}}` must render from its own pack's catalog; got:\n{}",
+            composed.text,
+        );
+    }
+
+    /// T3 control — the precedence **winner**'s own workflow resolves its own
+    /// `{{cli.high-cmd}}` unchanged; no regression from the pack-local scoping.
+    /// (The winner pack owns both `wf` and `high-cmd`, so its origin is itself.)
+    #[test]
+    fn winner_pack_workflow_resolves_its_own_command_ref() {
+        let repo = TempDir::new("t3-winner-cmd");
+        let higher = cmd_overlap_pack("higher", "high-cmd");
+        let lower = cmd_overlap_pack("lower", "low-cmd");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(higher), Box::new(lower)]);
+
+        let base = engine::cascade::PackDefaultLayer::new(
+            "higher",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["emit".to_owned()],
+        );
+        let resolved =
+            engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+        let source = CascadeStepSource::new(&composite, &resolved, repo.path());
+
+        let composed = compose_drained(
+            repo.path(),
+            "anything",
+            &composite,
+            "wf",
+            &source,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("the winner-pack workflow composes its own command-ref");
+
+        assert!(
+            composed.text.contains("Run: `jigc noop`"),
+            "the winner-pack `{{cli.high-cmd}}` must resolve from its own catalog; got:\n{}",
+            composed.text,
+        );
+    }
+
+    /// T3 floor — a single-pack `Composite([base])` is byte-identical: origin =
+    /// base = the pack, so the pack-local catalog scoping is inert and the
+    /// composed body matches a compose over the bare pack (the cold-start
+    /// regression guard, for the command-ref read this task moves).
+    #[test]
+    fn single_pack_composite_command_ref_is_byte_identical() {
+        let repo = TempDir::new("t3-floor");
+        let base_pack = cmd_overlap_pack("base", "base-cmd");
+        let base_pack_clone = cmd_overlap_pack("base", "base-cmd");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(base_pack)]);
+
+        let base = engine::cascade::PackDefaultLayer::new(
+            "base",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["emit".to_owned()],
+        );
+        let resolved =
+            engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+
+        let over_composite = compose_drained(
+            repo.path(),
+            "anything",
+            &composite,
+            "wf",
+            &CascadeStepSource::new(&composite, &resolved, repo.path()),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("compose over the single-pack composite");
+        let over_bare = compose_drained(
+            repo.path(),
+            "anything",
+            &base_pack_clone,
+            "wf",
+            &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("compose over the bare pack");
+
+        assert_eq!(
+            over_composite.text, over_bare.text,
+            "a single-pack composite must compose its command-refs byte-identically to the bare pack",
         );
     }
 
