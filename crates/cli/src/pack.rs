@@ -374,6 +374,20 @@ impl PackSource for CompositePack {
                 id: id.clone(),
             })
     }
+
+    /// Each constituent pack's own `(pack-id, version)` segment, **in precedence
+    /// order** (highest-precedence first) — the composed-set provenance the
+    /// multi-pack `Pack:` header renders. A single-element composite yields exactly
+    /// that one pack's segment, so the byte-identity floor holds on the provenance
+    /// axis (`design/multi-pack.md` → Provenance). Each constituent's id is read
+    /// from *its own* `config/defaults`, never the precedence-winner's, so a loser
+    /// pack still names itself in the header.
+    fn provenance_segments(&self) -> Vec<(String, String)> {
+        self.0
+            .iter()
+            .flat_map(|p| p.provenance_segments())
+            .collect()
+    }
 }
 
 /// The YAML for the 16 intrinsic per-check severity knobs, each floored at

@@ -73,6 +73,42 @@ pub trait PackSource {
 
     /// The raw bytes of one resource, or [`PackError::NotFound`] if absent.
     fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError>;
+
+    /// The pack's own provenance segments — `(pack-id, version)` pairs — that the
+    /// `Pack:` header renders, **highest-precedence first**. A single pack reports
+    /// exactly one segment (its own `config/defaults` `pack-id` + [`pack_version`]),
+    /// so the compact header degrades byte-identically to `Pack: <id>/<version>`
+    /// when only one pack composes. A composite (`CompositePack`) overrides this to
+    /// concatenate its constituents' segments in precedence order — the
+    /// multi-pack provenance the determinism contract requires (`design/multi-pack.md`
+    /// → Provenance: the single segment becomes the composed set). The pack-id is
+    /// read best-effort from `config/defaults`; a pack that declares none reports an
+    /// empty id (provenance is a display surface, never a hard-fail path).
+    ///
+    /// [`pack_version`]: PackSource::pack_version
+    fn provenance_segments(&self) -> Vec<(String, String)> {
+        vec![(self.own_pack_id(), self.pack_version())]
+    }
+
+    /// This pack's own `config/defaults` `pack-id`, best-effort (empty if the
+    /// resource is absent, non-UTF-8, non-YAML, or declares no `pack-id`). The
+    /// default [`provenance_segments`] reads it; not overridden by `CompositePack`,
+    /// which sources each id from its constituents instead.
+    ///
+    /// [`provenance_segments`]: PackSource::provenance_segments
+    fn own_pack_id(&self) -> String {
+        self.read(PackResourceKind::Config, &ResourceId::from("defaults"))
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+            .and_then(|text| serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&text).ok())
+            .and_then(|value| {
+                value
+                    .get("pack-id")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_owned)
+            })
+            .unwrap_or_default()
+    }
 }
 
 #[cfg(test)]

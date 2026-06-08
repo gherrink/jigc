@@ -70,9 +70,33 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
     let catalog = Catalog::new(selectable_workflows(pack)?);
 
     Ok(OrientationView::clean(
-        resolved.provenance().header(),
+        compose_pack_header(pack, resolved.provenance()),
         catalog,
     ))
+}
+
+/// Render the orientation provenance header with the **composed-set** `Pack:`
+/// segment substituted for the engine's single-pack one. The engine
+/// [`Provenance`](engine::cascade::Provenance) carries only the precedence-winner's
+/// `Pack: <id>/<version>` (the cascade resolves over one merged base); the
+/// multi-pack provenance — every composed pack, highest-precedence first, joined by
+/// ` | ` — is sourced from the pack-set itself ([`PackSource::provenance_segments`]).
+/// The config-path tail the engine appended is preserved unchanged.
+///
+/// A single-pack set composes one segment, so `multi == single` and the header is
+/// byte-identical to today (the floor on the provenance axis).
+fn compose_pack_header(pack: &dyn PackSource, provenance: &engine::cascade::Provenance) -> String {
+    let multi = pack
+        .provenance_segments()
+        .into_iter()
+        .map(|(id, version)| format!("{id}/{version}"))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let full = provenance.header();
+    let tail = full
+        .strip_prefix(&provenance.pack_segment())
+        .unwrap_or(&full);
+    format!("Pack: {multi}{tail}")
 }
 
 /// Read the pack's own cascade id from its `config/defaults` `pack-id` field.
@@ -190,10 +214,60 @@ mod tests {
         }
     }
 
+    /// A two-pack composite over [`FakePack`]s — highest-precedence first. Built
+    /// from real `CompositePack` (not a hand-rolled segment list) so the header
+    /// test drives the production enumeration, not a reconstruction.
+    fn two_pack_composite(high: &'static str, low: &'static str) -> crate::pack::CompositePack {
+        crate::pack::CompositePack::new(vec![
+            Box::new(FakePack::with_pack_id(high)),
+            Box::new(FakePack::with_pack_id(low)),
+        ])
+    }
+
     #[test]
     fn absent_project_layer_yields_unset_project_view() {
         let view = orient_with(&ctx(None), &FakePack::new()).expect("orient succeeds");
         assert_eq!(view, OrientationView::unset_project());
+    }
+
+    /// Under a two-pack set the `Pack:` header lists **both** packs,
+    /// highest-precedence first, joined by ` | ` — the composed-set provenance
+    /// (`multi-pack.md` → Provenance: the single segment becomes the composed set).
+    /// The config-path tail is preserved unchanged after the multi-segment.
+    #[test]
+    fn two_pack_set_header_names_both_packs_highest_first() {
+        let pack = two_pack_composite("methodology", "dev");
+        let view = orient_with(&ctx(Some(PathBuf::from("/repo/.jigc/config"))), &pack)
+            .expect("orient succeeds");
+        let OrientationView::Clean { header, .. } = &view else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
+        assert!(
+            header.starts_with("Pack: methodology/v0.3.0 | dev/v0.3.0"),
+            "got:\n{header}",
+        );
+        assert!(
+            header.contains(" · Project config: /repo/.jigc/config"),
+            "the config-path tail must survive after the composed-pack segment; got:\n{header}",
+        );
+    }
+
+    /// The single-segment floor on the provenance axis: a one-pack composite (the
+    /// cold-start shape) renders `Pack: dev/<version>` byte-identical to today —
+    /// no trailing ` | `, no second segment (increment-workflow hardening #5: the
+    /// feature composed into a context that omits the second pack stays inert).
+    #[test]
+    fn one_pack_composite_header_is_byte_identical_to_today() {
+        let pack = crate::pack::CompositePack::new(vec![Box::new(FakePack::new())]);
+        let view = orient_with(&ctx(Some(PathBuf::from("/repo/.jigc/config"))), &pack)
+            .expect("orient succeeds");
+        let OrientationView::Clean { header, .. } = &view else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
+        assert_eq!(
+            header,
+            "Pack: dev/v0.3.0 · Project config: /repo/.jigc/config",
+        );
     }
 
     #[test]
