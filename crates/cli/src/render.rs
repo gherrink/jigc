@@ -167,6 +167,16 @@ fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
         tree.workflow,
         tree.workflow_layer.label(),
     );
+    // The adjudicated top-level cross-pack collision winners — one line per id-space
+    // a multi-pack composition precedence-resolved, naming the winning pack
+    // (`design/multi-pack.md` → Provenance). A single-pack composition carries none,
+    // so no line renders and the output is byte-identical to today.
+    for winner in &tree.collision_winners {
+        out.push_str(&format!(
+            "  collision: {} → won by {}/{}\n",
+            winner.collision, winner.pack_id, winner.pack_version,
+        ));
+    }
     let total_overrides = tree.overrides_applied;
     if total_overrides == 0 {
         out.push_str("  overrides applied: none\n");
@@ -723,6 +733,83 @@ mod tests {
         assert!(!json_out.contains(ROUTING_FOOTER));
         let back: ResolutionTree = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, tree);
+    }
+
+    /// The `--explain` collision-winner line (T5): over a tree carrying one
+    /// adjudicated top-level cross-pack collision per id-space (the `default-workflow`
+    /// knob; the `commit` doctype), the agent-text body renders **one line per
+    /// collision** naming the **winning pack** (its `(pack-id, version)`). A
+    /// single-pack tree carries **no** collision winners, so **no** winner line
+    /// renders and the output is byte-identical to today (the byte-identity floor;
+    /// hardening #5 — the omitting context). JSON omits the empty `collision_winners`
+    /// (skip-empty) and projects the populated one.
+    #[test]
+    fn render_explain_names_collision_winner_per_top_level_collision() {
+        use engine::cascade::LayerKind;
+        use engine::result::{CollisionWinner, ResolutionTree};
+
+        // A two-pack composition: methodology wins both adjudicated top-level ids.
+        let colliding = ResolutionTree::with_collisions(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CollisionWinner {
+                    collision: "default-workflow".to_string(),
+                    pack_id: "methodology".to_string(),
+                    pack_version: "0.1.0".to_string(),
+                },
+                CollisionWinner {
+                    collision: "doctype:commit".to_string(),
+                    pack_id: "methodology".to_string(),
+                    pack_version: "0.1.0".to_string(),
+                },
+            ],
+        );
+
+        let agent = explain(Format::Agent, &colliding, "methodology/v0.1.0 | dev/v0.0.0");
+        // One winner line per adjudicated collision, naming the winning pack.
+        assert!(
+            agent.contains("collision: default-workflow → won by methodology/0.1.0"),
+            "the knob collision must name the winning pack; got:\n{agent}",
+        );
+        assert!(
+            agent.contains("collision: doctype:commit → won by methodology/0.1.0"),
+            "the doctype collision must name the winning pack; got:\n{agent}",
+        );
+        assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+
+        // A single-pack tree carries no collision winners → NO winner line renders,
+        // byte-identical to the no-collision composition (hardening #5).
+        let single = ResolutionTree::new(
+            "single-task",
+            LayerKind::PackDefault,
+            0,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let single_agent = explain(Format::Agent, &single, "dev/v0.0.0");
+        assert!(
+            !single_agent.contains("collision:"),
+            "a single-pack composition renders NO winner line; got:\n{single_agent}",
+        );
+
+        // JSON: the populated tree projects `collision_winners`; the single-pack tree
+        // omits it (skip-empty), and both round-trip.
+        let json_out = explain(Format::Json, &colliding, "methodology/v0.1.0 | dev/v0.0.0");
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        assert!(json_out.contains("\"collision\": \"default-workflow\""));
+        let back: ResolutionTree = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(back, colliding);
+        let single_json = explain(Format::Json, &single, "dev/v0.0.0");
+        assert!(
+            !single_json.contains("collision_winners"),
+            "an empty collision_winners is omitted; got:\n{single_json}",
+        );
     }
 
     /// A below-floor `scalar-set` the cascade soft-rejected renders as a

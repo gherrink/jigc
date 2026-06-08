@@ -584,6 +584,40 @@ pub(crate) fn scoped_deltas(workflow_id: &str, deltas: &[StructuralDelta]) -> Ve
         .collect()
 }
 
+/// The adjudicated top-level cross-pack collision id-spaces the multi-pack
+/// `--explain` provenance names a winner for (`design/multi-pack.md` → Collision
+/// resolution): the `default-workflow` knob (the whole `knobs.yaml` is
+/// precedence-shadowed, so a divergent `default-workflow` enum collides) and the
+/// `commit` doctype (a divergent schema). Each is `(label, kind, resource-id)`; a
+/// collision is *adjudicated* iff ≥2 composed packs own the resource. The path +
+/// content-hash provenance is increment 3, not these labels.
+const ADJUDICATED_COLLISIONS: &[(&str, PackResourceKind, &str)] = &[
+    ("default-workflow", PackResourceKind::Config, "knobs"),
+    ("doctype:commit", PackResourceKind::Schemas, "commit"),
+];
+
+/// The adjudicated top-level cross-pack collision winners for `pack` — one
+/// [`CollisionWinner`](engine::result::CollisionWinner) per [`ADJUDICATED_COLLISIONS`]
+/// id-space that ≥2 composed packs own, naming the **precedence winner** (the first
+/// `provenance_segments()` segment — highest-precedence first). A single-pack
+/// composition owns each id at most once, so it yields **no** winners and the
+/// `--explain` output stays byte-identical (`design/multi-pack.md` → Provenance:
+/// where a collision was adjudicated, name which pack won).
+fn collision_winners(pack: &dyn PackSource) -> Vec<engine::result::CollisionWinner> {
+    let Some((pack_id, pack_version)) = pack.provenance_segments().into_iter().next() else {
+        return Vec::new();
+    };
+    ADJUDICATED_COLLISIONS
+        .iter()
+        .filter(|(_, kind, id)| pack.owner_count(*kind, &ResourceId::from(*id)) > 1)
+        .map(|(label, _, _)| engine::result::CollisionWinner {
+            collision: (*label).to_owned(),
+            pack_id: pack_id.clone(),
+            pack_version: pack_version.clone(),
+        })
+        .collect()
+}
+
 /// Build the `--explain` resolution tree (layers 1–2 — `workflow-dialect.md` →
 /// `--explain` output contract) for `workflow_id` over the resolved cascade —
 /// the seam the `--explain` dispatch (T3) renders.
@@ -703,13 +737,17 @@ pub fn compose_explain_in_repo(
             .map(str::to_owned)
             .map_err(anyhow::Error::from)?,
     };
-    let tree = build_resolution_tree(
+    let mut tree = build_resolution_tree(
         pack,
         &resolved,
         &project_config,
         &overrides.deltas,
         &workflow_id,
     )?;
+    // The adjudicated top-level cross-pack collision winners — empty for a
+    // single-pack composition, so the tree (and its rendered `--explain`) stays
+    // byte-identical (`design/multi-pack.md` → Provenance).
+    tree.collision_winners = collision_winners(pack);
     let pack_label = format!("{}/v{}", pack_id_from_config(pack)?, pack.pack_version());
     Ok((tree, pack_label))
 }
@@ -4075,6 +4113,82 @@ mod tests {
                 replaced: "implement".to_owned(),
                 position: 2,
             }),
+        );
+    }
+
+    /// A two-pack fixture used to drive the `--explain` collision-winner detection:
+    /// each pack ships `config/knobs` (the `default-workflow` enum) and
+    /// `schemas/commit` (the doctype) under its own `pack-id`, so both adjudicated
+    /// id-spaces collide when two are composed.
+    fn collision_pack(pack_id: &str) -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                &format!("pack-id: {pack_id}\ndefault-workflow: wf\n"),
+            ),
+            (
+                PackResourceKind::Config,
+                "knobs",
+                "default-workflow:\n  type: enum\n",
+            ),
+            (PackResourceKind::Schemas, "commit", "type: commit\n"),
+        ])
+    }
+
+    /// T5 done-criterion — the `--explain` collision-winner detection: over a
+    /// **two-pack** composite where both adjudicated id-spaces collide
+    /// (`default-workflow` knob; `commit` doctype), [`collision_winners`] names the
+    /// **precedence winner** (the highest-precedence pack) for **each** collision;
+    /// over a **single-pack** composite it yields **none** (the byte-identity floor;
+    /// hardening #5 — the omitting context). The winner is the first
+    /// `provenance_segments()` segment (`design/multi-pack.md` → Provenance).
+    #[test]
+    fn collision_winners_names_precedence_winner_per_adjudicated_collision() {
+        // Two-pack composite: `methodology` is highest-precedence (first) and wins
+        // both adjudicated top-level ids over `dev`.
+        let composite = crate::pack::CompositePack::new(vec![
+            Box::new(collision_pack("methodology")),
+            Box::new(collision_pack("dev")),
+        ]);
+        let winners = collision_winners(&composite);
+
+        let by_label: Vec<(&str, &str, &str)> = winners
+            .iter()
+            .map(|w| {
+                (
+                    w.collision.as_str(),
+                    w.pack_id.as_str(),
+                    w.pack_version.as_str(),
+                )
+            })
+            .collect();
+        // One winner per adjudicated collision, each naming the precedence winner.
+        assert!(
+            by_label.contains(&("default-workflow", "methodology", "0.0.0")),
+            "the knob collision names the precedence winner; got:\n{by_label:?}",
+        );
+        assert!(
+            by_label.contains(&("doctype:commit", "methodology", "0.0.0")),
+            "the doctype collision names the precedence winner; got:\n{by_label:?}",
+        );
+        assert_eq!(
+            winners.len(),
+            2,
+            "exactly the two adjudicated collisions are named; got:\n{by_label:?}",
+        );
+
+        // Single-pack composite: no id is owned by >1 pack → NO winners (the
+        // byte-identity floor; the omitting context).
+        let single = crate::pack::CompositePack::new(vec![Box::new(collision_pack("dev"))]);
+        assert!(
+            collision_winners(&single).is_empty(),
+            "a single-pack composition adjudicates no cross-pack collision",
+        );
+        // A bare `FixturePack` (not even a composite) likewise yields none.
+        assert!(
+            collision_winners(&collision_pack("dev")).is_empty(),
+            "a non-composite pack adjudicates no cross-pack collision",
         );
     }
 

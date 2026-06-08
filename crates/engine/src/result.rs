@@ -326,6 +326,28 @@ pub struct RejectedDemotion {
     pub layer: LayerKind,
 }
 
+/// One adjudicated top-level cross-pack collision in the `--explain` tree's
+/// provenance: an id-space where ≥2 composed packs shipped the same top-level id
+/// and precedence-override picked a winner (the `default-workflow` knob; the
+/// `commit` doctype — `design/multi-pack.md` → Collision resolution; Provenance).
+/// Carries the colliding id-space label and the **winning** pack's
+/// `(pack-id, version)` (its `provenance_segments()` segment). Empty for a
+/// single-pack composition (no collision), so the no-collision projection is
+/// byte-identical.
+///
+/// The path + content-hash provenance (`design/multi-pack.md` → Provenance: each
+/// pack's resolving directory + blake3 content hash) is increment 3, not carried
+/// here — this is only the winner-naming surface.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CollisionWinner {
+    /// The adjudicated id-space label (e.g. `default-workflow`, `doctype:commit`).
+    pub collision: String,
+    /// The winning pack's id (its `provenance_segments()` pack-id).
+    pub pack_id: String,
+    /// The winning pack's version (its `provenance_segments()` version).
+    pub pack_version: String,
+}
+
 /// The structural slice of the `--explain` resolution tree — layers 1–2 of the
 /// output contract (`design/workflow-dialect.md` → `--explain` output contract):
 /// the workflow's cascade provenance (`overrides applied: N` plus the per-knob
@@ -363,13 +385,21 @@ pub struct ResolutionTree {
     /// delta did not become an override).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rejected_demotions: Vec<RejectedDemotion>,
+    /// The adjudicated top-level cross-pack collision winners — one per id-space a
+    /// multi-pack composition precedence-resolved (`design/multi-pack.md` →
+    /// Provenance). Empty for a single-pack composition, so the no-collision
+    /// projection is byte-identical (`skip_serializing_if`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collision_winners: Vec<CollisionWinner>,
     /// The resolved include steps, in post-phase-4 composed order.
     pub steps: Vec<ResolvedStep>,
 }
 
 impl ResolutionTree {
-    /// Build a resolution tree over its workflow provenance + resolved steps,
-    /// stamping the current [`SCHEMA_VERSION`].
+    /// Build a resolution tree over its workflow provenance + resolved steps, with
+    /// **no** cross-pack collision winners (the single-pack / byte-identity floor),
+    /// stamping the current [`SCHEMA_VERSION`]. Multi-pack callers that adjudicated
+    /// top-level collisions use [`with_collisions`](Self::with_collisions).
     pub fn new(
         workflow: impl Into<String>,
         workflow_layer: LayerKind,
@@ -378,6 +408,31 @@ impl ResolutionTree {
         rejected_demotions: Vec<RejectedDemotion>,
         steps: Vec<ResolvedStep>,
     ) -> Self {
+        Self::with_collisions(
+            workflow,
+            workflow_layer,
+            overrides_applied,
+            scalar_overrides,
+            rejected_demotions,
+            steps,
+            Vec::new(),
+        )
+    }
+
+    /// Build a resolution tree also carrying the adjudicated top-level cross-pack
+    /// `collision_winners` — the multi-pack `--explain` provenance
+    /// (`design/multi-pack.md` → Provenance). An empty `collision_winners` is
+    /// exactly [`new`](Self::new) (the single-pack floor).
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_collisions(
+        workflow: impl Into<String>,
+        workflow_layer: LayerKind,
+        overrides_applied: usize,
+        scalar_overrides: Vec<ScalarOverride>,
+        rejected_demotions: Vec<RejectedDemotion>,
+        steps: Vec<ResolvedStep>,
+        collision_winners: Vec<CollisionWinner>,
+    ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
             workflow: workflow.into(),
@@ -385,6 +440,7 @@ impl ResolutionTree {
             overrides_applied,
             scalar_overrides,
             rejected_demotions,
+            collision_winners,
             steps,
         }
     }

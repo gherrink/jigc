@@ -93,6 +93,19 @@ pub trait PackSource: AsPackSource {
     /// The raw bytes of one resource, or [`PackError::NotFound`] if absent.
     fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError>;
 
+    /// How many constituent packs **own** `(kind, id)` — the count `--explain`'s
+    /// collision-winner detection reads to tell a genuine cross-pack collision
+    /// (≥2 owners, precedence-override picked a winner) from a non-collision
+    /// (`design/multi-pack.md` → Collision resolution; Provenance). A single pack
+    /// owns at most one (`read().is_ok()`), so the default never reports a
+    /// collision; a composite ([`CompositePack`]) overrides this to count its
+    /// constituents.
+    ///
+    /// [`CompositePack`]: ../../cli/pack/struct.CompositePack.html
+    fn owner_count(&self, kind: PackResourceKind, id: &ResourceId) -> usize {
+        usize::from(self.read(kind, id).is_ok())
+    }
+
     /// The pack's own provenance segments — `(pack-id, version)` pairs — that the
     /// `Pack:` header renders, **highest-precedence first**. A single pack reports
     /// exactly one segment (its own `config/defaults` `pack-id` + [`pack_version`]),

@@ -375,6 +375,15 @@ impl PackSource for CompositePack {
             })
     }
 
+    /// How many constituents own `(kind, id)` — `--explain` reads this to tell a
+    /// genuine cross-pack collision (≥2 owners, precedence-override adjudicated a
+    /// winner) from a single owner (`design/multi-pack.md` → Provenance: where a
+    /// collision was adjudicated, name the winner). Counts every constituent whose
+    /// `read` succeeds, not just the precedence winner.
+    fn owner_count(&self, kind: PackResourceKind, id: &ResourceId) -> usize {
+        self.0.iter().filter(|p| p.read(kind, id).is_ok()).count()
+    }
+
     /// The constituent pack that **owns** `(kind, id)` — the **first
     /// (highest-precedence)** pack whose [`read`](PackSource::read) succeeds, the
     /// same pack the precedence `read` selects. This is the body-reference
