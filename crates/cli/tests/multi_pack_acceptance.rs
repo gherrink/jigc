@@ -890,22 +890,42 @@ fn flow17_consolidated_acceptance_over_the_real_dev_x_methodology_pair() {
     //        composed output byte-identical (re-execution under ≥2 divergent orders,
     //        hardening #7) — proven separately in `flow17_reversed_pack_order_*`.
     //
-    // 6a — recompose the methodology dev-task that the bare `start` above minted.
-    let first = run(repo.path(), home.path(), &["start", "--task", adr_task]);
+    // 6a — resume of a LOSER-PACK workflow must compose its OWN pack's body, exactly
+    // as the fresh compose did. Assertion 3 above already minted dev's `single-task`
+    // (the loser pack's workflow — methodology wins every top-level collision) fresh
+    // via `--workflow single-task "add a thing"` and pinned its fresh bytes to
+    // `DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN`. Here we RESUME that same task via
+    // `--task add-a-thing` and assert the resume re-resolves the pack-local
+    // body-references against DEV's pack (its direct-edit `implement` +
+    // `{{cli.create-adr}}`, which methodology's catalog LACKS) — NOT the
+    // precedence-winner methodology. The load-bearing assertion is resume == the fresh
+    // golden (crossing the mint→resume boundary on a loser-pack workflow: a resume
+    // that mis-resolved to methodology's test-first `implement` / dropped `create-adr`
+    // would diverge from the golden); recompose-determinism (resume twice
+    // byte-identical) rides along.
+    let det_task = "add-a-thing";
+    let first = run(repo.path(), home.path(), &["start", "--task", det_task]);
     assert!(
         first.status.success(),
-        "(6a) `jigc start --task <id>` recompose must exit 0; stderr:\n{}",
+        "(6a) `jigc start --task <id>` resume of a loser-pack workflow must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&first.stderr),
     );
-    let second = run(repo.path(), home.path(), &["start", "--task", adr_task]);
+    let first_out = String::from_utf8(first.stdout).expect("utf-8");
+    assert_eq!(
+        first_out, DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN,
+        "(6a) resume of a loser-pack workflow must compose DEV's OWN-pack body \
+         (direct-edit implement + create-adr), identical to the fresh golden — NOT \
+         methodology's (the precedence winner): mint == resume on body-reference resolution",
+    );
+    let second = run(repo.path(), home.path(), &["start", "--task", det_task]);
     assert!(
         second.status.success(),
-        "(6a) the second recompose must exit 0"
+        "(6a) the second resume must exit 0"
     );
     assert_eq!(
-        String::from_utf8(first.stdout).expect("utf-8"),
+        first_out,
         String::from_utf8(second.stdout).expect("utf-8"),
-        "(6a) recomposing the same task twice must be byte-identical under composition",
+        "(6a) resuming the same task twice must be byte-identical under composition",
     );
 }
 

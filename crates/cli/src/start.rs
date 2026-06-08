@@ -1183,7 +1183,16 @@ fn compose_task_workflow(
     if provision {
         provision_on_first_entry(pack, &def, task_dir, id)?;
     }
-    let commands = load_catalog(pack)?;
+    // The command catalog is read against the resumed workflow's **origin pack** — the
+    // constituent that defines `workflow_id`'s top-level id — exactly as the fresh
+    // front door ([`compose_core`]): a loser-pack workflow's `{{cli.X}}` resolves
+    // against ITS OWN pack's catalog on resume, never the precedence winner's (which
+    // need not be a superset). Without this, mint ≠ resume — a resumed loser-pack
+    // workflow would silently re-resolve to the winner's body (`multi-pack.md` →
+    // Pack-local body-reference resolution → Command-refs). Inert for a single pack
+    // (origin = pack), so the resume floor stays byte-identical.
+    let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
+    let commands = load_catalog(origin)?;
     let selectable = selectable_workflows(pack)?;
     // The committed store feed (`{{store.<doctype>}}`), enumerated from the committed
     // `<location>/<slug>.md` instances; the same `schemas` set the edge overlay below
@@ -1193,7 +1202,17 @@ fn compose_task_workflow(
     let store_feed = committed_store(repo_root, &schemas);
 
     let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
-    let source = PackStepSource { pack };
+    // Resume reads steps through the layer-aware [`CascadeStepSource`] over the *live*
+    // cascade (a project `steps/<id>.yaml` whole-file shadow wins) and scopes its
+    // pack-default arm to the resumed workflow's origin pack — so every
+    // `{{include: step:X}}` resolves against the pack that DEFINES the workflow, not
+    // the precedence winner. This mirrors the fresh front door's
+    // `scope_to_workflow` ([`compose_drained`]); without it a resumed loser-pack
+    // workflow would expand the winner's divergent step (the M3-class silent
+    // corruption `multi-pack.md` → Pack-local body-reference resolution → Steps kills).
+    // Inert for a single pack (origin = pack), so the resume floor stays byte-identical.
+    let source = CascadeStepSource::new(pack, &resolved, project_config);
+    source.scope_to_workflow(workflow_id);
 
     // Resume composes the task's pinned workflow, but still over the *live* cascade
     // (`resolved` / `overrides`, resolved up front so the definition reads route
@@ -1360,13 +1379,16 @@ fn build_context(
     }
 }
 
-/// A [`StepSource`] that resolves step ids against the embedded pack. The MVP
-/// cascade has no project step overrides, so the pack-default layer owns every
-/// step — the engine consumes this mapping and stays a pure function of it.
+/// A single-layer [`StepSource`] that resolves step ids directly against one pack,
+/// with no cascade/origin scoping. The live compose paths (fresh + resume) now read
+/// steps through the layer-aware, origin-scoped [`CascadeStepSource`], so this plain
+/// source survives only as a test fixture for the engine compose seam.
+#[cfg(test)]
 pub(crate) struct PackStepSource<'a> {
     pub(crate) pack: &'a dyn PackSource,
 }
 
+#[cfg(test)]
 impl StepSource for PackStepSource<'_> {
     fn step(&self, id: &str) -> Option<StepDef> {
         let bytes = self
