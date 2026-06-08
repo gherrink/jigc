@@ -116,6 +116,44 @@ const FS_LOCAL_VERSION: &str = "fs-local";
 /// See overrides.md → the `FilesystemPack` seam.
 const PACK_DIR_ENV: &str = "JIGC_PACK_DIR";
 
+/// The pre-cascade pack-assembly input: the ordered list of project-local pack
+/// directories read from `<project_config_dir>/packs.yaml`, **highest-precedence
+/// first** (earlier in the list = higher precedence). The composite `PackSource`
+/// assembles these over the base pack (the base sits lowest).
+///
+/// This is an **optional** pre-cascade input, **not** a cascade knob: it cannot be
+/// resolved by the cascade (the cascade resolves *over* the pack-set this selects).
+/// So **absent file** and an **absent/empty `packs:` list** both yield `Vec::new()`
+/// (the single-pack `[base]` floor), never an error. A **malformed** `packs.yaml`
+/// (not valid YAML, or a `packs:` that is not a list of strings) is a **located**
+/// `Err` naming the file — never a panic. See `design/multi-pack.md` → The pack-set.
+///
+/// Exercised by the unit tests now; wired into `make_pack()`'s pack-set assembly
+/// in T3 of this increment (the production caller).
+#[allow(dead_code)]
+pub fn read_pack_list(project_config_dir: &std::path::Path) -> anyhow::Result<Vec<PathBuf>> {
+    use anyhow::Context;
+
+    let path = project_config_dir.join("packs.yaml");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(e).with_context(|| format!("could not read {}", path.display()));
+        }
+    };
+
+    #[derive(serde::Deserialize)]
+    struct PacksFile {
+        #[serde(default)]
+        packs: Vec<PathBuf>,
+    }
+
+    let parsed: PacksFile = serde_yaml_ng::from_str(&text)
+        .with_context(|| format!("{} is not a valid pack-set list", path.display()))?;
+    Ok(parsed.packs)
+}
+
 /// The pack-source factory — the **single** production construction point for a
 /// [`PackSource`]. Every production path (the orientation/compose front door, the
 /// `jigc config` recording verbs, the task/doc working areas) routes through this
@@ -732,6 +770,137 @@ mod tests {
             defaults.lines().any(|l| l.trim() == "pack-id: dev"),
             "the pack config must declare `pack-id: dev`; got:\n{defaults}",
         );
+    }
+
+    mod pack_list {
+        use super::super::*;
+        use std::path::{Path, PathBuf};
+
+        /// A throwaway directory that removes itself on drop.
+        struct TempDir(PathBuf);
+
+        impl TempDir {
+            fn new() -> Self {
+                let mut path = std::env::temp_dir();
+                path.push(format!(
+                    "jigc-packlist-unit-{}-{:?}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
+                ));
+                std::fs::create_dir_all(&path).expect("create temp dir");
+                TempDir(path)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        /// A two-entry `packs:` list yields both dirs in declared order
+        /// (highest-precedence first — the list order is preserved verbatim).
+        #[test]
+        fn two_entry_list_preserves_declared_order() {
+            let dir = TempDir::new();
+            std::fs::write(
+                dir.path().join("packs.yaml"),
+                b"packs:\n  - /opt/jigc-packs/methodology\n  - /opt/jigc-packs/extra\n",
+            )
+            .expect("seed packs.yaml");
+
+            let list = read_pack_list(dir.path()).expect("a valid packs.yaml reads back");
+            assert_eq!(
+                list,
+                vec![
+                    PathBuf::from("/opt/jigc-packs/methodology"),
+                    PathBuf::from("/opt/jigc-packs/extra"),
+                ],
+            );
+        }
+
+        /// An absent `packs.yaml` is the common cold-start case: the empty pack-set
+        /// (the `[base]` floor), never an error.
+        #[test]
+        fn absent_file_is_empty() {
+            let dir = TempDir::new();
+            let list = read_pack_list(dir.path()).expect("an absent packs.yaml is not an error");
+            assert!(
+                list.is_empty(),
+                "absent file => empty pack-set; got {list:?}"
+            );
+        }
+
+        /// An explicit empty list (`packs: []`) is also the empty pack-set — a
+        /// present-but-empty selection is inert, not an error.
+        #[test]
+        fn empty_list_is_empty() {
+            let dir = TempDir::new();
+            std::fs::write(dir.path().join("packs.yaml"), b"packs: []\n")
+                .expect("seed empty packs.yaml");
+            let list = read_pack_list(dir.path()).expect("`packs: []` is not an error");
+            assert!(
+                list.is_empty(),
+                "`packs: []` => empty pack-set; got {list:?}"
+            );
+        }
+
+        /// A present file with no `packs:` key at all is still the empty pack-set
+        /// (the key defaults to empty) — absent key === absent file.
+        #[test]
+        fn absent_packs_key_is_empty() {
+            let dir = TempDir::new();
+            std::fs::write(dir.path().join("packs.yaml"), b"# nothing here\n")
+                .expect("seed keyless packs.yaml");
+            let list = read_pack_list(dir.path()).expect("a missing `packs:` key is not an error");
+            assert!(
+                list.is_empty(),
+                "absent `packs:` key => empty; got {list:?}"
+            );
+        }
+
+        /// Garbage YAML is a **located** `Err` naming the file — never a panic. The
+        /// hostile-input pass: the reader is the selection input the composite
+        /// assembles over, so it must fail cleanly on malformed bytes.
+        #[test]
+        fn garbage_is_a_located_err() {
+            let dir = TempDir::new();
+            std::fs::write(
+                dir.path().join("packs.yaml"),
+                b"packs: : : not valid : yaml ][\n",
+            )
+            .expect("seed garbage packs.yaml");
+
+            let err = read_pack_list(dir.path()).expect_err("garbage packs.yaml is a clean Err");
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("packs.yaml"),
+                "the error must locate the offending file; got: {msg}",
+            );
+        }
+
+        /// A `packs:` that is the wrong shape (a scalar, not a list of paths) is
+        /// likewise a located `Err`, not a panic — the wrong-type hostile case.
+        #[test]
+        fn wrong_shape_packs_is_a_located_err() {
+            let dir = TempDir::new();
+            std::fs::write(dir.path().join("packs.yaml"), b"packs: not-a-list\n")
+                .expect("seed wrong-shape packs.yaml");
+
+            let err = read_pack_list(dir.path()).expect_err("a non-list `packs:` is a clean Err");
+            let msg = format!("{err:#}");
+            assert!(
+                msg.contains("packs.yaml"),
+                "the error must locate the offending file; got: {msg}",
+            );
+        }
     }
 
     mod factory {
