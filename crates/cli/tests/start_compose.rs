@@ -160,6 +160,78 @@ fn run_config(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
 }
 
 #[test]
+fn listed_pack_resource_resolves_through_the_cwd_discovered_pack_set() {
+    // T3 — the load-bearing proof of the make_pack() elaboration pin: make_pack()
+    // stays zero-arg and CWD-discovers the project config, so the discovered
+    // pack-set equals the in-repo project dir's `.jigc/config/packs.yaml` list. A
+    // listed second filesystem pack shipping an extra `creates-task: true`
+    // selectable workflow must surface in the router catalog when `jigc start` runs
+    // with cwd inside the repo — proving the listed pack's resource resolved through
+    // the discovered set (the CLAIM the pin must prove, never assert).
+    //
+    // The base (embedded) pack is unchanged, so this *also* witnesses the union
+    // read: the listed pack's `listed-extra` and the base pack's `single-task` both
+    // list. The listed workflow is body-trivial (router only lists, never composes a
+    // body), so this stays inside increment 1's scope (no cross-pack body-reference
+    // resolution yet).
+    let repo = TempDir::new("listed-pack-set");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Seed a second filesystem pack OUTSIDE the repo (a literal pack directory the
+    // `packs:` list names), shipping one extra selectable work-workflow.
+    let listed = TempDir::new("listed-pack");
+    let listed_workflows = listed.path().join("workflows");
+    fs::create_dir_all(&listed_workflows).expect("mk listed workflows/");
+    fs::write(
+        listed_workflows.join("listed-extra.yaml"),
+        "---\n\
+         when: a workflow shipped only by the listed pack\n\
+         description: A listed-pack-only selectable work-workflow.\n\
+         usage: proving the CWD-discovered pack-set includes the listed pack.\n\
+         creates-task: true\n\
+         ---\n\
+         {{ include: step:locate }}\n",
+    )
+    .expect("seed listed-extra workflow");
+
+    // Record the listed pack in the in-repo project layer's packs.yaml — the
+    // pre-cascade selector make_pack() CWD-discovers.
+    let config = repo.path().join(".jigc").join("config");
+    fs::write(
+        config.join("packs.yaml"),
+        format!("packs:\n  - {}\n", listed.path().display()),
+    )
+    .expect("write packs.yaml naming the listed pack");
+
+    // Bare `jigc start "<intent>"` composes the router (cascade default), which
+    // lists the UNION of selectable work-workflows from the composed pack-set.
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "bare `jigc start` over a two-pack set must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The listed pack's resource resolved through the CWD-discovered set — its
+    // selectable workflow appears in the router catalog.
+    assert!(
+        stdout.contains("- listed-extra — a workflow shipped only by the listed pack"),
+        "the listed pack's workflow must surface in the router catalog (proving CWD-discovery \
+         loaded the in-repo packs.yaml set); got:\n{stdout}",
+    );
+    // The base (embedded) pack's `single-task` still lists — the union, base last.
+    assert!(
+        stdout.contains("- single-task — implement one scoped change end-to-end"),
+        "the base pack's single-task must still list alongside the listed pack's workflow \
+         (the union read); got:\n{stdout}",
+    );
+}
+
+#[test]
 fn bare_intent_composes_the_router_without_minting() {
     // Post-flip (`DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to
     // `router`): a bare `jigc start "<intent>"` composes the cascade default — now

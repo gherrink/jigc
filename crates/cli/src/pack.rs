@@ -128,9 +128,8 @@ const PACK_DIR_ENV: &str = "JIGC_PACK_DIR";
 /// (not valid YAML, or a `packs:` that is not a list of strings) is a **located**
 /// `Err` naming the file — never a panic. See `design/multi-pack.md` → The pack-set.
 ///
-/// Exercised by the unit tests now; wired into `make_pack()`'s pack-set assembly
-/// in T3 of this increment (the production caller).
-#[allow(dead_code)]
+/// Read by [`make_pack`]'s CWD-discovery (the production caller) and by the unit
+/// tests.
 pub fn read_pack_list(project_config_dir: &std::path::Path) -> anyhow::Result<Vec<PathBuf>> {
     use anyhow::Context;
 
@@ -161,17 +160,77 @@ pub fn read_pack_list(project_config_dir: &std::path::Path) -> anyhow::Result<Ve
 /// (overrides.md → the `FilesystemPack` seam: "every production pack-source
 /// construction goes through the factory").
 ///
-/// `JIGC_PACK_DIR` set to a directory selects a [`FilesystemPack`] over that tree;
-/// unset, the binary-embedded [`EmbeddedPack`] is the default, so output is
-/// byte-identical to a build without the seam.
+/// The returned source is an ordered [`CompositePack`] over the pack-set
+/// (multi-pack.md → The pack-set): the project's listed packs
+/// (`.jigc/config/packs:`, highest-precedence first) over the **base** pack — a
+/// [`FilesystemPack`] if `JIGC_PACK_DIR` is set, else the binary-embedded
+/// [`EmbeddedPack`] — which sits implicitly **last/lowest**. The factory stays
+/// **zero-arg** and **CWD-discovers** the project config (walk up from the process
+/// CWD to the repo root's `.jigc/config/`) so the ~22 call sites do not ripple;
+/// each caller already operates on the process CWD, so the discovered pack-set is
+/// the one its in-repo project dir would name (proven by the T3 two-pack
+/// real-binary load, not assumed).
+///
+/// **Cold-start floor:** absent/empty `packs.yaml` (or no discoverable project
+/// config — most `make_pack()` callers may run before any project layer exists)
+/// yields a composite of **exactly `[base]`**, which `CompositePack` makes
+/// byte-identical to the single-pack path. Discovery is therefore best-effort: a
+/// missing repo/config dir is the empty pack-set, never an error. A *malformed*
+/// `packs.yaml` is a located error surfaced by [`read_pack_list`] — propagated,
+/// not swallowed.
 pub fn make_pack() -> Box<dyn PackSource> {
-    make_pack_from(std::env::var_os(PACK_DIR_ENV))
+    let listed = discover_pack_list().unwrap_or_else(|err| {
+        // A malformed `packs.yaml` is a real authoring fault; surface it rather
+        // than silently falling back to the base. (An *absent* file is `Ok(vec![])`
+        // from `read_pack_list`, so this arm fires only on genuine corruption.)
+        eprintln!("warning: {err:#}");
+        Vec::new()
+    });
+    make_pack_from(std::env::var_os(PACK_DIR_ENV), listed)
 }
 
-/// The testable core of [`make_pack`]: select on an already-read env value rather
-/// than reading the process environment, so the selection logic is exercised
-/// without mutating global state (parallel-test-safe).
-fn make_pack_from(pack_dir: Option<OsString>) -> Box<dyn PackSource> {
+/// CWD-discover the project's pre-cascade pack-set: walk up from the process CWD to
+/// the repo root (the dir holding `.git`), then read `<root>/.jigc/config/packs.yaml`
+/// via [`read_pack_list`]. No repo / no `.jigc/config/` is the empty pack-set
+/// (`Ok(vec![])`) — the cold-start floor — not an error; only a malformed
+/// `packs.yaml` is an `Err`.
+fn discover_pack_list() -> anyhow::Result<Vec<PathBuf>> {
+    let Ok(cwd) = std::env::current_dir() else {
+        return Ok(Vec::new());
+    };
+    let Some(repo_root) = cwd.ancestors().find(|dir| dir.join(".git").exists()) else {
+        return Ok(Vec::new());
+    };
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        return Ok(Vec::new());
+    }
+    read_pack_list(&project_config)
+}
+
+/// The testable core of [`make_pack`]: assemble the composite from already-read
+/// inputs (the `JIGC_PACK_DIR` env value + the listed pack dirs) rather than
+/// reading the process environment / CWD, so the assembly is exercised without
+/// mutating global state (parallel-test-safe).
+///
+/// The pack-set is **listed packs first (highest-precedence), base last (lowest)**:
+/// each listed dir becomes a [`FilesystemPack`]; the base is a [`FilesystemPack`]
+/// over `JIGC_PACK_DIR` if set, else the [`EmbeddedPack`]. With no listed packs the
+/// composite is `[base]` — the byte-identity floor.
+fn make_pack_from(pack_dir: Option<OsString>, listed_dirs: Vec<PathBuf>) -> Box<dyn PackSource> {
+    let mut packs: Vec<Box<dyn PackSource>> = listed_dirs
+        .into_iter()
+        .map(|dir| Box::new(FilesystemPack::new(dir)) as Box<dyn PackSource>)
+        .collect();
+    packs.push(make_base_pack(pack_dir));
+    Box::new(CompositePack::new(packs))
+}
+
+/// Construct the **base** pack — the lowest-precedence foundation every listed pack
+/// composes over. `JIGC_PACK_DIR` set to a non-empty directory selects a
+/// [`FilesystemPack`] over that tree; unset (or empty), the binary-embedded
+/// [`EmbeddedPack`].
+fn make_base_pack(pack_dir: Option<OsString>) -> Box<dyn PackSource> {
     match pack_dir {
         Some(dir) if !dir.is_empty() => Box::new(FilesystemPack::new(PathBuf::from(dir))),
         _ => Box::new(EmbeddedPack::new()),
@@ -277,9 +336,8 @@ impl CompositePack {
     /// single-element `Vec` is the byte-identity floor: its `list`/`read`/
     /// `pack_version` equal that one pack's.
     ///
-    /// Exercised by the unit tests now; wired into `make_pack()`'s pack-set
-    /// assembly in T3 of this increment (the production caller).
-    #[allow(dead_code)]
+    /// Wired into [`make_pack`]'s pack-set assembly (the production caller) and
+    /// exercised directly by the unit tests.
     pub fn new(packs: Vec<Box<dyn PackSource>>) -> Self {
         CompositePack(packs)
     }
@@ -1002,12 +1060,13 @@ mod tests {
             }
         }
 
-        /// With `JIGC_PACK_DIR` unset, the factory yields an `EmbeddedPack`-backed
-        /// source: its `list`/`read`/`pack_version` equal `EmbeddedPack`'s, so a
-        /// no-env build is byte-identical to one without the seam.
+        /// With `JIGC_PACK_DIR` unset, the base selector yields an
+        /// `EmbeddedPack`-backed source: its `list`/`read`/`pack_version` equal
+        /// `EmbeddedPack`'s, so a no-env build is byte-identical to one without the
+        /// seam.
         #[test]
         fn unset_env_yields_an_embedded_backed_source() {
-            let pack = make_pack_from(None);
+            let pack = make_base_pack(None);
             let embedded = EmbeddedPack::new();
 
             assert_eq!(
@@ -1037,7 +1096,7 @@ mod tests {
         /// than reading an empty path (an unset-equivalent value is inert).
         #[test]
         fn empty_env_yields_an_embedded_backed_source() {
-            let pack = make_pack_from(Some(OsString::new()));
+            let pack = make_base_pack(Some(OsString::new()));
             let embedded = EmbeddedPack::new();
             assert_eq!(
                 pack.list(PackResourceKind::Workflows),
@@ -1062,12 +1121,12 @@ mod tests {
             std::fs::write(cfg.join("defaults.yaml"), b"pack-id: dev\nversion: 9.9.9\n")
                 .expect("seed defaults");
 
-            let pack = make_pack_from(Some(OsString::from(dir.path())));
+            let pack = make_base_pack(Some(OsString::from(dir.path())));
 
             assert_eq!(
                 pack.list(PackResourceKind::Workflows),
                 vec![ResourceId::from("only-on-disk")],
-                "the set-env factory must list the on-disk directory pack, not the embedded one",
+                "the set-env base selector must list the on-disk directory pack, not the embedded one",
             );
             assert_eq!(
                 pack.read(
@@ -1086,6 +1145,90 @@ mod tests {
                 pack.pack_version(),
                 EmbeddedPack::new().pack_version(),
                 "the directory pack reports a version distinct from the embedded binary version",
+            );
+        }
+
+        /// The composite-assembly floor at the factory core: with **no** listed
+        /// packs, `make_pack_from` is a `Composite([base])` whose `list`/`read`/
+        /// `pack_version` equal the base (`EmbeddedPack`) — byte-identical to the
+        /// single-pack path. This is the headline regression proven at the seam the
+        /// production `make_pack()` flows through (the real-binary floor rides the
+        /// existing `start_compose` goldens).
+        #[test]
+        fn no_listed_packs_is_the_base_only_floor() {
+            let pack = make_pack_from(None, Vec::new());
+            let embedded = EmbeddedPack::new();
+
+            assert_eq!(
+                pack.list(PackResourceKind::Workflows),
+                embedded.list(PackResourceKind::Workflows),
+                "Composite([base]).list must equal the base pack's list",
+            );
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                ),
+                embedded.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                ),
+                "Composite([base]).read must equal the base pack's read",
+            );
+            assert_eq!(
+                pack.pack_version(),
+                embedded.pack_version(),
+                "Composite([base]).pack_version must equal the base pack's",
+            );
+        }
+
+        /// Two-pack assembly at the core: a listed dir is composed **over** the base.
+        /// A resource present **only** on the listed pack resolves through the
+        /// composite (the union read), and the listed pack — being highest-precedence
+        /// — supplies `pack_version`. This proves `make_pack_from` orders listed-first,
+        /// base-last; the real-binary CWD-discovery equivalence is proven in
+        /// `start_compose.rs`.
+        #[test]
+        fn a_listed_pack_composes_over_the_base() {
+            let listed = TempDir::new();
+            let wf = listed.path().join("workflows");
+            std::fs::create_dir_all(&wf).expect("mk workflows/");
+            std::fs::write(wf.join("listed-only.yaml"), b"when: from listed\n")
+                .expect("seed listed wf");
+            let cfg = listed.path().join("config");
+            std::fs::create_dir_all(&cfg).expect("mk config/");
+            std::fs::write(
+                cfg.join("defaults.yaml"),
+                b"pack-id: listed\nversion: 7.7.7\n",
+            )
+            .expect("seed listed defaults");
+
+            // Base = EmbeddedPack (JIGC_PACK_DIR unset); the listed dir sits above it.
+            let pack = make_pack_from(None, vec![listed.path().to_owned()]);
+
+            // The listed pack's own workflow resolves through the composite ...
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("listed-only")
+                )
+                .expect("the listed-only workflow reads through the composite"),
+                b"when: from listed\n",
+            );
+            // ... and the base pack's `single-task` still resolves (the union, base last).
+            assert!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                )
+                .is_ok(),
+                "the base pack's single-task must still resolve through the composite union",
+            );
+            // The listed (highest-precedence) pack supplies the version.
+            assert_eq!(
+                pack.pack_version(),
+                "7.7.7",
+                "the highest-precedence (listed) pack must supply pack_version",
             );
         }
     }
