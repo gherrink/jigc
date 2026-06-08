@@ -381,6 +381,12 @@ fn compose_drained(
     overrides: &ComposeOverrides,
     milestone_ids: &[String],
 ) -> Result<ComposedWorkflow> {
+    // Scope the step source's pack-default arm to the composing workflow's origin
+    // pack, so its `{{include: step:X}}` resolves against the pack that *defines*
+    // the workflow — the pack-local body-reference rule (`multi-pack.md` →
+    // Pack-local body-reference resolution → Steps). Inert for a single pack
+    // (origin = pack), so the cold-start floor is byte-identical.
+    source.scope_to_workflow(workflow_id);
     let result = compose_core(
         repo_root,
         intent,
@@ -1351,6 +1357,14 @@ struct CascadeStepSource<'a> {
     resolved: &'a cascade::Resolved,
     /// The project layer's committed config dir — where `steps/<id>.yaml` lives.
     project_config: &'a Path,
+    /// The **pack of origin** the pack-default step arm reads from — the
+    /// constituent pack that defines the *composing workflow*'s top-level id, so a
+    /// loser-pack workflow's `{{include: step:X}}` resolves against **its own**
+    /// pack rather than the precedence-winner's divergent step (`multi-pack.md` →
+    /// Pack-local body-reference resolution → Steps). `None` until `compose_core`
+    /// scopes it; the read then falls back to `pack` (the composite itself), which
+    /// for a single pack *is* the origin — so the cold-start floor is inert.
+    origin: std::cell::Cell<Option<&'a dyn PackSource>>,
     /// The located fault recorded by the most recent `step()` that returned `None`
     /// for a reason other than "no layer owns the id".
     error: std::cell::RefCell<Option<Finding>>,
@@ -1368,8 +1382,23 @@ impl<'a> CascadeStepSource<'a> {
             pack,
             resolved,
             project_config,
+            origin: std::cell::Cell::new(None),
             error: std::cell::RefCell::new(None),
         }
+    }
+
+    /// Scope the pack-default step read to the **origin pack** of the composing
+    /// workflow — the constituent that defines `workflow_id`'s top-level id, so
+    /// every `{{include: step:X}}` this workflow expands resolves against its own
+    /// pack ([`PackSource::origin_pack`]; `multi-pack.md` → Pack-local
+    /// body-reference resolution → Steps). `compose_core` calls this once per
+    /// compose, before any `step()` runs. For a single pack the origin *is* the
+    /// pack, so the scoped read is byte-identical to the unscoped one (the floor).
+    fn scope_to_workflow(&self, workflow_id: &str) {
+        self.origin.set(Some(self.pack.origin_pack(
+            PackResourceKind::Workflows,
+            &ResourceId::from(workflow_id),
+        )));
     }
 
     /// Take the located fault recorded by the last failing `step()`, clearing the
@@ -1426,11 +1455,17 @@ impl StepSource for CascadeStepSource<'_> {
             // The project owns the id → read the project file (a missing/malformed
             // file is a located fault, never a fall-through to the pack body).
             Some(cascade::LayerKind::Project) => self.project_step(id),
-            // Pack-default owns it, or no layer does — read the pack body. A
-            // pack-unknown id is a plain dangling include the engine reports.
+            // Pack-default owns it, or no layer does — read the pack body from the
+            // composing workflow's **origin pack** (the constituent that defines the
+            // workflow's id), so a loser-pack workflow expands ITS OWN pack's step,
+            // never the precedence-winner's divergent one (`multi-pack.md` →
+            // Pack-local body-reference resolution). Unscoped (a single pack, or
+            // before `scope_to_workflow`) the origin *is* `self.pack`, so the read
+            // is byte-identical. A pack-unknown id is a plain dangling include the
+            // engine reports.
             _ => {
-                let bytes = self
-                    .pack
+                let origin = self.origin.get().unwrap_or(self.pack);
+                let bytes = origin
                     .read(PackResourceKind::Steps, &ResourceId::from(id))
                     .ok()?;
                 load_step_def(id, &bytes).ok()
@@ -3395,6 +3430,181 @@ mod tests {
             finding.message.contains("implement"),
             "the located error must name the absent step id; got: {}",
             finding.message,
+        );
+    }
+
+    /// A pack-default-only `creates-task: false` pack: one workflow `wf`
+    /// including `step:implement`, the named step, plus the `defaults` /
+    /// `commands` config every compose reads. `pack_id` and the step body are
+    /// caller-supplied so the two constituents of a composite carry **distinct**
+    /// bytes (forced overlap, hardening #7).
+    fn step_overlap_pack(pack_id: &str, implement_body: &str) -> FixturePack {
+        FixturePack::with(vec![
+            (
+                PackResourceKind::Config,
+                "defaults",
+                // `default-workflow` is unused on the Form-D-shaped compose path
+                // (the workflow id is named), but `defaults` must parse.
+                &format!("pack-id: {pack_id}\ndefault-workflow: wf\n"),
+            ),
+            (PackResourceKind::Config, "commands", "commands: []\n"),
+            (
+                PackResourceKind::Workflows,
+                "wf",
+                "---\nwhen: x\ncreates-task: false\n---\n{{ include: step:implement }}\n",
+            ),
+            (PackResourceKind::Steps, "implement", implement_body),
+        ])
+    }
+
+    /// T2 done-criterion — **pack-local step includes**: a loser-pack workflow's
+    /// `{{include: step:implement}}` composes its **own** pack's `implement`
+    /// body, even though the higher-precedence pack ships a **divergent**
+    /// `step:implement` that wins the top-level id (`multi-pack.md` → Pack-local
+    /// body-reference resolution → Steps; the M3-class corruption averted).
+    ///
+    /// The composite is `[higher, lower]`. Only `lower` defines `wf-lower`, so
+    /// the precedence `read` of `workflow:wf-lower` returns the lower pack's
+    /// bytes — but a *globally-merged* step read of `step:implement` would return
+    /// `higher`'s divergent body. The pack-of-origin scoping makes `wf-lower`'s
+    /// include resolve against `lower` (the workflow's own pack), so the composed
+    /// body carries **lower's** implement, never higher's.
+    #[test]
+    fn loser_pack_workflow_composes_its_own_step_body() {
+        let repo = TempDir::new("t2-loser-step");
+        let higher = step_overlap_pack("higher", "HIGHER implement body\n");
+        // The lower pack renames its workflow so the loser owns a non-colliding
+        // top-level workflow id, but keeps the colliding `step:implement` id.
+        let mut lower = step_overlap_pack("lower", "LOWER implement body\n");
+        let wf_bytes = lower
+            .0
+            .remove(&(PackResourceKind::Workflows, ResourceId::from("wf")))
+            .expect("the base fixture ships `wf`");
+        lower.0.insert(
+            (PackResourceKind::Workflows, ResourceId::from("wf-lower")),
+            wf_bytes,
+        );
+        let composite = crate::pack::CompositePack::new(vec![Box::new(higher), Box::new(lower)]);
+
+        // A no-shadow cascade over a pack-default layer that owns both top-level
+        // ids — no project shadows, so the pack-default step arm runs.
+        let base = engine::cascade::PackDefaultLayer::new(
+            "higher",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["implement".to_owned()],
+        );
+        let resolved =
+            engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+        let source = CascadeStepSource::new(&composite, &resolved, repo.path());
+
+        let composed = compose_drained(
+            repo.path(),
+            "anything",
+            &composite,
+            "wf-lower",
+            &source,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("the loser-pack workflow composes");
+
+        assert!(
+            composed.text.contains("LOWER implement body"),
+            "the loser-pack workflow must compose ITS OWN pack's implement body; got:\n{}",
+            composed.text,
+        );
+        assert!(
+            !composed.text.contains("HIGHER implement body"),
+            "the precedence winner's divergent step:implement must NOT leak into the \
+             loser-pack workflow (the M3-class corruption); got:\n{}",
+            composed.text,
+        );
+    }
+
+    /// T2 control — the precedence **winner**'s own workflow composes its own
+    /// body unchanged. The higher pack owns both `wf` (the workflow) and
+    /// `step:implement`, so its origin is itself; no regression from the
+    /// pack-local scoping.
+    #[test]
+    fn winner_pack_workflow_composes_its_own_step_body() {
+        let repo = TempDir::new("t2-winner-step");
+        let higher = step_overlap_pack("higher", "HIGHER implement body\n");
+        let lower = step_overlap_pack("lower", "LOWER implement body\n");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(higher), Box::new(lower)]);
+
+        let base = engine::cascade::PackDefaultLayer::new(
+            "higher",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["implement".to_owned()],
+        );
+        let resolved =
+            engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+        let source = CascadeStepSource::new(&composite, &resolved, repo.path());
+
+        let composed = compose_drained(
+            repo.path(),
+            "anything",
+            &composite,
+            "wf",
+            &source,
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("the winner-pack workflow composes");
+
+        assert!(
+            composed.text.contains("HIGHER implement body")
+                && !composed.text.contains("LOWER implement body"),
+            "the winner-pack workflow composes its own (winning) implement body; got:\n{}",
+            composed.text,
+        );
+    }
+
+    /// T2 floor — a single-pack `Composite([base])` is byte-identical: origin =
+    /// base = the pack, so the pack-local scoping is inert and the composed body
+    /// matches a compose over the bare pack (the cold-start regression).
+    #[test]
+    fn single_pack_composite_compose_is_byte_identical() {
+        let repo = TempDir::new("t2-floor");
+        let base_pack = step_overlap_pack("base", "BASE implement body\n");
+        let base_pack_clone = step_overlap_pack("base", "BASE implement body\n");
+        let composite = crate::pack::CompositePack::new(vec![Box::new(base_pack)]);
+
+        let base = engine::cascade::PackDefaultLayer::new(
+            "base",
+            "0.0.0",
+            BTreeMap::new(),
+            vec!["implement".to_owned()],
+        );
+        let resolved =
+            engine::cascade::resolve(&base, None, None).expect("no-shadow cascade resolves");
+
+        let over_composite = compose_drained(
+            repo.path(),
+            "anything",
+            &composite,
+            "wf",
+            &CascadeStepSource::new(&composite, &resolved, repo.path()),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("compose over the single-pack composite");
+        let over_bare = compose_drained(
+            repo.path(),
+            "anything",
+            &base_pack_clone,
+            "wf",
+            &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
+            &ComposeOverrides::structural(Vec::new()),
+            &[],
+        )
+        .expect("compose over the bare pack");
+
+        assert_eq!(
+            over_composite.text, over_bare.text,
+            "a single-pack composite must compose byte-identically to the bare pack",
         );
     }
 
