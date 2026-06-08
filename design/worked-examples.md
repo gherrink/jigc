@@ -12,6 +12,7 @@ The flows:
 6. [Spec-driven planning](#6-spec-driven-planning--the-two-task-arc) — the M3 arc: a `plan` task authors a spec, a later task binds and implements it
 7. [Upgrade reconciliation](#7-upgrade-reconciliation--clean--conflict--orphaned) — the M5 arc: `jigc upgrade` re-classifies recorded deltas against a new pack
 8. [Severity tuning & demotion-lock](#8-severity-tuning--demotion-lock) — the M6 arc: a project tunes a check's severity through the cascade; an intrinsic demotion is floor-rejected
+9. [Multi-pack composition](#17-multi-pack-composition--dev--methodology-co-composed-m14) — the M14 arc: dev + methodology co-composed, collisions resolved by precedence, includes pack-local *(flow 17)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -1023,3 +1024,76 @@ $ git log --oneline -1
 4. **The n→n `cites` edge walks at finalize.** A **dangling** `cites` target blocks `finalize` on `schema-conformance.ref-resolves` (the proven `supersedes`/`implements` walk, now for the M13 edge); re-pointing it at a committed `adr` passes. The block names the dangling target.
 5. **The `check:` selector is real, both predicates preserved.** The repeatable `components` anchor gets `symbol-exists` (not the test predicate) via the explicit per-field-type `check:` selector, while `spec.criteria/maps-to-test` keeps `criterion-maps-to-test` — both flows (13 and 16) are the selector increment's green-bar, not flow 16 alone ([architecture-documentation.md](architecture-documentation.md#the-per-field-type-predicate-selector-check--the-m13-engine-concept)).
 6. **Fix → exactly one commit at a fourth `location:`.** After fixing both blocks, `finalize` lands **exactly one** `docs(arch-doc):` commit (code-less promotion via the generic `plan_promotions` loop), promotes the doc to `architecture/index-layer.md` (the fourth managed `location:`, joining `decisions/`/`specs/`/`prds/`), and cleans the working area.
+
+## 17. multi-pack composition — dev + methodology co-composed (M14)
+
+The M14 acceptance: **one project composes the embedded dev pack *and* the M12 methodology pack at once**, with the subsume's two collision *kinds* resolving on their two distinct axes: the **top-level** collisions (`commit` doctype, `default-workflow` knob) resolve **by precedence** (highest pack's whole definition wins), while the **same-id body-references** (steps `implement`/`finalize`, the `{{cli.X}}` command-refs, and schema field-types) resolve **pack-locally** (each definition gets its *own* pack's). Each pack's *distinct* surfaces co-compose on top. This is the generalization of *engine-neutral, packs supply content* from internal discipline to architecture at scale ([VISION.md](../VISION.md) → Open questions → Multi-pack composition, de-parked here). The design of record is [multi-pack.md](multi-pack.md); the pack-set model, the precedence-override collision table, and the pack-local body-reference rule live there and are not restated. Notation illustrative. The headline split: the **single-pack floor stays byte-identical to today**, and *on top of that* the **two-pack composition** behaves as designed — both halves are the bar.
+
+### Setup — the single-pack floor, then add the second pack
+
+```text
+# the second pack already exists (M12 minted it): packs/methodology/ — VENDORS commit + the knob surface,
+#   default-workflow enum rewritten to [dev-task] (the subsume; see self-hosting.md). It STILL composes alone.
+
+# (a) the cold-start floor — NO listed packs ⇒ pack-set is [base] ⇒ byte-identical to the single-pack path.
+#   This is an IN-BINARY equivalence (a cross-binary `diff` against a pre-M14 capture is NOT a clean oracle —
+#   task-id/branch/HEAD/provenance vary). The real check: Composite([base]) composes byte-for-byte the same as the
+#   old SinglePackSource(base) — asserted as a compose-level golden with all non-pack variables pinned (the
+#   existing no-delta `start_compose` goldens, now driven through the composite-of-one path):
+$ JIGC_PACK_DIR=<base> jigc start --task <fixed-id>   # composite-of-one output == the single-pack golden (empty diff)
+
+# (b) compose the two packs: methodology listed (highest), the embedded dev pack the implicit base (lowest):
+$ cat .jigc/config/packs.yaml
+  packs:
+    - /abs/path/to/packs/methodology     # earlier = higher precedence; embedded dev is the implicit base below
+```
+
+### The walk — collisions resolve by precedence; distinct surfaces co-compose; includes stay pack-local
+
+```text
+$ jigc start                                  # bare start — no --workflow
+  Pack: methodology/0.1.0 ▸ dev/0.0.0         ← provenance names BOTH composed packs, highest-first
+  # default-workflow resolves to dev-task (methodology's knobs.yaml wins the whole-file shadow):
+  Scope — restate the intent and state an observable done-criterion …      ← methodology's dev-task spine
+  Implement — write the FAILING TEST FIRST, confirm it fails for the right reason …   ← methodology's test-first implement
+
+# pack-local body-references (the correctness proof): dev ALSO ships a step:implement (direct-edit, no test-first),
+# and methodology's catalog has only 5 command-refs (dev's has 11 — NOT mutual supersets).
+# methodology's dev-task composed METHODOLOGY's implement + command-refs, NOT dev's — each resolved in its own pack.
+
+# both packs' DISTINCT surfaces co-compose — dev's workflows + doctypes are available alongside methodology's:
+$ jigc start --workflow single-task "add a thing"     # dev's single-task is in the union catalog → composes fine
+  # its {{cli.create-adr}} resolves against DEV's own commands.yaml (pack-local) — methodology's catalog lacks it,
+  # but that never matters: a workflow's command-refs resolve in the pack that defines the workflow.
+$ jigc describe | grep -E "dev-task|single-task|router|adr|spec|arch-doc"
+  dev-task        ← methodology         single-task / router / adr / spec / arch-doc   ← dev   (the UNION menu)
+
+# the colliding knob + doctype, shown resolving deterministically (provenance glyphs illustrative, not a byte-contract):
+$ jigc start --explain | grep -E "default-workflow|schema:commit"
+  default-workflow = dev-task   (pack-default ◂ methodology/0.1.0, shadowing dev/0.0.0)   ← knob collision winner
+  schema:commit                 (pack-default ◂ methodology/0.1.0, shadowing dev/0.0.0)   ← doctype collision winner
+$ jigc start --explain | grep -E "Pack input"
+  Pack input: methodology/0.1.0 = /abs/.../methodology  (blake3 a3f9…) ◂ dev/0.0.0 = <embedded> (blake3 71c2…)
+  #  --explain names each pack's PATH + content-hash — id/version alone is not the identity (dir contents can change)
+
+# dev doctypes don't just LIST — they LOAD + VALIDATE (assertion 4), proving schema-pack-local field-type resolution:
+$ jigc start --workflow architecture-documentation "document the index layer"     # dev workflow composes (its steps + cli.X pack-local)
+$ jigc doc create arch-doc --title "Index layer" --task <id2>                      # dev doctype mints
+$ jigc doc set-field "arch-doc:index-layer#components/edge-index/implemented-by" \
+        --value "crates/engine/src/index.rs#rebuild_committed" --task <id2>
+  #  the implemented-by `code-anchor` field RESOLVED — dev's field-type came from DEV's field-types.yaml,
+  #  though methodology (the precedence winner) ships none. Without schema-pack-local resolution this would
+  #  fail "unknown field type: code-anchor". That is the field-type half of pack-local body-references.
+
+# determinism: recomposing the SAME task is byte-identical (the bar every prior flow asserts):
+$ jigc start --task <id> | diff - <first-capture>     # empty diff
+```
+
+### What it asserts (the acceptance bar)
+
+1. **The single-pack floor — `Composite([base])` is byte-identical to the single-pack path, in the same binary.** With `.jigc/config/packs:` absent the pack-set is `[base]`, and composing through the new composite-of-one source produces output **byte-identical** to the old single-pack path — asserted as a compose-level golden with non-pack variables pinned (the existing no-delta `start_compose` goldens, now driven through the composite), **not** a fragile `diff` against a pre-M14 binary (HEAD/branch/task-id/provenance vary). The whole multi-pack machinery adds **zero** observable change to a one-pack project — and the methodology pack's M12 *composes-alone* regression tests stay green untouched. A build that perturbs the one-pack path is rejected (the [M13 cold-start trap](../implementation/milestone-planning-workflow.md)).
+2. **Both top-level collisions resolve deterministically, and the winner is visible.** `default-workflow` resolves to `dev-task` (methodology's whole `knobs.yaml` wins the precedence shadow), so a bare `jigc start` composes the methodology loop; **and** `schema:commit` resolves to methodology's — *both* named in `--explain` as the collision winner (the determinism contract — [overrides.md](overrides.md#the-cascade) — extended to N packs). Both choices were proven authoring-compatible at Settle, so the pick is determinism-policy, not correctness ([multi-pack.md](multi-pack.md#why-the-commit-doctype-collision-is-safe-either-way)).
+3. **Body-references are pack-local — the correctness proof.** Both packs ship a `step:implement` with **divergent** bodies (methodology test-first; dev direct-edit), and their command catalogs are **not mutual supersets** (methodology 5 refs, dev 11). Methodology's `dev-task` composes **methodology's** implement and command-refs, never dev's; dev's `single-task` composes **dev's** `{{cli.create-adr}}` even though methodology's catalog lacks it — because a workflow's `{{include:}}` *and* `{{cli.X}}` resolve within its **own** pack, *independent* of which pack wins a top-level id. A composition that injected dev's implement into methodology's workflow (or stripped dev's `single-task` of `create-adr`) is the M3-class silent corruption this rule exists to kill ([multi-pack.md](multi-pack.md#pack-local-body-reference-resolution-a-correctness-rule-not-a-policy)).
+4. **Both packs' distinct surfaces co-compose — and dev's doctypes LOAD + VALIDATE, not just list.** The selectable-workflow catalog is the **union** — dev's `single-task`/`router`/… are invocable via `--workflow` (each resolving its own pack's steps + command-refs). Crucially, dev's `adr`/`spec`/`arch-doc` don't just appear in `describe` — a dev workflow **creates** one and **sets a `code-anchor` field on it**, which only resolves because a schema's field-types come from **its own** pack (dev's `field-types.yaml`), though methodology — the precedence winner — ships none. A `describe | grep`-only assertion is rejected as masking; the bar is a dev doctype that *resolves its pack-field-type and validates*. This is the *co-composition* proof M12 explicitly deferred to M14 (M12 ran the methodology pack **alone**).
+5. **Provenance names every composed pack — by path + content, not just id/version.** The orientation header shows the pack-set highest-first (`Pack: methodology/0.1.0 ▸ dev/0.0.0` — glyphs illustrative), and `--explain` surfaces each pack's **resolving directory path + a content hash** — because a `.jigc/config/packs:` entry is a literal directory whose `id/version` is not a sufficient identity (two dirs can share it; contents mutate). The resolved cascade stays a fully-declared, *inspectable* input under composition.
+6. **Determinism holds under composition.** Recomposing the same task (`--task`) is byte-identical — the pre-merge collision resolution is a pure function of the pack-set, same packs in → same composed output, the [VISION principle #1](../VISION.md) claim at pack scale.
