@@ -64,4 +64,4 @@ Implementation foundations (language/runtime, parsing, module layout) live in [i
 
 ## Non-goals
 
-Not a general-purpose workflow engine (no DAGs/conditionals/runtime), not an auto-doc-writer (detects and routes drift; never auto-authors prose), not one-size-fits-all, not a second domain yet (engine/pack boundary is internal discipline, not a public API), not an LLM wrapper.
+Not a general-purpose workflow engine (no DAGs/conditionals/runtime), not an auto-doc-writer (detects and routes drift; never auto-authors prose), not one-size-fits-all, **no longer single-domain** (M12/M14: the methodology pack composes with dev — the engine/pack boundary is proven architecture) but **not yet a public pack platform** (a stabilized third-party pack-authoring API is future work, when an external domain earns it), not an LLM wrapper.

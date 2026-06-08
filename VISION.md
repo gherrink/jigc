@@ -185,7 +185,7 @@ The seam where sub-agents meet integration:
 - **Not a general-purpose workflow engine.** Ordered steps + includes, plus a single bounded concurrency primitive (`fan-out`/`join`) — but no DAGs, conditionals, cross-sub-agent messaging, or a runtime. Add branching only if real workflows demand it.
 - **Not an auto-doc-writer.** The CLI detects and routes; it does not author prose or silently auto-fix drift.
 - **Not one-size-fits-all.** It wires into one project via strong defaults + a setup workflow.
-- **Not a second domain (yet).** The engine/pack boundary is internal discipline, not a public extension API. Development is the only pack until a real second domain earns the cost of a public pack-authoring surface.
+- **Not (yet) a public pack platform — but no longer single-domain.** The engine/pack boundary is **proven architecture, not just internal discipline**: M12 minted a second (methodology) pack, M14 composes it with the dev pack under deterministic collision resolution, and the mechanism generalizes to N domains ([multi-pack.md](design/multi-pack.md)). What stays **future work — earned when a real *external* domain needs it, not ruled out** — is a *stabilized, documented public pack-authoring surface* (a third-party contract + versioning); the composition mechanism is internal until then.
 - **Not an LLM wrapper.** The CLI core makes no LLM calls; composition is deterministic. (The *coding agent* may use the CLI to propose merges — that's the agent acting, not the CLI.)
 - **Not a replacement for the agent's reasoning.** It constrains placement, not thinking.
 
