@@ -59,12 +59,31 @@ pub enum PackError {
     },
 }
 
+/// Upcast `&self` to `&dyn PackSource` — the object-safe seam that lets
+/// [`PackSource::origin_pack`]'s default body return `self` without a
+/// `Self: Sized` bound (which would drop the method from the vtable and make it
+/// un-callable on the `&dyn PackSource` every consumer holds). The blanket impl
+/// covers every sized pack (the coercion is valid there) and supplies the vtable
+/// entry, so a `dyn PackSource` receiver dispatches `as_pack_source` through its
+/// concrete type. As a supertrait of [`PackSource`], it makes the upcast
+/// reachable from the default `origin_pack` body. Not a public surface — an
+/// internal upcast helper.
+pub trait AsPackSource {
+    fn as_pack_source(&self) -> &dyn PackSource;
+}
+
+impl<T: PackSource> AsPackSource for T {
+    fn as_pack_source(&self) -> &dyn PackSource {
+        self
+    }
+}
+
 /// How a frontend provides the pack-default cascade layer to the engine.
 ///
 /// The engine is *fed* this provider and resolves over it (feed-layers-in /
 /// assert-results-out); it compiles in no pack content of its own. `list` and
 /// `read` are keyed by [`PackResourceKind`]; bytes are raw and unparsed.
-pub trait PackSource {
+pub trait PackSource: AsPackSource {
     /// The pack-default layer version (built-in pack: = binary version).
     fn pack_version(&self) -> String;
 
@@ -88,6 +107,27 @@ pub trait PackSource {
     /// [`pack_version`]: PackSource::pack_version
     fn provenance_segments(&self) -> Vec<(String, String)> {
         vec![(self.own_pack_id(), self.pack_version())]
+    }
+
+    /// The constituent pack that **defines** `(kind, id)` — the body-reference
+    /// resolution anchor, distinct from the precedence [`read`]. A definition's
+    /// body-references (`{{include: step:X}}`, `{{cli.X}}`, a schema's field-type
+    /// names) must resolve against the pack that owns the definition's *top-level*
+    /// id, never a merged surface — otherwise a loser-pack workflow silently
+    /// composes the precedence-winner's divergent step/catalog (the M3-class
+    /// corruption; `design/multi-pack.md` → Pack-local body-reference resolution).
+    ///
+    /// A single pack **is** its own origin, so the default returns `self`. A
+    /// composite ([`CompositePack`]) overrides this to return the first
+    /// (highest-precedence) constituent whose [`read`] succeeds — the same pack
+    /// the composite `read` already selects — falling back to `self` when no
+    /// constituent owns the id, so a dangling reference still flows to the
+    /// existing not-found path.
+    ///
+    /// [`read`]: PackSource::read
+    /// [`CompositePack`]: ../../cli/pack/struct.CompositePack.html
+    fn origin_pack(&self, _kind: PackResourceKind, _id: &ResourceId) -> &dyn PackSource {
+        self.as_pack_source()
     }
 
     /// This pack's own `config/defaults` `pack-id`, best-effort (empty if the

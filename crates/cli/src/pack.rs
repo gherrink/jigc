@@ -375,6 +375,25 @@ impl PackSource for CompositePack {
             })
     }
 
+    /// The constituent pack that **owns** `(kind, id)` — the **first
+    /// (highest-precedence)** pack whose [`read`](PackSource::read) succeeds, the
+    /// same pack the precedence `read` selects. This is the body-reference
+    /// resolution anchor a composed definition resolves its `{{include: step:X}}`
+    /// / `{{cli.X}}` / field-type names against (`design/multi-pack.md` →
+    /// Pack-local body-reference resolution), so a *loser*-pack workflow composes
+    /// **its own** steps/catalog rather than the precedence-winner's divergent
+    /// ones. When no constituent owns the id the composite returns `self`, so a
+    /// dangling reference still flows to the existing not-found path (a clean
+    /// [`PackError::NotFound`] from `read`), never a panic. A single-element
+    /// composite returns that one pack — origin = the pack (the floor).
+    fn origin_pack(&self, kind: PackResourceKind, id: &ResourceId) -> &dyn PackSource {
+        self.0
+            .iter()
+            .find(|p| p.read(kind, id).is_ok())
+            .map(|p| p.as_ref())
+            .unwrap_or(self)
+    }
+
     /// Each constituent pack's own `(pack-id, version)` segment, **in precedence
     /// order** (highest-precedence first) — the composed-set provenance the
     /// multi-pack `Pack:` header renders. A single-element composite yields exactly
@@ -1525,6 +1544,114 @@ mod tests {
         fn pack_version_is_the_highest_precedence_pack() {
             let composite = two_pack_composite();
             assert_eq!(composite.pack_version(), "a-ver");
+        }
+
+        /// Pack A (higher) and pack B (lower) each ship a **colliding**
+        /// `step:implement` with **distinct bytes**, plus a non-colliding step
+        /// each. The composite is `[A, B]` — A wins the `implement` top-level id.
+        fn two_pack_step_composite() -> CompositePack {
+            let a = MemPack::new("a-ver")
+                .with(PackResourceKind::Steps, "implement", b"A-implement")
+                .with(PackResourceKind::Steps, "locate", b"A-locate");
+            let b = MemPack::new("b-ver")
+                .with(PackResourceKind::Steps, "implement", b"B-implement")
+                .with(PackResourceKind::Steps, "finalize", b"B-finalize");
+            CompositePack::new(vec![Box::new(a), Box::new(b)])
+        }
+
+        /// A colliding id's **origin** is the precedence **winner** — `A`. The
+        /// pack-of-origin lookup returns the constituent that owns the top-level
+        /// id (the body-reference resolution anchor), so resolving its bytes
+        /// through that origin yields **A's** `implement`, never B's. This is the
+        /// M3-class hazard the seam exists to avert: a definition's body-refs must
+        /// resolve against the pack that owns its top-level id.
+        #[test]
+        fn colliding_id_origin_is_the_precedence_winner() {
+            let composite = two_pack_step_composite();
+            let origin =
+                composite.origin_pack(PackResourceKind::Steps, &ResourceId::from("implement"));
+            assert_eq!(
+                origin
+                    .read(PackResourceKind::Steps, &ResourceId::from("implement"))
+                    .expect("the winner owns the colliding id"),
+                b"A-implement",
+            );
+        }
+
+        /// A **loser-only** id's origin is the lower-precedence pack `B` (not the
+        /// winner) — the constituent that actually defines it. Resolving through
+        /// that origin yields **B's** bytes, proving the lookup is first-success,
+        /// not always-the-winner.
+        #[test]
+        fn loser_only_id_origin_is_the_defining_pack() {
+            let composite = two_pack_step_composite();
+            let origin =
+                composite.origin_pack(PackResourceKind::Steps, &ResourceId::from("finalize"));
+            assert_eq!(
+                origin
+                    .read(PackResourceKind::Steps, &ResourceId::from("finalize"))
+                    .expect("B defines the loser-only id"),
+                b"B-finalize",
+            );
+        }
+
+        /// The single-pack **floor**: `Composite([A]).origin_pack(...)` is `A`
+        /// itself — a single pack is its own origin. Proven by resolving the id
+        /// through the returned origin: it reads `A`'s bytes, byte-identical to a
+        /// direct read.
+        #[test]
+        fn single_pack_composite_origin_is_the_pack() {
+            let a =
+                MemPack::new("a-ver").with(PackResourceKind::Steps, "implement", b"A-implement");
+            let composite = CompositePack::new(vec![Box::new(a)]);
+            let origin =
+                composite.origin_pack(PackResourceKind::Steps, &ResourceId::from("implement"));
+            assert_eq!(
+                origin
+                    .read(PackResourceKind::Steps, &ResourceId::from("implement"))
+                    .expect("the lone pack defines the id"),
+                b"A-implement",
+            );
+        }
+
+        /// The seam must be callable on a `&dyn PackSource` — every consumer
+        /// (T2/T3/T4's `compose_core`) holds the composite as `&dyn`, not the
+        /// concrete type. Resolving the colliding id through the `dyn` receiver
+        /// returns the winner's bytes, proving the method is in the vtable (the
+        /// object-safe `AsPackSource` upcast, not a `Self: Sized` default that
+        /// would be un-dispatchable on a trait object).
+        #[test]
+        fn origin_pack_is_callable_on_a_trait_object() {
+            let composite = two_pack_step_composite();
+            let as_dyn: &dyn PackSource = &composite;
+            let origin =
+                as_dyn.origin_pack(PackResourceKind::Steps, &ResourceId::from("implement"));
+            assert_eq!(
+                origin
+                    .read(PackResourceKind::Steps, &ResourceId::from("implement"))
+                    .expect("the winner owns the colliding id"),
+                b"A-implement",
+            );
+        }
+
+        /// An id **no** constituent owns falls back to `self` (the composite) —
+        /// so a dangling body-reference still flows to the existing not-found
+        /// path (a clean `NotFound`), never a panic.
+        #[test]
+        fn unowned_id_origin_falls_back_to_self() {
+            let composite = two_pack_step_composite();
+            let origin =
+                composite.origin_pack(PackResourceKind::Steps, &ResourceId::from("absent"));
+            let err = origin
+                .read(PackResourceKind::Steps, &ResourceId::from("absent"))
+                .expect_err("an unowned id reads back NotFound through the fallback origin");
+            assert_eq!(
+                err,
+                PackError::NotFound {
+                    kind: PackResourceKind::Steps,
+                    id: ResourceId::from("absent"),
+                },
+            );
         }
 
         /// The in-isolation **floor**: `Composite([single])` is byte-identical
