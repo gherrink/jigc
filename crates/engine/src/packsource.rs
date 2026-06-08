@@ -49,6 +49,29 @@ pub enum PackResourceKind {
     Config,
 }
 
+/// The `resolving_path` sentinel a pack with no on-disk root reports — the
+/// binary-embedded base, whose bytes ship inside `jigc` rather than at a directory.
+/// `--explain` renders it verbatim as the pack's "path" (`design/worked-examples.md`
+/// → flow 17: `dev/0.0.0 = <embedded>`).
+pub const EMBEDDED_PATH: &str = "<embedded>";
+
+/// One composed pack's **provenance entry** — its resolving directory path and a
+/// content-hash over its bytes. `--explain` renders one of these per composed pack,
+/// highest-precedence first, so the human can *see* the exact pack input behind a
+/// deterministic outcome (`design/multi-pack.md` → Provenance under N packs:
+/// "id/version alone is not the identity — dir contents can change"). The carrier
+/// for [`PackSource::provenance_entries`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PackProvenance {
+    /// The pack's resolving directory path — a [`FilesystemPack`] root, or
+    /// [`EMBEDDED_PATH`] for the binary-embedded base.
+    pub path: String,
+    /// A blake3 content-hash over the pack's bytes (`engine::file_state::hash_bytes`
+    /// — the same primitive the drift hash uses, no new dependency). Order-stable:
+    /// the same bytes hash identically regardless of `read_dir` order.
+    pub content_hash: String,
+}
+
 /// Why a `PackSource::read` failed.
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 pub enum PackError {
@@ -161,6 +184,72 @@ pub trait PackSource: AsPackSource {
                     .map(str::to_owned)
             })
             .unwrap_or_default()
+    }
+
+    /// The pack's **resolving directory path** — what `--explain` renders as the
+    /// pack's "path" so the human sees the exact directory behind a composed pack.
+    /// A directory-backed pack (`FilesystemPack`) overrides this to its root; the
+    /// default is the [`EMBEDDED_PATH`] sentinel, since a pack with no on-disk root
+    /// (the binary-embedded base) ships its bytes inside `jigc`. Display-only — never
+    /// a hard-fail path (`design/multi-pack.md` → Provenance under N packs).
+    fn resolving_path(&self) -> String {
+        EMBEDDED_PATH.to_owned()
+    }
+
+    /// A **blake3 content-hash over this pack's bytes** — the per-pack content
+    /// identity `--explain` renders alongside [`resolving_path`], so two packs that
+    /// share an `id/version` but differ in content are still distinguishable
+    /// (`design/multi-pack.md` → Provenance under N packs). Computed by hashing each
+    /// `(kind, id, bytes)` in a **stable order** — kinds in a fixed sequence, ids in
+    /// each kind's already-sorted [`list`] order — so the hash is `read_dir`-order
+    /// invariant (increment-workflow hardening #7): a pack whose files were created
+    /// out of id-order hashes identically to one created in order. Reuses
+    /// [`crate::file_state::hash_bytes`] (the drift-hash primitive — no new
+    /// dependency). Not overridden by `CompositePack`, which surfaces each
+    /// constituent's hash via [`provenance_entries`] instead.
+    ///
+    /// [`list`]: PackSource::list
+    /// [`provenance_entries`]: PackSource::provenance_entries
+    fn content_hash(&self) -> String {
+        // The fixed kind order — iteration must not depend on a `HashMap`'s order.
+        const KINDS: [PackResourceKind; 4] = [
+            PackResourceKind::Schemas,
+            PackResourceKind::Workflows,
+            PackResourceKind::Steps,
+            PackResourceKind::Config,
+        ];
+        let mut hashed = Vec::new();
+        for kind in KINDS {
+            // `list` is sorted-by-id, so the per-kind id order is stable.
+            for id in self.list(kind) {
+                if let Ok(bytes) = self.read(kind, &id) {
+                    // Frame each unit by its (kind, id) so distinct layouts that
+                    // happen to share concatenated bytes still hash distinctly.
+                    hashed.extend_from_slice(format!("{kind:?}\u{0}{id}\u{0}").as_bytes());
+                    hashed.extend_from_slice(&(bytes.len() as u64).to_le_bytes());
+                    hashed.extend_from_slice(&bytes);
+                }
+            }
+        }
+        crate::file_state::hash_bytes(&hashed)
+    }
+
+    /// This pack's **provenance entry** — its [`resolving_path`] + [`content_hash`]
+    /// — as a one-element `Vec`. A single pack reports exactly one entry, so the
+    /// `--explain` provenance line degrades to one pack just as [`provenance_segments`]
+    /// degrades to one segment. A composite (`CompositePack`) overrides this to
+    /// concatenate its constituents' entries in precedence order (highest-precedence
+    /// first) — the per-pack `path + content-hash` the multi-pack provenance line
+    /// renders (`design/multi-pack.md` → Provenance under N packs).
+    ///
+    /// [`resolving_path`]: PackSource::resolving_path
+    /// [`content_hash`]: PackSource::content_hash
+    /// [`provenance_segments`]: PackSource::provenance_segments
+    fn provenance_entries(&self) -> Vec<PackProvenance> {
+        vec![PackProvenance {
+            path: self.resolving_path(),
+            content_hash: self.content_hash(),
+        }]
     }
 }
 

@@ -310,6 +310,15 @@ impl PackSource for FilesystemPack {
             id: id.clone(),
         })
     }
+
+    /// A directory pack's resolving path **is** its root — what `--explain` renders
+    /// so the human sees the exact directory composed (`design/multi-pack.md` →
+    /// Provenance under N packs). Lossy on a non-UTF-8 root (display-only, never a
+    /// hard-fail path). The base `EmbeddedPack` keeps the trait default
+    /// (`<embedded>`); only a directory-backed pack reports a real path.
+    fn resolving_path(&self) -> String {
+        self.root.display().to_string()
+    }
 }
 
 /// An **ordered composite** [`PackSource`] over a pack-set, **highest-precedence
@@ -415,6 +424,19 @@ impl PackSource for CompositePack {
             .iter()
             .flat_map(|p| p.provenance_segments())
             .collect()
+    }
+
+    /// Each constituent pack's own provenance entry (resolving path + blake3
+    /// content-hash), **in precedence order** (highest-precedence first) — the
+    /// per-pack `path + content-hash` the multi-pack `--explain` line renders so the
+    /// human sees the exact pack inputs behind a deterministic outcome
+    /// (`design/multi-pack.md` → Provenance under N packs). A single-element composite
+    /// yields exactly that one pack's entry, so the floor degrades to one entry just
+    /// as [`provenance_segments`](PackSource::provenance_segments) degrades to one
+    /// segment. Each entry's path + hash come from *its own* constituent, never the
+    /// precedence-winner's — a loser pack still names its own directory and bytes.
+    fn provenance_entries(&self) -> Vec<engine::packsource::PackProvenance> {
+        self.0.iter().flat_map(|p| p.provenance_entries()).collect()
     }
 }
 
@@ -1703,6 +1725,171 @@ mod tests {
                 composite.pack_version(),
                 reference.pack_version(),
                 "Composite([single]).pack_version must equal the single pack's",
+            );
+        }
+    }
+
+    mod provenance {
+        use super::super::*;
+        use engine::packsource::{EMBEDDED_PATH, PackProvenance};
+        use std::path::{Path, PathBuf};
+
+        /// A throwaway directory that removes itself on drop.
+        struct TempDir(PathBuf);
+
+        impl TempDir {
+            fn new(tag: &str) -> Self {
+                let mut path = std::env::temp_dir();
+                path.push(format!(
+                    "jigc-prov-unit-{tag}-{}-{:?}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
+                ));
+                std::fs::create_dir_all(&path).expect("create temp dir");
+                TempDir(path)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        /// Seed `<root>/<kind_dir>/<file>` with `bytes`.
+        fn seed(root: &Path, kind_dir: &str, file: &str, bytes: &[u8]) {
+            let dir = root.join(kind_dir);
+            std::fs::create_dir_all(&dir).expect("create kind dir");
+            std::fs::write(dir.join(file), bytes).expect("seed pack resource");
+        }
+
+        /// (a) A two-pack composite (a directory `FilesystemPack` over the embedded
+        /// base) yields **one provenance entry per constituent, in precedence
+        /// order**: the listed `FilesystemPack` first carrying *its own* root path,
+        /// the embedded base second carrying the `<embedded>` sentinel — and each
+        /// entry has a **non-empty** blake3 content-hash. This is the net-new data
+        /// surface (`design/multi-pack.md` → Provenance under N packs:
+        /// path + content-hash, never id/version alone).
+        #[test]
+        fn two_pack_entries_carry_own_path_and_hash_in_order() {
+            let listed = TempDir::new("listed");
+            seed(
+                listed.path(),
+                "workflows",
+                "only-here.yaml",
+                b"when: listed\n",
+            );
+
+            let composite = CompositePack::new(vec![
+                Box::new(FilesystemPack::new(listed.path().to_owned())),
+                Box::new(EmbeddedPack::new()),
+            ]);
+
+            let entries = composite.provenance_entries();
+            assert_eq!(
+                entries.len(),
+                2,
+                "one entry per constituent, in precedence order; got {entries:?}",
+            );
+
+            // Highest-precedence first: the listed FilesystemPack names its own root.
+            assert_eq!(
+                entries[0].path,
+                listed.path().display().to_string(),
+                "the listed pack's entry must carry its own resolving path",
+            );
+            assert!(
+                !entries[0].content_hash.is_empty(),
+                "the listed pack's content-hash must be non-empty; got {:?}",
+                entries[0],
+            );
+
+            // The embedded base reports the `<embedded>` sentinel, but a real hash.
+            assert_eq!(
+                entries[1].path, EMBEDDED_PATH,
+                "the embedded base must report the `<embedded>` path sentinel",
+            );
+            assert!(
+                !entries[1].content_hash.is_empty(),
+                "the embedded base still computes a real content-hash; got {:?}",
+                entries[1],
+            );
+
+            // The two constituents' hashes differ (distinct bytes) — the hash is
+            // genuinely content-derived, not a constant.
+            assert_ne!(
+                entries[0].content_hash, entries[1].content_hash,
+                "distinct packs must hash distinctly",
+            );
+        }
+
+        /// (b) **Determinism / hardening #7** — a `FilesystemPack`'s content-hash is
+        /// `read_dir`-order invariant: two directory packs holding the **same**
+        /// resources whose files were *created in divergent orders* (id-order vs
+        /// reverse) hash **byte-identically**. The content-hash iterates each kind's
+        /// already-sorted `list()` and frames each `(kind, id, bytes)` unit, so the
+        /// underlying `read_dir` enumeration order never reaches the digest.
+        #[test]
+        fn content_hash_is_read_dir_order_invariant() {
+            // Forward: files created in ascending id order.
+            let fwd = TempDir::new("fwd");
+            seed(fwd.path(), "steps", "aaa.txt", b"alpha\n");
+            seed(fwd.path(), "steps", "mmm.txt", b"middle\n");
+            seed(fwd.path(), "steps", "zzz.txt", b"omega\n");
+
+            // Reverse: the identical resource set, files created in descending order.
+            let rev = TempDir::new("rev");
+            seed(rev.path(), "steps", "zzz.txt", b"omega\n");
+            seed(rev.path(), "steps", "mmm.txt", b"middle\n");
+            seed(rev.path(), "steps", "aaa.txt", b"alpha\n");
+
+            let fwd_hash = FilesystemPack::new(fwd.path().to_owned()).content_hash();
+            let rev_hash = FilesystemPack::new(rev.path().to_owned()).content_hash();
+
+            assert_eq!(
+                fwd_hash, rev_hash,
+                "the content-hash must be identical regardless of file-creation / read_dir order",
+            );
+            assert!(!fwd_hash.is_empty(), "the content-hash must be non-empty");
+        }
+
+        /// (c) The single-pack **floor**: `Composite([base])` yields **exactly one**
+        /// provenance entry — byte-identical to the base pack's own
+        /// `provenance_entries()` degrade (one `PackProvenance`), mirroring the
+        /// one-segment `provenance_segments()` floor. The `--explain` line degrades
+        /// to one pack when only one composes.
+        #[test]
+        fn single_pack_composite_yields_one_entry() {
+            let base = EmbeddedPack::new();
+            let composite = CompositePack::new(vec![Box::new(EmbeddedPack::new())]);
+
+            let entries = composite.provenance_entries();
+            assert_eq!(
+                entries.len(),
+                1,
+                "a one-pack composite yields exactly one provenance entry; got {entries:?}",
+            );
+            assert_eq!(
+                entries,
+                vec![PackProvenance {
+                    path: base.resolving_path(),
+                    content_hash: base.content_hash(),
+                }],
+                "the lone entry must equal the base pack's own provenance-entry degrade",
+            );
+            // The provenance-entry count tracks the provenance-segment count (both
+            // degrade to one for a single-pack composite).
+            assert_eq!(
+                composite.provenance_entries().len(),
+                composite.provenance_segments().len(),
+                "the entry count must mirror the one-segment provenance_segments floor",
             );
         }
     }
