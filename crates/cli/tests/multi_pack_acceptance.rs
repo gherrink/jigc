@@ -3,13 +3,14 @@
 //! the **top-level precedence-winner** for a colliding doctype + knob — all driven
 //! through the built `jigc` binary against throwaway git repos.
 //!
-//! This task asserts **loading + the floor + the top-level winner ONLY**
+//! Increment 1's tests assert **loading + the floor + the top-level winner**
 //! (`design/worked-examples.md` → flow 17 setup (a)+(b) and the walk's top-level
-//! collision lines; `design/multi-pack.md` → Collision resolution). It MUST NOT
-//! assert correct cross-pack workflow *body* composition — a loser-pack workflow's
-//! colliding `{{include: step:X}}` / `{{cli.X}}` is knowingly mis-resolved until
-//! increment 2, so asserting it here would be a tautology against an unbuilt
-//! feature. The M12 `methodology_pack_*` compose-alone tests stay green untouched.
+//! collision lines; `design/multi-pack.md` → Collision resolution). **Increment 2**
+//! (`pack_local_*`, below) adds the **correctness axis** — flow 17 assertion 3: a
+//! definition's body-references resolve against *its own* pack regardless of which
+//! pack wins a top-level id, so co-composition never silently corrupts the loser's
+//! definitions (the M3-class trap). The M12 `methodology_pack_*` compose-alone tests
+//! stay green untouched.
 //!
 //! The four observables, each on the EMITTED bytes the agent would actually see
 //! (increment-workflow hardening #4):
@@ -350,5 +351,167 @@ fn multi_pack_pack_header_names_both_packs_highest_first() {
     assert!(
         stdout.contains("Pack: methodology/0.1.0 | dev/"),
         "the orientation header must name the composed pack-set highest-first (methodology | dev); got:\n{stdout}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Increment 2 — the correctness axis (flow 17 assertion 3): body-references are
+// pack-local. A definition's `{{include: step:X}}` and `{{cli.X}}` resolve in the
+// pack that DEFINES the definition, independent of which pack wins a top-level id.
+// Both packs ship a divergent `step:implement` and NON-superset command catalogs
+// (methodology: test-first implement + `set-commit-*`, no `create-adr`; dev:
+// direct-edit implement + `create-adr`), so co-composing them forces the real
+// overlap. Asserted on the EMITTED bytes verbatim (hardening #4) — a reconstruction
+// would mask the exact corruption (dev's implement injected into methodology's
+// workflow, or dev's `single-task` stripped of `create-adr`) the rule exists to kill.
+
+/// (loser-pack-workflow) Methodology is the precedence winner (its `dev-task` is the
+/// resolved `default-workflow`, its whole `commit` schema + `knobs.yaml` shadow dev's).
+/// Yet `--workflow single-task` composes DEV's `single-task`, and its body-references
+/// resolve in DEV's own pack: dev's direct-edit `step:implement` (NOT methodology's
+/// test-first one), and `{{cli.set-commit-summary}}`/`{{cli.create-adr}}` — `create-adr`
+/// exists ONLY in dev's catalog (methodology's lacks it). Asserted byte-identical to the
+/// dev single-pack compose: co-composition leaves the loser pack's workflow untouched.
+const DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN: &str = "\
+Reason about the change. The intent is:
+add a thing
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.
+
+Implement the change directly in the working tree. When done, stage the
+commit prose:
+
+Run: `jigc doc set-slot commit:add-a-thing#summary --from-file -`
+<<author: commit:add-a-thing#summary>>
+
+If a decision is warranted, create an ADR and author its slots:
+
+Run: `jigc doc create adr --title <TITLE>`
+
+If your decision supersedes an earlier one, here is that decision for
+reference — make your consequences explain what changes:
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize add-a-thing`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
+/// (winner-pack-workflow) Bare `jigc start "<intent>"` composes methodology's `dev-task`
+/// (the resolved `default-workflow`). Its body-references resolve in METHODOLOGY's own
+/// pack: methodology's test-first `step:implement`, and the `set-commit-type`/`-scope`/
+/// `-summary`/`-body` command-refs — methodology's `set-field`/`set-slot` verb split, NOT
+/// dev's single `set-commit-summary`. Asserted byte-identical to methodology composing
+/// alone: the winner pack's workflow is unperturbed by the co-composed dev base below it.
+const METHODOLOGY_DEV_TASK_GOLDEN: &str = "\
+Scope the task before touching code. The intent is:
+
+add rate limiter
+
+Restate that intent in your own words, then name the single observable
+done-criterion — a test, a command that exits cleanly, or a behaviour you can
+point at. If your restatement reveals a different problem than the intent
+asked for, stop and check with the human before proceeding: a clarifying
+question costs less than solving the wrong problem.
+
+Implement the change test-first. Write the failing test first and confirm it
+fails for the right reason — the assertion you care about, not an incidental
+compile error standing in for it. Only then write the minimal implementation
+that makes it pass. Refactor while green, touching only what this task needs.
+
+This ordering is yours to police: nothing here enforces that the test was
+observed failing before the implementation. Hold the discipline yourself.
+
+Run your project's own test, lint, and build gate — the commands this project
+already uses to prove a change is sound — and confirm every one passes before
+you finalize. Use whatever the project's configured gate is; do not assume a
+particular toolchain. A green gate is what separates a finished change from one
+that merely compiles in your head.
+
+Land the change as exactly one logical commit. finalize renders the commit; it
+does not fill it, so set the commit header and prose first.
+
+Set the Conventional-Commits type:
+
+Run: `jigc doc set-field commit:add-rate-limiter#type --value <TYPE>`
+
+Set the scope — the area this change touches:
+
+Run: `jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE>`
+
+Stage the subject line:
+
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+
+Stage the body — why this change:
+
+Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file -`
+
+Then validate and commit:
+
+Run: `jigc task finalize add-rate-limiter`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+";
+
+#[test]
+fn pack_local_loser_pack_workflow_resolves_body_refs_in_its_own_pack() {
+    // The loser-pack-workflow correctness proof. Methodology wins every top-level
+    // collision (default-workflow knob, commit schema), yet `--workflow single-task`
+    // composes DEV's single-task with DEV's body-references — its direct-edit
+    // `step:implement` and `{{cli.create-adr}}` (a command-ref methodology's catalog
+    // LACKS). The emitted bytes must equal the dev single-pack compose exactly: if
+    // includes/command-refs resolved by precedence instead of pack-of-origin, dev's
+    // single-task would get methodology's test-first implement and would fail to
+    // resolve `create-adr` — the M3-class silent corruption this rule kills.
+    let repo = TempDir::new("loser-body");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    write_packs_yaml(repo.path(), &methodology_pack_tree());
+
+    let out = run(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add a thing"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow single-task` over the two-pack set must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout, DEV_SINGLE_TASK_UNDER_METHODOLOGY_GOLDEN,
+        "dev's single-task must compose with DEV's pack-local implement + command-refs \
+         (incl. create-adr, which methodology lacks) even though methodology wins precedence",
+    );
+}
+
+#[test]
+fn pack_local_winner_pack_workflow_resolves_body_refs_in_its_own_pack() {
+    // The winner-pack-workflow correctness proof. Bare `jigc start "<intent>"` composes
+    // methodology's `dev-task` (the resolved default), and its body-references resolve in
+    // METHODOLOGY's own pack: its test-first `step:implement` and its
+    // `set-commit-type`/`-scope`/`-summary`/`-body` command-refs — NOT dev's direct-edit
+    // implement or dev's single `set-commit-summary` verb. The emitted bytes must equal
+    // methodology composing alone: the co-composed dev base below it changes nothing.
+    let repo = TempDir::new("winner-body");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    write_packs_yaml(repo.path(), &methodology_pack_tree());
+
+    let out = run(repo.path(), home.path(), &["start", "add rate limiter"]);
+    assert!(
+        out.status.success(),
+        "bare `jigc start` over the two-pack set must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout, METHODOLOGY_DEV_TASK_GOLDEN,
+        "methodology's dev-task must compose with METHODOLOGY's pack-local test-first implement \
+         + set-commit-type/scope/summary/body command-refs, not dev's direct-edit implement",
     );
 }
