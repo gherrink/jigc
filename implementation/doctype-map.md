@@ -13,10 +13,10 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 | `spec` | the "what" a task implements | persisted → `specs/` | M3 | planned |
 | `prd` | product requirements above specs | persisted → `prds/` | M9 | planned |
 | `arch-doc` | living architecture documentation | persisted → `architecture/` | M13 | ✅ shipped |
-| `roadmap` | the milestone spine + per-milestone decomposition | persisted (running singleton) | M16 | planned |
-| `deferral-ledger` | the forward look — keyed deferred decisions | persisted (running singleton) | M16 | planned |
-| `decisions-log` | the running log of what was decided + why | persisted (running singleton) | M16 | planned |
-| `completion-record` | one milestone's audit → findings → verdict | persisted → `completions/` | M16 | planned |
+| `roadmap` | the milestone spine + per-milestone decomposition | persisted (running singleton) | M16 | ✅ shipped |
+| `deferral-ledger` | the forward look — keyed deferred decisions | persisted (running singleton) | M16 | ✅ shipped |
+| `decisions-log` | the running log of what was decided + why | persisted (running singleton) | M16 | ✅ shipped |
+| `completion-record` | one milestone's audit → findings → verdict | persisted → `completions/` | M16 | ✅ shipped |
 
 VISION's starting set (commit · arch-doc · prd · adr · spec — [VISION.md](../VISION.md) → Document model) is **complete**: every member ships. `arch-doc` was the last, driven at M13 by the architecture-documentation workflow ([architecture-documentation.md](../design/architecture-documentation.md); [roadmap.md](roadmap.md) → M13). The four **methodology working-doc** doctypes below the starting set are not part of VISION's named set — they are the methodology's *own* documents graduating from plain markdown to managed doctypes at M16 (the self-hosting fold-back), each earned from its driving workflow (planning drives `roadmap` + `deferral-ledger`; completion drives `decisions-log` + `completion-record`), schemas in the **methodology pack** ([methodology-docs.md](../design/methodology-docs.md); [roadmap.md](roadmap.md) → M16).
 
