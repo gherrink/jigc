@@ -179,6 +179,8 @@ A repeatable section keeps its item-template inline:
         - { id: maps-to-test, type: code-anchor }
 ```
 
+**Repeatable items are conformance-validated per item (M16).** The MVP `schema-conformance` path adjudicated only simple sections (it skipped repeatable bodies); **M16 lifts that limit** — `required-slot-present` / `required-field-present` / `field-value-conformant` now run **per item** over a repeatable block's leaves, so a malformed entry (an empty required slot, a non-member enum) blocks at finalize, addressed at `#section/item/leaf`. The **`id-from` source field is exempt** from `required-field-present`: it renders as the item's `###` heading, not a trailing bullet, so checking its presence as a field would false-fail every conformant item. **Conformance-only** — no M16 doctype carries a per-entry managed `ref`, so `ref-resolves` over a repeatable-item edge stays deferred ([validation.md](validation.md#repeatable-section-conformance-m16)).
+
 Two derived conveniences, no extra source:
 
 - **`--template` view** — the engine renders the *blank instance* a schema produces (headings + marked slots/fields + relation notes) on demand, like the generated mermaid flow, so "what does this produce" is legible without the source being a template.

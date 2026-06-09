@@ -237,7 +237,7 @@ The three orphan emissions **deliberately collapse to one `target-exists` knob**
 An intrinsic check is one whose demotion would break a load-bearing invariant of the system itself:
 
 - **`workflow-refs.*`** — composition would emit broken / ambiguous / cyclic output to the agent. The structural-determinism bet fails at the surface where compliance actually happens.
-- **`schema-conformance.*`** — the four schema-driven integrity checks at finalize. Forward-ref resolution is the integration advantage's mechanical floor; required-slot / required-field presence is what makes a schema meaningful at all; field-value conformance is the field-type adjudication that distinguishes structured values from prose.
+- **`schema-conformance.*`** — the four schema-driven integrity checks at finalize. Forward-ref resolution is the integration advantage's mechanical floor; required-slot / required-field presence is what makes a schema meaningful at all; field-value conformance is the field-type adjudication that distinguishes structured values from prose. The three presence/value checks (`required-slot-present`, `required-field-present`, `field-value-conformant`) adjudicate **both simple and repeatable** sections — **per item** over a repeatable block's leaves, the `id-from` heading field exempted (it is the heading text, never a trailing bullet), findings addressed at `#section/item/leaf` (M16; [Repeatable-section conformance](#repeatable-section-conformance-m16) below).
 - **`pack-probe-integrity.*`** (M10) — a probe that timed out, crashed, or returned malformed output **cannot be trusted to have validated anything**, and a missing finding could mask a real integrity error. Demoting these would let a misbehaving probe pass silently — the determinism boundary applied to the probe interface itself. (`sandbox-violation` joins them when OS-level sandboxing ships.)
 
 Tunable checks protect themselves with their *route* and *default severity*, not with lock semantics: `file-state` drift routes to reconciliation (so demotion just means "absorb silently" — still safe); `inverse-cardinality` is advisory at task scope by design (because completeness depends on other tasks); commit line-limits are conventional and a project may rationally not want them enforced.
@@ -245,6 +245,18 @@ Tunable checks protect themselves with their *route* and *default severity*, not
 ### Synthetic categories
 
 `schema-conformance`, `schema-completeness`, and `commit-rendering` are **synthetic probe categories** — not literal probes with a `check(target, ctx) → [finding]` implementation, but namespaces for cascade-key consistency. The engine runs these checks as part of other pipelines (the parse + schema-validate path for `schema-conformance`, the edge-index walk for `schema-completeness`, the commit-doc renderer for `commit-rendering`). The cascade key naming is uniform regardless of whether a check sits in a literal probe or a synthetic category — a project tuning severity doesn't need to know the implementation detail. **This is exactly why severity assignment is a post-pass** (below): a synthetic check has no `check()` site to thread a cascade read into, but it still produces a `Finding` carrying a `(probe, check)`, so the engine's aggregate post-pass tunes it identically to a real probe's finding.
+
+### Repeatable-section conformance (M16)
+
+`schema-conformance`'s three presence/value checks adjudicate **every item of a repeatable section**, not just simple sections. The MVP path validated only `Simple` bodies (an unconditional skip past non-`Simple` section bodies); **M16 lifts that limit** so each repeatable item is conformance-checked over its block leaves:
+
+- **`required-slot-present`** — every required slot of the item is non-empty;
+- **`required-field-present`** — every required field of the item carries a value, **except the `id-from` source field**, which renders as the item's `###` heading rather than a trailing bullet (mirroring the parser's heading-field exclusion — [document-type-schema.md](document-type-schema.md#sections-and-repetition)); checking its presence as a bullet would false-fail every conformant item;
+- **`field-value-conformant`** — every present item field's value conforms to its declared type (date / enum / string-shape).
+
+Findings address at **`#section/item/leaf`** (the M13 fragment vocabulary), so a malformed entry is located precisely inside the document. The checks stay **intrinsic blocking** (above) and share the simple-section `schema-conformance.*` cascade keys — no new inventory rows.
+
+**Conformance-only — ref-edges are out of M16.** No M16 doctype carries a *per-entry managed `ref`* ([methodology-docs.md](methodology-docs.md) → Relations), so this lift covers only presence/value conformance. The `ref-resolves` walk over a *repeatable-item* edge — and the per-item edge-identity question it raises — stays **deferred** to the first co-composition milestone that puts a managed ref inside a repeatable item; M16's "validate against reality" rests on per-item conformance (every entry well-formed), not per-entry ref-resolution.
 
 ## Severity assignment — the M6 post-pass
 
