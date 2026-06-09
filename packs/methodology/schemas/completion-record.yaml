@@ -1,0 +1,39 @@
+# completion-record — the methodology pack's PER-MILESTONE close record (M16
+# inc-5 / T1), driven by completion · Audit→triage→re-verify. NOT a singleton:
+# `id-from: title` mints `completions/M16.md` create-fresh per milestone (the
+# proven adr/spec/arch-doc mint, never the running-doc idempotent-copy-in).
+#
+# The `meta` header (header: true) carries the audit `verdict` (green/red) and the
+# `owner-artifact` — an engine-native `owned-location` path (the #5-gate target
+# shipped inc-3): finalize promotes that owned file in-transaction and the gate
+# asserts its presence. A repeatable `findings` section records each audit finding:
+# a `severity`, a `disposition` (fixed/deferred/contested), and an `evidence`
+# STRING — NOT a managed ref, because the artifact it names (an adr/spec) lives in
+# the dev pack and the methodology pack composes alone (the M12 subsume model; a
+# `ref:` would point outside the composed schema universe).
+#
+# Section ids are SINGLE WORDS ONLY (`meta`/`findings`): a multi-word id trips the
+# logged title-case reparse defect, deferred — these route around it exactly as
+# `arch-doc`/`prd` did. Engine-native types only. See design/methodology-docs.md →
+# The four doctypes; Relations (none managed, by deliberate bound); The engine work
+# (item 3, the owner-artifact gate).
+type: completion-record
+location: completions/
+id-from: title
+description: The per-milestone completion record — the audit verdict, the owner-artifact the genuine audit produced, and each triaged finding with its disposition.
+usage: a milestone reaches its completion audit, so its verdict, the audit's owner-artifact, and the triaged findings need a durable per-milestone record.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: verdict, type: enum, of: [green, red] }
+      - { id: owner-artifact, type: owned-location }
+  - id: findings
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: severity, type: enum, of: [blocking, advisory] }
+        - { id: disposition, type: enum, of: [fixed, deferred, contested] }
+        - { id: evidence, type: string }
