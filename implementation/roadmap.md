@@ -887,6 +887,17 @@ Cut 2026-06-09 via the [milestone-planning workflow](milestone-planning-workflow
 
 **Proves:** the differentiator's substrate — jigc validates that every entry of a repeatable-bodied managed doc is well-formed — retired in isolation before the four repeatable-heavy doctypes ride on it. Updates [validation.md](../design/validation.md) + [document-type-schema.md](../design/document-type-schema.md).
 
+### Increment 1b — multi-slot-per-repeatable-item (inserted at build-time; a deferral lifted by human choice)
+
+**Deliverable:** a repeatable item template with **>1 slot leaf** persists every slot — each rendered under a `#### <Leaf-Title>` sub-heading (schema order); a **single**-slot item keeps the bare-prose form byte-identical (backward-compat). The roadmap milestone entry's `proves` + `decomposition` slots both round-trip. Shipped `dcf85a3`.
+
+**Grouped scope:**
+- `ParsedItem.slots: Vec<(leaf, Span)>` + `ItemTemplate.slot_ids`; `parse_items` splits a multi-slot item body by its `####` sub-headings (`#####`+ stays opaque), single-slot keeps the whole-body span ([parsing.md](parsing.md)).
+- `ItemContent.slots` + `render_item` (the `####` form for multi-slot, bare for single); `add_item` mints the **full ordered empty skeleton** (the M13 cold-start seam); `set_item_slot` splices the named leaf, siblings untouched; the `{{store.…}}` compose read-view + the inc-1 per-leaf conformance follow.
+- Red-first: the two-slot round-trip (`render(parse(x)) == x`, both slots preserved); the cold-start fill-one-leaf-at-a-time byte-stability; **backward-compat byte-identity** (the entire existing suite green with zero snapshot churn on single-slot items — the hard constraint); per-leaf conformance fires.
+
+**Proves:** the deferred "Multi-slot sections + their rendering" limit ([decisions-pending.md](decisions-pending.md)) lifted for the **repeatable-item** case (Simple-section case stays deferred — no driver), so the roadmap entry's genuine two-part structure is representable rather than collapsed. Surfaced at inc-4 T4 by the executor's cold-start spike — the [milestone-completion](milestone-completion-workflow.md) human gate firing on a real fork ([DECISIONS.md](../DECISIONS.md) → M16 build halt).
+
 ### Increment 2 — `singleton` doctypes + idempotent create (the running-doc substrate)
 
 **Deliverable:** a `singleton: true` schema doctype mints at a **fixed slug = the type id** (no `id-from`), and `create` on an **already-committed** singleton slug **copies-in** the committed doc instead of clobbering it; proven on a fixture singleton doctype — cold-create round-trips byte-stable, warm re-create copies-in + `add-item` appends + re-promotes byte-stable, the `single-task` ADR/superseding flow regression-passes unchanged, and a baseline-recorded-then-OOB-drifted warm edit conflict-blocks at finalize-preflight.
