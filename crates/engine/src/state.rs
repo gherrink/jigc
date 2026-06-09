@@ -561,8 +561,14 @@ pub fn create(
         return Err(unknown_doctype_finding(type_name));
     };
 
-    // 2. Mint the frozen content-slug (empty id-source → the type-name fallback).
-    let slug = mint_id(id_source, type_name);
+    // 2. Mint the frozen content-slug. A `singleton` doctype fixes the slug to the
+    //    type id unconditionally (so a re-create targets the same `<location>/<ty>.md`,
+    //    review B-2); a non-singleton slugs the id-source (empty → type-name fallback).
+    let slug = if schema.singleton {
+        schema.ty.clone()
+    } else {
+        mint_id(id_source, type_name)
+    };
     let address = format!("{type_name}:{slug}");
     let path = instance_path(task_dir, type_name, &slug);
 
@@ -1094,6 +1100,56 @@ mod tests {
         assert!(
             collide.route.is_some(),
             "a serial collision carries a route"
+        );
+    }
+
+    /// (M16 inc-2 T1) Fixed-slug minting for a `singleton` doctype. `create` on a
+    /// `singleton: true` schema mints at slug **= the type id** unconditionally —
+    /// a non-empty `id_source` (a title) does **not** change the slug, so a
+    /// re-`create` deterministically targets the same `<location>/<ty>.md` (the
+    /// premise idempotent-create rests on, review finding B-2). A **non-singleton**
+    /// `create` still slugs the `id_source` (the unchanged mint discipline). See
+    /// `design/methodology-docs.md` → The four doctypes.
+    #[test]
+    fn singleton_create_mints_at_the_type_id_regardless_of_id_source() {
+        let root = TempRoot::new("singleton-slug");
+        let task_dir = root.path().join("tasks").join("s");
+
+        // A `singleton: true` schema (its location is irrelevant to the slug).
+        let singleton_yaml = b"\
+type: roadmap
+singleton: true
+location: roadmap/
+sections: []
+";
+        let singleton = crate::schema::load_schema(singleton_yaml).expect("singleton loads");
+        let mut singleton_schemas = std::collections::BTreeMap::new();
+        singleton_schemas.insert("roadmap".to_string(), singleton);
+
+        // A non-empty id_source (a title) does NOT move the slug off the type id.
+        let created = create(
+            &task_dir,
+            &singleton_schemas,
+            "roadmap",
+            "Some Milestone Plan Title",
+        )
+        .expect("singleton create succeeds");
+        assert_eq!(
+            created.address, "roadmap:roadmap",
+            "a singleton mints at slug = the type id, ignoring the id_source",
+        );
+        assert_eq!(
+            created.path,
+            task_dir.join("docs").join("roadmap:roadmap.md"),
+            "the singleton instance lands at the fixed type-id slug",
+        );
+
+        // A non-singleton `create` still slugs the id_source (unchanged discipline).
+        let non_singleton = create(&task_dir, &schemas(), "commit", "Add rate limiter")
+            .expect("non-singleton create succeeds");
+        assert_eq!(
+            non_singleton.address, "commit:add-rate-limiter",
+            "a non-singleton still slugs the id_source",
         );
     }
 

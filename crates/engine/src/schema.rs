@@ -58,6 +58,15 @@ pub struct Schema {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<String>,
 
+    /// `true` for a **singleton** doctype: a running doc with a **fixed slug = the
+    /// type id** (e.g. `roadmap/roadmap.md`), *not* an `id-from: title` slug. A
+    /// re-`create` then deterministically targets the same committed file — the
+    /// premise idempotent-create rests on (`design/methodology-docs.md` → The four
+    /// doctypes, review finding B-2). Skip-on-false (mirrors `header`): a schema
+    /// omitting it leaves every existing golden byte-unchanged.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub singleton: bool,
+
     /// The document's sections, in document order.
     pub sections: Vec<Section>,
 }
@@ -816,6 +825,47 @@ sections:
         assert!(
             err.to_string().contains("check"),
             "the load error must name the missing `check` field; got {err}",
+        );
+    }
+
+    /// (M16 inc-2 T1) The `singleton: true` schema flag serde-roundtrips: a
+    /// fixture schema declaring it parses `singleton == true` and **re-serializes**
+    /// the flag (it survives a load→serialize→reload cycle). A schema that **omits**
+    /// it defaults to `false` and, mirroring the `header: bool` skip-on-false
+    /// discipline, serializes **nothing** — the additive-field guard that leaves
+    /// every existing non-singleton golden byte-unchanged. See
+    /// `design/methodology-docs.md` → The four doctypes (review finding B-2).
+    #[test]
+    fn singleton_flag_serde_roundtrips_and_is_skipped_when_false() {
+        let with_singleton = b"\
+type: roadmap
+singleton: true
+sections: []
+";
+        let schema = load_schema(with_singleton).expect("singleton schema loads");
+        assert!(schema.singleton, "the singleton flag parses as true");
+
+        // Re-serializes the flag, and a reload preserves it (roundtrip).
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            json.contains("\"singleton\":true"),
+            "the singleton flag re-serializes; got {json}",
+        );
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(reloaded, schema, "singleton survives a serde roundtrip");
+
+        // A schema omitting it defaults to false and serializes nothing for it —
+        // the skip-on-false additive guard (no existing golden gains a key).
+        let without = b"\
+type: commit
+sections: []
+";
+        let plain = load_schema(without).expect("non-singleton schema loads");
+        assert!(!plain.singleton, "an omitted flag defaults to false");
+        let plain_json = serde_json::to_string(&plain).expect("serializes");
+        assert!(
+            !plain_json.contains("singleton"),
+            "a false singleton flag serializes nothing (skip-on-false); got {plain_json}",
         );
     }
 
