@@ -74,6 +74,31 @@ const SNAPSHOT_FILE: &str = "probe-snapshot.json";
 /// (shelling out) is passed in from the CLI (`DECISIONS.md` 2026-06-06, M10 inc-5 / T2).
 pub type ProbeInvoker<'a> = dyn Fn(&ProbeRequest) -> std::io::Result<ProbeRun> + 'a;
 
+/// The owner-assigned artifact home: every `owner-artifact` owned-location path must
+/// be a repo-relative path **under** this prefix (`design/methodology-docs.md` → The
+/// engine work, item 3 / the recording surface — a bare `exists(path)` would pass with
+/// any pre-existing file, so the field is constrained to a path under an owned artifact
+/// home, `completions/artifacts/<milestone>/…`). The trailing slash is significant — a
+/// value of exactly `completions/artifacts` (no milestone segment) is *not* under it.
+///
+/// This is a **structural** location the intrinsic #5 gate mechanizes, not domain
+/// content: `owned-location` is an engine-native field type (not a pack type), so the
+/// home prefix the gate keys on is engine knowledge, mirroring how the engine owns the
+/// `docs/`/`decisions/` working-area conventions.
+const OWNED_ARTIFACT_HOME: &str = "completions/artifacts/";
+
+/// The CLI-supplied git tracked-status predicate the engine threads through
+/// [`validate_task`] into the #5 owner-artifact gate — a `Fn(&str) -> bool` taking a
+/// **repo-relative** path and answering whether git tracks it (staged or committed),
+/// the inverse of the CLI's `git ls-files --others` untracked set. The engine reads
+/// existence under `repo_root` itself (a filesystem effect it already has) but **never
+/// shells out** for tracked-status — that is the CLI's, mirroring the `ProbeInvoker`
+/// shell-free seam (`design/methodology-docs.md` → The engine work, item 3; the planner
+/// note's threaded-predicate shape). The engine reads the field string + the file's
+/// presence + this predicate, **never the artifact's bytes** (presence, not content —
+/// the determinism boundary).
+pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
+
 /// Validate one task working area — the single engine both `task validate` and
 /// `finalize` phase 2 call (`validation.md` → How it gates `finalize`: one engine,
 /// two entry points, so what `validate` reports and what `finalize` blocks on can
@@ -115,6 +140,13 @@ pub type ProbeInvoker<'a> = dyn Fn(&ProbeRequest) -> std::io::Result<ProbeRun> +
 /// invoke step (which shells out) is the CLI's, keeping the engine shell-free. A task
 /// with no `code-anchor` leaf never calls it (the omitting-context inert path).
 ///
+/// `tracked` is the CLI-supplied git tracked-status predicate ([`TrackedPredicate`]) the
+/// #5 owner-artifact gate consults: for each staged instance's `owned-location` leaf, the
+/// engine validates the path is repo-relative + under the owned artifact home + the file
+/// is present (its own filesystem effect) and asks `tracked` whether git tracks it — the
+/// engine never shells out for tracked-status. A task with no `owned-location` field never
+/// consults it (the omitting-context inert path).
+///
 /// `repo_root` is the committed-store root, `jigc_root` is the `.jigc/` home (where the
 /// edge index caches), and `head` is the opaque HEAD stamp the committed index is
 /// tagged with (the CLI reads it via `git`, keeping the engine shell-free). These three
@@ -140,6 +172,7 @@ pub fn validate_task(
     head: &str,
     resolved: &crate::cascade::Resolved,
     invoke_doc_code: &ProbeInvoker<'_>,
+    tracked: &TrackedPredicate<'_>,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for entry in staged_instances(dir)? {
@@ -154,6 +187,15 @@ pub fn validate_task(
         // Markdown doc; the parser owns that, so we require a UTF-8 read here.
         let source = String::from_utf8_lossy(&bytes);
         findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
+
+        // The #5 owner-artifact presence gate over this instance's `owned-location`
+        // leaves: each named path must be a repo-relative path under the owned artifact
+        // home and the artifact durably present + tracked (`design/methodology-docs.md`
+        // → The engine work, item 3). An instance with no `owned-location` field yields
+        // nothing — the omitting-context inert path (mirroring the doc-code surface).
+        findings.extend(owner_artifact_present(
+            &filename, schemas, &rel_key, &source, repo_root, tracked,
+        ));
     }
 
     // Committed-store OOB reconciliation — sweep the committed managed docs and route
@@ -309,6 +351,138 @@ fn conformance_for(
         Ok(doc) => schema_conformance(schema, source, &doc),
         Err(parse_findings) => parse_findings,
     }
+}
+
+/// The intrinsic #5 **owner-artifact presence gate** over one staged instance's
+/// `owned-location` leaves (`design/methodology-docs.md` → The engine work, item 3).
+///
+/// For every header / simple-section field whose declared type is the engine-native
+/// [`FieldType::OwnedLocation`], the gate reads the authored path string and emits one
+/// blocking `owner-artifact.present` [`Finding`] unless **all** of:
+///
+/// - the path is repo-relative (not absolute) and carries no `..` component;
+/// - it is under the owned artifact home ([`OWNED_ARTIFACT_HOME`] — not a bare
+///   pre-existing file, the B-3 / Codex-blocking-1 anti-vacuity bar);
+/// - the file is **present** under `repo_root` and does not symlink-escape the home
+///   (the resolved real path stays under `<repo_root>/<home>`);
+/// - git **tracks** it (`tracked` — the artifact is durably staged/committed, not a
+///   present-but-untracked scratch file).
+///
+/// **Presence, not content** — the gate reads the field string, the file's existence,
+/// and the tracked flag; it **never** reads the artifact's bytes (the determinism
+/// boundary). The honest bound: it proves an artifact is present at the named owned path,
+/// **not** that the genuine audit happened — the orchestrator writes both the field and
+/// the file, so authenticity stays an orchestration-level recorded responsibility (the M8
+/// orchestrator-responsibility analogue).
+///
+/// An instance whose schema declares no `owned-location` field, or which omits the field,
+/// yields nothing — the omitting-context inert path. A type with no schema / an
+/// unparseable instance is `conformance_for`'s concern, not this gate's, so it is skipped
+/// here (best-effort, mirroring the target-surface enumeration).
+fn owner_artifact_present(
+    filename: &str,
+    schemas: &BTreeMap<String, Schema>,
+    rel_key: &str,
+    source: &str,
+    repo_root: &Path,
+    tracked: &TrackedPredicate<'_>,
+) -> Vec<Finding> {
+    let ty = filename.split(':').next().unwrap_or(filename);
+    let Some(schema) = schemas.get(ty) else {
+        return Vec::new();
+    };
+    let Ok(doc) = parse_sections(schema, source) else {
+        return Vec::new();
+    };
+    let mut findings = Vec::new();
+    for section in &schema.sections {
+        let SectionBody::Simple { fields, .. } = &section.body else {
+            continue; // owned-location lives on the meta header / a simple section.
+        };
+        let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) else {
+            continue;
+        };
+        for declared in fields {
+            if declared.ty != FieldType::OwnedLocation {
+                continue;
+            }
+            let Some(present) = parsed.fields.iter().find(|f| f.key == declared.id) else {
+                continue; // omitted: nothing to adjudicate (the inert path).
+            };
+            let crate::field_block::Value::Scalar(path) = &present.value else {
+                continue; // a list value is not an owned-location shape.
+            };
+            if let Some(why) = owned_location_violation(path, repo_root, tracked) {
+                findings.push(blocking_conformance(
+                    "owner-artifact.present",
+                    format!(
+                        "owner-artifact `{}` in section `{}` of `{rel_key}`: {why}",
+                        declared.id, section.id
+                    ),
+                    Some(Location::addressed(
+                        format!("{rel_key}#{}/{}", section.id, declared.id),
+                        1,
+                        1,
+                    )),
+                ));
+            }
+        }
+    }
+    findings
+}
+
+/// Adjudicate one `owned-location` path: `None` when the artifact is safe + durably
+/// present + tracked, else `Some(reason)` (the human-readable cause the finding carries).
+/// Reads only the path string, the file's presence under `repo_root`, and the `tracked`
+/// flag — never the artifact's bytes (the determinism boundary).
+fn owned_location_violation(
+    path: &str,
+    repo_root: &Path,
+    tracked: &TrackedPredicate<'_>,
+) -> Option<String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Some("the path is empty".to_string());
+    }
+    if Path::new(trimmed).is_absolute() || trimmed.starts_with('/') {
+        return Some(format!("`{trimmed}` is absolute, not a repo-relative path"));
+    }
+    // A `..` component would let the path climb out of the owned home (and out of the
+    // repo). Reject on the *textual* component, before any filesystem resolution.
+    if Path::new(trimmed)
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Some(format!("`{trimmed}` contains a `..` component"));
+    }
+    if !trimmed.starts_with(OWNED_ARTIFACT_HOME) || trimmed.len() == OWNED_ARTIFACT_HOME.len() {
+        return Some(format!(
+            "`{trimmed}` is not under the owned artifact home `{OWNED_ARTIFACT_HOME}<milestone>/`"
+        ));
+    }
+    // Presence under the repo root. The path is repo-relative + `..`-free, so the join
+    // stays within the tree textually; a symlink could still escape, caught next.
+    let full = repo_root.join(trimmed);
+    if !full.exists() {
+        return Some(format!("`{trimmed}` names no file under the repository"));
+    }
+    // Symlink-escape: the resolved real path must stay under the owned home. Canonicalize
+    // both the home and the target (the home must resolve too — `..`-free + present).
+    let home_real = repo_root.join(OWNED_ARTIFACT_HOME).canonicalize().ok();
+    match (full.canonicalize().ok(), home_real) {
+        (Some(real), Some(home)) if real.starts_with(&home) => {}
+        _ => {
+            return Some(format!(
+                "`{trimmed}` resolves outside the owned artifact home (symlink escape)"
+            ));
+        }
+    }
+    if !tracked(trimmed) {
+        return Some(format!(
+            "`{trimmed}` is present but untracked — stage it so it is durably committed"
+        ));
+    }
+    None
 }
 
 /// Run the synthetic `schema-conformance` checks over a parsed instance: every
@@ -1160,6 +1334,13 @@ kind: memo
         |_req| panic!("doc-code invoker must not run when the surface is empty")
     }
 
+    /// A tracked-predicate for fixtures carrying **no** `owned-location` field — the #5
+    /// owner-artifact gate never consults it (the omitting-context inert path), so its
+    /// answer is irrelevant; `false` is the inert default.
+    fn never_tracked() -> impl Fn(&str) -> bool {
+        |_path| false
+    }
+
     /// The done-criterion. Over a working area with **one drifted file** and **one
     /// conformance-broken instance**, `validate_task` returns *both* findings and
     /// `has_blocking() == true`; over a **clean** area it returns an empty report and
@@ -1188,6 +1369,7 @@ kind: memo
             "HEAD",
             &no_delta_resolved(),
             &unused_invoker(),
+            &never_tracked(),
         )
         .expect("sweep runs");
 
@@ -1221,6 +1403,7 @@ kind: memo
             "HEAD",
             &no_delta_resolved(),
             &unused_invoker(),
+            &never_tracked(),
         )
         .expect("clean sweep runs");
 
@@ -1315,6 +1498,12 @@ mod ref_resolves_in_sweep_tests {
         |_req| panic!("doc-code invoker must not run when the surface is empty")
     }
 
+    /// A tracked-predicate for the ADR fixtures (no `owned-location` field) — the #5
+    /// owner-artifact gate never consults it; `false` is the inert default.
+    fn never_tracked() -> impl Fn(&str) -> bool {
+        |_path| false
+    }
+
     /// A committed ADR `A` (the supersede target), with no outgoing ref. Its required
     /// slots are filled so the committed file parses cleanly.
     const ADR_A: &str = "\
@@ -1404,6 +1593,7 @@ Slightly higher write latency for resilience.
             "HEAD",
             &no_delta_resolved(),
             &unused_invoker(),
+            &never_tracked(),
         )
         .expect("sweep runs");
 
@@ -1456,6 +1646,7 @@ Slightly higher write latency for resilience.
             "HEAD",
             &no_delta_resolved(),
             &unused_invoker(),
+            &never_tracked(),
         )
         .expect("sweep runs");
 
@@ -1470,6 +1661,397 @@ Slightly higher write latency for resilience.
         assert!(
             !report.has_blocking(),
             "a clean task with a resolvable supersedes must not block, got {:?}",
+            report.findings
+        );
+    }
+}
+
+#[cfg(test)]
+mod owner_artifact_gate_tests {
+    //! (M16 inc-3 T2) The intrinsic #5 **owner-artifact presence gate** over a FIXTURE
+    //! `completion-record` doctype carrying an engine-native `owned-location` field
+    //! (`design/methodology-docs.md` → The engine work, item 3). The gate **fires**
+    //! (one blocking `owner-artifact.present`) on each unsafe / absent / untracked path
+    //! and is **silent** on a path durably staged under `completions/artifacts/<milestone>/`,
+    //! so a `finalize` (gating on exactly what `validate_task` reports — `plan_finalize`
+    //! phase 2) BLOCKS on the absent case and LANDS on the staged case (one engine, two
+    //! entry points). An instance that **omits** the field is inert (the omitting-context
+    //! guard) — paired with the firing cases so a green pass can't hide a scope bug.
+    //!
+    //! Path-safety + presence + tracked are proven over a real temp repo; the gate reads
+    //! the field string + the file's presence + the tracked flag, **never the artifact's
+    //! bytes** (the determinism boundary — presence, not content).
+
+    use super::*;
+    use crate::file_state::FileStateRecord;
+    use std::path::PathBuf;
+
+    /// A throwaway repo root that removes itself on drop.
+    struct TempRepo(PathBuf);
+
+    impl TempRepo {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-owner-artifact-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp repo");
+            TempRepo(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+        /// Materialize a file at `rel` (repo-relative), creating parent dirs.
+        fn write(&self, rel: &str, bytes: &[u8]) {
+            let full = self.0.join(rel);
+            std::fs::create_dir_all(full.parent().unwrap()).expect("mk parents");
+            std::fs::write(full, bytes).expect("write file");
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// The fixture `completion-record` doctype: a `meta` header carrying an
+    /// engine-native `owned-location` `owner-artifact` field (the #5 gate target) plus a
+    /// body slot. A FIXTURE, never pack content — the real completion-record rides this
+    /// gate in inc-5.
+    fn schemas() -> BTreeMap<String, Schema> {
+        let yaml = b"\
+type: completion-record
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: owner-artifact, type: owned-location }
+  - id: body
+    slot: { hint: \"The record body.\" }
+";
+        let mut m = BTreeMap::new();
+        m.insert(
+            "completion-record".to_string(),
+            crate::schema::load_schema(yaml).expect("completion-record fixture loads"),
+        );
+        m
+    }
+
+    /// A fixture completion-record naming `owner-artifact: <path>`; its required slot is
+    /// filled so the *only* possible blocking finding is the owner-artifact one.
+    fn record_with_owner_artifact(path: &str) -> String {
+        format!(
+            "\
+---
+title: M16 completion
+owner-artifact: {path}
+---
+
+# M16 completion
+
+## Body
+
+The audit landed green.
+"
+        )
+    }
+
+    /// A fixture completion-record that **omits** the `owner-artifact` field entirely
+    /// (the omitting context). Its required slot is filled.
+    const RECORD_NO_OWNER_ARTIFACT: &str = "\
+---
+title: M16 completion
+---
+
+# M16 completion
+
+## Body
+
+The audit landed green.
+";
+
+    /// Run the gate over a single parsed completion-record instance with the given path
+    /// + tracked predicate, over `repo_root`.
+    fn gate(repo_root: &Path, source: &str, tracked: &TrackedPredicate<'_>) -> Vec<Finding> {
+        owner_artifact_present(
+            "completion-record:m16.md",
+            &schemas(),
+            "docs/completion-record:m16.md",
+            source,
+            repo_root,
+            tracked,
+        )
+    }
+
+    /// A tracked predicate that tracks every path (so a present-but-safe artifact is the
+    /// pass case — only path-safety / presence can fire).
+    fn always_tracked() -> impl Fn(&str) -> bool {
+        |_p| true
+    }
+
+    /// (RED — fires) Each unsafe / absent / untracked owner-artifact path produces
+    /// **exactly one** blocking `owner-artifact.present` finding. The cases span every
+    /// bar the design names: absent-path (the file is missing), absolute, `..`-containing,
+    /// not-under-home (the anti-vacuity bar — a real, tracked, present file that is NOT a
+    /// durable owner-artifact), out-of-repo (an absolute escape), and present-but-untracked.
+    #[test]
+    fn gate_fires_on_each_unsafe_or_absent_or_untracked_path() {
+        let repo = TempRepo::new("fires");
+        // A real, tracked, present file OUTSIDE the owned home — the anti-vacuity case:
+        // a bare exists() would pass it; the under-home constraint must reject it.
+        repo.write("README.md", b"# readme\n");
+        // A present + (claimed-)tracked artifact UNDER the home — the untracked case
+        // flips its tracked flag to false; the absent case points elsewhere.
+        repo.write("completions/artifacts/M16/audit.md", b"audit transcript\n");
+
+        // (path, tracked-predicate, label) — each must yield exactly one finding.
+        let cases: Vec<(&str, Box<TrackedPredicate>, &str)> = vec![
+            (
+                // absent-path: a well-shaped home path naming a file that does not exist.
+                "completions/artifacts/M16/missing.md",
+                Box::new(|_p: &str| true),
+                "absent path",
+            ),
+            ("/etc/passwd", Box::new(|_p: &str| true), "absolute path"),
+            (
+                "completions/artifacts/M16/../../etc/passwd",
+                Box::new(|_p: &str| true),
+                "`..`-containing path",
+            ),
+            (
+                // not under the owned home, though present + tracked (anti-vacuity).
+                "README.md",
+                Box::new(|_p: &str| true),
+                "not under owned home",
+            ),
+            (
+                // present under the home but UNTRACKED.
+                "completions/artifacts/M16/audit.md",
+                Box::new(|_p: &str| false),
+                "present-but-untracked",
+            ),
+        ];
+
+        for (path, tracked, label) in cases {
+            let source = record_with_owner_artifact(path);
+            let findings = gate(repo.path(), &source, tracked.as_ref());
+            assert_eq!(
+                findings.len(),
+                1,
+                "the gate must fire exactly once for the {label} case ({path}), got {findings:?}"
+            );
+            let f = &findings[0];
+            assert_eq!(f.code, "owner-artifact.present", "{label}: finding code");
+            assert_eq!(f.severity, Severity::Blocking, "{label}: must block");
+            assert_eq!(
+                f.location.as_ref().and_then(|l| l.address.as_deref()),
+                Some("docs/completion-record:m16.md#meta/owner-artifact"),
+                "{label}: the finding addresses the owner-artifact field",
+            );
+        }
+    }
+
+    /// (GREEN — passes) A path durably staged under `completions/artifacts/<milestone>/`
+    /// (present + tracked, repo-relative, `..`-free) yields **zero** findings — the gate
+    /// is silent on a real recorded owner-artifact.
+    #[test]
+    fn gate_passes_on_a_durably_staged_owned_artifact() {
+        let repo = TempRepo::new("passes");
+        repo.write(
+            "completions/artifacts/M16/audit.md",
+            b"the genuine audit transcript\n",
+        );
+        let source = record_with_owner_artifact("completions/artifacts/M16/audit.md");
+        let findings = gate(repo.path(), &source, &always_tracked());
+        assert!(
+            findings.is_empty(),
+            "a durably-staged owned-location artifact must yield no finding, got {findings:?}"
+        );
+    }
+
+    /// (Inert — the omitting-context guard) A completion-record that omits the
+    /// `owner-artifact` field consults nothing and yields zero findings — byte-identical
+    /// to the pre-gate sweep. Paired with the firing cases so a green pass over a single
+    /// composing context can't hide a scope bug in every omitting context.
+    #[test]
+    fn gate_is_inert_when_the_field_is_omitted() {
+        let repo = TempRepo::new("inert");
+        // A tracked predicate that PANICS if consulted — the omitting context must never
+        // reach the tracked check (or any path adjudication).
+        let must_not_run: Box<TrackedPredicate> =
+            Box::new(|_p: &str| panic!("tracked must not be consulted when the field is omitted"));
+        let findings = gate(repo.path(), RECORD_NO_OWNER_ARTIFACT, must_not_run.as_ref());
+        assert!(
+            findings.is_empty(),
+            "an omitted owner-artifact field must yield no finding, got {findings:?}"
+        );
+    }
+
+    /// (Symlink-escape — fires) An `owner-artifact` path under the owned home that is a
+    /// **symlink pointing outside** the home resolves out of the artifact home; the gate
+    /// rejects it (the real path must stay under `<repo>/completions/artifacts/`). Unix-only
+    /// (symlink creation), the platform the build + CI runs on.
+    #[cfg(unix)]
+    #[test]
+    fn gate_fires_on_a_symlink_escape() {
+        let repo = TempRepo::new("symlink");
+        // A real file OUTSIDE the home, and a symlink under the home pointing at it.
+        repo.write("outside/secret.md", b"out of the owned home\n");
+        std::fs::create_dir_all(repo.path().join("completions/artifacts/M16")).expect("mk home");
+        std::os::unix::fs::symlink(
+            repo.path().join("outside/secret.md"),
+            repo.path().join("completions/artifacts/M16/escape.md"),
+        )
+        .expect("make escaping symlink");
+
+        let source = record_with_owner_artifact("completions/artifacts/M16/escape.md");
+        // Tracked = true so the ONLY lever is the symlink-escape check.
+        let findings = gate(repo.path(), &source, &always_tracked());
+        assert_eq!(
+            findings.len(),
+            1,
+            "a symlink escaping the owned home must fire exactly once, got {findings:?}"
+        );
+        assert_eq!(findings[0].code, "owner-artifact.present");
+        assert!(
+            findings[0].message.contains("symlink"),
+            "the finding names the symlink escape: {}",
+            findings[0].message
+        );
+    }
+
+    /// A no-delta resolved cascade — `owner-artifact.present` is not an inventory row, so
+    /// the post-pass is doubly inert; this confirms the emitted blocking severity survives.
+    fn no_delta_resolved() -> crate::cascade::Resolved {
+        crate::cascade::resolve(
+            &crate::cascade::PackDefaultLayer::new(
+                "dev-pack",
+                "0.1.0",
+                BTreeMap::new(),
+                Vec::new(),
+            ),
+            None,
+            None,
+        )
+        .expect("resolves")
+    }
+
+    /// The doc-code invoker must not run (the completion-record carries no `code-anchor`).
+    fn unused_invoker() -> impl Fn(&ProbeRequest) -> std::io::Result<ProbeRun> {
+        |_req| panic!("doc-code invoker must not run when the surface is empty")
+    }
+
+    /// Stage the fixture completion-record at `<task_dir>/docs/completion-record:m16.md`.
+    fn stage_record(task_dir: &Path, source: &str) {
+        let docs = task_dir.join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(docs.join("completion-record:m16.md"), source).expect("stage record");
+    }
+
+    /// (Integration — one engine, two entry points) The gate's finding flows through
+    /// `validate_task` into `plan_finalize` phase 2: a completion-record naming an
+    /// **absent** owner-artifact makes `validate_task` report a blocker, so `plan_finalize`
+    /// BLOCKS; the same task with the artifact durably staged + tracked yields no blocker,
+    /// so `plan_finalize` proceeds past phase 2 (it LANDS — the gate does not stop it).
+    #[test]
+    fn finalize_blocks_on_absent_owner_artifact_and_lands_on_staged() {
+        use crate::finalize::plan_finalize;
+        use crate::state::BasePin;
+
+        // --- The absent case: validate_task reports the owner-artifact blocker.
+        let repo = TempRepo::new("finalize-absent");
+        let task_dir = repo.path().join(".jigc").join("tasks").join("complete-m16");
+        stage_record(
+            &task_dir,
+            &record_with_owner_artifact("completions/artifacts/M16/missing.md"),
+        );
+        let mut record = FileStateRecord::new();
+        let report = validate_task(
+            &task_dir,
+            &schemas(),
+            &mut record,
+            repo.path(),
+            &repo.path().join(".jigc"),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &|_p| true, // tracked is irrelevant — the file is absent.
+        )
+        .expect("validate runs");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "owner-artifact.present" && f.severity == Severity::Blocking),
+            "the absent owner-artifact must surface a blocking finding, got {:?}",
+            report.findings
+        );
+        assert!(report.has_blocking(), "the absent case must block validate");
+
+        // plan_finalize phase 2 aborts on the report's blocking findings (it needs no
+        // commit doc — phase 2 precedes the render). Base == HEAD so the preflight passes.
+        let base = BasePin::new("HEAD", "HEAD");
+        let plan = plan_finalize(
+            &task_dir,
+            &base,
+            "HEAD",
+            &report,
+            true,
+            schemas().get("completion-record").unwrap(),
+            "m16",
+            &schemas(),
+        );
+        let Err(findings) = plan else {
+            panic!("finalize must BLOCK on the absent owner-artifact, got a plan");
+        };
+        assert!(
+            findings.iter().any(|f| f.code == "owner-artifact.present"),
+            "the finalize block surfaces the owner-artifact finding, got {findings:?}"
+        );
+
+        // --- The staged case: the artifact is present + tracked → no owner-artifact blocker.
+        let repo = TempRepo::new("finalize-staged");
+        let task_dir = repo.path().join(".jigc").join("tasks").join("complete-m16");
+        repo.write(
+            "completions/artifacts/M16/audit.md",
+            b"the genuine audit transcript\n",
+        );
+        stage_record(
+            &task_dir,
+            &record_with_owner_artifact("completions/artifacts/M16/audit.md"),
+        );
+        let mut record = FileStateRecord::new();
+        let report = validate_task(
+            &task_dir,
+            &schemas(),
+            &mut record,
+            repo.path(),
+            &repo.path().join(".jigc"),
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &|_p| true, // the artifact is tracked.
+        )
+        .expect("validate runs");
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "owner-artifact.present"),
+            "a staged + tracked owner-artifact yields no owner-artifact finding, got {:?}",
+            report.findings
+        );
+        assert!(
+            !report.has_blocking(),
+            "the staged case must not block validate, got {:?}",
             report.findings
         );
     }

@@ -372,6 +372,7 @@ impl TaskArea {
                 self.jigc_root
             )
         })?;
+        let tracked = self.tracked_predicate()?;
         validate_task(
             &self.dir,
             &schemas,
@@ -381,8 +382,29 @@ impl TaskArea {
             &head,
             &self.severity_cascade()?,
             &doc_code_invoker,
+            &tracked,
         )
         .with_context(|| format!("validating task at {:?}", self.dir))
+    }
+
+    /// Build the git tracked-status predicate the engine's #5 owner-artifact gate
+    /// consults ([`engine::validate::TrackedPredicate`]) — the CLI owns the shell-out, the
+    /// engine stays shell-free (`design/methodology-docs.md` → The engine work, item 3).
+    ///
+    /// A repo-relative path is **tracked** iff git does *not* list it among the untracked,
+    /// non-ignored files (`git ls-files --others --exclude-standard`, via [`git_untracked`]):
+    /// a present file outside that set is in git's index/HEAD (staged or committed), the
+    /// durable-presence the gate requires; a present-but-just-created file is in the set, so
+    /// the predicate answers `false` and the gate blocks (the present-but-untracked case).
+    /// The engine resolves existence itself, so this predicate answers tracked-status only.
+    fn tracked_predicate(&self) -> Result<impl Fn(&str) -> bool> {
+        let untracked: std::collections::HashSet<String> = git_untracked(&self.repo_root)?
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect();
+        Ok(move |path: &str| !untracked.contains(path))
     }
 
     /// Execute the `finalize` transaction (`design/finalize.md` → 5–7). Returns the
