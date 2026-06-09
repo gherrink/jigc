@@ -1,0 +1,11 @@
+Detect the gaps — a forward-looking, adversarial pass over the milestone's
+done-picture against the assembled product: what is missing or unfit to build it
+cleanly. Look across decisions still open, design docs that don't exist or have
+drifted, doctype schemas no workflow has yet driven, and engine/CLI surface the
+milestone assumes.
+
+Reuse is a claim, not a fact: "this already exists, the milestone just reuses it"
+is the most dangerous miss — spike the new shape against the real binary before
+trusting it, including its cold-start (empty, freshly-created) state. This is
+judgment work, not a checklist to tick: produce a ranked gap list, each gap
+concrete enough to act on.

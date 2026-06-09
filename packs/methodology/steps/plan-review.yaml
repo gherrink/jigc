@@ -1,0 +1,7 @@
+Review what Settle produced — an independent pass. A reader who did NOT author the
+decisions, docs, or doctype schemas reads them adversarially for coherence, gaps
+the first pass missed, over- or under-design, and conflicts with the locked
+invariants. Findings are baked back into the docs before anything is decomposed —
+a settled doc that survives an adversarial read is a sound basis for increments;
+an unreviewed one propagates its flaws into every increment cut from it. The human
+owns accepting or rejecting each finding.

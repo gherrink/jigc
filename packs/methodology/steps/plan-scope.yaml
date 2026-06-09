@@ -1,0 +1,13 @@
+Scope the milestone:
+{{ task.intent }}
+
+Restate, from the full-product roadmap, what this milestone proves and its
+risk-first place in the sequence — the runnable slice it must deliver and the
+worked-example flow(s) that will demonstrate it. That done-picture is the bar
+everything below is measured against.
+
+Verify the baseline it builds on, don't trust the roadmap's "shipped" prose:
+exercise the real binary to map what is genuinely built versus stubbed, deferred,
+or latent. A "design-locked / planning-light" framing must RAISE that audit
+intensity, never relax it. Pull this milestone's deferred topics from the
+deferral ledger first, and fold them into the done-picture and the gap list.

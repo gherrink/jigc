@@ -1,0 +1,15 @@
+---
+checkpoint:
+  reason: settle
+---
+Settle the gaps — the human-in-the-loop gate. For each blocking gap, resolve it
+through the right loop and record it: decisions via the design workflow, docs and
+doctype schemas elaborated where this milestone's workflows now drive them. Surface
+the genuine scope and judgment calls — must-settle-now versus defer-to-a-later
+milestone, and whether a gap warrants building machinery at all — rather than
+silently deciding them. The human owns this gate.
+
+A gap consciously deferred is logged on the deferral ledger, keyed to the
+milestone that will own it. The design Settle writes is itself a claim: pin the
+scope of every check it introduces, and spike every acceptance flow — its
+invocation commands included — against the real engine before locking it.

@@ -51,3 +51,25 @@ commands:
     command: jigc
     args: ["task", "finalize", { from: "task.id" }]
     hint: "Run validate + commit. One task → one commit."
+
+  # The planning workflow's idempotent-create command-refs (M16 inc-4 / T2). The
+  # three running docs are SINGLETONS — `create` fixes the slug to the type id
+  # regardless of `--title`, so the title is a fixed literal (ignored on mint, and
+  # never reaches the H1 of a singleton). `create` on an already-committed singleton
+  # copies-in for warm-append (the idempotent-create mechanism); safe whether or not
+  # it exists. The per-entry `add-item`/`set-slot`/`set-field` authoring lives in the
+  # author steps as literal guidance (the item id is runtime-minted).
+  - id: create-roadmap
+    command: jigc
+    args: ["doc", "create", "roadmap", "--title", "Roadmap"]
+    hint: "Create-or-update the running roadmap singleton in the current task."
+
+  - id: create-ledger
+    command: jigc
+    args: ["doc", "create", "deferral-ledger", "--title", "Deferral-Ledger"]
+    hint: "Create-or-update the running deferral-ledger singleton in the current task."
+
+  - id: create-log
+    command: jigc
+    args: ["doc", "create", "decisions-log", "--title", "Decisions-Log"]
+    hint: "Create-or-update the running decisions-log singleton in the current task."

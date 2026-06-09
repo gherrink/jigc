@@ -1,0 +1,6 @@
+Decompose the milestone into ordered, risk-first increments — straight from the
+now-reviewed scoped done-picture. Each increment carries its Deliverable, Grouped
+scope, and Proves, and names the design docs it builds against — the form the
+increment workflow consumes. Keep the cut minimal: the smallest sequence that
+delivers the milestone, no creep into a later one. The spine stays linear — each
+increment builds on the last.

@@ -1,0 +1,14 @@
+Log each gap Settle consciously deferred on the running deferral ledger.
+Create-or-update the ledger singleton — safe whether or not it already exists (an
+existing committed ledger is copied in for append):
+
+{{ cli.create-ledger }}
+
+Then, for each deferral, mint an entry and author it: its `kind` (D for a deferred
+decision, I for a parked idea), the `trigger` milestone that resurfaces it, and the
+`body` prose for what is owed and why. The `date` is CLI-set on create:
+
+jigc doc add-item deferral-ledger:deferral-ledger#entries --title "<what is owed>"
+jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/kind --value <D|I>
+jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/trigger --value <milestone>
+jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body --from-file -

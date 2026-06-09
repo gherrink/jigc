@@ -210,3 +210,136 @@ fn dev_task_composes_the_flat_spine_resolved_intent_and_verbatim_fill_lines() {
         "the four commit-fill Run lines must precede `jigc task finalize`; got:\n{stdout}",
     );
 }
+
+/// M16 Increment 4 / T2 — the methodology `planning` workflow composes the
+/// planning spine through the real binary: `jigc start --workflow planning
+/// "<milestone>"` mints a task **and** emits the **Settle checkpoint**
+/// (`Checkpoint: settle`) plus the create / add-item / set-slot / set-field
+/// authoring guidance for the three running doctypes (roadmap / deferral-ledger /
+/// decisions-log).
+///
+/// This is the compose-time contract (T4 *runs* the emitted commands end-to-end;
+/// this proves they are **emitted**, with the singleton create command-refs
+/// rendered verbatim on the EMITTED bytes — never reconstructed).
+#[test]
+fn planning_composes_the_settle_checkpoint_and_the_three_doctype_authoring_lines() {
+    let repo = TempDir::new("planning");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // `planning` is `creates-task: true` (the sub-task precedent) — invoked directly
+    // off the router by `--workflow planning`, it mints a task and composes the spine.
+    // Intent "M99" → slug "m99" (slugify lowercases).
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "planning", "M99"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow planning \"M99\"` over the methodology pack must compose the \
+         planning spine and exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // `creates-task: true` → a task dir is minted at `.jigc/tasks/m99/`.
+    let task_dir = repo.path().join(".jigc").join("tasks").join("m99");
+    assert!(
+        task_dir.is_dir(),
+        "`--workflow planning` must mint the task dir at {task_dir:?}; got stdout:\n{stdout}",
+    );
+
+    // No `{{ … }}` placeholder survives a clean compose (every include / data-value /
+    // command-ref resolved).
+    assert!(
+        !stdout.contains("{{") && !stdout.contains("}}"),
+        "no `{{{{ … }}}}` placeholder may survive the planning compose; got:\n{stdout}",
+    );
+
+    // The Settle checkpoint emits `Checkpoint: settle` at its own line, the bare slug
+    // (no backticks) — the M15 checkpoint primitive, the human gate of the loop.
+    assert!(
+        stdout.lines().any(|l| l == "Checkpoint: settle"),
+        "the Settle step must compose `Checkpoint: settle` at the left margin; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("Checkpoint: `settle`"),
+        "the `settle` reason slug must be bare (no backticks); got:\n{stdout}",
+    );
+
+    let pos = |needle: &str| {
+        stdout
+            .find(needle)
+            .unwrap_or_else(|| panic!("composed planning spine missing {needle:?}; got:\n{stdout}"))
+    };
+
+    // The five phases compose in loop order: scope → detect-gaps → settle → review →
+    // decompose. Each contributes a distinctive prose marker; offsets strictly increase.
+    let scope_at = pos("Scope the milestone");
+    let gaps_at = pos("Detect the gaps");
+    let settle_at = pos("Checkpoint: settle");
+    let review_at = pos("Review what Settle produced");
+    let decompose_at = pos("Decompose the milestone into ordered");
+    assert!(
+        scope_at < gaps_at
+            && gaps_at < settle_at
+            && settle_at < review_at
+            && review_at < decompose_at,
+        "the planning spine must order scope({scope_at}) < detect-gaps({gaps_at}) < \
+         settle({settle_at}) < review({review_at}) < decompose({decompose_at}); got:\n{stdout}",
+    );
+
+    // The three singleton `create` command-refs render verbatim on the EMITTED bytes —
+    // singletons fix the slug to the type id, so `--title` is a fixed literal (ignored).
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create roadmap"),
+        "jigc doc create roadmap --title Roadmap",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create deferral-ledger"),
+        "jigc doc create deferral-ledger --title Deferral-Ledger",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create decisions-log"),
+        "jigc doc create decisions-log --title Decisions-Log",
+    );
+
+    // The per-entry authoring lines (add-item + set-slot/set-field on the singleton's
+    // item-leaf addresses) appear for each doctype — literal guidance, the item id is
+    // runtime-minted so the `<id>` stays an authoring placeholder (the author-arch-doc
+    // precedent). Assert one address from each doctype's repeatable section.
+    for needle in [
+        "jigc doc add-item roadmap:roadmap#milestones",
+        "jigc doc set-slot roadmap:roadmap#milestones/<id>/proves",
+        "jigc doc set-slot roadmap:roadmap#milestones/<id>/decomposition",
+        "jigc doc add-item deferral-ledger:deferral-ledger#entries",
+        "jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/kind",
+        "jigc doc set-field deferral-ledger:deferral-ledger#entries/<id>/trigger",
+        "jigc doc set-slot deferral-ledger:deferral-ledger#entries/<id>/body",
+        "jigc doc add-item decisions-log:decisions-log#entries",
+        "jigc doc set-slot decisions-log:decisions-log#entries/<id>/why",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "the planning spine must emit the authoring line `{needle}`; got:\n{stdout}",
+        );
+    }
+
+    // The doc authoring follows Settle (the running docs record Settle's outputs).
+    assert!(
+        settle_at < pos("jigc doc create roadmap"),
+        "the doctype authoring must follow the Settle checkpoint; got:\n{stdout}",
+    );
+}

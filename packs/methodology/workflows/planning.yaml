@@ -1,0 +1,18 @@
+---
+description: The milestone-planning loop (scope → detect-gaps → settle → review → decompose), with the human-gated Settle composed as a structural Checkpoint, then authors the three running working-docs (roadmap / deferral-ledger / decisions-log) the loop maintains.
+usage: you are opening a milestone — scoping it against the roadmap, settling its gaps, and cutting it into increments — and you want the phase walk, its human gate, and the running-doc authoring made visible.
+creates-task: true
+selectable: false
+allows-create:
+  - { type: roadmap, as: roadmap }
+  - { type: deferral-ledger, as: ledger }
+  - { type: decisions-log, as: log }
+---
+{{ include: step:plan-scope }}
+{{ include: step:detect-gaps }}
+{{ include: step:settle }}
+{{ include: step:plan-review }}
+{{ include: step:decompose }}
+{{ include: step:author-roadmap }}
+{{ include: step:author-ledger }}
+{{ include: step:author-decisions }}
