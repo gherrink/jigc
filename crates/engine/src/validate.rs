@@ -39,7 +39,7 @@
 use crate::field_block::Field;
 use crate::file_state::{FileStateRecord, file_state};
 use crate::finding::{Finding, Location, Severity};
-use crate::parse::{Document, ParsedSection, parse_sections};
+use crate::parse::{Document, ParsedItem, ParsedSection, parse_sections};
 use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, ingest_probe_run};
 use crate::result::ValidationReport;
 use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
@@ -314,7 +314,9 @@ fn conformance_for(
 /// Run the synthetic `schema-conformance` checks over a parsed instance: every
 /// declared body slot is non-empty (`required-slot-present`), every author-required
 /// field is present (`required-field-present`), and every present field's value is
-/// type-conformant (`field-value-conformant`). Returns one blocking [`Finding`] per
+/// type-conformant (`field-value-conformant`). A **repeatable** section runs the same
+/// three checks per item over its block leaves (the `id-from` heading field exempted),
+/// findings addressed at `#section/item/leaf`. Returns one blocking [`Finding`] per
 /// violation, in section-document order; a conformant instance yields an empty `Vec`.
 ///
 /// `ref-resolves` (forward-ref / edge-index integrity) is **not** run here — it is a
@@ -324,30 +326,141 @@ pub fn schema_conformance(schema: &Schema, source: &str, doc: &Document) -> Vec<
     let mut findings = Vec::new();
     for section in &schema.sections {
         let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) else {
-            // A section the parser did not map (header sections carry no `ParsedSection`
-            // slot, and a repeatable section is out of MVP conformance scope) — nothing
-            // slot/field-shaped to adjudicate here.
+            // A section the parser did not map (a header section carries no
+            // `ParsedSection`) — nothing slot/field/item-shaped to adjudicate here.
             continue;
         };
-        let SectionBody::Simple {
-            slot: declared_slot,
-            fields: declared_fields,
-        } = &section.body
-        else {
-            // Repeatable sections are not adjudicated by these MVP checks.
-            continue;
-        };
-
-        // required-slot-present: a declared body slot must hold non-empty prose.
-        if declared_slot.is_some() {
-            check_slot_present(section, parsed, source, &mut findings);
-        }
-        // required-field-present + field-value-conformant over the declared fields.
-        for declared in declared_fields {
-            check_field(section, declared, parsed, &mut findings);
+        match &section.body {
+            SectionBody::Simple {
+                slot: declared_slot,
+                fields: declared_fields,
+            } => {
+                // required-slot-present: a declared body slot must hold non-empty prose.
+                if declared_slot.is_some() {
+                    check_slot_present(section, parsed, source, &mut findings);
+                }
+                // required-field-present + field-value-conformant over the declared fields.
+                for declared in declared_fields {
+                    check_field(section, declared, parsed, &mut findings);
+                }
+            }
+            SectionBody::Repeatable { repeatable } => {
+                check_repeatable(section, repeatable, parsed, source, &mut findings);
+            }
         }
     }
     findings
+}
+
+/// Run the three synthetic checks over each item of a **repeatable** section's
+/// block (`validation.md` → schema-conformance scope: the lifted MVP repeatable
+/// limit). Per item, every declared block leaf is adjudicated — a `slot` leaf via
+/// `required-slot-present`, a `field` leaf via `required-field-present` +
+/// `field-value-conformant` — **except the `id-from` source field**, which renders
+/// as the item heading not a trailing bullet (mirroring [`crate::parse`]'s
+/// `ItemTemplate::from` heading-field exclusion); checking its presence as a bullet
+/// would false-fail every conformant item. Findings address at `#section/item/leaf`
+/// (the M13 fragment vocabulary).
+fn check_repeatable(
+    section: &Section,
+    repeatable: &crate::schema::Repeatable,
+    parsed: &ParsedSection,
+    source: &str,
+    findings: &mut Vec<Finding>,
+) {
+    for item in &parsed.items {
+        for leaf in &repeatable.block {
+            match leaf {
+                crate::schema::Leaf::Slot { id, .. } => {
+                    check_item_slot_present(section, item, id, source, findings);
+                }
+                crate::schema::Leaf::Field(field) => {
+                    // The id-source field is the item heading, never a bullet.
+                    if field.id == repeatable.id_from {
+                        continue;
+                    }
+                    check_item_field(section, item, field, findings);
+                }
+            }
+        }
+    }
+}
+
+/// `required-slot-present` for one repeatable item's declared slot: its prose must
+/// be non-empty. The parser records the item's slot span (the heading is present,
+/// so the section parsed), so an all-whitespace slice is the unfilled-slot case.
+/// Addressed at `#section/item/leaf`.
+fn check_item_slot_present(
+    section: &Section,
+    item: &ParsedItem,
+    leaf_id: &str,
+    source: &str,
+    findings: &mut Vec<Finding>,
+) {
+    let filled = item
+        .slot
+        .as_ref()
+        .map(|span| !span.slice(source).trim().is_empty())
+        .unwrap_or(false);
+    if !filled {
+        let line = item.slot.as_ref().map(|span| span.start_line).unwrap_or(1);
+        findings.push(blocking_conformance(
+            "schema-conformance.required-slot-present",
+            format!(
+                "required slot `{leaf_id}` in item `{}` of section `{}` is empty",
+                item.id, section.id
+            ),
+            Some(Location::addressed(
+                item_leaf_address(section, item, leaf_id),
+                line,
+                1,
+            )),
+        ));
+    }
+}
+
+/// `required-field-present` + `field-value-conformant` for one repeatable item's
+/// declared block field. An absent author-required field blocks; a present field
+/// whose value fails its declared type blocks. Both address at `#section/item/leaf`.
+fn check_item_field(
+    section: &Section,
+    item: &ParsedItem,
+    declared: &SchemaField,
+    findings: &mut Vec<Finding>,
+) {
+    let address = item_leaf_address(section, item, &declared.id);
+    match item.fields.iter().find(|f| f.key == declared.id) {
+        Some(present) => {
+            if let Err(why) = crate::write::check_value(declared, &present.value) {
+                findings.push(blocking_conformance(
+                    "schema-conformance.field-value-conformant",
+                    format!(
+                        "field `{}` in item `{}` of section `{}`: {why}",
+                        declared.id, item.id, section.id
+                    ),
+                    Some(Location::addressed(address, 1, 1)),
+                ));
+            }
+        }
+        None => {
+            if is_author_required(declared) {
+                findings.push(blocking_conformance(
+                    "schema-conformance.required-field-present",
+                    format!(
+                        "required field `{}` is missing from item `{}` of section `{}`",
+                        declared.id, item.id, section.id
+                    ),
+                    Some(Location::addressed(address, 1, 1)),
+                ));
+            }
+        }
+    }
+}
+
+/// The `section/item/leaf` address fragment for a repeatable-item finding (the M13
+/// vocabulary; mirrors [`crate::target_surface`]'s per-item anchor address shape).
+fn item_leaf_address(section: &Section, item: &ParsedItem, leaf_id: &str) -> String {
+    format!("{}/{}/{}", section.id, item.id, leaf_id)
 }
 
 /// `required-slot-present`: the section declares a slot, so its prose must be
@@ -647,6 +760,201 @@ The note body prose.
         assert!(
             findings.is_empty(),
             "an omitted optional `code-anchor` field must yield no findings, got {findings:?}",
+        );
+    }
+}
+
+#[cfg(test)]
+mod repeatable_conformance_tests {
+    //! `schema-conformance.*` over a **repeatable** section's items: per item, the
+    //! three synthetic checks run over the block leaves (`required-slot-present`,
+    //! `required-field-present`, `field-value-conformant`), with the `id-from`
+    //! heading field exempted (it is the heading text, never a trailing bullet, so
+    //! it must not false-fail as a missing required field). Findings address at
+    //! `#section/item/leaf`. A conformant repeatable instance yields none; a
+    //! hand-malformed entry fires a blocking finding (the M16 inc-1 red obligation).
+
+    use super::*;
+    use crate::parse::parse_sections;
+
+    /// A purpose-built repeatable doctype (a test fixture, not pack content — no
+    /// shipped doctype carries a required field inside a repeatable item). The
+    /// `entries` block carries the three levers: the `id-from: title` heading field
+    /// (exempted), a required `detail` slot, and an author-required `kind` enum.
+    fn schema() -> Schema {
+        let yaml = b"\
+type: note
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [memo, brief] }
+        - { id: detail, slot: { hint: \"The entry detail.\" } }
+";
+        crate::schema::load_schema(yaml).expect("note repeatable schema loads")
+    }
+
+    fn parse(source: &str) -> Document {
+        parse_sections(&schema(), source)
+            .unwrap_or_else(|f| panic!("fixture must parse; got conformance findings: {f:?}"))
+    }
+
+    /// A fully-conformant repeatable instance: one item whose detail slot is filled,
+    /// whose `kind` enum is present and a member, and whose `title` (the id-source
+    /// heading) carries no trailing bullet. Yields **zero** findings — the id-from
+    /// heading field must NOT be flagged `required-field-present` (the exemption trap).
+    const CONFORMANT: &str = "\
+---
+---
+
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+
+The first entry's detail prose.
+
+<!-- fields -->
+- kind: memo
+";
+
+    /// A repeatable entry with an **empty required slot**: the `### …` item heading
+    /// parses, but its `detail` slot prose is blank. Exactly one blocking
+    /// `schema-conformance.required-slot-present`, addressed at `#entries/first-entry/detail`.
+    const EMPTY_SLOT: &str = "\
+---
+---
+
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+
+<!-- fields -->
+- kind: memo
+";
+
+    /// A repeatable entry with a **malformed required field value**: `kind` is present
+    /// but not an enum member. Exactly one blocking
+    /// `schema-conformance.field-value-conformant`, addressed at `#entries/first-entry/kind`.
+    const MALFORMED_VALUE: &str = "\
+---
+---
+
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+
+The first entry's detail prose.
+
+<!-- fields -->
+- kind: wormhole
+";
+
+    /// (a) A fully-conformant repeatable instance yields ZERO findings — proving the
+    /// id-from heading field is not spuriously flagged `required-field-present` (the
+    /// exemption trap). The load-bearing assumption the planner flagged.
+    #[test]
+    fn conformant_repeatable_instance_yields_no_findings() {
+        let schema = schema();
+        let doc = parse(CONFORMANT);
+        let findings = schema_conformance(&schema, CONFORMANT, &doc);
+        assert!(
+            findings.is_empty(),
+            "a fully-conformant repeatable instance must yield no findings, got {findings:?}"
+        );
+    }
+
+    /// (b) The red obligation FIRES: a hand-malformed entry with an empty required
+    /// slot produces a blocking `schema-conformance.required-slot-present`, and a
+    /// separate entry with a malformed required field value produces a blocking
+    /// `schema-conformance.field-value-conformant`. Each addressed at `#section/item/leaf`.
+    #[test]
+    fn malformed_repeatable_entry_fires_a_blocking_finding() {
+        let schema = schema();
+
+        let cases: &[(&str, &str, &str)] = &[
+            (
+                EMPTY_SLOT,
+                "schema-conformance.required-slot-present",
+                "entries/first-entry/detail",
+            ),
+            (
+                MALFORMED_VALUE,
+                "schema-conformance.field-value-conformant",
+                "entries/first-entry/kind",
+            ),
+        ];
+        for (source, expected_code, expected_address) in cases {
+            let doc = parse(source);
+            let findings = schema_conformance(&schema, source, &doc);
+            assert_eq!(
+                findings.len(),
+                1,
+                "fixture for {expected_code} must yield exactly one finding, got {findings:?}"
+            );
+            let finding = &findings[0];
+            assert_eq!(finding.code, *expected_code, "finding code");
+            assert_eq!(
+                finding.severity,
+                Severity::Blocking,
+                "{expected_code} must be blocking"
+            );
+            let address = finding
+                .location
+                .as_ref()
+                .and_then(|l| l.address.as_deref())
+                .unwrap_or_else(|| panic!("{expected_code} must carry an address"));
+            assert_eq!(
+                address, *expected_address,
+                "{expected_code} must address at #section/item/leaf"
+            );
+        }
+    }
+
+    /// A missing author-required field inside an item fires `required-field-present`,
+    /// addressed at `#section/item/leaf` — and the id-from heading field, absent as a
+    /// bullet by construction, is exempted (else every conformant item false-fails).
+    #[test]
+    fn missing_required_field_in_an_item_fires() {
+        let schema = schema();
+        let source = "\
+---
+---
+
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+
+The first entry's detail prose.
+";
+        let doc = parse(source);
+        let findings = schema_conformance(&schema, source, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "a missing author-required item field must yield exactly one finding, got {findings:?}"
+        );
+        assert_eq!(
+            findings[0].code,
+            "schema-conformance.required-field-present"
+        );
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(
+            findings[0]
+                .location
+                .as_ref()
+                .and_then(|l| l.address.as_deref()),
+            Some("entries/first-entry/kind"),
         );
     }
 }
