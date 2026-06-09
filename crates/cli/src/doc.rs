@@ -281,8 +281,15 @@ fn run_create(
     let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
-    let created = state::create_gated(&task.dir, &schemas, &gate.allows_create, type_name, title)
-        .map_err(|f| block(&f, "create", type_name))?;
+    let created = state::create_gated(
+        &task.dir,
+        &schemas,
+        &gate.allows_create,
+        type_name,
+        title,
+        &task.repo_root,
+    )
+    .map_err(|f| block(&f, "create", type_name))?;
     println!("{}", created.address);
     Ok(())
 }

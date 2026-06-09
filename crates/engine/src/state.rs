@@ -548,13 +548,25 @@ pub struct CreatedDoc {
 ///    area → reject with a blocking `create.serial-collision` [`Finding`] carrying a
 ///    route, never silently suffixed (`structural-grammar.md` → minting: the numeric
 ///    suffix is the post-MVP `fan-out`/`join` case only; serial mints reject).
-/// 4. **Provision** the empty instance at `docs/<type>:<slug>.md` via
+/// 4. **Idempotent create for a committed singleton** (`methodology-docs.md` → The
+///    engine work, item 2; review findings B-5/I-2). When `type_name` is a
+///    `singleton: true` doctype whose **committed** `<location>/<ty>.md` already
+///    exists under `repo_root`, `create` **copies that committed body in** via
+///    [`copy_in`] (recording `edited-from-base`) instead of minting blank — killing
+///    the clobber-on-blank landmine and giving create-or-update. The copy-in branch
+///    is **gated to `singleton`** so the shared primitive is unchanged for every
+///    other doctype: a non-singleton committed-slug collision is *not* this case (the
+///    working-area collision below still rejects, and a `single-task` ADR re-create
+///    keeps mint-or-reject). Copy-in does **not** reconcile (review I-1) — OOB drift
+///    over the committed doc is caught at finalize-preflight, not here.
+/// 5. **Provision** the empty instance at `docs/<type>:<slug>.md` via
 ///    [`provision_doc`] and return its [`CreatedDoc`] address + path.
 pub fn create(
     task_dir: &Path,
     schemas: &std::collections::BTreeMap<String, Schema>,
     type_name: &str,
     id_source: &str,
+    repo_root: &Path,
 ) -> Result<CreatedDoc, Finding> {
     // 1. Unknown doctype → reject before anything is minted or placed.
     let Some(schema) = schemas.get(type_name) else {
@@ -572,12 +584,30 @@ pub fn create(
     let address = format!("{type_name}:{slug}");
     let path = instance_path(task_dir, type_name, &slug);
 
-    // 3. Serial collision → reject, never suffixed, nothing created.
+    // 3. Serial collision in the working area → reject, never suffixed, nothing
+    //    created. (For a singleton this is the *already-staged* case; a re-create
+    //    after copy-in therefore still rejects, so the prior staged edit survives —
+    //    the same steady-state guard `read_or_copy_in` relies on.)
     if path.exists() {
         return Err(instance_collision_finding(&address));
     }
 
-    // 4. Provision the empty instance and return its address + path.
+    // 4. Idempotent create for a committed singleton: gated to `singleton`, a
+    //    committed `<location>/<ty>.md` under `repo_root` is copied in for editing
+    //    rather than minted blank (the B-5 clobber fix). Copy-in records
+    //    `edited-from-base`; drift is finalize-preflight's concern, not copy-in's.
+    if schema.singleton
+        && let Some(committed) = crate::store::canonical_path(repo_root, schema, &slug)
+        && committed.is_file()
+    {
+        let body = std::fs::read_to_string(&committed)
+            .map_err(|err| io_finding(&address, "read the committed singleton", &err))?;
+        let path = copy_in(task_dir, type_name, &slug, &body)
+            .map_err(|err| io_finding(&address, "copy in the committed singleton", &err))?;
+        return Ok(CreatedDoc { address, path });
+    }
+
+    // 5. Provision the empty instance and return its address + path.
     let path = provision_doc(task_dir, schema, &slug)
         .map_err(|err| io_finding(&address, "provision the instance", &err))?;
     Ok(CreatedDoc { address, path })
@@ -604,6 +634,7 @@ pub fn create_gated(
     gate: &[crate::compose::AllowsCreate],
     type_name: &str,
     id_source: &str,
+    repo_root: &Path,
 ) -> Result<CreatedDoc, Finding> {
     // Step 3: unknown doctype rejects before the gate is consulted.
     if !schemas.contains_key(type_name) {
@@ -613,8 +644,8 @@ pub fn create_gated(
     let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
         return Err(gate_blocked_finding(type_name, gate));
     };
-    // Step 4: admitted → mint + provision …
-    let created = create(task_dir, schemas, type_name, id_source)?;
+    // Step 4: admitted → mint + provision (or copy-in a committed singleton) …
+    let created = create(task_dir, schemas, type_name, id_source, repo_root)?;
     // … then bind it to the entry's `as:` role if the entry declares one.
     if !entry.as_role.is_empty() {
         let mut roles = RolesRecord::load(task_dir)
@@ -1048,8 +1079,14 @@ mod tests {
         let schemas = schemas();
 
         // Known type → mint `commit:<slug>` + land the empty instance on disk.
-        let created = create(&task_dir, &schemas, "commit", "Add rate limiter")
-            .expect("create of a known type succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "commit",
+            "Add rate limiter",
+            root.path(),
+        )
+        .expect("create of a known type succeeds");
         assert_eq!(
             created.address, "commit:add-rate-limiter",
             "minted address is `<type>:<slug>`"
@@ -1072,8 +1109,8 @@ mod tests {
         let docs_before = std::fs::read_dir(task_dir.join("docs"))
             .expect("docs dir")
             .count();
-        let err =
-            create(&task_dir, &schemas, "spec", "whatever").expect_err("unknown doctype rejects");
+        let err = create(&task_dir, &schemas, "spec", "whatever", root.path())
+            .expect_err("unknown doctype rejects");
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "create.unknown-doctype");
         assert!(
@@ -1089,8 +1126,14 @@ mod tests {
         );
 
         // Serial collision: a second create of the same id rejects, nothing new.
-        let collide = create(&task_dir, &schemas, "commit", "Add rate limiter")
-            .expect_err("a serial collision on an existing instance id rejects");
+        let collide = create(
+            &task_dir,
+            &schemas,
+            "commit",
+            "Add rate limiter",
+            root.path(),
+        )
+        .expect_err("a serial collision on an existing instance id rejects");
         assert_eq!(collide.severity, Severity::Blocking);
         assert_eq!(collide.code, "create.serial-collision");
         assert!(
@@ -1132,6 +1175,7 @@ sections: []
             &singleton_schemas,
             "roadmap",
             "Some Milestone Plan Title",
+            root.path(),
         )
         .expect("singleton create succeeds");
         assert_eq!(
@@ -1145,11 +1189,210 @@ sections: []
         );
 
         // A non-singleton `create` still slugs the id_source (unchanged discipline).
-        let non_singleton = create(&task_dir, &schemas(), "commit", "Add rate limiter")
-            .expect("non-singleton create succeeds");
+        let non_singleton = create(
+            &task_dir,
+            &schemas(),
+            "commit",
+            "Add rate limiter",
+            root.path(),
+        )
+        .expect("non-singleton create succeeds");
         assert_eq!(
             non_singleton.address, "commit:add-rate-limiter",
             "a non-singleton still slugs the id_source",
+        );
+    }
+
+    /// A fixture `singleton: true` schema with one prose slot section — the running-doc
+    /// substrate shape (a fixed slug + real authorable content) the idempotent-create
+    /// tests drive over.
+    fn singleton_schema() -> Schema {
+        let yaml = b"\
+type: roadmap
+singleton: true
+location: roadmap/
+sections:
+  - id: overview
+    slot: {}
+";
+        crate::schema::load_schema(yaml).expect("singleton schema loads")
+    }
+
+    fn singleton_schemas() -> std::collections::BTreeMap<String, Schema> {
+        let mut m = std::collections::BTreeMap::new();
+        m.insert("roadmap".to_string(), singleton_schema());
+        m
+    }
+
+    /// (M16 inc-2 T2 — cold) `create` of a `singleton` with **no committed instance**
+    /// mints the empty template and round-trips byte-stable (`render(parse(.)) == .`).
+    /// With no `<repo_root>/roadmap/roadmap.md` on disk, the copy-in branch is inert and
+    /// the create falls through to the unchanged mint path (`provision_doc`), recording
+    /// `created` provenance. See `design/methodology-docs.md` → The engine work (item 2),
+    /// cold/warm spike.
+    #[test]
+    fn singleton_create_cold_mints_empty_and_round_trips_byte_stable() {
+        let root = TempRoot::new("singleton-cold");
+        let task_dir = root.path().join("tasks").join("plan");
+        let schema = singleton_schema();
+        let schemas = singleton_schemas();
+
+        // No committed roadmap/roadmap.md under the repo root → cold create.
+        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path())
+            .expect("cold singleton create succeeds");
+        assert_eq!(created.address, "roadmap:roadmap");
+        assert_eq!(
+            created.path,
+            task_dir.join("docs").join("roadmap:roadmap.md"),
+        );
+
+        // The minted bytes ARE the empty template (the unchanged mint path).
+        let minted = std::fs::read_to_string(&created.path).expect("read minted");
+        assert_eq!(
+            minted,
+            write::render(&schema, &empty_instance(&schema, "roadmap")),
+            "a cold singleton create mints the empty template (no copy-in)",
+        );
+
+        // Round-trips byte-stable: render(parse(minted)) == minted.
+        let reparsed = write::render(
+            &schema,
+            &write::instance_from_source(&schema, &minted).expect("minted template parses"),
+        );
+        assert_eq!(reparsed, minted, "the cold mint round-trips byte-stable");
+
+        // Cold provenance is `created`, not `edited-from-base`.
+        let provenance = ProvenanceRecord::load(&task_dir).expect("provenance loads");
+        assert_eq!(
+            provenance.get("roadmap:roadmap"),
+            Some(Provenance::Created),
+            "a cold singleton create records `created` provenance",
+        );
+    }
+
+    /// (M16 inc-2 T2 — warm) `create` of a `singleton` whose committed
+    /// `<location>/<ty>.md` **exists** copies the committed body in (the B-5 clobber
+    /// fix): the staged body is `first_touch_canonicalize` of the committed source —
+    /// **no clobber, prior content preserved** — and provenance is recorded
+    /// `edited-from-base`. An already-canonical committed doc copies in byte-for-byte
+    /// (the `first_touch_canonicalize`-is-a-no-op confirmation the warm spike needs).
+    /// See `design/methodology-docs.md` → The engine work (item 2).
+    #[test]
+    fn singleton_create_warm_copies_committed_body_in_no_clobber() {
+        let root = TempRoot::new("singleton-warm");
+        let task_dir = root.path().join("tasks").join("plan");
+        let schema = singleton_schema();
+        let schemas = singleton_schemas();
+
+        // A committed roadmap with prior authored content (already canonical: one
+        // trailing newline) at the singleton's fixed canonical path under the repo.
+        let committed = "---\n---\n\n# roadmap\n\n## Overview\n\nMilestone M15 shipped the checkpoint step kind.\n";
+        let committed_path = crate::store::canonical_path(root.path(), &schema, "roadmap")
+            .expect("singleton has a committed path");
+        std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk roadmap/");
+        std::fs::write(&committed_path, committed).expect("commit the prior roadmap");
+
+        // Warm create: copies the committed body in, does NOT mint blank.
+        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path())
+            .expect("warm singleton create succeeds");
+        assert_eq!(created.address, "roadmap:roadmap");
+
+        // The staged body preserves the prior content — it is the committed body,
+        // first-touch-canonicalized (a no-op here: already-canonical in == out).
+        let staged = std::fs::read_to_string(&created.path).expect("read staged");
+        assert_eq!(
+            staged,
+            write::first_touch_canonicalize(committed),
+            "the warm create copies the committed body in (first_touch_canonicalize)",
+        );
+        assert_eq!(
+            staged, committed,
+            "an already-canonical committed doc copies in byte-for-byte (no clobber, prior content preserved)",
+        );
+
+        // The committed source file is untouched (copy-in writes only the working copy).
+        assert_eq!(
+            std::fs::read_to_string(&committed_path).expect("re-read committed"),
+            committed,
+            "copy-in never touches the committed source",
+        );
+
+        // Warm provenance is `edited-from-base` — the base doc was copied in.
+        let provenance = ProvenanceRecord::load(&task_dir).expect("provenance loads");
+        assert_eq!(
+            provenance.get("roadmap:roadmap"),
+            Some(Provenance::EditedFromBase),
+            "a warm singleton create records `edited-from-base` provenance",
+        );
+    }
+
+    /// (M16 inc-2 T2 — the shared-primitive regression guard, review I-2) The
+    /// committed-copy-in branch is **gated to `singleton`**: a **non-singleton**
+    /// `create` on a slug whose committed `<location>/<slug>.md` exists STILL returns
+    /// the unchanged blocking `create.serial-collision` (after the slug is also staged
+    /// in the working area) — copy-in must never leak into the shared primitive the
+    /// `single-task` ADR/superseding flow depends on. The collision fires on the
+    /// working-area path, exactly as before; the committed file is irrelevant to a
+    /// non-singleton create. See `design/methodology-docs.md` → The engine work (item
+    /// 2, the shared-primitive regression).
+    #[test]
+    fn non_singleton_create_keeps_mint_or_reject_over_a_committed_slug() {
+        let root = TempRoot::new("non-singleton-regression");
+        let task_dir = root.path().join("tasks").join("supersede");
+
+        // An `adr` doctype is non-singleton with a committed `decisions/` location.
+        let adr_yaml = b"\
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: decision
+    slot: {}
+";
+        let adr = crate::schema::load_schema(adr_yaml).expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+
+        // A committed adr at the slug's canonical path — the warm condition a
+        // singleton would copy-in over.
+        let committed = "---\n---\n\n# Rate limit\n\n## Decision\n\nLimit at the gateway.\n";
+        let committed_path = crate::store::canonical_path(root.path(), &adr, "rate-limit")
+            .expect("adr has a committed path");
+        std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk decisions/");
+        std::fs::write(&committed_path, committed).expect("commit the prior adr");
+
+        // First create mints fresh (the committed file does NOT trigger copy-in for a
+        // non-singleton): the mint path runs, recording `created`.
+        let first = create(&task_dir, &schemas, "adr", "Rate limit", root.path())
+            .expect("a non-singleton create mints fresh over a committed slug");
+        assert_eq!(first.address, "adr:rate-limit");
+        let minted = std::fs::read_to_string(&first.path).expect("read minted");
+        assert_eq!(
+            minted,
+            write::render(&adr, &empty_instance(&adr, "rate-limit")),
+            "a non-singleton create mints the empty template, never copies the committed body in",
+        );
+        assert_eq!(
+            ProvenanceRecord::load(&task_dir)
+                .expect("provenance loads")
+                .get("adr:rate-limit"),
+            Some(Provenance::Created),
+            "a non-singleton create records `created`, never `edited-from-base`",
+        );
+
+        // A second create of the same slug rejects with the UNCHANGED blocking
+        // serial-collision — copy-in never substituted for the reject.
+        let collide = create(&task_dir, &schemas, "adr", "Rate limit", root.path())
+            .expect_err("a non-singleton committed-slug re-create rejects, unchanged");
+        assert_eq!(collide.severity, Severity::Blocking);
+        assert_eq!(collide.code, "create.serial-collision");
+        assert!(
+            collide.message.contains("adr:rate-limit"),
+            "the block names the colliding instance: {collide:?}",
+        );
+        assert!(
+            collide.route.is_some(),
+            "the serial collision carries a route"
         );
     }
 
@@ -1174,12 +1417,12 @@ sections: []
         }];
 
         // In the gate → proceeds (mints + provisions).
-        let ok = create_gated(&task_dir, &all, &gate, "adr", "Some Decision")
+        let ok = create_gated(&task_dir, &all, &gate, "adr", "Some Decision", root.path())
             .expect("a gate-admitted type proceeds");
         assert_eq!(ok.address, "adr:some-decision");
 
         // Not in the gate → structured gate-block with the loosen route.
-        let blocked = create_gated(&task_dir, &all, &gate, "commit", "x")
+        let blocked = create_gated(&task_dir, &all, &gate, "commit", "x", root.path())
             .expect_err("a disallowed type is gate-blocked");
         assert_eq!(blocked.severity, Severity::Blocking);
         assert_eq!(blocked.code, "create.gate-blocked");
@@ -1193,7 +1436,7 @@ sections: []
         );
 
         // Unknown type → unknown-doctype reject fires *before* the gate.
-        let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x")
+        let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x", root.path())
             .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
     }
@@ -1225,8 +1468,15 @@ sections: []
             "no roles.json exists before a bound create"
         );
 
-        let created = create_gated(&task_dir, &all, &gate, "adr", "Shared Redis session cache")
-            .expect("the gate-admitted adr is created");
+        let created = create_gated(
+            &task_dir,
+            &all,
+            &gate,
+            "adr",
+            "Shared Redis session cache",
+            root.path(),
+        )
+        .expect("the gate-admitted adr is created");
         assert_eq!(created.address, "adr:shared-redis-session-cache");
 
         // The bind landed: roles.json maps `decision -> adr:<slug>`, read back.
@@ -1248,8 +1498,15 @@ sections: []
             doc_type: "commit".to_string(),
             as_role: String::new(), // the bare form: create permission, no role
         }];
-        let _ = create_gated(&bare_dir, &all, &bare_gate, "commit", "Add rate limiter")
-            .expect("the bare-form-gated commit is created");
+        let _ = create_gated(
+            &bare_dir,
+            &all,
+            &bare_gate,
+            "commit",
+            "Add rate limiter",
+            root.path(),
+        )
+        .expect("the bare-form-gated commit is created");
         assert!(
             !RolesRecord::path_in(&bare_dir).exists(),
             "a bare-form entry (no `as:` role) binds nothing — no roles.json written"
