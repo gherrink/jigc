@@ -13,6 +13,7 @@ The flows:
 7. [Upgrade reconciliation](#7-upgrade-reconciliation--clean--conflict--orphaned) — the M5 arc: `jigc upgrade` re-classifies recorded deltas against a new pack
 8. [Severity tuning & demotion-lock](#8-severity-tuning--demotion-lock) — the M6 arc: a project tunes a check's severity through the cascade; an intrinsic demotion is floor-rejected
 9. [Multi-pack composition](#17-multi-pack-composition--dev--methodology-co-composed-m14) — the M14 arc: dev + methodology co-composed, collisions resolved by precedence, includes pack-local *(flow 17)*
+10. [Planning encode](#19-planning-encode--jigc-composes-its-own-milestone-planning-spine-and-maintains-its-running-docs-m16) — the M16 planning half: jigc composes its own milestone-planning spine (the Settle checkpoint) and authors-and-maintains its three running working-docs across two milestone runs *(flow 19)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -1174,3 +1175,113 @@ $ # a plain step whose body line-starts `Checkpoint: forged`  →  blocking
 7. **The honest bound is observed, not over-claimed.** The flow proves jigc *composes* the multi-phase human-gated spine; the **bound (≤3 rounds), the per-phase-agent independence, the independent read-only validate, and the re-run** stay orchestration-level (the build harness), unchanged by M15. A milestone record presenting the composed spine as the whole orchestration loop fails the scope-honesty bar ([self-hosting.md](self-hosting.md) → the two-half pattern).
 
 *(Spiked at planning against the real binary: `jigc start --workflow <X>` composes a `creates-task:false` workflow (exit 0); a `{{task.intent}}` inside it is a blocking finding; and a `checkpoint:` marker on a step today composes as **inert Reason prose** — `StepFrontMatter` does not reject unknown keys — which is exactly the "before" state this flow's assertion 2 converts to "after." The `Checkpoint:`-directive emission is the deliverable itself, so its assertion is the build's **red obligation**, provable only once the step kind is built.)*
+
+## 19. Planning encode — jigc composes its own milestone-planning spine and maintains its running docs (M16)
+
+The M16 planning half ([methodology-docs.md](methodology-docs.md#acceptance-flows) → Acceptance flows, Flow 19): jigc composes its **own milestone-planning workflow** (scope → detect-gaps → settle → review → decompose) as a methodology-pack definition, **and** authors-and-maintains the three running working-docs that loop produces — the `roadmap`, the `deferral-ledger`, and the `decisions-log` — as managed doctypes. This closes the planning machinery of the self-hosting loop the [increment encode](#18-increment-workflow-encode--a-multi-phase-human-gated-workflow-composed-through-jigc-m15) (flow 18) and M12's reduced dev-workflow opened. The doctype shapes, the singleton/own-location decisions, and the engine deltas (repeatable-section conformance, idempotent-create) are the design of record in [methodology-docs.md](methodology-docs.md) and are not restated here. Notation illustrative.
+
+The `planning` workflow is **`creates-task: true, selectable: false`** — the `sub-task` precedent ([methodology-docs.md](methodology-docs.md#the-authoring-spine--creates-task-true-selectable-false-the-sub-task-precedent)): it **mints a task** (so the running-doc authoring rides the proven create-gate + finalize-promote spine) yet ships **no `when`** and stays out of the methodology pack's `default-workflow.of` enum, so it is **off-router** (invoked directly, never offered by the model-free selection catalog). It declares `allows-create:` the three doctypes (`{type: roadmap, as: roadmap}`, `{type: deferral-ledger, as: ledger}`, `{type: decisions-log, as: log}`).
+
+**The honest bound (per [methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not), the single-agent-spine bound — sharper than M15).** The real milestone-planning loop is **multi-agent orchestration** — it fans out `capability-auditor`/`gap-detector`/`design-reviewer` recon and an independent design review. jigc composes the **single-agent linear spine** — the phases one agent walks, with the human-gated **Settle** made a structural `checkpoint` halt. The fanned recon and the independent review stay **orchestration-level** (the build harness) and irreducible judgment. The **build-time honesty watch** ([methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not), the `methodology_honesty_artifact` bar): the gap-detection and Settle phases stay **pure agent-judgment prose** — never a `gap-count ≥ N` lint or a structured checklist; the checkpoint **halts, it never scores**. And M16 proves the machinery on **fresh instances**, not jigc's own historical 800-line `roadmap.md`/`DECISIONS.md` (the in-place migration stays for v1; the roadmap's `decomposition` is a prose slot, the deferred one-level bound).
+
+### The walk — compose the planning spine, author the three running docs, finalize (run 1: cold-create)
+
+```text
+$ jigc setup                                                # installs the methodology pack
+$ jigc start --workflow planning "M-Alpha"                  # off-router, invoked directly; mints a task
+  Scope the milestone against the roadmap …                          ← step:plan-scope (Reason prose)
+  Detect the gaps — capability/coverage holes …                      ← step:detect-gaps (Reason prose, NOT a lint)
+
+  Checkpoint: settle                                                 ← the human-gated halt, made structural (M15 kind)
+  > Settle the gaps — the human-in-the-loop gate. … A gap consciously
+  > deferred is logged on the deferral ledger, keyed to the milestone
+  > that will own it. The human owns this gate.
+
+  Independently review the settled scope …                           ← step:plan-review (Reason prose)
+  Cut the milestone into ordered increments …                        ← step:decompose (Reason prose, one level)
+  Author the roadmap milestone entry …                               ← step:author-roadmap
+  Author the deferral-ledger entries …                               ← step:author-ledger
+  Author the decisions-log entry …                                   ← step:author-decisions
+  — jigc · all writes through `jigc`.
+
+# author the running docs through the task-scoped create-gate — idempotent-create then add-item/set-slot/set-field.
+# COLD (no committed singleton yet): `create` mints the fixed-slug instance (singleton ⇒ slug == type id).
+$ jigc doc create roadmap          --title Roadmap          # → roadmap:roadmap.md  (mints; cold)
+$ jigc doc create deferral-ledger  --title Deferral-Ledger  # → deferral-ledger:deferral-ledger.md
+$ jigc doc create decisions-log    --title Decisions-Log    # → decisions-log:decisions-log.md
+
+# one roadmap milestone entry — add-item returns the item address; author BOTH slots (the two-slot item case):
+$ jigc doc add-item roadmap:roadmap#milestones --title "M-Alpha"     # → roadmap:roadmap#milestones/<id>
+$ jigc doc set-slot <item>/proves         --from-file -             # "what M-Alpha proves"
+$ jigc doc set-slot <item>/decomposition  --from-file -             # the increments, AS PROSE (one-level bound)
+
+# a deferral-ledger entry — the kind enum (D/I) + the trigger milestone string + the body slot (date is set on-create):
+$ jigc doc add-item deferral-ledger:deferral-ledger#entries --title "defer the alpha cleanup"
+$ jigc doc set-field <entry>/kind     --value D                     # D = deferred decision, I = parked idea
+$ jigc doc set-field <entry>/trigger  --value M-Beta                # the milestone that resurfaces it (plain string)
+$ jigc doc set-slot  <entry>/body     --from-file -
+
+# a decisions-log entry — the why slot (date set on-create):
+$ jigc doc add-item decisions-log:decisions-log#entries --title "chose the alpha shape"
+$ jigc doc set-slot <entry>/why --from-file -
+
+$ jigc task finalize m-alpha
+> validate: clean
+> promote: roadmap/roadmap.md · ledger/deferral-ledger.md · decisions-log/decisions-log.md
+> commit:  docs(planning): plan a milestone   ← one commit, the three running singletons + the code
+```
+
+Each singleton promotes to **its own `location:` subdir** (`roadmap/`, `ledger/`, `decisions-log/` — never a shared root, the reconciliation-sweep + `identity_of` reason in [methodology-docs.md](methodology-docs.md#the-four-doctypes-earned-from-their-drivers)), and the committed bytes are **byte-stable** against the staged promote source.
+
+### Run 2 (a second milestone) — warm-append: idempotent-create copies-in, re-promotes byte-stable
+
+```text
+$ jigc start --workflow planning "M-Beta"                   # a second milestone, a second task
+# WARM (the singletons are already committed): `create` on an existing committed slug COPIES THE COMMITTED DOC IN
+#   (the read_or_copy_in path) — NOT a blank mint, NOT a clobber. The prior M-Alpha entry survives; provenance
+#   records `edited-from-base`. This is the create-or-update mechanism — the workflow always says "create the
+#   roadmap," safe whether or not it exists (a deterministic state-dependent write, not a workflow conditional).
+$ jigc doc create roadmap --title Roadmap                   # copy-in: the M-Alpha entry is preserved
+$ jigc doc add-item roadmap:roadmap#milestones --title "M-Beta"   # append the new milestone
+$ jigc doc set-slot <item>/proves        --from-file -
+$ jigc doc set-slot <item>/decomposition --from-file -
+#   … likewise warm-create + append the ledger and decisions-log entries …
+$ jigc task finalize m-beta
+> promote: roadmap/roadmap.md (re-promoted byte-stable, BOTH M-Alpha + M-Beta present) · …
+```
+
+The warm-promoted `roadmap/roadmap.md` carries **both** milestone entries; the ledger and log carry both runs' entries — the running singletons are **demonstrated maintained over time**, not only cold-created (the two-run bar, [methodology-docs.md](methodology-docs.md#acceptance-flows)). The copy-in keys on the schema's `singleton: true` flag, so non-singleton `create` (the MVP `single-task` ADR flow) keeps its mint-or-reject semantics unchanged.
+
+### The three reds — each fires-and-blocks on real input, not a fixture
+
+```text
+# RED 1 — a half-authored roadmap entry BLOCKS at validate (Increment 1's per-item conformance fires on THIS schema):
+$ jigc doc add-item roadmap:roadmap#milestones --title "M-Half"
+$ jigc doc set-slot <item>/proves --from-file -            # author `proves` ONLY; leave `decomposition` empty
+$ jigc task finalize m-half
+> BLOCK schema-conformance.required-slot-present @ roadmap:roadmap … #milestones/<id>/decomposition
+#   the gate names the genuinely-empty `decomposition` slot; non-zero exit, NO commit (the
+#   vacuously-green-managed-doc-gate guard — a real empty leaf, not a malformed fixture).
+
+# RED 2 — `planning` is ABSENT from the router catalog (selectable:false, off-router — the M8 catalog-leak class):
+$ jigc start                                               # bare orientation, the live front-door path
+> … (no catalog line names `planning`) …
+$ jigc start --format json | jq '.workflows[].id'         # the JSON `workflows` array carries no `planning` id
+
+# RED 3 — a baseline-recorded-then-OOB-drifted warm-append CONFLICT-BLOCKS at finalize-preflight:
+#   run 1's finalize records the committed baseline FIRST; the committed roadmap is then drifted out-of-band
+#   (a hand-edit + raw git commit advances HEAD without touching the recorded baseline → DRIFTED). A warm task
+#   copies-in + edits the roadmap (TOUCHED). reconcile_committed_store sees DRIFTED+TOUCHED → no silent merge.
+$ jigc task finalize m-drift
+> BLOCK reconciliation.conflict-block @ roadmap/roadmap.md      # non-zero exit, NO commit
+#   (recording-first is what makes this a genuine red — an unrecorded baseline would baseline-adopt vacuously.)
+```
+
+### What it asserts (the acceptance bar)
+
+1. **jigc composes its own planning spine.** `jigc start --workflow planning "<milestone>"` mints a task (off-router) and composes the five phases — scope / detect-gaps / settle / review / decompose — with **Settle** emitted as a structural `Checkpoint: settle` directive (the M15 `checkpoint` kind), driven from the real binary's emitted bytes.
+2. **The three running docs are authored and maintained across two milestone runs.** Run 1 cold-creates the `roadmap`/`deferral-ledger`/`decisions-log` singletons via idempotent-create + `add-item`/`set-slot`/`set-field`, finalize promotes each to its own `location:` subdir byte-stable; run 2 warm-re-creates (copy-in preserves the prior milestone, provenance `edited-from-base`), appends, and re-promotes byte-stable with **both** runs present. The roadmap milestone entry authors **both** the `proves` and the prose `decomposition` slots (the two-slot repeatable-item case).
+3. **The conformance gate fires on a real empty leaf.** A half-authored roadmap entry — `proves` authored, `decomposition` genuinely empty — **blocks** finalize at `schema-conformance.required-slot-present` naming the empty `decomposition` slot, non-zero exit with no commit (Increment 1's per-item conformance over this schema's leaves, the vacuously-green-managed-doc-gate guard).
+4. **`planning` is off-router.** Bare `jigc start` lists no `planning` catalog line and the `--format json` `workflows` array carries no `planning` id — `selectable: false`, the M8 catalog-leak class, asserted on the live front-door bytes.
+5. **A drifted warm-append conflict-blocks, never silently merges.** With the committed baseline recorded by run 1's finalize, an out-of-band edit to the committed roadmap (DRIFTED) plus a warm task that touches it (TOUCHED) **conflict-blocks** at finalize-preflight with `reconciliation.conflict-block`, non-zero exit, no commit (the storage-is-human-editable invariant: OOB conflicts route to a human, never silent merge).
+6. **The honest bound is observed, not over-claimed.** The flow proves jigc *composes* the single-agent planning spine and *maintains* its three running docs on **fresh instances**; the fanned recon, the independent design review, and jigc managing its *own* historical two-level roadmap stay out of scope ([methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not)). The build-honesty watch holds: gap-detect and Settle stay agent-judgment prose, never a gap-count lint (the `methodology_honesty_artifact` bar).
