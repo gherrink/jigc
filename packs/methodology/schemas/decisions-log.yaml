@@ -1,0 +1,27 @@
+# decisions-log — the methodology pack's running log of decisions made (M16
+# inc-4 / T1). A running SINGLETON (fixed slug = the type id, always
+# `decisions-log/decisions-log.md`), so a re-`create` deterministically targets
+# the same committed file — the premise the planning workflow's idempotent-create
+# rests on. One repeatable `entries` section; each entry records the `date` the
+# call was made (CLI-derived on create) and a `why` prose slot for its rationale.
+# Driven by planning · Settle and completion · triage.
+#
+# Section ids are SINGLE WORDS ONLY (`entries`): the multi-word title-case reparse
+# defect is deferred — this routes around it. No managed per-entry ref (entries
+# cross-reference in prose; the methodology pack composes alone). Engine-native
+# types only. See design/methodology-docs.md → The four doctypes.
+type: decisions-log
+location: decisions-log/
+singleton: true
+id-from: title
+description: The running log of decisions made — each with the date it was settled and the reasoning behind it.
+usage: the planning loop reaches Settle (or completion reaches triage) and a decision is made worth preserving with its rationale, dated, on the record.
+
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: date, type: date, set: on-create }
+        - { id: why, slot: { hint: "Why this was decided — the reasoning, in a sentence or two." } }

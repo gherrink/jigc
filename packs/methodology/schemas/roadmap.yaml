@@ -1,0 +1,28 @@
+# roadmap — the methodology pack's running milestone spine (M16 inc-4 / T1). A
+# running SINGLETON (fixed slug = the type id, always `roadmap/roadmap.md`), so a
+# re-`create` deterministically targets the same committed file — the premise the
+# planning workflow's idempotent-create rests on. One repeatable `milestones`
+# section; each entry carries a `proves` slot + a `decomposition` slot that holds
+# the per-increment breakdown as PROSE — the deferred one-level bound (structured
+# milestone→increment items wait for multi-level repetition).
+#
+# Section ids are SINGLE WORDS ONLY (`milestones`): a multi-word id trips the
+# logged title-case reparse defect, deferred — these route around it exactly as
+# `arch-doc`/`prd` did. Engine-native types only (no pack field-types declared).
+# See design/methodology-docs.md → The four doctypes (singleton/own-location;
+# the one-level decomposition-slot bound; no managed per-entry ref).
+type: roadmap
+location: roadmap/
+singleton: true
+id-from: title
+description: The running milestone spine — each milestone with what it proves and the prose decomposition of its increments.
+usage: the planning loop reaches Decompose and a milestone's breakdown is worth recording on the durable roadmap.
+
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { hint: "What this milestone proves — the differentiator it converts from supported to demonstrated." } }
+        - { id: decomposition, slot: { hint: "The increments, as prose: each increment's deliverable and the tasks that build it, one level." } }

@@ -1,0 +1,328 @@
+//! M16 Increment 4 / T1 — the three methodology running-doc schemas
+//! (`roadmap` / `deferral-ledger` / `decisions-log`), proven through the real
+//! `jigc` binary AND asserted at their EXACT new shape (`design/methodology-docs.md`
+//! → The four doctypes).
+//!
+//! These are pure pack data — zero `crates/*/src` change. The singleton flag +
+//! own-`location:` mechanism was proven by the `runlog` FIXTURE (inc-2 T3); this
+//! file proves the three REAL shipped YAML files, so the assertions exercise the
+//! exact shapes the planning workflow authors, not a fixture stand-in.
+//!
+//! Two layers of proof:
+//!
+//!   (a) **Through the real binary.** `JIGC_PACK_DIR=<methodology> jigc setup` then
+//!       `jigc describe --format json` loads every methodology schema through the
+//!       cascade (`CascadeDefs::all_schemas`) — a malformed YAML or an undeclared
+//!       field type would make `describe` exit non-zero. The three doctypes appear
+//!       in the projection, so the binary genuinely parsed and resolved them.
+//!
+//!   (b) **The exact new shape.** Each shipped YAML's bytes are loaded through the
+//!       engine's public `load_schema` (engine-native types only — the same loader
+//!       the binary runs, fed no pack field-types, which the methodology pack does
+//!       not declare). Each carries `singleton: true`, its OWN `location:` subdir,
+//!       the single repeatable section, and the declared leaves (the `kind` enum
+//!       members, the `date` `set: on-create` fields).
+
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+use engine::schema::{FieldType, Leaf, Schema, SectionBody, load_schema};
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        let unique = format!(
+            "jigc-methodology-running-doctypes-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        );
+        path.push(unique);
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The on-disk methodology pack home (`<root>/packs/methodology`).
+fn methodology_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
+}
+
+/// Read a shipped methodology schema YAML's exact bytes from the on-disk pack tree.
+fn methodology_schema_bytes(file: &str) -> Vec<u8> {
+    fs::read(methodology_pack_tree().join("schemas").join(file))
+        .unwrap_or_else(|e| panic!("read methodology schema {file}: {e}"))
+}
+
+/// Initialize a real git repo with one commit (composition mints, which reads HEAD).
+fn init_repo(root: &Path) {
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "test@example.com"]);
+    git(&["config", "user.name", "Test"]);
+    fs::write(root.join("README.md"), "hello\n").expect("write file");
+    git(&["add", "."]);
+    git(&["commit", "-q", "-m", "initial"]);
+}
+
+/// Run a `jigc` subcommand with `cwd = repo`, `$HOME = home`, `JIGC_PACK_DIR = pack`.
+fn run_jigc(repo: &Path, home: &Path, pack_dir: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack_dir)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Locate the single repeatable section of `schema` by id, returning its
+/// `id-from` source field and the item block's leaves.
+fn repeatable_block<'a>(schema: &'a Schema, section_id: &str) -> (&'a str, &'a [Leaf]) {
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .unwrap_or_else(|| panic!("{} has a `{section_id}` section", schema.ty));
+    match &section.body {
+        SectionBody::Repeatable { repeatable } => {
+            (repeatable.id_from.as_str(), repeatable.block.as_slice())
+        }
+        SectionBody::Simple { .. } => {
+            panic!("{}'s `{section_id}` section must be repeatable", schema.ty)
+        }
+    }
+}
+
+/// The leaf field with `id` inside a repeatable block, or `None` if it is a slot /
+/// absent.
+fn block_field<'a>(block: &'a [Leaf], id: &str) -> Option<&'a engine::schema::Field> {
+    block.iter().find_map(|leaf| match leaf {
+        Leaf::Field(f) if f.id == id => Some(f.as_ref()),
+        _ => None,
+    })
+}
+
+/// `true` when the block carries a prose slot leaf named `id`.
+fn block_has_slot(block: &[Leaf], id: &str) -> bool {
+    block
+        .iter()
+        .any(|leaf| matches!(leaf, Leaf::Slot { id: i, .. } if i == id))
+}
+
+#[test]
+fn the_three_running_doctypes_load_through_the_binary_describe_projection() {
+    // (a) The real binary loads all three schemas as part of the methodology pack.
+    // `jigc describe` reads every doctype schema through the cascade — a malformed
+    // YAML or an undeclared field type would exit non-zero. The three appear in the
+    // JSON projection's doctype list, proving the binary parsed + resolved them.
+    let repo = TempDir::new("describe");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["describe", "--format", "json"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc describe` over the methodology pack must load every schema and exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("describe --format json emits valid JSON");
+    let doctype_ids: Vec<&str> = json["definitions"]
+        .as_array()
+        .expect("definitions is an array")
+        .iter()
+        .filter(|d| d["kind"] == "doctype")
+        .filter_map(|d| d["id"].as_str())
+        .collect();
+    for ty in ["roadmap", "deferral-ledger", "decisions-log"] {
+        assert!(
+            doctype_ids.contains(&ty),
+            "the `{ty}` doctype must surface in describe (the binary loaded its schema); \
+             got doctype ids: {doctype_ids:?}",
+        );
+    }
+}
+
+#[test]
+fn roadmap_schema_is_a_singleton_with_a_milestones_repeatable_and_two_slots() {
+    let schema = load_schema(&methodology_schema_bytes("roadmap.yaml"))
+        .expect("roadmap.yaml loads engine-native");
+    assert_eq!(schema.ty, "roadmap");
+    assert!(schema.singleton, "roadmap is a running singleton");
+    assert_eq!(
+        schema.location.as_deref(),
+        Some("roadmap/"),
+        "roadmap gets its OWN location subdir",
+    );
+
+    let (id_from, block) = repeatable_block(&schema, "milestones");
+    assert_eq!(
+        id_from, "title",
+        "the milestones entry is slugged from `title`"
+    );
+    assert!(
+        block_field(block, "title").is_some(),
+        "the milestones entry carries a `title` id-source field",
+    );
+    // The decomposition (increments-as-prose) and the `proves` differentiator are
+    // prose slots — the one-level bound (no structured sub-items).
+    assert!(
+        block_has_slot(block, "proves"),
+        "the milestones entry carries a `proves` slot",
+    );
+    assert!(
+        block_has_slot(block, "decomposition"),
+        "the milestones entry carries a `decomposition` slot (increments-as-prose)",
+    );
+}
+
+#[test]
+fn deferral_ledger_schema_is_a_singleton_with_a_kind_enum_and_an_on_create_date() {
+    let schema = load_schema(&methodology_schema_bytes("deferral-ledger.yaml"))
+        .expect("deferral-ledger.yaml loads engine-native");
+    assert_eq!(schema.ty, "deferral-ledger");
+    assert!(schema.singleton, "deferral-ledger is a running singleton");
+    assert_eq!(
+        schema.location.as_deref(),
+        Some("ledger/"),
+        "deferral-ledger gets its OWN location subdir",
+    );
+
+    let (id_from, block) = repeatable_block(&schema, "entries");
+    assert_eq!(id_from, "title");
+
+    // `kind` is an enum over exactly the D/I members (deferred decision vs parked
+    // idea) — the declared leaf the done-criterion names.
+    let kind = block_field(block, "kind").expect("the entry carries a `kind` field");
+    assert_eq!(kind.ty, FieldType::Enum, "`kind` is an enum");
+    assert_eq!(
+        kind.of.as_deref(),
+        Some(["D", "I"].map(String::from).as_slice()),
+        "`kind` enumerates exactly the D/I members",
+    );
+
+    // `trigger` is a plain string (a milestone work-unit, NOT a managed ref).
+    let trigger = block_field(block, "trigger").expect("the entry carries a `trigger` field");
+    assert_eq!(trigger.ty, FieldType::String, "`trigger` is a plain string");
+    assert!(trigger.to.is_none(), "`trigger` is no managed ref");
+
+    // `date` is CLI-derived on create — the declared `set: on-create` leaf.
+    let date = block_field(block, "date").expect("the entry carries a `date` field");
+    assert_eq!(date.ty, FieldType::Date, "`date` is a date field");
+    assert_eq!(
+        date.set.as_deref(),
+        Some("on-create"),
+        "`date` is CLI-derived on create",
+    );
+
+    // The deferral itself is a prose `body` slot.
+    assert!(
+        block_has_slot(block, "body"),
+        "the entry carries a `body` slot",
+    );
+}
+
+#[test]
+fn decisions_log_schema_is_a_singleton_with_an_on_create_date_and_a_why_slot() {
+    let schema = load_schema(&methodology_schema_bytes("decisions-log.yaml"))
+        .expect("decisions-log.yaml loads engine-native");
+    assert_eq!(schema.ty, "decisions-log");
+    assert!(schema.singleton, "decisions-log is a running singleton");
+    assert_eq!(
+        schema.location.as_deref(),
+        Some("decisions-log/"),
+        "decisions-log gets its OWN location subdir",
+    );
+
+    let (id_from, block) = repeatable_block(&schema, "entries");
+    assert_eq!(id_from, "title");
+
+    // `date` set: on-create — the declared leaf.
+    let date = block_field(block, "date").expect("the entry carries a `date` field");
+    assert_eq!(date.ty, FieldType::Date, "`date` is a date field");
+    assert_eq!(
+        date.set.as_deref(),
+        Some("on-create"),
+        "`date` is CLI-derived on create",
+    );
+
+    // The rationale is a prose `why` slot.
+    assert!(
+        block_has_slot(block, "why"),
+        "the entry carries a `why` slot",
+    );
+}
+
+#[test]
+fn the_three_singletons_each_own_a_distinct_location_subdir() {
+    // Review finding B-1: each persisted doctype gets its OWN location subdir, never
+    // a shared root — three doctypes sharing one location breaks `identity_of`
+    // (first-prefix-wins) and would vacuum root markdown into the reconciliation
+    // sweep. The three locations must be pairwise-distinct (and none is the root).
+    let locations: Vec<String> = ["roadmap.yaml", "deferral-ledger.yaml", "decisions-log.yaml"]
+        .into_iter()
+        .map(|file| {
+            load_schema(&methodology_schema_bytes(file))
+                .unwrap_or_else(|e| panic!("{file} loads: {e}"))
+                .location
+                .unwrap_or_else(|| panic!("{file} declares a location"))
+        })
+        .collect();
+    for loc in &locations {
+        assert_ne!(loc, "./", "no running doctype shares the root location");
+        assert_ne!(loc, ".", "no running doctype shares the root location");
+    }
+    let mut sorted = locations.clone();
+    sorted.sort();
+    sorted.dedup();
+    assert_eq!(
+        sorted.len(),
+        locations.len(),
+        "the three running doctypes own pairwise-distinct location subdirs; got: {locations:?}",
+    );
+}
