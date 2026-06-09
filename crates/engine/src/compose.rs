@@ -925,18 +925,19 @@ pub struct StepDef {
     /// The verbatim prompt body (post-front-matter remainder, byte-for-byte).
     pub body: String,
     /// The step kind, parsed from the front-matter markers. A plain step (no
-    /// `fan-out:`/`join:` marker) is [`StepKind::Plain`].
+    /// `fan-out:`/`join:`/`checkpoint:` marker) is [`StepKind::Plain`].
     pub kind: StepKind,
 }
 
 /// A step's kind, parsed from its front-matter markers (`workflow-dialect.md` →
 /// On-disk definition format). A plain step (no marker, or no front-matter at
 /// all) is [`StepKind::Plain`]; a `fan-out:` marker is [`StepKind::FanOut`]; a
-/// `join: {}` marker is [`StepKind::Join`]. The markers are **parsed and
-/// honored**, not stripped — pre-M8 `load_step_def` discarded all step
-/// front-matter, so a `fan-out:` marker silently composed as inert prose
-/// (`DECISIONS.md` 2026-06-04). The kind reaches [`ComposedStep`] so the emit
-/// (`Spawn:`) and `workflow-refs` passes can read it without re-parsing.
+/// `join: {}` marker is [`StepKind::Join`]; a `checkpoint:` marker is
+/// [`StepKind::Checkpoint`] (M15). The markers are **parsed and honored**, not
+/// stripped — pre-M8 `load_step_def` discarded all step front-matter, so a
+/// `fan-out:` marker silently composed as inert prose (`DECISIONS.md`
+/// 2026-06-04). The kind reaches [`ComposedStep`] so the emit (`Spawn:`) and
+/// `workflow-refs` passes can read it without re-parsing.
 ///
 /// Internally tagged (like [`CommandArg`]) so the serde projection is an
 /// unambiguous golden discriminant.
@@ -958,17 +959,29 @@ pub enum StepKind {
     /// A `join` step: the barrier that merges the fanned sub-task areas by
     /// task-id order. Carries no parameters (`join: {}`).
     Join,
+    /// A `checkpoint` step (M15): a structural human-gate that halts execution to
+    /// surface a decision. `reason` is a stable slug naming *which* halt point this
+    /// is (`new-fork-at-plan`, …) — a label for the human/orchestrator, not a CLI
+    /// condition. Required and non-empty. There is **no pairing rule** (unlike
+    /// `fan-out`↔`join`): a checkpoint is standalone, valid anywhere in a body
+    /// (`workflow-dialect.md` → The checkpoint step kind).
+    Checkpoint {
+        /// The `reason:` slug naming this halt point.
+        reason: String,
+    },
 }
 
 /// The config-family front-matter of a step definition, as YAML — the optional
-/// `fan-out:` / `join:` markers. Both default absent (a plain step needs no
-/// front-matter); the kind validation happens in [`load_step_def`].
+/// `fan-out:` / `join:` / `checkpoint:` markers. All default absent (a plain step
+/// needs no front-matter); the kind validation happens in [`load_step_def`].
 #[derive(Deserialize)]
 struct StepFrontMatter {
     #[serde(rename = "fan-out", default)]
     fan_out: Option<FanOutMarker>,
     #[serde(default)]
     join: Option<serde_yaml_ng::Value>,
+    #[serde(default)]
+    checkpoint: Option<CheckpointMarker>,
 }
 
 /// The `fan-out:` marker body: `over` (the list-source path) and `run` (the
@@ -977,6 +990,13 @@ struct StepFrontMatter {
 struct FanOutMarker {
     over: Option<String>,
     run: Option<String>,
+}
+
+/// The `checkpoint:` marker body: `reason` (the halt-point slug). Required and
+/// non-empty — a missing/blank reason is a malformed kind (M15).
+#[derive(Deserialize)]
+struct CheckpointMarker {
+    reason: Option<String>,
 }
 
 /// Parse one step definition's raw bytes into a [`StepDef`] under `id`.
@@ -1018,12 +1038,14 @@ pub fn load_step_def(id: impl Into<String>, bytes: &[u8]) -> Result<StepDef, Fin
 }
 
 /// Parse a step's front-matter YAML into its [`StepKind`], honoring the
-/// `fan-out:` / `join:` markers (`workflow-dialect.md` → On-disk definition
-/// format). A blocking, **located** `workflow-refs.step-kind-malformed`
-/// [`Finding`] (pointing at the front-matter, line 2) rejects: malformed YAML,
-/// **both** markers present (a step is one kind), or a `fan-out` missing `over`
-/// or `run` (both are required). Front-matter that declares neither marker — any
-/// other config a step might carry — is [`StepKind::Plain`].
+/// `fan-out:` / `join:` / `checkpoint:` markers (`workflow-dialect.md` → On-disk
+/// definition format). A step is **exactly one kind**: a blocking, **located**
+/// `workflow-refs.step-kind-malformed` [`Finding`] (pointing at the front-matter,
+/// line 2) rejects: malformed YAML, **more than one** marker present (the
+/// three-marker mutual-exclusivity check, M15), a `fan-out` missing `over` or
+/// `run` (both required), or a `checkpoint` missing/blank `reason`. Front-matter
+/// that declares no marker — any other config a step might carry — is
+/// [`StepKind::Plain`].
 fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
     // The front-matter begins on line 2 (line 1 is the opening `---` fence).
     let malformed = |msg: &str| {
@@ -1035,24 +1057,38 @@ fn parse_step_kind(front: &str) -> Result<StepKind, Finding> {
     };
     let meta: StepFrontMatter = serde_yaml_ng::from_str(front)
         .map_err(|source| malformed(&format!("not valid config-family YAML: {source}")))?;
-    match (meta.fan_out, meta.join) {
-        (Some(_), Some(_)) => Err(malformed(
-            "a step is one kind, but both `fan-out:` and `join:` are present",
-        )),
-        (Some(fan_out), None) => {
-            let over = fan_out
-                .over
-                .filter(|s| !s.trim().is_empty())
-                .ok_or_else(|| malformed("`fan-out` requires a non-empty `over:`"))?;
-            let run = fan_out
-                .run
-                .filter(|s| !s.trim().is_empty())
-                .ok_or_else(|| malformed("`fan-out` requires a non-empty `run:`"))?;
-            Ok(StepKind::FanOut { over, run })
-        }
-        (None, Some(_)) => Ok(StepKind::Join),
-        (None, None) => Ok(StepKind::Plain),
+
+    // Mutual exclusivity across all three markers: a step is exactly one kind.
+    let marker_count =
+        meta.fan_out.is_some() as u8 + meta.join.is_some() as u8 + meta.checkpoint.is_some() as u8;
+    if marker_count > 1 {
+        return Err(malformed(
+            "a step is one kind, but more than one of `fan-out:` / `join:` / `checkpoint:` is present",
+        ));
     }
+
+    if let Some(fan_out) = meta.fan_out {
+        let over = fan_out
+            .over
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| malformed("`fan-out` requires a non-empty `over:`"))?;
+        let run = fan_out
+            .run
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| malformed("`fan-out` requires a non-empty `run:`"))?;
+        return Ok(StepKind::FanOut { over, run });
+    }
+    if meta.join.is_some() {
+        return Ok(StepKind::Join);
+    }
+    if let Some(checkpoint) = meta.checkpoint {
+        let reason = checkpoint
+            .reason
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| malformed("`checkpoint` requires a non-empty `reason:`"))?;
+        return Ok(StepKind::Checkpoint { reason });
+    }
+    Ok(StepKind::Plain)
 }
 
 /// Parse one workflow definition's raw bytes into a [`WorkflowDef`].
@@ -3462,6 +3498,96 @@ reference — make your consequences explain what changes:
             b"---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n---\nbody\n",
         )
         .expect_err("missing run rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// The M15 done-criterion: a `checkpoint: {reason: <slug>}` step loads as
+    /// `StepKind::Checkpoint { reason }` with its body intact (`workflow-dialect.md`
+    /// → The checkpoint step kind — `checkpoint:` carries one field, `reason`).
+    #[test]
+    fn checkpoint_step_has_checkpoint_kind() {
+        let cp = load_step_def(
+            "plan-gate",
+            b"---\ncheckpoint:\n  reason: new-fork-at-plan\n---\nIf planning surfaced a genuinely new fork, stop and surface it.\n",
+        )
+        .expect("loads");
+        assert_eq!(
+            cp.kind,
+            StepKind::Checkpoint {
+                reason: "new-fork-at-plan".to_owned(),
+            }
+        );
+        assert_eq!(
+            cp.body,
+            "If planning surfaced a genuinely new fork, stop and surface it.\n"
+        );
+    }
+
+    /// The serde-tagged golden discriminant for the new variant: `StepKind` is
+    /// internally tagged (`#[serde(tag = "kind", rename_all = "kebab-case")]`), so
+    /// `Checkpoint { reason }` projects to `{"kind": "checkpoint", "reason": …}` —
+    /// an unambiguous discriminant a rename would break.
+    #[test]
+    fn checkpoint_kind_serde_discriminant() {
+        let kind = StepKind::Checkpoint {
+            reason: "new-fork-at-plan".to_owned(),
+        };
+        let json = serde_json::to_string_pretty(&kind).expect("serializes");
+        insta::assert_snapshot!(json, @r#"
+        {
+          "kind": "checkpoint",
+          "reason": "new-fork-at-plan"
+        }
+        "#);
+    }
+
+    /// `checkpoint` alongside any other marker (`fan-out` here) is a blocking,
+    /// **located** conformance finding — a step is exactly one kind, now a
+    /// three-marker mutual-exclusivity check (`workflow-dialect.md` → Engine
+    /// reality: `parse_step_kind` becomes a three-marker mutual-exclusivity check).
+    #[test]
+    fn checkpoint_plus_fan_out_is_blocking_located_finding() {
+        let err = load_step_def(
+            "confused-cp",
+            b"---\ncheckpoint:\n  reason: x\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nbody\n",
+        )
+        .expect_err("checkpoint + fan-out rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// `checkpoint` alongside `join` is equally rejected — the mutual-exclusivity
+    /// holds across every pair of the three markers.
+    #[test]
+    fn checkpoint_plus_join_is_blocking_located_finding() {
+        let err = load_step_def(
+            "confused-cp-join",
+            b"---\ncheckpoint:\n  reason: x\njoin: {}\n---\nbody\n",
+        )
+        .expect_err("checkpoint + join rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// A `checkpoint` marker with an empty `reason` is rejected — the `reason` slug
+    /// is required (mirrors `fan-out`'s required `over`/`run`).
+    #[test]
+    fn checkpoint_empty_reason_is_blocking_located_finding() {
+        let err = load_step_def(
+            "blank-reason",
+            b"---\ncheckpoint:\n  reason: \"   \"\n---\nbody\n",
+        )
+        .expect_err("empty reason rejected");
+        assert_eq!(err.code, "workflow-refs.step-kind-malformed");
+        assert!(err.location.is_some(), "finding is located");
+    }
+
+    /// A `checkpoint` marker missing `reason` entirely is likewise rejected.
+    #[test]
+    fn checkpoint_missing_reason_is_blocking_located_finding() {
+        let err = load_step_def("no-reason", b"---\ncheckpoint: {}\n---\nbody\n")
+            .expect_err("missing reason rejected");
         assert_eq!(err.code, "workflow-refs.step-kind-malformed");
         assert!(err.location.is_some(), "finding is located");
     }
