@@ -14,6 +14,7 @@ The flows:
 8. [Severity tuning & demotion-lock](#8-severity-tuning--demotion-lock) — the M6 arc: a project tunes a check's severity through the cascade; an intrinsic demotion is floor-rejected
 9. [Multi-pack composition](#17-multi-pack-composition--dev--methodology-co-composed-m14) — the M14 arc: dev + methodology co-composed, collisions resolved by precedence, includes pack-local *(flow 17)*
 10. [Planning encode](#19-planning-encode--jigc-composes-its-own-milestone-planning-spine-and-maintains-its-running-docs-m16) — the M16 planning half: jigc composes its own milestone-planning spine (the Settle checkpoint) and authors-and-maintains its three running working-docs across two milestone runs *(flow 19)*
+11. [Completion encode](#20-completion-encode--jigc-composes-its-own-milestone-completion-spine-and-the-5-owner-artifact-gate-m16) — the M16 completion half: jigc composes its own milestone-completion spine (the audit/triage/fix/re-verify halts as checkpoints), create-fresh authors the per-milestone completion-record, appends the decisions-log, and `finalize` promotes the owner-artifact in-transaction + fires the #5 presence gate *(flow 20)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -1285,3 +1286,103 @@ $ jigc task finalize m-drift
 4. **`planning` is off-router.** Bare `jigc start` lists no `planning` catalog line and the `--format json` `workflows` array carries no `planning` id — `selectable: false`, the M8 catalog-leak class, asserted on the live front-door bytes.
 5. **A drifted warm-append conflict-blocks, never silently merges.** With the committed baseline recorded by run 1's finalize, an out-of-band edit to the committed roadmap (DRIFTED) plus a warm task that touches it (TOUCHED) **conflict-blocks** at finalize-preflight with `reconciliation.conflict-block`, non-zero exit, no commit (the storage-is-human-editable invariant: OOB conflicts route to a human, never silent merge).
 6. **The honest bound is observed, not over-claimed.** The flow proves jigc *composes* the single-agent planning spine and *maintains* its three running docs on **fresh instances**; the fanned recon, the independent design review, and jigc managing its *own* historical two-level roadmap stay out of scope ([methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not)). The build-honesty watch holds: gap-detect and Settle stay agent-judgment prose, never a gap-count lint (the `methodology_honesty_artifact` bar).
+
+## 20. Completion encode — jigc composes its own milestone-completion spine and the #5 owner-artifact gate (M16)
+
+The M16 completion half ([methodology-docs.md](methodology-docs.md#acceptance-flows) → Acceptance flows, Flow 20): jigc composes its **own milestone-completion workflow** (audit → triage → fix → re-verify) as a methodology-pack definition, **create-fresh authors** the per-milestone `completion-record` (the audit `verdict` + the `owner-artifact` owned-location path + the triaged `findings`), **appends** the running `decisions-log` with the triage decisions, and `finalize` **promotes the owner-artifact in the same transaction** and runs the intrinsic **#5 owner-artifact presence gate**. With [flow 19](#19-planning-encode--jigc-composes-its-own-milestone-planning-spine-and-maintains-its-running-docs-m16) (the planning half) this closes the self-hosting *machinery* loop. The doctype shape (the `meta` header's `verdict`/`owner-artifact`, the repeatable `findings`), the create-fresh `id-from: title` decision, and the engine deltas (the #5 presence gate, repeatable-section conformance) are the design of record in [methodology-docs.md](methodology-docs.md) and are not restated here. Notation illustrative.
+
+The `completion` workflow is **`creates-task: true, selectable: false`** — the same `sub-task` precedent as `planning` ([methodology-docs.md](methodology-docs.md#the-authoring-spine--creates-task-true-selectable-false-the-sub-task-precedent)): it **mints a task** (so the record authoring + the append ride the proven create-gate + finalize-promote spine) yet ships **no `when`** and stays out of the methodology pack's `default-workflow.of` enum, so it is **off-router**. It declares `allows-create:` the per-milestone `completion-record` (`as: record`) and the running `decisions-log` (`as: log`).
+
+**The honest bound (per [methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not), the single-agent-spine bound — sharper than M15).** The real milestone-completion loop is **multi-agent orchestration** — parallel `milestone-code-reviewer`/`milestone-e2e-tester` audits plus per-finding fix agents. jigc composes the **single-agent linear spine** — the phases one agent walks, with the human-gated **triage** and **fix-round-cap** halts made structural `checkpoint` directives, and the #5 presence gate made a finalize check. The independent audit passes — and the **green/red verdict** they produce — stay **orchestration-level** (the build harness) and irreducible judgment: the spine *records* the verdict and findings, it does **not** certify them. The **build-time honesty watch** ([methodology-docs.md](methodology-docs.md#what-m16-proves-and-what-it-does-not), the `methodology_honesty_artifact` bar): the audit/triage phases stay **pure agent-judgment prose** — never a structured checklist or count threshold; the checkpoints **halt, they never score**. And the **#5 gate is presence, not judgment** — it asserts a file *exists* at the named owned path, never reads its bytes (a content-reading check would have crossed into the audit judgment the gate only brackets — the determinism boundary). It is a **backstop**: you cannot finalize a completion without recording *something* at the named path; it does not prove the audit was genuine — that stays the orchestrator's recorded responsibility ([methodology-docs.md](methodology-docs.md#the-engine-work-bounded-risk-first), item 3, the anti-vacuity statement).
+
+### The walk — compose the completion spine, author the record, append the log, finalize
+
+```text
+$ jigc setup                                                # installs the methodology pack
+$ jigc start --workflow completion "M16"                    # off-router, invoked directly; mints a task
+  Audit the assembled milestone … {{task.intent}} = M16 …            ← step:audit (Reason prose, NOT a checklist)
+
+  Checkpoint: triage-gate                                            ← the human-gated triage halt (M15 kind)
+  > Triage each finding — verify it is real … the human gate fires
+  > for exactly two cases: a fix too big for the lane, and a contested
+  > finding. … The human owns this gate.
+
+  Checkpoint: fix-rounds-exhausted                                   ← the fix-round-cap halt (bounded to three)
+  > For each blocking finding, run a dev-workflow fix task … bounded
+  > to three rounds. If blocking findings remain, stop and surface it.
+
+  Re-verify — the full gate green AND re-run the affected audit slice … ← step:re-verify (Reason prose)
+  Record the completion audit on the per-milestone completion-record … ← step:author-completion-record
+  Record each triage decision on the running decisions log …          ← step:author-decisions
+  — jigc · all writes through `jigc`.
+
+# create-fresh the per-milestone record — `id-from: title` mints `completions/M16.md` (the proven adr/spec
+# mint, NOT the running-doc copy-in). Author the `meta` header (the audit verdict + the owner-artifact path):
+$ jigc doc create completion-record --title "M16"           # → completion-record:m16  (mints; create-fresh)
+$ jigc doc set-field completion-record:m16#meta/verdict        --value green
+$ jigc doc set-field completion-record:m16#meta/owner-artifact --value completions/artifacts/M16/audit.md
+#   the owner-artifact MUST live under the owned home `completions/artifacts/<milestone>/` — write the genuine
+#   -audit file there + `git add` it (the orchestrator's same-transaction recording), then name the path here.
+
+# one triaged finding per audit finding — title + severity/disposition enums + an `evidence` STRING
+# (a plain `set-field` string: the file:line / repro / trace — NOT a managed ref, the methodology pack
+# composes alone, so an adr/spec target would point outside the composed schema universe):
+$ jigc doc add-item completion-record:m16#findings --title "A confirmed finding"   # → …#findings/<id>
+$ jigc doc set-field <item>/severity    --value blocking
+$ jigc doc set-field <item>/disposition --value fixed                  # fixed / deferred / contested
+$ jigc doc set-field <item>/evidence    --value engine/src/foo.rs:42
+
+# the both-halves driver — append the triage decisions to the RUNNING decisions-log singleton (create-or-update:
+# safe whether or not it exists; an existing committed log is copied-in for append, NOT clobbered):
+$ jigc doc create decisions-log --title "Decisions-Log"
+$ jigc doc add-item decisions-log:decisions-log#entries --title "chose to fix-now the finding"
+$ jigc doc set-slot <entry>/why --from-file -
+
+$ jigc task finalize m16
+> validate: clean (the #5 owner-artifact.present gate satisfied — the artifact is durably staged)
+> promote: completions/m16.md · completions/artifacts/M16/audit.md · decisions-log/decisions-log.md
+> commit:  chore(completion): close the milestone   ← one commit: the record, the owner-artifact, the log, the code
+```
+
+The `completion-record` promotes to its own `completions/` `location:` subdir, the owner-artifact lands under `completions/artifacts/M16/`, and the appended `decisions-log` re-promotes to `decisions-log/` byte-stable — all in **one commit** (the writes-are-transactional-at-finalize invariant). The audit `verdict` is an **authored** field: a **`red`** verdict finalizes exactly as readily as a `green` one (the engine records the agent's judgment, it does not certify the audit — the single-agent-spine bound).
+
+### The #5 gate — the owner-artifact presence assertion at finalize
+
+The gate is an **intrinsic** (floored-blocking) finalize-time check on the completion task: it reads the `meta/owner-artifact` field, asserts the named path is **safe** (repo-relative, under the owned home, no `..`/symlink escape) and **durably present** (staged/committed), and emits the `owner-artifact.present` finding when it is not. It **never reads the artifact's bytes** — presence, not content ([methodology-docs.md](methodology-docs.md#the-engine-work-bounded-risk-first), item 3).
+
+```text
+# PASS — the artifact is durably staged under the owned home (written + `git add`ed BEFORE finalize):
+$ git add completions/artifacts/M16/audit.md                # the same-transaction recording, made explicit
+$ jigc task finalize m16
+> validate: clean   (owner-artifact.present satisfied)      ← finalize lands; the gate is silent
+```
+
+### The reds — the gate fires-and-blocks on a non-durable recording, not a vacuous path-exists
+
+```text
+# RED a — ABSENT: a well-shaped owned-home path whose file was never written:
+$ jigc doc set-field completion-record:m16#meta/owner-artifact --value completions/artifacts/M16/audit.md
+$ jigc task finalize m16                                     # the file at that path does not exist
+> BLOCK owner-artifact.present @ completion-record:m16 … completions/artifacts/M16/audit.md   # non-zero, NO commit
+
+# RED b — UNSAFE: an absolute path (or `..`/symlink escape) the gate rejects outright:
+$ jigc doc set-field completion-record:m16#meta/owner-artifact --value /etc/passwd
+$ jigc task finalize m16
+> BLOCK owner-artifact.present @ … /etc/passwd  (not a repo-relative owned-home path)        # non-zero, NO commit
+
+# RED c — PRESENT-BUT-UNTRACKED: the file exists on disk under the owned home but is NOT `git add`ed
+#   (presence on disk ≠ a durable recording — the M3 lesson: a file not git-tracked before validate is
+#   not durably recorded, so the PASS path's `git add` is load-bearing, not incidental):
+$ jigc task finalize m16
+> BLOCK owner-artifact.present @ … completions/artifacts/M16/audit.md  (present, untracked)   # non-zero, NO commit
+```
+
+Each red exits finalize **non-zero** with **no commit**, surfacing `owner-artifact.present` — proving the gate **fires on a real non-durable recording**, not a vacuous always-pass (the *vacuously-green-managed-doc-gate* guard; the present-but-untracked case is the anti-vacuity teeth that prove the PASS path's staging is genuinely load-bearing).
+
+### What it asserts (the acceptance bar)
+
+1. **jigc composes its own completion spine.** `jigc start --workflow completion "<milestone>"` mints a task (off-router) and composes the audit → triage → fix → re-verify phase walk, with **triage** and the **fix-round cap** emitted as structural `Checkpoint: triage-gate` / `Checkpoint: fix-rounds-exhausted` directives (the M15 `checkpoint` kind), driven from the real binary's emitted bytes.
+2. **The per-milestone completion-record is create-fresh authored.** `jigc doc create completion-record --title "<milestone>"` mints `completions/<milestone>.md` (`id-from: title`, the proven mint — *not* a running-doc copy-in); the agent authors the `meta` header's `verdict` + `owner-artifact` and one `findings` entry per triaged finding (`severity`/`disposition` enums + a plain-string `evidence`, never a managed ref), and finalize promotes the record to `completions/` byte-stable.
+3. **The #5 owner-artifact gate fires-and-blocks on a non-durable recording.** Finalize **blocks** with `owner-artifact.present` (non-zero exit, no commit) when the named path is absent, unsafe (absolute / `..` / symlink escape), or present-but-untracked, and **passes** when the artifact is durably staged under `completions/artifacts/<milestone>/` — the gate asserting presence, never the artifact's bytes (the determinism boundary).
+4. **The decisions-log is appended by this half too.** A triage decision rides into the running `decisions-log` via create-or-update + `add-item`/`set-slot`, re-promoting `decisions-log/decisions-log.md` in the same commit — flow 20 is a both-halves driver of the running singleton.
+5. **The verdict is recorded, not certified.** A `red` verdict finalizes exactly as readily as a `green` one — the engine promotes the authored judgment without adjudicating it; the genuine green/red audit stays orchestration-level (the single-agent-spine bound, the build-honesty watch — the checkpoints halt and the gate asserts presence, neither scores).
