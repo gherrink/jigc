@@ -453,14 +453,15 @@ fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines
     // The meta-header authoring: verdict enum + the owner-artifact owned-location path
     // (the #5-gate target). The `<slug>` is the runtime-minted create-fresh slug, an
     // authoring placeholder (the author-arch-doc precedent). The per-finding repeatable
-    // authoring: add-item + set-field severity/disposition + set-slot evidence.
+    // authoring: add-item + set-field severity/disposition + set-field evidence (a string
+    // FIELD — `set-field`, not `set-slot`; the binary rejects `set-slot` on a field).
     for needle in [
         "jigc doc set-field completion-record:<slug>#verdict",
         "jigc doc set-field completion-record:<slug>#owner-artifact",
         "jigc doc add-item completion-record:<slug>#findings",
         "jigc doc set-field completion-record:<slug>#findings/<id>/severity",
         "jigc doc set-field completion-record:<slug>#findings/<id>/disposition",
-        "jigc doc set-slot completion-record:<slug>#findings/<id>/evidence",
+        "jigc doc set-field completion-record:<slug>#findings/<id>/evidence",
     ] {
         assert!(
             stdout.contains(needle),

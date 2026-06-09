@@ -21,4 +21,4 @@ from the title you give:
 jigc doc add-item completion-record:<slug>#findings --title "<the finding>"
 jigc doc set-field completion-record:<slug>#findings/<id>/severity --value <blocking|advisory>
 jigc doc set-field completion-record:<slug>#findings/<id>/disposition --value <fixed|deferred|contested>
-jigc doc set-slot completion-record:<slug>#findings/<id>/evidence --from-file -
+jigc doc set-field completion-record:<slug>#findings/<id>/evidence --value "<the file:line, repro, or trace>"

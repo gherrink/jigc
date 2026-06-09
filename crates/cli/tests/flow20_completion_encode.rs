@@ -563,6 +563,119 @@ fn flow20_the_gate_passes_on_a_staged_artifact_and_the_decisions_log_is_appended
     );
 }
 
+/// The composed `evidence` authoring line is RUN VERBATIM (the M3 emitted-bytes contract):
+/// the `findings/<id>/evidence` line the `completion` spine emits must itself author the
+/// field against the real binary. `evidence` is a `string` FIELD, so the emitted verb must
+/// be `set-field` (not `set-slot`) — the reconstructing `author_finding` helper would mask
+/// a `set-slot`/`set-field` mismatch, so this test parses the emitted line out of the
+/// composed spine, substitutes the `<slug>`/`<id>` placeholders with the real record +
+/// minted item, and EXECUTES it. On the broken `set-slot` emission the binary rejects the
+/// write (`write.not-present`); the emitted line must succeed.
+#[test]
+fn flow20_the_emitted_evidence_authoring_line_authors_the_field_verbatim() {
+    let repo = TempDir::new("evidence-verbatim");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    setup(repo.path(), home.path());
+
+    let milestone = "M16";
+    let spine = start_completion(repo.path(), home.path(), milestone);
+
+    // Pull the emitted evidence authoring line out of the composed spine verbatim.
+    let emitted = spine
+        .lines()
+        .find(|l| l.contains("/evidence") && l.trim_start().starts_with("jigc doc "))
+        .unwrap_or_else(|| {
+            panic!("the spine emits a `findings/<id>/evidence` authoring line; got:\n{spine}")
+        })
+        .trim();
+
+    let addr = create_completion_record(repo.path(), home.path(), milestone);
+    let slug = addr
+        .split(':')
+        .nth(1)
+        .expect("addr is `completion-record:<slug>`");
+    let add = jigc_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            &format!("{addr}#findings"),
+            "--title",
+            "the finding",
+        ],
+        None,
+    );
+    assert_ok(&add, "`doc add-item completion-record#findings`");
+    let item = String::from_utf8(add.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    // The minted item leaf id (`completion-record:<slug>#findings/<id>` → `<id>`).
+    let id = item.rsplit('/').next().expect("item addr ends in `/<id>`");
+
+    // Substitute the spine's `<slug>`/`<id>` placeholders with the real values, then split
+    // the line into argv honoring the single quoted `--value "..."`.
+    let concrete = emitted.replace("<slug>", slug).replace("<id>", id);
+    let argv = split_emitted(&concrete);
+    assert_eq!(
+        argv.first().map(String::as_str),
+        Some("jigc"),
+        "emitted line is a `jigc ...` invocation: {concrete}"
+    );
+    let doc_args: Vec<&str> = argv[2..].iter().map(String::as_str).collect();
+    assert_eq!(
+        argv.get(1).map(String::as_str),
+        Some("doc"),
+        "emitted line is a `jigc doc ...` invocation: {concrete}"
+    );
+
+    let out = jigc_doc(repo.path(), home.path(), &doc_args, None);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.status.success(),
+        "the EMITTED `findings/<id>/evidence` authoring line must author the field verbatim \
+         (`evidence` is a string FIELD → `set-field`, not `set-slot`); emitted line:\n  \
+         {concrete}\nran as `jigc doc {doc_args:?}` and got:\n{rendered}",
+    );
+}
+
+/// Split an emitted `jigc ...` command line into argv, honoring a single `"..."`-quoted
+/// token (the `--value "<...>"` the evidence line carries). Minimal — only the quoting the
+/// emitted authoring lines actually use.
+fn split_emitted(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut in_quote = false;
+    let mut started = false;
+    for ch in line.chars() {
+        match ch {
+            '"' => {
+                in_quote = !in_quote;
+                started = true;
+            }
+            c if c.is_whitespace() && !in_quote => {
+                if started {
+                    out.push(std::mem::take(&mut cur));
+                    started = false;
+                }
+            }
+            c => {
+                cur.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        out.push(cur);
+    }
+    out
+}
+
 /// (e) The audit `verdict` is an AUTHORED `meta/verdict` field, never an engine opinion:
 /// a `red` verdict finalizes exactly as readily as a `green` one. The engine records the
 /// agent's verdict and promotes the record; it does NOT certify the audit (the
