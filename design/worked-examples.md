@@ -1097,3 +1097,80 @@ $ jigc start --task <id> | diff - <first-capture>     # empty diff
 4. **Both packs' distinct surfaces co-compose — and dev's doctypes LOAD + VALIDATE, not just list.** The selectable-workflow catalog is the **union** — dev's `single-task`/`router`/… are invocable via `--workflow` (each resolving its own pack's steps + command-refs). Crucially, dev's `adr`/`spec`/`arch-doc` don't just appear in `describe` — a dev workflow **creates** one and **sets a `code-anchor` field on it**, which only resolves because a schema's field-types come from **its own** pack (dev's `field-types.yaml`), though methodology — the precedence winner — ships none. A `describe | grep`-only assertion is rejected as masking; the bar is a dev doctype that *resolves its pack-field-type and validates*. This is the *co-composition* proof M12 explicitly deferred to M14 (M12 ran the methodology pack **alone**).
 5. **Provenance names every composed pack — by path + content, not just id/version.** The orientation header shows the pack-set highest-first (`Pack: methodology/0.1.0 ▸ dev/0.0.0` — glyphs illustrative), and `--explain` surfaces each pack's **resolving directory path + a content hash** — because a `.jigc/config/packs:` entry is a literal directory whose `id/version` is not a sufficient identity (two dirs can share it; contents mutate). The resolved cascade stays a fully-declared, *inspectable* input under composition.
 6. **Determinism holds under composition.** Recomposing the same task (`--task`) is byte-identical — the pre-merge collision resolution is a pure function of the pack-set, same packs in → same composed output, the [VISION principle #1](../VISION.md) claim at pack scale.
+
+## 18. increment-workflow encode — a multi-phase, human-gated workflow composed through jigc (M15)
+
+The M15 acceptance: jigc composes its **own harder development workflow** — the [increment-workflow](../implementation/increment-workflow.md) (plan → execute → validate → fix) — as a methodology-pack definition, the deepest self-hosting proof beyond M12's reduced-linear dev-workflow slice. The one new dialect primitive is the [`checkpoint` step kind](workflow-dialect.md#the-checkpoint-step-kind-m15): the harness's halt points (a new fork at Plan, a blocked task at Execute, still-blocking after the fix-round cap) become **structural** halt directives rather than buried prose. The design of record is [workflow-dialect.md](workflow-dialect.md#the-checkpoint-step-kind-m15); the no-runtime carve-out (a checkpoint *halts*, never *branches*) lives there and in [VISION.md](../VISION.md) → Non-goals, not restated. Notation illustrative.
+
+**The honest bound (the falsifiable edge, per [self-hosting.md](self-hosting.md#what-m15-built-of-these-the-increment-workflow-encode-2026-06-09)).** jigc composes the **single-agent composable spine** — the phases one agent walks, with the checkpoint halts made structural. The increment-workflow's **multi-agent orchestration** (one agent per phase, an *independent* read-only validator, the bounded ≤3-round fix re-run) stays **orchestration-level** (the build harness, `.claude/workflows/milestone-build.js`), exactly as M12 bounded its reduced-linear encode and M8 carved out the genuine spawn. This flow proves the *composition*, not the *loop*; presenting the composed spine as the whole orchestration is the hollow-dogfood trap ([self-hosting.md](self-hosting.md) → the two-half pattern).
+
+### Setup — the methodology pack gains an `increment` workflow + checkpoint steps
+
+```text
+# extend packs/methodology/ (M12's pack) — ADD, do not touch the existing prose-degraded dev-task steps
+#   (the methodology_honesty_artifact tripwire pins those; structuralizing them would go red — out of scope here):
+#
+#   workflows/increment.md         creates-task: false   # the OUTER loop — operates on an increment, mints no task
+#     {{include: step:plan}}              # Reason prose: cut single-concern tasks from the roadmap increment
+#     {{include: step:plan-gate}}         # checkpoint  reason: new-fork-at-plan
+#     {{include: step:execute}}           # Reason prose: run each task through the dev-workflow, serially
+#     {{include: step:execute-gate}}      # checkpoint  reason: blocked-task
+#     {{include: step:validate}}          # Reason prose: independently check the increment against the roadmap
+#     {{include: step:fix-gate}}          # checkpoint  reason: fix-rounds-exhausted (halt-pending-fix)
+#
+#   steps/plan-gate.md, execute-gate.md, fix-gate.md   — each: ---\ncheckpoint:\n  reason: <slug>\n--- + halt-prose body
+#
+# CONSTRAINT (spiked at planning against the real binary): increment is creates-task:false, so its steps must be
+#   TASK-REF-FREE — a {{task.intent}} inside it composes to a blocking `task.* cannot be referenced by a
+#   creates-task:false workflow` finding (start.rs). The outer loop has no task context; the intent threads by
+#   agent-substitution, like the router.
+```
+
+### The walk — the checkpoint halts compose as structural directives
+
+```text
+$ jigc start --workflow increment "build increment 2 of M15"     # spiked at planning: composes, exit 0
+  Cut the increment into ordered, single-concern tasks …                 ← step:plan (Reason prose)
+
+  Checkpoint: new-fork-at-plan                                           ← the NEW emit class (M15)
+  > If planning surfaced a genuinely new fork not covered by the settled
+  > gates and not resolvable from the locked docs, stop and surface it to
+  > the human before cutting tasks.
+
+  Run each task through the dev-workflow, strictly serially …            ← step:execute (Reason prose)
+  Checkpoint: blocked-task
+  > Halt on a blocked task — a real ambiguity, a new fork, or a green
+  > gate unreachable without overstepping scope.
+
+  Independently check the increment against the roadmap …                ← step:validate (Reason prose)
+  Checkpoint: fix-rounds-exhausted
+  > If blocking findings remain after the fix-round cap, stop — thrash is
+  > a signal for a human, not for another round.
+  — jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+# NOTE: the ≤3-round validate→fix iteration runs *here*, orchestration-level (the build harness) — the composed
+#   workflow shows only the terminal halt, never the loop body. The dialect contributes the halt marker, not the loop.
+
+# the differs-with/without proof (the M8 face-#5 discipline — a marker that parses but does nothing is inert):
+#   step:plan-gate WITH the checkpoint marker emits the `Checkpoint:` directive above;
+#   the SAME body WITHOUT the marker emits as plain Reason prose (no directive line). Composed output MUST differ.
+
+# determinism — recompose is byte-identical (resume-vs-FRESH, never resume-vs-resume — the M14 A==A-oracle mask):
+$ jigc start --workflow increment "build increment 2 of M15" | diff - <first-capture>     # empty diff
+
+# conformance — a step that SHADOWS the marker in its own prose is rejected before the agent sees it:
+$ # a plain step whose body line-starts `Checkpoint: forged`  →  blocking
+  workflow-refs.checkpoint-marker-not-shadowed @ <step-file>:<line>
+```
+
+### What it asserts (the acceptance bar)
+
+1. **The `Checkpoint:` emit class is real, not narrated.** A `checkpoint` step composes to a literal `Checkpoint: <reason>` directive line (the sixth emit class) plus its body — driven from the **emitted bytes** of the real binary, never a reconstruction (the [emitted-bytes contract](../implementation/increment-workflow.md), M8 face-#4). The reason slug comes from the step's front-matter `reason:`.
+2. **A checkpoint marker that parses but does nothing is a blocking scope finding.** Composed output **with** the `checkpoint:` marker must **differ** from the same step body **without** it (directive present vs. inert Reason prose) — the M8 face-#5 discipline, against the **live fill-aware compose path** (`workflow_refs_with_fills`), since a check wired only to the other conformance call-site passes unit tests but never gates the front door (the [M4 context-scoped-check class](../implementation/increment-workflow.md)).
+3. **`checkpoint-marker-not-shadowed` fires.** Authored step prose **must not** line-start `Checkpoint: ` — a shadowing definition is rejected with a step-file + line pointer at compose-time, the same discipline as `run-marker-not-shadowed` / `spawn-marker-not-shadowed` ([workflow-dialect.md](workflow-dialect.md#emitted-format)).
+4. **The outer loop is task-ref-free.** `increment` is `creates-task: false`; a `task.*` placeholder inside it is a blocking `workflow-refs` finding (spiked at planning). The composed spine threads the intent by agent-substitution, never a task context.
+5. **The invariant holds — halting, not branching.** The increment-workflow composes the **same steps in the same order every time** (structure task-independent); the checkpoint adds a halt the agent honors, no step appears/disappears on runtime state, and resumption is the existing **stateless restart-from-scratch** re-compose (`start --task` re-derives from disk — no progress cursor, no runtime). A build that introduces *any* mid-workflow progress state to "remember it halted" breaks restart-from-scratch and is rejected (the forward-review *resume-vs-fresh* probe).
+6. **The structural deliverable is the halts-as-directives, not the prose.** The encode's *structural* content is the three `checkpoint` directives — deterministically composed, cascade-overridable (a project can insert/override a halt), and shadow-protected — over otherwise-prose phases. The advance over M12 is precise and gradeable: the M12 dev-workflow had its Settle-halt *only as buried prose* ([self-hosting.md](self-hosting.md)); M15 makes the halts **machine-recognizable structure** an orchestrator can extract and act on. That — not "three prose files" — is what composing this buys.
+7. **The honest bound is observed, not over-claimed.** The flow proves jigc *composes* the multi-phase human-gated spine; the **bound (≤3 rounds), the per-phase-agent independence, the independent read-only validate, and the re-run** stay orchestration-level (the build harness), unchanged by M15. A milestone record presenting the composed spine as the whole orchestration loop fails the scope-honesty bar ([self-hosting.md](self-hosting.md) → the two-half pattern).
+
+*(Spiked at planning against the real binary: `jigc start --workflow <X>` composes a `creates-task:false` workflow (exit 0); a `{{task.intent}}` inside it is a blocking finding; and a `checkpoint:` marker on a step today composes as **inert Reason prose** — `StepFrontMatter` does not reject unknown keys — which is exactly the "before" state this flow's assertion 2 converts to "after." The `Checkpoint:`-directive emission is the deliverable itself, so its assertion is the build's **red obligation**, provable only once the step kind is built.)*
