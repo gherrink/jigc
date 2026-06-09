@@ -73,3 +73,19 @@ commands:
     command: jigc
     args: ["doc", "create", "decisions-log", "--title", "Decisions-Log"]
     hint: "Create-or-update the running decisions-log singleton in the current task."
+
+  # The completion workflow's create-fresh command-ref (M16 inc-5 / T2). The
+  # completion-record is `id-from: title` (per-milestone, NOT a singleton) — `create`
+  # mints `completions/<milestone>.md` fresh from the agent's title (the adr/arch-doc
+  # mint), so `--title` carries the agent-supplied milestone title, never a fixed
+  # literal. The per-entry `set-field`/`add-item`/`set-slot` authoring lives in the
+  # author step as literal guidance (the create-fresh slug is runtime-minted).
+  - id: create-completion-record
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "completion-record"
+      - "--title"
+      - { agent: title, hint: "the milestone this completion record closes — its title mints the create-fresh slug" }
+    hint: "Create the per-milestone completion-record fresh in the current task."

@@ -1,0 +1,16 @@
+---
+description: The milestone-completion loop (audit → triage → fix → re-verify), with the human-gated triage and fix-round halts composed as structural Checkpoints, then authors the per-milestone completion-record (verdict + owner-artifact + findings) and appends the triage decisions to the running decisions-log.
+usage: you are closing a milestone — auditing the assembled whole, triaging and fixing its findings, then recording the verdict and the genuine-audit owner-artifact — and you want the phase walk, its human gates, and the record authoring made visible.
+creates-task: true
+selectable: false
+allows-create:
+  - { type: completion-record, as: record }
+  - { type: decisions-log, as: log }
+---
+{{ include: step:audit }}
+{{ include: step:triage }}
+{{ include: step:fix-gate }}
+{{ include: step:re-verify }}
+{{ include: step:author-completion-record }}
+{{ include: step:author-decisions }}
+{{ include: step:finalize }}

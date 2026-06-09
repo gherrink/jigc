@@ -343,3 +343,169 @@ fn planning_composes_the_settle_checkpoint_and_the_three_doctype_authoring_lines
         "the doctype authoring must follow the Settle checkpoint; got:\n{stdout}",
     );
 }
+
+/// M16 Increment 5 / T2 — the methodology `completion` workflow composes the
+/// completion spine through the real binary: `jigc start --workflow completion
+/// "<milestone>"` mints a task (off-router) **and** emits the completion-half's
+/// human-gated halts as `Checkpoint:` directives plus the create-fresh
+/// completion-record authoring (meta verdict/owner-artifact + repeatable findings)
+/// and the reused decisions-log append (the both-halves driver).
+///
+/// This is the compose-time contract (T4 *runs* the emitted commands end-to-end
+/// and fires the #5 owner-artifact presence gate; this proves the directives are
+/// **emitted**, with the `{{cli.X}}` authoring command-refs rendered verbatim on
+/// the EMITTED bytes — never reconstructed). The completion-record is
+/// `id-from: title` create-fresh, so its slug is runtime-minted from the milestone
+/// title; the per-entry authoring addresses carry the literal `<slug>` authoring
+/// placeholder (the author-arch-doc precedent).
+#[test]
+fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines() {
+    let repo = TempDir::new("completion");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // `completion` is `creates-task: true, selectable: false` (the sub-task precedent)
+    // — invoked directly off the router by `--workflow completion`, it mints a task and
+    // composes the spine. Intent "M99" → slug "m99" (slugify lowercases).
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "completion", "M99"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow completion \"M99\"` over the methodology pack must compose the \
+         completion spine and exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // `creates-task: true` → a task dir is minted at `.jigc/tasks/m99/`.
+    let task_dir = repo.path().join(".jigc").join("tasks").join("m99");
+    assert!(
+        task_dir.is_dir(),
+        "`--workflow completion` must mint the task dir at {task_dir:?}; got stdout:\n{stdout}",
+    );
+
+    // No `{{ … }}` placeholder survives a clean compose (every include / data-value /
+    // command-ref resolved) — the spike that the `{{cli.X}}` refs combine against the
+    // built grammar, not assumed.
+    assert!(
+        !stdout.contains("{{") && !stdout.contains("}}"),
+        "no `{{{{ … }}}}` placeholder may survive the completion compose; got:\n{stdout}",
+    );
+
+    let pos = |needle: &str| {
+        stdout.find(needle).unwrap_or_else(|| {
+            panic!("composed completion spine missing {needle:?}; got:\n{stdout}")
+        })
+    };
+
+    // The completion spine composes the audit → triage → fix → re-verify phase walk,
+    // with the human-gated halts as `Checkpoint:` directives. Each phase contributes a
+    // distinctive prose marker; offsets strictly increase.
+    let audit_at = pos("Audit the assembled milestone");
+    let triage_at = pos("Checkpoint: triage-gate");
+    let fix_at = pos("Checkpoint: fix-rounds-exhausted");
+    let reverify_at = pos("Re-verify");
+    assert!(
+        audit_at < triage_at && triage_at < fix_at && fix_at < reverify_at,
+        "the completion spine must order audit({audit_at}) < triage({triage_at}) < \
+         fix({fix_at}) < re-verify({reverify_at}); got:\n{stdout}",
+    );
+
+    // Both human-gated halts emit `Checkpoint: <slug>` at their own line, the bare slug
+    // (no backticks) — the M15 checkpoint primitive. triage-gate is the completion-half's
+    // own gate (too-big / contested); fix-rounds-exhausted is the reused fix-gate.
+    for slug in ["triage-gate", "fix-rounds-exhausted"] {
+        assert!(
+            stdout.lines().any(|l| l == format!("Checkpoint: {slug}")),
+            "the completion spine must compose `Checkpoint: {slug}` at the left margin; \
+             got:\n{stdout}",
+        );
+        assert!(
+            !stdout.contains(&format!("Checkpoint: `{slug}`")),
+            "the `{slug}` reason slug must be bare (no backticks); got:\n{stdout}",
+        );
+    }
+
+    // The completion-record `create` command-ref renders verbatim on the EMITTED bytes.
+    // It is `id-from: title` create-fresh (the adr/arch-doc mint), so `--title` carries
+    // the agent's milestone-named title placeholder (NOT a singleton fixed literal).
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create completion-record"),
+        "jigc doc create completion-record --title <TITLE>",
+    );
+
+    // The create-gate admits `completion-record` (the workflow's `allows-create`): the
+    // create line composed above only resolves if the gate admits the type.
+    // The meta-header authoring: verdict enum + the owner-artifact owned-location path
+    // (the #5-gate target). The `<slug>` is the runtime-minted create-fresh slug, an
+    // authoring placeholder (the author-arch-doc precedent). The per-finding repeatable
+    // authoring: add-item + set-field severity/disposition + set-slot evidence.
+    for needle in [
+        "jigc doc set-field completion-record:<slug>#verdict",
+        "jigc doc set-field completion-record:<slug>#owner-artifact",
+        "jigc doc add-item completion-record:<slug>#findings",
+        "jigc doc set-field completion-record:<slug>#findings/<id>/severity",
+        "jigc doc set-field completion-record:<slug>#findings/<id>/disposition",
+        "jigc doc set-slot completion-record:<slug>#findings/<id>/evidence",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "the completion spine must emit the authoring line `{needle}`; got:\n{stdout}",
+        );
+    }
+
+    // The owner-artifact is written under the owned artifact home the #5 gate asserts on
+    // (`completions/artifacts/<milestone>/…`) — the guidance names that home so the
+    // recorded path is durable, not an arbitrary pre-existing file.
+    assert!(
+        stdout.contains("completions/artifacts/"),
+        "the completion-record authoring must name the owned artifact home \
+         `completions/artifacts/<milestone>/`; got:\n{stdout}",
+    );
+
+    // The decisions-log append is REUSED (the both-halves driver): the same idempotent
+    // create-log + add-item/set-slot the planning half drives, here recording triage
+    // decisions. Assert the reused command-ref + per-entry authoring compose.
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create decisions-log"),
+        "jigc doc create decisions-log --title Decisions-Log",
+    );
+    for needle in [
+        "jigc doc add-item decisions-log:decisions-log#entries",
+        "jigc doc set-slot decisions-log:decisions-log#entries/<id>/why",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "the completion spine must emit the reused decisions-log authoring line \
+             `{needle}`; got:\n{stdout}",
+        );
+    }
+
+    // The authoring follows the re-verify phase (the record is authored after the loop
+    // produces a verdict + closed findings).
+    assert!(
+        reverify_at < pos("jigc doc create completion-record"),
+        "the completion-record authoring must follow the re-verify phase; got:\n{stdout}",
+    );
+
+    // The finalize step composes last (validate + commit boundary — the #5 gate fires
+    // here in T4). Assert the finalize Run line is emitted, after the authoring.
+    assert!(
+        pos("jigc doc create completion-record") < pos("jigc task finalize"),
+        "the finalize step must follow the completion-record authoring; got:\n{stdout}",
+    );
+}

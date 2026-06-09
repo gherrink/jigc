@@ -1,0 +1,14 @@
+---
+checkpoint:
+  reason: triage-gate
+---
+Triage each finding — verify it is real (reproduce it as a red test or a source
+trace, because an audit is a hypothesis generator, not an oracle) and severity-rank
+it. The default is fix-now: a confirmed, bounded finding is repaired immediately,
+not parked behind a permission ask.
+
+The human gate fires for exactly two cases, never every finding: a fix too big for
+the completion-fix lane (recorded as its own task/increment, keyed to the milestone
+that will own it) and a contested finding (the "fix" would revise a settled decision
+or change intended behavior). Surface those two; everything else is a tested commit
+the human reviews after. The human owns this gate.

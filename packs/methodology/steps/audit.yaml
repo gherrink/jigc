@@ -1,0 +1,16 @@
+Audit the assembled milestone — a fresh, adversarial pass over the finished whole,
+not a re-run of the per-increment validate. The milestone you are closing:
+{{ task.intent }}
+
+Two independent passes: a read-only code review of the whole milestone diff for
+correctness, invariant violations, and scope honesty (inert/dead features,
+stubs-as-done, tautological tests, creep); and an end-to-end run of the milestone's
+worked-example flows over the real binary in throwaway repos — not trusting the
+builders' own tests. Produce ranked findings with file:line evidence and a
+green/red verdict on whether the deliverable genuinely holds.
+
+This is judgment work, not a checklist to tick. The verdict and the gap-detection
+stay pure agent prose — a step that emits a count threshold or a checklist the agent
+must satisfy has hollowed the judgment. The genuine, independent audit passes are an
+orchestration-level responsibility above this single-agent spine; the spine records
+their verdict and findings, it does not certify them.
