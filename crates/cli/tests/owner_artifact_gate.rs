@@ -304,6 +304,67 @@ fn finalize_blocks_on_an_absent_owner_artifact() {
     assert_eq!(before, after, "a blocked finalize creates no commit");
 }
 
+/// (BLOCKS) A completion-record naming an owner-artifact that is **present but
+/// gitignored** (so it is in neither git's index nor the untracked-non-ignored set) must
+/// make `task finalize` exit non-zero with the `owner-artifact.present` block: a gitignored
+/// file is not durably committable, so it cannot satisfy the durable-presence gate even
+/// though it exists on disk.
+#[test]
+fn finalize_blocks_on_a_gitignored_owner_artifact() {
+    let repo = TempDir::new("gitignored");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let pack = TempDir::new("pack");
+    seed_fixture_pack(pack.path());
+    list_fixture_pack(repo.path(), pack.path());
+
+    // The owner-artifact is present on disk under the owned home, but a `.gitignore`
+    // pattern covers it — so it is neither tracked nor stageable (`git add` would skip
+    // it), defeating the gate's durable-presence guarantee if it were treated as tracked.
+    let artifact = "completions/artifacts/M16/audit.md";
+    fs::create_dir_all(repo.path().join("completions/artifacts/M16")).expect("mk owned home");
+    fs::write(repo.path().join(artifact), "the genuine audit transcript\n")
+        .expect("write owner-artifact");
+    fs::write(
+        repo.path().join(".gitignore"),
+        "completions/artifacts/M16/\n",
+    )
+    .expect("write .gitignore covering the owned home");
+
+    let task = "record-the-completion";
+    author_completion(
+        repo.path(),
+        home.path(),
+        "record the completion",
+        task,
+        artifact,
+    );
+
+    let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a gitignored owner-artifact must make finalize exit non-zero; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("owner-artifact.present"),
+        "the block surfaces the owner-artifact.present check; got:\n{rendered}",
+    );
+    let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(before, after, "a blocked finalize creates no commit");
+}
+
 /// (LANDS) A completion-record naming an owner-artifact **durably staged** under
 /// `completions/artifacts/<milestone>/` (present + git-tracked) finalizes clean: the gate
 /// is silent, the commit lands, and the artifact + the promoted completion-record are

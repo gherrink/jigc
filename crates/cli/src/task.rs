@@ -391,14 +391,18 @@ impl TaskArea {
     /// consults ([`engine::validate::TrackedPredicate`]) — the CLI owns the shell-out, the
     /// engine stays shell-free (`design/methodology-docs.md` → The engine work, item 3).
     ///
-    /// A repo-relative path is **tracked** iff git does *not* list it among the untracked,
-    /// non-ignored files (`git ls-files --others --exclude-standard`, via [`git_untracked`]):
-    /// a present file outside that set is in git's index/HEAD (staged or committed), the
-    /// durable-presence the gate requires; a present-but-just-created file is in the set, so
-    /// the predicate answers `false` and the gate blocks (the present-but-untracked case).
-    /// The engine resolves existence itself, so this predicate answers tracked-status only.
+    /// A repo-relative path is **durably present** iff git does *not* list it among *all*
+    /// untracked files — `git ls-files --others` **without** `--exclude-standard`, via
+    /// [`git_untracked_all`]: a present file outside that set is in git's index/HEAD (staged
+    /// or committed), the durable-presence the gate requires; a present-but-just-created file
+    /// is in the set, so the predicate answers `false` and the gate blocks (the
+    /// present-but-untracked case). Dropping `--exclude-standard` is deliberate: with it, a
+    /// present-but-**gitignored** file is in neither the index nor the `--others` output, so
+    /// it would read as tracked — yet `git add` skips it, so it is *not* durably committable.
+    /// Listing ignored files here too catches that gap (a gitignored artifact blocks). The
+    /// engine resolves existence itself, so this predicate answers durable-presence only.
     fn tracked_predicate(&self) -> Result<impl Fn(&str) -> bool> {
-        let untracked: std::collections::HashSet<String> = git_untracked(&self.repo_root)?
+        let untracked: std::collections::HashSet<String> = git_untracked_all(&self.repo_root)?
             .lines()
             .map(str::trim)
             .filter(|l| !l.is_empty())
@@ -800,6 +804,27 @@ pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
 pub(crate) fn git_untracked(repo_root: &Path) -> Result<String> {
     let out = Command::new("git")
         .args(["ls-files", "--others", "--exclude-standard"])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git ls-files --others` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    String::from_utf8(out.stdout).context("`git ls-files` produced non-UTF-8 output")
+}
+
+/// List **all** untracked files — including gitignored ones — via
+/// `git ls-files --others` (no `--exclude-standard`). A path absent from this set is in
+/// git's index/HEAD (durably present); a present path *in* it is untracked or gitignored,
+/// i.e. not durably committable. The owner-artifact #5 gate's durable-presence predicate
+/// consults this so a present-but-gitignored artifact (which `git add` would skip) blocks
+/// rather than passing as falsely "tracked".
+pub(crate) fn git_untracked_all(repo_root: &Path) -> Result<String> {
+    let out = Command::new("git")
+        .args(["ls-files", "--others"])
         .current_dir(repo_root)
         .output()
         .context("could not run `git` (is it on PATH?)")?;
