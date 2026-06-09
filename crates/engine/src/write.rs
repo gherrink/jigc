@@ -96,9 +96,16 @@ pub struct ItemContent {
     pub id: String,
     /// The item's title (the `###` heading text).
     pub title: String,
-    /// The item body's slot prose, opaque bytes emitted verbatim.
+    /// The item body's slot prose (the **single-slot** bare-prose form), opaque
+    /// bytes emitted verbatim. A multi-slot item carries `slots` instead.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<String>,
+    /// The per-leaf slot prose, in schema block order, for a **multi-slot** item
+    /// (M16). Each `(leaf_id, prose)` renders under its `#### <Leaf-Title>`
+    /// sub-heading. Empty for a single-slot / slot-less item (the bare-prose `slot`
+    /// carries the single-slot case). The inverse of [`crate::parse::ParsedItem::slots`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slots: Vec<(String, String)>,
     /// The item's per-item field values, in schema order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<Field>,
@@ -175,14 +182,39 @@ fn render_section(section: &Section, content: Option<&SectionContent>) -> String
     out
 }
 
-/// Render one repeatable item: `### <title>  {#id}`, a blank line, the slot prose,
+/// Render one repeatable item: `### <title>  {#id}`, a blank line, the item body,
 /// then an optional trailing field group. Two spaces precede the `{#id}` anchor.
+///
+/// The body is either the **single-slot** bare prose (`slots` empty — the form every
+/// existing single-slot doctype keeps, byte-identical backward-compat) or, for a
+/// **multi-slot** item (`slots` non-empty), each slot under its `#### <Leaf-Title>`
+/// sub-heading in schema block order with one blank line between the heading and its
+/// prose and one blank line between slots (M16).
 fn render_item(item: &ItemContent) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "### {}  {{#{}}}", item.title.trim(), item.id);
     out.push('\n');
-    let prose = item.slot.as_deref().unwrap_or("");
-    out.push_str(prose.trim_end());
+    if item.slots.is_empty() {
+        let prose = item.slot.as_deref().unwrap_or("");
+        out.push_str(prose.trim_end());
+    } else {
+        // Multi-slot: each leaf renders as `#### <Leaf-Title>\n\n<prose>`, the slots
+        // joined by a single blank line (the same `\n\n` discipline sections use).
+        let blocks: Vec<String> = item
+            .slots
+            .iter()
+            .map(|(leaf_id, prose)| {
+                let mut block = format!("#### {}\n", heading_text(leaf_id));
+                block.push('\n');
+                block.push_str(prose.trim_end());
+                // Trim a slot whose prose is empty back to just its heading line so an
+                // empty-skeleton slot is `#### Proves` (no trailing blanks); a filled
+                // one is `#### Proves\n\n<prose>`.
+                block.trim_end().to_string()
+            })
+            .collect();
+        out.push_str(&blocks.join("\n\n"));
+    }
     append_field_group(&mut out, &item.fields);
     out
 }
@@ -434,6 +466,7 @@ sections:
                                 "The gateway rejects the 101st request in a 60s window."
                                     .to_string(),
                             ),
+                            slots: Vec::new(),
                             fields: vec![scalar("maps-to-test", "`test/rate_limit_spec.rb#burst`")],
                         },
                         ItemContent {
@@ -442,6 +475,7 @@ sections:
                             slot: Some(
                                 "A short burst above the limit is tolerated for 2s.".to_string(),
                             ),
+                            slots: Vec::new(),
                             fields: vec![],
                         },
                     ],
@@ -581,12 +615,7 @@ sections:
                 items: s
                     .items
                     .iter()
-                    .map(|it| ItemContent {
-                        id: it.id.clone(),
-                        title: it.title.clone(),
-                        slot: it.slot.as_ref().map(|sp| sp.slice(source).to_string()),
-                        fields: it.fields.clone(),
-                    })
+                    .map(|it| item_content_from_parsed(it, source))
                     .collect(),
             })
             .collect();
@@ -721,6 +750,7 @@ sections:
                         id: anchor,
                         title: "Crit".into(),
                         slot: Some("A statement.".into()),
+                        slots: Vec::new(),
                         fields,
                     }], ..Default::default() },
                 ],
@@ -983,6 +1013,7 @@ pub fn set_item_slot(
     source: &str,
     section_id: &str,
     item_id: &str,
+    leaf_id: &str,
     new_prose: &str,
 ) -> Result<String, SpliceError> {
     let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
@@ -1000,9 +1031,11 @@ pub fn set_item_slot(
         .ok_or_else(|| SpliceError::NotPresent {
             what: format!("item {item_id:?} in section {section_id:?}"),
         })?;
-    if item.slot.is_none() {
+    // The addressed leaf's slot span must be present — single-slot via the bare
+    // `slot`, multi-slot via the named `slots` entry (`slot_span` resolves either).
+    if item.slot_span(leaf_id).is_none() {
         return Err(SpliceError::NotPresent {
-            what: format!("slot in item {item_id:?}"),
+            what: format!("slot {leaf_id:?} in item {item_id:?}"),
         });
     }
 
@@ -1026,12 +1059,15 @@ pub fn set_item_slot(
     let region = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
         what: format!("item {item_id:?} block"),
     })?;
-    let content = ItemContent {
-        id: item.id.clone(),
-        title: item.title.clone(),
-        slot: Some(new_prose.to_string()),
-        fields: item.fields.clone(),
-    };
+    // Re-derive the item's content (preserving sibling slots + fields) and overwrite
+    // the addressed leaf's prose — single-slot updates the bare `slot`, multi-slot
+    // updates the named `slots` entry, sibling slots untouched.
+    let mut content = item_content_from_parsed(item, source);
+    if content.slots.is_empty() {
+        content.slot = Some(new_prose.to_string());
+    } else if let Some(entry) = content.slots.iter_mut().find(|(id, _)| id == leaf_id) {
+        entry.1 = new_prose.to_string();
+    }
     let rendered = render_item(&content);
     let body = rendered.trim_end_matches('\n');
     let replacement = if region.end < source.len() {
@@ -1335,16 +1371,30 @@ pub fn instance_from_source(schema: &Schema, source: &str) -> Result<Instance, V
             items: s
                 .items
                 .iter()
-                .map(|it| ItemContent {
-                    id: it.id.clone(),
-                    title: it.title.clone(),
-                    slot: it.slot.as_ref().map(|sp| sp.slice(source).to_string()),
-                    fields: it.fields.clone(),
-                })
+                .map(|it| item_content_from_parsed(it, source))
                 .collect(),
         })
         .collect();
     Ok(Instance { title, sections })
+}
+
+/// Re-derive an [`ItemContent`] from a parsed [`parse::ParsedItem`] over `source`,
+/// owning each slot's prose (re-slicing the recorded spans). Carries the single-slot
+/// bare-prose `slot` or the multi-slot per-leaf `slots`, whichever the parser
+/// populated — the inverse the round-trip rests on, used everywhere a parsed item is
+/// re-rendered (`instance_from_source`, `set_item_slot`, the `add_item` re-render).
+fn item_content_from_parsed(it: &parse::ParsedItem, source: &str) -> ItemContent {
+    ItemContent {
+        id: it.id.clone(),
+        title: it.title.clone(),
+        slot: it.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+        slots: it
+            .slots
+            .iter()
+            .map(|(leaf, sp)| (leaf.clone(), sp.slice(source).to_string()))
+            .collect(),
+        fields: it.fields.clone(),
+    }
 }
 
 // ============================================================================
@@ -1471,12 +1521,36 @@ pub fn add_item(
         });
     }
 
-    let item = render_item(&ItemContent {
-        id: id.clone(),
-        title: title.to_string(),
-        slot: slot.map(str::to_string),
-        fields: fields.to_vec(),
-    });
+    // A **multi-slot** template mints the FULL ordered `#### <Leaf-Title>` skeleton
+    // (every slot leaf, empty body, schema order) — the M13 create→fill seam: a later
+    // `set-slot .../<leaf>` has an ordered, named target to splice into. A single-slot
+    // template keeps the bare-prose form (the `slot` pre-fill, the existing shape).
+    let template = match &section.body {
+        SectionBody::Repeatable { repeatable } => parse::ItemTemplate::from(repeatable),
+        SectionBody::Simple { .. } => unreachable!("repeatability checked above"),
+    };
+    let item_content = if template.is_multi_slot() {
+        ItemContent {
+            id: id.clone(),
+            title: title.to_string(),
+            slot: None,
+            slots: template
+                .slot_ids
+                .iter()
+                .map(|leaf| (leaf.clone(), String::new()))
+                .collect(),
+            fields: fields.to_vec(),
+        }
+    } else {
+        ItemContent {
+            id: id.clone(),
+            title: title.to_string(),
+            slot: slot.map(str::to_string),
+            slots: Vec::new(),
+            fields: fields.to_vec(),
+        }
+    };
+    let item = render_item(&item_content);
 
     let present = present_body_sections(schema, source);
     if present.iter().any(|(sid, _)| sid == section_id) {
@@ -1516,12 +1590,7 @@ pub fn add_item(
                 .ok_or_else(|| GenerateError::WrongShape {
                     what: format!("section {section_id:?} last item not present"),
                 })?;
-            let prev_content = ItemContent {
-                id: prev.id.clone(),
-                title: prev.title.clone(),
-                slot: prev.slot.as_ref().map(|sp| sp.slice(source).to_string()),
-                fields: prev.fields.clone(),
-            };
+            let prev_content = item_content_from_parsed(&prev, source);
             let tail = &source[last.clone()];
             let separator = &tail[tail.trim_end().len()..];
             // The canonical join `render_section` uses: full `render_item`s joined by a
@@ -1794,12 +1863,7 @@ pub fn insert_item_field(
                 .ok_or_else(|| GenerateError::WrongShape {
                     what: format!("item {item_id:?} in section {section_id:?} not present"),
                 })?;
-            let mut content = ItemContent {
-                id: item.id.clone(),
-                title: item.title.clone(),
-                slot: item.slot.as_ref().map(|sp| sp.slice(source).to_string()),
-                fields: item.fields.clone(),
-            };
+            let mut content = item_content_from_parsed(&item, source);
             content.fields.push(field.clone());
             // Re-render the item, then re-attach the **canonical** inter-block separator
             // (not the recorded one): once a field group is added the item is no longer
@@ -2425,6 +2489,7 @@ A short burst is tolerated.
             TWO_ITEM_SPEC,
             "criteria",
             "burst-allowance",
+            "statement",
             "A short burst is tolerated for two seconds.",
         )
         .expect("item B slot present");
@@ -2445,6 +2510,7 @@ A short burst is tolerated.
             TWO_ITEM_SPEC,
             "criteria",
             "rate-limit",
+            "statement",
             "The gateway rejects the 101st request in a 60s window.",
         )
         .expect("item A slot present");
@@ -2460,8 +2526,15 @@ A short burst is tolerated.
     #[test]
     fn set_item_slot_absent_is_not_present() {
         let schema = linked_spec_schema();
-        let missing_item =
-            set_item_slot(&schema, TWO_ITEM_SPEC, "criteria", "ghost", "x").expect_err("no item");
+        let missing_item = set_item_slot(
+            &schema,
+            TWO_ITEM_SPEC,
+            "criteria",
+            "ghost",
+            "statement",
+            "x",
+        )
+        .expect_err("no item");
         assert!(matches!(missing_item, SpliceError::NotPresent { .. }));
     }
 
@@ -2930,12 +3003,7 @@ title: Auth flow
                     items: s
                         .items
                         .iter()
-                        .map(|it| ItemContent {
-                            id: it.id.clone(),
-                            title: it.title.clone(),
-                            slot: it.slot.as_ref().map(|sp| sp.slice(&out).to_string()),
-                            fields: it.fields.clone(),
-                        })
+                        .map(|it| item_content_from_parsed(it, &out))
                         .collect(),
                 })
                 .collect(),
@@ -3235,6 +3303,7 @@ title: Auth flow
             &two,
             "criteria",
             "rate-limit-holds",
+            "statement",
             "The gateway rejects the 101st request.",
         )
         .expect("first item slot filled");
@@ -5076,6 +5145,7 @@ mod commit_render {
                 id: crate::slug::slugify(k),
                 title: (*k).to_string(),
                 slot: None,
+                slots: Vec::new(),
                 fields: vec![scalar("key", k), scalar("value", v)],
             })
             .collect();
@@ -5219,5 +5289,243 @@ mod commit_render {
             let second = render_commit_message(&schema, &instance);
             prop_assert_eq!(first, second);
         }
+    }
+}
+
+#[cfg(test)]
+mod multi_slot {
+    //! M16 Increment 1b — multi-slot-per-repeatable-item (the build-halt resolution).
+    //!
+    //! A repeatable item template with **>1 slot leaf** renders each slot under a
+    //! `#### <Leaf-Title>` sub-heading (leaf id title-cased, schema block order); an
+    //! item with **exactly one** slot keeps the bare-prose form (its backward-compat
+    //! is asserted by every other suite staying green). These tests drive the
+    //! **emitted bytes** end-to-end — `add_item` mints the skeleton, `set_item_slot`
+    //! fills each leaf — and assert `render(parse(x)) == x` at every state.
+
+    use super::*;
+    use crate::parse::parse_sections;
+    use crate::schema::Schema;
+
+    /// A `roadmap`-shaped schema: one header-less `# H1` title (id-from), one
+    /// repeatable `milestones` section whose item block carries TWO prose slots
+    /// (`proves`, `decomposition`) in that order — the exact shape the M16 roadmap
+    /// doctype ships.
+    fn two_slot_schema() -> Schema {
+        let yaml = b"\
+type: roadmap
+id-from: title
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { hint: \"what it proves\" } }
+        - { id: decomposition, slot: { hint: \"the increments\" } }
+";
+        crate::schema::load_schema(yaml).expect("two-slot roadmap schema loads")
+    }
+
+    /// Round-trip helper: parse `src`, re-derive its instance, re-render — assert
+    /// byte-identical (`render(parse(x)) == x`).
+    fn assert_byte_stable(schema: &Schema, src: &str) {
+        let instance = instance_from_source(schema, src)
+            .unwrap_or_else(|f| panic!("source parses: {f:?}\n--- src ---\n{src}"));
+        let rendered = render(schema, &instance);
+        assert_eq!(rendered, src, "render(parse(x)) must equal x");
+    }
+
+    /// Done-criterion 1 — the failing case made to pass: a two-slot item, both
+    /// slots authored through the real write path (`add_item` then `set_item_slot`
+    /// per leaf), and BOTH slots' prose are preserved (today the first is dropped).
+    /// The assertion runs over the **emitted bytes**, not a hand-built equivalent.
+    #[test]
+    fn two_slot_item_preserves_both_slots() {
+        let schema = two_slot_schema();
+        // An empty roadmap with the section home present.
+        let empty = render(
+            &schema,
+            &instance_from_source(&schema, "# Roadmap\n\n## Milestones\n")
+                .expect("empty roadmap parses"),
+        );
+
+        // Mint the milestone item (mint-empty skeleton).
+        let minted = add_item(&schema, &empty, "milestones", "M16 self-hosting", None, &[])
+            .expect("add_item mints a two-slot item");
+        assert_byte_stable(&schema, &minted);
+
+        // Fill the first slot leaf (`proves`).
+        let filled_a = set_item_slot(
+            &schema,
+            &minted,
+            "milestones",
+            "m16-self-hosting",
+            "proves",
+            "Closes the self-hosting loop — the pack composes with dev.",
+        )
+        .expect("set proves slot");
+        assert_byte_stable(&schema, &filled_a);
+
+        // Fill the second slot leaf (`decomposition`).
+        let filled_b = set_item_slot(
+            &schema,
+            &filled_a,
+            "milestones",
+            "m16-self-hosting",
+            "decomposition",
+            "Inc 1: conformance. Inc 2: singletons. Inc 3: owner gate.",
+        )
+        .expect("set decomposition slot");
+        assert_byte_stable(&schema, &filled_b);
+
+        // BOTH slots' prose survive (the bug dropped `proves`).
+        assert!(
+            filled_b.contains("Closes the self-hosting loop"),
+            "the first slot's prose must survive: {filled_b:?}",
+        );
+        assert!(
+            filled_b.contains("Inc 1: conformance"),
+            "the second slot's prose must survive: {filled_b:?}",
+        );
+        // Each slot renders under its `#### <Leaf-Title>` sub-heading, schema order.
+        let proves_at = filled_b.find("#### Proves").expect("Proves sub-heading");
+        let decomp_at = filled_b
+            .find("#### Decomposition")
+            .expect("Decomposition sub-heading");
+        assert!(
+            proves_at < decomp_at,
+            "slots render in schema block order (proves before decomposition)",
+        );
+    }
+
+    /// Done-criterion 2 — the M13 cold-start seam: `add_item` mints the FULL
+    /// skeleton (all `#### <Label>` sub-headings, empty bodies, schema order), which
+    /// round-trips byte-stable; then each leaf is filled, each intermediate state
+    /// byte-stable. set_item_slot splices into the named, pre-minted sub-heading.
+    #[test]
+    fn cold_start_mints_full_skeleton_then_fills_each_leaf() {
+        let schema = two_slot_schema();
+        let empty = render(
+            &schema,
+            &instance_from_source(&schema, "# Roadmap\n\n## Milestones\n")
+                .expect("empty roadmap parses"),
+        );
+        let minted = add_item(&schema, &empty, "milestones", "Alpha", None, &[])
+            .expect("add_item mints the skeleton");
+
+        // The minted skeleton carries BOTH empty sub-headings in schema order.
+        assert!(
+            minted.contains("#### Proves"),
+            "skeleton has Proves: {minted:?}"
+        );
+        assert!(
+            minted.contains("#### Decomposition"),
+            "skeleton has Decomposition: {minted:?}",
+        );
+        assert_byte_stable(&schema, &minted);
+
+        // Fill decomposition FIRST (out of block order) — set_item_slot must target
+        // the named sub-heading, not insert in order.
+        let f1 = set_item_slot(
+            &schema,
+            &minted,
+            "milestones",
+            "alpha",
+            "decomposition",
+            "D-prose",
+        )
+        .expect("fill decomposition");
+        assert_byte_stable(&schema, &f1);
+        let f2 = set_item_slot(&schema, &f1, "milestones", "alpha", "proves", "P-prose")
+            .expect("fill proves");
+        assert_byte_stable(&schema, &f2);
+
+        // Both filled; still in schema order regardless of fill order.
+        let proves_at = f2.find("#### Proves").unwrap();
+        let decomp_at = f2.find("#### Decomposition").unwrap();
+        assert!(
+            proves_at < decomp_at,
+            "schema order preserved across fill order"
+        );
+        let doc = parse_sections(&schema, &f2).expect("filled doc parses");
+        let item = &doc
+            .sections
+            .iter()
+            .find(|s| s.id == "milestones")
+            .unwrap()
+            .items[0];
+        let proves = item.slot_span("proves").expect("proves span").slice(&f2);
+        let decomp = item
+            .slot_span("decomposition")
+            .expect("decomposition span")
+            .slice(&f2);
+        assert_eq!(proves.trim(), "P-prose");
+        assert_eq!(decomp.trim(), "D-prose");
+    }
+
+    /// Done-criterion 4 — conformance per-leaf: a multi-slot item with one empty
+    /// required slot leaf produces exactly one blocking
+    /// `schema-conformance.required-slot-present` addressed at `#section/item/leaf`;
+    /// a fully-authored item yields zero findings (the `#### Proves` id-from heading
+    /// not spuriously flagged).
+    #[test]
+    fn per_leaf_conformance_blocks_empty_required_slot() {
+        let schema = two_slot_schema();
+        // Author only `proves`; leave `decomposition` empty.
+        let src = "\
+# Roadmap
+
+## Milestones
+
+### Alpha  {#alpha}
+
+#### Proves
+
+Proven.
+
+#### Decomposition
+";
+        let doc = parse_sections(&schema, src).expect("half-authored item still parses");
+        let findings = crate::validate::schema_conformance(&schema, src, &doc);
+        let slot_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.required-slot-present")
+            .collect();
+        assert_eq!(
+            slot_findings.len(),
+            1,
+            "exactly one empty-slot finding (decomposition); got: {findings:?}",
+        );
+        let f = slot_findings[0];
+        assert_eq!(
+            f.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("milestones/alpha/decomposition"),
+            "addressed at the empty leaf",
+        );
+
+        // Fully authored: zero slot findings.
+        let full = "\
+# Roadmap
+
+## Milestones
+
+### Alpha  {#alpha}
+
+#### Proves
+
+Proven.
+
+#### Decomposition
+
+Decomposed.
+";
+        let full_doc = parse_sections(&schema, full).expect("full item parses");
+        let none = crate::validate::schema_conformance(&schema, full, &full_doc);
+        assert!(
+            none.iter()
+                .all(|f| f.code != "schema-conformance.required-slot-present"),
+            "a fully-authored multi-slot item yields no empty-slot findings: {none:?}",
+        );
     }
 }

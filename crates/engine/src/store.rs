@@ -202,12 +202,41 @@ fn render_repeatable_items(section: &ParsedSection, source: &str) -> String {
     section
         .items
         .iter()
-        .map(|item| match &item.slot {
-            Some(span) => format!("### {}\n\n{}", item.title.trim(), span.slice(source).trim()),
-            None => format!("### {}", item.title.trim()),
+        .map(|item| {
+            if !item.slots.is_empty() {
+                // A multi-slot item: the `### <title>` heading then each slot under its
+                // `#### <Leaf-Title>` sub-heading (the writer's form), so the read view
+                // mirrors the on-disk shape.
+                let mut out = format!("### {}", item.title.trim());
+                for (leaf_id, span) in &item.slots {
+                    out.push_str(&format!(
+                        "\n\n#### {}\n\n{}",
+                        title_case_label(leaf_id),
+                        span.slice(source).trim()
+                    ));
+                }
+                out
+            } else {
+                match &item.slot {
+                    Some(span) => {
+                        format!("### {}\n\n{}", item.title.trim(), span.slice(source).trim())
+                    }
+                    None => format!("### {}", item.title.trim()),
+                }
+            }
         })
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+/// Title-case a single-word slot leaf id for its `#### <Leaf-Title>` sub-heading in
+/// the store-read view (mirrors the writer's single-word heading rendering).
+fn title_case_label(id: &str) -> String {
+    let mut chars = id.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
 }
 
 #[cfg(test)]

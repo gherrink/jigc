@@ -121,12 +121,39 @@ pub struct ParsedItem {
     pub id: String,
     /// The item's mutable title (the `###` heading text, anchor stripped).
     pub title: String,
-    /// The item body's opaque slot span, when the item template declares a slot.
+    /// The item body's opaque slot span, when the item template declares **exactly
+    /// one** slot leaf (the bare-prose form — the whole item body is the slot). A
+    /// multi-slot template (`slots` non-empty) carries `None` here; a slot-less
+    /// template carries `None` too.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slot: Option<Span>,
+    /// The per-leaf slot spans, in schema block order, when the item template
+    /// declares **>1** slot leaf (M16 multi-slot, `methodology-docs.md` → the
+    /// `roadmap` two-slot entry). Each `(leaf_id, span)` is the opaque prose under
+    /// that leaf's `#### <Leaf-Title>` sub-heading. Empty for a single-slot or
+    /// slot-less template (the bare-prose `slot` carries the single-slot case).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slots: Vec<(String, Span)>,
     /// The item's sentinelled per-item fields, in physical order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<crate::field_block::Field>,
+}
+
+impl ParsedItem {
+    /// The opaque span of the slot leaf `leaf_id`: the multi-slot `slots` entry when
+    /// the template declares >1 slot, else the single bare-prose `slot` (whose leaf
+    /// id is the item template's one slot id). Returns `None` when no such slot leaf
+    /// is present. The lookup the conformance + item-slot-splice paths address by.
+    pub fn slot_span(&self, leaf_id: &str) -> Option<&Span> {
+        if self.slots.is_empty() {
+            // Single-slot (bare-prose) template: the one slot leaf is the body.
+            return self.slot.as_ref();
+        }
+        self.slots
+            .iter()
+            .find(|(id, _)| id == leaf_id)
+            .map(|(_, span)| span)
+    }
 }
 
 /// A half-open byte range `[start, end)` into the source, plus the 1-based source
@@ -755,12 +782,29 @@ fn parse_items(
         }
         seen.push(id.clone());
 
-        // The item's slot prose: heading end → its field-group sentinel or item end.
-        let slot_end = body_boundary(blocks, *content_start, item_end);
-        let span = trim_span(source, *content_start, slot_end);
-        for v in ceiling_violations(blocks, span.start, span.end) {
-            findings.push(v);
-        }
+        // The item's slot prose. A **multi-slot** template splits the body by its
+        // `#### <Leaf-Title>` sub-headings (one span per slot leaf, schema order); a
+        // single-slot template keeps the whole body as one bare-prose span.
+        let body_end = body_boundary(blocks, *content_start, item_end);
+        let (single_slot, multi_slots) = if item_template.is_multi_slot() {
+            let slots = parse_item_slots(
+                source,
+                blocks,
+                *content_start,
+                body_end,
+                &item_template.slot_ids,
+                findings,
+            );
+            (None, slots)
+        } else if item_template.has_slot() {
+            let span = trim_span(source, *content_start, body_end);
+            for v in ceiling_violations(blocks, span.start, span.end) {
+                findings.push(v);
+            }
+            (Some(span), Vec::new())
+        } else {
+            (None, Vec::new())
+        };
 
         // The item's per-item fields (sentinelled bullet group), against its block.
         let item_fields = if item_template.has_fields {
@@ -779,33 +823,121 @@ fn parse_items(
         items.push(ParsedItem {
             id,
             title: heading_text(raw, true),
-            slot: if item_template.has_slot {
-                Some(span)
-            } else {
-                None
-            },
+            slot: single_slot,
+            slots: multi_slots,
             fields: item_fields,
         });
     }
     items
 }
 
-/// The leaf shape of a repeatable item template: whether it has a slot, its
-/// declared field keys (in schema order, excluding the id-source field, which is
-/// rendered as the heading not a bullet).
-struct ItemTemplate {
-    has_slot: bool,
+/// Split a **multi-slot** item body `[from, body_end)` into per-leaf slot spans by
+/// its `#### <Leaf-Title>` sub-headings, in schema block order.
+///
+/// Each declared slot leaf's `#### <Leaf-Title>` heading (the leaf id title-cased,
+/// matching the writer) opens its slot; the slot's opaque prose runs from after that
+/// heading to the next `####` sub-heading (or `body_end`). `#####`+ headings stay
+/// opaque slot-internal content — only `####` at the leaf-label level delimits a
+/// slot (the same discipline by which `###` delimits items and `####`+ was
+/// slot-internal). A declared leaf whose `#### <Leaf-Title>` heading is absent is a
+/// located [`Severity::Blocking`] conformance finding (the skeleton the writer mints
+/// always carries every sub-heading, so an absent one is an out-of-band malformation).
+fn parse_item_slots(
+    source: &str,
+    blocks: &[Block],
+    from: usize,
+    body_end: usize,
+    slot_ids: &[String],
+    findings: &mut Vec<Finding>,
+) -> Vec<(String, Span)> {
+    // The `#### <label>` (H4) sub-headings in the item body, in document order:
+    // `(heading start, content_start, label text)`.
+    let sub_heads: Vec<(usize, usize, String)> = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading {
+                level: HeadingLevel::H4,
+                range,
+                content_start,
+                text,
+                ..
+            } if range.start >= from && range.start < body_end => {
+                Some((range.start, *content_start, text.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    let mut slots = Vec::new();
+    for leaf_id in slot_ids {
+        // The slot's `#### <Leaf-Title>` heading — matched case-insensitively against
+        // the title-cased leaf id (the writer emits `#### Proves` for `proves`).
+        let Some(pos) = sub_heads
+            .iter()
+            .position(|(_, _, label)| heading_matches_label(label, leaf_id))
+        else {
+            findings.push(Finding::blocking(
+                "conformance.item-slot-label-missing",
+                format!(
+                    "multi-slot item is missing its `#### {}` sub-heading",
+                    title_case(leaf_id)
+                ),
+                Location::at(line_of(source, from), 1),
+            ));
+            continue;
+        };
+        let content_start = sub_heads[pos].1;
+        // The slot's prose ends at the next `####` sub-heading or the body end.
+        let slot_end = sub_heads
+            .get(pos + 1)
+            .map(|(s, _, _)| *s)
+            .unwrap_or(body_end);
+        let span = trim_span(source, content_start, slot_end);
+        slots.push((leaf_id.clone(), span));
+    }
+    slots
+}
+
+/// Case-insensitive, whitespace-trimmed match of a `#### <label>` sub-heading's text
+/// against a slot leaf id — the multi-slot dual of [`heading_matches`] for sections.
+/// The writer title-cases the leaf id (`proves` → `Proves`); the read compare folds
+/// case so the title-cased heading maps back to the leaf id.
+fn heading_matches_label(label: &str, leaf_id: &str) -> bool {
+    label.trim().eq_ignore_ascii_case(leaf_id.trim())
+}
+
+/// Title-case a single-word leaf id for the `#### <Leaf-Title>` sub-heading (mirrors
+/// the writer's `heading_text` for a single-word id). Leaf ids are single words
+/// (the same constraint section ids follow), so a single capitalization suffices.
+fn title_case(id: &str) -> String {
+    let mut chars = id.chars();
+    match chars.next() {
+        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// The leaf shape of a repeatable item template: its declared slot leaf ids (in
+/// schema block order), its declared field keys (in schema order, excluding the
+/// id-source field, which is rendered as the heading not a bullet).
+///
+/// **Single vs multi-slot** is the count of `slot_ids`: exactly one → the
+/// bare-prose form (the whole item body is the slot, byte-identical backward-compat
+/// with every existing single-slot doctype); more than one → each slot renders
+/// under its own `#### <Leaf-Title>` sub-heading (M16).
+pub(crate) struct ItemTemplate {
+    pub(crate) slot_ids: Vec<String>,
     has_fields: bool,
     field_keys: Vec<String>,
 }
 
 impl ItemTemplate {
-    fn from(repeatable: &crate::schema::Repeatable) -> Self {
-        let mut has_slot = false;
+    pub(crate) fn from(repeatable: &crate::schema::Repeatable) -> Self {
+        let mut slot_ids = Vec::new();
         let mut field_keys = Vec::new();
         for leaf in &repeatable.block {
             match leaf {
-                crate::schema::Leaf::Slot { .. } => has_slot = true,
+                crate::schema::Leaf::Slot { id, .. } => slot_ids.push(id.clone()),
                 crate::schema::Leaf::Field(f) => {
                     // The id-source field is the heading, not a trailing bullet.
                     if f.id != repeatable.id_from {
@@ -816,10 +948,21 @@ impl ItemTemplate {
         }
         let has_fields = !field_keys.is_empty();
         ItemTemplate {
-            has_slot,
+            slot_ids,
             has_fields,
             field_keys,
         }
+    }
+
+    /// Whether the template declares at least one slot leaf.
+    fn has_slot(&self) -> bool {
+        !self.slot_ids.is_empty()
+    }
+
+    /// Whether the template declares more than one slot leaf (the multi-slot form,
+    /// rendered with `#### <Leaf-Title>` sub-headings).
+    pub(crate) fn is_multi_slot(&self) -> bool {
+        self.slot_ids.len() > 1
     }
 }
 
@@ -1225,6 +1368,88 @@ A short burst above the limit is tolerated for 2s.
             criteria.items[0].fields[0].value,
             Value::Scalar("`test/rate_limit_spec.rb#burst`".into())
         );
+    }
+
+    /// A `roadmap`-shaped schema: a `milestones` repeatable whose item block carries
+    /// TWO prose slots (`proves`, `decomposition`) — the M16 multi-slot shape.
+    fn two_slot_schema() -> Schema {
+        let yaml = b"\
+type: roadmap
+id-from: title
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: proves, slot: { hint: \"x\" } }
+        - { id: decomposition, slot: { hint: \"y\" } }
+";
+        crate::schema::load_schema(yaml).expect("two-slot roadmap schema loads")
+    }
+
+    /// Golden (M16 multi-slot read): a two-slot item is split by its `#### Proves` /
+    /// `#### Decomposition` sub-headings into two per-leaf spans (schema block order),
+    /// each re-slicing to exactly its opaque prose. `item.slot` stays `None` (the
+    /// single-slot bare-prose carrier); the per-leaf spans live in `item.slots`. A
+    /// `#####`-deep heading inside a slot stays opaque slot-internal content.
+    #[test]
+    fn multi_slot_item_splits_by_sub_label_headings() {
+        let src = "\
+# Roadmap
+
+## Milestones
+
+### M16 self-hosting  {#m16-self-hosting}
+
+#### Proves
+
+Closes the self-hosting loop.
+
+##### A deeper heading stays opaque
+
+#### Decomposition
+
+Inc 1, Inc 2, Inc 3.
+";
+        let doc = parse_sections(&two_slot_schema(), src).expect("conformant roadmap parses");
+        let milestones = doc.sections.iter().find(|s| s.id == "milestones").unwrap();
+        let item = &milestones.items[0];
+
+        // The single-slot bare carrier is unused; the per-leaf spans carry the prose.
+        assert!(
+            item.slot.is_none(),
+            "multi-slot item uses `slots`, not bare `slot`"
+        );
+        let leaf_ids: Vec<&str> = item.slots.iter().map(|(id, _)| id.as_str()).collect();
+        assert_eq!(leaf_ids, ["proves", "decomposition"], "schema block order");
+
+        // Each leaf span re-slices to its opaque prose (the `#####` stays inside proves).
+        let proves = item.slot_span("proves").unwrap().slice(src);
+        assert!(proves.contains("Closes the self-hosting loop."));
+        assert!(
+            proves.contains("##### A deeper heading stays opaque"),
+            "`#####` stays opaque slot-internal content: {proves:?}",
+        );
+        let decomp = item.slot_span("decomposition").unwrap().slice(src);
+        assert_eq!(decomp.trim(), "Inc 1, Inc 2, Inc 3.");
+
+        // Project for the golden: (id, [(leaf, prose)]).
+        type SlotView<'a> = (&'a str, Vec<(&'a str, &'a str)>);
+        let view: Vec<SlotView> = milestones
+            .items
+            .iter()
+            .map(|it| {
+                (
+                    it.id.as_str(),
+                    it.slots
+                        .iter()
+                        .map(|(leaf, sp)| (leaf.as_str(), sp.slice(src)))
+                        .collect(),
+                )
+            })
+            .collect();
+        insta::assert_debug_snapshot!("multi_slot_items", view);
     }
 
     /// Conformance golden: a `<!-- fields -->` sentinel with no following bullet

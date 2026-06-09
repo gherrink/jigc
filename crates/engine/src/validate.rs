@@ -571,13 +571,16 @@ fn check_item_slot_present(
     source: &str,
     findings: &mut Vec<Finding>,
 ) {
-    let filled = item
-        .slot
-        .as_ref()
+    // The addressed slot leaf's own span — single-slot via the bare `slot`,
+    // multi-slot via the named `slots` entry (`slot_span` resolves either). Each
+    // declared slot leaf is checked against ITS span, so a multi-slot item with one
+    // empty required slot yields one blocking finding for that leaf alone.
+    let span = item.slot_span(leaf_id);
+    let filled = span
         .map(|span| !span.slice(source).trim().is_empty())
         .unwrap_or(false);
     if !filled {
-        let line = item.slot.as_ref().map(|span| span.start_line).unwrap_or(1);
+        let line = span.map(|span| span.start_line).unwrap_or(1);
         findings.push(blocking_conformance(
             "schema-conformance.required-slot-present",
             format!(

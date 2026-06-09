@@ -1,0 +1,20 @@
+---
+source: crates/engine/src/parse.rs
+assertion_line: 1446
+expression: view
+---
+[
+    (
+        "m16-self-hosting",
+        [
+            (
+                "proves",
+                "Closes the self-hosting loop.\n\n##### A deeper heading stays opaque",
+            ),
+            (
+                "decomposition",
+                "Inc 1, Inc 2, Inc 3.",
+            ),
+        ],
+    ),
+]

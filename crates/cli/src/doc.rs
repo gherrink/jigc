@@ -221,10 +221,12 @@ fn run_set_slot(
     let edited = match target {
         SlotTarget::Section(section) => set_slot_validated(&schema, &source, &section, &prose)
             .map_err(|f| block(&f, "set-slot", addr))?,
-        SlotTarget::Item { section, item } => {
-            set_item_slot(&schema, &source, &section, &item, &prose)
-                .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?
-        }
+        SlotTarget::Item {
+            section,
+            item,
+            leaf,
+        } => set_item_slot(&schema, &source, &section, &item, &leaf, &prose)
+            .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?,
     };
 
     persist(&path, &edited)?;
@@ -640,7 +642,11 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
 /// repeatable item (spliced via `set_item_slot`, addressed through the item id).
 enum SlotTarget {
     Section(String),
-    Item { section: String, item: String },
+    Item {
+        section: String,
+        item: String,
+        leaf: String,
+    },
 }
 
 /// Resolve the destination a `set-slot` address targets — the simple section whose
@@ -652,10 +658,11 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
     let section_id = match address.fragment.as_ref()? {
         Fragment::Unit(u) => u.as_str(),
         Fragment::UnitLeaf(u, _) => u.as_str(),
-        Fragment::UnitItemLeaf(section, item, _) => {
+        Fragment::UnitItemLeaf(section, item, leaf) => {
             return Some(SlotTarget::Item {
                 section: section.as_str().to_string(),
                 item: item.as_str().to_string(),
+                leaf: leaf.as_str().to_string(),
             });
         }
         _ => return None,
