@@ -29,6 +29,16 @@
 //! These are structural assertions over the committed pack data + doc, with **zero
 //! `crates/*/src` changes** — if a later edit mechanizes a judgment step, or ships
 //! a prose-wash the doc does not name, this test goes red.
+//!
+//! M16 Inc 4 T3 EXTENDS the hollowing guard to the **planning** phase steps
+//! (`design/methodology-docs.md` → Build-time honesty watch, review finding A-3:
+//! "the encoded planning/completion steps must keep their gap-detection / settle /
+//! verdict phases as *pure agent-judgment prose* — a step that emits a
+//! `gap-count ≥ N` lint or a structured checklist the agent must satisfy has
+//! *hollowed* the judgment"). The planning loop's judgment phases — `settle`,
+//! `detect-gaps`, `plan-review` — each carry a human-judgment handback and must
+//! stay free of a numeric-threshold lint. A future edit that mechanizes any of
+//! them into a `gap-count ≥ N` / scored gate goes red here.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -124,6 +134,81 @@ fn scope_step_is_judgment_prose_not_a_hollowed_checklist() {
              — the scope judgment stays the agent's (self-hosting.md → bar #2 FAIL exemplar (a)); \
              got:\n{scope}",
         );
+    }
+}
+
+#[test]
+fn planning_judgment_phases_stay_prose_not_a_gap_count_or_scored_checklist() {
+    // FAIL exemplar (a) for the planning loop (methodology-docs.md → Build-time
+    // honesty watch, A-3). The settle / detect-gaps / plan-review phases are the
+    // milestone's irreducible judgment slots — gap-detection, the human-gated
+    // settle, and the independent adversarial review. Each must stay judgment prose
+    // (a human-judgment handback present) and must NOT be mechanized into a
+    // `gap-count >= N` lint or a scored checklist the agent must satisfy. A future
+    // edit that hollows any of them goes red here.
+
+    // The numeric-threshold / scoring tokens that mark a hollowed judgment slot. We
+    // do NOT forbid the bare word "checklist": detect-gaps DISAVOWS it ("judgment
+    // work, not a checklist to tick"), and forbidding the disavowal would false-red.
+    // The honest tell is a numeric gate (`gap-count >= N`), which never appears in
+    // honest judgment prose; that token set is the falsifiable edge.
+    let forbidden_mechanizers = ["gap-count", "gap count", ">=", "\u{2265}"];
+
+    // Collapse whitespace runs (incl. the prose's hard line-wraps) to single spaces
+    // so a handback phrase split across a wrap still matches its words in order.
+    let normalize = |s: &str| {
+        s.to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    // (settle) the human-gated checkpoint phase: the human owns the gate.
+    let settle = step_text("settle.yaml");
+    let settle_lc = normalize(&settle);
+    assert!(
+        settle_lc.contains("human owns") && settle_lc.contains("judgment"),
+        "settle.yaml must stay the human-in-the-loop judgment gate — the human owns it and \
+         the judgment calls are surfaced, not silently decided (methodology-docs.md → A-3: \
+         the settle phase stays pure agent-judgment prose); got:\n{settle}",
+    );
+
+    // (detect-gaps) the adversarial gap pass: explicitly judgment work, not a checklist.
+    let detect = step_text("detect-gaps.yaml");
+    let detect_lc = normalize(&detect);
+    assert!(
+        detect_lc.contains("judgment work") && detect_lc.contains("not a checklist"),
+        "detect-gaps.yaml must stay judgment prose — it is judgment work, NOT a checklist to \
+         tick (methodology-docs.md → A-3: gap-detection stays pure agent-judgment prose); \
+         got:\n{detect}",
+    );
+
+    // (plan-review) the independent adversarial review: the human owns each finding.
+    let review = step_text("plan-review.yaml");
+    let review_lc = normalize(&review);
+    assert!(
+        review_lc.contains("human owns") && review_lc.contains("adversari"),
+        "plan-review.yaml must stay the independent adversarial-judgment phase — the human \
+         owns accepting or rejecting each finding (methodology-docs.md → A-3: the review/verdict \
+         phase stays pure agent-judgment prose); got:\n{review}",
+    );
+
+    // (negative) none of the three judgment phases may carry a numeric-threshold lint
+    // or scored gate — that is the FAIL exemplar (a) hollowing.
+    for (name, text) in [
+        ("settle.yaml", &settle),
+        ("detect-gaps.yaml", &detect),
+        ("plan-review.yaml", &review),
+    ] {
+        let lc = text.to_lowercase();
+        for forbidden in forbidden_mechanizers {
+            assert!(
+                !lc.contains(forbidden),
+                "{name} must not be hollowed into a numeric-threshold `{forbidden}` lint / scored \
+                 gate — the planning judgment stays the agent's (methodology-docs.md → A-3: a step \
+                 that emits a `gap-count >= N` lint has hollowed the judgment); got:\n{text}",
+            );
+        }
     }
 }
 
