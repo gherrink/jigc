@@ -590,7 +590,7 @@ mod tests {
         assert_eq!(
             per_check.len(),
             26,
-            "the inventory totals 26 checks (validation.md:210); got:\n{per_check:#?}",
+            "the inventory totals 26 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
         // 17 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
