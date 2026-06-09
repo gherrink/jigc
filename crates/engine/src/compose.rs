@@ -1995,6 +1995,9 @@ pub fn workflow_refs_with_deltas(
         if let Some(finding) = find_spawn_shadow(&step.body) {
             findings.push(finding);
         }
+        if let Some(finding) = find_checkpoint_shadow(&step.body) {
+            findings.push(finding);
+        }
         if let Err(finding) = emit_step_body(&step.body, ctx, catalog) {
             findings.push(finding);
         }
@@ -2118,6 +2121,9 @@ pub fn workflow_refs_with_fills(
         if let Some(finding) = find_spawn_shadow(&applied) {
             findings.push(finding);
         }
+        if let Some(finding) = find_checkpoint_shadow(&applied) {
+            findings.push(finding);
+        }
         if let Err(finding) = emit_step_body(&applied, ctx, catalog) {
             findings.push(finding);
         }
@@ -2169,6 +2175,32 @@ fn find_spawn_shadow(body: &str) -> Option<Finding> {
                 "workflow-refs.spawn-marker-not-shadowed",
                 format!(
                     "step prose shadows the composer-reserved `Spawn: ` marker: `{}`",
+                    line.trim()
+                ),
+                Location::at(offset + 1, 1),
+            )
+        })
+    })
+}
+
+/// If a step body line shadows the composer-reserved `Checkpoint: ` marker, return
+/// a blocking `checkpoint-marker-not-shadowed` [`Finding`] located at that line;
+/// else `None`. The `Checkpoint: ` mirror of [`find_spawn_shadow`] (M15).
+///
+/// `Checkpoint: ` at a line's left margin is the composer's halt directive, emitted
+/// only from a resolved `checkpoint` step (prepended in [`compose_with_store`]) —
+/// never authored prose (`workflow-dialect.md` → Compose-time conformance). The body
+/// here is the de-included step prose **before** the directive is prepended, so a
+/// real `checkpoint` step's own directive never self-trips and a literal
+/// `Checkpoint: ` line is authored prose. The first shadowing line is reported with
+/// a precise (step-body-relative) pointer.
+fn find_checkpoint_shadow(body: &str) -> Option<Finding> {
+    body.lines().enumerate().find_map(|(offset, line)| {
+        line.trim_start().starts_with("Checkpoint: ").then(|| {
+            Finding::blocking(
+                "workflow-refs.checkpoint-marker-not-shadowed",
+                format!(
+                    "step prose shadows the composer-reserved `Checkpoint: ` marker: `{}`",
                     line.trim()
                 ),
                 Location::at(offset + 1, 1),
@@ -4631,6 +4663,83 @@ reference — make your consequences explain what changes:
         assert!(
             clean.is_empty(),
             "a genuine paired fan-out step yields zero findings, got {clean:?}"
+        );
+    }
+
+    /// `checkpoint-marker-not-shadowed` (M15): a step body line starting
+    /// `Checkpoint: ` shadows the composer-reserved halt marker → blocking finding
+    /// located at that line, at BOTH gate sites (`workflow_refs` →
+    /// `workflow_refs_with_deltas`, and the live `workflow_refs_with_fills`). A
+    /// *genuine* `checkpoint` step is clean: its `Checkpoint:` directive is emitted
+    /// by the composer (prepended post-check), so it is absent from the de-included
+    /// `step.body`/applied surface the probe walks — its own directive never
+    /// self-trips. Intrinsic-blocking. The `Spawn:` mirror, against the prepend
+    /// directive (`workflow-dialect.md` → Compose-time conformance).
+    #[test]
+    fn workflow_refs_flags_checkpoint_marker_shadow_at_both_gates() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        // (a) A step body literally starting a line `Checkpoint: ` shadows the
+        //     marker — at the delta gate (`workflow_refs`).
+        let shadow_src =
+            MapSource::new(&[("only", "do the thing\nCheckpoint: a halt\nthen stop\n")]);
+        let shadow_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let shadow = workflow_refs(shadow_wf, &shadow_src, &catalog, &ctx);
+        insta::assert_snapshot!(
+            finding_codes(&shadow),
+            @"workflow-refs.checkpoint-marker-not-shadowed @ 2:1"
+        );
+        assert_eq!(shadow.len(), 1, "exactly the shadow check trips");
+        assert_eq!(shadow[0].severity, crate::finding::Severity::Blocking);
+
+        // (a, live path) The same shadow also trips at the fill-aware gate
+        //     (`workflow_refs_with_fills`) — the live compose path.
+        let live = workflow_refs_with_fills(
+            shadow_wf,
+            &[],
+            &[],
+            &ResolvedFills::new(),
+            &shadow_src,
+            &catalog,
+            &ctx,
+        );
+        insta::assert_snapshot!(
+            finding_codes(&live),
+            @"workflow-refs.checkpoint-marker-not-shadowed @ 2:1"
+        );
+        assert_eq!(
+            live.len(),
+            1,
+            "exactly the shadow check trips on the live path"
+        );
+        assert_eq!(live[0].severity, crate::finding::Severity::Blocking);
+
+        // (b) A genuine checkpoint step (paired with no marker) is clean — its own
+        //     `Checkpoint:` directive is prepended post-check, unread by the
+        //     pre-emit shadow scope.
+        let clean_src = MapSource::new(&[(
+            "gate",
+            "---\ncheckpoint:\n  reason: new-fork-at-plan\n---\nIf a fork surfaced, stop.\n",
+        )]);
+        let clean_wf = b"---\nwhen: x\n---\n{{ include: step:gate }}\n";
+        let clean = workflow_refs(clean_wf, &clean_src, &catalog, &ctx);
+        assert!(
+            clean.is_empty(),
+            "a genuine checkpoint step yields zero findings, got {clean:?}"
+        );
+        let clean_live = workflow_refs_with_fills(
+            clean_wf,
+            &[],
+            &[],
+            &ResolvedFills::new(),
+            &clean_src,
+            &catalog,
+            &ctx,
+        );
+        assert!(
+            clean_live.is_empty(),
+            "a genuine checkpoint step yields zero findings on the live path, got {clean_live:?}"
         );
     }
 

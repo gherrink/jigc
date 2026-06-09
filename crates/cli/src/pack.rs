@@ -793,7 +793,7 @@ mod tests {
           of: [blocking, warning, advisory]
           default: blocking
 
-        # --- workflow-refs.* (9, intrinsic) ---
+        # --- workflow-refs.* (10, intrinsic) ---
         validation.workflow-refs.placeholder-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
@@ -825,6 +825,11 @@ mod tests {
           default: blocking
           floor: blocking
         validation.workflow-refs.spawn-marker-not-shadowed.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
+        validation.workflow-refs.checkpoint-marker-not-shadowed.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: blocking

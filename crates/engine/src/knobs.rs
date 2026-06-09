@@ -40,7 +40,7 @@ struct KnobDecl {
 
 /// The engine-owned set of intrinsic check cascade keys — the checks whose
 /// demotion would break a load-bearing invariant of the system itself
-/// (`validation.md` → What "intrinsic" means mechanically: the nine
+/// (`validation.md` → What "intrinsic" means mechanically: the ten
 /// `workflow-refs.*` checks, the four `schema-conformance.*` checks, and the three
 /// `pack-probe-integrity.*` meta-findings). The
 /// engine asserts at pack-load that every one of these knobs is **declared** and
@@ -56,6 +56,7 @@ pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.workflow-refs.at-marker-on-non-scalar.severity",
     "validation.workflow-refs.run-marker-not-shadowed.severity",
     "validation.workflow-refs.spawn-marker-not-shadowed.severity",
+    "validation.workflow-refs.checkpoint-marker-not-shadowed.severity",
     "validation.workflow-refs.fan-out-join-paired.severity",
     "validation.workflow-refs.body-include-only.severity",
     "validation.schema-conformance.ref-resolves.severity",
@@ -323,13 +324,17 @@ mod tests {
                 "validation.schema-conformance.required-slot-present.severity",
                 "blocking",
             ),
-            // workflow-refs (9, intrinsic) + the M4 per-probe default (retained).
+            // workflow-refs (10, intrinsic) + the M4 per-probe default (retained).
             (
                 "validation.workflow-refs.at-marker-on-non-scalar.severity",
                 "blocking",
             ),
             (
                 "validation.workflow-refs.body-include-only.severity",
+                "blocking",
+            ),
+            (
+                "validation.workflow-refs.checkpoint-marker-not-shadowed.severity",
                 "blocking",
             ),
             (
@@ -559,16 +564,17 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **25 per-check `validation.<probe>.<check>.severity` keys — 16 intrinsic
+    /// **26 per-check `validation.<probe>.<check>.severity` keys — 17 intrinsic
     /// (floored at `blocking`) + 9 tunable (no floor)** (`validation.md`:210). The
-    /// 16 intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is
-    /// every other per-check key, including the two M10 `doc-code.*` rows. Counted
+    /// M15 `checkpoint-marker-not-shadowed` row joins the intrinsic set (16 → 17).
+    /// The 17 intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder
+    /// is every other per-check key, including the two M10 `doc-code.*` rows. Counted
     /// over the *embedded* bytes, so the count is the shipped surface — not a
     /// synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_25_16_9_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_26_17_9_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -583,24 +589,59 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            25,
-            "the inventory totals 25 checks (validation.md:210); got:\n{per_check:#?}",
+            26,
+            "the inventory totals 26 checks (validation.md:210); got:\n{per_check:#?}",
         );
 
-        // 16 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
+        // 17 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
         let intrinsic = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).map(String::as_str) == Some("blocking"))
             .count();
-        assert_eq!(intrinsic, 16, "16 intrinsic checks (floored at blocking)");
-        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 16);
+        assert_eq!(intrinsic, 17, "17 intrinsic checks (floored at blocking)");
+        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 17);
 
-        // The remaining 9 are tunable (no floor) — 25 - 16.
+        // The remaining 9 are tunable (no floor) — 26 - 17.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
             .count();
         assert_eq!(tunable, 9, "9 tunable checks (unfloored)");
+    }
+
+    /// Done-criterion (c): the new `checkpoint-marker-not-shadowed` severity key is
+    /// registered in **exactly** the lists its M8 sibling `spawn-marker-not-shadowed`
+    /// belongs to — proved, not trusted. The sibling lives in `INTRINSIC_CHECK_KEYS`
+    /// and the `knobs.yaml` enum (both floored intrinsic), and NOT in
+    /// `CHECK_INVENTORY` (the VERIFIED-FALSE roadmap claim — that gates
+    /// task-validate/finalize, not compose-time). This asserts list membership is
+    /// byte-for-byte the sibling's set over `INTRINSIC_CHECK_KEYS` (the engine-owned
+    /// list) and the embedded knob keys.
+    #[test]
+    fn checkpoint_severity_key_membership_matches_spawn_sibling() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        let checkpoint = "validation.workflow-refs.checkpoint-marker-not-shadowed.severity";
+        let spawn = "validation.workflow-refs.spawn-marker-not-shadowed.severity";
+
+        // Both are in INTRINSIC_CHECK_KEYS.
+        assert!(
+            INTRINSIC_CHECK_KEYS.contains(&spawn),
+            "spawn sibling is intrinsic"
+        );
+        assert!(
+            INTRINSIC_CHECK_KEYS.contains(&checkpoint),
+            "checkpoint key joins the intrinsic list (the spawn sibling's set)"
+        );
+
+        // Both are declared, floored-blocking knobs in the embedded knobs.yaml enum.
+        for key in [spawn, checkpoint] {
+            assert!(knobs.field(key).is_some(), "{key} is a declared knob");
+            assert_eq!(
+                knobs.floors().get(key).map(String::as_str),
+                Some("blocking"),
+                "{key} is floored intrinsic in the knobs enum",
+            );
+        }
     }
 
     /// A project `scalar-set validation.doc-code.criterion-maps-to-test.severity
