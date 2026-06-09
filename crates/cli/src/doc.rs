@@ -257,7 +257,13 @@ fn run_add_item(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let edited = engine::write::add_item(&schema, &source, &section_id, title, None, &[])
+    // Materialize the item block's `set: on-create` fields at mint, mirroring the
+    // doc-level on-create contract: a `date` leaf declared `set: on-create` inside
+    // the repeatable block is stamped with the current date here (the CLI owns the
+    // clock — the engine stays a pure function; `write.rs` names this "the CLI
+    // `set: on-create` deriver"). Single-slot / no-on-create items pass no fields.
+    let on_create = on_create_item_fields(&schema, &section_id);
+    let edited = engine::write::add_item(&schema, &source, &section_id, title, None, &on_create)
         .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
 
     persist(&path, &edited)?;
@@ -271,6 +277,71 @@ fn run_add_item(
         engine::slug::slugify(title),
     );
     Ok(())
+}
+
+/// The `set: on-create` fields the repeatable `section_id`'s item block declares,
+/// each materialized to its CLI-derived value at mint time. Currently the only
+/// derived `set:` is `on-create` over a `date` leaf — stamped with [`today_iso`]
+/// (the doc-level `set: on-create` contract, applied to a repeatable item). A
+/// non-repeatable / unknown section, or a block with no such leaf, yields no
+/// fields (the existing single-slot/no-date `add-item` behavior is unchanged).
+fn on_create_item_fields(schema: &Schema, section_id: &str) -> Vec<engine::field_block::Field> {
+    use engine::schema::{FieldType, Leaf};
+
+    let Some(section) = schema.sections.iter().find(|s| s.id == section_id) else {
+        return Vec::new();
+    };
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return Vec::new();
+    };
+    let today = today_iso();
+    repeatable
+        .block
+        .iter()
+        .filter_map(|leaf| match leaf {
+            Leaf::Field(field)
+                if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") =>
+            {
+                Some(engine::field_block::Field {
+                    key: field.id.clone(),
+                    value: Value::Scalar(today.clone()),
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The current UTC date as an ISO `YYYY-MM-DD` string — the CLI-side `set: on-create`
+/// date deriver (`write.rs` → `is_iso_date`: "the canonical-date authority is the CLI
+/// `set: on-create` deriver"). The engine stays a pure function, so clock access lives
+/// CLI-side. Derived from [`SystemTime`](std::time::SystemTime) via the civil-from-days
+/// algorithm (Howard Hinnant's `civil_from_days`) — no date-crate dependency, the same
+/// `std::time` source the CLI already reads elsewhere.
+fn today_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let days = (secs / 86_400) as i64; // days since 1970-01-01 (UTC)
+    let (y, m, d) = civil_from_days(days);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Convert a count of days since the Unix epoch (1970-01-01) to a `(year, month, day)`
+/// proleptic-Gregorian civil date — Howard Hinnant's `civil_from_days` (the standard
+/// branch-free algorithm), correct for all civil dates. Used only by [`today_iso`].
+fn civil_from_days(z: i64) -> (i64, u32, u32) {
+    let z = z + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32; // [1, 12]
+    (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
 /// `jigc doc create <type> --title <…>` — agent-initiated, create-gated mint.
@@ -902,6 +973,89 @@ mod tests {
         assert!(
             !within_area(&area, &far),
             "a destination climbing above the repo is out-of-area",
+        );
+    }
+
+    /// `civil_from_days` is the `today_iso` date deriver's core — pin it against
+    /// known epoch-day anchors (the epoch itself, leap-day boundaries, and a
+    /// post-2000 century-rule case) so the stamped `set: on-create` date is correct
+    /// independent of the wall clock.
+    #[test]
+    fn civil_from_days_matches_known_dates() {
+        assert_eq!(civil_from_days(0), (1970, 1, 1), "the Unix epoch");
+        assert_eq!(
+            civil_from_days(-1),
+            (1969, 12, 31),
+            "the day before the epoch"
+        );
+        // 2000-02-29 — a leap day across the divide-by-400 century rule.
+        assert_eq!(civil_from_days(11_016), (2000, 2, 29), "the 2000 leap day");
+        assert_eq!(civil_from_days(11_017), (2000, 3, 1), "the day after");
+        // 2026-06-09 (the day this regression was fixed) — 20_613 days post-epoch.
+        assert_eq!(civil_from_days(20_613), (2026, 6, 9), "a contemporary date");
+    }
+
+    /// `today_iso` emits a well-formed ISO `YYYY-MM-DD` the engine's date-conformance
+    /// check accepts (four-digit year, `01..=12` month, `01..=31` day).
+    #[test]
+    fn today_iso_is_a_well_formed_iso_date() {
+        let s = today_iso();
+        let parts: Vec<&str> = s.split('-').collect();
+        assert_eq!(parts.len(), 3, "ISO date has three `-`-joined parts: {s:?}");
+        assert_eq!(parts[0].len(), 4, "four-digit year: {s:?}");
+        let month: u32 = parts[1].parse().expect("numeric month");
+        let day: u32 = parts[2].parse().expect("numeric day");
+        assert!((1..=12).contains(&month), "month in range: {s:?}");
+        assert!((1..=31).contains(&day), "day in range: {s:?}");
+    }
+
+    /// `on_create_item_fields` materializes exactly the repeatable block's `date`
+    /// leaves declared `set: on-create` — and nothing for a block without one (the
+    /// existing single-slot/no-date `add-item` behavior is untouched).
+    #[test]
+    fn on_create_item_fields_stamps_only_on_create_date_leaves() {
+        // The shipped `spec` doctype's `criteria` block carries NO `set: on-create`
+        // field, so `add-item` over it passes no fields (the regression-safe path).
+        const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+        let types = vec![engine::schema::PackTypeDecl {
+            name: "code-anchor".to_owned(),
+            adjudicator: "doc-code".to_owned(),
+            check: "symbol-exists".to_owned(),
+        }];
+        let spec = engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec loads");
+        assert!(
+            on_create_item_fields(&spec, "criteria").is_empty(),
+            "a block with no `set: on-create` field stamps nothing",
+        );
+
+        // A fixture block WITH an on-create date stamps exactly that one field.
+        let yaml = br#"
+type: ledger
+location: ledger/
+id-from: title
+description: A fixture running ledger.
+usage: pin the on-create date materialization.
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: date, type: date, set: on-create }
+        - { id: body, slot: { hint: "what" } }
+"#;
+        let schema = load_schema(yaml).expect("fixture ledger loads");
+        let fields = on_create_item_fields(&schema, "entries");
+        assert_eq!(fields.len(), 1, "exactly the one on-create date field");
+        assert_eq!(fields[0].key, "date", "the stamped field is `date`");
+        match &fields[0].value {
+            Value::Scalar(v) => assert_eq!(v, &today_iso(), "stamped with today's date"),
+            other => panic!("the date is a scalar, got {other:?}"),
+        }
+        // An unknown / non-repeatable section yields nothing.
+        assert!(
+            on_create_item_fields(&schema, "no-such-section").is_empty(),
+            "an unknown section stamps nothing",
         );
     }
 }
