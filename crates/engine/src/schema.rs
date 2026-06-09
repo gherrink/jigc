@@ -258,6 +258,14 @@ pub enum FieldType {
     Int,
     /// A cross-reference carrying relation metadata.
     Ref,
+    /// A repo-relative path under an owner-assigned artifact home. Recognition
+    /// only at this layer (the field parses + is exempt from author-required /
+    /// value-conformant, mirroring [`FieldType::Pack`]); its real adjudication —
+    /// path-safety + durable presence — is the intrinsic finalize-time #5
+    /// owner-artifact gate (`design/methodology-docs.md` → The engine work, item
+    /// 3). Engine-**native**, not a `Pack` type, because the gate keying on it is
+    /// intrinsic (not a tunable pack probe like `code-anchor` → `doc-code`).
+    OwnedLocation,
     /// A pack-declared type: its declared spelling plus the adjudicator probe
     /// bound to it. `adjudicator` is `None` until [`load_schema`] resolves the
     /// name against the supplied pack-declared set; an unresolved `Pack`
@@ -276,6 +284,7 @@ impl FieldType {
         ("bool", FieldType::Bool),
         ("int", FieldType::Int),
         ("ref", FieldType::Ref),
+        ("owned-location", FieldType::OwnedLocation),
     ];
 
     /// The on-disk spelling of this type (the inverse of [`Self::NATIVE`]).
@@ -287,6 +296,7 @@ impl FieldType {
             FieldType::Bool => "bool",
             FieldType::Int => "int",
             FieldType::Ref => "ref",
+            FieldType::OwnedLocation => "owned-location",
             FieldType::Pack(p) => &p.name,
         }
     }
@@ -867,6 +877,69 @@ sections: []
             !plain_json.contains("singleton"),
             "a false singleton flag serializes nothing (skip-on-false); got {plain_json}",
         );
+    }
+
+    /// (M16 inc-3 T1) The engine-native `owned-location` field type round-trips
+    /// through serde: a fixture schema declaring a field of `type: owned-location`
+    /// parses to the new [`FieldType::OwnedLocation`] native variant and
+    /// **re-serializes to the bare `owned-location` spelling** (not an unresolved
+    /// `Pack`). It loads with the **engine-empty** type set (no pack supplied) —
+    /// the proof it is engine-native, not pack-declared. The additive guard: every
+    /// other native spelling still round-trips byte-unchanged, so no existing
+    /// golden gains or loses a key. See `design/methodology-docs.md` → The engine
+    /// work (item 3, the owned-location recognition surface).
+    #[test]
+    fn owned_location_native_type_serde_roundtrips() {
+        let yaml = b"\
+type: completion-record
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: owner-artifact, type: owned-location }
+";
+        let schema = load_schema(yaml).expect("owned-location schema loads engine-native");
+        let SectionBody::Simple { fields, .. } = &schema.sections[0].body else {
+            panic!("meta is a simple header section");
+        };
+        let owner = fields.iter().find(|f| f.id == "owner-artifact").unwrap();
+        assert_eq!(
+            owner.ty,
+            FieldType::OwnedLocation,
+            "`owned-location` parses to the native variant, not an unresolved Pack",
+        );
+
+        // Re-serializes to the bare `owned-location` spelling and survives a reload.
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            json.contains("\"owned-location\""),
+            "the type re-serializes to the bare `owned-location` spelling; got {json}",
+        );
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(
+            reloaded, schema,
+            "owned-location survives a serde roundtrip"
+        );
+
+        // The additive guard: every pre-existing native spelling still round-trips
+        // to its own bare string (no native golden's bytes shift under the new arm).
+        for (spelling, ty) in [
+            ("enum", FieldType::Enum),
+            ("string", FieldType::String),
+            ("date", FieldType::Date),
+            ("bool", FieldType::Bool),
+            ("int", FieldType::Int),
+            ("ref", FieldType::Ref),
+        ] {
+            let s = serde_json::to_string(&ty).expect("native type serializes");
+            assert_eq!(
+                s,
+                format!("\"{spelling}\""),
+                "the `{spelling}` native type still serializes to its bare spelling",
+            );
+        }
     }
 
     /// Authored-prose metadata (M11): a schema carrying top-level

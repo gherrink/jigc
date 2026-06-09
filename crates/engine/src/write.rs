@@ -3363,7 +3363,14 @@ fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
         // Non-empty, single-line opaque value; deeper adjudication is a finalize /
         // pack concern. Control chars (newline/tab/…) are rejected so a value can
         // never inject a second field line when spliced onto its `- key: value` line.
-        FieldType::String | FieldType::Ref => check_opaque_scalar(field, value),
+        // `owned-location` joins the opaque-scalar floor here: recognition only at
+        // the write/conformance layer (its real adjudication — path-safety + durable
+        // presence — is the intrinsic finalize-time #5 owner-artifact gate). So
+        // `field-value-conformant` never fires for it beyond the shared floor (any
+        // non-empty single-line value passes), regardless of the value's safety.
+        FieldType::String | FieldType::Ref | FieldType::OwnedLocation => {
+            check_opaque_scalar(field, value)
+        }
         // A pack-declared type. Its **real** adjudicator is the bound finalize-time
         // probe (built in a later increment); here we run only the type's optional,
         // cheap *write-time shape check* — the `String | Ref` arm above split out so

@@ -549,6 +549,13 @@ fn is_author_required(field: &SchemaField) -> bool {
     if matches!(field.ty, FieldType::Pack(_)) {
         return false;
     }
+    // `owned-location` mirrors the pack-anchor exemption: its presence is the
+    // agent's choice and its *adjudication* — path-safety + durable presence — is
+    // the intrinsic finalize-time #5 owner-artifact gate, never a `required-field-
+    // present` obligation here (`design/methodology-docs.md` → The engine work, item 3).
+    if field.ty == FieldType::OwnedLocation {
+        return false;
+    }
     field.default.is_none() && field.set.is_none()
 }
 
@@ -760,6 +767,77 @@ The note body prose.
         assert!(
             findings.is_empty(),
             "an omitted optional `code-anchor` field must yield no findings, got {findings:?}",
+        );
+    }
+
+    /// (M16 inc-3 T1) The engine-native `owned-location` field is **exempt** from
+    /// `schema-conformance`'s author-required + value-conformant checks, mirroring
+    /// the pack-anchor exemption: its presence is the agent's choice and its
+    /// *adjudication* (path-safety + presence) is the finalize-time #5 gate (T2),
+    /// never `field-value-conformant`. So an instance is clean both ways: when the
+    /// `owner-artifact` field is **omitted** (no `required-field-present`) and when
+    /// it carries an arbitrary value (no `field-value-conformant`), regardless of
+    /// that value. The red step proving recognition: without the native arm,
+    /// `owned-location` would resolve to an unresolved `Pack` and `load_schema`
+    /// (engine-empty set) would reject the schema with `UnknownFieldType`.
+    #[test]
+    fn an_owned_location_field_is_exempt_from_conformance() {
+        let yaml = b"\
+type: completion-record
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: owner-artifact, type: owned-location }
+  - id: body
+    slot: { hint: \"The record body.\" }
+";
+        // Loads with the engine-empty type set — `owned-location` is engine-native.
+        let schema = crate::schema::load_schema(yaml)
+            .expect("completion-record schema with owned-location loads");
+
+        // Omitted: no `owner-artifact` line — must not fire `required-field-present`.
+        let omitted = "\
+---
+title: A record
+---
+
+# A record
+
+## Body
+
+The record body prose.
+";
+        let doc = parse_sections(&schema, omitted)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, omitted, &doc);
+        assert!(
+            findings.is_empty(),
+            "an omitted `owned-location` field must yield no findings, got {findings:?}",
+        );
+
+        // Present with an arbitrary value — must not fire `field-value-conformant`
+        // (recognition only; path-safety/presence is the T2 finalize-time gate).
+        let present = "\
+---
+title: A record
+owner-artifact: ../wildly/unsafe/../path
+---
+
+# A record
+
+## Body
+
+The record body prose.
+";
+        let doc = parse_sections(&schema, present)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, present, &doc);
+        assert!(
+            findings.is_empty(),
+            "a present `owned-location` value must not fire field-value-conformant, got {findings:?}",
         );
     }
 }
