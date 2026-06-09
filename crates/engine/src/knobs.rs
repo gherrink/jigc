@@ -41,8 +41,9 @@ struct KnobDecl {
 /// The engine-owned set of intrinsic check cascade keys — the checks whose
 /// demotion would break a load-bearing invariant of the system itself
 /// (`validation.md` → What "intrinsic" means mechanically: the ten
-/// `workflow-refs.*` checks, the four `schema-conformance.*` checks, and the three
-/// `pack-probe-integrity.*` meta-findings). The
+/// `workflow-refs.*` checks, the four `schema-conformance.*` checks, the three
+/// `pack-probe-integrity.*` meta-findings, and the `owner-artifact.present` #5 gate).
+/// The
 /// engine asserts at pack-load that every one of these knobs is **declared** and
 /// floored at `blocking`, so a mis-declared pack cannot silently un-lock the
 /// determinism boundary by leaving an intrinsic check absent or demotable. This
@@ -66,6 +67,7 @@ pub const INTRINSIC_CHECK_KEYS: &[&str] = &[
     "validation.pack-probe-integrity.timeout.severity",
     "validation.pack-probe-integrity.crash.severity",
     "validation.pack-probe-integrity.malformed-output.severity",
+    "validation.owner-artifact.present.severity",
 ];
 
 /// The parsed knob surface: the declared knobs as `(key, Field)` in sorted key
@@ -292,6 +294,8 @@ mod tests {
                 "validation.override-default.target-unchanged.severity",
                 "blocking",
             ),
+            // owner-artifact (1, intrinsic — the M16 #5 completion-half gate).
+            ("validation.owner-artifact.present.severity", "blocking"),
             // pack-probe-integrity (3, intrinsic — the enforced meta-findings).
             ("validation.pack-probe-integrity.crash.severity", "blocking"),
             (
@@ -564,17 +568,18 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **26 per-check `validation.<probe>.<check>.severity` keys — 17 intrinsic
-    /// (floored at `blocking`) + 9 tunable (no floor)** (`validation.md`:210). The
-    /// M15 `checkpoint-marker-not-shadowed` row joins the intrinsic set (16 → 17).
-    /// The 17 intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder
+    /// **27 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
+    /// (floored at `blocking`) + 9 tunable (no floor)** (`validation.md` → Severity
+    /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
+    /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18).
+    /// The 18 intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder
     /// is every other per-check key, including the two M10 `doc-code.*` rows. Counted
     /// over the *embedded* bytes, so the count is the shipped surface — not a
     /// synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_26_17_9_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_27_18_9_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -589,19 +594,19 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            26,
-            "the inventory totals 26 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            27,
+            "the inventory totals 27 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
-        // 17 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
+        // 18 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
         let intrinsic = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).map(String::as_str) == Some("blocking"))
             .count();
-        assert_eq!(intrinsic, 17, "17 intrinsic checks (floored at blocking)");
-        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 17);
+        assert_eq!(intrinsic, 18, "18 intrinsic checks (floored at blocking)");
+        assert_eq!(INTRINSIC_CHECK_KEYS.len(), 18);
 
-        // The remaining 9 are tunable (no floor) — 26 - 17.
+        // The remaining 9 are tunable (no floor) — 27 - 18.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
@@ -642,6 +647,28 @@ mod tests {
                 "{key} is floored intrinsic in the knobs enum",
             );
         }
+    }
+
+    /// Done-criterion (c): the M16 #5 `owner-artifact.present` gate key is registered
+    /// as a **floored-blocking intrinsic** — in [`INTRINSIC_CHECK_KEYS`] (the
+    /// engine-owned list) AND declared in the embedded `knobs.yaml` enum with
+    /// `floor: blocking`. (Its `CHECK_INVENTORY` membership — the divergence from the
+    /// checkpoint sibling — is proved in `result.rs`.) Proved, not trusted.
+    #[test]
+    fn owner_artifact_present_severity_key_is_floored_intrinsic() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+        let key = "validation.owner-artifact.present.severity";
+
+        assert!(
+            INTRINSIC_CHECK_KEYS.contains(&key),
+            "the #5 owner-artifact presence gate joins the intrinsic list",
+        );
+        assert!(knobs.field(key).is_some(), "{key} is a declared knob");
+        assert_eq!(
+            knobs.floors().get(key).map(String::as_str),
+            Some("blocking"),
+            "{key} is floored intrinsic in the knobs enum",
+        );
     }
 
     /// A project `scalar-set validation.doc-code.criterion-maps-to-test.severity

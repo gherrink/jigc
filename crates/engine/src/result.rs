@@ -194,6 +194,7 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("commit-rendering", "line-limit-body"),
     ("doc-code", "symbol-exists"),
     ("doc-code", "criterion-maps-to-test"),
+    ("owner-artifact", "present"),
 ];
 
 /// Whether a `(probe, check)` is a keyed inventory row — the membership test that
@@ -899,6 +900,26 @@ mod tests {
             report.findings[0].severity,
             Severity::Blocking,
             "a non-inventory check is exempt — the per-probe key never catches it"
+        );
+    }
+
+    /// Done-criterion (c): the #5 `owner-artifact.present` gate IS a
+    /// task-validate/finalize check, so it is a `CHECK_INVENTORY` row — the
+    /// divergence from the M15 `checkpoint-marker-not-shadowed` sibling, which is a
+    /// compose-time marker check deliberately excluded from `CHECK_INVENTORY`. This
+    /// asserts inventory membership over the engine const (`methodology-docs.md` →
+    /// engine work 3: "CHECK_INVENTORY — it is a task-validate/finalize check, unlike
+    /// the compose-time marker checks").
+    #[test]
+    fn owner_artifact_present_is_a_check_inventory_row() {
+        assert!(
+            is_inventory_check("owner-artifact", "present"),
+            "the #5 owner-artifact presence gate is a task-validate/finalize check — a CHECK_INVENTORY row",
+        );
+        // The compose-time marker check is NOT — the deliberate divergence.
+        assert!(
+            !is_inventory_check("workflow-refs", "checkpoint-marker-not-shadowed"),
+            "the compose-time checkpoint marker check stays out of CHECK_INVENTORY",
         );
     }
 }

@@ -936,6 +936,18 @@ mod tests {
           type: enum
           of: [blocking, warning, advisory]
           default: blocking
+
+        # --- owner-artifact.present (1, intrinsic — the M16 #5 completion-half gate) ---
+        # A finalize-time presence assertion: the `owner-artifact` owned-location path on a
+        # `completion-record` must be durably staged under the owned artifact home. The
+        # milestone is not shippable without the artifact, so demoting it would let a
+        # completion finalize with no recorded audit artifact — floored blocking
+        # (methodology-docs.md → The engine work, item 3).
+        validation.owner-artifact.present.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: blocking
+          floor: blocking
         "###);
 
         // `pack-id` is a non-knob identity field — it lives in defaults.yaml,
