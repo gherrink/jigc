@@ -21,6 +21,15 @@
 //! falsifiable for THIS workflow — a leak (planning added to the enum, or
 //! `selectable: true` flipping it into the catalog) goes red here, not silently.
 //!
+//! M16 Inc 5 T3 EXTENDS the same guard to the `completion` workflow — the second
+//! authoring-spine workflow (`design/methodology-docs.md` → The authoring spine).
+//! Like `planning`, `completion` is `creates-task: true, selectable: false`: it
+//! MINTS a task (riding the create-gate + finalize-promote spine) but stays off the
+//! router catalog and out of the `default-workflow.of` enum. The `dev-task`-only
+//! base already excludes it *by construction*, but `documented != delivered`, so T3
+//! adds the EXPLICIT `completion`-named negatives — a leak (`completion` in the enum,
+//! or `selectable: true` flipping it into the catalog) goes red here, not silently.
+//!
 //! Two leak vectors, two guards:
 //!   (a) The **front-door catalog** (the live path). Bare `jigc start` (no intent)
 //!       over `JIGC_PACK_DIR=<methodology>` orients to the clean-no-task state and
@@ -169,6 +178,16 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
          class — `planning` is `selectable: false`, off-router by construction); \
          catalog lines: {catalog_lines:?}",
     );
+    // T3 (completion): the same M8 catalog-leak guard, named for `completion`. Like
+    // planning it is `creates-task: true, selectable: false` — it mints a task but
+    // stays out of the selectable catalog (the `creates_task && selectable` filter).
+    // A leak (`selectable: true`) would surface it here; assert no catalog line names it.
+    assert!(
+        !catalog_lines.iter().any(|l| l.contains("completion")),
+        "the model-free selection catalog must NOT name `completion` (the M8 catalog-leak \
+         class — `completion` is `selectable: false`, off-router by construction); \
+         catalog lines: {catalog_lines:?}",
+    );
 
     // JSON emitted bytes: the `workflows` array carries exactly one entry, `dev-task`
     // — `increment` is absent and nothing else leaks.
@@ -208,6 +227,14 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
         "the selectable catalog must NOT name `planning` — it is `selectable: false`, \
          off-router (M8 catalog-leak class); got:\n{json_out}",
     );
+    // T3 (completion): the explicit completion-named negative over the same JSON bytes
+    // — `ids == [dev-task]` already excludes it by construction, but the named guard
+    // makes the completion leak falsifiable (documented != delivered).
+    assert!(
+        !ids.contains(&"completion"),
+        "the selectable catalog must NOT name `completion` — it is `selectable: false`, \
+         off-router (M8 catalog-leak class); got:\n{json_out}",
+    );
 }
 
 #[test]
@@ -238,10 +265,18 @@ fn knobs_default_workflow_enum_does_not_name_increment() {
         "`default-workflow.of` must NOT name `planning` (the forbidden M8 catalog-leak — \
          `planning` is `selectable: false`, off-router); got enum: {names:?}",
     );
+    // T3 (completion): the same static-leak guard, named for `completion`. Adding it to
+    // the enum would make the `selectable: false` authoring workflow a router-selectable
+    // default — exactly the M8 catalog-leak this task forbids.
+    assert!(
+        !names.contains(&"completion"),
+        "`default-workflow.of` must NOT name `completion` (the forbidden M8 catalog-leak — \
+         `completion` is `selectable: false`, off-router); got enum: {names:?}",
+    );
     assert_eq!(
         names,
         vec!["dev-task"],
         "`default-workflow.of` must stay the single-entry [dev-task] enum (byte-unchanged \
-         from base, forbidding both `increment` and `planning`); got: {names:?}",
+         from base, forbidding `increment`, `planning`, and `completion`); got: {names:?}",
     );
 }

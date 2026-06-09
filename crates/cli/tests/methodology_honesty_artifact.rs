@@ -39,6 +39,18 @@
 //! `detect-gaps`, `plan-review` — each carry a human-judgment handback and must
 //! stay free of a numeric-threshold lint. A future edit that mechanizes any of
 //! them into a `gap-count ≥ N` / scored gate goes red here.
+//!
+//! M16 Inc 5 T3 EXTENDS the hollowing guard to the **completion** phase steps —
+//! the second authoring spine (`design/methodology-docs.md` → Build-time honesty
+//! watch (A-3) + the single-agent-spine bound). The completion loop's judgment
+//! phases are `audit` (the milestone verdict + gap-detection) and `triage` (the
+//! human-gated finding gate). Each must stay pure agent-judgment prose: a
+//! human-judgment handback present, free of a `gap-count ≥ N` lint / scored
+//! checklist. Sharper than planning, `audit` also carries the **single-agent-spine
+//! bound** — the genuine independent audit verdict is an *orchestration-level*
+//! responsibility above the single-agent spine; the spine records the verdict, it
+//! does NOT certify it. A future edit that mechanizes either judgment phase, or that
+//! lets `audit` over-claim the verdict as jigc-computed/certified, goes red here.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -207,6 +219,80 @@ fn planning_judgment_phases_stay_prose_not_a_gap_count_or_scored_checklist() {
                 "{name} must not be hollowed into a numeric-threshold `{forbidden}` lint / scored \
                  gate — the planning judgment stays the agent's (methodology-docs.md → A-3: a step \
                  that emits a `gap-count >= N` lint has hollowed the judgment); got:\n{text}",
+            );
+        }
+    }
+}
+
+#[test]
+fn completion_judgment_phases_stay_prose_and_audit_does_not_over_claim_the_verdict() {
+    // FAIL exemplar (a) for the completion loop (methodology-docs.md → Build-time
+    // honesty watch, A-3 + the single-agent-spine bound). The `audit` phase (the
+    // milestone verdict + gap-detection) and the `triage` phase (the human-gated
+    // finding gate) are the loop's irreducible judgment slots. Each must stay
+    // judgment prose (a human-judgment / orchestration handback present) and must NOT
+    // be mechanized into a `gap-count >= N` lint or a scored checklist. Additionally,
+    // `audit` must NOT over-claim: the genuine audit verdict stays an
+    // orchestration-level responsibility above this single-agent spine — the spine
+    // records the verdict, it does not certify it. A future edit that hollows either
+    // phase, or that lets `audit` present the verdict as jigc-computed/certified,
+    // goes red here.
+
+    // The numeric-threshold / scoring tokens that mark a hollowed judgment slot — the
+    // same falsifiable edge as the planning guard. We do NOT forbid the bare word
+    // "checklist": audit DISAVOWS it ("judgment work, not a checklist to tick"), and
+    // forbidding the disavowal would false-red.
+    let forbidden_mechanizers = ["gap-count", "gap count", ">=", "\u{2265}"];
+
+    // Collapse whitespace runs (incl. the prose's hard line-wraps) to single spaces so
+    // a handback phrase split across a wrap still matches its words in order.
+    let normalize = |s: &str| {
+        s.to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    // (audit) the milestone verdict + gap-detection phase. Two obligations:
+    //   - judgment prose: the verdict and gap-detection are pure agent prose;
+    //   - the single-agent-spine bound: the genuine audit is orchestration-level and
+    //     the spine does not certify it (audit must say so, not over-claim).
+    let audit = step_text("audit.yaml");
+    let audit_lc = normalize(&audit);
+    assert!(
+        audit_lc.contains("judgment work") && audit_lc.contains("not a checklist"),
+        "audit.yaml must stay judgment prose — the milestone verdict + gap-detection are \
+         judgment work, NOT a checklist to tick (methodology-docs.md → A-3: the verdict \
+         phase stays pure agent-judgment prose); got:\n{audit}",
+    );
+    assert!(
+        audit_lc.contains("orchestration-level") && audit_lc.contains("does not certify"),
+        "audit.yaml must observe the single-agent-spine bound — the genuine audit verdict is \
+         an orchestration-level responsibility above this spine; the spine records the verdict, \
+         it does NOT certify it (methodology-docs.md → the single-agent-spine bound: the \
+         completion audit verdict stays orchestration-level, never over-claimed); got:\n{audit}",
+    );
+
+    // (triage) the human-gated finding gate: the human owns this gate.
+    let triage = step_text("triage.yaml");
+    let triage_lc = normalize(&triage);
+    assert!(
+        triage_lc.contains("human owns") && triage_lc.contains("gate"),
+        "triage.yaml must stay the human-in-the-loop judgment gate — the human owns the \
+         triage gate, the calls are surfaced not silently decided (methodology-docs.md → A-3: \
+         the triage phase stays pure agent-judgment prose); got:\n{triage}",
+    );
+
+    // (negative) neither judgment phase may carry a numeric-threshold lint or scored gate
+    // — that is the FAIL exemplar (a) hollowing.
+    for (name, text) in [("audit.yaml", &audit), ("triage.yaml", &triage)] {
+        let lc = text.to_lowercase();
+        for forbidden in forbidden_mechanizers {
+            assert!(
+                !lc.contains(forbidden),
+                "{name} must not be hollowed into a numeric-threshold `{forbidden}` lint / scored \
+                 gate — the completion judgment stays the agent's (methodology-docs.md → A-3: a \
+                 step that emits a `gap-count >= N` lint has hollowed the judgment); got:\n{text}",
             );
         }
     }
