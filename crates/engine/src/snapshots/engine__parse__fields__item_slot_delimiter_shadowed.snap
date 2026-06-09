@@ -1,0 +1,19 @@
+---
+source: crates/engine/src/parse.rs
+expression: f
+---
+Finding {
+    severity: Blocking,
+    probe: "conformance",
+    check: "item-slot-delimiter-shadowed",
+    code: "conformance.item-slot-delimiter-shadowed",
+    message: "`#### Note` in multi-slot item prose shadows the item-slot delimiter; slot prose must not start a line with `#### ` (use `#####`+ or rephrase)",
+    location: Some(
+        Location {
+            address: None,
+            line: 11,
+            col: 1,
+        },
+    ),
+    route: None,
+}

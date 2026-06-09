@@ -895,6 +895,34 @@ fn parse_item_slots(
         let span = trim_span(source, content_start, slot_end);
         slots.push((leaf_id.clone(), span));
     }
+
+    // Shadow guard (M16): in a multi-slot item every `#### ` line-start is the writer's
+    // per-leaf slot delimiter, so any `#### ` sub-heading whose label does **not** match
+    // a declared leaf is authored slot prose that shadows the delimiter — the parser
+    // would (mis)read it as a slot boundary and silently corrupt the round-trip
+    // (`render(parse(x)) != x`). Detect each such stray `#### ` and emit a located
+    // Blocking conformance finding, the same shadow-conformance discipline as the
+    // reserved-marker checks (`run-marker-not-shadowed` &c.) — turning silent
+    // corruption into a clear, routed block. (`#####`+ is opaque slot-internal content
+    // and is never collected here, so it is unaffected.)
+    for (start, _, label) in &sub_heads {
+        if !slot_ids
+            .iter()
+            .any(|leaf_id| heading_matches_label(label, leaf_id))
+        {
+            findings.push(Finding::blocking(
+                "conformance.item-slot-delimiter-shadowed",
+                format!(
+                    "`#### {}` in multi-slot item prose shadows the item-slot \
+                     delimiter; slot prose must not start a line with `#### ` \
+                     (use `#####`+ or rephrase)",
+                    label.trim()
+                ),
+                Location::at(line_of(source, *start), 1),
+            ));
+        }
+    }
+
     slots
 }
 
@@ -1450,6 +1478,96 @@ Inc 1, Inc 2, Inc 3.
             })
             .collect();
         insta::assert_debug_snapshot!("multi_slot_items", view);
+    }
+
+    /// Conformance golden (M16 multi-slot shadow): a slot's prose that itself starts
+    /// a line with `#### Something` shadows the **item-slot delimiter** — in a
+    /// multi-slot item, a `#### ` line-start is the writer's per-leaf delimiter, so
+    /// authored prose carrying one would be re-parsed as a slot boundary and silently
+    /// corrupt the round-trip (`render(parse(x)) != x`). The parser detects the extra
+    /// `#### ` (one not matching a declared leaf label) and emits a located Blocking
+    /// finding — the same shadow-conformance discipline as the reserved-marker checks
+    /// (`run-marker-not-shadowed` &c.), turning silent corruption into a routed block.
+    /// A single-slot item is unaffected: there `####` is opaque whole-body prose.
+    #[test]
+    fn multi_slot_prose_h4_shadows_slot_delimiter() {
+        // The `proves` slot's prose carries a `#### Note` line. Today that line is
+        // collected as a slot delimiter and ends `proves` early (dropping the rest);
+        // the guard must flag it instead.
+        let src = "\
+# Roadmap
+
+## Milestones
+
+### M16 self-hosting  {#m16-self-hosting}
+
+#### Proves
+
+Closes the self-hosting loop.
+
+#### Note
+
+This stray heading is prose, not a slot delimiter.
+
+#### Decomposition
+
+Inc 1, Inc 2, Inc 3.
+";
+        let findings =
+            parse_sections(&two_slot_schema(), src).expect_err("a shadowing `#### ` blocks");
+        let f = findings
+            .iter()
+            .find(|f| f.code == "conformance.item-slot-delimiter-shadowed")
+            .expect("an item-slot-delimiter-shadowed finding");
+        insta::assert_debug_snapshot!("item_slot_delimiter_shadowed", f);
+    }
+
+    /// A `#### `-line-start in a **single-slot** item's prose is *not* a delimiter
+    /// (single-slot bodies are opaque whole-body prose), so it must parse cleanly with
+    /// no shadow finding and the `####` retained verbatim in the slot span.
+    #[test]
+    fn single_slot_prose_h4_is_opaque_not_shadowed() {
+        let yaml = b"\
+type: roadmap
+id-from: title
+sections:
+  - id: milestones
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: notes, slot: { hint: \"x\" } }
+";
+        let schema = crate::schema::load_schema(yaml).expect("single-slot roadmap schema loads");
+        let src = "\
+# Roadmap
+
+## Milestones
+
+### M16 self-hosting  {#m16-self-hosting}
+
+Opening prose.
+
+#### A stray heading stays opaque
+
+Closing prose.
+";
+        let doc = parse_sections(&schema, src).expect("single-slot prose `####` parses cleanly");
+        let item = &doc
+            .sections
+            .iter()
+            .find(|s| s.id == "milestones")
+            .unwrap()
+            .items[0];
+        let notes = item
+            .slot
+            .as_ref()
+            .expect("single-slot bare carrier")
+            .slice(src);
+        assert!(
+            notes.contains("#### A stray heading stays opaque"),
+            "single-slot `####` is opaque whole-body prose: {notes:?}",
+        );
     }
 
     /// Conformance golden: a `<!-- fields -->` sentinel with no following bullet
