@@ -1861,6 +1861,14 @@ pub fn compose_with_store(
                 emitted.push_str(&spawns);
             }
         }
+        // A `checkpoint` step **prepends** its `Checkpoint: <reason>` halt directive
+        // — the bare `reason` slug, no backticks — before the body prose (the inverse
+        // of `fan-out`'s `Spawn:` append), so the halt is read before the prose that
+        // explains when to honor it (`workflow-dialect.md` → Emitted format, rule 5:
+        // the 6th class).
+        if let StepKind::Checkpoint { reason } = &step.kind {
+            emitted = format!("Checkpoint: {reason}\n{emitted}");
+        }
         emitted_steps.push(emitted);
     }
     // Join the per-step emitted texts with a single blank line between **step
@@ -3540,6 +3548,52 @@ reference — make your consequences explain what changes:
           "reason": "new-fork-at-plan"
         }
         "#);
+    }
+
+    /// T2 done-criterion (`workflow-dialect.md` → Emitted format, rule 5: the
+    /// sixth emit class): a `checkpoint` step's emitted text **opens** with a
+    /// `Checkpoint: <reason>\n` directive line — the slug bare, no backticks —
+    /// then the body prose, the directive **prepended** before the body (the
+    /// inverse of `fan-out`'s `Spawn:` append). The same body with the marker
+    /// stripped (a plain step, byte-identical prose) composes **without** that
+    /// line — the M8 face-#5 parsed-but-ignored guard at the engine seam: the
+    /// composed output must differ with vs. without the marker.
+    #[test]
+    fn checkpoint_step_prepends_directive() {
+        let body = "If planning surfaced a genuinely new fork, stop and surface it.\n";
+        let with_marker = MapSource::new(&[(
+            "plan-gate",
+            "---\ncheckpoint:\n  reason: new-fork-at-plan\n---\nIf planning surfaced a genuinely new fork, stop and surface it.\n",
+        )]);
+        let without_marker = MapSource::new(&[("plan-gate", body)]);
+        let def = WorkflowDef {
+            when: None,
+            description: None,
+            usage: None,
+            creates_task: true,
+            selectable: true,
+            allows_create: vec![],
+            reads: vec![],
+            includes: vec!["plan-gate".to_owned()],
+        };
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let ctx = compose_ctx();
+
+        let composed = compose(&def, &with_marker, &catalog, &ctx).expect("composes");
+        assert_eq!(
+            composed.text,
+            format!("Checkpoint: new-fork-at-plan\n{body}"),
+            "the directive prepends before the body prose, slug bare"
+        );
+
+        // The same body, marker stripped, composes WITHOUT the directive — the
+        // with-vs-without delta at the engine seam.
+        let plain = compose(&def, &without_marker, &catalog, &ctx).expect("composes");
+        assert_eq!(plain.text, body, "a plain step emits no Checkpoint: line");
+        assert_ne!(
+            composed.text, plain.text,
+            "composed output must differ with vs. without the checkpoint marker"
+        );
     }
 
     /// `checkpoint` alongside any other marker (`fan-out` here) is a blocking,
