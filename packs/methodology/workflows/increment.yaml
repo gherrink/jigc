@@ -1,0 +1,12 @@
+---
+when: drive one roadmap increment end-to-end — plan its tasks, execute them serially, validate independently, then fix until clean
+description: The increment-workflow's outer loop (plan → execute → validate → fix), with its three human-gated halts composed as structural Checkpoint directives.
+usage: you are working a whole roadmap increment, not a single task, and you want the plan/execute/validate/fix phases and their halt points made visible.
+creates-task: false
+---
+{{ include: step:plan }}
+{{ include: step:plan-gate }}
+{{ include: step:execute }}
+{{ include: step:execute-gate }}
+{{ include: step:validate }}
+{{ include: step:fix-gate }}

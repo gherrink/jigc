@@ -1,0 +1,9 @@
+---
+checkpoint:
+  reason: fix-rounds-exhausted
+---
+For each blocking finding, run a dev-workflow fix task — a red that fails because
+of the defect, a minimal green, the gate, one commit — then re-validate. This is
+bounded to three rounds. If blocking findings remain after the fix-round cap,
+stop and surface it: thrash is a signal for a human, not for another round.
+Advisories are surfaced, not gated.

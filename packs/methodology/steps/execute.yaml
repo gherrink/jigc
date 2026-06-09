@@ -1,0 +1,4 @@
+Execute each task through the dev-workflow verbatim — scope, red, green,
+refactor, gate, commit. Run the tasks strictly serially: they share one working
+tree, each builds on the last, and each ends in exactly one conventional commit.
+One task is one focused concern is one commit.

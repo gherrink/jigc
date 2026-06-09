@@ -1,0 +1,9 @@
+Validate the increment independently against the roadmap — a read-only check
+that does not edit or commit. Verify, with concrete evidence: the gate is green
+from a clean state; the deliverable holds end-to-end by running the real binary
+and observing output, not by trusting the tests alone; the increment proves what
+the roadmap says it proves; the invariants are honored; and the scope is honest
+— no inert feature, no stub presented as done, no creep into a later increment.
+
+Return findings, each blocking (the deliverable, proves, invariants, or scope
+are not genuinely met) or advisory (real but non-blocking).

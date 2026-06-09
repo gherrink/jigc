@@ -1,0 +1,7 @@
+---
+checkpoint:
+  reason: blocked-task
+---
+Halt on a blocked task — a real ambiguity, a new fork, or a green gate
+unreachable without overstepping the task's scope. Surface it to the human
+rather than guessing past it or widening scope to force a pass.

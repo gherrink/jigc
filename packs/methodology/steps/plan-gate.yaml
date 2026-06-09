@@ -1,0 +1,8 @@
+---
+checkpoint:
+  reason: new-fork-at-plan
+---
+If planning surfaced a genuinely new fork not covered by the settled gates and
+not resolvable from the locked docs, stop and surface it to the human before
+cutting tasks. A clarifying decision costs less than tasks cut against the wrong
+shape.

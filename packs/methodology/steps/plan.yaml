@@ -1,0 +1,9 @@
+Plan the increment. Cut it into ordered, single-concern tasks straight from the
+roadmap increment — its Deliverable, Grouped scope, and Proves — and the design
+docs it names. Each task carries an observable done-criterion: a named test that
+passes, or a command that exits clean with asserted output, so every task has a
+real red step.
+
+Keep the cut minimal — the smallest set of tasks that delivers the increment's
+Deliverable, with no creep into later increments. Each task is one focused
+concern that ends in one commit.
