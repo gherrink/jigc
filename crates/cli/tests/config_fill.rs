@@ -549,3 +549,85 @@ fn fill_prose_with_inline_braces_stays_inert_and_composes_verbatim() {
         "the fill prose must compose verbatim, the inert token included; got:\n{stdout}",
     );
 }
+
+#[test]
+fn fill_prose_with_resolvable_token_stays_verbatim_while_pack_prose_substitutes() {
+    // The determinism boundary applied to inline data-values (DECISIONS 2026-06-12):
+    // inline `{{<path>}}` substitution exists FOR pack/step-authored composed prose
+    // (the M17 inc-4 `--task {{task.id}}` stamping). Agent/project-authored slot-fill
+    // prose is the LLM/human's prose — the CLI never rewrites it, so a *resolvable*
+    // token in fill content composes verbatim too (not only the unresolvable one the
+    // sibling test pins). Proven on emitted bytes through the binary, both halves.
+    let repo = TempDir::new("resolvable-fill");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Half 1 — fill-authored prose is never rewritten, resolvable token included.
+    let prose = "House rule: restate {{task.intent}} before you begin.";
+    let out = run_fill(
+        repo.path(),
+        home.path(),
+        "step:implement#extra-guidance",
+        &format!("{prose}\n"),
+    );
+    assert!(
+        out.status.success(),
+        "the fill is accepted at write time; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let compose = run_start(repo.path(), home.path(), &["fill probe task"]);
+    let stdout = String::from_utf8(compose.stdout).expect("utf-8 stdout");
+    assert!(
+        compose.status.success(),
+        "compose over the filled point must exit 0; got {:?}\nstderr:\n{}",
+        compose.status,
+        String::from_utf8_lossy(&compose.stderr),
+    );
+    assert!(
+        stdout.contains(prose),
+        "fill-authored prose is never rewritten: the resolvable `{{{{task.intent}}}}` \
+         must compose verbatim; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("restate fill probe task"),
+        "the CLI must not substitute the task's intent into fill-authored prose; got:\n{stdout}",
+    );
+    // Non-vacuity: the same token resolves where the PACK wrote it (the `locate`
+    // step's lone-line `{{task.intent}}`), so resolution itself is intact.
+    assert!(
+        stdout.contains("fill probe task"),
+        "the pack-authored `{{{{task.intent}}}}` line must still resolve; got:\n{stdout}",
+    );
+
+    // Half 2 — the inc-4 stamping feature is pinned non-vacuously: a pack-authored
+    // step line carrying a mid-line `{{task.id}}` (`author-arch-doc`'s literal
+    // `--task {{task.id}}` lines) still substitutes the minted task id.
+    let repo2 = TempDir::new("pack-stamp");
+    init_repo(repo2.path());
+    let stamped = run_start(
+        repo2.path(),
+        home.path(),
+        &[
+            "--workflow",
+            "architecture-documentation",
+            "document the cache layer",
+        ],
+    );
+    let stdout = String::from_utf8(stamped.stdout).expect("utf-8 stdout");
+    assert!(
+        stamped.status.success(),
+        "`jigc start --workflow architecture-documentation` must exit 0; got {:?}\nstderr:\n{}",
+        stamped.status,
+        String::from_utf8_lossy(&stamped.stderr),
+    );
+    assert!(
+        stdout.contains("--task document-the-cache-layer"),
+        "the pack-authored mid-line `{{{{task.id}}}}` must substitute the minted id; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("{{task.id}}"),
+        "no literal `{{{{task.id}}}}` may survive in pack-authored composed prose; got:\n{stdout}",
+    );
+}

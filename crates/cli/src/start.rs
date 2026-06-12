@@ -28,7 +28,7 @@ use engine::cascade::{
 use engine::compose::{
     self, CommandCatalog, ComposedWorkflow, ResolvedFills, StepDef, StepSource, StoreContext,
     WorkflowDef, apply_slot_fills, apply_structural_deltas, load_command_catalog, load_step_def,
-    load_workflow_def,
+    load_workflow_def, resolve_inline_data_values,
 };
 use engine::data_value::{ComposeContext, TaskRoot};
 use engine::finding::{Finding, Severity};
@@ -563,6 +563,7 @@ fn compose_core(
     let filled = FillStepSource {
         inner: source,
         fills: &overrides.fills,
+        ctx: &ctx,
     };
     compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)
 }
@@ -1259,6 +1260,7 @@ fn compose_task_workflow(
     let filled = FillStepSource {
         inner: &source,
         fills: &overrides.fills,
+        ctx: &ctx,
     };
     compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
         .map_err(finding_to_err)
@@ -1413,17 +1415,28 @@ impl StepSource for PackStepSource<'_> {
 /// the body passes through byte-for-byte and the no-override path stays byte-
 /// identical. Phase 5 does **not** re-run; a `{{fill:}}` nested in applied content
 /// survives, already blocked by the `fill-survivor` gate check above.
+///
+/// Before splicing fills, the fetched **step-file body** gets the inline
+/// data-value pass ([`resolve_inline_data_values`]) — pack/shadow-authored
+/// composed prose substitutes its mid-line `{{task.…}}` tokens (the M17 inc-4
+/// `--task` stamping), while the fill content spliced *after* is agent/project
+/// prose the CLI never rewrites (`DECISIONS.md` 2026-06-12 — the determinism
+/// boundary applied).
 struct FillStepSource<'a> {
     inner: &'a dyn StepSource,
     fills: &'a ResolvedFills,
+    ctx: &'a ComposeContext,
 }
 
 impl StepSource for FillStepSource<'_> {
     fn step(&self, id: &str) -> Option<StepDef> {
         let def = self.inner.step(id)?;
+        // Inline data-values resolve in the step-file body only — before phase 5,
+        // so fill-applied prose is never scanned.
+        let stamped = resolve_inline_data_values(&def.body, self.ctx);
         // The pass has no failure of its own in M4 (orphan/survivor is the gate's
         // job, already run); on the unreachable `Err` the unfilled body is kept.
-        let body = apply_slot_fills(id, &def.body, self.fills).unwrap_or(def.body);
+        let body = apply_slot_fills(id, &stamped, self.fills).unwrap_or(stamped);
         // The fill pass rewrites only the body; the step kind passes through.
         Some(StepDef {
             id: def.id,

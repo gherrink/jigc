@@ -561,20 +561,54 @@ fn emit_line(
         return emit_bare_data_value(&path, ctx);
     }
 
-    // Reason: bare prose — any **inline** `{{<path>}}` data-value token resolved
-    // in place; an unresolvable token and a line with no token pass through
-    // verbatim.
-    Ok(emit_inline_data_values(line, ctx))
+    // Reason: bare prose — passed through verbatim. Inline `{{<path>}}` data-value
+    // tokens are NOT resolved here: that substitution runs as a pre-phase-5 pass
+    // over step-file bodies only ([`resolve_inline_data_values`]), so phase-5
+    // fill-applied (agent/project-authored) prose is never rewritten at emit
+    // (`DECISIONS.md` 2026-06-12 — the determinism boundary applied).
+    Ok(line.to_owned())
 }
 
-/// Resolve every **inline** `{{<path>}}` bare data-value token in a Reason prose
-/// line, substituting in place with the lone-line Reason-resolved semantics
+/// Resolve every **inline** `{{<path>}}` bare data-value token in a **step-file
+/// body**, substituting in place with the lone-line Reason-resolved semantics
 /// ([`emit_bare_data_value`]: scalar text / address handle / absent → empty) — the
 /// compose-time mechanism a literal `jigc … --task {{task.id}}` authoring line
 /// needs (`DECISIONS.md` M17 settle pre-fix #3: compose-time substitution, the
-/// deterministic pack+compose surface).
+/// deterministic pack+compose surface; M17 inc-4 revised the M12-era lone-line-only
+/// rule to inline resolution).
 ///
-/// Token-anywhere scan, the [`next_fill_token`] discipline: a `{{…}}` whose
+/// **Runs before phase 5** (fill application), on the body as the step file
+/// authored it — pack-, team-, or project-shadow-authored *composed* prose. It
+/// must never run over fill-applied text: slot-fill content is agent/project
+/// prose, and the CLI owns structure, never the prose (`VISION.md` → the
+/// determinism boundary; `DECISIONS.md` 2026-06-12). The frontend applies this
+/// pass per fetched step, then splices fills ([`apply_slot_fills`]).
+///
+/// Line discipline: a line that is a lone `{{…}}` placeholder (any kind — those
+/// are the lone-line emit classes, blocking semantics included) or an
+/// `<<author: …>>` directive passes through **verbatim**, left to its own class
+/// at emit. Every other line gets the token-anywhere scan
+/// ([`emit_inline_data_values`]).
+pub fn resolve_inline_data_values(body: &str, ctx: &crate::data_value::ComposeContext) -> String {
+    let trailing_newline = body.ends_with('\n');
+    let mut out_lines = Vec::new();
+    for line in body.lines() {
+        let trimmed = line.trim();
+        if parse_lone_placeholder(trimmed).is_some() || trimmed.starts_with("<<author:") {
+            out_lines.push(line.to_owned());
+        } else {
+            out_lines.push(emit_inline_data_values(line, ctx));
+        }
+    }
+    let mut resolved = out_lines.join("\n");
+    if trailing_newline {
+        resolved.push('\n');
+    }
+    resolved
+}
+
+/// The per-line token-anywhere scan behind [`resolve_inline_data_values`], the
+/// [`next_fill_token`] discipline: a `{{…}}` whose
 /// trimmed inner is `fill:`-shaped (phase 5's), `cli.`-prefixed, `@`-prefixed, or
 /// `include:`-shaped (the lone-line classes) is **skipped** — the scan resumes
 /// just past its `{{`, leaving the token for its own phase. Every other inner is
@@ -582,11 +616,9 @@ fn emit_line(
 /// unresolvable path, or a **collection** resolution (`catalog` / `store.*` /
 /// `milestone.*` — collections stay lone-line classes) — is left **verbatim**,
 /// the same skip discipline. Inline tokens are **inert, never blocking**:
-/// agent-authored slot-fill prose flows through this same emit pass (phase-5 fill
-/// application precedes emission), and prose *mentioning* `{{…}}` syntax must not
-/// brick every later compose of the workflow (M17 inc-4 validation fix). Blocking
-/// stays with the lone-line classes. A line with no resolved token is returned
-/// byte-unchanged.
+/// prose *mentioning* `{{…}}` syntax must not brick every later compose of the
+/// workflow (M17 inc-4 validation fix). Blocking stays with the lone-line
+/// classes. A line with no resolved token is returned byte-unchanged.
 fn emit_inline_data_values(line: &str, ctx: &crate::data_value::ComposeContext) -> String {
     let mut rewritten = String::new();
     let mut cursor = 0;
@@ -2442,26 +2474,24 @@ If your decision supersedes an earlier one, here is that decision:
     }
 
     /// Core done-criterion (M17 inc-4 T2): an **inline** `{{<path>}}` data-value
-    /// token in a Reason prose line resolves in place with the lone-line
+    /// token in a step-file prose line resolves in place with the lone-line
     /// Reason-resolved semantics — a scalar substitutes its text (`{{task.id}}` →
     /// the minted slug, the literal `--task` disambiguation line T3 ships), a
     /// bound role substitutes its address handle, an absent role substitutes
     /// empty text (empty-not-finding). A line with no placeholder stays
-    /// byte-unchanged.
+    /// byte-unchanged. Since the 2026-06-12 adjudication this runs as the
+    /// **pre-phase-5** pass over step-file bodies, never at emit.
     #[test]
     fn inline_data_value_token_resolves_in_prose_line() {
         let ctx = emit_ctx();
-        let catalog = CommandCatalog {
-            commands: std::collections::BTreeMap::new(),
-        };
         let body = "\
 jigc doc add-item x --task {{task.id}}
 intent: {{ task.intent }} (inline scalar)
 see {{task.commit}} and absent [{{task.decision}}] inline
 plain prose, {single} braces, no tokens
 ";
-        let emitted = emit_step_body(body, &ctx, &catalog).expect("emits");
-        insta::assert_snapshot!(emitted, @r"
+        let resolved = resolve_inline_data_values(body, &ctx);
+        insta::assert_snapshot!(resolved, @r"
         jigc doc add-item x --task emit-four-classes
         intent: emit a composed step body to the four-class format (inline scalar)
         see commit:emit-four-classes and absent [] inline
@@ -2470,34 +2500,38 @@ plain prose, {single} braces, no tokens
     }
 
     /// An unresolvable **inline** token is left **verbatim** — inert, never
-    /// blocking (M17 inc-4 validation fix: agent-authored slot-fill prose flows
-    /// through this same emit pass, so prose *mentioning* `{{…}}` syntax must not
-    /// brick compose). An inline **collection** (`{{catalog}}`) is inert too —
+    /// blocking (M17 inc-4 validation fix: prose *mentioning* `{{…}}` syntax must
+    /// not brick compose). An inline **collection** (`{{catalog}}`) is inert too —
     /// collections stay lone-line classes; blocking stays with the lone-line
     /// forms, and a resolvable token on the same line still substitutes.
     #[test]
     fn inline_unresolvable_path_and_collection_stay_inert_verbatim() {
         let ctx = emit_ctx();
-        let catalog = CommandCatalog {
-            commands: std::collections::BTreeMap::new(),
-        };
         let line = "Note: template syntax like {{version}} appears in our docs; leave it as-is.\n";
-        let emitted = emit_step_body(line, &ctx, &catalog).expect("inline tokens never block");
-        assert_eq!(emitted, line, "an unresolvable inline token stays verbatim");
+        assert_eq!(
+            resolve_inline_data_values(line, &ctx),
+            line,
+            "an unresolvable inline token stays verbatim"
+        );
 
         let line = "see {{task.bogus}} here\n";
-        let emitted = emit_step_body(line, &ctx, &catalog).expect("inline tokens never block");
-        assert_eq!(emitted, line, "an undeclared inline role stays verbatim");
+        assert_eq!(
+            resolve_inline_data_values(line, &ctx),
+            line,
+            "an undeclared inline role stays verbatim"
+        );
 
         let line = "pick from {{catalog}} now\n";
-        let emitted = emit_step_body(line, &ctx, &catalog).expect("inline tokens never block");
-        assert_eq!(emitted, line, "an inline collection stays verbatim");
+        assert_eq!(
+            resolve_inline_data_values(line, &ctx),
+            line,
+            "an inline collection stays verbatim"
+        );
 
         // A resolvable token still substitutes alongside an inert one.
-        let emitted = emit_step_body("use {{version}} for task {{task.id}}\n", &ctx, &catalog)
-            .expect("inline tokens never block");
         assert_eq!(
-            emitted, "use {{version}} for task emit-four-classes\n",
+            resolve_inline_data_values("use {{version}} for task {{task.id}}\n", &ctx),
+            "use {{version}} for task emit-four-classes\n",
             "resolvable inline tokens substitute; inert ones stay verbatim",
         );
     }
@@ -2505,19 +2539,45 @@ plain prose, {single} braces, no tokens
     /// The other placeholder kinds are **skipped** to their own phases (the
     /// `next_fill_token` discipline): a `{{fill:…}}`-shaped inner belongs to
     /// phase 5, a `{{cli.…}}` / `{{@…}}` / `{{include:…}}` inner is a lone-line
-    /// class — all four pass through byte-for-byte, never resolved inline.
+    /// class — all four pass through byte-for-byte, never resolved inline. A
+    /// **lone-line** placeholder of any kind and an `<<author: …>>` directive
+    /// pass verbatim too — those belong to the emit classes (blocking semantics
+    /// included), not the inline pre-pass.
     #[test]
     fn inline_other_placeholder_kinds_pass_through_verbatim() {
+        let ctx = emit_ctx();
+        let body =
+            "do {{fill: extra}} then {{cli.x}} and {{@task.commit}} and {{include: step:y}}\n";
+        assert_eq!(
+            resolve_inline_data_values(body, &ctx),
+            body,
+            "non-data-value inners are left to their phases"
+        );
+
+        let body = "{{ task.intent }}\n<<author: {{task.commit#summary}}>>\n{{nonsense}}\n";
+        assert_eq!(
+            resolve_inline_data_values(body, &ctx),
+            body,
+            "lone-line placeholders and author directives are left to their emit classes"
+        );
+    }
+
+    /// The emit pass itself never rewrites Reason prose: an inline `{{<path>}}`
+    /// token — resolvable or not — reaching [`emit_step_body`] (i.e. surviving to
+    /// post-phase-5 text, where fill-applied prose lives) passes through
+    /// byte-for-byte. Fill-authored prose is never rewritten — the determinism
+    /// boundary applied (`DECISIONS.md` 2026-06-12).
+    #[test]
+    fn emit_leaves_inline_tokens_in_post_fill_prose_verbatim() {
         let ctx = emit_ctx();
         let catalog = CommandCatalog {
             commands: std::collections::BTreeMap::new(),
         };
-        let body =
-            "do {{fill: extra}} then {{cli.x}} and {{@task.commit}} and {{include: step:y}}\n";
-        let emitted = emit_step_body(body, &ctx, &catalog).expect("emits");
+        let body = "House rule: restate {{task.intent}} for task {{task.id}}.\n";
+        let emitted = emit_step_body(body, &ctx, &catalog).expect("inline prose never blocks");
         assert_eq!(
             emitted, body,
-            "non-data-value inners are left to their phases"
+            "emit never substitutes inline tokens — fill-applied prose stays verbatim"
         );
     }
 
