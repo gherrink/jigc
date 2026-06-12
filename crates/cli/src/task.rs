@@ -34,7 +34,7 @@ use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
-use engine::finalize::{Promotion, plan_finalize};
+use engine::finalize::{Promotion, RepinDecision, decide_base_repin, plan_finalize};
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
@@ -428,6 +428,18 @@ impl TaskArea {
         Ok(move |path: &str| !untracked.contains(path))
     }
 
+    /// Render blocking `findings` through the shared validation funnel (stderr) and
+    /// return the validation-blocked exit (3) — the planner-block surface shared by
+    /// the phase-1 re-pin decision and [`plan_finalize`].
+    fn blocked(&self, findings: Vec<Finding>, format: Format) -> Result<ExitCode> {
+        let report = engine::result::ValidationReport::new(findings, &self.severity_cascade()?);
+        eprint!("{}", render::validation(format, &report));
+        if format != Format::Json {
+            eprintln!();
+        }
+        Ok(ExitCode::from(EXIT_VALIDATION_BLOCKED))
+    }
+
     /// Execute the `finalize` transaction (`design/finalize.md` → 5–7). Returns the
     /// process exit code: `SUCCESS` on a landed commit — which also emits the
     /// preflight findings envelope on stdout, symmetric with `task validate`
@@ -439,6 +451,35 @@ impl TaskArea {
     fn finalize(&self, id: &str, format: Format) -> Result<ExitCode> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
+        let schemas = self.schemas()?;
+
+        // Phase 1 (amended) — the moved-base re-pin decision runs BEFORE anything
+        // else reads the pin: `has_diff` must diff against the *effective* base,
+        // else a no-work task reads disjoint moved history as its own diff and
+        // slips the empty-commit guard. The CLI supplies the git facts; the engine
+        // owns the decision (`design/finalize.md` → Parallel hand-editing, the
+        // 2026-06-12 phase-1 amendment).
+        let base = match decide_base_repin(
+            &self.dir,
+            &base,
+            &head,
+            &git_changed_paths(&self.repo_root, &base.sha, &head)?,
+            &git_dirty_paths(&self.repo_root)?,
+            &schemas,
+        ) {
+            Ok(RepinDecision::NoDivergence) => base,
+            // Disjoint moved history: the effective pin is HEAD — in-memory ONLY.
+            // `base.json` is never rewritten: a landed finalize deletes the working
+            // area, and a blocked run re-derives the decision next invocation (the
+            // inc-2 landed-only discipline).
+            Ok(RepinDecision::Repin) => BasePin::new(
+                head.clone(),
+                git_capture(&self.repo_root, &["rev-parse", "--short", "HEAD"])?,
+            ),
+            // The moved history overlaps the task's work — the block names the
+            // overlapping paths and carries the resolve-or-discard route.
+            Err(findings) => return self.blocked(findings, format),
+        };
 
         // The validate report the planner gates on — one engine, two entry points
         // (`design/finalize.md` → 2. Validate: no private check path). The post-sweep
@@ -456,7 +497,6 @@ impl TaskArea {
             || !self.staged_docs()?.is_empty()
             || !git_untracked(&self.repo_root)?.trim().is_empty();
 
-        let schemas = self.schemas()?;
         let commit_schema = schemas
             .get(COMMIT_TYPE)
             .with_context(|| format!("the embedded pack ships no `{COMMIT_TYPE}` schema"))?;
@@ -473,15 +513,7 @@ impl TaskArea {
             &schemas,
         ) {
             Ok(plan) => plan,
-            Err(findings) => {
-                let report =
-                    engine::result::ValidationReport::new(findings, &self.severity_cascade()?);
-                eprint!("{}", render::validation(format, &report));
-                if format != Format::Json {
-                    eprintln!();
-                }
-                return Ok(ExitCode::from(EXIT_VALIDATION_BLOCKED));
-            }
+            Err(findings) => return self.blocked(findings, format),
         };
 
         // Phases 4–7: the shared transactional core — promote + stage + commit +
@@ -872,6 +904,55 @@ pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
         );
     }
     String::from_utf8(out.stdout).context("`git diff` produced non-UTF-8 output")
+}
+
+/// List the repo-relative paths changed in commits between `base_sha` and `head_sha`
+/// (`git diff --name-only <base> <head>`) — the moved-history fact the phase-1 re-pin
+/// decision ([`decide_base_repin`]) intersects with the task's footprint
+/// (`design/finalize.md` → Parallel hand-editing, the 2026-06-12 amendment).
+fn git_changed_paths(repo_root: &Path, base_sha: &str, head_sha: &str) -> Result<Vec<String>> {
+    let out = git_capture(repo_root, &["diff", "--name-only", base_sha, head_sha])?;
+    Ok(out
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+/// List the repo-relative dirty working-tree paths — `git status --porcelain
+/// --untracked-files=all`, untracked included (the finalize stage is `git add --all`,
+/// which commits them, so they are part of the task's footprint; `=all` lists files
+/// inside untracked directories individually, else a collapsed `dir/` entry could
+/// never match a changed file path and an overlap would slip). A rename line names
+/// both sides; both count.
+fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
+    let out = Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git status --porcelain` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text = String::from_utf8(out.stdout).context("`git status` produced non-UTF-8 output")?;
+    let mut paths = Vec::new();
+    for line in text.lines() {
+        // Porcelain v1: two status columns + a space, then the path; a rename
+        // reads `R  old -> new`.
+        let Some(path) = line.get(3..) else { continue };
+        match path.split_once(" -> ") {
+            Some((old, new)) => {
+                paths.push(old.to_string());
+                paths.push(new.to_string());
+            }
+            None => paths.push(path.to_string()),
+        }
+    }
+    Ok(paths)
 }
 
 /// List untracked, non-ignored files via `git ls-files --others --exclude-standard`.

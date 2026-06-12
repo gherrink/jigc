@@ -636,7 +636,7 @@ fn scenario_5a_validate_and_finalize_block_on_missing_required_field() {
 }
 
 #[test]
-fn scenario_5b_finalize_aborts_on_base_mismatch() {
+fn scenario_5b_finalize_aborts_on_overlapping_base_divergence() {
     let repo = TempDir::new("base-mismatch");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -648,13 +648,16 @@ fn scenario_5b_finalize_aborts_on_base_mismatch() {
     );
     assert_ok(&start, "`jigc start`");
     let task = "add-rate-limiter";
-    fs::write(repo.path().join("limiter.rs"), "// x\n").expect("write code");
-    fill_commit(repo.path(), home.path(), task);
 
-    // HEAD moves after start: a human lands another commit, diverging the base pin.
-    fs::write(repo.path().join("other.txt"), "unrelated\n").expect("write");
-    git(repo.path(), &["add", "other.txt"]);
-    git(repo.path(), &["commit", "-q", "-m", "unrelated work"]);
+    // HEAD moves after start ON the task's own path: a human commits `limiter.rs`
+    // while the task's working tree edits it too — the parallel-hand-editing overlap
+    // (`design/finalize.md` → Parallel hand-editing; disjoint moved history would
+    // auto-re-pin instead, per the 2026-06-12 phase-1 amendment).
+    fs::write(repo.path().join("limiter.rs"), "// the human's\n").expect("write");
+    git(repo.path(), &["add", "limiter.rs"]);
+    git(repo.path(), &["commit", "-q", "-m", "human edit"]);
+    fs::write(repo.path().join("limiter.rs"), "// the task's\n").expect("write code");
+    fill_commit(repo.path(), home.path(), task);
 
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
@@ -662,18 +665,21 @@ fn scenario_5b_finalize_aborts_on_base_mismatch() {
     let fin = jigc(repo.path(), home.path(), &["task", "finalize", task]);
     assert!(
         !fin.status.success(),
-        "a base mismatch must make finalize exit non-zero; streams:\n{}",
+        "an overlapping base divergence must make finalize exit non-zero; streams:\n{}",
         streams(&fin)
     );
     assert!(
-        streams(&fin).to_lowercase().contains("base"),
-        "the abort must surface the base divergence; got:\n{}",
+        streams(&fin).contains("overlaps the task's work on `limiter.rs`"),
+        "the abort must name the overlapping path; got:\n{}",
         streams(&fin)
     );
     let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
-    assert_eq!(before, after, "a base-mismatch abort must create no commit");
+    assert_eq!(
+        before, after,
+        "a base-divergence abort must create no commit"
+    );
 }
 
 #[test]

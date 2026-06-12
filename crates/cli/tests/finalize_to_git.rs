@@ -14,9 +14,11 @@
 //! - remove `.jigc/tasks/<id>/` (phase 7),
 //! - advance the file-state hashes (phase 7 best-effort).
 //!
-//! The abort path: if HEAD moves after `start` (a new commit), `finalize` aborts
-//! non-zero with the divergence route (`design/finalize.md` → 1. Preflight) and
-//! creates NO commit.
+//! The moved-base paths (`design/finalize.md` → Parallel hand-editing, the
+//! 2026-06-12 phase-1 amendment): if HEAD moves after `start` on history **disjoint**
+//! from the task's work, `finalize` auto-re-pins to the new HEAD and lands; if the
+//! moved history **overlaps** the task's work, it blocks (exit 3) naming the
+//! overlapping paths with the conflict route, and creates NO commit.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the
 //! temp repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off
@@ -573,40 +575,133 @@ fn no_delta_finalize_block_render_is_byte_identical_to_the_baseline() {
     );
 }
 
+/// The phase-1 re-pin path (`design/finalize.md` → Parallel hand-editing, the
+/// 2026-06-12 amendment): HEAD moved after `start`, but on history **disjoint** from
+/// the task's work — the serial completion-task shape (mint at audit-start, finalize
+/// after fix commits land). Finalize auto-re-pins to the new HEAD in-memory and
+/// lands: exit 0, ONE new commit carrying only the task's work (not the moved
+/// history's files), the findings envelope on stdout, the working area removed.
 #[test]
-fn finalize_aborts_with_no_commit_when_head_moved() {
+fn finalize_repins_and_lands_when_moved_history_is_disjoint() {
     let (repo, home) = started_repo("add rate limiter");
     let task = "add-rate-limiter";
 
     fs::write(repo.path().join("limiter.rs"), "// rate limiter\n").expect("write code change");
     make_commit_conformant(repo.path(), home.path(), task);
 
-    // HEAD moves after `start`: a human lands another commit, diverging the base pin.
+    // HEAD moves after `start` on DISJOINT history: a human commits `other.txt`,
+    // a path the task's work never touches.
     fs::write(repo.path().join("other.txt"), "unrelated\n").expect("write");
     git(repo.path(), &["add", "other.txt"]);
     git(repo.path(), &["commit", "-q", "-m", "unrelated work"]);
 
-    let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+    let log_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
 
     let out = run_task(repo.path(), home.path(), &["finalize", task]);
     assert!(
-        !out.status.success(),
-        "a base mismatch (HEAD moved) must exit non-zero"
-    );
-    let rendered = format!(
-        "{}{}",
+        out.status.success(),
+        "disjoint moved history must re-pin and land (exit 0); stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
+
+    // The landed surface emits the findings envelope on stdout (the report frame;
+    // its content here is the sweep's advisory baseline-adopt, not the concern).
+    let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        rendered.contains("base-mismatch") || rendered.to_lowercase().contains("base"),
-        "the abort must surface the divergence route; got:\n{rendered}"
+        stdout.contains("— jigc ·"),
+        "a landed re-pinned finalize must emit the findings envelope; got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("blocking ·"),
+        "the landed envelope must carry no blocking finding; got:\n{stdout}"
     );
 
-    // No new commit was created by finalize.
+    // Exactly one new commit, carrying ONLY the task's work.
+    let log_after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(
+        log_after,
+        log_before + 1,
+        "a re-pinned finalize must produce exactly ONE new commit"
+    );
+    let files = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        files.lines().any(|l| l == "limiter.rs"),
+        "the task's code change must land in the commit; files:\n{files}"
+    );
+    assert!(
+        !files.lines().any(|l| l == "other.txt"),
+        "the moved history's file must NOT ride in the task's commit; files:\n{files}"
+    );
+
+    // The working area is gone (phase 7) — the re-pin was in-memory only.
+    let area = repo.path().join(".jigc").join("tasks").join(task);
+    assert!(
+        !area.exists(),
+        "a landed finalize must remove `.jigc/tasks/<id>/`; it still exists at {area:?}"
+    );
+}
+
+/// The overlap form of the phase-1 amendment: the moved history **touches the task's
+/// work**, so no auto-re-pin — finalize blocks (exit 3, the validation-blocked code)
+/// naming the overlapping path with the resolve-or-discard conflict route, creates no
+/// commit, and leaves `base.json` untouched (a blocked run re-derives the decision).
+#[test]
+fn finalize_blocks_on_overlapping_history_naming_the_paths() {
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+
+    // A human lands a commit touching `limiter.rs` after `start`…
+    fs::write(repo.path().join("limiter.rs"), "// the human's limiter\n").expect("write");
+    git(repo.path(), &["add", "limiter.rs"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "human edit to limiter"],
+    );
+    // …while the task's working tree edits the SAME path (dirty).
+    fs::write(repo.path().join("limiter.rs"), "// the task's limiter\n").expect("write");
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    let base_json = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("base.json");
+    let pin_before = fs::read_to_string(&base_json).expect("read the base pin");
+    let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "an overlapping base divergence must exit 3 (validation-blocked); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("overlaps the task's work on `limiter.rs`"),
+        "the block must name the overlapping path; got:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("resolve the overlap on `limiter.rs`") && stderr.contains("discard"),
+        "the block must carry the resolve-or-discard conflict route; got:\n{stderr}"
+    );
+
+    // No new commit, and the recorded pin was never rewritten.
     let log_after = git(repo.path(), &["rev-list", "--count", "HEAD"]);
     assert_eq!(
         log_before, log_after,
-        "a base-mismatch abort must create no commit"
+        "an overlap-blocked finalize must create no commit"
+    );
+    let pin_after = fs::read_to_string(&base_json).expect("read the base pin after the block");
+    assert_eq!(
+        pin_before, pin_after,
+        "a blocked finalize must never rewrite `base.json` (the re-pin is in-memory only)"
     );
 }
