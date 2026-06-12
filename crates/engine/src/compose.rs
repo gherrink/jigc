@@ -561,8 +561,64 @@ fn emit_line(
         return emit_bare_data_value(&path, ctx);
     }
 
-    // Reason: bare prose, verbatim.
-    Ok(line.to_owned())
+    // Reason: bare prose — any **inline** `{{<path>}}` data-value token resolved
+    // in place; a line with no token passes through verbatim.
+    emit_inline_data_values(line, ctx)
+}
+
+/// Resolve every **inline** `{{<path>}}` bare data-value token in a Reason prose
+/// line, substituting in place with the lone-line Reason-resolved semantics
+/// ([`emit_bare_data_value`]: scalar text / address handle / absent → empty) — the
+/// compose-time mechanism a literal `jigc … --task {{task.id}}` authoring line
+/// needs (`DECISIONS.md` M17 settle pre-fix #3: compose-time substitution, the
+/// deterministic pack+compose surface).
+///
+/// Token-anywhere scan, the [`next_fill_token`] discipline: a `{{…}}` whose
+/// trimmed inner is `fill:`-shaped (phase 5's), `cli.`-prefixed, `@`-prefixed, or
+/// `include:`-shaped (the lone-line classes) is **skipped** — the scan resumes
+/// just past its `{{`, leaving the token for its own phase. Every other inner is
+/// a bare data-value path: a malformed path, an unresolvable path, or a
+/// **collection** resolution (`catalog` / `store.*` / `milestone.*` — collections
+/// stay lone-line classes) surfaces the resolver's blocking [`Finding`], exactly
+/// as the lone-line form does (lone-line parity, never silent verbatim leakage).
+/// A line with no resolved token is returned byte-unchanged.
+fn emit_inline_data_values(
+    line: &str,
+    ctx: &crate::data_value::ComposeContext,
+) -> Result<String, Finding> {
+    let mut rewritten = String::new();
+    let mut cursor = 0;
+    while let Some(rel_open) = line[cursor..].find("{{") {
+        let open = cursor + rel_open;
+        // The matching `}}` is the first one after this `{{` (data-value paths
+        // carry no braces, so no nesting to balance). No closer: the rest of the
+        // line is plain prose.
+        let Some(rel_close) = line[open + 2..].find("}}") else {
+            break;
+        };
+        let close = open + 2 + rel_close;
+        let inner = line[open + 2..close].trim();
+        // Skip the other placeholder kinds to their own phases.
+        if inner.starts_with("fill:")
+            || inner.starts_with("cli.")
+            || inner.starts_with('@')
+            || inner.starts_with("include:")
+        {
+            rewritten.push_str(&line[cursor..open + 2]);
+            cursor = open + 2;
+            continue;
+        }
+        let path = parse_data_value(inner)?;
+        let resolved = emit_bare_data_value(&path, ctx)?;
+        rewritten.push_str(&line[cursor..open]);
+        rewritten.push_str(&resolved);
+        cursor = close + 2;
+    }
+    if cursor == 0 {
+        return Ok(line.to_owned());
+    }
+    rewritten.push_str(&line[cursor..]);
+    Ok(rewritten)
 }
 
 /// A read-side dereference surface for `{{@<path>}}` Content lines: walk one
@@ -2373,6 +2429,72 @@ If your decision supersedes an earlier one, here is that decision:
 
         after
         "###);
+    }
+
+    /// Core done-criterion (M17 inc-4 T2): an **inline** `{{<path>}}` data-value
+    /// token in a Reason prose line resolves in place with the lone-line
+    /// Reason-resolved semantics — a scalar substitutes its text (`{{task.id}}` →
+    /// the minted slug, the literal `--task` disambiguation line T3 ships), a
+    /// bound role substitutes its address handle, an absent role substitutes
+    /// empty text (empty-not-finding). A line with no placeholder stays
+    /// byte-unchanged.
+    #[test]
+    fn inline_data_value_token_resolves_in_prose_line() {
+        let ctx = emit_ctx();
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let body = "\
+jigc doc add-item x --task {{task.id}}
+intent: {{ task.intent }} (inline scalar)
+see {{task.commit}} and absent [{{task.decision}}] inline
+plain prose, {single} braces, no tokens
+";
+        let emitted = emit_step_body(body, &ctx, &catalog).expect("emits");
+        insta::assert_snapshot!(emitted, @r"
+        jigc doc add-item x --task emit-four-classes
+        intent: emit a composed step body to the four-class format (inline scalar)
+        see commit:emit-four-classes and absent [] inline
+        plain prose, {single} braces, no tokens
+        ");
+    }
+
+    /// An unresolvable **inline** path surfaces the resolver's blocking finding —
+    /// lone-line parity (an undeclared role is a structural error, never silent
+    /// verbatim leakage); an inline **collection** (`{{catalog}}`) blocks too —
+    /// collections stay lone-line classes.
+    #[test]
+    fn inline_unresolvable_path_and_collection_block() {
+        let ctx = emit_ctx();
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let err = emit_step_body("see {{task.bogus}} here\n", &ctx, &catalog)
+            .expect_err("an undeclared role blocks inline, as it does lone-line");
+        assert_eq!(err.code, "workflow-refs.undeclared-role");
+
+        let err = emit_step_body("pick from {{catalog}} now\n", &ctx, &catalog)
+            .expect_err("a collection inline is a structural misuse");
+        assert_eq!(err.code, "workflow-refs.collection-not-lone");
+    }
+
+    /// The other placeholder kinds are **skipped** to their own phases (the
+    /// `next_fill_token` discipline): a `{{fill:…}}`-shaped inner belongs to
+    /// phase 5, a `{{cli.…}}` / `{{@…}}` / `{{include:…}}` inner is a lone-line
+    /// class — all four pass through byte-for-byte, never resolved inline.
+    #[test]
+    fn inline_other_placeholder_kinds_pass_through_verbatim() {
+        let ctx = emit_ctx();
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let body =
+            "do {{fill: extra}} then {{cli.x}} and {{@task.commit}} and {{include: step:y}}\n";
+        let emitted = emit_step_body(body, &ctx, &catalog).expect("emits");
+        assert_eq!(
+            emitted, body,
+            "non-data-value inners are left to their phases"
+        );
     }
 
     // -- The superseding-decision context-slice (inc-5 seq 5) ----------------
