@@ -10,7 +10,8 @@ The scripts run on stock `python3` (the no-non-stock-interpreter bound: they mus
    - `JIGC_DOGFOOD_HOME` — the absolute path of this directory (a jigc checkout).
    - `JIGC_DOGFOOD_LOG` — the absolute log path, **outside the twin repo** (the log is measurement apparatus, not project content), e.g. `/tmp/jigc-dogfood/<run>/hook-log.jsonl`.
 2. Merge `hooks.json` into the twin's `.claude/settings.json` (both `PostToolUse` matchers — `Bash` and `Write|Edit` — route to `log-event.py`).
-3. After the run: `python3 tally.py "$JIGC_DOGFOOD_LOG" --managed-prefix <dir/> ...` — one `--managed-prefix` per active schema `location:` dir (e.g. `decisions/`, `dogfood/`); the task working-area rule (`.jigc/tasks/<id>/docs/`) is built in.
+3. **Pre-pilot smoke check** (before burning a pilot session): in the hooked session, run one Bash command containing a jigc invocation (e.g. `jigc --help`), then confirm the logged event's `exit` is **non-null** (`tail -1 "$JIGC_DOGFOOD_LOG"`). The hook reads `tool_response.exitCode`/`exit_code` and never invents a value — if the harness payload carries neither, every jigc event logs `exit: null` and the tally will refuse the whole log (see below).
+4. After the run: `python3 tally.py "$JIGC_DOGFOOD_LOG" --managed-prefix <dir/> ...` — one `--managed-prefix` per active schema `location:` dir (e.g. `decisions/`, `dogfood/`); the task working-area rule (`.jigc/tasks/<id>/docs/`) is built in.
 
 The raw log + the tally output are exported **unchanged** into the run's owner-artifact (measurement.md → the per-case two-half shape).
 
@@ -44,3 +45,4 @@ The hook always exits 0 (a measurement hook never perturbs the run); with `JIGC_
 - **adapter-writes** — successful write-verb invocations (`doc create|set-field|set-slot|add-item`) grouped one logical mutation per (doc address × finalize window); the address is the positional arg with any `#fragment` stripped, and a `create`'s minted `type:slug(title)`. Raw counts ride as `jigc-invocations` / `write-verb-invocations` telemetry, never the headline.
 - **oob-edits** — one per (path × window), post-dedup across the two corroborating channels (`write-edit` hook observation on a managed path · `reconciliation.absorb` finding); the channels are named per event, never summed.
 - **drift-caught** vs **validate-blocks** — exit-3 keying: a `finalize` exit 3 keys the drift bucket, a `validate` exit 3 keys the paired validate-blocks count; each entry carries its finding codes (the qualitative what-it-caught record).
+- **Null-exit refusal** — every fact above except oob-edits keys on exits, so a log whose `jigc` events carry `exit: null` would silently tally as all zeros while telemetry still accrues. The tally **refuses** such a log (exit 2, message naming the null-exit count and the smoke check) rather than emit a plausible-looking report; `file_op` events carry no exit and are unaffected.

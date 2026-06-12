@@ -125,6 +125,19 @@ fn run_tally(log: &Path, managed_prefixes: &[&str]) -> serde_json::Value {
 }
 
 fn run_tally_raw(log: &Path, managed_prefixes: &[&str]) -> String {
+    let out = run_tally_unchecked(log, managed_prefixes);
+    assert!(
+        out.status.success(),
+        "tally exits 0: {}\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).expect("tally output is UTF-8")
+}
+
+/// Run the REAL tally script and hand back the raw process output — for the
+/// paths where the tally is REQUIRED to refuse (non-zero exit), not report.
+fn run_tally_unchecked(log: &Path, managed_prefixes: &[&str]) -> std::process::Output {
     let script = apparatus_dir().join("tally.py");
     assert!(
         script.is_file(),
@@ -136,14 +149,7 @@ fn run_tally_raw(log: &Path, managed_prefixes: &[&str]) -> String {
     for prefix in managed_prefixes {
         cmd.arg("--managed-prefix").arg(prefix);
     }
-    let out = cmd.output().expect("spawn tally script");
-    assert!(
-        out.status.success(),
-        "tally exits 0: {}\n{}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8(out.stdout).expect("tally output is UTF-8")
+    cmd.output().expect("spawn tally script")
 }
 
 /// A synthetic PostToolUse payload for a Bash invocation, carrying the command,
@@ -487,6 +493,67 @@ fn tally_reads_the_committed_v1_fixture() {
         .filter(|m| m["address"] == "roadmap:roadmap")
         .collect();
     assert_eq!(windows.len(), 2, "one entry per (address × window)");
+}
+
+/// A harness payload that carries NO exit code — the historically documented
+/// Claude Code Bash `tool_response` shape (`{stdout, stderr, interrupted,
+/// isImage}`). The hook must log `exit: null` (never invent a value), and the
+/// tally must then REFUSE LOUDLY: with exit null, every exit-keyed fact
+/// (adapter-writes, drift-caught, validate-blocks, the finalize-window advance)
+/// silently collapses to zero while telemetry still accrues — a plausible-looking
+/// report that measured nothing. Refusal, not zeros.
+#[test]
+fn tally_refuses_a_log_whose_jigc_exits_are_null() {
+    let tmp = TempDir::new("null-exit");
+    let log = tmp.path().join("hook-log.jsonl");
+
+    // The real hook over the no-exit-code payload shape: logs exit: null.
+    let payload = serde_json::json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": { "command": "jigc task finalize t1" },
+        "tool_response": {
+            "stdout": "ok\n",
+            "stderr": "",
+            "interrupted": false,
+            "isImage": false,
+        },
+    })
+    .to_string();
+    run_hook(&log, &payload);
+
+    let raw = fs::read_to_string(&log).expect("hook log written");
+    let event: serde_json::Value =
+        serde_json::from_str(raw.lines().next().expect("one logged event"))
+            .expect("logged event is JSON");
+    assert!(
+        event["exit"].is_null(),
+        "no exit code in the payload → exit: null, never an invented value: {event}"
+    );
+
+    // A telemetry-only file_op alongside — null exit is fine for non-jigc events.
+    run_hook(&log, &file_event("Write", "decisions/0001-x.md"));
+
+    let out = run_tally_unchecked(&log, &["decisions/"]);
+    assert!(
+        !out.status.success(),
+        "the tally must refuse a log whose jigc exits are null, not emit zeros:\n{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("1 jigc invocation"),
+        "the refusal names the null-exit count: {stderr}"
+    );
+    assert!(
+        stderr.contains("smoke"),
+        "the refusal points at the pre-pilot smoke check: {stderr}"
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "no plausible-looking report rides a refusal: {}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }
 
 /// The shipped apparatus is complete and self-describing: the hooks config wires

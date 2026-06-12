@@ -175,6 +175,32 @@ def tally(events, prefixes):
     }
 
 
+def refuse_null_exits(events):
+    """Refuse a log whose jigc invocations carry `exit: null` — fail loudly.
+
+    Every exit-keyed fact (adapter-writes, drift-caught, validate-blocks, the
+    finalize-window advance) silently collapses to zero when exits are null,
+    while telemetry still accrues — a plausible-looking report that measured
+    nothing. A tally that cannot key on exits must refuse, not emit zeros.
+    Telemetry-only events (file_op) carry no exit and are fine.
+    """
+    null_exits = sum(
+        1
+        for e in events
+        if e.get("v") == 1 and e.get("event") == "jigc" and e.get("exit") is None
+    )
+    if null_exits:
+        sys.stderr.write(
+            f"tally.py: REFUSING — {null_exits} jigc invocation event(s) carry "
+            "exit: null (the harness payload supplied no exit code), so the "
+            "exit-keyed facts (adapter-writes, drift-caught, validate-blocks, "
+            "finalize windows) cannot be derived. Run the pre-pilot smoke check "
+            "(README.md): feed one live PostToolUse payload through log-event.py "
+            "and confirm the logged exit is non-null before a measured run.\n"
+        )
+        sys.exit(2)
+
+
 def main():
     log_path, prefixes = parse_args(sys.argv)
     events = []
@@ -186,6 +212,7 @@ def main():
                 events.append(json.loads(line))
             except ValueError:
                 sys.stderr.write("tally.py: skipped one unparseable line\n")
+    refuse_null_exits(events)
     report = tally(events, prefixes)
     json.dump(report, sys.stdout, indent=2, sort_keys=True, ensure_ascii=False)
     sys.stdout.write("\n")
