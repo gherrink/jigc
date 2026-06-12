@@ -338,15 +338,20 @@ pub fn reconcile_committed_store(
 
 /// Whether `path` (a `file-state` record key like `decisions/x.md`) lives under a
 /// persisted schema's `location:` — i.e. it is a committed managed doc, not a staged
-/// working-area key (`docs/…`) or a code path.
+/// working-area key (`docs/<type>:<slug>.md`) or a code path. The `:` discriminates
+/// the staged namespace even when a schema's `location:` is itself `docs/`: every
+/// staged key carries one ([`crate::state`] mints `<type>:<slug>.md`), no committed
+/// path can (committed docs are `<location>/<slug>.md`, slugs `[a-z0-9-]` per
+/// [`crate::slug::slugify`]).
 fn persisted_committed_path(
     path: &str,
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
 ) -> bool {
-    schemas
-        .values()
-        .filter_map(|s| s.location.as_deref())
-        .any(|loc| path.starts_with(loc) && path.ends_with(".md"))
+    !path.contains(':')
+        && schemas
+            .values()
+            .filter_map(|s| s.location.as_deref())
+            .any(|loc| path.starts_with(loc) && path.ends_with(".md"))
 }
 
 /// The `<type>:<slug>` identity for a committed record path (`decisions/x.md` → its

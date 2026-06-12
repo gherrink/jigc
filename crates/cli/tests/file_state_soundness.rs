@@ -244,11 +244,16 @@ fn parse_envelope(stdout: &str, what: &str) -> Vec<serde_json::Value> {
 
 /// Count the `reconciliation.absorb` findings naming the committed ADR's path.
 fn absorb_count(findings: &[serde_json::Value]) -> usize {
+    absorb_count_at(findings, ADR_PATH)
+}
+
+/// Count the `reconciliation.absorb` findings naming `path`.
+fn absorb_count_at(findings: &[serde_json::Value], path: &str) -> usize {
     findings
         .iter()
         .filter(|f| {
             f["code"] == "reconciliation.absorb"
-                && f["message"].as_str().is_some_and(|m| m.contains(ADR_PATH))
+                && f["message"].as_str().is_some_and(|m| m.contains(path))
         })
         .count()
 }
@@ -580,6 +585,288 @@ fn promoted_owner_artifact_does_not_poison_later_finalizes() {
             .unwrap()
     };
     assert_eq!(before, after, "a blocked finalize creates no commit");
+}
+
+/// The embedded dev-pack source tree (`crates/cli/pack/`) — `CARGO_MANIFEST_DIR` is
+/// `<root>/crates/cli`, the very tree `include_dir!` embeds (mirrors
+/// `flow8_override_default_warning.rs`).
+fn embedded_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+}
+
+/// Recursively copy `src` into `dst` (both directories), creating `dst`.
+fn copy_tree(src: &Path, dst: &Path) {
+    fs::create_dir_all(dst).expect("create copy target dir");
+    for entry in fs::read_dir(src).expect("read source tree").flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_tree(&from, &to);
+        } else {
+            fs::copy(&from, &to).expect("copy pack file");
+        }
+    }
+}
+
+/// Copy the embedded pack into `dir` and move the `adr` schema's committed home from
+/// `decisions/` to `docs/` — a natural `location:` name that collides with the
+/// staged working-area key prefix (`docs/<type>:<slug>.md`), the collision the
+/// post-sweep strip must discriminate on.
+fn docs_located_pack(dir: &Path) -> PathBuf {
+    copy_tree(&embedded_pack_tree(), dir);
+    let schema = dir.join("schemas").join("adr.yaml");
+    let body = fs::read_to_string(&schema).expect("read the copied adr.yaml");
+    let moved = body.replacen("location: decisions/", "location: docs/", 1);
+    assert_ne!(body, moved, "adr.yaml must declare `location: decisions/`");
+    fs::write(&schema, moved).expect("write the docs/-located adr.yaml");
+    dir.to_path_buf()
+}
+
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, `JIGC_PACK_DIR = pack`,
+/// optionally piping `stdin`.
+fn jigc_with_pack(
+    repo: &Path,
+    home: &Path,
+    pack: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack);
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn jigc");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// [`fill_commit`] over the `JIGC_PACK_DIR` seam.
+fn fill_commit_with_pack(repo: &Path, home: &Path, pack: &Path, task: &str) {
+    let set_field = |addr: &str, value: &str| {
+        let out = jigc_with_pack(
+            repo,
+            home,
+            pack,
+            &["doc", "set-field", addr, "--value", value],
+            None,
+        );
+        assert_ok(&out, &format!("set-field {addr}"));
+    };
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_with_pack(
+            repo,
+            home,
+            pack,
+            &["doc", "set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_field(&format!("commit:{task}#type"), "feat");
+    set_field(&format!("commit:{task}#scope"), "cache");
+    set_slot(&format!("commit:{task}#summary"), b"change the cache\n");
+    set_slot(&format!("commit:{task}#body"), b"A cache change.\n");
+}
+
+/// [`stage_commit_only`] over the `JIGC_PACK_DIR` seam.
+fn stage_commit_only_with_pack(repo: &Path, home: &Path, pack: &Path, task: &str, intent: &str) {
+    let out = jigc_with_pack(
+        repo,
+        home,
+        pack,
+        &["start", "--workflow", "single-task", intent],
+        None,
+    );
+    assert_ok(&out, &format!("`jigc start` ({task})"));
+    fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    fill_commit_with_pack(repo, home, pack, task);
+}
+
+/// A conformant (prose-only) OOB edit on the committed doc at `rel`, made and
+/// committed outside the CLI — the human-in-git channel.
+fn oob_edit_and_commit(repo: &Path, rel: &str, from: &str, to: &str) {
+    let path = repo.join(rel);
+    let body = fs::read_to_string(&path).expect("read the committed doc");
+    let edited = body.replacen(from, to, 1);
+    assert_ne!(body, edited, "the OOB edit must change {rel}");
+    fs::write(&path, edited).expect("apply the OOB edit");
+    git(repo, &["add", rel]);
+    git(repo, &["commit", "-q", "-m", "docs: tighten the prose"]);
+}
+
+/// The post-sweep persistence discriminator (`crates/cli/src/task.rs` →
+/// `advance_file_state`): the per-run staged working-area baselines
+/// (`docs/<type>:<slug>.md` — always `:`-bearing) are stripped, but a **committed**
+/// baseline under a `location: docs/` schema (`docs/<slug>.md` — slugs are
+/// `[a-z0-9-]`, never `:`) must survive a landed finalize. Red before the fix: the
+/// strip matched on the `docs/` prefix alone, so the committed baseline died at
+/// every landed finalize and a later OOB edit silently baseline-adopted instead of
+/// firing `reconciliation.absorb` — drift detection permanently off for that type.
+#[test]
+fn docs_located_committed_baseline_survives_landed_finalize() {
+    const DOCS_ADR_PATH: &str = "docs/single-node-cache.md";
+    let repo = TempDir::new("docsloc");
+    let home = TempDir::new("home");
+    let pack_dir = TempDir::new("pack");
+    init_repo(repo.path());
+    let pack = docs_located_pack(pack_dir.path());
+
+    // ── task 0: land `adr:single-node-cache` at its docs/ canonical path ──────────
+    let out = jigc_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "cache sessions in a single in-memory node",
+        ],
+        None,
+    );
+    assert_ok(&out, "`jigc start` (task 0)");
+    let task0 = "cache-sessions-in-a-single-in-memory-node";
+    let create = jigc_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["doc", "create", "adr", "--title", "Single-node cache"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr` (task 0)");
+    for (slot, prose) in [
+        ("context", "Session lookups must stay sub-millisecond.\n"),
+        ("decision", "A single in-memory node keeps lookups fast.\n"),
+        ("consequences", "A cold node loses its sessions.\n"),
+    ] {
+        let out = jigc_with_pack(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "set-slot",
+                &format!("adr:single-node-cache#{slot}"),
+                "--from-file",
+                "-",
+            ],
+            Some(prose.as_bytes()),
+        );
+        assert_ok(&out, &format!("set-slot #{slot}"));
+    }
+    fill_commit_with_pack(repo.path(), home.path(), &pack, task0);
+    let out = jigc_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", task0],
+        None,
+    );
+    assert_ok(&out, "`jigc task finalize` (task 0)");
+    assert!(
+        repo.path().join(DOCS_ADR_PATH).exists(),
+        "task 0 must promote {DOCS_ADR_PATH}",
+    );
+
+    // ── OOB edit #1, then task A's landed finalize absorbs AND persists ───────────
+    oob_edit_and_commit(
+        repo.path(),
+        DOCS_ADR_PATH,
+        "A cold node loses its sessions.",
+        "A cold node loses its sessions; clients re-authenticate.",
+    );
+    let task_a = "absorb-the-external-edit";
+    stage_commit_only_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        task_a,
+        "absorb the external edit",
+    );
+    let out = jigc_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", task_a, "--format", "json"],
+        None,
+    );
+    assert_ok(&out, "`jigc task finalize` (task A)");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let findings = parse_envelope(&stdout, "task A landed finalize");
+    assert_eq!(
+        absorb_count_at(&findings, DOCS_ADR_PATH),
+        1,
+        "task A's landed envelope carries the absorb exactly once; got:\n{stdout}",
+    );
+
+    let record = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("state")
+            .join("file-state.json"),
+    )
+    .expect("a landed finalize persists the file-state record");
+    let value: serde_json::Value = serde_json::from_str(&record).expect("file-state.json parses");
+    let hashes = value["hashes"]
+        .as_object()
+        .expect("the record carries a `hashes` map");
+    let on_disk = fs::read(repo.path().join(DOCS_ADR_PATH)).expect("read the absorbed ADR");
+    assert_eq!(
+        hashes.get(DOCS_ADR_PATH),
+        Some(&serde_json::Value::String(engine::file_state::hash_bytes(
+            &on_disk
+        ))),
+        "the docs/-located committed baseline survives the landed finalize; got:\n{record}",
+    );
+    assert!(
+        hashes.keys().all(|k| !k.contains(':')),
+        "the persisted record carries no `docs/<type>:<slug>.md` staged keys; got:\n{record}",
+    );
+
+    // ── OOB edit #2 still fires the absorb on the next sweep ──────────────────────
+    oob_edit_and_commit(
+        repo.path(),
+        DOCS_ADR_PATH,
+        "clients re-authenticate",
+        "clients re-authenticate transparently",
+    );
+    let task_b = "tighten-the-cache-docs";
+    stage_commit_only_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        task_b,
+        "tighten the cache docs",
+    );
+    let out = jigc_with_pack(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "validate", task_b, "--format", "json"],
+        None,
+    );
+    assert_ok(&out, "`jigc task validate` (task B)");
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let findings = parse_envelope(&stdout, "task B validate");
+    assert_eq!(
+        absorb_count_at(&findings, DOCS_ADR_PATH),
+        1,
+        "drift detection on the docs/-located committed doc stays live after task A's \
+         landed finalize (no silent baseline re-adopt); got:\n{stdout}",
+    );
 }
 
 /// The pure-reader guard (`design/reconciliation.md` → Persistence of the shifted

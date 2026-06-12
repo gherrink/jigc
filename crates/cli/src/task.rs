@@ -854,8 +854,12 @@ fn post_commit(
 /// state), it is the **base** the commit's updates land on, so an absorbed OOB baseline
 /// the commit itself never touched persists too — fixing the verified re-fire defect
 /// (`design/reconciliation.md` → Persistence of the shifted baseline). Committed-store
-/// keys only: the sweep's `docs/…` staged working-area baselines are per-run
-/// ([`TaskArea::validate`]) and stripped. The plan's hash set and the landed commit's
+/// keys only: the sweep's staged working-area baselines (`docs/<type>:<slug>.md`) are
+/// per-run ([`TaskArea::validate`]) and stripped — discriminated by the `:` every
+/// staged key carries ([`engine::state`] mints `<type>:<slug>.md`) and no committed
+/// path can (committed docs are `<location>/<slug>.md`, slugs `[a-z0-9-]`), so a
+/// committed baseline under a schema whose `location:` is itself `docs/` survives and
+/// its drift detection stays live. The plan's hash set and the landed commit's
 /// re-hash apply on top, winning on overlap. `None` (the milestone boundary, no sweep)
 /// loads the durable record as before.
 fn advance_file_state(
@@ -866,7 +870,9 @@ fn advance_file_state(
 ) -> Result<()> {
     let mut record = match post_sweep {
         Some(mut swept) => {
-            swept.hashes.retain(|path, _| !path.starts_with("docs/"));
+            swept
+                .hashes
+                .retain(|path, _| !(path.starts_with("docs/") && path.contains(':')));
             swept
         }
         None => FileStateRecord::load(jigc_root)
