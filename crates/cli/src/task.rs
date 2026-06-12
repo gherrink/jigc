@@ -160,8 +160,11 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    // The post-sweep record is dropped: a standalone `validate` is a pure reader —
+    // the durable baseline advances only at a landed `finalize`
+    // (`design/reconciliation.md` → Persistence of the shifted baseline).
     match task.validate() {
-        Ok(report) => {
+        Ok((report, _record)) => {
             print!("{}", render::validation(format, &report));
             if format != Format::Json {
                 println!();
@@ -356,12 +359,16 @@ impl TaskArea {
     /// → Detection timing: the `task validate` full sweep).
     ///
     /// The record is **loaded** (so drift of a committed doc against its recorded
-    /// baseline is detected) but **not persisted** back from `validate`: the record
-    /// advances only at adopt/absorb/commit, and a `validate` is none of those for
-    /// committed state — `finalize` phase 7 re-derives the committed hashes from the
-    /// just-landed commit. So a working-area instance with no committed baseline
-    /// baseline-adopts fresh (advisory) each run rather than drifting against a stale
-    /// staged hash — clean validate stays clean as the agent fills it.
+    /// baseline is detected) and the **post-sweep** record is returned alongside the
+    /// report — but never persisted here: the record advances durably only at a
+    /// **landed `finalize`** (`design/reconciliation.md` → Persistence of the shifted
+    /// baseline, the M17 amendment), whose post-commit threads this record through so
+    /// an absorbed OOB baseline stops re-firing in every later task. A standalone
+    /// `task validate` drops the record — read verbs stay pure readers. A
+    /// working-area instance with no committed baseline baseline-adopts fresh
+    /// (advisory) each run rather than drifting against a stale staged hash — clean
+    /// validate stays clean as the agent fills it; those `docs/…` staged keys are
+    /// per-run and stripped before any persistence.
     ///
     /// The sweep runs `engine::file_state::reconcile_committed_store` over the committed
     /// store (`reconciliation.md` → Detection timing: the `task validate` full sweep,
@@ -372,7 +379,7 @@ impl TaskArea {
     /// current HEAD (read via `git`, keeping the engine shell-free). The two reachable
     /// surfaces (committed store + this task's working area) make `validate` preview
     /// exactly the forward-ref block `finalize` gates on.
-    fn validate(&self) -> Result<engine::result::ValidationReport> {
+    fn validate(&self) -> Result<(engine::result::ValidationReport, FileStateRecord)> {
         let schemas = self.schemas()?;
         let head = git_head(&self.repo_root)?;
         let mut record = FileStateRecord::load(&self.jigc_root).with_context(|| {
@@ -382,7 +389,7 @@ impl TaskArea {
             )
         })?;
         let tracked = self.tracked_predicate()?;
-        validate_task(
+        let report = validate_task(
             &self.dir,
             &schemas,
             &mut record,
@@ -393,7 +400,8 @@ impl TaskArea {
             &doc_code_invoker,
             &tracked,
         )
-        .with_context(|| format!("validating task at {:?}", self.dir))
+        .with_context(|| format!("validating task at {:?}", self.dir))?;
+        Ok((report, record))
     }
 
     /// Build the git tracked-status predicate the engine's #5 owner-artifact gate
@@ -433,8 +441,11 @@ impl TaskArea {
         let head = git_head(&self.repo_root)?;
 
         // The validate report the planner gates on — one engine, two entry points
-        // (`design/finalize.md` → 2. Validate: no private check path).
-        let report = self.validate()?;
+        // (`design/finalize.md` → 2. Validate: no private check path). The post-sweep
+        // record rides along: a *landed* commit persists it (the absorb baseline-advance,
+        // `design/reconciliation.md` → Persistence of the shifted baseline); a blocked
+        // branch drops it.
+        let (report, swept) = self.validate()?;
 
         // The diff-presence signal the planner's empty-commit guard needs: any
         // working-tree change from base, any staged managed doc, or any untracked
@@ -482,6 +493,7 @@ impl TaskArea {
             &self.dir,
             &plan,
             &self.dir,
+            Some(swept),
         )? {
             Ok(()) => {
                 // The landed surface: emit the preflight findings envelope on stdout,
@@ -649,7 +661,9 @@ pub(crate) fn execute_finalize_plan(
     // per-task and `squash: true` milestone callers expect (a failure surfaces git's
     // stderr verbatim — through the shared operational-error funnel, so `--format
     // json` gets the error envelope — and exits `FAILURE`; success exits `SUCCESS`).
-    match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir)? {
+    // The milestone boundary runs no reconcile sweep, so it carries no post-sweep
+    // record to persist (`None` — post-commit loads the durable record as before).
+    match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir, None)? {
         Ok(()) => Ok(ExitCode::SUCCESS),
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -665,12 +679,18 @@ pub(crate) fn execute_finalize_plan(
 /// boundary calls this directly so it can detect the aggregate failure and undo the
 /// per-sub-task commits it laid down ahead of the aggregate (`git_reset_hard`); the
 /// `Ok(Err(_))` carries the original error so the caller can still surface it.
+///
+/// `post_sweep` is the per-task preflight's post-sweep file-state record — persisted
+/// by post-commit **only when the commit lands**, so an absorbed OOB baseline advances
+/// durably exactly once (`design/reconciliation.md` → Persistence of the shifted
+/// baseline). The milestone callers run no sweep and pass `None`.
 pub(crate) fn try_execute_finalize_plan(
     repo_root: &Path,
     jigc_root: &Path,
     msg_tmp_dir: &Path,
     plan: &engine::finalize::FinalizePlan,
     cleanup_dir: &Path,
+    post_sweep: Option<FileStateRecord>,
 ) -> Result<Result<()>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -695,7 +715,13 @@ pub(crate) fn try_execute_finalize_plan(
         return Ok(Err(err));
     }
     // Phase 7 — post-commit (best-effort; the commit is already truth).
-    post_commit(repo_root, jigc_root, cleanup_dir, &plan.hash_updates);
+    post_commit(
+        repo_root,
+        jigc_root,
+        cleanup_dir,
+        &plan.hash_updates,
+        post_sweep,
+    );
     Ok(Ok(()))
 }
 
@@ -774,8 +800,9 @@ fn post_commit(
     jigc_root: &Path,
     cleanup_dir: &Path,
     hash_updates: &BTreeMap<String, String>,
+    post_sweep: Option<FileStateRecord>,
 ) {
-    if let Err(err) = advance_file_state(repo_root, jigc_root, hash_updates) {
+    if let Err(err) = advance_file_state(repo_root, jigc_root, hash_updates, post_sweep) {
         eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
     }
     if let Err(err) = engine::index::invalidate(jigc_root) {
@@ -790,13 +817,29 @@ fn post_commit(
 /// managed-doc hash set is empty in the commit-only case; the committed code files (the
 /// working-tree changes that just landed) are hashed from `HEAD`'s tree so the next
 /// `file-state` probe sees them in-sync.
+///
+/// When the caller carries a `post_sweep` record (the per-task preflight's post-sweep
+/// state), it is the **base** the commit's updates land on, so an absorbed OOB baseline
+/// the commit itself never touched persists too — fixing the verified re-fire defect
+/// (`design/reconciliation.md` → Persistence of the shifted baseline). Committed-store
+/// keys only: the sweep's `docs/…` staged working-area baselines are per-run
+/// ([`TaskArea::validate`]) and stripped. The plan's hash set and the landed commit's
+/// re-hash apply on top, winning on overlap. `None` (the milestone boundary, no sweep)
+/// loads the durable record as before.
 fn advance_file_state(
     repo_root: &Path,
     jigc_root: &Path,
     hash_updates: &BTreeMap<String, String>,
+    post_sweep: Option<FileStateRecord>,
 ) -> Result<()> {
-    let mut record = FileStateRecord::load(jigc_root)
-        .with_context(|| format!("loading the file-state record under {jigc_root:?}"))?;
+    let mut record = match post_sweep {
+        Some(mut swept) => {
+            swept.hashes.retain(|path, _| !path.starts_with("docs/"));
+            swept
+        }
+        None => FileStateRecord::load(jigc_root)
+            .with_context(|| format!("loading the file-state record under {jigc_root:?}"))?,
+    };
     for (path, hash) in hash_updates {
         record.record(path.clone(), hash.clone());
     }

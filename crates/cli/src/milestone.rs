@@ -536,7 +536,10 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         commit_per_subtask_messages(&repo_root, &dir, milestone_id, &list, &schemas)?;
 
         // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
-        match crate::task::try_execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)? {
+        // The milestone boundary runs no reconcile sweep → no post-sweep record (`None`).
+        match crate::task::try_execute_finalize_plan(
+            &repo_root, &jigc_root, &dir, &plan, &dir, None,
+        )? {
             Ok(()) => {
                 // The boundary landed — clean up the per-sub-task working areas too (the
                 // executor only removed the milestone area). On a failure (below) the areas
