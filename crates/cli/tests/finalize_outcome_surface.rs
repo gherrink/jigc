@@ -260,12 +260,34 @@ fn landed_finalize_after_oob(format: Option<&str>) -> String {
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }
 
+/// Seed the file-state record with `task`'s staged commit doc's **real** digest so
+/// the sweep sees `IN_SYNC`, not a fresh baseline-adopt. `task validate`/finalize
+/// never persist the working-area baseline, so without the seed the staged commit
+/// doc would adopt anew on every sweep (the severity-tuning seeding pattern, here
+/// with the matching hash). Merges into any existing record — a prior task's
+/// landed finalize may have posted baselines this seed must not drop.
+fn seed_in_sync(repo: &Path, task: &str) {
+    let staged = repo
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("commit:{task}.md"));
+    let digest = engine::file_state::hash_bytes(&fs::read(&staged).expect("read staged doc"));
+    let state = repo.join(".jigc").join("state");
+    fs::create_dir_all(&state).expect("create .jigc/state");
+    let record = state.join("file-state.json");
+    let mut body: serde_json::Value = match fs::read_to_string(&record) {
+        Ok(existing) => serde_json::from_str(&existing).expect("parse existing file-state.json"),
+        Err(_) => serde_json::json!({ "hashes": {} }),
+    };
+    body["hashes"][format!("docs/commit:{task}.md")] = serde_json::Value::String(digest);
+    fs::write(record, body.to_string()).expect("seed file-state.json");
+}
+
 /// The clean scenario: a commit-only task whose preflight report is **empty**.
-/// `task validate`/finalize never persist the working-area baseline, so the staged
-/// commit doc would baseline-adopt fresh on every sweep; seeding the file-state
-/// record with the doc's *matching* hash (the severity-tuning seeding pattern, here
-/// with the real digest) puts it `IN_SYNC` — zero findings. Asserts the finalize
-/// lands and returns its stdout — which must carry the positive no-findings signal.
+/// Asserts the finalize lands and returns its stdout — which must carry the
+/// positive no-findings signal.
 fn landed_clean_finalize(format: Option<&str>) -> String {
     let repo = TempDir::new("clean");
     let home = TempDir::new("home");
@@ -279,20 +301,7 @@ fn landed_clean_finalize(format: Option<&str>) -> String {
     );
     assert_ok(&out, "`jigc start` (clean task)");
     fill_commit(repo.path(), home.path(), task);
-
-    // Seed the staged commit doc's real hash so the sweep sees IN_SYNC, not adopt.
-    let staged = repo
-        .path()
-        .join(".jigc")
-        .join("tasks")
-        .join(task)
-        .join("docs")
-        .join(format!("commit:{task}.md"));
-    let digest = engine::file_state::hash_bytes(&fs::read(&staged).expect("read staged doc"));
-    let state = repo.path().join(".jigc").join("state");
-    fs::create_dir_all(&state).expect("create .jigc/state");
-    let body = serde_json::json!({ "hashes": { format!("docs/commit:{task}.md"): digest } });
-    fs::write(state.join("file-state.json"), body.to_string()).expect("seed file-state.json");
+    seed_in_sync(repo.path(), task);
 
     let out = finalize(repo.path(), home.path(), task, format);
     assert_ok(&out, "`jigc task finalize` (clean task)");
@@ -545,4 +554,230 @@ fn landed_finalize_emits_findings() {
         findings.is_empty(),
         "the clean json envelope must carry an empty findings array; got:\n{stdout}",
     );
+}
+
+/// Mint + fill + land a commit-only task in `repo`, returning the finalize output
+/// for the caller's exit-code/stream assertions. The fill is clean (in-sync seeded)
+/// so the landed envelope is the deterministic positive signal; each task writes
+/// one distinct code file (the agent's authored change) so its commit is never
+/// empty — a second commit-only task in the same repo would otherwise have nothing
+/// for git to commit.
+fn land_commit_only(
+    repo: &Path,
+    home: &Path,
+    task: &str,
+    intent: &str,
+    format: Option<&str>,
+) -> std::process::Output {
+    let out = jigc(repo, home, &["start", "--workflow", "single-task", intent]);
+    assert_ok(&out, &format!("`jigc start` ({task})"));
+    fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    fill_commit(repo, home, task);
+    seed_in_sync(repo, task);
+    finalize(repo, home, task, format)
+}
+
+/// The exit code of an outcome, with the streams surfaced on a missing code.
+fn code_of(out: &std::process::Output, what: &str) -> i32 {
+    out.status.code().unwrap_or_else(|| {
+        panic!(
+            "{what} must exit with a code (not a signal); stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        )
+    })
+}
+
+/// M17 increment 1, T4 — the discrimination matrix (`design/measurement.md` →
+/// drift-caught definition + The capture substrate: the harness-side tally keys on
+/// exit code + finding codes from output, so every invocation outcome must be
+/// pairwise distinguishable by exit code + output alone). One throwaway repo, both
+/// renderer families (agent default + `--format json`):
+///
+/// - **landed finalize** → exit 0, the findings envelope on **stdout**;
+/// - **validation-blocked finalize** → exit 3, the findings envelope on **stderr**;
+/// - **operational error** → exit 1, the `{"error": …}` envelope on stderr under
+///   `--format json` (plain `{err:#}` text under agent);
+/// - **usage error** → exit 2 (clap's convention), format-independent.
+///
+/// The code space is asserted collision-free per family — the drift-caught counting
+/// contract: a tally that reads exit codes never conflates a stopped bad commit
+/// with a crashed binary or a typo'd invocation.
+#[test]
+fn outcome_space_is_discriminable() {
+    let repo = TempDir::new("matrix");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // ── outcome: landed finalize → 0 + envelope on stdout, both families ─────────
+    let landed_agent = land_commit_only(
+        repo.path(),
+        home.path(),
+        "land-the-agent-probe",
+        "land the agent probe",
+        None,
+    );
+    assert_eq!(
+        code_of(&landed_agent, "landed finalize (agent)"),
+        0,
+        "a landed finalize exits 0; stderr:\n{}",
+        String::from_utf8_lossy(&landed_agent.stderr),
+    );
+    let stdout = String::from_utf8_lossy(&landed_agent.stdout);
+    assert!(
+        stdout.contains("no findings — the task validates clean"),
+        "the landed agent envelope rides stdout; got:\n{stdout}",
+    );
+    assert!(
+        landed_agent.stderr.is_empty(),
+        "a landed finalize keeps stderr silent (the envelope-stream split is the \
+         landed/blocked discriminator); stderr:\n{}",
+        String::from_utf8_lossy(&landed_agent.stderr),
+    );
+
+    let landed_json = land_commit_only(
+        repo.path(),
+        home.path(),
+        "land-the-json-probe",
+        "land the json probe",
+        Some("json"),
+    );
+    assert_eq!(code_of(&landed_json, "landed finalize (json)"), 0);
+    let stdout = String::from_utf8(landed_json.stdout.clone()).expect("utf-8 stdout");
+    let findings = parse_envelope(&stdout, "landed finalize (json)");
+    assert!(
+        findings.is_empty(),
+        "the clean landed json envelope carries an empty findings array; got:\n{stdout}",
+    );
+    assert!(
+        landed_json.stderr.is_empty(),
+        "a landed json finalize keeps stderr silent; stderr:\n{}",
+        String::from_utf8_lossy(&landed_json.stderr),
+    );
+
+    // ── outcome: validation-blocked finalize → 3 + envelope on stderr ────────────
+    let task = stage_dangling_supersedes(repo.path(), home.path());
+
+    let blocked_agent = finalize(repo.path(), home.path(), task, None);
+    assert_eq!(
+        code_of(&blocked_agent, "blocked finalize (agent)"),
+        3,
+        "a validation-blocked finalize exits 3; stderr:\n{}",
+        String::from_utf8_lossy(&blocked_agent.stderr),
+    );
+    assert!(
+        blocked_agent.stdout.is_empty(),
+        "a blocked finalize keeps stdout silent; stdout:\n{}",
+        String::from_utf8_lossy(&blocked_agent.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&blocked_agent.stderr);
+    assert!(
+        stderr.contains("blocking") && stderr.contains("adr:typo-nonexistent"),
+        "the blocked agent envelope rides stderr, naming the dangling target; got:\n{stderr}",
+    );
+
+    // A block consumes nothing — the same blocked task re-runs under json.
+    let blocked_json = finalize(repo.path(), home.path(), task, Some("json"));
+    assert_eq!(code_of(&blocked_json, "blocked finalize (json)"), 3);
+    assert!(
+        blocked_json.stdout.is_empty(),
+        "a blocked json finalize keeps stdout silent; stdout:\n{}",
+        String::from_utf8_lossy(&blocked_json.stdout),
+    );
+    let stderr = String::from_utf8(blocked_json.stderr.clone()).expect("utf-8 stderr");
+    let findings = parse_envelope(&stderr, "blocked finalize (json, stderr)");
+    assert!(
+        findings.iter().any(|f| f["severity"] == "blocking"),
+        "the blocked json envelope carries ≥1 blocking finding; got:\n{stderr}",
+    );
+
+    // ── outcome: operational error → 1; json gets the error envelope ─────────────
+    let op_agent = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "nonexistent"],
+    );
+    assert_eq!(
+        code_of(&op_agent, "operational error (agent)"),
+        1,
+        "an operational error stays exit 1; stderr:\n{}",
+        String::from_utf8_lossy(&op_agent.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&op_agent.stderr);
+    assert!(
+        stderr.contains("no task `nonexistent`"),
+        "the agent operational error carries the plain chain; got:\n{stderr}",
+    );
+
+    let op_json = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "nonexistent", "--format", "json"],
+    );
+    assert_eq!(code_of(&op_json, "operational error (json)"), 1);
+    let stderr = String::from_utf8(op_json.stderr.clone()).expect("utf-8 stderr");
+    let value: serde_json::Value = serde_json::from_str(&stderr).unwrap_or_else(|err| {
+        panic!("the json operational error parses as the error envelope ({err}); got:\n{stderr}")
+    });
+    assert!(
+        value["error"].is_string() && value["findings"].is_null(),
+        "the operational envelope is `{{\"error\": …}}`, never a findings report \
+         (a tally must not read a crash as a validation outcome); got:\n{stderr}",
+    );
+
+    // ── outcome: usage error → 2, format-independent ──────────────────────────────
+    let usage_agent = jigc(repo.path(), home.path(), &["task", "finalize"]);
+    assert_eq!(
+        code_of(&usage_agent, "usage error (agent)"),
+        2,
+        "a usage error exits 2 (clap's convention); stderr:\n{}",
+        String::from_utf8_lossy(&usage_agent.stderr),
+    );
+    assert!(
+        String::from_utf8_lossy(&usage_agent.stderr).contains("Usage"),
+        "the usage error carries clap's usage text; stderr:\n{}",
+        String::from_utf8_lossy(&usage_agent.stderr),
+    );
+
+    let usage_json = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", "--format", "json"],
+    );
+    assert_eq!(
+        code_of(&usage_json, "usage error (json)"),
+        2,
+        "a usage error stays 2 under --format json; stderr:\n{}",
+        String::from_utf8_lossy(&usage_json.stderr),
+    );
+
+    // ── the collision-free code space, per renderer family ───────────────────────
+    for (family, codes) in [
+        (
+            "agent",
+            [
+                code_of(&landed_agent, "landed (agent)"),
+                code_of(&blocked_agent, "blocked (agent)"),
+                code_of(&op_agent, "operational (agent)"),
+                code_of(&usage_agent, "usage (agent)"),
+            ],
+        ),
+        (
+            "json",
+            [
+                code_of(&landed_json, "landed (json)"),
+                code_of(&blocked_json, "blocked (json)"),
+                code_of(&op_json, "operational (json)"),
+                code_of(&usage_json, "usage (json)"),
+            ],
+        ),
+    ] {
+        let distinct: std::collections::HashSet<i32> = codes.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            codes.len(),
+            "the {family}-family exit-code space must be collision-free \
+             (landed/blocked/operational/usage); got {codes:?}",
+        );
+    }
 }
