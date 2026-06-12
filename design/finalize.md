@@ -93,6 +93,8 @@ The rule is simple by design:
 - **No `--include-all` flag, no "stash unrelated."** A task is a coherent unit of work; the tree's deltas from base define it.
 - **Parallel hand-editing** (a human editing other files on the same branch while a task runs) is caught upstream by the base-pin: if the human commits, HEAD moves and the base-mismatch rejection in phase 1 fires; if the human only edits without committing, the changes show in `jigc task diff <id>` before `finalize` so they're visible at preview time.
 
+  **Amended at M17 planning (2026-06-12) — phase 1 gains a re-pin path.** The unconditional rejection proved wrong for serial-task shapes the methodology itself mandates: a completion task minted at audit-start finalizes *after* its fix commits land, so its base has moved **by design**, and discard-and-reauthor was the only route (verified by exercise on a foreign repo). Phase 1 now **auto-re-pins** when the moved history is disjoint from the task's work: re-pin to the new HEAD iff *(paths changed in commits between the recorded base and HEAD)* ∩ *(currently-dirty working-tree paths ∪ the task's promote destinations)* = ∅, then re-run the preflight sweep against the new base. Any overlap keeps the block — now with a conflict route naming the overlapping paths — which is exactly the parallel-hand-editing case this bullet exists to catch. ([DECISIONS.md](../DECISIONS.md) 2026-06-12; the M17 pre-fix set.)
+
 The cost is honesty: if you started a task on a checkout, the tree-diff from base **is** the task. The benefit is the absence of a hidden allow/deny list the agent would have to reason about.
 
 ## Rollback discipline
