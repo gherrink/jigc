@@ -46,6 +46,14 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
+/// The validation-blocked exit code: a blocking-`ValidationReport` /
+/// `plan_finalize`-findings outcome — distinct from an operational error (1) and
+/// clap's usage error (2), so a harness-side tally can discriminate outcomes from
+/// the exit code alone (`design/measurement.md` → The capture substrate, item 2:
+/// drift-caught and the `validate-blocks` paired count key on it). Setup/ingest/join
+/// blocks and git/hook commit rejections are NOT validation outcomes and stay 1.
+pub(crate) const EXIT_VALIDATION_BLOCKED: u8 = 3;
+
 /// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`
 /// (`design/write-commands.md` → Lifecycle).
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -141,7 +149,8 @@ fn run_diff(cwd: &Path, id: &str) -> Result<()> {
 
 /// `jigc task validate <id>` — run the task-scope sweep and render its findings; the
 /// exit code tracks `has_blocking()` (`design/validation.md` → How it gates
-/// `finalize`: validate previews what finalize blocks on). The findings render
+/// `finalize`: validate previews what finalize blocks on) — a blocking report exits
+/// [`EXIT_VALIDATION_BLOCKED`], an operational error 1. The findings render
 /// through `crate::render::validation` in the selected format.
 fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
     let task = match TaskArea::resolve(cwd, id) {
@@ -158,7 +167,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
                 println!();
             }
             if report.has_blocking() {
-                ExitCode::FAILURE
+                ExitCode::from(EXIT_VALIDATION_BLOCKED)
             } else {
                 ExitCode::SUCCESS
             }
@@ -414,10 +423,11 @@ impl TaskArea {
     /// Execute the `finalize` transaction (`design/finalize.md` → 5–7). Returns the
     /// process exit code: `SUCCESS` on a landed commit — which also emits the
     /// preflight findings envelope on stdout, symmetric with `task validate`
-    /// (`design/measurement.md` → The capture substrate, item 2) — `FAILURE` on any
-    /// planner block (rendered + surfaced) or hook/git rejection (git's stderr
-    /// surfaced, no envelope). An orchestration error (git unavailable, malformed
-    /// pin) bubbles as `Err`.
+    /// (`design/measurement.md` → The capture substrate, item 2) —
+    /// [`EXIT_VALIDATION_BLOCKED`] on a planner block (rendered + surfaced), `FAILURE`
+    /// on a hook/git rejection (git's stderr surfaced, no envelope — not a validation
+    /// outcome). An orchestration error (git unavailable, malformed pin) bubbles as
+    /// `Err`.
     fn finalize(&self, id: &str, format: Format) -> Result<ExitCode> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
@@ -459,7 +469,7 @@ impl TaskArea {
                 if format != Format::Json {
                     eprintln!();
                 }
-                return Ok(ExitCode::FAILURE);
+                return Ok(ExitCode::from(EXIT_VALIDATION_BLOCKED));
             }
         };
 

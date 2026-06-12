@@ -15,6 +15,10 @@
 //!
 //! Both repeated under `--format json`: stdout parses as the report envelope.
 //!
+//! And the exit-code split (T2): a validation-blocked `task validate` / `task
+//! finalize` exits **3** (`EXIT_VALIDATION_BLOCKED` — drift-caught and the
+//! `validate-blocks` paired count key on it), while an operational error stays **1**.
+//!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, and a self-cleaning `TempDir` keeps the test off the
 //! dev's repo.
@@ -306,6 +310,134 @@ fn parse_envelope(stdout: &str, what: &str) -> Vec<serde_json::Value> {
             panic!("{what}: the envelope must carry a `findings` array; got:\n{stdout}")
         })
         .clone()
+}
+
+/// Inject a `supersedes: <target>` line into the staged ADR's empty front-matter block
+/// (mirrors `superseding_decision.rs` — the concern here is the exit code of the block,
+/// not the write-path field generation).
+fn inject_supersedes(repo: &Path, task: &str, slug: &str, target: &str) {
+    let staged = repo
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("adr:{slug}.md"));
+    let body = fs::read_to_string(&staged).expect("read staged ADR");
+    let with = body.replacen(
+        "---\n---\n",
+        &format!("---\nsupersedes: {target}\n---\n"),
+        1,
+    );
+    assert_ne!(
+        body, with,
+        "the staged ADR carries an empty front-matter block"
+    );
+    fs::write(&staged, &with).expect("inject supersedes ref");
+}
+
+/// Stage a task whose ADR carries a **dangling** `supersedes` forward-ref — the
+/// validation-blocked shape (`schema-conformance.ref-resolves`, blocking). The commit
+/// doc is filled so the ref is the only block.
+fn stage_dangling_supersedes(repo: &Path, home: &Path) -> &'static str {
+    let task = "supersede-the-cache-decision";
+    let out = jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "supersede the cache decision",
+        ],
+    );
+    assert_ok(&out, "`jigc start` (dangling task)");
+
+    let create = jigc_doc(
+        repo,
+        home,
+        &["create", "adr", "--title", "Shared redis cache"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr` (dangling task)");
+
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo,
+            home,
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_slot(
+        "adr:shared-redis-cache#context",
+        b"A single node is a single point of failure.\n",
+    );
+    set_slot(
+        "adr:shared-redis-cache#decision",
+        b"Replicate the session cache across nodes.\n",
+    );
+    set_slot(
+        "adr:shared-redis-cache#consequences",
+        b"Cache reads cross the network.\n",
+    );
+    // The dangling forward-ref: a target in NEITHER surface.
+    inject_supersedes(repo, task, "shared-redis-cache", "adr:typo-nonexistent");
+    fill_commit(repo, home, task);
+    task
+}
+
+/// M17 increment 1, T2 — the exit-code split (`design/measurement.md` → The capture
+/// substrate: exit 3 = validation-blocked, the code drift-caught and the
+/// `validate-blocks` paired count key on; 1 stays operational error; 2 stays clap
+/// usage). Blocked finalize and blocked validate must exit **3**; an operational
+/// error must stay **1**.
+#[test]
+fn validation_blocked_exits_3() {
+    let repo = TempDir::new("blocked");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let task = stage_dangling_supersedes(repo.path(), home.path());
+
+    // ── a blocked `task validate` exits 3 (the validate-blocks paired count) ─────
+    let out = jigc(repo.path(), home.path(), &["task", "validate", task]);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a blocking `task validate` must exit 3; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // ── a blocked `task finalize` exits 3 with the envelope on stderr ────────────
+    let out = finalize(repo.path(), home.path(), task, None);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a validation-blocked finalize must exit 3; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("blocking") && stderr.contains("adr:typo-nonexistent"),
+        "the blocked finalize carries the findings envelope on stderr, naming the \
+         dangling target; got:\n{stderr}",
+    );
+
+    // ── an operational error stays exit 1 ────────────────────────────────────────
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "nonexistent"],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an operational error must stay exit 1; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
 }
 
 #[test]

@@ -510,7 +510,10 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
                         eprintln!("  route: {route}");
                     }
                 }
-                return Ok(ExitCode::FAILURE);
+                // The same outcome class as the task-finalize planner block: a
+                // `plan_*_finalize`-findings block is a validation outcome, exit 3
+                // (`design/measurement.md` → The capture substrate, item 2).
+                return Ok(ExitCode::from(crate::task::EXIT_VALIDATION_BLOCKED));
             }
         };
 
