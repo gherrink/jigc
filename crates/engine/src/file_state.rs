@@ -308,11 +308,16 @@ pub fn reconcile_committed_store(
 
     // Rename detection: a recorded committed path of a persisted type that is no longer
     // on disk is a suspected rename/deletion (`reconciliation.md` → Rename detection).
-    // The untracked candidates are the on-disk `.md` files (of any persisted type) that
-    // carry no recorded hash, paired with their raw-byte hash.
+    // "Missing" means absent from DISK, not absent from the walk (the 2026-06-12
+    // amendment): the walk is a non-recursive `<location>/*.md` glob, so a baselined
+    // path outside it (e.g. a promoted owner-artifact under `completions/artifacts/`)
+    // is checked for genuine disk presence — present-but-unwalked yields no finding and
+    // stays baselined as-is. The untracked candidates are the on-disk `.md` files (of
+    // any persisted type) that carry no recorded hash, paired with their raw-byte hash.
     let recorded_missing: Vec<String> = recorded_at_entry
         .iter()
         .filter(|p| !seen_on_disk.contains(*p))
+        .filter(|p| !repo_root.join(p).exists())
         .cloned()
         .collect();
     if !recorded_missing.is_empty() {
@@ -986,6 +991,72 @@ Slightly higher write latency for resilience.
         assert!(
             rename.message.contains(tracked) && rename.message.contains("new-name"),
             "the strong-signal rename names both the missing tracked path and the suspect: {rename:?}"
+        );
+    }
+
+    /// The 2026-06-12 rename amendment (`reconciliation.md` → Rename detection:
+    /// "missing means absent from disk, not absent from the walk"): a baselined path
+    /// under a persisted `location:` prefix but outside the non-recursive
+    /// `<location>/*.md` walk — the promoted owner-artifact case,
+    /// `completions/artifacts/<run>/x.md`, baselined by its finalize — is **not**
+    /// missing while it exists on disk: zero `reconciliation.rename`, hash untouched.
+    /// Genuinely deleted from disk, the weak-signal blocking rename fires.
+    #[test]
+    fn baselined_path_outside_walk_is_not_missing() {
+        let mut schema = adr_schema();
+        schema.location = Some("completions/".to_string());
+        let mut schemas: std::collections::BTreeMap<String, Schema> =
+            std::collections::BTreeMap::new();
+        schemas.insert("completion-record".to_string(), schema);
+
+        let root = TempRoot::new("outside-walk");
+        let artifact_rel = "completions/artifacts/run-1/x.md";
+        let artifact_abs = root.path().join(artifact_rel);
+        std::fs::create_dir_all(artifact_abs.parent().expect("artifact has a parent"))
+            .expect("mk completions/artifacts/run-1/");
+        let artifact_bytes: &[u8] = b"the genuine audit transcript\n";
+        std::fs::write(&artifact_abs, artifact_bytes).expect("write the owner-artifact");
+
+        // The artifact was baselined at its finalize (git_commit_files re-hash).
+        let mut record = FileStateRecord::new();
+        let baseline = hash_bytes(artifact_bytes);
+        record.record(artifact_rel, baseline.clone());
+
+        let mut index = EdgeIndex::default();
+        let task = TempRoot::new("outside-walk-task");
+
+        // Present on disk but never walked → NOT missing: zero rename, hash untouched.
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        assert!(
+            findings.iter().all(|f| f.code != "reconciliation.rename"),
+            "a baselined path present on disk outside the walk is not missing: {findings:?}"
+        );
+        assert_eq!(
+            record.get(artifact_rel),
+            Some(baseline.as_str()),
+            "the present-outside-the-walk path stays baselined as-is (hash untouched)"
+        );
+
+        // Genuinely deleted from disk → the weak-signal blocking rename fires.
+        std::fs::remove_file(&artifact_abs).expect("delete the owner-artifact");
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        let rename = findings
+            .iter()
+            .find(|f| f.code == "reconciliation.rename")
+            .expect("a genuinely deleted baselined path still routes to rename detection");
+        assert_eq!(rename.severity, Severity::Blocking);
+        assert!(
+            rename.message.contains(artifact_rel) && rename.message.contains("missing"),
+            "the weak-signal rename names the missing artifact path: {rename:?}"
+        );
+        assert!(
+            rename
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("restore")),
+            "no content-matching suspect exists, so the weak signal routes to restore: {rename:?}"
         );
     }
 

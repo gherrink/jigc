@@ -1,9 +1,10 @@
-//! M17 increment 2, T1 — file-state soundness: the absorb baseline-advance is
-//! persisted by a landed `task finalize` only (`design/reconciliation.md` →
+//! M17 increment 2 — file-state soundness: the absorb baseline-advance is
+//! persisted by a landed `task finalize` only (T1 — `design/reconciliation.md` →
 //! Persistence of the shifted baseline, the M17 amendment; `design/measurement.md`
-//! → The capture substrate).
+//! → The capture substrate), and a baselined path is *missing* only when it is
+//! absent from disk, not merely absent from the walk (T2 — the rename amendment).
 //!
-//! Two contracts:
+//! Three contracts:
 //!
 //! - **One edit, one absorb.** A conformant OOB edit on a committed ADR (the
 //!   human-in-git channel: edit + `git commit` outside the CLI) fires its
@@ -17,6 +18,10 @@
 //!   memory for its own run (the advisory still surfaces) but leaves
 //!   `.jigc/state/file-state.json` byte-unchanged — and never mints it when
 //!   absent. No write side effects on a read verb.
+//! - **Artifacts don't poison.** A promoted owner-artifact (baselined under the
+//!   `completions/` location prefix but outside the non-recursive
+//!   `completions/*.md` walk) never false-blocks a later finalize via
+//!   `reconciliation.rename`; genuinely deleting it still blocks.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the
 //! temp repo is a real `git init`, and a self-cleaning `TempDir` keeps the test
@@ -349,6 +354,232 @@ fn absorbed_oob_edit_fires_absorb_exactly_once_across_tasks() {
         0,
         "task B's landed finalize must not re-fire the absorb; got:\n{stdout}",
     );
+}
+
+/// The on-disk methodology pack home (`<root>/packs/methodology`).
+fn methodology_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
+}
+
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, `JIGC_PACK_DIR =
+/// <methodology>` (the methodology-pack seam), optionally piping `stdin`.
+fn jigc_methodology(
+    repo: &Path,
+    home: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", methodology_pack_tree());
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn jigc");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// Fill the methodology-pack commit doc's author-required header + prose so a
+/// finalize over it validates clean of `schema-conformance` findings.
+fn fill_commit_methodology(repo: &Path, home: &Path, task: &str) {
+    let set_field = |addr: &str, value: &str| {
+        let out = jigc_methodology(
+            repo,
+            home,
+            &["doc", "set-field", addr, "--value", value],
+            None,
+        );
+        assert_ok(&out, &format!("set-field {addr}"));
+    };
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_methodology(
+            repo,
+            home,
+            &["doc", "set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_field(&format!("commit:{task}#type"), "chore");
+    set_field(&format!("commit:{task}#scope"), "completion");
+    set_slot(&format!("commit:{task}#summary"), b"land the change\n");
+    set_slot(&format!("commit:{task}#body"), b"A landed change.\n");
+}
+
+/// Start a methodology `dev-task` for `intent` and stage one code file + a filled
+/// commit doc, leaving the caller to drive finalize.
+fn stage_dev_task(repo: &Path, home: &Path, task: &str, intent: &str) {
+    assert_ok(
+        &jigc_methodology(
+            repo,
+            home,
+            &["start", "--workflow", "dev-task", intent],
+            None,
+        ),
+        &format!("`jigc start --workflow dev-task` ({task})"),
+    );
+    fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    fill_commit_methodology(repo, home, task);
+}
+
+/// The false-rename fix end-to-end (`design/reconciliation.md` → Rename detection,
+/// the 2026-06-12 amendment: "missing means absent from disk, not absent from the
+/// walk"), through the real binary with the methodology pack: a `completion` task's
+/// landed finalize promotes the completion-record AND baselines its owner-artifact
+/// (`completions/artifacts/<run>/audit.md` — under the `completions/` location
+/// prefix but outside the non-recursive `completions/*.md` walk). The next task's
+/// finalize must land clean (red before the fix: a permanent weak-signal
+/// `reconciliation.rename` block on the artifact path) — while genuinely `rm`-ing
+/// the artifact makes the following finalize block again.
+#[test]
+fn promoted_owner_artifact_does_not_poison_later_finalizes() {
+    let repo = TempDir::new("artifact");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // ── the completion task: promote a completion-record + its owner-artifact ────
+    let artifact = "completions/artifacts/M17/audit.md";
+    fs::create_dir_all(repo.path().join("completions/artifacts/M17")).expect("mk owned home");
+    fs::write(repo.path().join(artifact), "the genuine audit transcript\n")
+        .expect("write owner-artifact");
+    git(repo.path(), &["add", artifact]);
+
+    assert_ok(
+        &jigc_methodology(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "completion", "M17"],
+            None,
+        ),
+        "`jigc start --workflow completion M17`",
+    );
+    let create = jigc_methodology(
+        repo.path(),
+        home.path(),
+        &["doc", "create", "completion-record", "--title", "M17"],
+        None,
+    );
+    assert_ok(&create, "`doc create completion-record`");
+    let addr = String::from_utf8(create.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    for (leaf, value) in [("verdict", "green"), ("owner-artifact", artifact)] {
+        assert_ok(
+            &jigc_methodology(
+                repo.path(),
+                home.path(),
+                &[
+                    "doc",
+                    "set-field",
+                    &format!("{addr}#meta/{leaf}"),
+                    "--value",
+                    value,
+                ],
+                None,
+            ),
+            &format!("set-field meta/{leaf}"),
+        );
+    }
+    let completion_task = "m17";
+    fill_commit_methodology(repo.path(), home.path(), completion_task);
+    let out = jigc_methodology(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", completion_task],
+        None,
+    );
+    assert_ok(&out, "`jigc task finalize` (the completion task)");
+    let committed = {
+        let show = Command::new("git")
+            .args(["show", "--name-only", "--format=", "HEAD"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git show");
+        String::from_utf8(show.stdout).expect("utf-8")
+    };
+    assert!(
+        committed.contains(artifact) && committed.contains("completions/m17.md"),
+        "the completion finalize promotes the record + artifact together; got:\n{committed}",
+    );
+
+    // ── the next task's finalize lands clean (red: the permanent rename block) ───
+    let task = "tighten-the-docs";
+    stage_dev_task(repo.path(), home.path(), task, "tighten the docs");
+    let out = jigc_methodology(repo.path(), home.path(), &["task", "finalize", task], None);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.status.success(),
+        "the promoted owner-artifact must not poison the next finalize; got:\n{rendered}",
+    );
+    assert!(
+        !rendered.contains("reconciliation.rename"),
+        "a present-on-disk baselined artifact fires no rename finding; got:\n{rendered}",
+    );
+
+    // ── a genuinely deleted artifact still blocks the following finalize ─────────
+    fs::remove_file(repo.path().join(artifact)).expect("rm the owner-artifact");
+    let task = "another-pass";
+    stage_dev_task(repo.path(), home.path(), task, "another pass");
+    let before: u32 = {
+        let out = Command::new("git")
+            .args(["rev-list", "--count", "HEAD"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git rev-list");
+        String::from_utf8(out.stdout)
+            .expect("utf-8")
+            .trim()
+            .parse()
+            .unwrap()
+    };
+    let out = jigc_methodology(repo.path(), home.path(), &["task", "finalize", task], None);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "a genuinely deleted owner-artifact must block the following finalize; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("reconciliation.rename") && rendered.contains(artifact),
+        "the block is the weak-signal rename naming the deleted artifact; got:\n{rendered}",
+    );
+    let after: u32 = {
+        let out = Command::new("git")
+            .args(["rev-list", "--count", "HEAD"])
+            .current_dir(repo.path())
+            .output()
+            .expect("git rev-list");
+        String::from_utf8(out.stdout)
+            .expect("utf-8")
+            .trim()
+            .parse()
+            .unwrap()
+    };
+    assert_eq!(before, after, "a blocked finalize creates no commit");
 }
 
 /// The pure-reader guard (`design/reconciliation.md` → Persistence of the shifted
