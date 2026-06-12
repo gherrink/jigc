@@ -676,6 +676,176 @@ fn split_emitted(line: &str) -> Vec<String> {
     out
 }
 
+/// (M17 inc-3 T4) The completion-shaped SEAL: the completion workflow's own designed
+/// serial-task shape (`design/finalize.md` → Parallel hand-editing, the 2026-06-12
+/// phase-1 amendment; `design/methodology-docs.md` → The engine work, item 3 amendment)
+/// proven end-to-end over the REAL methodology pack:
+///
+///   1. the task is minted at AUDIT-START (the base pins the pre-fix HEAD);
+///   2. the audit authors the completion-record but OMITS `owner-artifact:` — the
+///      fresh-mint default state the M16 exemption let finalize silently void;
+///   3. a fix commit moves HEAD on history DISJOINT from the task's work (a path
+///      touching neither the dirty working tree nor the promote destinations
+///      `completions/m16.md` / `decisions-log/decisions-log.md` /
+///      `completions/artifacts/...`);
+///   4. finalize with `owner-artifact` unset exits 3 and surfaces
+///      `schema-conformance.required-field-present` naming the field — the omission
+///      now blocks at CONFORMANCE (never a vacuous pass, never the #5 gate's job),
+///      and no commit lands;
+///   5. after `set-field meta/owner-artifact` + durably staging the artifact, finalize
+///      auto-RE-PINS over the moved (disjoint) history and lands exactly ONE commit
+///      promoting the record + the artifact together — the fix commit's own file does
+///      not ride in it.
+///
+/// "Each run recorded as an owner-artifact" is no longer voidable by omission, and
+/// mint-at-audit-start / finalize-after-fix-commits works without discard-and-reauthor.
+#[test]
+fn completion_finalize_after_fix_commits_repins_and_blocks_on_omitted_owner_artifact() {
+    let repo = TempDir::new("seal");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    setup(repo.path(), home.path());
+
+    let milestone = "M16";
+    let task = milestone.to_lowercase();
+    let artifact = "completions/artifacts/M16/audit.md";
+
+    // 1. Mint at audit-start: the base pins the PRE-FIX HEAD.
+    start_completion(repo.path(), home.path(), milestone);
+
+    // 2. The audit + triage author the record — verdict, a triaged finding, the
+    //    decisions-log entry — but the `owner-artifact` field stays UNSET (the fresh-mint
+    //    default state).
+    let addr = create_completion_record(repo.path(), home.path(), milestone);
+    assert_ok(
+        &jigc_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-field",
+                &format!("{addr}#meta/verdict"),
+                "--value",
+                "green",
+            ],
+            None,
+        ),
+        "`set-field verdict`",
+    );
+    author_finding(
+        repo.path(),
+        home.path(),
+        &addr,
+        "A confirmed finding",
+        "blocking",
+        "fixed",
+        "engine/src/foo.rs:42",
+    );
+    append_decision(
+        repo.path(),
+        home.path(),
+        "fix-now the confirmed finding",
+        b"Bounded, confirmed, in-scope.\n",
+    );
+    fill_commit(repo.path(), home.path(), &task);
+
+    // 3. The fix round lands a commit: HEAD moves on history DISJOINT from the task's
+    //    work (neither a dirty path nor a promote destination).
+    fs::write(repo.path().join("fix.rs"), "// the audit fix\n").expect("write the fix");
+    git(repo.path(), &["add", "fix.rs"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "fix: the audit finding"],
+    );
+
+    // 4. Finalize with `owner-artifact` unset: the omission blocks at CONFORMANCE —
+    //    exit 3, `schema-conformance.required-field-present` naming the field, no commit.
+    let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", &task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "an omitted owner-artifact must block finalize with exit 3 (validation-blocked); \
+         got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("schema-conformance.required-field-present"),
+        "the omission surfaces `schema-conformance.required-field-present` (conformance \
+         owns absence — the M17 flip); got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("owner-artifact"),
+        "the block names the missing `owner-artifact` field; got:\n{rendered}",
+    );
+    let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(before, after, "a blocked finalize creates no commit");
+
+    // 5. Set the field + durably stage the artifact, then finalize again: the moved
+    //    (disjoint) history auto-RE-PINS and the seal lands as ONE commit.
+    assert_ok(
+        &jigc_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "set-field",
+                &format!("{addr}#meta/owner-artifact"),
+                "--value",
+                artifact,
+            ],
+            None,
+        ),
+        "`set-field owner-artifact`",
+    );
+    stage_owner_artifact(repo.path(), artifact, "the genuine audit transcript\n");
+
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", &task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_ok(
+        &out,
+        &format!(
+            "after set-field + a durably-staged artifact, finalize must re-pin over the \
+             disjoint moved history and land; got:\n{rendered}"
+        ),
+    );
+
+    let sealed: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .trim()
+        .parse()
+        .unwrap();
+    assert_eq!(
+        sealed,
+        after + 1,
+        "the re-pinned seal lands exactly ONE commit"
+    );
+    let committed_files = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed_files.contains("completions/m16.md"),
+        "the completion-record is promoted in the seal commit; got:\n{committed_files}",
+    );
+    assert!(
+        committed_files.contains(artifact),
+        "the owner-artifact lands in the same seal commit; got:\n{committed_files}",
+    );
+    assert!(
+        !committed_files.lines().any(|l| l == "fix.rs"),
+        "the fix commit's file must NOT ride in the task's seal commit; got:\n{committed_files}",
+    );
+}
+
 /// (e) The audit `verdict` is an AUTHORED `meta/verdict` field, never an engine opinion:
 /// a `red` verdict finalizes exactly as readily as a `green` one. The engine records the
 /// agent's verdict and promotes the record; it does NOT certify the audit (the
