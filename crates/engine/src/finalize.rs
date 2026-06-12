@@ -49,7 +49,7 @@
 //! aborts are deliberately ordered so that **no plan is produced** on any blocking
 //! branch — there is nothing to roll back before phase 3.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -209,6 +209,71 @@ pub fn plan_finalize(
         promote.promotions,
         promote.hash_updates,
     ))
+}
+
+/// The phase-1 decision over a moved base (`design/finalize.md` → Parallel
+/// hand-editing, the 2026-06-12 phase-1 amendment): does the divergence between the
+/// recorded base pin and the supplied HEAD touch the task's work?
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RepinDecision {
+    /// `base == HEAD` — the pin holds; nothing moved, nothing to re-pin.
+    NoDivergence,
+    /// HEAD moved, but on history **disjoint** from the task's work — finalize
+    /// proceeds with HEAD as the *effective* pin (in-memory only; `base.json` is
+    /// never rewritten — a blocked-then-retried finalize re-derives the decision).
+    Repin,
+}
+
+/// Decide whether a task whose base moved can **auto-re-pin** to the new HEAD —
+/// the serial-task phase-1 amendment (`design/finalize.md` → Parallel hand-editing,
+/// 2026-06-12): re-pin iff *(paths changed in commits between the recorded base and
+/// HEAD)* ∩ *(currently-dirty working-tree paths ∪ the task's promote destinations)*
+/// = ∅; any overlap keeps the block — now with a conflict route **naming the
+/// overlapping paths** — which is exactly the parallel-hand-editing case the
+/// unconditional rejection existed to catch.
+///
+/// A pure decision over CLI-supplied git facts (the `has_diff` precedent — the
+/// engine never shells out): `changed_paths` is the repo-relative base→HEAD path
+/// set (`git diff --name-only <base> <head>`), `dirty_paths` the repo-relative
+/// dirty working-tree set (`git status --porcelain`, untracked included — `git add
+/// --all` would commit them). The promote destinations come from the shared phase-4
+/// sweep ([`plan_promotions`]) over `task_dir` + `schemas`, so a staged managed doc
+/// whose canonical destination the moved history touched also blocks.
+///
+/// [`plan_finalize`]'s phase-1 equality stays as defense — on a re-pin the CLI
+/// feeds it the effective pin. The milestone sibling ([`plan_milestone_finalize`])
+/// is consciously unchanged: the amendment targets the serial-task phase 1.
+pub fn decide_base_repin(
+    task_dir: &Path,
+    base: &BasePin,
+    head_sha: &str,
+    changed_paths: &[String],
+    dirty_paths: &[String],
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<RepinDecision, Vec<Finding>> {
+    if base.sha == head_sha {
+        return Ok(RepinDecision::NoDivergence);
+    }
+
+    // The task's footprint: dirty working-tree paths ∪ promote destinations (the
+    // shared phase-4 sweep keeps the destination derivation in one place).
+    let promote = plan_promotions(task_dir, schemas)?;
+    let mut footprint: BTreeSet<&str> = dirty_paths.iter().map(String::as_str).collect();
+    footprint.extend(promote.promotions.iter().map(|p| p.destination.as_str()));
+
+    // Sorted + deduped: the overlap naming is a pure function of the path *set*,
+    // byte-identical across feed orders (Validation hardening #7).
+    let overlapping: Vec<&str> = changed_paths
+        .iter()
+        .map(String::as_str)
+        .filter(|p| footprint.contains(p))
+        .collect::<BTreeSet<&str>>()
+        .into_iter()
+        .collect();
+    if overlapping.is_empty() {
+        return Ok(RepinDecision::Repin);
+    }
+    Err(vec![base_overlap_finding(base, head_sha, &overlapping)])
 }
 
 /// Plan the **milestone** `finalize` transaction — the thin sibling of
@@ -426,6 +491,29 @@ fn base_mismatch_finding(base: &BasePin, head_sha: &str) -> Finding {
         Some(format!(
             "switch back to `{}` or discard the task with `jigc task discard`",
             base.short
+        )),
+    )
+}
+
+/// The overlap form of the phase-1 base-divergence block (`finalize.md` → Parallel
+/// hand-editing, the 2026-06-12 amendment): HEAD moved on history that **touches the
+/// task's work**, so no auto-re-pin — the finding names the overlapping paths and
+/// carries the resolve-or-discard conflict route. `overlapping` is sorted + deduped
+/// by [`decide_base_repin`].
+fn base_overlap_finding(base: &BasePin, head_sha: &str, overlapping: &[&str]) -> Finding {
+    let paths = overlapping.join("`, `");
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.base-mismatch",
+        format!(
+            "the task was started at base `{}` but HEAD is now `{head_sha}`, and the moved \
+             history overlaps the task's work on `{paths}`",
+            base.short
+        ),
+        None,
+        Some(format!(
+            "resolve the overlap on `{paths}` against the new history, or discard the task \
+             with `jigc task discard`"
         )),
     )
 }
@@ -1024,6 +1112,146 @@ mod tests {
             plan.hash_updates.get("decisions/cache-strategy.md"),
             Some(&hash_bytes(&adr_bytes)),
             "the hash is over the materialized body bytes (the shared phase-7 set)",
+        );
+    }
+
+    /// An unmoved base (`base == HEAD`) is **no-divergence** — the pin holds and
+    /// the decision never blocks, whatever the task's dirty footprint looks like.
+    #[test]
+    fn repin_unmoved_base_is_no_divergence() {
+        let root = TempRoot::new("repin-unmoved");
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        stage_filled_adr(&task_dir, "keep-sessions-in-memory");
+
+        let decision = decide_base_repin(
+            &task_dir,
+            &base(),
+            &base().sha,
+            &[],
+            &["src/limiter.rs".to_string()],
+            &schemas(),
+        )
+        .expect("an unmoved base never blocks");
+        assert_eq!(decision, RepinDecision::NoDivergence);
+    }
+
+    /// The phase-1 amendment (`finalize.md` → Parallel hand-editing, 2026-06-12):
+    /// a base moved on history **disjoint** from the task's work — the changed
+    /// paths touch neither a dirty working-tree path nor a staged doc's promote
+    /// destination — **re-pins** instead of blocking.
+    #[test]
+    fn repin_disjoint_moved_history_repins() {
+        let root = TempRoot::new("repin-disjoint");
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        stage_filled_adr(&task_dir, "keep-sessions-in-memory");
+
+        let decision = decide_base_repin(
+            &task_dir,
+            &base(),
+            "ffffffffffffffffffffffffffffffffffffffff",
+            &["other.txt".to_string(), "README.md".to_string()],
+            &["src/limiter.rs".to_string()],
+            &schemas(),
+        )
+        .expect("disjoint moved history re-pins, never blocks");
+        assert_eq!(decision, RepinDecision::Repin);
+    }
+
+    /// A moved-history path that is also a **dirty working-tree path** keeps the
+    /// block — the parallel-hand-editing case — and the finding **names the
+    /// overlapping paths** (sorted: a pure function of the path *set*, byte-identical
+    /// across feed orders) plus the resolve-or-discard route.
+    #[test]
+    fn repin_dirty_path_overlap_blocks_naming_the_path() {
+        let root = TempRoot::new("repin-dirty-overlap");
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        stage_filled_adr(&task_dir, "keep-sessions-in-memory");
+
+        let changed = [
+            "src/limiter.rs".to_string(),
+            "other.txt".to_string(),
+            "src/auth.rs".to_string(),
+        ];
+        let dirty = ["src/auth.rs".to_string(), "src/limiter.rs".to_string()];
+        let err = decide_base_repin(
+            &task_dir,
+            &base(),
+            "ffffffffffffffffffffffffffffffffffffffff",
+            &changed,
+            &dirty,
+            &schemas(),
+        )
+        .expect_err("a dirty-path overlap keeps the block");
+        assert_eq!(err.len(), 1, "one overlap finding");
+        assert_eq!(err[0].code, "finalize.base-mismatch");
+        assert_eq!(err[0].severity, Severity::Blocking);
+        assert!(
+            err[0].message.contains("src/limiter.rs") && err[0].message.contains("src/auth.rs"),
+            "the block names every overlapping path: {:?}",
+            err[0].message
+        );
+        assert!(
+            !err[0].message.contains("other.txt"),
+            "a non-overlapping moved path is not named: {:?}",
+            err[0].message
+        );
+        let route = err[0].route.as_deref().expect("the block carries a route");
+        assert!(
+            route.contains("jigc task discard"),
+            "the route offers the discard half of resolve-or-discard: {route:?}"
+        );
+
+        // Order-invariance: the same path SETS fed in reversed order yield the
+        // byte-identical finding — the naming is a function of the set, not the feed.
+        let mut changed_rev = changed.to_vec();
+        changed_rev.reverse();
+        let mut dirty_rev = dirty.to_vec();
+        dirty_rev.reverse();
+        let err_rev = decide_base_repin(
+            &task_dir,
+            &base(),
+            "ffffffffffffffffffffffffffffffffffffffff",
+            &changed_rev,
+            &dirty_rev,
+            &schemas(),
+        )
+        .expect_err("the reversed feed blocks identically");
+        assert_eq!(
+            err, err_rev,
+            "the finding is byte-identical across feed orders"
+        );
+    }
+
+    /// A moved-history path that collides with a staged doc's **promote
+    /// destination** (the phase-4 sweep's canonical `<location>/<slug>.md`) also
+    /// keeps the block — the human's commit already touched where the task's doc
+    /// will land.
+    #[test]
+    fn repin_promote_destination_overlap_blocks() {
+        let root = TempRoot::new("repin-promote-overlap");
+        let task_dir = root.path().join("tasks").join("add-rate-limiter");
+        stage_filled_adr(&task_dir, "keep-sessions-in-memory");
+
+        let err = decide_base_repin(
+            &task_dir,
+            &base(),
+            "ffffffffffffffffffffffffffffffffffffffff",
+            &[
+                "other.txt".to_string(),
+                "decisions/keep-sessions-in-memory.md".to_string(),
+            ],
+            &["src/limiter.rs".to_string()],
+            &schemas(),
+        )
+        .expect_err("a promote-destination overlap keeps the block");
+        assert_eq!(err.len(), 1, "one overlap finding");
+        assert_eq!(err[0].code, "finalize.base-mismatch");
+        assert!(
+            err[0]
+                .message
+                .contains("decisions/keep-sessions-in-memory.md"),
+            "the block names the colliding promote destination: {:?}",
+            err[0].message
         );
     }
 }
