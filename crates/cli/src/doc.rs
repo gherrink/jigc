@@ -91,7 +91,9 @@ pub enum DocCommand {
 
 /// A `doc` verb's failure: a write-time **block** (a structured [`Finding`],
 /// rendered through `--format` so an agent on `--format json` gets a parseable
-/// envelope), or an **orchestration** error (git/IO/usage — plain text). The
+/// envelope), or an **orchestration** error (git/IO/usage — the shared
+/// operational-error funnel: `{"error": …}` under `--format json`, plain text
+/// otherwise). The
 /// blocking finding is the same envelope the rest of the CLI uses; only the
 /// happy-path *output* of `doc` stays plain (the staged buffer / new address).
 enum DocFailure {
@@ -109,7 +111,7 @@ impl DocCommand {
     /// Dispatch the parsed `doc` verb against the active task in `cwd`, mapping a
     /// blocking [`Finding`] to a non-zero exit — rendered through `--format` (JSON
     /// envelope under `--format json`, the located message + route otherwise) — and
-    /// an orchestration error to plain stderr.
+    /// an orchestration error to stderr through the shared operational-error funnel.
     pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
         let result = match self {
             DocCommand::Create {
@@ -137,7 +139,7 @@ impl DocCommand {
                 let resolved = match crate::cascade_util::no_delta_resolved() {
                     Ok(resolved) => resolved,
                     Err(err) => {
-                        eprintln!("{err:#}");
+                        eprintln!("{}", render::operational_error(format, &err));
                         return ExitCode::FAILURE;
                     }
                 };
@@ -149,7 +151,7 @@ impl DocCommand {
                 ExitCode::FAILURE
             }
             Err(DocFailure::Orchestration(err)) => {
-                eprintln!("{err:#}");
+                eprintln!("{}", render::operational_error(format, &err));
                 ExitCode::FAILURE
             }
         }
