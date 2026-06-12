@@ -562,8 +562,9 @@ fn emit_line(
     }
 
     // Reason: bare prose — any **inline** `{{<path>}}` data-value token resolved
-    // in place; a line with no token passes through verbatim.
-    emit_inline_data_values(line, ctx)
+    // in place; an unresolvable token and a line with no token pass through
+    // verbatim.
+    Ok(emit_inline_data_values(line, ctx))
 }
 
 /// Resolve every **inline** `{{<path>}}` bare data-value token in a Reason prose
@@ -577,15 +578,16 @@ fn emit_line(
 /// trimmed inner is `fill:`-shaped (phase 5's), `cli.`-prefixed, `@`-prefixed, or
 /// `include:`-shaped (the lone-line classes) is **skipped** — the scan resumes
 /// just past its `{{`, leaving the token for its own phase. Every other inner is
-/// a bare data-value path: a malformed path, an unresolvable path, or a
-/// **collection** resolution (`catalog` / `store.*` / `milestone.*` — collections
-/// stay lone-line classes) surfaces the resolver's blocking [`Finding`], exactly
-/// as the lone-line form does (lone-line parity, never silent verbatim leakage).
-/// A line with no resolved token is returned byte-unchanged.
-fn emit_inline_data_values(
-    line: &str,
-    ctx: &crate::data_value::ComposeContext,
-) -> Result<String, Finding> {
+/// tried as a bare data-value path; one that fails — a malformed path, an
+/// unresolvable path, or a **collection** resolution (`catalog` / `store.*` /
+/// `milestone.*` — collections stay lone-line classes) — is left **verbatim**,
+/// the same skip discipline. Inline tokens are **inert, never blocking**:
+/// agent-authored slot-fill prose flows through this same emit pass (phase-5 fill
+/// application precedes emission), and prose *mentioning* `{{…}}` syntax must not
+/// brick every later compose of the workflow (M17 inc-4 validation fix). Blocking
+/// stays with the lone-line classes. A line with no resolved token is returned
+/// byte-unchanged.
+fn emit_inline_data_values(line: &str, ctx: &crate::data_value::ComposeContext) -> String {
     let mut rewritten = String::new();
     let mut cursor = 0;
     while let Some(rel_open) = line[cursor..].find("{{") {
@@ -608,17 +610,25 @@ fn emit_inline_data_values(
             cursor = open + 2;
             continue;
         }
-        let path = parse_data_value(inner)?;
-        let resolved = emit_bare_data_value(&path, ctx)?;
+        // An inner that fails to parse or resolve is left verbatim — the same
+        // skip: inline tokens are inert (see the doc comment).
+        let Some(resolved) = parse_data_value(inner)
+            .ok()
+            .and_then(|path| emit_bare_data_value(&path, ctx).ok())
+        else {
+            rewritten.push_str(&line[cursor..open + 2]);
+            cursor = open + 2;
+            continue;
+        };
         rewritten.push_str(&line[cursor..open]);
         rewritten.push_str(&resolved);
         cursor = close + 2;
     }
     if cursor == 0 {
-        return Ok(line.to_owned());
+        return line.to_owned();
     }
     rewritten.push_str(&line[cursor..]);
-    Ok(rewritten)
+    rewritten
 }
 
 /// A read-side dereference surface for `{{@<path>}}` Content lines: walk one
@@ -2459,23 +2469,37 @@ plain prose, {single} braces, no tokens
         ");
     }
 
-    /// An unresolvable **inline** path surfaces the resolver's blocking finding —
-    /// lone-line parity (an undeclared role is a structural error, never silent
-    /// verbatim leakage); an inline **collection** (`{{catalog}}`) blocks too —
-    /// collections stay lone-line classes.
+    /// An unresolvable **inline** token is left **verbatim** — inert, never
+    /// blocking (M17 inc-4 validation fix: agent-authored slot-fill prose flows
+    /// through this same emit pass, so prose *mentioning* `{{…}}` syntax must not
+    /// brick compose). An inline **collection** (`{{catalog}}`) is inert too —
+    /// collections stay lone-line classes; blocking stays with the lone-line
+    /// forms, and a resolvable token on the same line still substitutes.
     #[test]
-    fn inline_unresolvable_path_and_collection_block() {
+    fn inline_unresolvable_path_and_collection_stay_inert_verbatim() {
         let ctx = emit_ctx();
         let catalog = CommandCatalog {
             commands: std::collections::BTreeMap::new(),
         };
-        let err = emit_step_body("see {{task.bogus}} here\n", &ctx, &catalog)
-            .expect_err("an undeclared role blocks inline, as it does lone-line");
-        assert_eq!(err.code, "workflow-refs.undeclared-role");
+        let line = "Note: template syntax like {{version}} appears in our docs; leave it as-is.\n";
+        let emitted = emit_step_body(line, &ctx, &catalog).expect("inline tokens never block");
+        assert_eq!(emitted, line, "an unresolvable inline token stays verbatim");
 
-        let err = emit_step_body("pick from {{catalog}} now\n", &ctx, &catalog)
-            .expect_err("a collection inline is a structural misuse");
-        assert_eq!(err.code, "workflow-refs.collection-not-lone");
+        let line = "see {{task.bogus}} here\n";
+        let emitted = emit_step_body(line, &ctx, &catalog).expect("inline tokens never block");
+        assert_eq!(emitted, line, "an undeclared inline role stays verbatim");
+
+        let line = "pick from {{catalog}} now\n";
+        let emitted = emit_step_body(line, &ctx, &catalog).expect("inline tokens never block");
+        assert_eq!(emitted, line, "an inline collection stays verbatim");
+
+        // A resolvable token still substitutes alongside an inert one.
+        let emitted = emit_step_body("use {{version}} for task {{task.id}}\n", &ctx, &catalog)
+            .expect("inline tokens never block");
+        assert_eq!(
+            emitted, "use {{version}} for task emit-four-classes\n",
+            "resolvable inline tokens substitute; inert ones stay verbatim",
+        );
     }
 
     /// The other placeholder kinds are **skipped** to their own phases (the

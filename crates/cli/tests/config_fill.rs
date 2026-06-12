@@ -508,3 +508,44 @@ fn nested_fill_hand_edited_past_the_verb_is_blocked_at_compose_by_the_survivor_c
         "the survivor block must name the surviving nested fill; got:\n{stderr}",
     );
 }
+
+#[test]
+fn fill_prose_with_inline_braces_stays_inert_and_composes_verbatim() {
+    // Regression (M17 inc-4 validation): agent-authored fill prose carrying a
+    // mid-line `{{…}}` token (e.g. guidance *about* template syntax) is accepted
+    // at write time — the write-time guard rejects only nested `{{fill:}}` — so it
+    // must stay **inert** at compose: emitted verbatim with exit 0, never a
+    // front-door error bricking every later `jigc start`. The inline data-value
+    // scanner resolves what resolves and leaves the rest; blocking stays with the
+    // lone-line classes. Proven on emitted bytes through the binary.
+    let repo = TempDir::new("inline-braces");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let prose = "Note: template syntax like {{version}} appears in our docs; leave it as-is.";
+    let out = run_fill(
+        repo.path(),
+        home.path(),
+        "step:implement#extra-guidance",
+        &format!("{prose}\n"),
+    );
+    assert!(
+        out.status.success(),
+        "the mid-line `{{{{…}}}}` fill is accepted at write time; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let compose = run_start(repo.path(), home.path(), &["fill probe task"]);
+    let stdout = String::from_utf8(compose.stdout).expect("utf-8 stdout");
+    assert!(
+        compose.status.success(),
+        "a compose over fill prose with an unresolvable mid-line `{{{{…}}}}` must exit 0; got {:?}\nstderr:\n{}",
+        compose.status,
+        String::from_utf8_lossy(&compose.stderr),
+    );
+    assert!(
+        stdout.contains(prose),
+        "the fill prose must compose verbatim, the inert token included; got:\n{stdout}",
+    );
+}
