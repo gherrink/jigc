@@ -137,8 +137,10 @@ pub enum ConfigCommand {
 impl ConfigCommand {
     /// Dispatch the parsed `config` verb against `cwd`, mapping the result to a
     /// process exit code. A blocking adjudication finding surfaces on stderr (with
-    /// its route) and exits non-zero; a clean write exits 0.
-    pub fn dispatch(self, cwd: &Path) -> ExitCode {
+    /// its route) through the shared operational-error funnel — `{"error": …}`
+    /// under `--format json`, the plain `{err:#}` bytes otherwise — and exits
+    /// non-zero; a clean write exits 0.
+    pub fn dispatch(self, cwd: &Path, format: crate::cli::Format) -> ExitCode {
         let result = match self {
             ConfigCommand::Set { key, value } => run_set(cwd, &key, &value),
             ConfigCommand::InsertStep {
@@ -155,7 +157,7 @@ impl ConfigCommand {
         match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("{err:#}");
+                eprintln!("{}", crate::render::operational_error(format, &err));
                 ExitCode::FAILURE
             }
         }

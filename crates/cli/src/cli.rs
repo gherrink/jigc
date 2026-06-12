@@ -240,7 +240,7 @@ impl Cli {
             Command::Workflow { workflow, task } => run_reenter(self.format, &workflow, &task),
             Command::Doc { verb } => run_doc(self.format, verb),
             Command::Task { verb } => run_task(self.format, verb),
-            Command::Config { verb } => run_config(verb),
+            Command::Config { verb } => run_config(self.format, verb),
             Command::Milestone { verb } => run_milestone(self.format, verb),
             Command::Setup => run_setup(self.format),
             Command::Upgrade => run_upgrade(self.format),
@@ -323,9 +323,10 @@ fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
 /// working directory. A `set` records a `scalar-set`; `insert-step` / `replace-step`
 /// / `remove-step` each record a `structural-op` (insert/replace also writing the
 /// native step file) — each adjudicated at write time; a blocking adjudication
-/// finding surfaces on stderr (with its route) and exits non-zero
+/// finding surfaces on stderr (with its route, through the shared
+/// format-honoring operational-error funnel) and exits non-zero
 /// (`design/overrides.md` → Authoring deltas).
-fn run_config(verb: ConfigCommand) -> ExitCode {
+fn run_config(format: Format, verb: ConfigCommand) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -333,7 +334,7 @@ fn run_config(verb: ConfigCommand) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    verb.dispatch(&cwd)
+    verb.dispatch(&cwd, format)
 }
 
 /// Dispatch a `jigc milestone <verb>` action against the current working

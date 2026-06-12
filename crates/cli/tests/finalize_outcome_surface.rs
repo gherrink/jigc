@@ -597,6 +597,81 @@ fn doc_operational_error_honors_json() {
     );
 }
 
+/// M17 increment 1 — the `config` verbs' operational-error path honors `--format
+/// json` too: `--format` is `global = true` (every verb accepts it), so the config
+/// funnel must ride the same shared `render::operational_error` as every other
+/// format-bearing verb, not plain `{err:#}` text. Under `--format json` the error
+/// surfaces on stderr as the single-key `{"error": …}` envelope, exit stays **1**;
+/// under the agent default the plain bytes stay unchanged.
+#[test]
+fn config_operational_error_honors_json() {
+    let repo = TempDir::new("config-operr");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // ── json: stderr parses as the single-key error object; exit stays 1 ─────────
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "config",
+            "set",
+            "bogus-knob",
+            "somevalue",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a config operational error stays exit 1 under --format json; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    let value: serde_json::Value = serde_json::from_str(&stderr).unwrap_or_else(|err| {
+        panic!(
+            "under --format json, config's stderr must parse as the error envelope ({err}); \
+             got:\n{stderr}"
+        )
+    });
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("the error envelope is a JSON object; got:\n{stderr}"));
+    assert_eq!(
+        object.keys().collect::<Vec<_>>(),
+        ["error"],
+        "the envelope is the single-key object {{\"error\": …}}; got:\n{stderr}",
+    );
+    let chain = value["error"]
+        .as_str()
+        .unwrap_or_else(|| panic!("`error` carries the anyhow chain as a string; got:\n{stderr}"));
+    assert!(
+        chain.contains("not a settable knob"),
+        "the chain carries the undeclared-knob rejection; got:\n{chain}",
+    );
+
+    // ── agent (default): today's plain text, byte-unchanged ──────────────────────
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "bogus-knob", "somevalue"],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "a config operational error stays exit 1 under the agent default; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        String::from_utf8(out.stderr).expect("utf-8 stderr"),
+        "`bogus-knob` is not a settable knob — the cascade surface is closed\n  \
+         route: run `jigc start` to orient; settable knobs are declared by the pack\n",
+        "the agent-format config operational error stays the plain `{{err:#}}` bytes",
+    );
+}
+
 #[test]
 fn landed_finalize_emits_findings() {
     // ── agent format: the absorb advisory is on stdout, not swallowed ────────────
