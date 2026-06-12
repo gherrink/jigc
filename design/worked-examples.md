@@ -15,6 +15,8 @@ The flows:
 9. [Multi-pack composition](#17-multi-pack-composition--dev--methodology-co-composed-m14) — the M14 arc: dev + methodology co-composed, collisions resolved by precedence, includes pack-local *(flow 17)*
 10. [Planning encode](#19-planning-encode--jigc-composes-its-own-milestone-planning-spine-and-maintains-its-running-docs-m16) — the M16 planning half: jigc composes its own milestone-planning spine (the Settle checkpoint) and authors-and-maintains its three running working-docs across two milestone runs *(flow 19)*
 11. [Completion encode](#20-completion-encode--jigc-composes-its-own-milestone-completion-spine-and-the-5-owner-artifact-gate-m16) — the M16 completion half: jigc composes its own milestone-completion spine (the audit/triage/fix/re-verify halts as checkpoints), create-fresh authors the per-milestone completion-record, appends the decisions-log, and `finalize` promotes the owner-artifact in-transaction + fires the #5 presence gate *(flow 20)*
+12. [Measured run](#21-measured-run--capture-live-on-a-twin-seeds-planted-mid-run-the-record-authored-through-the-binary-m17) — the M17 capture arc: hooks + pinned binary on a twin, both seeded failures planted mid-run after the first promoting finalize, the facts tallied from the raw log, and `record-dogfood` authoring the per-run `dogfood-record` through the binary *(flow 21)*
+13. [Three-arm comparison](#22-three-arm-comparison--the-pre-registered-thesis-protocol-m17-sessions-pending) — the M17 thesis comparison protocol: pre-registration first, three twins from one baseline (jigc · control · static-methodology), one matched intent, a rubric'd judgment naming ≥1 non-seeded observation — authored protocol; the sessions themselves are the P1 phase, not yet run *(flow 22)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -1385,4 +1387,146 @@ Each red exits finalize **non-zero** with **no commit**, surfacing `owner-artifa
 2. **The per-milestone completion-record is create-fresh authored.** `jigc doc create completion-record --title "<milestone>"` mints `completions/<milestone>.md` (`id-from: title`, the proven mint — *not* a running-doc copy-in); the agent authors the `meta` header's `verdict` + `owner-artifact` and one `findings` entry per triaged finding (`severity`/`disposition` enums + a plain-string `evidence`, never a managed ref), and finalize promotes the record to `completions/` byte-stable.
 3. **The #5 owner-artifact gate fires-and-blocks on a non-durable recording.** Finalize **blocks** with `owner-artifact.present` (non-zero exit, no commit) when the named path is absent, unsafe (absolute / `..` / symlink escape), or present-but-untracked, and **passes** when the artifact is durably staged under `completions/artifacts/<milestone>/` — the gate asserting presence, never the artifact's bytes (the determinism boundary).
 4. **The decisions-log is appended by this half too.** A triage decision rides into the running `decisions-log` via create-or-update + `add-item`/`set-slot`, re-promoting `decisions-log/decisions-log.md` in the same commit — flow 20 is a both-halves driver of the running singleton.
+
+## 21. Measured run — capture live on a twin, seeds planted mid-run, the record authored through the binary (M17)
+
+The M17 measured-run arc ([measurement.md](measurement.md) → Acceptance flows, Flow 21): a twin with the capture apparatus on and a pinned binary does real work through the methodology, both **seeded failures** plant mid-run (after the first promoting finalize, by construction — a fresh twin has no committed managed doc to edit), the facts are assembled from the capture, and the `record-dogfood` workflow authors the per-run `dogfood-record` **through the binary** (the recording itself dogfoods the machinery) — finalize promoting record + owner-artifact in one commit. The **fact definitions** (units, numerators, the dedup rule), the **doctype shape**, and the **seeded-failure obligation** are the design of record in [measurement.md](measurement.md#the-three-facts--operational-definitions) and are not restated here; the **apparatus mechanics** (the hook set, the pinned v1 JSONL log schema, the tally rules) live at [implementation/dogfood/README.md](../implementation/dogfood/README.md). Notation illustrative; the spine is sealed end-to-end through the real binary by `crates/cli/tests/flow21_measured_run.rs` — composed authoring lines extracted and run verbatim, the real hook logger and real tally closing the capture loop.
+
+The `record-dogfood` workflow is **`creates-task: true, selectable: false`** — the [flow 19](#19-planning-encode--jigc-composes-its-own-milestone-planning-spine-and-maintains-its-running-docs-m16)/[20](#20-completion-encode--jigc-composes-its-own-milestone-completion-spine-and-the-5-owner-artifact-gate-m16) authoring-spine precedent: it **mints a task** (so the record rides the proven create-gate + finalize-promote spine) yet ships **no `when`** and stays out of the methodology pack's `default-workflow.of` enum — **off-router**, invoked directly when a measured run completes. It declares `allows-create: [{type: dogfood-record, as: record}]`.
+
+**The honest bounds (per [measurement.md](measurement.md#the-capture-substrate), stated here because the walk leans on them).** The record's fact fields are **typed-but-transcribed**: collection is mechanical (hooks + emissions), form is engine-validated (`int`/enum), the *values* are transcribed by the recording agent — auditable against the committed raw hook log in the owner-artifact, never CLI-sourced. And the honesty watch extends to this workflow: the `judgment` slot stays **pure prose** and the `verdict` stays **authored** judgment over the counts — never a scoring lint, never computed (the engine never opines on whether jigc is helping; an engine opinion on the thesis would be the thesis inverted).
+
+### The walk — apparatus on, the seeds, the tally, the record
+
+```text
+# twin + apparatus on + pinned binary (implementation/dogfood/README.md → Install):
+$ export JIGC_DOGFOOD_HOME=<jigc-checkout>/implementation/dogfood
+$ export JIGC_DOGFOOD_LOG=/tmp/jigc-dogfood/pilot/hook-log.jsonl    # the log lives OUTSIDE the twin repo
+#   merge hooks.json into the twin's .claude/settings.json; record the pinned binary's sha
+$ jigc setup                                                        # installs the methodology pack
+
+# real task work through the methodology — the FIRST PROMOTING FINALIZE lands the committed managed docs:
+$ jigc start "…"                                                    # dev-task … finalize lands, docs promote
+
+# mid-run seed 1 — the OOB edit: a conformant edit on a now-COMMITTED managed doc (target class: the run's
+# promoted methodology singleton), made OUTSIDE the observed tools (human/sed in Bash, not Write/Edit, not
+# jigc — pinning the seed to the absorb channel):
+$ sed -i 's/…/…/' decisions-log/decisions-log.md
+# the next LANDED finalize emits reconciliation.absorb in its envelope EXACTLY ONCE and advances the
+# file-state baseline; a subsequent validate sights ZERO absorb (the re-fire defect stays fixed):
+$ jigc task validate <next> --format json | jq '[.findings[] | select(.code=="reconciliation.absorb")] | length'
+> 0
+
+# mid-run seed 2 — the bad-finalize attempt: a staged integrity violation on a later task; finalize must
+# block with the validation-blocked exit code (3 — distinct from operational error 1, usage error 2):
+$ jigc task finalize <staged>; echo $?
+> BLOCK …                                                           # non-zero, NO commit
+> 3
+
+# remaining work … then assemble the facts from the capture (one --managed-prefix per active location: dir):
+$ python3 "$JIGC_DOGFOOD_HOME"/tally.py "$JIGC_DOGFOOD_LOG" --managed-prefix decisions-log/ --managed-prefix dogfood/ …
+> { "adapter-writes": …, "oob-edits": …, "drift-caught": …, "validate-blocks": …, … }   # totals + per-event detail;
+#   raw invocation counts ride as telemetry, never the headline; seeded attribution is transcription protocol —
+#   the orchestrator attributes the seeded entries against the run protocol, the tally never opines.
+
+# record the run — off-router, through the binary:
+$ jigc start --workflow record-dogfood "Pilot Run"                  # mints a task; composes:
+  Record the measured run on the per-run dogfood-record …                ← step:author-dogfood-record
+  Run: jigc doc create dogfood-record --title <…> --task <id>            ← {{cli.create-dogfood-record}}
+  jigc doc set-field dogfood-record:<slug>#meta/case … /binary-sha …     ← the run identity
+  jigc doc set-field … the eight ORGANIC fact ints …                     ← transcribe the tally VERBATIM
+  jigc doc set-field … /seeded-oob … /seeded-blocks …                    ← each must be exactly 1
+  jigc doc set-field … /verdict … /owner-artifact …
+  jigc doc set-slot  dogfood-record:<slug>#judgment …                    ← prose: what the counts mean
+  Run: jigc task finalize <id>                                           ← step:finalize
+
+$ jigc doc create dogfood-record --title "Pilot Run" --task <id>    # → dogfood-record:pilot-run (create-fresh
+#   `id-from: title` mint to `dogfood/` — NOT `completions/`, the shared-location cross-block fact)
+# … transcribe the facts; write the owner-artifact (transcript + raw hook log/tally exported UNCHANGED +
+#   a content-hash manifest) under the owned home, then stage it durably:
+$ git add completions/artifacts/pilot-run/capture.md
+$ jigc task finalize <id>
+> validate: clean (owner-artifact durably staged)
+> promote: dogfood/pilot-run.md · completions/artifacts/pilot-run/capture.md
+> commit: …                                                         ← ONE commit: the record + the artifact
+# … export: record + artifacts copied as plain committed files into jigc's repo under
+#   completions/artifacts/M17/<case>/ (a copy, not a conversion — the storage invariant).
+```
+
+### The reds — the red obligations of measurement.md's flow 21
+
+```text
+# RED 1 — the seeded edit counts EXACTLY once post-dedup: the corroborating absorb sightings across
+#   blocked + landed envelopes collapse to one (path × finalize window) event in the tally.
+#   Zero = the substrate is blind; two+ = the re-fire defect lives or the dedup rule fails. Either FAILS THE RUN.
+
+# RED 2 — the seeded block keys via exit 3 on FINALIZE (a validate exit 3 keys the paired, non-headline
+#   validate-blocks count instead — previewing is the designed loop, not a caught escape).
+
+# RED 3 — a half-transcribed record BLOCKS at finalize (the run cannot land with a fact missing):
+$ jigc task finalize <id>                                           # oob-edits never transcribed
+> BLOCK schema-conformance.required-field-present @ dogfood-record:pilot-run … #meta/oob-edits   # exit 3, NO commit
+
+# RED 4 — the omitted owner-artifact BLOCKS (the flow-20 #5 gate, on this doctype's owned-location field):
+$ jigc task finalize <id>                                           # fact fixed; owner-artifact never set/staged
+> BLOCK … owner-artifact …                                          # exit 3, NO commit — names ONLY the artifact
+#   (the absent/unsafe/present-but-untracked reds are the gate's own — flow 20, not restated here)
+```
+
+### What it asserts (the acceptance bar)
+
+1. **`record-dogfood` composes off-router through the real binary.** `jigc start --workflow record-dogfood "<run>"` mints a task and composes the authoring spine (create-fresh mint → identity → organic facts → seeded checks → verdict/owner-artifact → judgment) + the `step:finalize` tail; bare `jigc start` lists no `record-dogfood` catalog line and the `default-workflow.of` enum carries no `record-dogfood` (the M8 catalog-leak class, asserted on the live front-door bytes).
+2. **The seeds follow the first promotion by construction and register exactly once each.** The seeded OOB edit (outside the observed tools, pinned to the absorb channel) yields `reconciliation.absorb` exactly once in the next landed finalize's emitted envelope, advances the baseline (zero re-fire at a subsequent validate), and tallies as one post-dedup (path × window) event; the seeded bad finalize exits **3**.
+3. **The record cannot land half-recorded.** Finalize blocks (exit 3, no commit) on a missing fact field — `required-field-present` naming the field — and on the omitted owner-artifact; fully authored + durably staged, **one** landed commit promotes the record to `dogfood/` and the artifact under `completions/artifacts/`.
+4. **The real capture loop closes.** Every jigc invocation rides through the real hook logger (`log-event.py`, the pinned v1 JSONL), and the real `tally.py` derives the facts — logical mutations grouped per (doc address × finalize window), invocations as telemetry never headline, exit-3 keying splitting finalize from validate.
+5. **The honesty watch holds.** The `judgment` slot stays prose and the `verdict` stays authored — no scoring lint, no engine opinion on the thesis; the seeded counts live in their own `seeded-*` fields and never enter the organic facts.
+
+## 22. Three-arm comparison — the pre-registered thesis protocol (M17, sessions pending)
+
+The M17 thesis comparison ([measurement.md](measurement.md#the-comparison-protocol-pilot-only--three-arms) → The comparison protocol + Acceptance flows, Flow 22). This flow is **authored protocol, not a recorded run**: the comparison sessions themselves are the milestone's P1 protocol phase, executed *after* the flow-21 apparatus lands — **every line below is illustrative by construction; no session has run**. The arm definitions, the pre-registration rule, the counting protocol, and the judge rubric are the design of record in [measurement.md](measurement.md#the-comparison-protocol-pilot-only--three-arms) and are not restated here.
+
+### The protocol walk (illustrative — sessions not yet run)
+
+```text
+# 0 · pre-registration — WRITTEN FIRST, into the comparison artifact (the carryover mitigation: the
+#   orchestrator learns the task from arm 1 and would otherwise unintentionally improve arm 2; with n=1
+#   that can dominate): the exact intent text · the acceptance checks · the allowed human interventions ·
+#   the stop condition · the judge rubric. Arm order then fixed by coin-flip equivalent and RECORDED.
+#   Arm C's frozen static-methodology CLAUDE.md is curated ONCE, before any arm runs — itself a recorded artifact.
+
+# 1 · three twins from ONE pinned baseline commit of gherrink-galey (the originals never touched):
+#   A — jigc:               `jigc setup` + the methodology pack (the 4-line CLAUDE.md delta — A and B
+#                            differ by precisely the adapter)
+#   B — control:             galey's own existing static CLAUDE.md, untouched (the product baseline)
+#   C — static-methodology:  the methodology content hand-frozen into a static CLAUDE.md, no jigc —
+#                            isolating dynamic composition + the write channel from methodology CONTENT
+#   the SAME hooks run on every arm — the Write|Edit channel is the one observation identical across arms.
+
+# 2 · the matched intent — the same pre-registered REAL galey task, issued identically to all arms; same
+#   model, same session shape, one arm per session. The jigc arm runs it as ONE dev-task workflow (the
+#   closest session-shape match, so ceremony cost compares like-for-like) — the full-methodology spine is
+#   the surrounding pilot run (flow 21), measured separately, NOT part of the comparison.
+
+# 3 · comparison-arm counting — PROTOCOL-COUNTED, labeled as such: defects reaching the commit = post-hoc
+#   review of each landed commit against the pre-registered acceptance + the project's own gate, counted
+#   by the judge; plus each arm's hook log (Write|Edit record).
+
+# 4 · the rubric'd judgment — the human (LLM-judge assist permitted) applies the pre-registered rubric:
+#   correctness of the landed change · doc/commit-message quality · drift left behind · ceremony cost
+#   (counted on EVERY arm — jigc's overhead is data, not noise). The verdict must name AT LEAST ONE
+#   NON-SEEDED thesis observation — a gate passed on apparatus-planted events alone has validated the
+#   instrument and measured nothing (the pilot-gate criterion).
+
+# 5 · the artifacts — the comparison artifact (pre-registration + arm transcripts + counts + the rubric'd
+#   judgment) and the jigc arm's dogfood-record carrying the comparative verdict in its judgment slot.
+#   The comparison arms get NO dogfood-record — no jigc in their loop makes the jigc facts N/A, not zero;
+#   their counts live in the comparison artifact's prose (measurement.md → the comparison-arm asymmetry).
+```
+
+### What it asserts (the acceptance bar — judged at the pilot gate, not by the engine)
+
+1. **Pre-registration precedes any arm.** Intent, acceptance, interventions, stop condition, and rubric are committed to the comparison artifact before a single arm session starts; arm order is recorded.
+2. **Three arms isolate the variable.** Without arm C, an A-beats-B result cannot say whether *jigc* or merely *written-down methodology* did the work — C separates dynamic composition + the write channel from methodology content.
+3. **The verdict names ≥1 non-seeded thesis observation** — an organic event or judged difference, never an apparatus-planted one. With flow 21's substrate checks, this is what unlocks cases 2+3 at the pilot gate.
+4. **The honest bounds ride along, named.** The judge is unblinded (transcripts self-identify; rubric + recorded arm order + committed hook logs are the mitigations); control-arm counts are protocol-counted and labeled; n=1 per case — a structured pilot study, not a statistics claim ([measurement.md](measurement.md#honest-bounds)).
 5. **The verdict is recorded, not certified.** A `red` verdict finalizes exactly as readily as a `green` one — the engine promotes the authored judgment without adjudicating it; the genuine green/red audit stays orchestration-level (the single-agent-spine bound, the build-honesty watch — the checkpoints halt and the gate asserts presence, neither scores).
