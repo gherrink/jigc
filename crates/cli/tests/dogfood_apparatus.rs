@@ -556,6 +556,143 @@ fn tally_refuses_a_log_whose_jigc_exits_are_null() {
     );
 }
 
+/// Real-session command shapes the first cut of the hook missed: a PATH-QUALIFIED
+/// jigc token (`/usr/local/bin/jigc`, `./jigc`) must be recognized, a COMPOUND
+/// command must log one event PER invocation (not just the first), and prose that
+/// merely mentions jigc inside quotes (`echo "run jigc ..."`) must log nothing —
+/// the hook tokenizes with quotes respected (a bounded tokenizer, not a shell
+/// parser; the bounds are pinned in the README).
+#[test]
+fn hook_extracts_path_qualified_and_every_compound_invocation() {
+    let tmp = TempDir::new("compound");
+    let log = tmp.path().join("hook-log.jsonl");
+
+    // (a) Path-qualified at command start — zero events under the old extraction.
+    run_hook(
+        &log,
+        &bash_event(
+            "/usr/local/bin/jigc task validate t1",
+            3,
+            "blocking · conformance.required-field-present — required field `case` missing\n",
+        ),
+    );
+    run_hook(
+        &log,
+        &bash_event(
+            "./jigc doc create adr \"Pick Storage\" --task t1",
+            0,
+            "created\n",
+        ),
+    );
+
+    // (b) Compound: BOTH invocations log — the set-field and the landed finalize.
+    run_hook(
+        &log,
+        &bash_event(
+            "jigc doc set-field adr:pick-storage#status --value accepted --task t1 \
+             && jigc task finalize t1",
+            0,
+            "ok\n",
+        ),
+    );
+
+    // (c) Quoted prose mentioning jigc is NOT an invocation — nothing logged.
+    run_hook(
+        &log,
+        &bash_event(
+            "echo \"run jigc task validate next\"",
+            0,
+            "run jigc task validate next\n",
+        ),
+    );
+
+    let raw_log = fs::read_to_string(&log).expect("hook log written");
+    let cmds: Vec<String> = raw_log
+        .lines()
+        .map(|line| {
+            let event: serde_json::Value = serde_json::from_str(line).expect("v1 JSON line");
+            assert_eq!(event["event"], "jigc", "only jigc events here: {line}");
+            event["cmd"].as_str().expect("cmd is a string").to_string()
+        })
+        .collect();
+    assert_eq!(
+        cmds,
+        vec![
+            "task validate t1",
+            "doc create adr \"Pick Storage\" --task t1",
+            "doc set-field adr:pick-storage#status --value accepted --task t1",
+            "task finalize t1",
+        ],
+        "4 invocations: two path-qualified, two from one compound, prose skipped:\n{raw_log}"
+    );
+
+    // The REAL tally over the produced log: the path-qualified create and the
+    // compound's set-field hit the SAME address in window 1 — ONE logical
+    // mutation; the path-qualified validate exit 3 keys validate-blocks; the
+    // compound's landed finalize closes the window.
+    let tally = run_tally(&log, &["decisions/"]);
+    assert_eq!(tally["totals"]["jigc-invocations"], 4, "tally: {tally:#}");
+    assert_eq!(tally["totals"]["adapter-writes"], 1, "tally: {tally:#}");
+    assert_eq!(
+        tally["totals"]["write-verb-invocations"], 2,
+        "tally: {tally:#}"
+    );
+    assert_eq!(tally["totals"]["validate-blocks"], 1, "tally: {tally:#}");
+    assert_eq!(tally["totals"]["drift-caught"], 0, "tally: {tally:#}");
+    let mutations = tally["detail"]["logical-mutations"]
+        .as_array()
+        .expect("mutation detail");
+    assert_eq!(mutations.len(), 1, "tally: {tally:#}");
+    assert_eq!(mutations[0]["address"], "adr:pick-storage");
+    assert_eq!(mutations[0]["window"], 1);
+    assert_eq!(
+        mutations[0]["invocations"], 2,
+        "create + compound set-field grouped into one mutation"
+    );
+}
+
+/// A compound carrying TWO landed finalizes closes TWO windows — one advance per
+/// landed finalize event, never a collapse into one and never more than two. A
+/// write after the compound lands in window 3.
+#[test]
+fn compound_with_two_finalizes_closes_two_windows() {
+    let tmp = TempDir::new("two-finalizes");
+    let log = tmp.path().join("hook-log.jsonl");
+
+    run_hook(
+        &log,
+        &bash_event("jigc task finalize t1 && jigc task finalize t2", 0, "ok\n"),
+    );
+    run_hook(
+        &log,
+        &bash_event(
+            "jigc doc set-field roadmap:roadmap#status --value done --task t3",
+            0,
+            "ok\n",
+        ),
+    );
+
+    let raw_log = fs::read_to_string(&log).expect("hook log written");
+    assert_eq!(
+        raw_log.lines().count(),
+        3,
+        "the compound logs one event per finalize:\n{raw_log}"
+    );
+
+    let tally = run_tally(&log, &[]);
+    let mutations = tally["detail"]["logical-mutations"]
+        .as_array()
+        .expect("mutation detail");
+    assert_eq!(mutations.len(), 1, "tally: {tally:#}");
+    assert_eq!(
+        mutations[0]["window"], 3,
+        "two landed finalizes closed windows 1 and 2: {tally:#}"
+    );
+
+    // Determinism holds over the multi-event-per-command log.
+    assert_eq!(run_tally_raw(&log, &[]), run_tally_raw(&log, &[]));
+}
+
 /// The shipped apparatus is complete and self-describing: the hooks config wires
 /// BOTH matchers (Bash and Write|Edit) at the real scripts, and the README pins
 /// the v1 schema + the env-configured log path.
