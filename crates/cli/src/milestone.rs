@@ -147,7 +147,7 @@ impl MilestoneCommand {
         // shared finalize-plan executor (git I/O), returning a process exit code rather
         // than a one-line summary — so it, too, has its own dispatch arm.
         if let MilestoneCommand::Finalize { milestone_id } = self {
-            return dispatch_finalize(cwd, &milestone_id);
+            return dispatch_finalize(cwd, format, &milestone_id);
         }
         // `execute` composes a workflow and emits the composed view (not a one-line
         // summary), so — like `join`/`finalize` — it has its own dispatch arm.
@@ -177,7 +177,7 @@ impl MilestoneCommand {
                 ExitCode::SUCCESS
             }
             Err(err) => {
-                eprintln!("{err:#}");
+                eprintln!("{}", render::operational_error(format, &err));
                 ExitCode::FAILURE
             }
         }
@@ -313,7 +313,7 @@ fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode 
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -356,7 +356,7 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
     let outcome = match run_join(cwd, milestone_id) {
         Ok(outcome) => outcome,
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             return ExitCode::FAILURE;
         }
     };
@@ -416,11 +416,11 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
 /// same-doc clash, an unknown milestone) or an orchestration error routes to stderr and
 /// exits non-zero **before** any commit. A landed commit prints a summary and exits 0.
 /// `design/finalize.md` → `fan-out` finalize (single-commit form).
-fn dispatch_finalize(cwd: &Path, milestone_id: &str) -> ExitCode {
-    match run_milestone_finalize(cwd, milestone_id) {
+fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
+    match run_milestone_finalize(cwd, format, milestone_id) {
         Ok(code) => code,
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -442,7 +442,7 @@ fn dispatch_finalize(cwd: &Path, milestone_id: &str) -> ExitCode {
 /// [`crate::task::execute_finalize_plan`] executor promotes, stages, and commits in **one**
 /// boundary, removing the milestone area on success. The engine performs no git; the CLI
 /// reads HEAD and locates `.jigc/`.
-fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
+fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Result<ExitCode> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = repo_root.join(".jigc");
@@ -551,7 +551,7 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
             // The sub-task areas are left intact (not cleaned) so a retry works.
             Err(err) => {
                 crate::task::git_reset_hard(&repo_root, &pre_finalize_head)?;
-                eprintln!("{err:#}");
+                eprintln!("{}", render::operational_error(format, &err));
                 Ok(ExitCode::FAILURE)
             }
         }
@@ -561,7 +561,8 @@ fn run_milestone_finalize(cwd: &Path, milestone_id: &str) -> Result<ExitCode> {
         // area is the cleanup dir removed on a landed commit. The `squash: true` default path
         // lands only the single CLI-synthesized aggregate (no per-sub-task commits), so it is
         // byte-identical to what M7 shipped — left untouched.
-        let code = crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir)?;
+        let code =
+            crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir, format)?;
         // On a landed commit, clean up the per-sub-task working areas too (the executor only
         // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves
         // the areas intact for retry.

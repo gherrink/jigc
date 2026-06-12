@@ -440,6 +440,78 @@ fn validation_blocked_exits_3() {
     );
 }
 
+/// M17 increment 1, T3 — the operational-error path honors `--format json`
+/// (`design/measurement.md` → The capture substrate, item 2: the second verified gap —
+/// the error funnels printed plain text even under the flag). Under `--format json`
+/// the error surfaces on stderr as the single-key envelope `{"error": "<anyhow
+/// chain>"}`, exit stays **1** (an operational error is not a validation outcome);
+/// under the agent default the output stays today's `{err:#}` plain text,
+/// byte-unchanged.
+#[test]
+fn operational_error_honors_json() {
+    let repo = TempDir::new("operr");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // ── json: stderr parses as the single-key error object; exit stays 1 ─────────
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "nonexistent", "--format", "json"],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an operational error stays exit 1 under --format json; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "the error envelope rides stderr, not stdout; stdout:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    let value: serde_json::Value = serde_json::from_str(&stderr).unwrap_or_else(|err| {
+        panic!(
+            "under --format json, stderr must parse as the error envelope ({err}); got:\n{stderr}"
+        )
+    });
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("the error envelope is a JSON object; got:\n{stderr}"));
+    assert_eq!(
+        object.keys().collect::<Vec<_>>(),
+        ["error"],
+        "the envelope is the single-key object {{\"error\": …}}; got:\n{stderr}",
+    );
+    let chain = value["error"]
+        .as_str()
+        .unwrap_or_else(|| panic!("`error` carries the anyhow chain as a string; got:\n{stderr}"));
+    assert!(
+        chain.contains("no task `nonexistent`") && chain.contains("jigc start"),
+        "the chain carries the start-a-task route; got:\n{chain}",
+    );
+
+    // ── agent (default): today's plain text, byte-unchanged ──────────────────────
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "nonexistent"],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "an operational error stays exit 1 under the agent default; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        String::from_utf8(out.stderr).expect("utf-8 stderr"),
+        "no task `nonexistent` — start one with `jigc start \"<intent>\"`\n",
+        "the agent-format operational error stays the plain `{{err:#}}` bytes",
+    );
+}
+
 #[test]
 fn landed_finalize_emits_findings() {
     // ── agent format: the absorb advisory is on stdout, not swallowed ────────────

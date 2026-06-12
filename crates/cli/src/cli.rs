@@ -271,7 +271,7 @@ fn run_describe(format: Format) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -379,7 +379,7 @@ fn run_upgrade(format: Format) -> ExitCode {
             }
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -406,7 +406,7 @@ fn run_ingest(format: Format) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -447,7 +447,7 @@ fn run_compose(format: Format, intent: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -476,7 +476,7 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -503,7 +503,7 @@ fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> 
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -530,7 +530,7 @@ fn run_resume(format: Format, id: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -558,7 +558,7 @@ fn run_reenter(format: Format, workflow: &str, task: &str) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -581,7 +581,7 @@ fn run_orient(format: Format) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }

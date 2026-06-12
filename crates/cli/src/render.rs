@@ -457,6 +457,22 @@ fn suffix_of(
     }
 }
 
+/// Render an **operational error** (an orchestration/`anyhow` failure — not a
+/// validation outcome) to the surface `format` selects: `json` emits the single-key
+/// envelope `{"error": "<anyhow chain>"}` (so a tooling consumer on `--format json`
+/// gets a parseable error, never plain text — `design/measurement.md` → The capture
+/// substrate, item 2); `agent` / `human` emit the `{err:#}` chain byte-identical to
+/// the historic `eprintln!("{err:#}")` funnels this replaces (no routing footer — an
+/// error is not a composed reading surface). The exit code (1, never 3) stays the
+/// dispatcher's concern; every format-bearing error funnel (`task` / `cli` /
+/// `milestone` dispatch arms) routes through here, emitted on **stderr**.
+pub fn operational_error(format: Format, err: &anyhow::Error) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({ "error": format!("{err:#}") })),
+        Format::Agent | Format::Human => format!("{err:#}"),
+    }
+}
+
 /// Render the **unset project** orientation (`design/bootstrap.md` → Orientation
 /// output examples, state 1): no project layer is set up, so route the agent to
 /// `jigc setup` and end with the universal routing footer.
@@ -1339,6 +1355,38 @@ mod tests {
                 && chars.next().is_some_and(char::is_whitespace);
             assert!(!bullet, "a bullet row leaked into the prose: {line:?}");
         }
+    }
+
+    /// The shared operational-error funnel (M17 inc-1 T3): `json` emits the
+    /// single-key envelope `{"error": "<anyhow chain>"}` (parseable by a tooling
+    /// consumer); `agent` / `human` emit the `{err:#}` chain byte-identical to the
+    /// historic `eprintln!("{err:#}")` funnels (no footer — an error is not a
+    /// composed reading surface). The integration counterpart
+    /// (`tests/finalize_outcome_surface.rs::operational_error_honors_json`) holds
+    /// the real binary's stderr to the same contract.
+    #[test]
+    fn render_operational_error_json_envelope_and_plain_agent_bytes() {
+        let err = anyhow::anyhow!("could not run `git` (is it on PATH?)")
+            .context("validating task at `.jigc/tasks/x`");
+
+        // Agent: exactly the alternate-chain bytes, nothing else.
+        let agent = operational_error(Format::Agent, &err);
+        assert_eq!(
+            agent,
+            "validating task at `.jigc/tasks/x`: could not run `git` (is it on PATH?)",
+        );
+        assert!(!agent.contains(ROUTING_FOOTER));
+
+        // Human renders identically to agent in the MVP (TUI is post-MVP).
+        assert_eq!(operational_error(Format::Human, &err), agent);
+
+        // JSON: the single-key envelope carrying the same chain, no footer.
+        let json_out = operational_error(Format::Json, &err);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        let object = value.as_object().expect("an object envelope");
+        assert_eq!(object.keys().collect::<Vec<_>>(), ["error"]);
+        assert_eq!(value["error"], serde_json::Value::String(agent));
     }
 
     /// The JSON rendering of the same value is valid JSON of the result type and

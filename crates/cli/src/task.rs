@@ -107,7 +107,7 @@ impl TaskCommand {
         match result {
             Ok(()) => ExitCode::SUCCESS,
             Err(err) => {
-                eprintln!("{err:#}");
+                eprintln!("{}", render::operational_error(format, &err));
                 ExitCode::FAILURE
             }
         }
@@ -156,7 +156,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             return ExitCode::FAILURE;
         }
     };
@@ -173,7 +173,7 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
             }
         }
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -231,14 +231,14 @@ fn run_finalize(cwd: &Path, id: &str, format: Format) -> ExitCode {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             return ExitCode::FAILURE;
         }
     };
     match task.finalize(id, format) {
         Ok(code) => code,
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             ExitCode::FAILURE
         }
     }
@@ -496,7 +496,7 @@ impl TaskArea {
                 Ok(ExitCode::SUCCESS)
             }
             Err(err) => {
-                eprintln!("{err:#}");
+                eprintln!("{}", render::operational_error(format, &err));
                 Ok(ExitCode::FAILURE)
             }
         }
@@ -643,14 +643,16 @@ pub(crate) fn execute_finalize_plan(
     msg_tmp_dir: &Path,
     plan: &engine::finalize::FinalizePlan,
     cleanup_dir: &Path,
+    format: Format,
 ) -> Result<ExitCode> {
     // Map the landed/failed `Result` onto the historic `Ok(ExitCode)` contract the
     // per-task and `squash: true` milestone callers expect (a failure surfaces git's
-    // stderr verbatim and exits `FAILURE`; success exits `SUCCESS`).
+    // stderr verbatim — through the shared operational-error funnel, so `--format
+    // json` gets the error envelope — and exits `FAILURE`; success exits `SUCCESS`).
     match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir)? {
         Ok(()) => Ok(ExitCode::SUCCESS),
         Err(err) => {
-            eprintln!("{err:#}");
+            eprintln!("{}", render::operational_error(format, &err));
             Ok(ExitCode::FAILURE)
         }
     }
