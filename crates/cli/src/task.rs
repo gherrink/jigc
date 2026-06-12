@@ -412,9 +412,12 @@ impl TaskArea {
     }
 
     /// Execute the `finalize` transaction (`design/finalize.md` → 5–7). Returns the
-    /// process exit code: `SUCCESS` on a landed commit, `FAILURE` on any planner block
-    /// (rendered + surfaced) or hook/git rejection (git's stderr surfaced). An
-    /// orchestration error (git unavailable, malformed pin) bubbles as `Err`.
+    /// process exit code: `SUCCESS` on a landed commit — which also emits the
+    /// preflight findings envelope on stdout, symmetric with `task validate`
+    /// (`design/measurement.md` → The capture substrate, item 2) — `FAILURE` on any
+    /// planner block (rendered + surfaced) or hook/git rejection (git's stderr
+    /// surfaced, no envelope). An orchestration error (git unavailable, malformed
+    /// pin) bubbles as `Err`.
     fn finalize(&self, id: &str, format: Format) -> Result<ExitCode> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
@@ -460,15 +463,33 @@ impl TaskArea {
             }
         };
 
-        // Phases 4–7: the shared plan executor — promote + stage + commit + rollback +
-        // post-commit. The working area is the cleanup dir removed on a landed commit.
-        execute_finalize_plan(
+        // Phases 4–7: the shared transactional core — promote + stage + commit +
+        // rollback + post-commit. The working area is the cleanup dir removed on a
+        // landed commit.
+        match try_execute_finalize_plan(
             &self.repo_root,
             &self.jigc_root,
             &self.dir,
             &plan,
             &self.dir,
-        )
+        )? {
+            Ok(()) => {
+                // The landed surface: emit the preflight findings envelope on stdout,
+                // symmetric with `task validate` and advisories included — absorb
+                // evidence observed by the sweep is surfaced, never swallowed
+                // (`design/measurement.md` → The capture substrate, item 2). Only a
+                // landed commit emits it: a hook/git rejection took the branch below.
+                print!("{}", render::validation(format, &report));
+                if format != Format::Json {
+                    println!();
+                }
+                Ok(ExitCode::SUCCESS)
+            }
+            Err(err) => {
+                eprintln!("{err:#}");
+                Ok(ExitCode::FAILURE)
+            }
+        }
     }
 
     /// Steps 2–5 of the bind enforcement (`design/write-commands.md` → Binding a
