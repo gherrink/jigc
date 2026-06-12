@@ -726,13 +726,13 @@ fn is_author_required(field: &SchemaField) -> bool {
     if matches!(field.ty, FieldType::Pack(_)) {
         return false;
     }
-    // `owned-location` mirrors the pack-anchor exemption: its presence is the
-    // agent's choice and its *adjudication* — path-safety + durable presence — is
-    // the intrinsic finalize-time #5 owner-artifact gate, never a `required-field-
-    // present` obligation here (`design/methodology-docs.md` → The engine work, item 3).
-    if field.ty == FieldType::OwnedLocation {
-        return false;
-    }
+    // `owned-location` carries NO exemption (M17 reversed the M16 one, which made
+    // the #5 gate bypassable by omission — a fresh mint that never set the field
+    // finalized clean): a declared owned-location field is author-required like any
+    // other no-default/no-set field. *Conformance* owns field-absence; the intrinsic
+    // finalize-time #5 owner-artifact gate keeps owning the named file's path-safety
+    // + durable presence (`design/methodology-docs.md` → The engine work, item 3
+    // amendment 2026-06-12).
     field.default.is_none() && field.set.is_none()
 }
 
@@ -947,18 +947,19 @@ The note body prose.
         );
     }
 
-    /// (M16 inc-3 T1) The engine-native `owned-location` field is **exempt** from
-    /// `schema-conformance`'s author-required + value-conformant checks, mirroring
-    /// the pack-anchor exemption: its presence is the agent's choice and its
-    /// *adjudication* (path-safety + presence) is the finalize-time #5 gate (T2),
-    /// never `field-value-conformant`. So an instance is clean both ways: when the
-    /// `owner-artifact` field is **omitted** (no `required-field-present`) and when
-    /// it carries an arbitrary value (no `field-value-conformant`), regardless of
-    /// that value. The red step proving recognition: without the native arm,
-    /// `owned-location` would resolve to an unresolved `Pack` and `load_schema`
-    /// (engine-empty set) would reject the schema with `UnknownFieldType`.
+    /// (M17 inc-3 T3, inverting M16 inc-3 T1) A **declared** `owned-location` field
+    /// is **author-required** like any other no-`default:`/no-`set:` field: omitting
+    /// it fires exactly one blocking `required-field-present`. The M16 exemption made
+    /// the #5 gate's "each run recorded as an owner-artifact" silently voidable — a
+    /// fresh mint that never set `owner-artifact:` finalized clean with no finding
+    /// anywhere (omission being the default state of a fresh mint). M17 reverses it:
+    /// *conformance* owns field-**absence**; the #5 gate keeps owning the named
+    /// *file's* presence/safety/trackedness. A **present** arbitrary value still
+    /// fires zero `field-value-conformant` (recognition only at this layer — the
+    /// opaque-scalar floor; the value's safety is the gate's job).
+    /// (`design/methodology-docs.md` → The engine work, item 3 amendment 2026-06-12.)
     #[test]
-    fn an_owned_location_field_is_exempt_from_conformance() {
+    fn a_declared_owned_location_field_is_author_required() {
         let yaml = b"\
 type: completion-record
 id-from: title
@@ -975,7 +976,8 @@ sections:
         let schema = crate::schema::load_schema(yaml)
             .expect("completion-record schema with owned-location loads");
 
-        // Omitted: no `owner-artifact` line — must not fire `required-field-present`.
+        // Omitted: no `owner-artifact` line — exactly one blocking
+        // `required-field-present` (the M17 flip closing the omission bypass).
         let omitted = "\
 ---
 title: A record
@@ -990,9 +992,20 @@ The record body prose.
         let doc = parse_sections(&schema, omitted)
             .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
         let findings = schema_conformance(&schema, omitted, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "an omitted declared `owned-location` field must fire exactly one finding, got {findings:?}",
+        );
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(
+            findings[0].code,
+            "schema-conformance.required-field-present"
+        );
         assert!(
-            findings.is_empty(),
-            "an omitted `owned-location` field must yield no findings, got {findings:?}",
+            findings[0].message.contains("owner-artifact"),
+            "the finding must name the missing field, got: {}",
+            findings[0].message,
         );
 
         // Present with an arbitrary value — must not fire `field-value-conformant`
