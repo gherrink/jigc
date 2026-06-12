@@ -344,6 +344,93 @@ fn planning_composes_the_settle_checkpoint_and_the_three_doctype_authoring_lines
     );
 }
 
+/// M17 Increment 4 / T1 — the composed `planning` workflow carries its finalize
+/// tail (the stranded-docs gap): the same `{{ include: step:finalize }}` that
+/// completion.yaml/dev-task.yaml carry, which brings the commit-doc authoring
+/// guidance with it. Through the real binary, the composed planning spine must
+/// emit the four `set-commit-*` `Run:` lines (type/scope/summary/body, addresses
+/// resolved to the minted task's commit doc) **and** the `jigc task finalize
+/// <minted-id>` line, all AFTER the decompose/author steps — asserted on the
+/// EMITTED bytes, never reconstructed.
+#[test]
+fn planning_composes_the_commit_fill_and_finalize_tail() {
+    let repo = TempDir::new("planning-finalize");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // Intent "M99" → slug "m99" (slugify lowercases): the minted task id is `m99`
+    // and the minted commit doc is `commit:m99`.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "planning", "M99"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow planning \"M99\"` must compose the planning spine and exit 0; \
+         got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // The four commit-fill Run lines + the finalize-task line render verbatim with
+    // addresses resolved to the minted `m99` slug (the emitted-bytes contract).
+    assert_eq!(
+        emitted_run_line(&stdout, "set-field commit:m99#type"),
+        "jigc doc set-field commit:m99#type --value <TYPE>",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "set-field commit:m99#scope"),
+        "jigc doc set-field commit:m99#scope --value <SCOPE>",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "set-slot commit:m99#summary"),
+        "jigc doc set-slot commit:m99#summary --from-file -",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "set-slot commit:m99#body"),
+        "jigc doc set-slot commit:m99#body --from-file -",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "task finalize"),
+        "jigc task finalize m99",
+    );
+
+    let pos = |needle: &str| {
+        stdout
+            .find(needle)
+            .unwrap_or_else(|| panic!("composed planning spine missing {needle:?}; got:\n{stdout}"))
+    };
+
+    // The finalize tail follows the decompose phase AND the last author step
+    // (author-decisions, whose create-log line is `doc create decisions-log`) —
+    // the agent decomposes, authors the running docs, fills the commit, then
+    // finalizes.
+    let decompose_at = pos("Decompose the milestone into ordered");
+    let author_decisions_at = pos("jigc doc create decisions-log");
+    let commit_fill_at = pos("jigc doc set-field commit:m99#type");
+    let finalize_at = pos("jigc task finalize m99");
+    assert!(
+        decompose_at < author_decisions_at
+            && author_decisions_at < commit_fill_at
+            && commit_fill_at < finalize_at,
+        "the finalize tail must follow decompose({decompose_at}) and the author steps \
+         ({author_decisions_at}): commit-fill({commit_fill_at}) < finalize({finalize_at}); \
+         got:\n{stdout}",
+    );
+}
+
 /// M16 Increment 5 / T2 — the methodology `completion` workflow composes the
 /// completion spine through the real binary: `jigc start --workflow completion
 /// "<milestone>"` mints a task (off-router) **and** emits the completion-half's
