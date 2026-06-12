@@ -946,3 +946,74 @@ Cut 2026-06-09 via the [milestone-planning workflow](milestone-planning-workflow
 ### Status
 
 All increments (1, **1b**, 2–5) complete as of 2026-06-09 — **the self-hosting *machinery* loop is closed: jigc composes its own planning + completion workflows and manages four of its methodology's working-docs as managed doctypes** (proven on fresh instances; jigc's own historical files migrate at v1). The deliverable: the **authoring spine** = `creates-task: true, selectable: false` (the `sub-task` precedent — mint a task, author via the proven create-gate + finalize-promote, off-router); four doctypes (`roadmap`/`deferral-ledger`/`decisions-log` running singletons via a net-new `singleton: true` fixed-slug flag + the per-milestone `completion-record`); the engine deltas — **repeatable-section conformance** (conformance-only, the validate.rs skip lifted), **idempotent-create** (copy-in on a committed singleton → create-or-update + the clobber fix, gated to singleton doctypes), **multi-slot-per-repeatable-item** (the `#### <Leaf-Title>` sub-label form, a deferral lifted mid-build), and the **`owner-artifact.present` #5 gate** (a finalize-time presence check on a safe owned-location durably-staged path — presence never content; the four-list severity sync → 27/18); the **`planning`/`completion` workflows** + their phase-walk steps (Settle/audit/triage halts as `Checkpoint:` directives) authoring the doctypes; and flows **19** (planning two-run cold/warm) + **20** (completion encode, the #5 gate block/pass) e2e through the real binary. The build ran via the [milestone-build harness](milestone-build-workflow.md) — **1 design halt** (inc-4 T4 surfaced the two-slot/one-slot-per-item contradiction; the human chose to lift the deferred multi-slot limit, built as inserted Increment 1b, then T4 resumed) and **0 in-increment fix rounds**. The [milestone-completion audit](milestone-completion-workflow.md) (independent code-review + real-binary e2e: 11/11 e2e scenarios pass, both flows reproduced) returned **3 findings, all verified-real + auto-fixed + re-verified**: **1 HIGH** (`ddd8eb5`) — multi-slot slot prose containing a `#### ` line shadowed the slot delimiter (silent round-trip corruption) → a `conformance.item-slot-delimiter-shadowed` block (the marker-shadow discipline), single-slot byte-identity held; **2 LOW** — item-level `set: on-create` date never materialized (`a8056e4`, surfacing that doc-level on-create is *also* inert — pre-existing, tracked in [decisions-pending.md](decisions-pending.md)), and a gitignored owner-artifact wrongly passing the #5 gate (`f3f9855`, the `--exclude-standard` gap). The **honest bound holds**: jigc composes the single-agent spine; planning's fanned recon/review and completion's parallel audits + verdict stay orchestration-level (the build harness), not over-claimed. **The dialect-extension trigger ledger is fully resolved** (M15 checkpoint #2/#4-structural; M16 #5 presence-gate; #1 A==A lint + #3 gate-command knob stay deferred with named triggers — [self-hosting.md](../design/self-hosting.md)). **M16 is adoption-arc prereq #2** — M17 (dogfood + measurement on real projects) is now unblocked.
+
+## Milestone 17 — dogfood + measurement: decomposition
+
+The terminus milestone splits structurally ([measurement.md](../design/measurement.md); [DECISIONS.md](../DECISIONS.md) 2026-06-12): **Increments 1–5 are harness-fittable TDD work** (the measurement substrate + the six pre-fix run-breakers + the recording surface) and build via the [milestone-build harness](milestone-build-workflow.md); **the three dogfood runs are NOT increments** — they are genuine live-agent/human sessions recorded as owner-artifacts (the M12 Half-B class, [self-hosting.md](../design/self-hosting.md) → the two-half pattern), run from the main session per the protocol phases below, after the increments land. Forcing a run into a TDD increment is the hollow-dogfood trap. Need-driven fix-what-hurt increments insert *between* runs (binary pinning: fixes never land mid-measured-run). Ordering is risk-first: the engine-semantics changes (re-pin, file-state) come before the pack/apparatus work that depends on their behavior; the recording surface comes last of the increments because it consumes everything before it.
+
+## Increment 1 — Emission + exit-code soundness (the tally's discrimination substrate)
+
+**Deliverable:** a harness-side tally can discriminate every jigc invocation outcome: successful `task finalize` emits the findings envelope (advisories included — absorb evidence no longer swallowed), validation-blocked exits with **exit 3** (operational error stays 1; the operational-error path honors `--format json`), in both renderers.
+
+**Grouped scope:**
+- Finalize-success findings emission, symmetric with `validate` ([measurement.md](../design/measurement.md) → The capture substrate, item 2; the silent-success gap verified at planning).
+- Exit-code split: 3 = validation-blocked (≥1 blocking finding), 1 = operational error; the error path emits the JSON envelope under `--format json` ([measurement.md](../design/measurement.md) → capture substrate item 2, scope pinned at review M3).
+- Renderer/e2e proof: blocked vs. landed vs. operational-error finalize distinguishable by exit code + output alone — the drift-caught counting contract.
+
+**Proves:** drift-caught and the absorb term are observable from invocation output — the zero-binary-change capture claim's two verified holes closed.
+
+## Increment 2 — File-state soundness (one edit, one absorb; artifacts don't poison)
+
+**Deliverable:** an absorbed OOB edit fires its `reconciliation.absorb` exactly once across subsequent tasks (the durable baseline advances at landed finalize; `validate`/`start`/reads stay pure readers), and a promoted owner-artifact no longer false-blocks later finalizes.
+
+**Grouped scope:**
+- Absorb baseline-advance persisted by landed finalize only ([reconciliation.md](../design/reconciliation.md) → the persistence amendment; the verified re-fire defect).
+- The false-rename fix: *missing means absent from disk, not absent from the walk* — disk-presence check before classifying a baselined path missing ([reconciliation.md](../design/reconciliation.md) → the rename amendment; the spike-found permanent-block defect, reproduced in isolation at planning).
+- Red obligations: the re-fire case (two tasks after one OOB edit → one emission) and the post-promotion finalize (artifact promoted → next finalize lands clean; genuinely deleted artifact still blocks).
+
+**Proves:** the adapter-adherence absorb channel is sound (no over-count) and repeated per-run record promotion is possible at all.
+
+## Increment 3 — Finalize re-pin + owned-location requiredness (the serial-task + omission gates)
+
+**Deliverable:** a task whose base moved on disjoint history finalizes (auto-re-pin per the pinned overlap rule); a completion-class doc that omits its declared `owned-location` field blocks at conformance.
+
+**Grouped scope:**
+- `finalize.base-mismatch` re-pin: re-pin iff *(paths changed between recorded base and HEAD)* ∩ *(dirty working-tree paths ∪ promote destinations)* = ∅, then re-run preflight against the new base; overlap keeps the block with a conflict route naming the overlapping paths ([finalize.md](../design/finalize.md) → the phase-1 amendment).
+- Owned-location requiredness: a **declared** owned-location field joins `required-field-present`; the #5 gate unchanged (conformance owns absence, the gate owns the named file); the `validate.rs` exemption comment flips ([methodology-docs.md](../design/methodology-docs.md) → engine work item 3 amendment).
+- Red obligations: disjoint-history finalize lands; overlapping-history finalize blocks with the route; a fresh completion-record minted without `owner-artifact:` blocks at finalize.
+
+**Proves:** the completion workflow's own designed shape (mint at audit-start, finalize after fix commits) works, and "each run recorded as an owner-artifact" is no longer silently voidable.
+
+## Increment 4 — Pack + doc pre-fixes (the composed surface tells the truth)
+
+**Deliverable:** the composed planning workflow carries its finalize tail; composed authoring commands carry the minted task id; QUICKSTART documents the router reality.
+
+**Grouped scope:**
+- `packs/methodology/workflows/planning.yaml` gains the finalize step include (+ commit-doc authoring guidance) — the stranded-docs gap.
+- Composed write-command task-disambiguation: the authoring steps' literal command lines carry the minted task id via compose-time placeholder substitution (the finalize tail already renders it — extend the same mechanism; prove against the >1-active-task case).
+- QUICKSTART.md: the router-menu reality replaces the stale one-call-mint claim (+ the install section names the probe sibling) — case-3's verbatim fixture.
+
+**Proves:** an agent following composed prose verbatim lands the planning loop and never hits the more-than-one-active-task wall the workflows themselves create.
+
+## Increment 5 — The recording surface (dogfood-record + record-dogfood + the hook apparatus)
+
+**Deliverable:** `jigc start --workflow record-dogfood "<run>"` composes off-router, authors a `dogfood-record` (the post-review field set: organic facts · `seeded-*` instrument checks · verdict · owner-artifact) through the binary, and finalize promotes record + artifact; the versioned hook artifact + tally script land at `implementation/dogfood/`; flows 21/22 authored into [worked-examples.md](../design/worked-examples.md).
+
+**Grouped scope:**
+- `packs/methodology/schemas/dogfood-record.yaml` (`location: dogfood/`, the planning-spike YAML as seed, post-review fields per [measurement.md](../design/measurement.md) → The dogfood-record doctype) + `workflows/record-dogfood.yaml` + authoring step + command-ref.
+- The hook set (PostToolUse Bash / Write|Edit) + append-only log format + the tally script (logical-mutation grouping, dedup rule, exit-3 keying) at `implementation/dogfood/` — versioned measurement apparatus, conscious placement.
+- Flow-21-shaped e2e through the real binary on a throwaway repo: seeded OOB edit absorbed once (exercises inc 1+2), seeded bad finalize exits 3, record blocks on a missing fact field / omitted owner-artifact (exercises inc 3), promotes on complete; off-router + honesty guards extended (`record-dogfood` off the catalog; the judgment slot stays prose — no scoring lint).
+- Flows 21 + 22 authored into worked-examples.md (doc fold-back, separate commit — the M16 T5 pattern).
+
+**Proves:** the full measured-run loop is drivable end-to-end through the real binary before any real dogfood spends a session on it.
+
+## The dogfood runs — protocol phases, not increments (main-session / human work)
+
+Run per [measurement.md](../design/measurement.md) after increments 1–5 land, each on a pinned binary (sha in the record), each producing a `dogfood-record` + the raw-capture owner-artifact exported to `completions/artifacts/M17/<case>/`:
+
+- **P1 · The pilot** — `gherrink-galey`: pre-registration → the three-arm comparison (jigc · control · static-methodology) + the full-methodology dogfood, seeded failures planted mid-run. Gated by the **pilot gate** (substrate validated; verdict names ≥1 non-seeded observation) before P2/P3 proceed.
+- **P2 · Existing-with-docs** — `gherrink-lacon`: ingest on the real corpus, task work referencing adopted docs, doc↔code genuinely adjudicating (Rust).
+- **P3 · Greenfield, human-driven** — intent named at the pilot gate; the human at the wheel; capture identical.
+- **Fix-what-hurt** — need-driven increments inserted between runs (each its own dev-workflow loop; never mid-run), recorded as "fixed because it hurt" with the run that surfaced it.
+
+Then the [milestone-completion workflow](milestone-completion-workflow.md) audits the whole — the spine's last completion record states the thesis verdict with the future-work deferrals explicitly post-spine.
