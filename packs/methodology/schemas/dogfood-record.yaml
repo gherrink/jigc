@@ -1,0 +1,51 @@
+# dogfood-record — the methodology pack's PER-RUN measured-dogfood record (M17
+# inc-5 / T1), driven by record-dogfood. NOT a singleton: `id-from: title` mints
+# `dogfood/<run>.md` create-fresh per measured run (the proven completion-record
+# mint). `location: dogfood/` — NOT `completions/`: the reconcile sweep parses
+# every file in a location dir against EVERY schema declaring that dir, so
+# sharing with completion-record would cross-block both (a design-binding engine
+# fact; design/measurement.md → The dogfood-record doctype).
+#
+# The `meta` header (header: true) carries the run identity (`case` enum +
+# the pinned `binary-sha`), the eight ORGANIC fact ints (values transcribed from
+# the capture by the recording agent — typed-but-transcribed, the stated honesty
+# bound: collection mechanical, form engine-validated, transcription auditable
+# against the committed hook log), the two SEEDED instrument checks (seeds
+# validate the instrument, never the thesis — they never enter the organic
+# facts), the judged `verdict`, and the `owner-artifact` owned-location (the
+# #5-gate target: transcript + raw hook log/tally + manifest). Known dialect
+# bound, accepted: `int` takes negatives and stores verbatim — counts are
+# protocol-honest, not schema-clamped. Comparison arms get NO record (no `arm`
+# field) — their counts live in the comparison owner-artifact prose.
+#
+# Section ids are SINGLE WORDS ONLY (`meta`/`judgment`): a multi-word id trips
+# the logged title-case reparse defect, deferred — routed around exactly as
+# completion-record did. Engine-native types only. One prose slot: `judgment` —
+# the verdict is authored judgment over the counts, never computed (no scoring
+# lint).
+type: dogfood-record
+location: dogfood/
+id-from: title
+description: The per-run measured-dogfood record — the run's case and pinned binary, the transcribed organic fact counts, the seeded instrument checks, the judged verdict, and the owner-artifact holding the raw capture.
+usage: a measured dogfood run completes, so its transcribed facts, seeded instrument checks, verdict, and capture artifact need a durable per-run record.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: case, type: enum, of: [pilot, existing-docs, greenfield] }
+      - { id: binary-sha, type: string }
+      - { id: adapter-writes, type: int }
+      - { id: oob-edits, type: int }
+      - { id: drift-caught, type: int }
+      - { id: validate-blocks, type: int }
+      - { id: halts-expected, type: int }
+      - { id: halts-unplanned, type: int }
+      - { id: fix-rounds, type: int }
+      - { id: audit-findings, type: int }
+      - { id: seeded-oob, type: int }
+      - { id: seeded-blocks, type: int }
+      - { id: verdict, type: enum, of: [green, red] }
+      - { id: owner-artifact, type: owned-location }
+  - id: judgment
+    slot: { hint: "What the counts mean — where the loop held or strained, what the verdict rests on, and what this run did NOT test." }
