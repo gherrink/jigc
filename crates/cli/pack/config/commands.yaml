@@ -2,6 +2,9 @@
 # workflow's steps resolve against. See design/command-catalog.md → Worked
 # catalog. The catalog parser arrives with the composer (later in increment 3);
 # these bytes are the canonical contract it will load.
+# Every doc-verb ref carries `--task` + `{ from: "task.id" }` (M17 settle pre-fix
+# #3): with more than one active task a `--task`-less doc write rejects, and the
+# workflows themselves create that state.
 commands:
   - id: set-commit-summary
     command: jigc
@@ -11,6 +14,8 @@ commands:
       - { from: "task.commit#summary" }
       - "--from-file"
       - "-"
+      - "--task"
+      - { from: "task.id" }
     stdin: "the slot prose"
     hint: "Stage the commit summary slot from stdin."
 
@@ -32,6 +37,8 @@ commands:
       - "adr"
       - "--title"
       - { agent: title, hint: "short declarative sentence describing the decision" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Create a new ADR in the current task."
 
   - id: create-spec
@@ -42,6 +49,8 @@ commands:
       - "spec"
       - "--title"
       - { agent: title, hint: "short declarative title naming what the spec delivers" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Create a new spec in the current task."
 
   - id: create-prd
@@ -52,6 +61,8 @@ commands:
       - "prd"
       - "--title"
       - { agent: title, hint: "short declarative title naming the product the prd specifies" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Create a new prd in the current task."
 
   - id: create-arch-doc
@@ -62,6 +73,8 @@ commands:
       - "arch-doc"
       - "--title"
       - { agent: title, hint: "short declarative title naming the part of the system the arch-doc documents" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Create a new arch-doc in the current task."
 
   - id: bind-spec

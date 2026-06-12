@@ -94,12 +94,12 @@ scope before implementing.
 Implement the change directly in the working tree. When done, stage the
 commit prose:
 
-Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 <<author: commit:add-rate-limiter#summary>>
 
 If a decision is warranted, create an ADR and author its slots:
 
-Run: `jigc doc create adr --title <TITLE>`
+Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
 If your decision supersedes an earlier one, here is that decision for
 reference — make your consequences explain what changes:
@@ -1404,7 +1404,7 @@ fn form_d_sub_task_mints_and_composes_fan_out_free_without_finalize() {
     );
     // ... the `implement` body (the commit-summary authoring) ...
     assert!(
-        stdout.contains("Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`"),
+        stdout.contains("Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`"),
         "the composed sub-task view must carry the implement step's commit-summary authoring; got:\n{stdout}",
     );
     // ... and the net-new `author-commit` body (authoring the commit prose).

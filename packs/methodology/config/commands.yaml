@@ -4,6 +4,9 @@
 # the `summary`/`body` slots must be set BEFORE finalize). `set-field --value` (for
 # the `type`/`scope` fields) is a different verb than `set-slot --from-file` (for
 # the `summary`/`body` slots); the finalize step wires a command-ref for each.
+# Every doc-verb ref carries `--task` + `{ from: "task.id" }` (M17 settle pre-fix
+# #3): the workflows themselves create >1 active task, and a `--task`-less doc
+# write rejects as soon as a second task is active.
 commands:
   - id: set-commit-type
     command: jigc
@@ -13,6 +16,8 @@ commands:
       - { from: "task.commit#type" }
       - "--value"
       - { agent: type, hint: "the Conventional-Commits type — one of feat/fix/docs/style/refactor/perf/test/build/ci/chore/revert" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Set the commit header type before finalize."
 
   - id: set-commit-scope
@@ -23,6 +28,8 @@ commands:
       - { from: "task.commit#scope" }
       - "--value"
       - { agent: scope, hint: "the Conventional-Commits scope — the area this change touches" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Set the commit header scope before finalize."
 
   - id: set-commit-summary
@@ -33,6 +40,8 @@ commands:
       - { from: "task.commit#summary" }
       - "--from-file"
       - "-"
+      - "--task"
+      - { from: "task.id" }
     stdin: "the subject line"
     hint: "Stage the commit summary slot from stdin."
 
@@ -44,6 +53,8 @@ commands:
       - { from: "task.commit#body" }
       - "--from-file"
       - "-"
+      - "--task"
+      - { from: "task.id" }
     stdin: "the commit body prose"
     hint: "Stage the commit body slot from stdin."
 
@@ -61,17 +72,17 @@ commands:
   # author steps as literal guidance (the item id is runtime-minted).
   - id: create-roadmap
     command: jigc
-    args: ["doc", "create", "roadmap", "--title", "Roadmap"]
+    args: ["doc", "create", "roadmap", "--title", "Roadmap", "--task", { from: "task.id" }]
     hint: "Create-or-update the running roadmap singleton in the current task."
 
   - id: create-ledger
     command: jigc
-    args: ["doc", "create", "deferral-ledger", "--title", "Deferral-Ledger"]
+    args: ["doc", "create", "deferral-ledger", "--title", "Deferral-Ledger", "--task", { from: "task.id" }]
     hint: "Create-or-update the running deferral-ledger singleton in the current task."
 
   - id: create-log
     command: jigc
-    args: ["doc", "create", "decisions-log", "--title", "Decisions-Log"]
+    args: ["doc", "create", "decisions-log", "--title", "Decisions-Log", "--task", { from: "task.id" }]
     hint: "Create-or-update the running decisions-log singleton in the current task."
 
   # The completion workflow's create-fresh command-ref (M16 inc-5 / T2). The
@@ -88,4 +99,6 @@ commands:
       - "completion-record"
       - "--title"
       - { agent: title, hint: "the milestone this completion record closes — its title mints the create-fresh slug" }
+      - "--task"
+      - { from: "task.id" }
     hint: "Create the per-milestone completion-record fresh in the current task."

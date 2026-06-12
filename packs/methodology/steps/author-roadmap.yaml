@@ -8,6 +8,6 @@ Then mint this milestone's entry and author it — its `proves` and the prose
 `decomposition` of its increments (one level: each increment's deliverable and the
 tasks that build it, as prose). The item id is minted from the title you give:
 
-jigc doc add-item roadmap:roadmap#milestones --title "<milestone>"
-jigc doc set-slot roadmap:roadmap#milestones/<id>/proves --from-file -
-jigc doc set-slot roadmap:roadmap#milestones/<id>/decomposition --from-file -
+jigc doc add-item roadmap:roadmap#milestones --title "<milestone>" --task {{task.id}}
+jigc doc set-slot roadmap:roadmap#milestones/<id>/proves --from-file - --task {{task.id}}
+jigc doc set-slot roadmap:roadmap#milestones/<id>/decomposition --from-file - --task {{task.id}}

@@ -2390,7 +2390,7 @@ If your decision supersedes an earlier one, here is that decision:
         );
         assert_eq!(
             run_line,
-            "Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file -`"
+            "Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file - --task emit-four-classes`"
         );
 
         // The `<<author:>>` wrapper survives; only the embedded `{{…}}` resolves.
@@ -2398,7 +2398,7 @@ If your decision supersedes an earlier one, here is that decision:
 
         insta::assert_snapshot!(emitted, @r#"
         Implement the change directly. When done, stage the commit prose:
-        Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file -`
+        Run: `jigc doc set-slot commit:emit-four-classes#summary --from-file - --task emit-four-classes`
         <<author: commit:emit-four-classes#summary>>
 
         Here is the bound commit content:
@@ -3092,6 +3092,14 @@ A failed charge retries with exponential backoff, capped at five attempts.
                   "kind": "agent",
                   "agent": "title",
                   "hint": "short declarative sentence describing the decision"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
                 }
               ],
               "hint": "Create a new ADR in the current task."
@@ -3119,6 +3127,14 @@ A failed charge retries with exponential backoff, capped at five attempts.
                   "kind": "agent",
                   "agent": "title",
                   "hint": "short declarative title naming the part of the system the arch-doc documents"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
                 }
               ],
               "hint": "Create a new arch-doc in the current task."
@@ -3146,6 +3162,14 @@ A failed charge retries with exponential backoff, capped at five attempts.
                   "kind": "agent",
                   "agent": "title",
                   "hint": "short declarative title naming the product the prd specifies"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
                 }
               ],
               "hint": "Create a new prd in the current task."
@@ -3173,6 +3197,14 @@ A failed charge retries with exponential backoff, capped at five attempts.
                   "kind": "agent",
                   "agent": "title",
                   "hint": "short declarative title naming what the spec delivers"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
                 }
               ],
               "hint": "Create a new spec in the current task."
@@ -3264,6 +3296,14 @@ A failed charge retries with exponential backoff, capped at five attempts.
                 {
                   "kind": "literal",
                   "literal": "-"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
                 }
               ],
               "stdin": "the slot prose",
@@ -3891,13 +3931,13 @@ reference — make your consequences explain what changes:
         let set_commit = catalog.get("set-commit-summary").expect("present");
         assert_eq!(
             render_command(set_commit, &ctx).expect("renders"),
-            "jigc doc set-slot commit:add-rate-limiter#summary --from-file -"
+            "jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter"
         );
 
         let create_adr = catalog.get("create-adr").expect("present");
         assert_eq!(
             render_command(create_adr, &ctx).expect("renders"),
-            "jigc doc create adr --title <TITLE>"
+            "jigc doc create adr --title <TITLE> --task add-rate-limiter"
         );
 
         let finalize = catalog.get("finalize-task").expect("present");
@@ -3926,11 +3966,11 @@ reference — make your consequences explain what changes:
         }
         insta::assert_snapshot!(rows.join("\n"), @r#"
         create-adr
-          => jigc doc create adr --title <TITLE>
+          => jigc doc create adr --title <TITLE> --task add-rate-limiter
         finalize-task
           => jigc task finalize add-rate-limiter
         set-commit-summary
-          => jigc doc set-slot commit:add-rate-limiter#summary --from-file -
+          => jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter
         validate-task
           => jigc task validate add-rate-limiter
         "#);
@@ -4499,7 +4539,7 @@ reference — make your consequences explain what changes:
             "the engine view must not carry the routing footer"
         );
 
-        insta::assert_snapshot!(composed.text, @r#"
+        insta::assert_snapshot!(composed.text, @"
         Reason about the change. The intent is:
         add rate limiter
 
@@ -4509,12 +4549,12 @@ reference — make your consequences explain what changes:
         Implement the change directly in the working tree. When done, stage the
         commit prose:
 
-        Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+        Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
         <<author: commit:add-rate-limiter#summary>>
 
         If a decision is warranted, create an ADR and author its slots:
 
-        Run: `jigc doc create adr --title <TITLE>`
+        Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
         If your decision supersedes an earlier one, here is that decision for
         reference — make your consequences explain what changes:
@@ -4522,7 +4562,7 @@ reference — make your consequences explain what changes:
         Validate and commit the task as one logical commit:
 
         Run: `jigc task finalize add-rate-limiter`
-        "#);
+        ");
     }
 
     /// T3 done-criterion (`catalog_placeholder_emits_option_lines`): a lone

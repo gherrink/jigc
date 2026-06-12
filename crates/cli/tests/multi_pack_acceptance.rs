@@ -389,12 +389,12 @@ scope before implementing.
 Implement the change directly in the working tree. When done, stage the
 commit prose:
 
-Run: `jigc doc set-slot commit:add-a-thing#summary --from-file -`
+Run: `jigc doc set-slot commit:add-a-thing#summary --from-file - --task add-a-thing`
 <<author: commit:add-a-thing#summary>>
 
 If a decision is warranted, create an ADR and author its slots:
 
-Run: `jigc doc create adr --title <TITLE>`
+Run: `jigc doc create adr --title <TITLE> --task add-a-thing`
 
 If your decision supersedes an earlier one, here is that decision for
 reference — make your consequences explain what changes:
@@ -441,19 +441,19 @@ does not fill it, so set the commit header and prose first.
 
 Set the Conventional-Commits type:
 
-Run: `jigc doc set-field commit:add-rate-limiter#type --value <TYPE>`
+Run: `jigc doc set-field commit:add-rate-limiter#type --value <TYPE> --task add-rate-limiter`
 
 Set the scope — the area this change touches:
 
-Run: `jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE>`
+Run: `jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE> --task add-rate-limiter`
 
 Stage the subject line:
 
-Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 
 Stage the body — why this change:
 
-Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file -`
+Run: `jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter`
 
 Then validate and commit:
 

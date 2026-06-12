@@ -10,15 +10,15 @@ write the artifact file there, then name it here. finalize promotes that file in
 same transaction and the presence gate asserts it is durably staged (it never reads
 the artifact's bytes — presence, not content):
 
-jigc doc set-field completion-record:<slug>#verdict --value <green|red>
-jigc doc set-field completion-record:<slug>#owner-artifact --value completions/artifacts/<milestone>/<file>
+jigc doc set-field completion-record:<slug>#verdict --value <green|red> --task {{task.id}}
+jigc doc set-field completion-record:<slug>#owner-artifact --value completions/artifacts/<milestone>/<file> --task {{task.id}}
 
 Then, for each triaged finding, mint an entry and author it — its `severity`
 (blocking/advisory), its `disposition` (fixed/deferred/contested), and the `evidence`
 (a string: the file:line, repro, or trace — not a managed ref). The item id is minted
 from the title you give:
 
-jigc doc add-item completion-record:<slug>#findings --title "<the finding>"
-jigc doc set-field completion-record:<slug>#findings/<id>/severity --value <blocking|advisory>
-jigc doc set-field completion-record:<slug>#findings/<id>/disposition --value <fixed|deferred|contested>
-jigc doc set-field completion-record:<slug>#findings/<id>/evidence --value "<the file:line, repro, or trace>"
+jigc doc add-item completion-record:<slug>#findings --title "<the finding>" --task {{task.id}}
+jigc doc set-field completion-record:<slug>#findings/<id>/severity --value <blocking|advisory> --task {{task.id}}
+jigc doc set-field completion-record:<slug>#findings/<id>/disposition --value <fixed|deferred|contested> --task {{task.id}}
+jigc doc set-field completion-record:<slug>#findings/<id>/evidence --value "<the file:line, repro, or trace>" --task {{task.id}}

@@ -9,12 +9,12 @@ Create the arch-doc, then author its overview:
 Cite each decision this part of the system rests on — one `cites` edge per ADR,
 so finalize can check the citation still resolves:
 
-jigc doc set-field arch-doc:<slug>#cites --value adr:<slug>
+jigc doc set-field arch-doc:<slug>#cites --value adr:<slug> --task {{task.id}}
 
 Then add one component per architectural piece. For each, mint the item, write
 its responsibility in prose, and anchor it to the code that implements it (a
 `path#symbol` finalize re-checks against the working tree):
 
-jigc doc add-item arch-doc:<slug>#components --title "<component name>"
-jigc doc set-slot arch-doc:<slug>#components/<id>/description --from-file -
-jigc doc set-field arch-doc:<slug>#components/<id>/implemented-by --value <path>#<symbol>
+jigc doc add-item arch-doc:<slug>#components --title "<component name>" --task {{task.id}}
+jigc doc set-slot arch-doc:<slug>#components/<id>/description --from-file - --task {{task.id}}
+jigc doc set-field arch-doc:<slug>#components/<id>/implemented-by --value <path>#<symbol> --task {{task.id}}

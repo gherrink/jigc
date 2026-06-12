@@ -134,12 +134,12 @@ scope before implementing.
 Implement the change directly in the working tree. When done, stage the
 commit prose:
 
-Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file -`
+Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 <<author: commit:add-rate-limiter#summary>>
 
 If a decision is warranted, create an ADR and author its slots:
 
-Run: `jigc doc create adr --title <TITLE>`
+Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
 If your decision supersedes an earlier one, here is that decision for
 reference — make your consequences explain what changes:

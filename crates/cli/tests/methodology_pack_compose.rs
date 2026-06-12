@@ -99,6 +99,34 @@ fn run_jigc(repo: &Path, home: &Path, pack_dir: &Path, args: &[&str]) -> std::pr
         .expect("run the jigc binary")
 }
 
+/// Like [`run_jigc`] but piping `stdin` (the `set-slot --from-file -` path).
+fn run_jigc_stdin(
+    repo: &Path,
+    home: &Path,
+    pack_dir: &Path,
+    args: &[&str],
+    stdin: &str,
+) -> std::process::Output {
+    use std::io::Write;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack_dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn the jigc binary");
+    child
+        .stdin
+        .take()
+        .expect("stdin piped")
+        .write_all(stdin.as_bytes())
+        .expect("write stdin");
+    child.wait_with_output().expect("wait for the jigc binary")
+}
+
 /// Extract the backtick-quoted body of the *unique* `Run:` line containing `needle`,
 /// so the assertion runs over the **emitted bytes** the agent would copy — never a
 /// reconstruction. Panics with the full stdout if absent or ambiguous.
@@ -185,19 +213,19 @@ fn dev_task_composes_the_flat_spine_resolved_intent_and_verbatim_fill_lines() {
     // Asserted on the EMITTED bytes (extracted from stdout), never reconstructed.
     assert_eq!(
         emitted_run_line(&stdout, "set-field commit:add-rate-limiter#type"),
-        "jigc doc set-field commit:add-rate-limiter#type --value <TYPE>",
+        "jigc doc set-field commit:add-rate-limiter#type --value <TYPE> --task add-rate-limiter",
     );
     assert_eq!(
         emitted_run_line(&stdout, "set-field commit:add-rate-limiter#scope"),
-        "jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE>",
+        "jigc doc set-field commit:add-rate-limiter#scope --value <SCOPE> --task add-rate-limiter",
     );
     assert_eq!(
         emitted_run_line(&stdout, "set-slot commit:add-rate-limiter#summary"),
-        "jigc doc set-slot commit:add-rate-limiter#summary --from-file -",
+        "jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter",
     );
     assert_eq!(
         emitted_run_line(&stdout, "set-slot commit:add-rate-limiter#body"),
-        "jigc doc set-slot commit:add-rate-limiter#body --from-file -",
+        "jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter",
     );
     assert_eq!(
         emitted_run_line(&stdout, "task finalize"),
@@ -305,15 +333,15 @@ fn planning_composes_the_settle_checkpoint_and_the_three_doctype_authoring_lines
     // singletons fix the slug to the type id, so `--title` is a fixed literal (ignored).
     assert_eq!(
         emitted_run_line(&stdout, "doc create roadmap"),
-        "jigc doc create roadmap --title Roadmap",
+        "jigc doc create roadmap --title Roadmap --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "doc create deferral-ledger"),
-        "jigc doc create deferral-ledger --title Deferral-Ledger",
+        "jigc doc create deferral-ledger --title Deferral-Ledger --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "doc create decisions-log"),
-        "jigc doc create decisions-log --title Decisions-Log",
+        "jigc doc create decisions-log --title Decisions-Log --task m99",
     );
 
     // The per-entry authoring lines (add-item + set-slot/set-field on the singleton's
@@ -388,19 +416,19 @@ fn planning_composes_the_commit_fill_and_finalize_tail() {
     // addresses resolved to the minted `m99` slug (the emitted-bytes contract).
     assert_eq!(
         emitted_run_line(&stdout, "set-field commit:m99#type"),
-        "jigc doc set-field commit:m99#type --value <TYPE>",
+        "jigc doc set-field commit:m99#type --value <TYPE> --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "set-field commit:m99#scope"),
-        "jigc doc set-field commit:m99#scope --value <SCOPE>",
+        "jigc doc set-field commit:m99#scope --value <SCOPE> --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "set-slot commit:m99#summary"),
-        "jigc doc set-slot commit:m99#summary --from-file -",
+        "jigc doc set-slot commit:m99#summary --from-file - --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "set-slot commit:m99#body"),
-        "jigc doc set-slot commit:m99#body --from-file -",
+        "jigc doc set-slot commit:m99#body --from-file - --task m99",
     );
     assert_eq!(
         emitted_run_line(&stdout, "task finalize"),
@@ -532,7 +560,7 @@ fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines
     // the agent's milestone-named title placeholder (NOT a singleton fixed literal).
     assert_eq!(
         emitted_run_line(&stdout, "doc create completion-record"),
-        "jigc doc create completion-record --title <TITLE>",
+        "jigc doc create completion-record --title <TITLE> --task m99",
     );
 
     // The create-gate admits `completion-record` (the workflow's `allows-create`): the
@@ -570,7 +598,7 @@ fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines
     // decisions. Assert the reused command-ref + per-entry authoring compose.
     assert_eq!(
         emitted_run_line(&stdout, "doc create decisions-log"),
-        "jigc doc create decisions-log --title Decisions-Log",
+        "jigc doc create decisions-log --title Decisions-Log --task m99",
     );
     for needle in [
         "jigc doc add-item decisions-log:decisions-log#entries",
@@ -595,5 +623,149 @@ fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines
     assert!(
         pos("jigc doc create completion-record") < pos("jigc task finalize"),
         "the finalize step must follow the completion-record authoring; got:\n{stdout}",
+    );
+}
+
+/// M17 Increment 4 / T3 — every composed doc-verb command carries the minted
+/// task id, proven against the **>1-active-task** case the workflows themselves
+/// create (the M17 settle pre-fix #3 wall: a `--task`-less `jigc doc …` rejects
+/// with `more than one active task` as soon as a second task is active).
+///
+/// With one dev-task already active, `jigc start --workflow planning "M99"`
+/// mints a second task (`m99`); the composed planning spine must emit **every**
+/// `jigc doc …` line — the `Run:`-class catalog refs *and* the literal authoring
+/// guidance — carrying `--task m99` (the catalog refs via `{ from: "task.id" }`,
+/// the literal lines via the T2 inline `{{task.id}}` compose-time substitution;
+/// the no-`{{`-survives assertion proves the substitution resolved, never leaked).
+/// Then one composed authoring line and one composed commit-fill line are
+/// executed **verbatim** (the emitted bytes, split into argv — never
+/// reconstructed) and must succeed, landing the write in the PLANNING task's
+/// working area.
+#[test]
+fn composed_authoring_commands_carry_the_minted_task_id_with_two_active_tasks() {
+    let repo = TempDir::new("two-active");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // First active task: a bare start composes `dev-task` and mints
+    // `add-rate-limiter` — the concurrent task the wall needs.
+    let first = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "add rate limiter"],
+    );
+    assert!(
+        first.status.success(),
+        "`jigc start \"add rate limiter\"` must mint the first task; got {:?}\nstderr:\n{}",
+        first.status,
+        String::from_utf8_lossy(&first.stderr),
+    );
+
+    // Second active task: the planning workflow mints `m99` ("M99" slugified).
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "planning", "M99"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow planning \"M99\"` must mint a second task and compose; \
+         got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    for id in ["add-rate-limiter", "m99"] {
+        assert!(
+            repo.path().join(".jigc").join("tasks").join(id).is_dir(),
+            "both tasks must be active (task dir `{id}` present); got stdout:\n{stdout}",
+        );
+    }
+
+    // No `{{ … }}` survives — proves the literal lines' ` --task {{task.id}}`
+    // substitution resolved at compose time (never leaked to the agent).
+    assert!(
+        !stdout.contains("{{") && !stdout.contains("}}"),
+        "no `{{{{ … }}}}` placeholder may survive the planning compose; got:\n{stdout}",
+    );
+
+    // EVERY emitted `jigc doc …` line — Run-class and literal — carries the
+    // minted planning id. Asserted over the emitted bytes, line by line.
+    let doc_lines: Vec<&str> = stdout.lines().filter(|l| l.contains("jigc doc ")).collect();
+    assert!(
+        !doc_lines.is_empty(),
+        "the planning spine must emit `jigc doc …` lines; got:\n{stdout}",
+    );
+    for line in &doc_lines {
+        assert!(
+            line.contains("--task m99"),
+            "every composed `jigc doc …` line must carry `--task m99` (the >1-active-task \
+             disambiguation); offending line:\n{line}\nfull stdout:\n{stdout}",
+        );
+    }
+
+    // Execute ONE composed authoring line VERBATIM: the create-roadmap Run line.
+    // Red today: `more than one active task — name one with --task <id>`.
+    let create = emitted_run_line(&stdout, "doc create roadmap");
+    let argv: Vec<&str> = create.split_whitespace().collect();
+    assert_eq!(
+        argv[0], "jigc",
+        "the emitted command invokes jigc: {create:?}"
+    );
+    let executed = run_jigc(repo.path(), home.path(), &pack, &argv[1..]);
+    assert!(
+        executed.status.success(),
+        "the composed authoring line `{create}` must run verbatim with two active tasks; \
+         got {:?}\nstderr:\n{}",
+        executed.status,
+        String::from_utf8_lossy(&executed.stderr),
+    );
+    // The write routed to the PLANNING task's working area, not the first task's.
+    let staged = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("m99")
+        .join("docs")
+        .join("roadmap:roadmap.md");
+    assert!(
+        staged.is_file(),
+        "the verbatim create must land the roadmap in the planning task's working area \
+         ({staged:?}); stdout of the create:\n{}",
+        String::from_utf8_lossy(&executed.stdout),
+    );
+
+    // Execute ONE composed commit-fill line VERBATIM: the summary set-slot
+    // (stdin-fed `--from-file -`). Red today: the same >1-active-task rejection.
+    let fill = emitted_run_line(&stdout, "set-slot commit:m99#summary");
+    let argv: Vec<&str> = fill.split_whitespace().collect();
+    assert_eq!(
+        argv[0], "jigc",
+        "the emitted command invokes jigc: {fill:?}"
+    );
+    let filled = run_jigc_stdin(
+        repo.path(),
+        home.path(),
+        &pack,
+        &argv[1..],
+        "plan M99 into increments\n",
+    );
+    assert!(
+        filled.status.success(),
+        "the composed commit-fill line `{fill}` must run verbatim with two active tasks; \
+         got {:?}\nstderr:\n{}",
+        filled.status,
+        String::from_utf8_lossy(&filled.stderr),
     );
 }
