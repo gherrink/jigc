@@ -15,9 +15,13 @@ Build the release binary from the workspace and put it on your `PATH`:
 
 ```sh
 cargo build --release -p cli
-# the binary lands at target/release/jigc
-cp target/release/jigc /usr/local/bin/   # or anywhere on $PATH
+# jigc lands at target/release/jigc, with the doc-code probe beside it
+cp target/release/{jigc,doc-code} /usr/local/bin/   # or anywhere on $PATH
 ```
+
+Copy both: the doc↔code probe (`doc-code`) resolves next to the `jigc`
+binary, so an install without it blocks any finalize that checks code
+anchors.
 
 Confirm it identifies itself:
 
@@ -46,14 +50,24 @@ Both edits are idempotent — re-running `jigc setup` leaves the files
 byte-identical, so it is safe to run after every upgrade to re-apply the
 adapter.
 
-## 2. `jigc start "<intent>"` — mint and compose a task
+## 2. `jigc start "<intent>"` — route, then mint
 
-Hand the agent (or yourself) a task by stating the intent. `start` mints the
-task and composes the `single-task` workflow over the resolved cascade
-(`design/write-commands.md` → Task origination):
+Hand the agent (or yourself) a task by stating the intent. `start` composes
+the cascade-default **router** (`design/write-commands.md` → Task
+origination): it presents the selectable work-workflows with the situation
+each fits, and emits the re-run line — nothing is minted yet:
 
 ```sh
 jigc start "add per-client rate limit at the gateway"
+# → the workflow menu, then the re-run line:
+#   jigc start --workflow <chosen> "<intent>"
+```
+
+Pick the workflow whose situation fits the intent and re-run with that
+choice — this is the call that mints:
+
+```sh
+jigc start --workflow single-task "add per-client rate limit at the gateway"
 ```
 
 This opens the task's working area under `.jigc/tasks/<id>/` and emits the
@@ -90,7 +104,8 @@ jigc task diff <id>
 ---
 
 That is the whole loop: **`jigc setup`** once, then **`jigc start "<intent>"` →
-implement → `jigc task finalize <id>`** per task. See
+pick from the menu → `jigc start --workflow <chosen> "<intent>"` → implement →
+`jigc task finalize <id>`** per task. See
 [`design/worked-examples.md`](design/worked-examples.md) for end-to-end flows
 and [`implementation/roadmap.md`](implementation/roadmap.md) for the build
 sequence.
