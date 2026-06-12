@@ -28,7 +28,7 @@ One JSON object per line; the hook only appends, never rewrites. Common fields: 
 - `exit` — the exit code when the harness payload carries one (`tool_response.exitCode`/`exit_code`), else `null`.
 - `findings` — `{code, path}` pairs extracted from the captured output, via the `--format json` envelope (`findings[].code` + `findings[].location.address`) or the agent-text finding line (path from the first backticked token); deduplicated.
 
-**`"event": "file_op"`** — one per Write/Edit tool operation (every path, unclassified — classification is the tally's job):
+**`"event": "file_op"`** — one per Write/Edit tool operation (every path, unclassified — classification is the tally's job). Write/Edit supply **absolute** paths; the hook records the path **repo-relative** when it sits under `CLAUDE_PROJECT_DIR` (the repo root Claude Code sets for every hook command), else verbatim — so the tally's (path × window) OOB dedup key is byte-identical with the `reconciliation.absorb` channel's repo-relative finding paths (the channels corroborate, never sum):
 
 ```json
 {"v":1,"ts":"2026-06-12T10:03:00+00:00","event":"file_op","tool":"Write","path":"decisions/0001-x.md"}

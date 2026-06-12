@@ -70,15 +70,33 @@ fn apparatus_dir() -> PathBuf {
 /// the log path env-configured (outside any repo — `$JIGC_DOGFOOD_LOG`). The hook
 /// must always exit 0: a measurement hook never perturbs the run it observes.
 fn run_hook(log: &Path, payload: &str) {
+    run_hook_with(log, payload, None);
+}
+
+/// `run_hook` with `CLAUDE_PROJECT_DIR` set — the env Claude Code provides to every
+/// hook command in a real run (the repo root the hook relativizes file_ops against).
+fn run_hook_in_repo(log: &Path, payload: &str, repo_root: &Path) {
+    run_hook_with(log, payload, Some(repo_root));
+}
+
+fn run_hook_with(log: &Path, payload: &str, project_dir: Option<&Path>) {
     let script = apparatus_dir().join("log-event.py");
     assert!(
         script.is_file(),
         "hook script missing: {}",
         script.display()
     );
-    let mut child = Command::new("python3")
-        .arg(&script)
-        .env("JIGC_DOGFOOD_LOG", log)
+    let mut cmd = Command::new("python3");
+    cmd.arg(&script).env("JIGC_DOGFOOD_LOG", log);
+    match project_dir {
+        Some(root) => {
+            cmd.env("CLAUDE_PROJECT_DIR", root);
+        }
+        None => {
+            cmd.env_remove("CLAUDE_PROJECT_DIR");
+        }
+    }
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -356,6 +374,71 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
         run_tally_raw(&log, &["decisions/"]),
         run_tally_raw(&log, &["decisions/"]),
         "the tally is deterministic over the same log"
+    );
+}
+
+/// The shape a REAL run produces: Claude Code's Write|Edit tool supplies an
+/// ABSOLUTE `file_path`, and the hook command runs with `CLAUDE_PROJECT_DIR` (the
+/// repo root) in its environment. The hook must record the file_op repo-relative
+/// so the tally classifies it as managed AND the (path × window) dedup key is
+/// byte-identical with the absorb channel's repo-relative finding path — the two
+/// OOB channels corroborate, never sum (`design/measurement.md` →
+/// adapter-adherence).
+#[test]
+fn absolute_path_write_corroborates_with_absorb_not_sums() {
+    let tmp = TempDir::new("abs");
+    let log = tmp.path().join("hook-log.jsonl");
+    let repo = tmp.path().join("twin");
+    fs::create_dir_all(repo.join("decisions")).expect("twin repo dir");
+
+    // (a) The hook-observed Write — ABSOLUTE path under the repo root.
+    let abs_path = repo.join("decisions/0002-pick-storage.md");
+    run_hook_in_repo(
+        &log,
+        &file_event("Write", abs_path.to_str().expect("utf-8 path")),
+        &repo,
+    );
+
+    // (b) The absorb finding on the SAME doc rides the landed finalize
+    //     repo-RELATIVE — the path shape jigc findings always carry.
+    run_hook_in_repo(
+        &log,
+        &bash_event(
+            "jigc task finalize t1 --format json",
+            0,
+            &envelope(
+                "advisory",
+                "reconciliation.absorb",
+                "external edit absorbed: `decisions/0002-pick-storage.md`",
+                "decisions/0002-pick-storage.md",
+            ),
+        ),
+        &repo,
+    );
+
+    let tally = run_tally(&log, &["decisions/"]);
+
+    // ONE OOB event post-dedup — not zero (the write-edit channel fired for the
+    // absolute path) and not two (the channels did not sum).
+    assert_eq!(tally["totals"]["oob-edits"], 1, "tally: {tally:#}");
+    let oob = tally["detail"]["oob-edits"].as_array().expect("oob detail");
+    assert_eq!(oob.len(), 1, "one entry, not one per channel: {tally:#}");
+    assert_eq!(
+        oob[0]["path"], "decisions/0002-pick-storage.md",
+        "the dedup key is the repo-relative path"
+    );
+    assert_eq!(
+        oob[0]["channels"],
+        serde_json::json!(["absorb", "write-edit"]),
+        "both channels corroborate on the byte-identical key: {tally:#}"
+    );
+
+    // A path OUTSIDE the repo root stays verbatim and unmanaged — never counted.
+    run_hook_in_repo(&log, &file_event("Write", "/etc/elsewhere/notes.md"), &repo);
+    let tally = run_tally(&log, &["decisions/"]);
+    assert_eq!(
+        tally["totals"]["oob-edits"], 1,
+        "an out-of-repo absolute path is not a managed-doc edit: {tally:#}"
     );
 }
 

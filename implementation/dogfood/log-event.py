@@ -7,8 +7,9 @@ substrate, item 1):
 - `Bash`       -> records every **jigc invocation** (argv after the `jigc` token,
                   exit code, finding codes extracted from the captured output);
                   non-jigc commands are not logged.
-- `Write|Edit` -> records the direct file operation (path only) — the OOB
-                  denominator channel, identical on every comparison arm.
+- `Write|Edit` -> records the direct file operation (path only; repo-relative
+                  when under `CLAUDE_PROJECT_DIR`) — the OOB denominator
+                  channel, identical on every comparison arm.
 
 The log path is env-configured (`JIGC_DOGFOOD_LOG`, an absolute path OUTSIDE the
 twin repo — measurement apparatus, not project content). Unset = apparatus off:
@@ -68,6 +69,27 @@ def findings_from_output(*chunks):
     return unique
 
 
+def repo_relative(path):
+    """Record a file_op path repo-relative when it sits under the repo root.
+
+    Claude Code's Write|Edit tools supply ABSOLUTE paths, while the corroborating
+    `reconciliation.absorb` channel carries repo-RELATIVE finding paths — and the
+    tally's (path x window) OOB dedup key must be byte-identical across both
+    channels (corroborate, never sum). The root is `CLAUDE_PROJECT_DIR`, the env
+    Claude Code sets for every hook command. The payload `cwd` is NOT a fallback —
+    the agent may have cd'd into a subdirectory, which would mint a wrong relative
+    path that silently mismatches. No root known, or path outside it: verbatim.
+    """
+    root = os.environ.get("CLAUDE_PROJECT_DIR")
+    if not root or not os.path.isabs(path):
+        return path
+    root = os.path.normpath(root)
+    normalized = os.path.normpath(path)
+    if normalized.startswith(root + os.sep):
+        return normalized[len(root) + 1 :]
+    return path
+
+
 def exit_code(tool_response):
     """The invocation's exit code, when the harness payload carries one."""
     if isinstance(tool_response, dict):
@@ -105,7 +127,7 @@ def event_for(payload):
         path = tool_input.get("file_path")
         if not path:
             return None
-        return {"event": "file_op", "tool": tool, "path": path}
+        return {"event": "file_op", "tool": tool, "path": repo_relative(path)}
 
     return None
 
