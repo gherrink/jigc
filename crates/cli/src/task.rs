@@ -907,11 +907,18 @@ pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
 }
 
 /// List the repo-relative paths changed in commits between `base_sha` and `head_sha`
-/// (`git diff --name-only <base> <head>`) — the moved-history fact the phase-1 re-pin
-/// decision ([`decide_base_repin`]) intersects with the task's footprint
+/// (`git diff --no-renames --name-only <base> <head>`) — the moved-history fact the
+/// phase-1 re-pin decision ([`decide_base_repin`]) intersects with the task's footprint
 /// (`design/finalize.md` → Parallel hand-editing, the 2026-06-12 amendment).
+/// `--no-renames`: under rename detection a renamed file reports only its NEW name, so
+/// the deleted OLD path would never enter the changed set and a rename of a footprint
+/// path would auto-re-pin instead of blocking; it also pins the decision against the
+/// user's `diff.renames` config (Validation hardening #7 — a pure function of repo state).
 fn git_changed_paths(repo_root: &Path, base_sha: &str, head_sha: &str) -> Result<Vec<String>> {
-    let out = git_capture(repo_root, &["diff", "--name-only", base_sha, head_sha])?;
+    let out = git_capture(
+        repo_root,
+        &["diff", "--no-renames", "--name-only", base_sha, head_sha],
+    )?;
     Ok(out
         .lines()
         .map(str::trim)

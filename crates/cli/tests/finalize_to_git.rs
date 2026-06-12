@@ -705,3 +705,52 @@ fn finalize_blocks_on_overlapping_history_naming_the_paths() {
         "a blocked finalize must never rewrite `base.json` (the re-pin is in-memory only)"
     );
 }
+
+/// The **rename** shape of the overlap form: after `start` the human `git mv`s a
+/// committed path the task's footprint covers. Under git's default rename detection
+/// `git diff --name-only <base> <head>` collapses the pair to its NEW name only, so
+/// the deleted OLD path would never enter the changed set, the divergence would
+/// auto-re-pin, and the seal commit would resurrect the renamed-away file.
+/// `git_changed_paths` passes `--no-renames` so BOTH sides enter the changed set —
+/// which also pins the decision against the user's `diff.renames` config (Validation
+/// hardening #7: the same repo state must decide the same way on every machine).
+/// Finalize must block (exit 3) naming the old path, creating no commit.
+#[test]
+fn finalize_blocks_when_moved_history_renames_a_footprint_path() {
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+
+    // The human renames the committed `README.md` away and commits (HEAD moves;
+    // the moved history DELETES the old path)…
+    git(repo.path(), &["mv", "README.md", "README-archived.md"]);
+    git(repo.path(), &["commit", "-q", "-m", "archive the readme"]);
+    // …while the task's working tree recreates the OLD path (a dirty/untracked
+    // footprint path the rename's delete side collides with).
+    fs::write(repo.path().join("README.md"), "// the task's readme\n").expect("write");
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a rename of a footprint path in the moved history must block (exit 3), not \
+         auto-re-pin; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("overlaps the task's work on `README.md`"),
+        "the block must name the rename's OLD path; got:\n{stderr}"
+    );
+
+    // No new commit — the moved history's delete of `README.md` never lands as a
+    // silent resurrection.
+    let log_after = git(repo.path(), &["rev-list", "--count", "HEAD"]);
+    assert_eq!(
+        log_before, log_after,
+        "a rename-overlap-blocked finalize must create no commit"
+    );
+}
