@@ -1,0 +1,10 @@
+---
+description: The measured-dogfood recording spine — transcribes a completed measured run's organic fact counts and seeded instrument checks from the committed capture into a per-run dogfood-record, with the judged verdict and the owner-artifact holding the raw capture, then finalizes.
+usage: a measured dogfood run has completed and its capture (transcript + raw hook log/tally + manifest) is in hand — the run's facts, instrument checks, verdict, and capture artifact need a durable record authored through the binary.
+creates-task: true
+selectable: false
+allows-create:
+  - { type: dogfood-record, as: record }
+---
+{{ include: step:author-dogfood-record }}
+{{ include: step:finalize }}

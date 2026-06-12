@@ -626,6 +626,168 @@ fn completion_composes_the_checkpoints_and_the_completion_record_authoring_lines
     );
 }
 
+/// M17 Increment 5 / T2 — the methodology `record-dogfood` workflow composes the
+/// recording spine through the real binary: `jigc start --workflow record-dogfood
+/// "<run>"` mints a task (off-router, `creates-task: true, selectable: false` —
+/// the completion authoring-spine pattern) **and** emits the create-fresh
+/// dogfood-record authoring: the run identity (case + binary-sha), the eight
+/// ORGANIC fact-int transcription lines, the two SEEDED instrument-check lines,
+/// the verdict + owner-artifact, the judgment slot, and the finalize tail.
+///
+/// This is the compose-time contract (T5 *runs* the emitted commands end-to-end;
+/// this proves they are **emitted**, with the `{{cli.create-dogfood-record}}` ref
+/// rendered verbatim on the EMITTED bytes — never reconstructed). The
+/// dogfood-record is `id-from: title` create-fresh, so its slug is runtime-minted
+/// from the run title; the authoring addresses carry the literal `<slug>`
+/// authoring placeholder (the author-completion-record precedent), and EVERY
+/// authoring line carries `--task <minted-id>` resolved at compose time.
+#[test]
+fn record_dogfood_composes_the_record_authoring_lines_and_finalize_tail() {
+    let repo = TempDir::new("record-dogfood");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // Off-router by construction: `--workflow record-dogfood` mints a task and
+    // composes the spine. Intent "pilot run" → slug "pilot-run".
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "record-dogfood", "pilot run"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow record-dogfood \"pilot run\"` over the methodology pack must \
+         compose the recording spine and exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // `creates-task: true` → a task dir is minted at `.jigc/tasks/pilot-run/`.
+    let task_dir = repo.path().join(".jigc").join("tasks").join("pilot-run");
+    assert!(
+        task_dir.is_dir(),
+        "`--workflow record-dogfood` must mint the task dir at {task_dir:?}; got stdout:\n{stdout}",
+    );
+
+    // No `{{ … }}` placeholder survives a clean compose (every include / data-value /
+    // command-ref resolved — incl. the literal lines' inline `{{task.id}}`).
+    assert!(
+        !stdout.contains("{{") && !stdout.contains("}}"),
+        "no `{{{{ … }}}}` placeholder may survive the record-dogfood compose; got:\n{stdout}",
+    );
+
+    // The dogfood-record `create` command-ref renders verbatim on the EMITTED bytes.
+    // It is `id-from: title` create-fresh (the completion-record mint), so `--title`
+    // carries the agent's run-named title placeholder (NOT a singleton fixed literal).
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create dogfood-record"),
+        "jigc doc create dogfood-record --title <TITLE> --task pilot-run",
+    );
+
+    // The meta-header authoring: the run identity, the eight ORGANIC fact ints, the
+    // two SEEDED instrument checks, the verdict enum + the owner-artifact
+    // owned-location (the #5-gate target). The `<slug>` is the runtime-minted
+    // create-fresh slug, an authoring placeholder. Every line carries the minted
+    // task id (the >1-active-task disambiguation), resolved — never `{{task.id}}`.
+    for field in [
+        "case",
+        "binary-sha",
+        "adapter-writes",
+        "oob-edits",
+        "drift-caught",
+        "validate-blocks",
+        "halts-expected",
+        "halts-unplanned",
+        "fix-rounds",
+        "audit-findings",
+        "seeded-oob",
+        "seeded-blocks",
+        "verdict",
+        "owner-artifact",
+    ] {
+        let needle = format!("jigc doc set-field dogfood-record:<slug>#meta/{field}");
+        let line = stdout
+            .lines()
+            .find(|l| l.contains(&needle))
+            .unwrap_or_else(|| {
+                panic!(
+                    "the recording spine must emit the authoring line `{needle}`; got:\n{stdout}"
+                )
+            });
+        assert!(
+            line.contains("--task pilot-run"),
+            "the `{field}` authoring line must carry `--task pilot-run` resolved; \
+             offending line:\n{line}\nfull stdout:\n{stdout}",
+        );
+    }
+
+    // The judgment slot authoring (the ONE prose slot — the verdict is authored
+    // judgment over the counts, never computed).
+    let judgment_line = stdout
+        .lines()
+        .find(|l| l.contains("jigc doc set-slot dogfood-record:<slug>#judgment"))
+        .unwrap_or_else(|| {
+            panic!("the recording spine must emit the judgment set-slot line; got:\n{stdout}")
+        });
+    assert!(
+        judgment_line.contains("--task pilot-run"),
+        "the judgment authoring line must carry `--task pilot-run`; offending line:\
+         \n{judgment_line}\nfull stdout:\n{stdout}",
+    );
+
+    // The owner-artifact is written under the engine-native owned artifact home the
+    // #5 gate asserts on (`completions/artifacts/<run>/…`) — the guidance names that
+    // home so the recorded path is durable, not an arbitrary pre-existing file.
+    assert!(
+        stdout.contains("completions/artifacts/"),
+        "the dogfood-record authoring must name the owned artifact home \
+         `completions/artifacts/<run>/`; got:\n{stdout}",
+    );
+
+    let pos = |needle: &str| {
+        stdout.find(needle).unwrap_or_else(|| {
+            panic!("composed recording spine missing {needle:?}; got:\n{stdout}")
+        })
+    };
+
+    // The finalize tail composes last: the four commit-fill Run lines + the
+    // finalize-task line render verbatim with addresses resolved to the minted
+    // `pilot-run` slug (the emitted-bytes contract), AFTER the record authoring.
+    assert_eq!(
+        emitted_run_line(&stdout, "set-field commit:pilot-run#type"),
+        "jigc doc set-field commit:pilot-run#type --value <TYPE> --task pilot-run",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "set-slot commit:pilot-run#summary"),
+        "jigc doc set-slot commit:pilot-run#summary --from-file - --task pilot-run",
+    );
+    assert_eq!(
+        emitted_run_line(&stdout, "task finalize"),
+        "jigc task finalize pilot-run",
+    );
+    assert!(
+        pos("jigc doc create dogfood-record")
+            < pos("jigc doc set-slot dogfood-record:<slug>#judgment")
+            && pos("jigc doc set-slot dogfood-record:<slug>#judgment")
+                < pos("jigc doc set-field commit:pilot-run#type")
+            && pos("jigc doc set-field commit:pilot-run#type")
+                < pos("jigc task finalize pilot-run"),
+        "the spine must order create < judgment-authoring < commit-fill < finalize; \
+         got:\n{stdout}",
+    );
+}
+
 /// M17 Increment 4 / T3 — every composed doc-verb command carries the minted
 /// task id, proven against the **>1-active-task** case the workflows themselves
 /// create (the M17 settle pre-fix #3 wall: a `--task`-less `jigc doc …` rejects
