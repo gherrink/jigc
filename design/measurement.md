@@ -118,6 +118,6 @@ A run whose seeded failures don't register **fails the run**, whatever its other
 
 ## Open questions
 
-- The hook log's exact schema (the build increment pins it; the tally script is its consumer and test).
+- ~~The hook log's exact schema~~ — *settled (2026-06-12, increment 5):* pinned at the apparatus home — the v1 append-only JSONL schema, the install steps, and the tally rules live in [`implementation/dogfood/README.md`](../implementation/dogfood/README.md); the tally script is its consumer, `crates/cli/tests/dogfood_apparatus.rs` (a committed v1 fixture included) its test.
 - Whether the greenfield case's record is authored by the human, the agent, or jointly — settled at the pilot gate with the intent.
 - Whether `dogfood/` records ever migrate into a managed jigc-repo store at v1 (rides the existing v1-migration deferral).

@@ -1,0 +1,6 @@
+{"v":1,"ts":"2026-06-12T10:00:00Z","event":"jigc","cmd":"doc set-field roadmap:roadmap#status --value active --task t1","exit":0,"findings":[]}
+{"v":1,"ts":"2026-06-12T10:01:00Z","event":"jigc","cmd":"task finalize t1","exit":0,"findings":[]}
+{"v":1,"ts":"2026-06-12T10:02:00Z","event":"jigc","cmd":"doc set-field roadmap:roadmap#status --value done --task t2","exit":0,"findings":[]}
+{"v":1,"ts":"2026-06-12T10:03:00Z","event":"file_op","tool":"Edit","path":".jigc/tasks/t2/docs/draft.md"}
+{"v":1,"ts":"2026-06-12T10:04:00Z","event":"file_op","tool":"Write","path":"src/main.rs"}
+{"v":1,"ts":"2026-06-12T10:05:00Z","event":"jigc","cmd":"task finalize t9 --format json","exit":3,"findings":[{"code":"workflow-refs.target-exists","path":"decisions/0002-gone.md"}]}
