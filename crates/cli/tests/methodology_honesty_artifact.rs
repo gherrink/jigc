@@ -51,6 +51,17 @@
 //! responsibility above the single-agent spine; the spine records the verdict, it
 //! does NOT certify it. A future edit that mechanizes either judgment phase, or that
 //! lets `audit` over-claim the verdict as jigc-computed/certified, goes red here.
+//!
+//! M17 Inc 5 T3 EXTENDS the hollowing guard to the **recording** step —
+//! `author-dogfood-record.yaml`, the measured-dogfood transcription spine
+//! (`design/measurement.md` → The three-way cut, applied to measurement: "The
+//! engine never opines on whether jigc is helping — an engine opinion on the
+//! thesis would be the thesis inverted. Facts are counts; the verdict consumes
+//! them in a judgment slot"). The `judgment` slot and the `verdict` enum are the
+//! measurement's irreducible judgment seam: the verdict is *authored judgment over
+//! the counts, never computed*, and the judgment prose stays the agent's. A future
+//! edit that hollows the step into a scored checklist / scoring lint, or that
+//! flips the verdict to a computed/derived value, goes red here.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -295,6 +306,69 @@ fn completion_judgment_phases_stay_prose_and_audit_does_not_over_claim_the_verdi
                  step that emits a `gap-count >= N` lint has hollowed the judgment); got:\n{text}",
             );
         }
+    }
+}
+
+#[test]
+fn recording_judgment_stays_prose_and_the_verdict_is_authored_never_computed() {
+    // FAIL exemplar (a) for the recording spine (measurement.md → The three-way cut,
+    // applied to measurement: the engine never opines on the thesis). The
+    // `author-dogfood-record` step transcribes mechanical counts, but the `verdict`
+    // enum and the `judgment` slot are the measurement's irreducible judgment seam —
+    // an engine-computed verdict, a scoring lint over the counts, or a scored
+    // checklist replacing the judgment prose would be the thesis inverted. A future
+    // edit that hollows the step that way goes red here.
+
+    // Collapse whitespace runs (incl. the prose's hard line-wraps) to single spaces
+    // so a handback phrase split across a wrap still matches its words in order.
+    let normalize = |s: &str| {
+        s.to_lowercase()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+
+    let record = step_text("author-dogfood-record.yaml");
+    let record_lc = normalize(&record);
+
+    // (positive) the verdict-stays-authored disavowal is present — the honest tell
+    // that the verdict is judgment over the counts, never derived from them. If the
+    // verdict were flipped to a computed/derived value, this disavowal would be gone.
+    assert!(
+        record_lc.contains("authored judgment over the counts, never computed"),
+        "author-dogfood-record.yaml must keep the verdict AUTHORED — judgment over the \
+         counts, never computed (measurement.md → the three-way cut: the verdict consumes \
+         the facts in a judgment slot; the engine never opines on the thesis); got:\n{record}",
+    );
+
+    // (positive) the judgment handback is present — the step hands the agent the
+    // judgment slot as prose (what the counts mean), authored via `set-slot`, not a
+    // form to fill against a rubric.
+    assert!(
+        record_lc.contains("what the counts mean") && record.contains("#judgment"),
+        "author-dogfood-record.yaml must hand the `judgment` slot back as prose — what the \
+         counts mean, authored via set-slot (measurement.md → one prose slot: judgment); \
+         got:\n{record}",
+    );
+
+    // (negative) no hollowing into a scoring lint / scored checklist / numeric-
+    // threshold gate over the counts — the FAIL exemplar (a) hollowing, applied to
+    // the recording seam. ("score" also catches "scored"/"scoring".)
+    for forbidden in [
+        "gap-count",
+        "gap count",
+        ">=",
+        "\u{2265}",
+        "checklist",
+        "score",
+    ] {
+        assert!(
+            !record_lc.contains(forbidden),
+            "author-dogfood-record.yaml must not be hollowed into a `{forbidden}` scoring \
+             lint / scored checklist — the recording judgment stays the agent's \
+             (measurement.md → facts are counts; the verdict stays judgment over them); \
+             got:\n{record}",
+        );
     }
 }
 

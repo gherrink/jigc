@@ -30,6 +30,17 @@
 //! adds the EXPLICIT `completion`-named negatives — a leak (`completion` in the enum,
 //! or `selectable: true` flipping it into the catalog) goes red here, not silently.
 //!
+//! M17 Inc 5 T3 EXTENDS the same guard to the `record-dogfood` workflow — the
+//! measured-dogfood recording spine (`design/measurement.md` → The dogfood-record
+//! doctype: "`creates-task: true, selectable: false` — the completion-workflow
+//! authoring-spine pattern"). Like planning/completion it mints a task (riding the
+//! create-gate + finalize-promote spine) but is invoked only off-router via
+//! `jigc start --workflow record-dogfood "<run>"`. The `dev-task`-only base already
+//! excludes it *by construction*, but `documented != delivered`, so T3 adds the
+//! EXPLICIT `record-dogfood`-named negatives — a leak (`record-dogfood` in the
+//! enum, or `selectable: true` flipping it into the catalog) goes red here, not
+//! silently.
+//!
 //! Two leak vectors, two guards:
 //!   (a) The **front-door catalog** (the live path). Bare `jigc start` (no intent)
 //!       over `JIGC_PACK_DIR=<methodology>` orients to the clean-no-task state and
@@ -188,6 +199,18 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
          class — `completion` is `selectable: false`, off-router by construction); \
          catalog lines: {catalog_lines:?}",
     );
+    // M17 T3 (record-dogfood): the same M8 catalog-leak guard, named for the
+    // recording workflow. `record-dogfood` is `creates-task: true, selectable:
+    // false` — it mints a task but stays out of the selectable catalog (the
+    // `creates_task && selectable` filter); it is invoked only off-router via
+    // `--workflow record-dogfood`. A leak (`selectable: true`) would surface it
+    // here; assert no catalog line names it.
+    assert!(
+        !catalog_lines.iter().any(|l| l.contains("record-dogfood")),
+        "the model-free selection catalog must NOT name `record-dogfood` (the M8 \
+         catalog-leak class — `record-dogfood` is `selectable: false`, off-router by \
+         construction); catalog lines: {catalog_lines:?}",
+    );
 
     // JSON emitted bytes: the `workflows` array carries exactly one entry, `dev-task`
     // — `increment` is absent and nothing else leaks.
@@ -235,6 +258,14 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
         "the selectable catalog must NOT name `completion` — it is `selectable: false`, \
          off-router (M8 catalog-leak class); got:\n{json_out}",
     );
+    // M17 T3 (record-dogfood): the explicit record-dogfood-named negative over the
+    // same JSON bytes — `ids == [dev-task]` already excludes it by construction, but
+    // the named guard makes the recording leak falsifiable (documented != delivered).
+    assert!(
+        !ids.contains(&"record-dogfood"),
+        "the selectable catalog must NOT name `record-dogfood` — it is `selectable: false`, \
+         off-router (M8 catalog-leak class); got:\n{json_out}",
+    );
 }
 
 #[test]
@@ -273,10 +304,19 @@ fn knobs_default_workflow_enum_does_not_name_increment() {
         "`default-workflow.of` must NOT name `completion` (the forbidden M8 catalog-leak — \
          `completion` is `selectable: false`, off-router); got enum: {names:?}",
     );
+    // M17 T3 (record-dogfood): the same static-leak guard, named for the recording
+    // workflow. Adding it to the enum would make the `selectable: false` recording
+    // spine a router-selectable default — exactly the M8 catalog-leak this task forbids.
+    assert!(
+        !names.contains(&"record-dogfood"),
+        "`default-workflow.of` must NOT name `record-dogfood` (the forbidden M8 catalog-leak \
+         — `record-dogfood` is `selectable: false`, off-router); got enum: {names:?}",
+    );
     assert_eq!(
         names,
         vec!["dev-task"],
         "`default-workflow.of` must stay the single-entry [dev-task] enum (byte-unchanged \
-         from base, forbidding `increment`, `planning`, and `completion`); got: {names:?}",
+         from base, forbidding `increment`, `planning`, `completion`, and `record-dogfood`); \
+         got: {names:?}",
     );
 }
