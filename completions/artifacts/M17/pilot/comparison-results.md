@@ -68,4 +68,45 @@ instruction** (the adapter + `SessionStart` orientation routed the agent — the
   `jigc start … | head -60` (jrun logs the full output pre-truncation; hardened post-run so a
   closed pipe can't drop an event — `ea8a065`).
 
-## Arm C — static-methodology  *(pending)*
+## Arm C — static-methodology  *(run 3, 2026-06-13)*
+
+- **Environment:** clean home (no GSD, no jigc, no mem); galey project-facts `CLAUDE.md` + the frozen
+  methodology block. Bare intent, identical to A/B.
+- **Wall-clock:** < 5 min. **Transcript:** `logs/arm-C/transcript.jsonl` (75 lines). Tools: `Edit`×2,
+  `Bash`×10, `Read`×2 (no MultiEdit — file_op capture complete).
+- **Commit:** `ef48d83` — `feat(extension-heading): honor maxLevel…` with the **richest commit body**
+  of the three (spells out the assistive-tech / theming impact of the missing contract). *(Typed
+  `feat`; arguably a `fix` — minor.)*
+- **Diff:** `index.ts` (+9/−6) **plus a test** `heading.test.ts` (+39 — the most of any arm).
+- **file_op capture:** 2 (`heading.test.ts`, `index.ts`).
+
+**Correctness — A1–A6: PASS (all).** Verified (4/4 + `pnpm test` green).
+
+**The standout:** following the written methodology, it **wrote the test first, the test caught a
+mistake in its first implementation** (an error A and B didn't make), and it rewrote to green — the
+test-first safety net working, from *static methodology text alone* (no jigc machinery). Also flagged
+the pre-existing lint debt (like A, unlike B).
+
+## Three-arm picture (evidence for the judge — verdict is the human's)
+
+| | **B — GSD** | **A — jigc** | **C — static methodology** |
+|---|---|---|---|
+| Correct A1–A6 | ✅ | ✅ | ✅ |
+| Test added (test-first) | ✗ | ✅ (+30) | ✅ (+39) |
+| Test caught a bug | — | no | **yes** |
+| Commit body | terse | detailed | richest |
+| Flagged lint debt | ✗ | ✅ | ✅ |
+| Routing | GSD fast-skill, unprompted | jigc adapter, **unprompted** | static text |
+| Ceremony | lowest (1 edit) | jigc workflow (9 calls, 1 exit-1 fumble) | plain edits + tests |
+| Wall-clock | <5 min | <5 min | <5 min |
+
+**The non-seeded thesis observation (gate requirement):** on this task **C ≈ A** — the methodology
+*written as static text* produced the same test-first thoroughness and commit quality as jigc's
+composed workflow, and both out-discipline GSD's fast skill (which skipped the test). **Reading:**
+for a small, spec-less code fix, the *methodology content* drives the quality, not jigc's dynamic
+machinery — because this task never exercises jigc's actual differentiators (managed docs, the write
+channel, validation/drift, forward-ref integrity). jigc (A) matched but did **not** beat the same
+methodology as a flat file (C), and carried slightly more ceremony (the dev-task workflow + one CLI
+fumble). **Honest implication:** the differentiators live in the *surrounding spine* (flow 21:
+planning → increment → completion with ADRs, validation, supersession), not in a lone code task —
+which is exactly what the pilot's flow-21 run must exercise to test the thesis where it actually bites.
