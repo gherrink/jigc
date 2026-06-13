@@ -84,11 +84,12 @@ Run each arm as a **fresh, isolated session** (separate `claude` launch). Do the
      `jigc` event with **`exit` non-null**. Confirm: `tail -1 /tmp/jigc-dogfood/pilot/logs/arm-A/hook-log.jsonl`.
      If `exit` is `null` or the file is empty, STOP — the capture is misconfigured (don't burn the run).
    - Arm B/C: after the agent's first Write/Edit, confirm a `file_op` line appears in that arm's log.
-3. **Issue the task:**
-   - **B and C:** paste the matched intent verbatim as the first message.
-   - **A:** instruct the agent to run the task through jigc's dev-task workflow — e.g. *"Run this as a
-     jigc dev-task (`jigc start --workflow dev-task`) and follow the composed steps,"* then the intent
-     verbatim. (Running it as one `dev-task` is the pre-registered like-for-like session shape.)
+3. **Issue the task:** paste the matched intent **verbatim, bare, identically on every arm** — no
+   tool-routing instruction. Each arm's setup routes the agent on its own (GSD CLAUDE.md / jigc
+   adapter + SessionStart orientation / static methodology). **Do not tell arm A to "use jigc"** —
+   whether the adapter routes it is the adherence measurement; instructing it confounds both fairness
+   and that signal. (The cascade `default-workflow: dev-task` makes a natural `jigc start "<intent>"`
+   become one dev-task without anyone specifying `--workflow`.)
 4. **Attend** for the one clarification only. Otherwise hands-off.
 5. **End** at the stop condition. Record wall-clock + turn count + anything notable (drift, friction,
    where it strained) — ceremony cost is data on every arm.

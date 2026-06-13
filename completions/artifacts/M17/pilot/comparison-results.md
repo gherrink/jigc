@@ -27,6 +27,16 @@ A5 `pnpm test` green (existing suite) · A6 descriptions well-formed (`set headi
   regression is uncovered (no test-first; the GSD fast path optimizes for speed, not test-first
   discipline). A signal worth weighing against arm A/C, which the methodology pushes toward a test.
 
-## Arm A — jigc  *(pending)*
+## Arm A — jigc  *(re-run pending — first attempt discarded)*
+
+**Discarded run (contaminated):** issued with a *"use jigc"* instruction (spoon-fed the routing the
+adapter must earn; a fairness + adherence confound). Preserved under `logs/arm-A/contaminated/`
+(132-line transcript + 12-event jigc log). What it showed (reference only, **not** comparison
+evidence): the agent ran the full jigc channel (`jigc start` → `set-field`×2 → `set-slot`×2 →
+`finalize`, all exit 0), **added a test** (`heading.test.ts` +30) and a **changeset** — more
+thorough than B's no-test fast-skill run — landing `f11b5b8`. Whether that test-first thoroughness
+holds *without* the nudge is exactly what the clean re-run tests. **The capture apparatus validated
+end-to-end** (jrun logged every verb with real non-null exits — the null-exit contingency works).
+Twin reset to `2db6026`; re-running with the bare intent identical to B.
 
 ## Arm C — static-methodology  *(pending)*

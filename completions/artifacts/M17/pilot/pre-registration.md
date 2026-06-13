@@ -51,8 +51,19 @@ on every arm; the personal `~/.claude/CLAUDE.md` (`@PRINCIPLES`) is moved aside 
 > `heading({ maxLevel: 6 })` advertises keyboard shortcuts and theme keys for all six levels (and
 > the default `heading()` still exposes exactly three).
 
-Issued to **A** as the `--workflow dev-task` intent; to **B** and **C** as the verbatim session
-prompt. No other steering text.
+Issued **identically and bare** to all three arms — the verbatim intent above as the session
+prompt, **no tool-routing instruction**. Each arm's tooling routes the agent on its own: arm B via
+galey's GSD `CLAUDE.md`, arm A via the jigc adapter (the `SessionStart` `jigc start` orientation +
+the `@.jigc/AGENT.md` line) with the cascade `default-workflow: dev-task` yielding one dev-task
+naturally, arm C via the static methodology text. **Whether jigc's adapter routes the agent is
+itself the adapter-adherence measurement — it must not be instructed.**
+
+> **Amendment (2026-06-13, after a discarded arm-A run).** The first arm-A attempt was issued with
+> a *"use jigc, run `jigc start`"* instruction (the original pre-reg said "issue to A as the
+> `--workflow dev-task` intent"). That spoon-fed the routing the adapter is meant to earn, and gave
+> A a nudge B/C didn't — a fairness + adherence confound. That run is **discarded** (preserved under
+> `logs/arm-A/contaminated/` for honesty) and arm A re-run with the bare intent. The contaminated
+> run did validate the capture apparatus end-to-end (jrun logged every jigc verb with real exits).
 
 Grounding (verified, jigc session 2026-06-13): `packs`… n/a — in galey,
 `packages/extension-heading/src/index.ts`: `addKeymap` loops `1..maxLevel` (L117-122) and `toDOM`
