@@ -666,6 +666,60 @@ fn jrun_captures_real_exit_into_the_log() {
     );
 }
 
+/// The measurement must survive the agent piping jrun's output into `head`/`grep -q`
+/// and closing the pipe early — a real shape observed in a measured run
+/// (`jigc start ... | head -60`). jrun logs BEFORE the passthrough and guards the
+/// write, so a BrokenPipe costs neither the event nor a clean exit.
+#[test]
+fn jrun_logs_before_passthrough_survives_a_closed_pipe() {
+    let tmp = TempDir::new("jrun-pipe");
+    let log = tmp.path().join("hook-log.jsonl");
+    let stub = tmp.path().join("jigc.real");
+    // A stub that prints a finding line then far more than a pipe buffer of
+    // output (so `head -1` closing forces a BrokenPipe on jrun's write), exit 3.
+    fs::write(
+        &stub,
+        "#!/usr/bin/env bash\n\
+         echo \"blocking · conformance.required-field-present — required field case missing\"\n\
+         seq 1 200000\n\
+         exit 3\n",
+    )
+    .expect("write stub");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&stub).expect("stub metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&stub, perms).expect("chmod stub");
+    }
+
+    let jrun = apparatus_dir().join("jrun");
+    let cmd = format!("python3 {jrun:?} task finalize t1 | head -1");
+    let out = Command::new("bash")
+        .arg("-c")
+        .arg(&cmd)
+        .env("JIGC_REAL_BIN", &stub)
+        .env("JIGC_DOGFOOD_LOG", &log)
+        .env("JIGC_DOGFOOD_HOME", apparatus_dir())
+        .output()
+        .expect("run jrun piped to head");
+
+    // The event was logged despite the pipe closing mid-passthrough.
+    let raw = fs::read_to_string(&log).expect("log written despite closed pipe");
+    let event: serde_json::Value =
+        serde_json::from_str(raw.lines().next().expect("one event")).expect("v1 JSON");
+    assert_eq!(event["exit"], 3, "real exit logged before passthrough");
+    assert_eq!(
+        event["findings"][0]["code"], "conformance.required-field-present",
+        "findings extracted from the full captured output, not the truncated view"
+    );
+    // The BrokenPipe was swallowed — no Python traceback leaked to the run.
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !stderr.contains("BrokenPipeError") && !stderr.contains("Traceback"),
+        "closed pipe handled cleanly: {stderr}"
+    );
+}
+
 /// Real-session command shapes the first cut of the hook missed: a PATH-QUALIFIED
 /// jigc token (`/usr/local/bin/jigc`, `./jigc`) must be recognized, a COMPOUND
 /// command must log one event PER invocation (not just the first), and prose that

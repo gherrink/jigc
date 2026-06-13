@@ -52,9 +52,9 @@ def main():
     proc = subprocess.run(
         ["jigc", *args], executable=real, capture_output=True, text=True
     )
-    sys.stdout.write(proc.stdout)
-    sys.stderr.write(proc.stderr)
-
+    # Log FIRST, before the passthrough below. The measurement must survive even
+    # when the agent pipes our stdout into `head`/`grep -q` and closes the pipe
+    # early: a BrokenPipe on the passthrough write must never cost us the event.
     log = os.environ.get("JIGC_DOGFOOD_LOG")
     if log:
         home = os.environ.get("JIGC_DOGFOOD_HOME") or here
@@ -67,27 +67,38 @@ def main():
                 f"{hook!r} — set JIGC_DOGFOOD_HOME to the apparatus dir. "
                 "The jigc event was NOT logged.\n"
             )
-            return proc.returncode
-        # Hand the canonical hook the payload the harness left out (real exit) —
-        # zero extraction drift: log-event.py owns invocation + finding parsing.
-        payload = {
-            "hook_event_name": "PostToolUse",
-            "tool_name": "Bash",
-            "tool_input": {"command": "jigc " + " ".join(shlex.quote(a) for a in args)},
-            "tool_response": {
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-                "exitCode": proc.returncode,
-            },
-        }
-        import json
+        else:
+            # Hand the canonical hook the payload the harness left out (real
+            # exit) — zero extraction drift: log-event.py owns the parsing.
+            import json
 
-        subprocess.run(
-            ["python3", hook],
-            input=json.dumps(payload),
-            text=True,
-            env={**os.environ, "JIGC_DOGFOOD_LOG": log},
-        )
+            payload = {
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "jigc " + " ".join(shlex.quote(a) for a in args)
+                },
+                "tool_response": {
+                    "stdout": proc.stdout,
+                    "stderr": proc.stderr,
+                    "exitCode": proc.returncode,
+                },
+            }
+            subprocess.run(
+                ["python3", hook],
+                input=json.dumps(payload),
+                text=True,
+                env={**os.environ, "JIGC_DOGFOOD_LOG": log},
+            )
+
+    # Pass output through faithfully — guarded: a consumer that closed the pipe
+    # early (`| head`, `| grep -q`) must not become a traceback or a lost exit.
+    for stream, text in ((sys.stdout, proc.stdout), (sys.stderr, proc.stderr)):
+        try:
+            stream.write(text)
+            stream.flush()
+        except BrokenPipeError:
+            pass
 
     return proc.returncode
 
