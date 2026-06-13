@@ -639,6 +639,31 @@ fn jrun_captures_real_exit_into_the_log() {
         "passthrough exit still forwarded"
     );
     assert!(!off_log.exists(), "logging off writes nothing");
+
+    // Misconfiguration is LOUD, never silent: log requested but the apparatus
+    // home has no log-event.py → a stderr warning, the exit still forwarded, and
+    // nothing logged (a blind measured run must be visible, not a quiet zero).
+    let blind_log = tmp.path().join("blind.jsonl");
+    let empty_home = tmp.path().join("empty-home");
+    fs::create_dir_all(&empty_home).expect("empty home dir");
+    let misconfig = Command::new("python3")
+        .arg(&jrun)
+        .args(["task", "finalize", "t1"])
+        .env("JIGC_REAL_BIN", &stub)
+        .env("JIGC_DOGFOOD_LOG", &blind_log)
+        .env("JIGC_DOGFOOD_HOME", &empty_home)
+        .output()
+        .expect("run jrun with bad home");
+    assert_eq!(misconfig.status.code(), Some(3), "exit still forwarded");
+    assert!(
+        String::from_utf8_lossy(&misconfig.stderr).contains("JIGC_DOGFOOD_HOME"),
+        "a missing log-event.py warns loudly: {}",
+        String::from_utf8_lossy(&misconfig.stderr)
+    );
+    assert!(
+        !blind_log.exists(),
+        "no event logged when the hook is unreachable"
+    );
 }
 
 /// Real-session command shapes the first cut of the hook missed: a PATH-QUALIFIED

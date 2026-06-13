@@ -58,6 +58,16 @@ def main():
     log = os.environ.get("JIGC_DOGFOOD_LOG")
     if log:
         home = os.environ.get("JIGC_DOGFOOD_HOME") or here
+        hook = os.path.join(home, "log-event.py")
+        if not os.path.isfile(hook):
+            # Loud, never silent: a measured run with logging requested but the
+            # hook unreachable would drop every jigc event and tally as blind.
+            sys.stderr.write(
+                f"jrun: JIGC_DOGFOOD_LOG is set but log-event.py was not found at "
+                f"{hook!r} — set JIGC_DOGFOOD_HOME to the apparatus dir. "
+                "The jigc event was NOT logged.\n"
+            )
+            return proc.returncode
         # Hand the canonical hook the payload the harness left out (real exit) —
         # zero extraction drift: log-event.py owns invocation + finding parsing.
         payload = {
@@ -73,7 +83,7 @@ def main():
         import json
 
         subprocess.run(
-            ["python3", os.path.join(home, "log-event.py")],
+            ["python3", hook],
             input=json.dumps(payload),
             text=True,
             env={**os.environ, "JIGC_DOGFOOD_LOG": log},
