@@ -120,8 +120,11 @@ const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
 ///     exactly the freshly rendered body (regenerated each `setup`);
 ///   - a pre-existing **foreign** hook → its content is preserved **verbatim** and a
 ///     jigc block (bracketed by [`PRECOMMIT_SENTINEL`]/[`PRECOMMIT_SENTINEL_END`]) is
-///     appended; a re-install strips and regenerates only that block, so the result
-///     is byte-identical and the sentinel appears exactly once.
+///     spliced in just after the foreign shebang and **before** the foreign body, so
+///     the warn-only backstop runs even when the foreign hook ends in an explicit
+///     `exit` (it never blocks — control falls through to the foreign hook); a
+///     re-install strips and regenerates only that block, so the result is
+///     byte-identical and the sentinel appears exactly once.
 ///
 /// The written file is made owner-executable (a git hook must be executable to fire).
 pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Result<()> {
@@ -140,12 +143,26 @@ pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Re
                 // Empty, or only a prior jigc block: regenerate the standalone hook.
                 rendered
             } else {
-                // Preserve the foreign hook verbatim; append a wrapped jigc block.
-                // Normalize the foreign remainder's trailing newlines so the
-                // separator is fixed and a re-install is byte-identical.
-                let mut out = foreign.trim_end_matches('\n').to_string();
-                out.push_str("\n\n");
+                // Preserve the foreign hook verbatim; run the wrapped jigc block
+                // *before* it. The block is warn-only and never exits, so the foreign
+                // hook still runs (and owns the final exit) — but the backstop is
+                // reached even when the foreign hook ends in an explicit `exit`, which
+                // a verbatim-append wrap would skip. The foreign hook keeps its own
+                // shebang; the jigc block (shebang- and `exit 0`-stripped, bracketed
+                // by the start/end sentinels) is spliced in just after it.
+                let foreign = foreign.trim_start_matches('\n');
+                let (shebang, rest) = match foreign.split_once('\n') {
+                    Some((first, rest)) if first.starts_with("#!") => (format!("{first}\n"), rest),
+                    _ => (String::new(), foreign),
+                };
+                // Normalize the separator so a re-install (strip-and-regenerate) is
+                // byte-identical: exactly one blank line between the jigc block's
+                // end-marker and the foreign body.
+                let rest = rest.trim_start_matches('\n');
+                let mut out = shebang;
                 out.push_str(&wrapped_managed_block(jigc_path));
+                out.push('\n');
+                out.push_str(rest);
                 out
             }
         }
@@ -156,8 +173,11 @@ pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Re
 }
 
 /// The jigc-managed block for the **wrap** case: the rendered body with its shebang
-/// line dropped (the foreign hook owns the shebang) and an end-sentinel appended, so
-/// the block is self-delimited for strip-and-regenerate.
+/// line dropped (the foreign hook owns the shebang) and its trailing `exit 0` dropped
+/// (the block is warn-only — it must fall through to the foreign hook that follows it,
+/// which owns the final exit), with an end-sentinel appended so the block is
+/// self-delimited for strip-and-regenerate. The block runs **before** the foreign hook
+/// so the backstop fires even when the foreign hook ends in an explicit `exit`.
 fn wrapped_managed_block(jigc_path: &Path) -> String {
     let body = precommit_hook_body(jigc_path);
     // Drop the leading `#!/bin/sh\n` shebang — the wrapped block runs inside the
@@ -165,7 +185,13 @@ fn wrapped_managed_block(jigc_path: &Path) -> String {
     let without_shebang = body
         .strip_prefix("#!/bin/sh\n")
         .expect("the rendered body always begins with the sh shebang");
-    format!("{without_shebang}{PRECOMMIT_SENTINEL_END}\n")
+    // Drop the trailing `exit 0\n` — the wrapped block must not terminate the script;
+    // control falls through to the foreign hook spliced in after it.
+    let without_exit = without_shebang
+        .strip_suffix("exit 0\n")
+        .expect("the rendered body always ends with `exit 0`")
+        .trim_end_matches('\n');
+    format!("{without_exit}\n{PRECOMMIT_SENTINEL_END}\n")
 }
 
 /// Remove the jigc-managed block from a pre-existing hook, returning the foreign
@@ -798,13 +824,25 @@ mod tests {
         install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("install succeeds");
 
         let after = std::fs::read_to_string(&hook).expect("hook still present");
+        // The foreign shebang stays first; the jigc block is spliced in *after* it and
+        // *before* the foreign body (so the backstop runs before a foreign `exit`), so
+        // the foreign body is preserved verbatim though the file is no longer one
+        // contiguous run.
         assert!(
-            after.contains(existing),
-            "the original hook content must be preserved verbatim",
+            after.starts_with("#!/bin/sh\n"),
+            "the foreign shebang must stay first",
+        );
+        assert!(
+            after.contains("# someone's hand-rolled hook\necho hello\nexit 0\n"),
+            "the foreign hook body must be preserved verbatim",
         );
         assert!(
             after.contains(PRECOMMIT_SENTINEL),
             "the wrapped hook must also carry our sentinel block",
+        );
+        assert!(
+            after.find(PRECOMMIT_SENTINEL).unwrap() < after.find("echo hello").unwrap(),
+            "the jigc block must run before the foreign hook body",
         );
         assert_eq!(
             mode(&hook) & 0o100,

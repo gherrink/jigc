@@ -17,7 +17,10 @@
 //! - **(d)** `jigc setup` run twice leaves the `pre-commit` **byte-identical**
 //!   (idempotent);
 //! - **(e)** a repo with a pre-existing `pre-commit` keeps it after `setup`
-//!   (non-destructive).
+//!   (non-destructive);
+//! - **(f)** a wrapped foreign hook ending in `exit 0` still lets the jigc backstop
+//!   FIRE — the regression guard for the dead-backstop defect (the jigc block runs
+//!   *before* the foreign body, so a foreign `exit` cannot skip it).
 //!
 //! The hook embeds the installing `jigc`'s absolute path (the stale-binary hazard);
 //! the hook in turn runs `jigc validate`, which selects the real `doc-code` probe via
@@ -371,12 +374,85 @@ fn setup_preserves_existing_precommit() {
     assert!(setup.status.success(), "`jigc setup` must succeed");
 
     let after = fs::read_to_string(hook_path(repo.path())).expect("hook still present");
+    // The foreign hook's body is preserved verbatim. The shebang stays first (the
+    // foreign hook owns the interpreter); the jigc block is spliced in *after* the
+    // shebang and *before* the foreign body, so the backstop runs before a foreign
+    // `exit`. The body therefore stays contiguous even though the whole file is no
+    // longer one contiguous run.
     assert!(
-        after.contains(existing),
-        "the pre-existing hook content must be preserved verbatim; after:\n{after}",
+        after.starts_with("#!/bin/sh\n"),
+        "the foreign shebang must stay first; after:\n{after}",
+    );
+    assert!(
+        after.contains("# someone's hand-rolled hook\necho hello\nexit 0\n"),
+        "the foreign hook body must be preserved verbatim; after:\n{after}",
     );
     assert!(
         after.contains("jigc-managed pre-commit hook"),
         "the wrapped hook must also carry the jigc block; after:\n{after}",
+    );
+    // The jigc block must precede the foreign body (so it is reached before a foreign
+    // `exit`).
+    assert!(
+        after.find("jigc-managed pre-commit hook").unwrap() < after.find("echo hello").unwrap(),
+        "the jigc block must run before the foreign hook body; after:\n{after}",
+    );
+}
+
+/// (f) The wrapped backstop FIRES. A pre-existing foreign hook that ends in an
+/// explicit `exit 0` (the overwhelmingly common shape) is wrapped over a stale-anchor
+/// store; a real `git commit` of a drift-introducing change must run BOTH the foreign
+/// hook's output AND the jigc drift warning, and the commit must still succeed
+/// (warn-only). This is the regression guard: a verbatim-append wrap puts the jigc
+/// block after the foreign `exit 0`, where it is dead.
+#[test]
+fn commit_warns_through_wrapped_exit0_foreign_hook() {
+    let repo = TempDir::new("wrapped-fire");
+    init_repo(repo.path());
+    seed_store_with_anchor(repo.path());
+    mark_set_up(repo.path());
+
+    // Seed a foreign pre-commit that prints a marker and then `exit 0`s — the shape
+    // where a verbatim-append wrap is dead.
+    fs::create_dir_all(repo.path().join(".git/hooks")).expect("mk hooks dir");
+    fs::write(
+        hook_path(repo.path()),
+        "#!/bin/sh\necho FOREIGN-HOOK-RAN\nexit 0\n",
+    )
+    .expect("seed a foreign pre-commit");
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // Rename the cited symbol: the committed adr now cites a symbol that is gone.
+    fs::write(
+        repo.path().join("crates/engine/src/cache.rs"),
+        "pub fn evicted() {}\nfn helper() {}\n",
+    )
+    .expect("rename the cited symbol");
+
+    git(repo.path(), &["add", "."]);
+    let out = git_commit(repo.path(), "rename through wrapped foreign hook");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    assert!(
+        out.status.success(),
+        "the warn-only wrapped hook must NOT block the commit; output:\n{merged}",
+    );
+    assert!(
+        merged.contains("FOREIGN-HOOK-RAN"),
+        "the foreign hook must still run; output:\n{merged}",
+    );
+    assert!(
+        merged.contains(DRIFT_WARNING),
+        "the jigc backstop must FIRE even when the foreign hook exits 0; output:\n{merged}",
     );
 }
