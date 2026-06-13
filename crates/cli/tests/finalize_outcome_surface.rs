@@ -998,6 +998,17 @@ fn finalize_relays_hook_output_on_success() {
         "the hook relay is a delimited section AFTER the routing footer (review S1), \
          never interleaved into it; got:\n{stdout}",
     );
+    // The relay section is the last thing emitted; its output shape must be clean —
+    // exactly one trailing newline, never a spurious trailing blank line (M19
+    // completion audit LOW). The agent-text relay ends `--- hook output ---\n<warning>\n`.
+    assert!(
+        stdout.ends_with(&format!("{HOOK_WARNING}\n")),
+        "the relay section ends with the warning + a single newline; got:\n{stdout:?}",
+    );
+    assert!(
+        !stdout.ends_with(&format!("{HOOK_WARNING}\n\n")),
+        "the relayed hook-output section must not end with a trailing blank line; got:\n{stdout:?}",
+    );
 
     // ── --format json: stdout stays the un-corrupted envelope; warning on stderr ─
     let repo = TempDir::new("relay-json");

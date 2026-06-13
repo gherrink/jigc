@@ -797,11 +797,13 @@ pub(crate) fn relay_hook_output(format: Format, hook_output: &str) {
     if hook_output.is_empty() {
         return;
     }
+    // `section` already ends with one `\n`; `print!`/`eprint!` (not the `ln` variants)
+    // keep the relayed section's shape clean — no spurious trailing blank line.
     let section = format!("--- hook output ---\n{hook_output}\n");
     if format == Format::Json {
-        eprintln!("{section}");
+        eprint!("{section}");
     } else {
-        println!("{section}");
+        print!("{section}");
     }
 }
 
