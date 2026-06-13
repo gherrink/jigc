@@ -9,9 +9,10 @@ operator guide for the live runs. **Arm order is fixed: B → A → C** (coin-fl
   **jrun** wrapper (the Bash `PostToolUse` payload carries no exit code — verified — so jrun
   captures the real exit). `doc-code` sha `f56032c2…` on PATH.
 - **Three twins** at galey baseline `4147a36`, all **A5-green** (`pnpm test`), hook-free, clean:
-  - `arm-A-jigc` @ `d13251f` — `jigc setup` + methodology pack wiring + Write|Edit capture hook (committed).
-  - `arm-B-control` @ `4147a36` — pristine galey; capture hook in `.claude/` (git-excluded).
-  - `arm-C-static` @ `45f4721` — galey + frozen methodology in `CLAUDE.md`; capture hook git-excluded.
+  - `arm-A-jigc` @ `2db6026` — `jigc setup` + pack wiring + Write|Edit capture hook; `CLAUDE.md` =
+    galey **project-facts** (GSD scaffolding stripped) + jigc adapter.
+  - `arm-B-control` @ `4147a36` — galey **untouched** (full GSD `CLAUDE.md`); capture hook git-excluded.
+  - `arm-C-static` @ `1ad5c6a` — galey **project-facts** (GSD stripped) + frozen methodology; hook git-excluded.
 - **Capture:** Write|Edit → `log-event.py` (file_op channel, all arms); jigc → jrun (jigc-event
   channel, arm A). Per-arm logs at `/tmp/jigc-dogfood/pilot/logs/arm-{A,B,C}/hook-log.jsonl`
   (outside the repos). Launch scripts `run-arm-{A,B,C}.sh` export the needed env.
@@ -22,19 +23,29 @@ operator guide for the live runs. **Arm order is fixed: B → A → C** (coin-fl
 
 ### Environment isolation (contamination control)
 
-All three arms launch in a **dedicated pristine Claude home**, `CLAUDE_CONFIG_DIR=/tmp/jigc-dogfood/clean-home`
-(no plugins → **claude-mem off**, no global methodology). This neutralizes two confounds:
+**Home per arm** (the launch scripts set `CLAUDE_CONFIG_DIR` for you):
 
-- **claude-mem** — memory injection would bleed cross-session knowledge of the task/jigc into the
-  arms (the worst carryover vector). The clean home enables no plugins. Verify at each arm's startup
-  that **no "recent context" / memory block appears.**
-- **Global methodology** — `~/.claude/CLAUDE.md` (`@LACON @PRINCIPLES`) loaded into every session
-  regardless of home, and `PRINCIPLES.md`'s test-first/verifiable content overlaps arm C's frozen
-  methodology — muting the C-vs-B contrast. It has been **moved aside** (`~/.claude/CLAUDE.md.dogfood-bak`)
-  for the run window. **Restore after the pilot:** `bash /tmp/jigc-dogfood/RESTORE-AFTER-PILOT.sh`.
+- **Arm B → `~/.claude`** (the **GSD home**): GSD agents/skills/hooks active — galey's real setup,
+  the incumbent. claude-mem **disabled** here for the run window.
+- **Arms A, C → `/tmp/jigc-dogfood/clean-home`**: no plugins (no mem), no GSD, `bypassPermissions`
+  to match arm B. Auth reuses your token; if it prompts at first launch, `claude login` once there.
 
-The launch scripts set `CLAUDE_CONFIG_DIR` for you. The clean home reuses your auth token; if it
-prompts to log in at first launch, run `claude login` once there.
+What this neutralizes (the same on every arm):
+
+- **claude-mem off** — memory injection is the worst carryover vector (cross-session knowledge of
+  the task/jigc bleeding in). Off in both homes. **Verify at each arm's startup: no "recent context"
+  / memory block appears.**
+- **Personal global methodology moved aside** — `~/.claude/CLAUDE.md` (`@LACON @PRINCIPLES`) loaded
+  into every session and `PRINCIPLES.md`'s test-first content overlaps arm C's methodology. Moved to
+  `~/.claude/CLAUDE.md.dogfood-bak` for the run window (does **not** touch GSD, which lives in
+  agents/skills/hooks).
+- **GSD is NOT contamination** — it is arm B's content. Only B has it.
+
+**Restore after the pilot** (re-enables mem in `~/.claude`, restores the global `CLAUDE.md`):
+`bash /tmp/jigc-dogfood/RESTORE-AFTER-PILOT.sh`.
+
+**Recorded bound:** the GSD home also has `lacon` + `repowise-augment` (general productivity tools)
+that A/C lack — a conservative bias *toward* arm B. Noted, not replicated.
 
 ## The matched intent (verbatim, all arms)
 
@@ -64,9 +75,11 @@ Run each arm as a **fresh, isolated session** (separate `claude` launch). Do the
 1. **Launch:** `bash /tmp/jigc-dogfood/pilot/run-arm-<X>.sh` (it `cd`s into the twin, exports env,
    starts `claude`).
 2. **Mini-smoke (first, before the task):**
-   - **Environment check (all arms):** confirm the session shows **no claude-mem "recent context"
-     block** and **no `PRINCIPLES`/`LACON`/GSD** in the loaded instructions — only the twin's own
-     `CLAUDE.md`. If either leaks, stop and re-check the clean home / the moved-aside global config.
+   - **Environment check (arm-aware):** every arm — confirm **no claude-mem "recent context" block**
+     and **no `PRINCIPLES`/`LACON`** in the loaded instructions. Then: **arm B** should show **GSD
+     active** (gsd skills/agents available; galey's full GSD `CLAUDE.md`) — that's expected, it's the
+     GSD arm. **Arms A and C** should show **no GSD** (stripped project-facts `CLAUDE.md` + their tool
+     layer). If mem/PRINCIPLES leak anywhere, or GSD is missing on B / present on A/C, stop and fix.
    - Arm A: the `SessionStart` hook runs `jigc start` on launch → the log should already hold one
      `jigc` event with **`exit` non-null**. Confirm: `tail -1 /tmp/jigc-dogfood/pilot/logs/arm-A/hook-log.jsonl`.
      If `exit` is `null` or the file is empty, STOP — the capture is misconfigured (don't burn the run).

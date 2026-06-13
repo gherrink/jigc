@@ -14,14 +14,33 @@ stop condition, or rubric may change once an arm has started. Arm order is fixed
 
 ## The three arms
 
-| Arm | Instruction surface | Isolates |
-|---|---|---|
-| **A — jigc** | galey `CLAUDE.md` + `jigc setup` 4-line adapter; methodology delivered by **jigc composition** (`jigc start --workflow dev-task "<intent>"`) | dynamic composition + the write channel |
-| **B — control** | galey `CLAUDE.md`, **untouched** (the product baseline: jigc vs. what galey has today) | — (baseline) |
-| **C — static-methodology** | galey `CLAUDE.md` + the frozen methodology block (`arm-C-static-methodology.md`), static, no jigc | methodology *content*, written down |
+> **Amendment (pre-run, 2026-06-13 — no arm had executed).** The original framing ("A and B differ
+> by exactly the 4-line adapter") was a CLAUDE.md-*file*-level view that missed that **galey is a
+> GSD project**: its `CLAUDE.md` is GSD-generated and instructs GSD-workflow behaviour, and the GSD
+> machinery (agents/skills/hooks) lives at the Claude-*home* level. So "what galey has today" (the
+> control) **is GSD** — and jigc's own positioning is that it *replaces* GSD-style workflows
+> (`CLAUDE.md` → What this project is). The corrected arms below make B the **real GSD run** and
+> strip the now-dangling GSD scaffolding from A/C's `CLAUDE.md` (keeping galey's project facts).
+> This makes A-vs-B the headline **jigc-vs-GSD** test. Recorded, not silent.
 
-A-beats-B alone can't say whether jigc or merely *written-down methodology* did the work; arm C
-separates them.
+| Arm | Instruction surface | Claude home | Isolates |
+|---|---|---|---|
+| **A — jigc** | galey **project-facts** `CLAUDE.md` (GSD scaffolding stripped) + `jigc setup` adapter; methodology by **jigc composition** (`jigc start --workflow dev-task`) | clean (no GSD, no mem) | dynamic composition + write channel |
+| **B — control = GSD** | galey `CLAUDE.md` **untouched** (GSD-generated) + GSD agents/skills/hooks **active** — galey's real setup today | `~/.claude` (GSD), **mem off** | — (the incumbent baseline) |
+| **C — static-methodology** | galey **project-facts** `CLAUDE.md` (GSD stripped) + the frozen methodology block, static, no jigc | clean (no GSD, no mem) | methodology *content*, written down |
+
+The matched intent, acceptance A1–A6, the single clarification, stop condition, and rubric are
+**unchanged** by this amendment — only the instruction-surface/home wiring is corrected.
+
+- **A vs B** = jigc vs GSD (the incumbent jigc claims to replace) — the headline thesis test.
+- **A vs C** = jigc's composition+channel vs the same methodology as static text.
+- **C vs B** = written-down static methodology vs GSD.
+
+**Recorded environment bounds (honesty):** the GSD home also carries general-productivity tooling
+A/C lack — `lacon` (Bash-output filtering) and `repowise-augment` (codebase-context injection). These
+mildly *aid* arm B, biasing **against** jigc — a conservative bias (jigc winning despite it is a
+stronger result). Permission mode is matched (`bypassPermissions` on both homes). claude-mem is off
+on every arm; the personal `~/.claude/CLAUDE.md` (`@PRINCIPLES`) is moved aside so it confounds none.
 
 ## The matched intent (issued identically to all three arms)
 
