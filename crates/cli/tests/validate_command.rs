@@ -102,10 +102,17 @@ fn git(repo: &Path, args: &[&str]) {
 /// Run `jigc <args>` with `cwd = repo` and the real doc-code probe selected via
 /// `JIGC_DOC_CODE_PROBE`, capturing output.
 fn jigc(repo: &Path, args: &[&str]) -> std::process::Output {
+    jigc_with_probe(repo, args, doc_code_probe())
+}
+
+/// Run `jigc <args>` with `cwd = repo` and an explicit `JIGC_DOC_CODE_PROBE`,
+/// capturing output — lets the pre-flight test point the override at a path that
+/// does not resolve to an executable.
+fn jigc_with_probe(repo: &Path, args: &[&str], probe: &Path) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_jigc"))
         .args(args)
         .current_dir(repo)
-        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .env("JIGC_DOC_CODE_PROBE", probe)
         .output()
         .expect("run the jigc binary")
 }
@@ -212,5 +219,39 @@ fn validate_clean_store_exits_zero_with_no_content_finding() {
     assert!(
         !stdout.contains("doc-code"),
         "a clean store must surface no doc-code content finding; stdout:\n{stdout}",
+    );
+}
+
+/// The probe pre-flight (M18 inc-3 / T2): a committed store carrying ≥1 anchor, but
+/// `JIGC_DOC_CODE_PROBE` pointed at a path that does not resolve to an executable →
+/// `jigc validate` exits **non-zero** with **exactly one** "`doc-code` probe not found"
+/// operational error on stderr (the count asserted, so an N-per-anchor crash-meta
+/// regression fails), and **no `pack-probe-integrity` meta-finding** in stdout — the
+/// sweep never ran (`design/validation.md` → Distribution bound; review S2). A missing
+/// probe is a misconfiguration to report once, not N findings.
+#[test]
+fn validate_probe_absent_reports_one_operational_error_non_zero() {
+    let repo = TempDir::new("probe-absent");
+    seed_clean_store(repo.path());
+
+    let missing = repo.path().join("nonexistent-doc-code-probe");
+    let out = jigc_with_probe(repo.path(), &["validate"], &missing);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "a missing probe must exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    let hits = stderr.matches("`doc-code` probe not found").count();
+    assert_eq!(
+        hits, 1,
+        "exactly one `doc-code probe not found` operational error must surface on stderr \
+         (an N-per-anchor regression fails this); stderr:\n{stderr}",
+    );
+    assert!(
+        !stdout.contains("pack-probe-integrity"),
+        "the sweep must not run when the probe is absent — no pack-probe-integrity meta-finding; \
+         stdout:\n{stdout}",
     );
 }

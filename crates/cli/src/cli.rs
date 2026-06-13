@@ -437,9 +437,10 @@ fn run_ingest(format: Format) -> ExitCode {
 /// and render the report through the selected `format`. The sweep is task-less and
 /// **detect-and-report** — it gates no transaction; this clean-path handler always exits
 /// **0** (the `jigc ingest` precedent). The two-class exit rule (a `pack-probe-integrity.*`
-/// meta-finding → non-zero) + the probe pre-flight land in T2/T3. A locator error (no
-/// repo / no project layer) routes to stderr and exits non-zero (`design/validation.md` →
-/// Store-scope re-validation → The command).
+/// meta-finding → non-zero) lands in T3. The probe **pre-flight** (T2) runs before the
+/// sweep: an unresolvable `doc-code` probe bails with one operational error here. A
+/// locator error (no repo / no project layer) likewise routes to stderr and exits
+/// non-zero (`design/validation.md` → Store-scope re-validation → The command).
 fn run_validate_store(format: Format) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
@@ -460,13 +461,16 @@ fn run_validate_store(format: Format) -> ExitCode {
     }
 }
 
-/// Locate the repo + project layer from `cwd`, build the resolved schemas (keyed by
-/// doctype) + severity cascade, and run the committed-store sweep against the production
-/// `doc-code` invoker. Mirrors `run_ingest`'s locate preamble + `task.rs`'s `schemas()` /
-/// `resolve_severity_cascade` idiom; the engine stays domain-empty (the CLI feeds the
-/// pack in).
+/// Locate the repo + project layer from `cwd`, **pre-flight the `doc-code` probe**, then
+/// build the resolved schemas (keyed by doctype) + severity cascade and run the
+/// committed-store sweep against the production `doc-code` invoker. The pre-flight bails
+/// before any sweep work when the probe is unresolvable, so a missing probe is one
+/// operational error, never N per-anchor crash meta-findings. Mirrors `run_ingest`'s
+/// locate preamble + `task.rs`'s `schemas()` / `resolve_severity_cascade` idiom; the
+/// engine stays domain-empty (the CLI feeds the pack in).
 fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport> {
     let repo_root = require_project_layer(cwd)?;
+    require_doc_code_probe()?;
     let pack = crate::pack::make_pack();
     let schemas = load_schema_map(pack.as_ref())?;
     let project_config = repo_root.join(".jigc").join("config");
@@ -478,6 +482,23 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         &crate::task::doc_code_invoker,
     )
     .with_context(|| format!("validating the committed store at {repo_root:?}"))
+}
+
+/// The store sweep's **probe pre-flight**: resolve the `doc-code` probe program (the
+/// `JIGC_DOC_CODE_PROBE` override else the `<bin-dir>/doc-code` sibling) and require it
+/// to be an existing file before the sweep runs. A missing probe is a single
+/// misconfiguration to report once — not a `crash` meta-finding per anchor — so this
+/// bails with **one** operational error naming the resolved path + the override knob,
+/// and the handler routes it to stderr with a non-zero exit (`design/validation.md` →
+/// Distribution bound; review S2).
+fn require_doc_code_probe() -> Result<()> {
+    let program = ::cli::invoke::doc_code_program();
+    if !program.is_file() {
+        anyhow::bail!(
+            "`doc-code` probe not found at {program:?} — place the `doc-code` binary beside `jigc` or set `JIGC_DOC_CODE_PROBE` to its path"
+        );
+    }
+    Ok(())
 }
 
 /// Load every shipped schema keyed by doctype — the set the store sweep resolves the
