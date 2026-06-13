@@ -46,9 +46,18 @@ cross-reference surface (so a wrong/dangling cross-ref is the arm's fault, not t
    routed, never silently merged"*, `status: accepted`. A plain `cites` target for the arch-doc.
 
 Both twins also start from the same jigc source HEAD (so `implemented-by` anchors target the same real
-`reconciliation` symbols). Arm J's twin additionally has `jigc setup` + the methodology+dev packs;
-arm S's twin has the frozen-conventions `CLAUDE.md` and **no jigc** (no `.jigc/`, no pack, the binary
-is not referenced).
+`reconciliation` symbols). Arm J's twin additionally has `jigc setup` with the **dev pack** (the
+embedded domain pack that ships `arch-doc`, `adr`, and the `architecture-documentation` + `single-task`
+workflows — see amendment 1); arm S's twin has the frozen-conventions `CLAUDE.md` and **no jigc** (no
+`.jigc/`, no pack, the binary is not referenced).
+
+> **Amendment 1 (pre-run, no arm has run, 2026-06-13):** arm J uses the **dev pack alone**, not the
+> methodology+dev composition the draft named. Rationale: the dev pack is the domain pack that owns
+> `arch-doc`/`adr` and the `architecture-documentation`/`single-task` (supersede) workflows; the
+> methodology pack is jigc's *milestone-process* pack (planning/completion/dev-task), irrelevant to
+> authoring architecture docs, and composing it would add catalog entries the blind arm-J agent
+> would have to wade through — a confound, not the thesis. Using the domain pack that fits the task
+> is the honest setup.
 
 ## What each arm must produce (the deliverable, identical target)
 
