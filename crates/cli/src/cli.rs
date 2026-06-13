@@ -18,7 +18,12 @@ use crate::setup;
 use crate::start;
 use crate::task::TaskCommand;
 use crate::upgrade;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
+use engine::packsource::PackResourceKind;
+use engine::schema::Schema;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 /// The `jigc` CLI — a context compiler for coding agents.
@@ -180,6 +185,17 @@ pub enum Command {
     /// on it (`design/introspection.md` → Command surface / Non-contractual by
     /// design). Whole-menu only: a single-item `describe <id>` form is **not** built.
     Describe,
+
+    /// The store-scope doc-code re-validation sweep — `jigc validate` runs the
+    /// task-less, read-only committed-store walk (`engine::validate::validate_store`):
+    /// it enumerates every committed doc's `code-anchor` leaves, drives the `doc-code`
+    /// probe over them, and renders the report through the global `--format`. It catches
+    /// the over-time drift an unrelated `task validate` / `finalize` does not
+    /// (`design/validation.md` → Store-scope re-validation). The realization of VISION's
+    /// named `jigc validate [target]`, scoped to doc-code; the four-target breadth is a
+    /// named-but-unbuilt envelope (no positional). Detect-and-report (the `jigc ingest`
+    /// precedent).
+    Validate,
 }
 
 impl Cli {
@@ -246,6 +262,7 @@ impl Cli {
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
             Command::Describe => run_describe(self.format),
+            Command::Validate => run_validate_store(self.format),
         }
     }
 }
@@ -411,6 +428,85 @@ fn run_ingest(format: Format) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Run `jigc validate` (the store-scope doc-code re-validation sweep) against the
+/// current working directory: locate the repo + project layer, build the resolved
+/// schemas + severity cascade, run the read-only committed-store walk
+/// (`engine::validate::validate_store`) driving the CLI's production `doc-code` invoker,
+/// and render the report through the selected `format`. The sweep is task-less and
+/// **detect-and-report** — it gates no transaction; this clean-path handler always exits
+/// **0** (the `jigc ingest` precedent). The two-class exit rule (a `pack-probe-integrity.*`
+/// meta-finding → non-zero) + the probe pre-flight land in T2/T3. A locator error (no
+/// repo / no project layer) routes to stderr and exits non-zero (`design/validation.md` →
+/// Store-scope re-validation → The command).
+fn run_validate_store(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match validate_store_in_repo(&cwd) {
+        Ok(report) => {
+            println!("{}", render::validation(format, &report));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{}", render::operational_error(format, &err));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Locate the repo + project layer from `cwd`, build the resolved schemas (keyed by
+/// doctype) + severity cascade, and run the committed-store sweep against the production
+/// `doc-code` invoker. Mirrors `run_ingest`'s locate preamble + `task.rs`'s `schemas()` /
+/// `resolve_severity_cascade` idiom; the engine stays domain-empty (the CLI feeds the
+/// pack in).
+fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport> {
+    let repo_root = require_project_layer(cwd)?;
+    let pack = crate::pack::make_pack();
+    let schemas = load_schema_map(pack.as_ref())?;
+    let project_config = repo_root.join(".jigc").join("config");
+    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    engine::validate::validate_store(
+        &repo_root,
+        &schemas,
+        &resolved,
+        &crate::task::doc_code_invoker,
+    )
+    .with_context(|| format!("validating the committed store at {repo_root:?}"))
+}
+
+/// Load every shipped schema keyed by doctype — the set the store sweep resolves the
+/// committed docs against (the `task.rs`'s `schemas()` idiom; the engine stays
+/// domain-empty, the CLI feeds the cascade in).
+fn load_schema_map(pack: &dyn engine::packsource::PackSource) -> Result<BTreeMap<String, Schema>> {
+    let mut out = BTreeMap::new();
+    for id in pack.list(PackResourceKind::Schemas) {
+        let bytes = pack
+            .read(PackResourceKind::Schemas, &id)
+            .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
+        let schema = crate::pack::load_pack_schema(pack, &bytes)
+            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
+        out.insert(schema.ty.clone(), schema);
+    }
+    Ok(out)
+}
+
+/// Locate the repo root and its `.jigc/config/` project layer — the store-walk locate
+/// preamble shared with `jigc ingest` / `jigc upgrade`. Errors with routed messages when
+/// the repo or the project layer is absent.
+fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
+    let ctx = crate::locate::locate(cwd)?;
+    if ctx.project_config.is_none() {
+        anyhow::bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+    Ok(ctx.repo_root)
 }
 
 /// Dispatch a `jigc doc <verb>` write against the active task in the current
@@ -763,6 +859,27 @@ mod cli_parse {
     fn ingest_takes_no_positional() {
         let err = Cli::try_parse_from(["jigc", "ingest", "extra"])
             .expect_err("`jigc ingest` takes no positional argument");
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn validate_parses() {
+        let cli = Cli::try_parse_from(["jigc", "validate"]).expect("`jigc validate` parses");
+        assert_eq!(cli.command, Command::Validate);
+    }
+
+    #[test]
+    fn validate_format_json_is_selected() {
+        let cli = Cli::try_parse_from(["jigc", "validate", "--format", "json"])
+            .expect("`jigc validate --format json` parses");
+        assert_eq!(cli.format, Format::Json);
+        assert_eq!(cli.command, Command::Validate);
+    }
+
+    #[test]
+    fn validate_takes_no_positional() {
+        let err = Cli::try_parse_from(["jigc", "validate", "extra"])
+            .expect_err("`jigc validate` takes no positional argument");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 

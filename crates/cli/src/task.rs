@@ -261,7 +261,7 @@ fn run_finalize(cwd: &Path, id: &str, format: Format) -> ExitCode {
 /// passing or aborting the whole validate — an unresolvable invocation is never a clean
 /// run. A serialization failure of the engine-built request is the only `Err` raised (an
 /// internal fault, not a probe outcome).
-fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
+pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeRun> {
     let bytes = serde_json::to_vec(request)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))?;
     let program = ::cli::invoke::doc_code_program();
