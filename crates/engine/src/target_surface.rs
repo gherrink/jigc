@@ -170,6 +170,99 @@ pub fn enumerate_target_surface(
     Ok((anchors, guard_findings))
 }
 
+/// Enumerate the **committed store's** target surface: every `code-anchor` leaf over
+/// every committed doc in every active schema `location:`, as a deterministically
+/// address-sorted list of [`TargetAnchor`]s. This is the **store-scope** sweep
+/// (`validation.md` → Store-scope re-validation) — **task-less and read-only**: it
+/// has no working area, opens **no `FileStateRecord` write**, and touches **no edge
+/// index**.
+///
+/// `repo_root` is the committed-store root; `schemas` maps a doctype name to its
+/// resolved [`Schema`] (the engine stays domain-empty — the caller feeds the
+/// cascade-resolved set in). For each schema declaring a persisted `location:`, this
+/// globs `<repo_root>/<location>/*.md` (its **own** deterministic, address-sorted
+/// read-dir + `.md`-filter walk, reusing the proven sorted-enumeration idiom of the
+/// CLI's `committed_store` / [`crate::store::canonical_path`]), parses each doc, and
+/// collects its `code-anchor` leaves via the shared [`collect_from_source`]
+/// projection (so the predicate selector + multi-valued guard apply identically to
+/// the task scope). A transient (location-less) doctype contributes nothing.
+///
+/// This walk **deliberately surfaces unrelated committed docs** — the inversion of
+/// the task-scope masking-trap guard ([`enumerate_target_surface`]): at task scope a
+/// committed doc neither edited nor bound is excluded so a task can't be blocked by
+/// drift it didn't cause; at store scope surfacing exactly that pre-existing drift is
+/// the command's entire purpose. A future reader must **not** "fix" this to honor the
+/// task-gate exclusion (`validation.md` → Store-scope re-validation, the inversion).
+///
+/// It **must not** route through [`crate::file_state::reconcile_committed_store`] —
+/// that path mutates the file-state record + edge index (re-baselining drifted-clean
+/// docs via *absorb*, keyed off a `task_dir` a task-less sweep lacks), so reusing it
+/// would *silently re-baseline genuine drift* the sweep exists to surface. This is a
+/// pure read.
+///
+/// One doctype per `location:` is **assumed** (true for the three code-anchor
+/// doctypes today — `adr`/`decisions`, `arch-doc`/`architecture`, `spec`/`specs`).
+/// The walk claims files by `location:`, so a future pack sharing a `location:`
+/// across doctypes would need the walk to disambiguate by parsed type; no
+/// disambiguation is built (`validation.md` → Scope of the sweep).
+///
+/// Returns `(anchors, guard_findings)`: the second element carries the **multi-valued
+/// non-silent guard** findings ([`collect_from_source`]) — a committed `code-anchor`
+/// that parsed to a [`Value::List`] is not enumerated but is surfaced as one loud
+/// blocking finding rather than silently dropped (a false store-wide "all clear").
+pub fn enumerate_committed_surface(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> std::io::Result<(Vec<TargetAnchor>, Vec<Finding>)> {
+    let mut anchors = Vec::new();
+    let mut guard_findings = Vec::new();
+
+    for schema in schemas.values() {
+        let Some(location) = schema.location.as_deref() else {
+            continue; // a transient (location-less) type has no committed instances.
+        };
+        let dir = repo_root.join(location);
+        let read = match std::fs::read_dir(&dir) {
+            Ok(read) => read,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err),
+        };
+        // Collect the location's `.md` stems and sort them, so the per-doc walk is
+        // deterministic regardless of directory-read order (the `committed_store`
+        // sorted-enumeration idiom).
+        let mut slugs: Vec<String> = Vec::new();
+        for entry in read {
+            let entry = entry?;
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if let Some(stem) = name.strip_suffix(".md") {
+                slugs.push(stem.to_owned());
+            }
+        }
+        slugs.sort();
+        for slug in &slugs {
+            let path = dir.join(format!("{slug}.md"));
+            let bytes = std::fs::read(&path)?;
+            let mut source = String::from_utf8_lossy(&bytes).into_owned();
+            crate::parse::strip_leading_bom(&mut source);
+            collect_from_source(
+                schema,
+                &schema.ty,
+                slug,
+                &source,
+                &mut anchors,
+                &mut guard_findings,
+            );
+        }
+    }
+
+    anchors.sort_by(|a, b| a.address.cmp(&b.address));
+    anchors.dedup();
+    Ok((anchors, guard_findings))
+}
+
 /// Parse one doc against its schema and collect its `code-anchor` leaves into
 /// `anchors`. An unparseable instance contributes nothing (best-effort).
 ///
@@ -687,6 +780,160 @@ sections:
             }],
             "a repeatable `code-anchor` with no field override inherits the \
              type-level `symbol-exists` — position is not the discriminator",
+        );
+    }
+
+    /// Recursively collect every file path under `root` (relative to it), sorted —
+    /// the before/after snapshot that proves the store walk wrote nothing.
+    fn file_set(root: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        fn walk(dir: &Path, base: &Path, out: &mut Vec<PathBuf>) {
+            let Ok(read) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for entry in read.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, base, out);
+                } else {
+                    out.push(path.strip_prefix(base).unwrap().to_path_buf());
+                }
+            }
+        }
+        walk(root, root, &mut out);
+        out.sort();
+        out
+    }
+
+    /// (M18, the net-new read-only committed-store walk — `validation.md` →
+    /// Store-scope re-validation.) [`enumerate_committed_surface`] sweeps every
+    /// active schema `location:` over the committed store and collects its
+    /// `code-anchor` leaves, with **no** working area and **no** task scope. Three
+    /// things it must do that the task-scope walk does not:
+    ///
+    /// - **Surface unrelated committed docs.** The task gate deliberately *excludes*
+    ///   a committed doc that is neither edited nor bound (hardening #5). Store scope
+    ///   **inverts** that: surfacing pre-existing drift across the whole store is the
+    ///   command's entire purpose, so a committed ADR no task ever touched IS in the
+    ///   set.
+    /// - **Fire the multi-valued guard at store scope.** A committed doc whose
+    ///   `code-anchor` parses to a [`Value::List`] yields no anchor and one loud
+    ///   guard finding (the store-scope half of the non-silent-guard contract).
+    /// - **Mutate nothing.** It must not route through `reconcile_committed_store`
+    ///   (which absorbs drift into the file-state record + edge index), so a
+    ///   before/after file-set snapshot under the repo root is byte-identical — no
+    ///   `file-state.json` / `edges.json` appears.
+    ///
+    /// The seeded store carries a **valid** anchor, a **dangling** anchor (a
+    /// well-formed `<path>#<symbol>` whose target need not exist — enumeration does
+    /// not resolve, the probe does), a **list-valued** anchor, and an **unrelated**
+    /// committed doc. The returned set is exactly the scalar anchors, address-sorted.
+    #[test]
+    fn enumerate_committed_surface_walks_store_surfaces_unrelated_fires_guard_mutates_nothing() {
+        let repo = TempRoot::new("committed-surface");
+
+        // A committed ADR with a valid scalar anchor.
+        commit(
+            repo.path(),
+            "decisions",
+            "single-node-cache",
+            ADR_WITH_ANCHOR,
+        );
+        // A committed ADR with a *dangling* anchor (well-formed, target absent —
+        // enumeration is shape-only; the probe resolves it later).
+        const ADR_DANGLING: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: crates/engine/src/gone.rs#vanished_symbol
+---
+
+# Dangling decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+        commit(repo.path(), "decisions", "dangling", ADR_DANGLING);
+        // A committed ADR whose anchor is list-valued — fires the guard, no anchor.
+        commit(
+            repo.path(),
+            "decisions",
+            "list-anchor",
+            ADR_WITH_LIST_ANCHOR,
+        );
+        // A committed SPEC with a criterion anchor — a *different* location/doctype,
+        // proving the per-location glob covers every active schema.
+        commit(repo.path(), "specs", "rate-limiting", SPEC_WITH_ANCHOR);
+
+        let before = file_set(repo.path());
+
+        let (anchors, guard_findings) =
+            enumerate_committed_surface(repo.path(), &schemas()).expect("enumerates store");
+
+        // Exactly the three scalar anchors (valid + dangling + the bound-spec item),
+        // address-sorted. The list-valued ADR contributes no anchor.
+        assert_eq!(
+            anchors,
+            vec![
+                TargetAnchor {
+                    address: "adr:dangling#status/cites-code".to_string(),
+                    anchor_value: "crates/engine/src/gone.rs#vanished_symbol".to_string(),
+                    check_id: "symbol-exists".to_string(),
+                },
+                TargetAnchor {
+                    address: "adr:single-node-cache#status/cites-code".to_string(),
+                    anchor_value: "crates/engine/src/validate.rs#validate_task".to_string(),
+                    check_id: "symbol-exists".to_string(),
+                },
+                TargetAnchor {
+                    address: "spec:rate-limiting#criteria/rate-limit/maps-to-test".to_string(),
+                    anchor_value: "crates/engine/src/validate.rs#validate_task".to_string(),
+                    check_id: "criterion-maps-to-test".to_string(),
+                },
+            ],
+            "store walk collects every committed doc's scalar code-anchor, \
+             address-sorted, across all active locations",
+        );
+
+        // The store-scope inversion: an unrelated committed ADR (no task touched it)
+        // IS present — store scope surfaces exactly the drift the task gate excludes.
+        assert!(
+            anchors
+                .iter()
+                .any(|a| a.address == "adr:single-node-cache#status/cites-code"),
+            "an unrelated committed doc must be surfaced at store scope (the \
+             task-gate inversion), got {anchors:?}",
+        );
+
+        // The list-valued committed anchor fired the guard at store scope.
+        assert_eq!(
+            guard_findings.len(),
+            1,
+            "the committed list-valued code-anchor emits one guard finding at store \
+             scope (not a silent drop): {guard_findings:?}",
+        );
+        let f = &guard_findings[0];
+        assert_eq!(f.severity, crate::finding::Severity::Blocking);
+        assert_eq!(f.code, "doc-code.multi-valued-anchor");
+        assert_eq!(
+            f.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("adr:list-anchor#status/cites-code"),
+            "the guard finding points at the offending committed field's address",
+        );
+
+        // Mutated nothing: no file-state.json, no edges.json, no record write — the
+        // file set under the repo root is byte-identical before and after.
+        let after = file_set(repo.path());
+        assert_eq!(
+            before, after,
+            "the read-only store walk must write no FileStateRecord / edge-index \
+             file (it must NOT route through reconcile_committed_store)",
         );
     }
 
