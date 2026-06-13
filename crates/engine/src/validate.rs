@@ -43,7 +43,7 @@ use crate::parse::{Document, ParsedItem, ParsedSection, parse_sections};
 use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, ingest_probe_run};
 use crate::result::ValidationReport;
 use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
-use crate::target_surface::enumerate_target_surface;
+use crate::target_surface::{enumerate_committed_surface, enumerate_target_surface};
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -238,6 +238,103 @@ pub fn validate_task(
     // cascade the caller resolved, read per-finding by inventory `(probe, check)`
     // membership. A no-delta cascade leaves every emitted severity untouched.
     Ok(ValidationReport::new(findings, resolved))
+}
+
+/// The filename the engine materializes the store-sweep snapshot under — distinct
+/// from [`SNAPSHOT_FILE`] (which rides the task working area) because the store sweep is
+/// **task-less**: there is no working area, so the snapshot goes to a fresh **temp-dir
+/// scratch** path (`validation.md` → Store-scope re-validation: the scratch path is a
+/// temp dir, **never** under a managed `location:`). The engine writes it, drives the
+/// probe over it, and removes it before returning — it is never committed and never
+/// observed by anything but the one probe invocation.
+const STORE_SNAPSHOT_FILE: &str = "store-probe-snapshot.json";
+
+/// Re-validate the **committed store's** doc↔code surface — the engine entry point the
+/// top-level `jigc validate` drives (`validation.md` → Store-scope re-validation). It is
+/// the **store-scope twin** of [`schedule_doc_code`] wrapped in a [`ValidationReport`]:
+/// **task-less and read-only** (no working area, no `FileStateRecord`, no edge index).
+///
+/// It enumerates every committed doc's `code-anchor` leaves over every active schema
+/// `location:` ([`enumerate_committed_surface`]), materializes the serializable
+/// [`EffectiveStateSnapshot`] (`working_tree_root = repo_root`) to a **temp-dir scratch**
+/// path (never under a managed `location:`), drives the CLI-supplied subprocess
+/// `invoke_doc_code` seam over it, and ingests the probe's findings + any
+/// `pack-probe-integrity.*` meta-findings into the report. The engine stays shell-free —
+/// the invoke step (the only thing that shells out) is the CLI's, exactly as at task
+/// scope.
+///
+/// **Reuses the M10 spine wholesale** — `enumerate_committed_surface` (inc-1),
+/// [`EffectiveStateSnapshot::new`], [`ProbeRequest::new`], and [`ingest_probe_run`] are
+/// target-agnostic: the store sweep differs from the task sweep only in *which surface it
+/// enumerates*, not in how it requests/ingests. One probe invocation covers the whole
+/// store; the wire request names a representative `target` (the first address-sorted
+/// anchor) but the probe reads the full set from the snapshot.
+///
+/// **Severity is the engine-owned post-pass** at [`ValidationReport::new`], keyed by
+/// `(probe, check)` identically to the task gate (the M6 post-pass): `doc-code.*` content
+/// findings are tunable, the `pack-probe-integrity.*` meta-findings intrinsic-blocking and
+/// untunable. A no-delta `resolved` leaves every emitted severity untouched.
+///
+/// **No anchor → the loud guard only.** A store with no `code-anchor` leaf (or only
+/// list-valued ones) never calls the invoker and writes no snapshot — the report carries
+/// only the enumeration's guard findings, never silently dropping the multi-valued guard
+/// (`validation.md` → Multi-valued anchors get a non-silent guard).
+pub fn validate_store(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    resolved: &crate::cascade::Resolved,
+    invoke_doc_code: &ProbeInvoker<'_>,
+) -> std::io::Result<ValidationReport> {
+    let (anchors, mut findings) = enumerate_committed_surface(repo_root, schemas)?;
+    if anchors.is_empty() {
+        // No anchor to probe — but a list-valued committed `code-anchor` still surfaces
+        // its loud guard finding (never silently dropped, the store-scope half of the
+        // non-silent-guard contract). The invoker is not called and no snapshot is
+        // written. The guard findings are graded by the same post-pass below.
+        return Ok(ValidationReport::new(findings, resolved));
+    }
+
+    // The representative target the wire envelope carries (the probe reads the full set
+    // from the snapshot). `anchors` is non-empty here, so the first is always present.
+    let target = anchors[0].address.clone();
+
+    // Materialize the snapshot to a fresh temp-dir scratch file — task-less, so it must
+    // NOT land under a managed `location:` (`validation.md` → the scratch path is a temp
+    // dir). Removed before returning; never committed.
+    let snapshot = EffectiveStateSnapshot::new(anchors, repo_root.to_path_buf());
+    let scratch = store_scratch_path();
+    std::fs::write(&scratch, serde_json::to_vec(&snapshot)?)?;
+
+    let request = ProbeRequest::new(
+        DOC_CODE_PROBE,
+        target,
+        scratch.clone(),
+        serde_json::Map::new(),
+    );
+    let run = invoke_doc_code(&request);
+    // Always clean the scratch file, whether the invoke succeeded or errored.
+    let _ = std::fs::remove_file(&scratch);
+    findings.extend(ingest_probe_run(DOC_CODE_PROBE, &run?));
+
+    Ok(ValidationReport::new(findings, resolved))
+}
+
+/// A fresh, process-and-time-unique scratch path under [`std::env::temp_dir`] for the
+/// store-sweep snapshot — never under a managed `location:` (the task-less sweep has no
+/// working area to put it in). The caller writes it, drives the probe over it, and removes
+/// it before returning.
+fn store_scratch_path() -> std::path::PathBuf {
+    let mut path = std::env::temp_dir();
+    path.push(format!(
+        "jigc-{}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+        STORE_SNAPSHOT_FILE,
+    ));
+    path
 }
 
 /// Schedule the `doc-code` probe over the task's effective-state target surface
@@ -2077,5 +2174,388 @@ The audit landed green.
             "the staged case must not block validate, got {:?}",
             report.findings
         );
+    }
+}
+
+#[cfg(test)]
+mod validate_store_tests {
+    //! The store-scope sweep ([`validate_store`]): enumerate every committed doc's
+    //! `code-anchor` leaves, materialize the snapshot to a temp-dir scratch path, drive
+    //! the CLI-supplied `doc-code` invoker over it, then ingest the probe's findings plus
+    //! the `pack-probe-integrity.*` meta-findings into one [`ValidationReport`]. The
+    //! invoker is an in-process double here (the real probe is `T2`'s acceptance).
+
+    use super::*;
+    use crate::probe::{ProbeRequest, ProbeResponse, ProbeRun, ProbeRunStatus};
+    use crate::schema::{dev_pack_field_types, load_schema_with_types};
+    use std::cell::RefCell;
+    use std::path::PathBuf;
+
+    /// A throwaway committed-store root that removes itself on drop.
+    struct TempRoot(PathBuf);
+
+    impl TempRoot {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-validate-store-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp root");
+            TempRoot(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+        /// Commit a doc at `<repo_root>/<location>/<slug>.md`.
+        fn commit(&self, location: &str, slug: &str, body: &str) {
+            let dir = self.0.join(location);
+            std::fs::create_dir_all(&dir).expect("mk location");
+            std::fs::write(dir.join(format!("{slug}.md")), body).expect("commit");
+        }
+    }
+
+    impl Drop for TempRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    /// The two code-anchor doctypes the store sweep walks — `adr` (decisions/) with a
+    /// header `cites-code`, and an inline `spec` (specs/) with a criterion `maps-to-test`.
+    fn schemas() -> BTreeMap<String, Schema> {
+        const SPEC_YAML: &[u8] = b"\
+type: spec
+location: specs/
+id-from: title
+sections:
+  - id: goal
+    slot: { hint: One sentence. }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: maps-to-test, type: code-anchor, check: criterion-maps-to-test }
+";
+        let mut m = BTreeMap::new();
+        m.insert(
+            "adr".to_string(),
+            load_schema_with_types(ADR_YAML, &dev_pack_field_types()).expect("adr.yaml loads"),
+        );
+        m.insert(
+            "spec".to_string(),
+            load_schema_with_types(SPEC_YAML, &dev_pack_field_types()).expect("spec fixture loads"),
+        );
+        m
+    }
+
+    /// A committed ADR with a **valid** anchor (a real symbol — `validate_task` exists in
+    /// this very file).
+    const ADR_VALID: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: crates/engine/src/validate.rs#validate_task
+---
+
+# Valid decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+
+    /// A committed ADR with a **dangling** anchor — a well-formed `<path>#<symbol>` whose
+    /// symbol does not exist (the renamed/deleted-symbol case the store sweep must catch).
+    const ADR_DANGLING: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: crates/engine/src/validate.rs#vanished_symbol
+---
+
+# Dangling decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+
+    /// A no-delta resolved cascade — the post-pass leaves every emitted severity
+    /// untouched, so these sweeps assert the byte-identical no-override path.
+    fn no_delta_resolved() -> crate::cascade::Resolved {
+        crate::cascade::resolve(
+            &crate::cascade::PackDefaultLayer::new(
+                "dev-pack",
+                "0.1.0",
+                BTreeMap::new(),
+                Vec::new(),
+            ),
+            None,
+            None,
+        )
+        .expect("resolves")
+    }
+
+    /// An in-process `doc-code` invoker double (the `InProcessDocCodeProbe` pattern as an
+    /// `impl Fn(&ProbeRequest) -> io::Result<ProbeRun>`): it reads the snapshot the engine
+    /// materialized at the request's `snapshot_path`, and emits one blocking
+    /// `doc-code.symbol-exists` content finding for every anchor whose value names a
+    /// `vanished_symbol` (the dangling fixture). A valid anchor yields nothing. It records
+    /// each snapshot path it was handed so the test can assert scratch-path placement +
+    /// cleanup. Exits 0 with a well-formed [`ProbeResponse`].
+    fn dangling_aware_invoker(
+        seen: &RefCell<Vec<PathBuf>>,
+    ) -> impl Fn(&ProbeRequest) -> std::io::Result<ProbeRun> + '_ {
+        move |req| {
+            seen.borrow_mut()
+                .push(req.effective_state.snapshot_path.clone());
+            let snapshot: EffectiveStateSnapshot =
+                serde_json::from_slice(&std::fs::read(&req.effective_state.snapshot_path)?)?;
+            let findings: Vec<Finding> = snapshot
+                .anchors
+                .iter()
+                .filter(|a| a.anchor_value.contains("vanished_symbol"))
+                .map(|a| {
+                    Finding::graded(
+                        Severity::Blocking,
+                        "doc-code.symbol-exists",
+                        format!("symbol does not resolve: {}", a.anchor_value),
+                        Some(Location::addressed(a.address.clone(), 1, 1)),
+                        None,
+                    )
+                })
+                .collect();
+            Ok(ProbeRun {
+                stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            })
+        }
+    }
+
+    /// (Test 1, the done-criterion) A committed store with one **valid** and one
+    /// **dangling** anchor: the real-shaped invoker emits exactly one blocking
+    /// `doc-code.symbol-exists` content finding (for the dangling anchor), the valid one is
+    /// clean, and `report.has_blocking()` reflects it. A clean store (valid anchor only)
+    /// yields no content finding and does not block.
+    #[test]
+    fn validate_store_reports_dangling_anchor_clean_on_valid() {
+        // --- The drifted store: one valid + one dangling committed anchor.
+        let repo = TempRoot::new("dangling");
+        repo.commit("decisions", "valid", ADR_VALID);
+        repo.commit("decisions", "dangling", ADR_DANGLING);
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+        )
+        .expect("store sweep runs");
+
+        let content: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "doc-code.symbol-exists")
+            .collect();
+        assert_eq!(
+            content.len(),
+            1,
+            "exactly one dangling anchor must surface one doc-code content finding, got {:?}",
+            report.findings,
+        );
+        assert_eq!(content[0].severity, Severity::Blocking);
+        assert!(
+            content[0].message.contains("vanished_symbol"),
+            "the finding must name the dangling anchor, got {}",
+            content[0].message,
+        );
+        assert!(
+            report.has_blocking(),
+            "a dangling anchor must make the report block, got {:?}",
+            report.findings,
+        );
+
+        // --- The clean store: only the valid anchor. No content finding, no block.
+        let clean = TempRoot::new("clean");
+        clean.commit("decisions", "valid", ADR_VALID);
+        let seen_clean = RefCell::new(Vec::new());
+        let clean_report = validate_store(
+            clean.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen_clean),
+        )
+        .expect("clean store sweep runs");
+        assert!(
+            clean_report.findings.is_empty(),
+            "a store with only valid anchors must yield an empty report, got {:?}",
+            clean_report.findings,
+        );
+        assert!(!clean_report.has_blocking());
+    }
+
+    /// (Test 2) An invoker that fails — non-zero exit (crash), timeout, or exit-0 garbage
+    /// (malformed-output) — yields **exactly one** blocking `pack-probe-integrity.*`
+    /// meta-finding in the report (the input to inc-3's exit rule). The probe didn't
+    /// validate anything, so the report cannot claim a trustworthy clean result.
+    #[test]
+    fn validate_store_failure_yields_one_probe_integrity_meta_finding() {
+        // Each failure mode drives `validate_store` over a real-anchor store (so the
+        // invoker is actually called) and asserts exactly one blocking meta-finding.
+        fn assert_one_meta(label: &str, invoke: &ProbeInvoker<'_>) {
+            let repo = TempRoot::new(label);
+            repo.commit("decisions", "valid", ADR_VALID);
+
+            let report = validate_store(repo.path(), &schemas(), &no_delta_resolved(), invoke)
+                .expect("store sweep runs even when the probe misbehaves");
+
+            let meta: Vec<&Finding> = report
+                .findings
+                .iter()
+                .filter(|f| f.code.starts_with("pack-probe-integrity"))
+                .collect();
+            assert_eq!(
+                meta.len(),
+                1,
+                "a {label} invocation must yield exactly one pack-probe-integrity meta-finding, \
+                 got {:?}",
+                report.findings,
+            );
+            assert_eq!(
+                meta[0].severity,
+                Severity::Blocking,
+                "{label} meta-finding blocks"
+            );
+            assert!(
+                report.has_blocking(),
+                "{label}: the report must block (the probe could not be trusted)",
+            );
+        }
+
+        // crash — non-zero exit with no usable output.
+        assert_one_meta("crash", &|_req| {
+            Ok(ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::Exited { code: Some(2) },
+            })
+        });
+        // timeout — killed for exceeding the budget.
+        assert_one_meta("timeout", &|_req| {
+            Ok(ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::TimedOut,
+            })
+        });
+        // malformed-output — exit 0 but unparseable stdout.
+        assert_one_meta("malformed-output", &|_req| {
+            Ok(ProbeRun {
+                stdout: b"not json".to_vec(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            })
+        });
+    }
+
+    /// (Test 3) The snapshot scratch path resolves under [`std::env::temp_dir`] — **not**
+    /// under `repo_root` nor any managed `location:` — and is **cleaned up** after the
+    /// sweep returns. The invoker captures the path the engine handed it; the test
+    /// inspects it.
+    #[test]
+    fn store_snapshot_scratch_is_under_temp_dir_and_cleaned_up() {
+        let repo = TempRoot::new("scratch");
+        repo.commit("decisions", "valid", ADR_VALID);
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+        )
+        .expect("store sweep runs");
+        // The valid-only store does not block, but the invoker WAS called.
+        assert!(!report.has_blocking());
+
+        let paths = seen.borrow();
+        assert_eq!(
+            paths.len(),
+            1,
+            "the invoker is called exactly once for the whole store"
+        );
+        let scratch = &paths[0];
+
+        assert!(
+            scratch.starts_with(std::env::temp_dir()),
+            "the snapshot scratch path must resolve under std::env::temp_dir(), got {scratch:?}",
+        );
+        assert!(
+            !scratch.starts_with(repo.path()),
+            "the scratch path must NEVER be under repo_root / any location:, got {scratch:?}",
+        );
+        assert!(
+            !scratch.exists(),
+            "the scratch snapshot must be cleaned up after the sweep returns, still at {scratch:?}",
+        );
+    }
+
+    /// (Test 4) A store with **no** `code-anchor` leaf never calls the invoker and writes
+    /// no snapshot — the report is empty and does not block (the omitting-context inert
+    /// path; the invoker panics if it runs). The list-valued / loud-guard half is the
+    /// enumeration's own test (inc-1); this asserts the entry point's empty-surface skip.
+    #[test]
+    fn no_anchor_store_skips_the_invoker() {
+        const ADR_NO_ANCHOR: &str = "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# No-anchor decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+        let repo = TempRoot::new("no-anchor");
+        repo.commit("decisions", "plain", ADR_NO_ANCHOR);
+
+        let report = validate_store(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &(|_req: &ProbeRequest| {
+                panic!("invoker must not run when the store carries no anchor")
+            }),
+        )
+        .expect("store sweep runs");
+        assert!(
+            report.findings.is_empty(),
+            "a no-anchor store yields an empty report, got {:?}",
+            report.findings,
+        );
+        assert!(!report.has_blocking());
     }
 }
