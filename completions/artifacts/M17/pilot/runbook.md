@@ -20,6 +20,22 @@ operator guide for the live runs. **Arm order is fixed: B → A → C** (coin-fl
   was used once). `pnpm lint` has pre-existing biome drift at baseline (constant across all arms,
   left as-is — A5 is `pnpm test`, not lint). No lefthook git hooks (removed for arm/jigc symmetry).
 
+### Environment isolation (contamination control)
+
+All three arms launch in a **dedicated pristine Claude home**, `CLAUDE_CONFIG_DIR=/tmp/jigc-dogfood/clean-home`
+(no plugins → **claude-mem off**, no global methodology). This neutralizes two confounds:
+
+- **claude-mem** — memory injection would bleed cross-session knowledge of the task/jigc into the
+  arms (the worst carryover vector). The clean home enables no plugins. Verify at each arm's startup
+  that **no "recent context" / memory block appears.**
+- **Global methodology** — `~/.claude/CLAUDE.md` (`@LACON @PRINCIPLES`) loaded into every session
+  regardless of home, and `PRINCIPLES.md`'s test-first/verifiable content overlaps arm C's frozen
+  methodology — muting the C-vs-B contrast. It has been **moved aside** (`~/.claude/CLAUDE.md.dogfood-bak`)
+  for the run window. **Restore after the pilot:** `bash /tmp/jigc-dogfood/RESTORE-AFTER-PILOT.sh`.
+
+The launch scripts set `CLAUDE_CONFIG_DIR` for you. The clean home reuses your auth token; if it
+prompts to log in at first launch, run `claude login` once there.
+
 ## The matched intent (verbatim, all arms)
 
 > In `@galey/extension-heading`, the `heading()` factory accepts a `maxLevel` option (1–6,
@@ -48,6 +64,9 @@ Run each arm as a **fresh, isolated session** (separate `claude` launch). Do the
 1. **Launch:** `bash /tmp/jigc-dogfood/pilot/run-arm-<X>.sh` (it `cd`s into the twin, exports env,
    starts `claude`).
 2. **Mini-smoke (first, before the task):**
+   - **Environment check (all arms):** confirm the session shows **no claude-mem "recent context"
+     block** and **no `PRINCIPLES`/`LACON`/GSD** in the loaded instructions — only the twin's own
+     `CLAUDE.md`. If either leaks, stop and re-check the clean home / the moved-aside global config.
    - Arm A: the `SessionStart` hook runs `jigc start` on launch → the log should already hold one
      `jigc` event with **`exit` non-null**. Confirm: `tail -1 /tmp/jigc-dogfood/pilot/logs/arm-A/hook-log.jsonl`.
      If `exit` is `null` or the file is empty, STOP — the capture is misconfigured (don't burn the run).
