@@ -1,0 +1,3 @@
+0c333af docs(reconciliation): cite all three decisions in the reconciliation arch-doc
+1e6274e docs(reconciliation): document the reconciliation / file-state subsystem
+c5f25e0 docs(reconciliation): record absorb advances baseline only at a landed finalize

@@ -1,0 +1,1 @@
+ba0bcc7 docs: architecture doc + decisions for reconciliation / file-state

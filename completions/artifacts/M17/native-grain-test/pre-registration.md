@@ -100,6 +100,14 @@ Arm J gets **none** of this in prose — it gets the jigc adapter, and discovers
 through `jigc` (`jigc start`, `jigc describe`, the composed workflow). Fairness check before the run:
 confirm the frozen block encodes the same semantic rules jigc enforces (no more, no less).
 
+> **Amendment 2 (pre-run, 2026-06-13):** both twins replace jigc's own (jigc-tool-centric) `CLAUDE.md`
+> with an **identical minimal project-facts base** — the repo is a Rust workspace; the reconciliation/
+> file-state code lives in `crates/engine/src/file_state.rs` (+ `state.rs`) — so the two arms share the
+> *same* project orientation and differ **only** in the doc-authoring mechanism (arm J: the jigc
+> adapter appended by `jigc setup`; arm S: the frozen conventions block above). Using jigc's real
+> `CLAUDE.md` would (a) tell arm S all about jigc — contamination — and (b) give arm J jigc-specific
+> richness arm S lacks, breaking symmetry. This mirrors the pilot's project-facts base.
+
 ## The defect rubric (tool-neutral, semantic integrity — applied by the independent judge to BOTH arms)
 
 Counted on each arm's **committed** artifacts. These are integrity properties any doc-as-code system
