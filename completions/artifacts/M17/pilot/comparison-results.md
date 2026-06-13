@@ -110,3 +110,24 @@ methodology as a flat file (C), and carried slightly more ceremony (the dev-task
 fumble). **Honest implication:** the differentiators live in the *surrounding spine* (flow 21:
 planning → increment → completion with ADRs, validation, supersession), not in a lone code task —
 which is exactly what the pilot's flow-21 run must exercise to test the thesis where it actually bites.
+
+### Corrections + the structural finding (post-run, with the operator)
+
+- **Tests — both A and C added them.** The committed diffs show A and C each added ~4 test cases
+  (default-3 + maxLevel-6 for `aria.keyboard` and `themeKeys`); only B added none. The *difference
+  is in how*: in **A** test-first was **deliberate** (jigc's `implement` step mandates the failing
+  test first); in **C** it was **reactive** — the agent brute-forced a first implementation, then
+  tested, the test caught a bug A/B didn't make, and it rewrote (the commit shows only the clean
+  end-state). C's rougher first pass is plausibly LLM variance, not a methodology effect.
+- **The structural finding (why no single code task can differentiate jigc):** the `dev-task`
+  workflow has **no `allows-create`** — only `planning`/`completion`/`record-dogfood` create managed
+  docs. A lone dev-task produces *only a commit* (transient, no `location:`), so it exercises **none**
+  of jigc's differentiators (managed `decisions-log`/`roadmap`/`completion-record`, validation over
+  them, drift/reconciliation, supersession). A≈C is therefore expected, and *any* code task would
+  tie for the same reason. The comparison validated the **adapter (routes unprompted) + the
+  methodology layer + the apparatus** — never the machinery.
+
+**Verdict status:** this single-task comparison is **retained as adapter/methodology/apparatus
+validation**, and **superseded as the thesis test** by an **increment-level 3-arm comparison** (the
+unit that actually produces managed artifacts — settled with the operator, 2026-06-13). A fresh
+pre-registration follows.
