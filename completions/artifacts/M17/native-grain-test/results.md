@@ -86,8 +86,19 @@ the next test, if pursued: scale the task until hand-structuring breaks.
 - **Orchestrator authored both environments** (the arms ran blind; the setup is mine). Symmetric
   project-facts base verified; the jigc-vs-hand authoring mechanism is the only intended difference.
 - **One metric, one dimension** — structural-integrity defects. Says nothing about prose quality,
-  speed, or maintenance-over-time (the doc↔code drift jigc re-checks on every later finalize, which a
-  one-shot comparison can't measure — arguably jigc's strongest claim, and untested here).
+  speed, or maintenance-over-time.
+
+> **Post-test probe correction (2026-06-13):** scoping the *maintenance/drift-over-time* follow-up
+> empirically corrected an assumption stated in an earlier draft of this doc — that jigc "re-checks
+> doc↔code on every later finalize." It does **not**. Three probes in the jigc twin: a stale
+> `implemented-by` anchor (a symbol the committed arch-doc names was renamed in the code) is **not**
+> caught at an unrelated task's finalize, and **not** caught when the doc itself drifts and is
+> absorbed; it is caught **only** when the doc is re-authored through its own workflow — and there is
+> **no store-wide `jigc validate`** to sweep committed docs against current code. So jigc enforces
+> doc↔code integrity at **authoring time, not over time**: a committed doc silently rots under moving
+> code until deliberately re-authored. This gap — and the milestone to close it (build the store-wide
+> re-validation, then run the maintenance/drift comparison) — is recorded in
+> [decisions-pending.md](../../../implementation/decisions-pending.md) and the roadmap (M18).
 
 ## Disposition
 
