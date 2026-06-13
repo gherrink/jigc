@@ -49,6 +49,7 @@
 //! serializable snapshot ([`crate::validate`]'s T3 materialization) carries.
 
 use crate::field_block::Value;
+use crate::finding::{Finding, Location, Severity};
 use crate::parse::{ParsedSection, parse_sections};
 use crate::schema::{FieldType, Schema, SectionBody};
 use crate::state::{DOCS_DIR, RolesRecord};
@@ -97,12 +98,21 @@ pub struct TargetAnchor {
 /// skipped (best-effort, mirroring [`crate::index::overlay_working`]): conformance
 /// is the `schema-conformance` gate's concern, not enumeration's. The output is
 /// address-sorted so it is reproducible regardless of directory-read order.
+///
+/// Returns `(anchors, guard_findings)`: the second element carries any **multi-valued
+/// non-silent guard** findings ([`collect_from_source`]) — a `code-anchor` field that
+/// parsed to a [`Value::List`] is not an anchor shape this projection enumerates, but
+/// it is *not silently dropped* either, so a future `0..*` code-anchor can never pass
+/// unchecked-but-green (`validation.md` → Store-scope re-validation, "Multi-valued
+/// anchors get a non-silent guard"). No shipped `code-anchor` is list-valued, so over
+/// the shipped pack this is always empty.
 pub fn enumerate_target_surface(
     task_dir: &Path,
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
-) -> std::io::Result<Vec<TargetAnchor>> {
+) -> std::io::Result<(Vec<TargetAnchor>, Vec<Finding>)> {
     let mut anchors = Vec::new();
+    let mut guard_findings = Vec::new();
 
     // Surface a — created/edited: the staged `docs/*.md` instances.
     let docs = task_dir.join(DOCS_DIR);
@@ -126,7 +136,7 @@ pub fn enumerate_target_surface(
                 };
                 let bytes = std::fs::read(entry.path())?;
                 let source = String::from_utf8_lossy(&bytes);
-                collect_from_source(schema, ty, slug, &source, &mut anchors);
+                collect_from_source(schema, ty, slug, &source, &mut anchors, &mut guard_findings);
             }
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
@@ -152,22 +162,30 @@ pub fn enumerate_target_surface(
         };
         let mut source = String::from_utf8_lossy(&bytes).into_owned();
         crate::parse::strip_leading_bom(&mut source);
-        collect_from_source(schema, ty, slug, &source, &mut anchors);
+        collect_from_source(schema, ty, slug, &source, &mut anchors, &mut guard_findings);
     }
 
     anchors.sort_by(|a, b| a.address.cmp(&b.address));
     anchors.dedup();
-    Ok(anchors)
+    Ok((anchors, guard_findings))
 }
 
 /// Parse one doc against its schema and collect its `code-anchor` leaves into
 /// `anchors`. An unparseable instance contributes nothing (best-effort).
-fn collect_from_source(
+///
+/// `guard_findings` accumulates the **multi-valued non-silent guard** (`validation.md`
+/// → Store-scope re-validation): a `code-anchor` field that parsed to a
+/// [`Value::List`] is not enumerated as an anchor, but is surfaced as one loud
+/// blocking finding rather than silently dropped. The store walk ([T2]) lifts this
+/// projection **verbatim**, so the guard is a property of the projection, shared by
+/// both the task-scope and store-scope callers.
+pub fn collect_from_source(
     schema: &Schema,
     ty: &str,
     slug: &str,
     source: &str,
     anchors: &mut Vec<TargetAnchor>,
+    guard_findings: &mut Vec<Finding>,
 ) {
     let Ok(doc) = parse_sections(schema, source) else {
         return;
@@ -178,10 +196,18 @@ fn collect_from_source(
         };
         match &section.body {
             SectionBody::Simple { .. } => {
-                collect_simple(section, parsed, ty, slug, anchors);
+                collect_simple(section, parsed, ty, slug, anchors, guard_findings);
             }
             SectionBody::Repeatable { repeatable } => {
-                collect_repeatable(repeatable, parsed, section, ty, slug, anchors);
+                collect_repeatable(
+                    repeatable,
+                    parsed,
+                    section,
+                    ty,
+                    slug,
+                    anchors,
+                    guard_findings,
+                );
             }
         }
     }
@@ -189,12 +215,13 @@ fn collect_from_source(
 
 /// Collect header / simple-section `code-anchor` fields, each carrying the
 /// predicate the M13 selector resolves (`field.check ?? field_type.check`).
-fn collect_simple(
+pub fn collect_simple(
     section: &crate::schema::Section,
     parsed: &ParsedSection,
     ty: &str,
     slug: &str,
     anchors: &mut Vec<TargetAnchor>,
+    guard_findings: &mut Vec<Finding>,
 ) {
     let SectionBody::Simple { fields, .. } = &section.body else {
         return;
@@ -206,9 +233,10 @@ fn collect_simple(
         let Some(present) = parsed.fields.iter().find(|f| f.key == declared.id) else {
             continue; // optional + absent: no anchor to adjudicate.
         };
-        if let Some(value) = scalar(&present.value) {
+        let address = format!("{ty}:{slug}#{}/{}", section.id, declared.id);
+        if let Some(value) = scalar(&present.value, &address, guard_findings) {
             anchors.push(TargetAnchor {
-                address: format!("{ty}:{slug}#{}/{}", section.id, declared.id),
+                address,
                 anchor_value: value,
                 check_id: resolve_check_id(declared),
             });
@@ -219,13 +247,14 @@ fn collect_simple(
 /// Collect repeatable-item `code-anchor` leaves, each carrying the predicate the
 /// M13 selector resolves (`field.check ?? field_type.check`) — *not* chosen by
 /// position, so a repeatable anchor may resolve to `symbol-exists`.
-fn collect_repeatable(
+pub fn collect_repeatable(
     repeatable: &crate::schema::Repeatable,
     parsed: &ParsedSection,
     section: &crate::schema::Section,
     ty: &str,
     slug: &str,
     anchors: &mut Vec<TargetAnchor>,
+    guard_findings: &mut Vec<Finding>,
 ) {
     // The block's `code-anchor` leaves (a field, never the id-source / a slot).
     let anchor_fields: Vec<&crate::schema::Field> = repeatable
@@ -244,9 +273,10 @@ fn collect_repeatable(
             let Some(present) = item.fields.iter().find(|f| f.key == declared.id) else {
                 continue;
             };
-            if let Some(value) = scalar(&present.value) {
+            let address = format!("{ty}:{slug}#{}/{}/{}", section.id, item.id, declared.id);
+            if let Some(value) = scalar(&present.value, &address, guard_findings) {
                 anchors.push(TargetAnchor {
-                    address: format!("{ty}:{slug}#{}/{}/{}", section.id, item.id, declared.id),
+                    address,
                     anchor_value: value,
                     check_id: resolve_check_id(declared),
                 });
@@ -262,7 +292,7 @@ fn collect_repeatable(
 /// type is a resolved [`FieldType::Pack`] carrying `check: Some(_)` (the post-T1
 /// invariant); a `None` there is a structurally-impossible mis-resolved schema and
 /// is surfaced as a panic, never a silent default (the absent-default trap).
-fn resolve_check_id(field: &crate::schema::Field) -> String {
+pub fn resolve_check_id(field: &crate::schema::Field) -> String {
     if let Some(check) = &field.check {
         return check.clone();
     }
@@ -278,16 +308,40 @@ fn resolve_check_id(field: &crate::schema::Field) -> String {
 }
 
 /// Whether a field's resolved type is the pack-declared `code-anchor`.
-fn is_code_anchor(ty: &FieldType) -> bool {
+pub fn is_code_anchor(ty: &FieldType) -> bool {
     matches!(ty, FieldType::Pack(p) if p.name == CODE_ANCHOR)
 }
 
-/// The scalar text of a field value (an anchor is a single opaque scalar; a list
-/// value is not an anchor shape and is skipped).
-fn scalar(value: &Value) -> Option<String> {
+/// The scalar text of a `code-anchor` field value, or `None` (with a **loud guard
+/// finding** pushed) when the value is a [`Value::List`].
+///
+/// An anchor is a single opaque scalar. A list-valued `code-anchor` is not an anchor
+/// shape this projection enumerates — no shipped field is list-valued, so no
+/// list-element walk is built (generality for a non-existent case). But it must **not**
+/// be silently dropped: at store scope a dropped list would read as a false "all
+/// clear." So a list value yields **no** anchor and **one** blocking guard finding
+/// addressed at the offending field — a future `0..*` code-anchor can never pass
+/// unchecked-but-green (`validation.md` → Store-scope re-validation, "Multi-valued
+/// anchors get a non-silent guard"). Coordinate is `(1, 1)` — the field's exact source
+/// position is not carried at this projection layer (the `doc-code.symbol-exists`
+/// convention).
+fn scalar(value: &Value, address: &str, guard_findings: &mut Vec<Finding>) -> Option<String> {
     match value {
         Value::Scalar(s) => Some(s.clone()),
-        Value::List(_) => None,
+        Value::List(_) => {
+            guard_findings.push(Finding::graded(
+                Severity::Blocking,
+                "doc-code.multi-valued-anchor",
+                format!(
+                    "code-anchor `{address}` is list-valued; multi-valued anchors are \
+                     not enumerated (no list-element check is built) — resolve to a \
+                     single anchor or add list-element support"
+                ),
+                Some(Location::addressed(address.to_string(), 1, 1)),
+                None,
+            ));
+            None
+        }
     }
 }
 
@@ -465,6 +519,29 @@ Decided.
 Effects.
 ";
 
+    /// A `created` ADR whose `cites-code` field parses to a [`Value::List`] (the
+    /// inline-flow `[a, b]` form). No shipped `code-anchor` is list-valued, so the
+    /// projection builds no list-element enumeration — but it must not *silently
+    /// drop* the value either (a false "all clear"). It emits a loud guard finding.
+    const ADR_WITH_LIST_ANCHOR: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: [crates/engine/src/a.rs#one, crates/engine/src/b.rs#two]
+---
+
+# List-valued anchor
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+
     /// Stage a doc at `<task_dir>/docs/<type>:<slug>.md`.
     fn stage(task_dir: &Path, addr: &str, body: &str) {
         let docs = task_dir.join(DOCS_DIR);
@@ -506,8 +583,14 @@ Effects.
             COMMITTED_UNRELATED_ADR,
         );
 
-        let anchors =
+        let (anchors, guard_findings) =
             enumerate_target_surface(&task_dir, repo.path(), &schemas()).expect("enumerates");
+
+        // No list-valued anchor in this fixture: zero guard findings.
+        assert!(
+            guard_findings.is_empty(),
+            "no list-valued code-anchor here, so no guard finding: {guard_findings:?}",
+        );
 
         // Exactly the two effective-state anchors, address-sorted.
         assert_eq!(
@@ -585,8 +668,13 @@ sections:
                 .expect("arch-doc fixture loads"),
         );
 
-        let anchors =
+        let (anchors, guard_findings) =
             enumerate_target_surface(&task_dir, repo.path(), &schemas).expect("enumerates");
+
+        assert!(
+            guard_findings.is_empty(),
+            "no list anchor: {guard_findings:?}"
+        );
 
         // The repeatable-item anchor resolves to the *type-level* `symbol-exists`,
         // not the deleted positional `criterion-maps-to-test`.
@@ -599,6 +687,50 @@ sections:
             }],
             "a repeatable `code-anchor` with no field override inherits the \
              type-level `symbol-exists` — position is not the discriminator",
+        );
+    }
+
+    /// (M18, the multi-valued non-silent guard — `validation.md` → Store-scope
+    /// re-validation, "Multi-valued anchors get a non-silent guard.") A
+    /// `code-anchor` field whose value parses to a [`Value::List`] is **not** an
+    /// anchor shape the projection enumerates (no shipped field is list-valued, so
+    /// no list-element enumeration is built). The contract is that it is **not
+    /// silently dropped** — the projection emits a loud guard `Finding` so a future
+    /// `0..*` code-anchor can never pass unchecked-but-green. Here a staged ADR's
+    /// `cites-code` carries the inline-flow list `[a, b]`: the projection yields
+    /// **zero** anchors for that field and **one** blocking guard finding addressed
+    /// at the field. (The mechanism lands here; its firing at *store* scope over a
+    /// committed list fixture is proven in T2.)
+    #[test]
+    fn list_valued_anchor_emits_guard_finding_not_a_dropped_anchor() {
+        let repo = TempRoot::new("list-anchor-guard");
+        let task_dir = repo.path().join(".jigc").join("tasks").join("guard");
+        stage(&task_dir, "adr:list-anchor", ADR_WITH_LIST_ANCHOR);
+
+        let (anchors, guard_findings) =
+            enumerate_target_surface(&task_dir, repo.path(), &schemas()).expect("enumerates");
+
+        // The list value is NOT enumerated as an anchor (no list-element walk built).
+        assert!(
+            anchors.is_empty(),
+            "a list-valued code-anchor yields no enumerated anchor, got {anchors:?}",
+        );
+
+        // It is NOT silently dropped: exactly one loud guard finding, addressed at
+        // the offending field, blocking.
+        assert_eq!(
+            guard_findings.len(),
+            1,
+            "the list value emits exactly one guard finding (not a silent drop): \
+             {guard_findings:?}",
+        );
+        let f = &guard_findings[0];
+        assert_eq!(f.severity, crate::finding::Severity::Blocking);
+        assert_eq!(f.code, "doc-code.multi-valued-anchor");
+        assert_eq!(
+            f.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("adr:list-anchor#status/cites-code"),
+            "the guard finding points at the offending field's address",
         );
     }
 }

@@ -264,9 +264,12 @@ fn schedule_doc_code(
     schemas: &BTreeMap<String, Schema>,
     invoke: &ProbeInvoker<'_>,
 ) -> std::io::Result<Vec<Finding>> {
-    let anchors = enumerate_target_surface(dir, repo_root, schemas)?;
+    let (anchors, guard_findings) = enumerate_target_surface(dir, repo_root, schemas)?;
     if anchors.is_empty() {
-        return Ok(Vec::new());
+        // No anchor to probe, but a list-valued `code-anchor` still surfaces its loud
+        // guard finding (the multi-valued non-silent guard, `validation.md` →
+        // Store-scope re-validation) — never silently dropped, even at task scope.
+        return Ok(guard_findings);
     }
 
     // The representative target the wire envelope carries (the probe reads the full set
@@ -284,7 +287,11 @@ fn schedule_doc_code(
         serde_json::Map::new(),
     );
     let run = invoke(&request)?;
-    Ok(ingest_probe_run(DOC_CODE_PROBE, &run))
+    // The probe's findings, plus any multi-valued guard findings (a list-valued
+    // `code-anchor` is never silently dropped, even alongside enumerable anchors).
+    let mut findings = guard_findings;
+    findings.extend(ingest_probe_run(DOC_CODE_PROBE, &run));
+    Ok(findings)
 }
 
 /// One staged doc instance under `<dir>/docs/`: its `docs/<filename>` record key
