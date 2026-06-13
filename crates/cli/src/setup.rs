@@ -89,8 +89,10 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
          # (empty findings), a not-a-jigc-project / probe-missing run (an `error`\n\
          # envelope on stderr, nothing matching here on stdout), and any\n\
          # `pack-probe-integrity` meta-finding (probe != doc-code) all fall through\n\
-         # to a silent exit 0.\n\
-         if printf '%s' \"$report\" | grep -q '\"probe\": \"doc-code\"'; then\n\
+         # to a silent exit 0. The match is whitespace-tolerant after the colon (a\n\
+         # POSIX ERE) so it survives compact or differently-spaced JSON — it keys on\n\
+         # the `\"probe\": \"doc-code\"` finding, never on the pretty-printer's spacing.\n\
+         if printf '%s' \"$report\" | grep -Eq '\"probe\"[[:space:]]*:[[:space:]]*\"doc-code\"'; then\n\
          \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
          fi\n\
          \n\
@@ -642,12 +644,31 @@ mod tests {
             !stderr.contains(warning),
             "an absent jigc must warn nothing (it no-ops cleanly); stderr:\n{stderr}",
         );
+
+        // (6) A doc-code CONTENT finding, but the JSON is emitted **compact** (no space
+        // after the colons): `{"findings":[{"probe":"doc-code",...}]}`. The detection
+        // must NOT couple to the pretty-print spacing — if `jigc validate --format json`
+        // is ever emitted compact (or with different spacing), the hook must still warn,
+        // not go silently dead and ship drift as a false-clean. Keyed on the finding,
+        // robust to whitespace after the colon.
+        let compact = "{\"schema_version\":1,\"findings\":[{\"severity\":\"blocking\",\"probe\":\"doc-code\",\"check\":\"symbol-exists\",\"code\":\"doc-code.symbol-exists\",\"message\":\"anchor crates/engine/src/cache.rs#evict_lru does not resolve\",\"address\":\"decisions/cache.md\",\"route\":null}]}";
+        let jigc = write_fake_jigc(dir.path(), "jigc-compact", compact, "", 0);
+        let (stderr, code) = run_rendered_hook(&jigc);
+        assert_eq!(
+            code, 0,
+            "a compact doc-code finding is warn-only — exit 0; stderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(warning),
+            "a compact (no-space-after-colon) doc-code content finding MUST still warn; stderr:\n{stderr}",
+        );
     }
 
     /// Golden-lock the rendered `pre-commit` body for a fixed `jigc_path`: the
     /// sentinel marker is present, the **absolute** path is embedded (quoted),
-    /// `--format json` is invoked, the discipline keys on `"probe": "doc-code"`, and
-    /// the script always `exit 0`. Pins the bytes an installed hook would run — a
+    /// `--format json` is invoked, the discipline keys on `"probe": "doc-code"`
+    /// whitespace-tolerantly (a POSIX ERE), and the script always `exit 0`. Pins the
+    /// bytes an installed hook would run — a
     /// rename, a reorder, or a discipline slip breaks it (the B2 contract).
     #[test]
     fn precommit_hook_body_golden() {
@@ -672,8 +693,10 @@ mod tests {
              # (empty findings), a not-a-jigc-project / probe-missing run (an `error`\n\
              # envelope on stderr, nothing matching here on stdout), and any\n\
              # `pack-probe-integrity` meta-finding (probe != doc-code) all fall through\n\
-             # to a silent exit 0.\n\
-             if printf '%s' \"$report\" | grep -q '\"probe\": \"doc-code\"'; then\n\
+             # to a silent exit 0. The match is whitespace-tolerant after the colon (a\n\
+             # POSIX ERE) so it survives compact or differently-spaced JSON — it keys on\n\
+             # the `\"probe\": \"doc-code\"` finding, never on the pretty-printer's spacing.\n\
+             if printf '%s' \"$report\" | grep -Eq '\"probe\"[[:space:]]*:[[:space:]]*\"doc-code\"'; then\n\
              \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
              fi\n\
              \n\
