@@ -65,10 +65,22 @@ impl Drop for TempDir {
     }
 }
 
-/// Mark `root` as a git repo for repo-root discovery, without invoking git — a
-/// bare `.git` directory is enough for `locate`.
+/// Make `root` a real git repo. `jigc setup` now installs a `pre-commit` hook that
+/// resolves the repo's real hooks dir via git, so a bare `.git` marker no longer
+/// suffices — the install runs `git rev-parse` against an actual repo.
 fn mark_repo(root: &Path) {
-    fs::create_dir_all(root.join(".git")).expect("create .git marker");
+    let out = Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(root)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .expect("run git init");
+    assert!(
+        out.status.success(),
+        "git init failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
 }
 
 /// Run the built `jigc setup` binary with `cwd = repo` and `$HOME = home`.

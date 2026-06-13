@@ -199,8 +199,10 @@ fn inject_supersedes(repo: &Path, task: &str, slug: &str, target: &str) {
 fn scenario_1_setup_is_idempotent() {
     let repo = TempDir::new("setup");
     let home = TempDir::new("home");
-    // A bare `.git` marker is enough for repo-root discovery.
-    fs::create_dir_all(repo.path().join(".git")).expect("git marker");
+    // `jigc setup` now installs a `pre-commit` hook, which resolves the repo's real
+    // hooks dir via git — so the repo must be a real `git init`, not a bare `.git`
+    // marker (as the real `jigc setup` always runs inside a git repo).
+    git(repo.path(), &["init", "-q"]);
 
     let first = jigc(repo.path(), home.path(), &["setup"]);
     assert_ok(&first, "first `jigc setup`");
