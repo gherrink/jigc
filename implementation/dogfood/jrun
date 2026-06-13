@@ -47,7 +47,11 @@ def main():
         return 127
 
     # Capture so finding codes can be extracted; pass output through faithfully.
-    proc = subprocess.run([real, *args], capture_output=True, text=True)
+    # argv[0] = "jigc" (not the real path) so the binary's own usage/errors read
+    # `jigc`, not `jigc.real` — the wrapper stays invisible to the agent.
+    proc = subprocess.run(
+        ["jigc", *args], executable=real, capture_output=True, text=True
+    )
     sys.stdout.write(proc.stdout)
     sys.stderr.write(proc.stderr)
 
