@@ -140,7 +140,7 @@ pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Re
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => rendered,
         Err(e) => return Err(e),
         Ok(existing) => {
-            let foreign = strip_managed_block(&existing);
+            let foreign = strip_managed_block(&existing, &rendered);
             if foreign.trim().is_empty() {
                 // Empty, or only a prior jigc block: regenerate the standalone hook.
                 rendered
@@ -197,12 +197,20 @@ fn wrapped_managed_block(jigc_path: &Path) -> String {
 }
 
 /// Remove the jigc-managed block from a pre-existing hook, returning the foreign
-/// remainder. Handles both forms: a **wrapped** block (between [`PRECOMMIT_SENTINEL`]
-/// and [`PRECOMMIT_SENTINEL_END`], inclusive of both markers and the trailing
-/// newline) and a **standalone** jigc hook (the rendered body — sentinel present but
-/// no end marker — which is wholly ours, so the remainder is empty). Content with no
-/// sentinel is returned unchanged.
-fn strip_managed_block(content: &str) -> std::borrow::Cow<'_, str> {
+/// remainder. A block counts as jigc-managed in exactly two forms:
+///   - a **wrapped** block bracketed by BOTH [`PRECOMMIT_SENTINEL`] (start) and
+///     [`PRECOMMIT_SENTINEL_END`] (end) — cut out inclusive of both markers and the
+///     trailing newline, the foreign remainder returned;
+///   - a **standalone** jigc hook — `content` byte-identical to `rendered` (the freshly
+///     rendered standalone body, which carries the start sentinel but no end marker) —
+///     wholly ours, so the remainder is empty.
+///
+/// Anything else is **foreign** and returned unchanged — including a foreign hook that
+/// merely *contains* the start-sentinel string on a line but has no matching end marker
+/// and is not our rendered body. Treating a start-sentinel-without-end-marker as wholly
+/// jigc-managed would overwrite that foreign hook (synthetic data-loss); a complete
+/// bracketed block (or the exact standalone body) is the only thing we own.
+fn strip_managed_block<'a>(content: &'a str, rendered: &str) -> std::borrow::Cow<'a, str> {
     let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
         return std::borrow::Cow::Borrowed(content);
     };
@@ -221,8 +229,11 @@ fn strip_managed_block(content: &str) -> std::borrow::Cow<'_, str> {
             out.push_str(&content[block_end..]);
             std::borrow::Cow::Owned(out)
         }
-        // Standalone jigc hook (no end marker): the whole file is ours.
-        None => std::borrow::Cow::Borrowed(""),
+        // No end marker: ours only if the file is byte-identical to a freshly rendered
+        // standalone hook. A foreign hook that merely references the start sentinel is
+        // preserved verbatim (wrapped, not stripped).
+        None if content == rendered => std::borrow::Cow::Borrowed(""),
+        None => std::borrow::Cow::Borrowed(content),
     }
 }
 
@@ -886,6 +897,38 @@ mod tests {
             twice.matches(PRECOMMIT_SENTINEL).count(),
             1,
             "the sentinel block must appear exactly once after a re-install",
+        );
+    }
+
+    /// A pre-existing **foreign** hook that happens to contain jigc's start-sentinel
+    /// string on a line but has NO matching end-marker must be treated as foreign and
+    /// **preserved**, not mistaken for a wholly-jigc standalone hook and overwritten
+    /// (synthetic data-loss). A block counts as jigc-managed only when BOTH the start
+    /// sentinel AND the end marker bracket it (or it is byte-identical to a freshly
+    /// rendered standalone hook).
+    #[test]
+    fn install_precommit_preserves_foreign_hook_carrying_start_sentinel_without_end_marker() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        // A foreign hook that mentions the start-sentinel string (e.g. a comment, or a
+        // copied fragment) on its own line but carries no end marker and is NOT our
+        // rendered body — its real work must survive a `jigc setup`.
+        let foreign = format!(
+            "#!/bin/sh\n{PRECOMMIT_SENTINEL}\n# foreign hook that references the sentinel\necho 'foreign work runs'\nexit 0\n",
+        );
+        std::fs::write(&hook, &foreign).expect("seed a foreign pre-commit");
+
+        install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("install succeeds");
+
+        let after = std::fs::read_to_string(&hook).expect("hook still present");
+        assert!(
+            after.contains("echo 'foreign work runs'\nexit 0\n"),
+            "the foreign hook body must be preserved, not overwritten; got:\n{after}",
+        );
+        assert!(
+            after.contains(PRECOMMIT_SENTINEL_END),
+            "the foreign hook must be wrapped (gain the jigc block), not stripped to ours",
         );
     }
 
