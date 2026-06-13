@@ -435,12 +435,21 @@ fn run_ingest(format: Format) -> ExitCode {
 /// schemas + severity cascade, run the read-only committed-store walk
 /// (`engine::validate::validate_store`) driving the CLI's production `doc-code` invoker,
 /// and render the report through the selected `format`. The sweep is task-less and
-/// **detect-and-report** — it gates no transaction; this clean-path handler always exits
-/// **0** (the `jigc ingest` precedent). The two-class exit rule (a `pack-probe-integrity.*`
-/// meta-finding → non-zero) lands in T3. The probe **pre-flight** (T2) runs before the
-/// sweep: an unresolvable `doc-code` probe bails with one operational error here. A
-/// locator error (no repo / no project layer) likewise routes to stderr and exits
-/// non-zero (`design/validation.md` → Store-scope re-validation → The command).
+/// **detect-and-report** — it gates no transaction.
+///
+/// The exit code follows the **two-class rule** (`design/validation.md` → Severity → the
+/// one exit-code exception; review B1): a content-only run (stale-anchor findings, or
+/// none) exits **0** (the `jigc ingest` precedent — a blocking *content* finding still
+/// exits 0); **any** `pack-probe-integrity.*` meta-finding present exits **non-zero**
+/// (`ExitCode::FAILURE`, *not* the task-gate `EXIT_VALIDATION_BLOCKED` — this is not a
+/// transaction gate, it is the command honestly reporting the probe didn't run, so the
+/// sweep can't claim a trustworthy result). The rule keys on the `pack-probe-integrity`
+/// probe id **directly**, never on `report.has_blocking()` — a deliberate divergence from
+/// the `run_upgrade` / `task validate` idiom.
+///
+/// The probe **pre-flight** runs before the sweep: an unresolvable `doc-code` probe bails
+/// with one operational error here. A locator error (no repo / no project layer) likewise
+/// routes to stderr and exits non-zero.
 fn run_validate_store(format: Format) -> ExitCode {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
@@ -452,7 +461,19 @@ fn run_validate_store(format: Format) -> ExitCode {
     match validate_store_in_repo(&cwd) {
         Ok(report) => {
             println!("{}", render::validation(format, &report));
-            ExitCode::SUCCESS
+            // The two-class exit: a `pack-probe-integrity.*` meta-finding means the probe
+            // could not be trusted (it crashed / timed out / emitted malformed output), so
+            // the sweep cannot claim a result — exit non-zero. Otherwise (content-only or
+            // clean) detect-and-report exits 0, even when a content finding blocks.
+            let probe_unreliable = report
+                .findings
+                .iter()
+                .any(|f| f.probe == "pack-probe-integrity");
+            if probe_unreliable {
+                ExitCode::FAILURE
+            } else {
+                ExitCode::SUCCESS
+            }
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));

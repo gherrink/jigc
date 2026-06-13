@@ -1,5 +1,6 @@
-//! M18 inc-3 / T1 — the `jigc validate` top-level command, **clean-path** end-to-end
-//! through the built `jigc` binary against the **real** `doc-code` probe.
+//! M18 inc-3 — the `jigc validate` top-level command, end-to-end through the built
+//! `jigc` binary against the **real** `doc-code` probe. T1 is the clean path (always
+//! exit 0); T3 adds the two-class exit rule + the milestone headline acceptance flow.
 //!
 //! The store-scope re-validation sweep ([`engine::validate::validate_store`], inc-2) is
 //! task-less by construction: it enumerates every committed doc's `code-anchor` leaves
@@ -253,5 +254,114 @@ fn validate_probe_absent_reports_one_operational_error_non_zero() {
         !stdout.contains("pack-probe-integrity"),
         "the sweep must not run when the probe is absent — no pack-probe-integrity meta-finding; \
          stdout:\n{stdout}",
+    );
+}
+
+/// Compile a tiny **real** probe program that drains its stdin request then exits 2 — a
+/// crashing `doc-code` the invoker drives as an actual subprocess (the non-zero-exit
+/// failure mode, the `store_sweep_acceptance.rs` `build_crasher` idiom). It is a real
+/// file, so it **passes** the T2 pre-flight (the probe *is* resolvable) yet yields a
+/// `pack-probe-integrity.crash` meta-finding when run — the injected-failure input to the
+/// two-class exit rule. Named `doc-code` so a `JIGC_DOC_CODE_PROBE` pointed at it
+/// resolves.
+fn build_crasher(dir: &Path) -> PathBuf {
+    let src = dir.join("crasher.rs");
+    fs::write(
+        &src,
+        "fn main() {\n\
+         use std::io::Read;\n\
+         let mut buf = String::new();\n\
+         std::io::stdin().read_to_string(&mut buf).ok();\n\
+         std::process::exit(2);\n\
+         }\n",
+    )
+    .expect("write crasher source");
+    let bin = dir.join("doc-code");
+    let out = Command::new("rustc")
+        .arg(&src)
+        .arg("-o")
+        .arg(&bin)
+        .arg("--edition")
+        .arg("2021")
+        .output()
+        .expect("invoke rustc for the crasher stub");
+    assert!(
+        out.status.success(),
+        "rustc failed to build the crasher stub:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    bin
+}
+
+/// The milestone **headline acceptance flow** (M18 inc-3 / T3): seed a committed store
+/// (an `adr` + a `spec` with valid `code-anchor`s over real `.rs` files), then **rename a
+/// cited symbol** in the working tree — the over-time drift an unrelated `task validate` /
+/// `finalize` would *not* catch. `jigc validate` surfaces the now-stale anchor as a
+/// `doc-code.*` content finding keyed on that anchor's address, and — because this is
+/// content-only (no `pack-probe-integrity.*` meta-finding) — **exits 0** (detect-and-
+/// report, the `jigc ingest` precedent; `design/validation.md` → Severity → the one
+/// exit-code exception). A blocking *content* finding must still exit 0: the exit rule keys
+/// on `pack-probe-integrity` directly, never on `has_blocking()`.
+#[test]
+fn validate_stale_anchor_surfaces_finding_and_exits_zero() {
+    let repo = TempDir::new("stale");
+    seed_clean_store(repo.path());
+
+    // Rename the symbol the committed `adr` cites: `evict_lru` → `evicted`. The doc still
+    // cites `evict_lru`, which no longer exists in the working tree → a stale anchor that
+    // only a store-scope sweep catches.
+    fs::write(
+        repo.path().join("crates/engine/src/cache.rs"),
+        "pub fn evicted() {}\nfn helper() {}\n",
+    )
+    .expect("rename the cited symbol");
+
+    let out = jigc(repo.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "a content-only sweep (a stale anchor, no probe-integrity meta-finding) must exit 0 \
+         (detect-and-report); stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("doc-code.symbol-exists")
+            && stdout.contains("crates/engine/src/cache.rs#evict_lru"),
+        "the renamed cited symbol must surface a doc-code.symbol-exists finding naming the \
+         now-stale anchor; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("pack-probe-integrity"),
+        "a healthy probe yields no pack-probe-integrity meta-finding; stdout:\n{stdout}",
+    );
+}
+
+/// The injected-probe-failure half of the two-class exit rule (M18 inc-3 / T3): the probe
+/// is **present** (it passes the T2 pre-flight) but crashes (exits non-zero) over every
+/// anchor → a `pack-probe-integrity.*` meta-finding is present → `jigc validate` exits
+/// **non-zero** (the sweep can't claim a trustworthy result — the probe didn't run). Never
+/// a falsely-green run. This is *not* a transaction gate: it is the command honestly
+/// reporting it could not complete (`design/validation.md` → Severity → review B1).
+#[test]
+fn validate_injected_probe_failure_exits_non_zero() {
+    let repo = TempDir::new("crash");
+    seed_clean_store(repo.path());
+
+    let probe_dir = TempDir::new("crasher");
+    let crasher = build_crasher(probe_dir.path());
+    let out = jigc_with_probe(repo.path(), &["validate"], &crasher);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "an injected probe failure (a present-but-crashing probe) must exit non-zero — the \
+         sweep could not complete; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("pack-probe-integrity"),
+        "a crashing probe must surface a pack-probe-integrity meta-finding in the rendered \
+         report; stdout:\n{stdout}",
     );
 }
