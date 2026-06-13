@@ -39,4 +39,33 @@ holds *without* the nudge is exactly what the clean re-run tests. **The capture 
 end-to-end** (jrun logged every verb with real non-null exits — the null-exit contingency works).
 Twin reset to `2db6026`; re-running with the bare intent identical to B.
 
+**Clean re-run (the comparison evidence)** — bare intent, identical to B; **jigc used with no
+instruction** (the adapter + `SessionStart` orientation routed the agent — the adherence bet held).
+
+- **Wall-clock:** < 5 min. **Transcript:** `logs/arm-A/transcript.jsonl` (123 lines).
+- **Commit:** `0a93412` — `fix(extension-heading): honor maxLevel in aria.keyboard and themeKeys`,
+  with a **detailed body** explaining the bind-vs-advertise inconsistency (notably richer than B's).
+- **Diff:** `index.ts` (+9/−6) **plus a real test** `heading.test.ts` (+30) — **test-first**, which
+  B's fast skill skipped. `.jigc/.gitignore` touched by setup (not task drift).
+- **Tally** (`tally.py`): `adapter-writes 1` (4 write-verbs → one logical commit-doc mutation,
+  per-window grouping working on a live log) · `drift-caught 0` · `validate-blocks 0` ·
+  `oob-edits 0` (no managed-doc bypass) · `jigc-invocations 9`.
+- **file_op capture:** 2 (`heading.test.ts`, `index.ts`) — both in scope.
+
+**Correctness — A1–A6: PASS (all).** Verified (throwaway test, 4/4 + gate + well-formed descriptions).
+
+**Evidence for the rubric (not scored here):**
+- *Commit/doc quality:* detailed, correctly-scoped Conventional Commit with a real "why" body. (strong)
+- *Drift:* none (the `.jigc/.gitignore` is setup, not task).
+- *Ceremony:* low but **higher than B** — 9 jigc invocations through the composed dev-task; one
+  `jigc start … --workflow` attempt **exited 1** (operational error) before recovering via `--task`
+  (real CLI friction, captured as exit 1 — not a validation block). Still < 5 min.
+- *Notable:* **added a test** (the methodology's implement step → test-first, unprompted) and a
+  changeset-free clean commit; **flagged the pre-existing lint debt** rather than silently ignoring
+  or folding it in (scope discipline). Both are the differentiators the thesis predicts; the bare-
+  intent re-run shows they came from jigc's composed workflow, not from operator instruction.
+- *Apparatus:* the capture worked end-to-end on a real session, incl. the agent piping
+  `jigc start … | head -60` (jrun logs the full output pre-truncation; hardened post-run so a
+  closed pipe can't drop an event — `ea8a065`).
+
 ## Arm C — static-methodology  *(pending)*
