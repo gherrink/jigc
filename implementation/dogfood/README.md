@@ -15,6 +15,18 @@ The scripts run on stock `python3` (the no-non-stock-interpreter bound: they mus
 
 The raw log + the tally output are exported **unchanged** into the run's owner-artifact (measurement.md → the per-case two-half shape).
 
+## jrun mode — when the harness payload carries no exit code
+
+The smoke check (step 3) can fail in a specific, anticipated way: **the real Claude Code Bash `PostToolUse` payload carries no exit code.** Verified 2026-06-13 — its `tool_response` is `{stdout, stderr, interrupted, isImage, noOutputExpected}`, with no `exitCode`/`exit_code` and no `tool_output`. The hook then logs `exit: null` for every jigc invocation and the tally **refuses** the whole log (`tally_refuses_a_log_whose_jigc_exits_are_null`). The `Write|Edit` → `file_op` channel is unaffected (it carries no exit).
+
+The fallback is **`jrun`** (shipped here, proven by `jrun_captures_real_exit_into_the_log`): a wrapper that shadows `jigc` on PATH, runs the real pinned binary, captures its REAL exit, and feeds `log-event.py` the payload the harness omitted — so the canonical (tested) extraction still produces the `jigc` events, now with real exits. Verbatim/composed workflow commands (`jigc task finalize t1`) run unchanged, so the measured verbatim-execution behaviour is preserved.
+
+**jrun-mode install (replaces step 2's `Bash` matcher; keep `Write|Edit`):**
+
+1. Put the pinned real binary at `jigc.real` and `jrun` (this dir) at `jigc`, both on PATH — e.g. `cp <pinned> ~/.local/bin/jigc.real` and `cp implementation/dogfood/jrun ~/.local/bin/jigc` (or set `JIGC_REAL_BIN` to the pinned binary's absolute path; jrun defaults to a sibling `jigc.real`). With `JIGC_DOGFOOD_LOG` unset jrun is a transparent passthrough that logs nothing.
+2. In the twin's `.claude/settings.json`, wire **only** the `Write|Edit` matcher to `log-event.py` (the OOB channel). **Do not** wire the `Bash` matcher — jrun is the sole jigc-event channel; keeping the Bash hook too would double-log each invocation, once with `exit: null`.
+3. Export `JIGC_DOGFOOD_LOG` (and `JIGC_DOGFOOD_HOME` = this dir) in the session. Re-run the smoke check: one `jigc` command, then confirm the logged event's `exit` is **non-null**.
+
 ## The v1 log schema (pinned, append-only JSONL)
 
 One JSON object per line; the hook only appends, never rewrites. Common fields: `"v": 1` (schema version — bump on any shape change; the tally must keep reading committed v1 capture, pinned by the fixture test) and `"ts"` (ISO-8601 UTC, informational).

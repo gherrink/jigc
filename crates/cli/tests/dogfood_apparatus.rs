@@ -556,6 +556,91 @@ fn tally_refuses_a_log_whose_jigc_exits_are_null() {
     );
 }
 
+/// jrun mode — the documented fallback for the verified real-harness fact that
+/// the Claude Code Bash `PostToolUse` payload carries NO exit code (so the Bash
+/// hook logs `exit: null` and the tally refuses). `jrun` shadows `jigc`, runs the
+/// real pinned binary, captures its REAL exit, and feeds `log-event.py` the
+/// payload the harness omitted — so the canonical extraction produces the `jigc`
+/// event with a real exit, and the tally KEYS (does not refuse) the log.
+#[test]
+fn jrun_captures_real_exit_into_the_log() {
+    let tmp = TempDir::new("jrun");
+    let log = tmp.path().join("hook-log.jsonl");
+
+    // A stub standing in for the real pinned jigc: a `finalize` that blocks —
+    // prints an agent-text finding line on stdout and exits 3.
+    let stub = tmp.path().join("jigc.real");
+    fs::write(
+        &stub,
+        "#!/usr/bin/env bash\n\
+         echo \"blocking · conformance.required-field-present — required field case missing\"\n\
+         exit 3\n",
+    )
+    .expect("write stub jigc");
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&stub).expect("stub metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&stub, perms).expect("chmod stub");
+    }
+
+    let jrun = apparatus_dir().join("jrun");
+    assert!(jrun.is_file(), "jrun ships: {}", jrun.display());
+    let out = Command::new("python3")
+        .arg(&jrun)
+        .args(["task", "finalize", "t1"])
+        .env("JIGC_REAL_BIN", &stub)
+        .env("JIGC_DOGFOOD_LOG", &log)
+        .env("JIGC_DOGFOOD_HOME", apparatus_dir())
+        .output()
+        .expect("run jrun");
+
+    // Passthrough: jrun exits with the real code and reproduces the binary's stdout.
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "jrun forwards the real exit code"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("required field case missing"),
+        "jrun passes the binary's stdout through"
+    );
+
+    // The log carries ONE jigc event with the REAL exit + the extracted finding.
+    let raw = fs::read_to_string(&log).expect("hook log written");
+    let lines: Vec<&str> = raw.lines().collect();
+    assert_eq!(lines.len(), 1, "one jigc event per jrun invocation:\n{raw}");
+    let event: serde_json::Value = serde_json::from_str(lines[0]).expect("v1 JSON line");
+    assert_eq!(event["event"], "jigc");
+    assert_eq!(event["cmd"], "task finalize t1", "the reconstructed argv");
+    assert_eq!(event["exit"], 3, "the REAL exit, not null");
+    assert_eq!(
+        event["findings"][0]["code"], "conformance.required-field-present",
+        "finding extraction runs over the captured stdout"
+    );
+
+    // The tally now KEYS the drift bucket (a finalize exit 3) — never refuses.
+    let tally = run_tally(&log, &[]);
+    assert_eq!(tally["totals"]["drift-caught"], 1, "tally: {tally:#}");
+
+    // With JIGC_DOGFOOD_LOG unset, jrun is a transparent passthrough: it runs the
+    // binary and logs nothing (any non-measured session).
+    let off_log = tmp.path().join("unused.jsonl");
+    let off = Command::new("python3")
+        .arg(&jrun)
+        .args(["--version"])
+        .env("JIGC_REAL_BIN", &stub)
+        .env_remove("JIGC_DOGFOOD_LOG")
+        .output()
+        .expect("run jrun with logging off");
+    assert_eq!(
+        off.status.code(),
+        Some(3),
+        "passthrough exit still forwarded"
+    );
+    assert!(!off_log.exists(), "logging off writes nothing");
+}
+
 /// Real-session command shapes the first cut of the hook missed: a PATH-QUALIFIED
 /// jigc token (`/usr/local/bin/jigc`, `./jigc`) must be recognized, a COMPOUND
 /// command must log one event PER invocation (not just the first), and prose that

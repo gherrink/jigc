@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""jrun — the exit-code-capturing jigc wrapper for dogfood runs.
+
+The Claude Code Bash `PostToolUse` payload carries **no exit code** (verified
+2026-06-13: its `tool_response` is `{stdout, stderr, interrupted, isImage,
+noOutputExpected}`). So the Bash matcher hook logs `exit: null` and the tally
+refuses the whole log (`tally_refuses_a_log_whose_jigc_exits_are_null`). jrun is
+the documented fallback (`design/measurement.md` → The capture substrate; the
+README → jrun mode): it shadows `jigc` on PATH, runs the real pinned binary,
+captures its REAL exit code, and feeds `log-event.py` the very PostToolUse
+payload the harness omitted — so the canonical, tested extraction still produces
+the `jigc` log events, now carrying real exits.
+
+In **jrun mode** the `Bash` matcher hook is REMOVED from the twin's settings
+(jrun is the sole jigc-event channel — keeping the Bash hook too would double-log
+each invocation, once with `exit: null`). Only the `Write|Edit` matcher stays:
+the OOB `file_op` channel needs no exit code and is unaffected.
+
+Transparent by design: jrun shadows `jigc`, so composed/verbatim workflow
+commands (`jigc task finalize t1`) run unchanged — verbatim execution, a measured
+behaviour, is preserved.
+
+Env:
+  JIGC_REAL_BIN     absolute path to the real pinned jigc binary. Defaults to a
+                    sibling `jigc.real` next to this script — so when
+                    JIGC_DOGFOOD_LOG is unset (any non-measured session) jrun is
+                    a transparent passthrough that never logs.
+  JIGC_DOGFOOD_LOG  the append-only log path; unset = logging off (passthrough).
+  JIGC_DOGFOOD_HOME dir containing log-event.py; defaults to this script's dir.
+"""
+
+import os
+import shlex
+import subprocess
+import sys
+
+
+def main():
+    args = sys.argv[1:]
+    here = os.path.dirname(os.path.abspath(__file__))
+    real = os.environ.get("JIGC_REAL_BIN") or os.path.join(here, "jigc.real")
+    if not os.path.isfile(real):
+        sys.stderr.write(
+            f"jrun: real jigc binary not found at {real!r} "
+            "(set JIGC_REAL_BIN to the pinned binary)\n"
+        )
+        return 127
+
+    # Capture so finding codes can be extracted; pass output through faithfully.
+    proc = subprocess.run([real, *args], capture_output=True, text=True)
+    sys.stdout.write(proc.stdout)
+    sys.stderr.write(proc.stderr)
+
+    log = os.environ.get("JIGC_DOGFOOD_LOG")
+    if log:
+        home = os.environ.get("JIGC_DOGFOOD_HOME") or here
+        # Hand the canonical hook the payload the harness left out (real exit) —
+        # zero extraction drift: log-event.py owns invocation + finding parsing.
+        payload = {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "jigc " + " ".join(shlex.quote(a) for a in args)},
+            "tool_response": {
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+                "exitCode": proc.returncode,
+            },
+        }
+        import json
+
+        subprocess.run(
+            ["python3", os.path.join(home, "log-event.py")],
+            input=json.dumps(payload),
+            text=True,
+            env={**os.environ, "JIGC_DOGFOOD_LOG": log},
+        )
+
+    return proc.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())
