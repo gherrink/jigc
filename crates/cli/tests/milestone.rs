@@ -1096,6 +1096,142 @@ fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head
     );
 }
 
+/// The marker a non-blocking `pre-commit` hook writes to stderr before exiting 0 — git
+/// redirects a hook's own stdout to stderr, so a warn-only hook (the M19 doc↔code
+/// backstop's shape) speaks on the hook stream `git_commit` captures.
+const HOOK_WARNING: &str = "NON-BLOCKING-MILESTONE-HOOK-WARNING";
+
+/// Install a **non-blocking** `pre-commit` hook in `repo` that prints `HOOK_WARNING` and
+/// exits 0 — git surfaces it on every commit's stderr (the hook stream). It fires on the
+/// N per-sub-task `commit_empty_message` commits AND the parent aggregate, so the relay's
+/// once-not-(N+1) discipline (`design/finalize.md` → 6. Commit, review B1) is asserted at
+/// the binary: only the aggregate's capture is relayed.
+fn install_warning_hook(repo: &Path) {
+    let hook = repo.join(".git").join("hooks").join("pre-commit");
+    fs::write(
+        &hook,
+        format!("#!/bin/sh\necho {HOOK_WARNING} 1>&2\nexit 0\n"),
+    )
+    .expect("write the non-blocking pre-commit hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&hook).expect("hook metadata").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&hook, perms).expect("chmod hook");
+    }
+}
+
+/// M19 increment 2, T3 — a milestone finalize relays the **aggregate** commit's
+/// non-blocking hook output to the agent, exactly ONCE, never once-per-sub-task
+/// (`design/finalize.md` → 6. Commit, review B1: fan-out relays only the aggregate). The
+/// `pre-commit` hook fires on **every** commit, so a `squash: false` finalize runs it N+1
+/// times (N tree-empty `commit_empty_message` per-sub-task commits + 1 aggregate); the N
+/// per-sub-task fires are intentionally swallowed (`commit_empty_message` relays nothing)
+/// and only the aggregate's capture surfaces. If the per-sub-task commits leaked into the
+/// relay the warning would appear N+1 times — the bug bullet B1 guards against. The
+/// `squash: true` default relays the single aggregate's output the same way.
+#[test]
+fn milestone_finalize_relays_only_the_aggregate_hook_output() {
+    // ── squash:false: 2 sub-task commits + 1 aggregate; warning relayed ONCE ──────
+    let repo = TempDir::new("relay-squash-false");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    install_warning_hook(repo.path());
+
+    let before = rev_list_count(repo.path());
+    let finalized = finalize_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+    assert!(
+        finalized.status.success(),
+        "a non-blocking hook must not block the squash:false finalize; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+    // N+1 = 3 commits landed (2 per-sub-task + 1 aggregate), so the hook fired 3 times —
+    // the precondition that makes once-not-(N+1) a genuine distinction.
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 3,
+        "squash:false must land N+1 commits, so the hook fires N+1 times",
+    );
+    let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout.matches(HOOK_WARNING).count(),
+        1,
+        "the aggregate hook warning must be relayed EXACTLY once — not N+1 times, one per \
+         sub-task commit (review B1: fan-out relays only the aggregate); got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("--- hook output ---"),
+        "the relay must land in the delimited section; got:\n{stdout}",
+    );
+
+    // ── squash:true: the single aggregate's output is relayed the same way ─────────
+    let repo = TempDir::new("relay-squash-true");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    install_warning_hook(repo.path());
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:zed-policy",
+        &adr_plain("Zed policy"),
+        "edited-from-base",
+    );
+
+    let before = rev_list_count(repo.path());
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "a non-blocking hook must not block the squash:true finalize; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+    // squash:true lands EXACTLY one commit (the synthesized aggregate), so the hook fires
+    // once — the relay surfaces it once.
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 1,
+        "squash:true must land exactly one aggregate commit",
+    );
+    let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
+    assert_eq!(
+        stdout.matches(HOOK_WARNING).count(),
+        1,
+        "the squash:true aggregate's hook warning must be relayed once; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("--- hook output ---"),
+        "the relay must land in the delimited section; got:\n{stdout}",
+    );
+}
+
 #[test]
 fn milestone_finalize_removes_every_sub_task_working_area_on_a_landed_commit() {
     // A landed milestone finalize must clean up the per-sub-task working areas

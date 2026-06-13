@@ -540,8 +540,12 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         match crate::task::try_execute_finalize_plan(
             &repo_root, &jigc_root, &dir, &plan, &dir, None,
         )? {
-            // T1 captures the aggregate hook output; the milestone relay site (T3) consumes it.
-            Ok(_hook_output) => {
+            Ok(hook_output) => {
+                // T3 — relay ONLY the aggregate `git_commit`'s non-blocking hook output
+                // (the N per-sub-task `commit_empty_message` commits laid down above
+                // relay nothing — `design/finalize.md` → 6. Commit, review B1: fan-out
+                // relays only the aggregate). Same placement discipline as T2.
+                crate::task::relay_hook_output(format, &hook_output);
                 // The boundary landed — clean up the per-sub-task working areas too (the
                 // executor only removed the milestone area). On a failure (below) the areas
                 // survive for retry.

@@ -700,8 +700,13 @@ pub(crate) fn execute_finalize_plan(
     // The milestone boundary runs no reconcile sweep, so it carries no post-sweep
     // record to persist (`None` — post-commit loads the durable record as before).
     match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir, None)? {
-        // T1 captures the aggregate hook output; the milestone relay site (T3) consumes it.
-        Ok(_hook_output) => Ok(ExitCode::SUCCESS),
+        // T3 — relay the aggregate `git_commit`'s non-blocking hook output (the
+        // `squash: true` milestone boundary; the per-sub-task `commit_empty_message`
+        // commits relay nothing — `design/finalize.md` → 6. Commit, review B1).
+        Ok(hook_output) => {
+            relay_hook_output(format, &hook_output);
+            Ok(ExitCode::SUCCESS)
+        }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
             Ok(ExitCode::FAILURE)
@@ -787,7 +792,7 @@ pub(crate) fn try_execute_finalize_plan(
 /// `--format json` the structured envelope owns stdout (an agent parsing it must not
 /// have it corrupted), so the relay goes to **stderr**; on agent-text it is a delimited
 /// section after `render::validation`'s footer.
-fn relay_hook_output(format: Format, hook_output: &str) {
+pub(crate) fn relay_hook_output(format: Format, hook_output: &str) {
     let hook_output = hook_output.trim();
     if hook_output.is_empty() {
         return;
