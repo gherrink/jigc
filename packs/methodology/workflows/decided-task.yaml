@@ -1,0 +1,14 @@
+---
+when: implement one scoped change test-first that also makes a design decision worth recording
+description: The dev-workflow plus a decision-recording step — scope, implement test-first, run the gate, record the task's design decision on the running decisions log, then land one commit. The lightweight sub-milestone path for a task that decides something worth keeping, without milestone-planning ceremony.
+usage: the work is one coherent change you can carry to a single commit AND it makes a design decision worth recording, and you want the test-first discipline plus a managed decision record without invoking milestone planning.
+creates-task: true
+selectable: false
+allows-create:
+  - { type: decisions-log, as: log }
+---
+{{ include: step:scope }}
+{{ include: step:implement }}
+{{ include: step:gate }}
+{{ include: step:author-decision }}
+{{ include: step:finalize }}

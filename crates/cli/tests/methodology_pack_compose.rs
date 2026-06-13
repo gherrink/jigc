@@ -459,6 +459,121 @@ fn planning_composes_the_commit_fill_and_finalize_tail() {
     );
 }
 
+/// M17 self-hosting dogfood — the methodology `decided-task` workflow composes the
+/// dev-workflow spine PLUS a decision-recording step through the real binary:
+/// `jigc start --workflow decided-task "<intent>"` mints a task and composes
+/// scope → implement → gate → author-decision → finalize, emitting the
+/// decisions-log create + per-entry authoring lines. This is the lightweight
+/// sub-milestone decision-recording path (the grain gap decisions-pending.md:77),
+/// distinct from milestone `planning`: it carries `allows-create: [{decisions-log}]`
+/// so the `{{cli.create-log}}` ref resolves (the create-gate admits the type) WITHOUT
+/// authoring the roadmap / deferral-ledger that planning forces.
+#[test]
+fn decided_task_composes_the_dev_spine_plus_the_decision_recording_step() {
+    let repo = TempDir::new("decided-task");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        setup.status,
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // `decided-task` is `creates-task: true` — a bare `--workflow decided-task` mints
+    // a task and composes the spine. Intent "add cache" → slug "add-cache".
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "decided-task", "add cache"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc start --workflow decided-task \"add cache\"` over the methodology pack must \
+         compose the spine and exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // `creates-task: true` → a task dir is minted at `.jigc/tasks/add-cache/`.
+    assert!(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join("add-cache")
+            .is_dir(),
+        "`--workflow decided-task` must mint the task dir; got stdout:\n{stdout}",
+    );
+
+    // No `{{ … }}` placeholder survives a clean compose.
+    assert!(
+        !stdout.contains("{{") && !stdout.contains("}}"),
+        "no `{{{{ … }}}}` placeholder may survive the decided-task compose; got:\n{stdout}",
+    );
+
+    let pos = |needle: &str| {
+        stdout.find(needle).unwrap_or_else(|| {
+            panic!("composed decided-task spine missing {needle:?}; got:\n{stdout}")
+        })
+    };
+
+    // The spine composes scope → implement → gate → author-decision → finalize. Each
+    // step contributes a distinctive prose marker; offsets strictly increase.
+    let scope_at = pos("done-criterion");
+    let implement_at = pos("failing test");
+    let gate_at = pos("test, lint, and build gate");
+    let decision_at = pos("design decision worth keeping");
+    let finalize_at = pos("one logical commit");
+    assert!(
+        scope_at < implement_at
+            && implement_at < gate_at
+            && gate_at < decision_at
+            && decision_at < finalize_at,
+        "the spine must order scope({scope_at}) < implement({implement_at}) < gate({gate_at}) \
+         < author-decision({decision_at}) < finalize({finalize_at}); got:\n{stdout}",
+    );
+
+    // The decisions-log authoring composes — the create line resolves ONLY if the
+    // workflow's `allows-create` admits `decisions-log` (the create-gate). The singleton
+    // create-ref renders verbatim on the EMITTED bytes (the planning precedent).
+    assert_eq!(
+        emitted_run_line(&stdout, "doc create decisions-log"),
+        "jigc doc create decisions-log --title Decisions-Log --task add-cache",
+    );
+    for needle in [
+        "jigc doc add-item decisions-log:decisions-log#entries",
+        "jigc doc set-slot decisions-log:decisions-log#entries/<id>/why",
+    ] {
+        assert!(
+            stdout.contains(needle),
+            "the decided-task spine must emit the decisions-log authoring line `{needle}`; \
+             got:\n{stdout}",
+        );
+    }
+
+    // The decision-recording authoring follows the gate AND precedes the finalize tail
+    // (record the decision, then fill the commit, then finalize).
+    assert!(
+        gate_at < pos("jigc doc create decisions-log")
+            && pos("jigc doc create decisions-log") < pos("jigc task finalize add-cache"),
+        "the decisions-log authoring must sit between the gate and finalize; got:\n{stdout}",
+    );
+
+    // decided-task does NOT author the roadmap / deferral-ledger that milestone planning
+    // forces — it is the lightweight path, not milestone ceremony.
+    assert!(
+        !stdout.contains("jigc doc create roadmap")
+            && !stdout.contains("jigc doc create deferral-ledger"),
+        "decided-task must NOT author the roadmap / deferral-ledger (it is the lightweight \
+         sub-milestone path, not milestone planning); got:\n{stdout}",
+    );
+}
+
 /// M16 Increment 5 / T2 — the methodology `completion` workflow composes the
 /// completion spine through the real binary: `jigc start --workflow completion
 /// "<milestone>"` mints a task (off-router) **and** emits the completion-half's

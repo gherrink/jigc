@@ -211,6 +211,19 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
          catalog-leak class — `record-dogfood` is `selectable: false`, off-router by \
          construction); catalog lines: {catalog_lines:?}",
     );
+    // M17 self-hosting dogfood: the same M8 catalog-leak guard, named for the
+    // lightweight decision-recording workflow. `decided-task` is `creates-task: true,
+    // selectable: false` — it mints a task (riding the create-gate + finalize-promote
+    // spine) but stays out of the selectable catalog; it is invoked only off-router via
+    // `--workflow decided-task`. Keeping it off-router holds the single-default catalog
+    // invariant until the router-flip (≥2 selectable work-workflows) is built. A leak
+    // (`selectable: true`) would surface it here; assert no catalog line names it.
+    assert!(
+        !catalog_lines.iter().any(|l| l.contains("decided-task")),
+        "the model-free selection catalog must NOT name `decided-task` (the M8 \
+         catalog-leak class — `decided-task` is `selectable: false`, off-router by \
+         construction); catalog lines: {catalog_lines:?}",
+    );
 
     // JSON emitted bytes: the `workflows` array carries exactly one entry, `dev-task`
     // — `increment` is absent and nothing else leaks.
@@ -266,6 +279,14 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
         "the selectable catalog must NOT name `record-dogfood` — it is `selectable: false`, \
          off-router (M8 catalog-leak class); got:\n{json_out}",
     );
+    // M17 self-hosting dogfood: the explicit decided-task-named negative over the same
+    // JSON bytes — `ids == [dev-task]` already excludes it by construction, but the named
+    // guard makes the decided-task leak falsifiable (documented != delivered).
+    assert!(
+        !ids.contains(&"decided-task"),
+        "the selectable catalog must NOT name `decided-task` — it is `selectable: false`, \
+         off-router (M8 catalog-leak class); got:\n{json_out}",
+    );
 }
 
 #[test]
@@ -312,11 +333,19 @@ fn knobs_default_workflow_enum_does_not_name_increment() {
         "`default-workflow.of` must NOT name `record-dogfood` (the forbidden M8 catalog-leak \
          — `record-dogfood` is `selectable: false`, off-router); got enum: {names:?}",
     );
+    // M17 self-hosting dogfood: the same static-leak guard, named for `decided-task`.
+    // Adding it to the enum would make the `selectable: false` decision-recording workflow
+    // a router-selectable default — exactly the M8 catalog-leak this task forbids.
+    assert!(
+        !names.contains(&"decided-task"),
+        "`default-workflow.of` must NOT name `decided-task` (the forbidden M8 catalog-leak — \
+         `decided-task` is `selectable: false`, off-router); got enum: {names:?}",
+    );
     assert_eq!(
         names,
         vec!["dev-task"],
         "`default-workflow.of` must stay the single-entry [dev-task] enum (byte-unchanged \
-         from base, forbidding `increment`, `planning`, `completion`, and `record-dogfood`); \
-         got: {names:?}",
+         from base, forbidding `increment`, `planning`, `completion`, `record-dogfood`, and \
+         `decided-task`); got: {names:?}",
     );
 }
