@@ -1,0 +1,83 @@
+{
+  "detail": {
+    "drift-caught": [
+      {
+        "cmd": "task finalize decided-task-increment-lightweight-sub-milestone",
+        "findings": [
+          "owner-artifact.present"
+        ],
+        "window": 3
+      },
+      {
+        "cmd": "task finalize seeded-bad-finalize-integrity-check",
+        "findings": [
+          "schema-conformance.field-value-conformant",
+          "schema-conformance.field-value-conformant",
+          "schema-conformance.required-slot-present",
+          "schema-conformance.required-slot-present"
+        ],
+        "window": 4
+      }
+    ],
+    "logical-mutations": [
+      {
+        "address": "commit:add-a-task-grade-decision-recording-workflow",
+        "invocations": 4,
+        "window": 1
+      },
+      {
+        "address": "commit:record-the-decided-task-design-decisions-its",
+        "invocations": 4,
+        "window": 2
+      },
+      {
+        "address": "decisions-log:decisions-log",
+        "invocations": 5,
+        "window": 2
+      },
+      {
+        "address": "commit:decided-task-increment-lightweight-sub-milestone",
+        "invocations": 4,
+        "window": 3
+      },
+      {
+        "address": "completion-record:decided-task-increment",
+        "invocations": 7,
+        "window": 3
+      }
+    ],
+    "oob-edits": [
+      {
+        "channels": [
+          "absorb"
+        ],
+        "path": "decisions-log/decisions-log.md",
+        "window": 3
+      }
+    ],
+    "validate-blocks": [
+      {
+        "cmd": "task validate record-the-decided-task-design-decisions-its",
+        "findings": [
+          "file-state.baseline-adopt",
+          "schema-conformance.field-value-conformant",
+          "schema-conformance.field-value-conformant",
+          "schema-conformance.required-slot-present",
+          "schema-conformance.required-slot-present",
+          "file-state.baseline-adopt"
+        ],
+        "window": 2
+      }
+    ]
+  },
+  "note": "raw capture only — seeded attribution is transcription protocol, never tally-inferred",
+  "totals": {
+    "adapter-writes": 5,
+    "drift-caught": 2,
+    "jigc-invocations": 38,
+    "oob-edits": 1,
+    "validate-blocks": 1,
+    "write-verb-invocations": 24
+  },
+  "v": 1
+}
