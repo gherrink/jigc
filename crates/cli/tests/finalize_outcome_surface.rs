@@ -25,6 +25,7 @@
 
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -931,4 +932,117 @@ fn outcome_space_is_discriminable() {
              (landed/blocked/operational/usage); got {codes:?}",
         );
     }
+}
+
+/// The marker a non-blocking `pre-commit` hook writes to **stderr** before exiting 0 —
+/// git redirects a hook's own stdout to stderr, so a warn-only hook (e.g. the M19
+/// doc↔code backstop) speaks on the hook stream `git_commit` captures.
+const HOOK_WARNING: &str = "NON-BLOCKING-HOOK-WARNING";
+
+/// Install a **non-blocking** `pre-commit` hook into `repo`'s `.git/hooks` that prints
+/// `HOOK_WARNING` and exits 0 — git surfaces it on the commit's stderr (the hook
+/// stream), the warn-only backstop's shape. Marked executable so git runs it.
+fn install_warning_hook(repo: &Path) {
+    let hooks = repo.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("create .git/hooks");
+    let path = hooks.join("pre-commit");
+    fs::write(
+        &path,
+        format!("#!/bin/sh\necho {HOOK_WARNING} 1>&2\nexit 0\n"),
+    )
+    .expect("write the non-blocking pre-commit hook");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755))
+        .expect("make the hook executable");
+}
+
+/// M19 increment 2, T2 — `jigc task finalize` relays a non-blocking `pre-commit`
+/// hook's success output to the agent (today only on rejection), closing the
+/// detect→surface loop the M19 spike exposed (`design/finalize.md` → 6. Commit,
+/// success-relay; review S1: delimited section **after** the success result, never in
+/// the routing footer or the `--format json` envelope). Three sub-cases:
+///
+/// - **agent-text:** the hook warning appears in a delimited section **after** the
+///   `render::validation` routing footer; the commit lands (exit 0).
+/// - **`--format json`:** stdout still parses as the un-corrupted report envelope, AND
+///   the hook warning rides **stderr** (never the stdout envelope).
+/// - **no hook output:** a finalize with no hook speaking emits **no** delimiter.
+#[test]
+fn finalize_relays_hook_output_on_success() {
+    // ── agent-text: the warning is a delimited section after the footer ──────────
+    let repo = TempDir::new("relay-agent");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    install_warning_hook(repo.path());
+    let out = land_commit_only(
+        repo.path(),
+        home.path(),
+        "relay-the-agent-warning",
+        "relay the agent warning",
+        None,
+    );
+    assert_eq!(
+        code_of(&out, "relay finalize (agent)"),
+        0,
+        "the non-blocking hook must not block the landed commit; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let footer_at = stdout.find("— jigc ·").unwrap_or_else(|| {
+        panic!("the agent-text output carries the routing footer; got:\n{stdout}")
+    });
+    let warning_at = stdout.find(HOOK_WARNING).unwrap_or_else(|| {
+        panic!("the hook warning must be relayed to the agent on success; got:\n{stdout}")
+    });
+    assert!(
+        warning_at > footer_at,
+        "the hook relay is a delimited section AFTER the routing footer (review S1), \
+         never interleaved into it; got:\n{stdout}",
+    );
+
+    // ── --format json: stdout stays the un-corrupted envelope; warning on stderr ─
+    let repo = TempDir::new("relay-json");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    install_warning_hook(repo.path());
+    let out = land_commit_only(
+        repo.path(),
+        home.path(),
+        "relay-the-json-warning",
+        "relay the json warning",
+        Some("json"),
+    );
+    assert_eq!(code_of(&out, "relay finalize (json)"), 0);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let findings = parse_envelope(&stdout, "relay finalize (json)");
+    assert!(
+        findings.is_empty(),
+        "the clean json envelope stays un-corrupted by the relay; got:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains(HOOK_WARNING),
+        "under --format json the relay never touches the stdout envelope; got:\n{stdout}",
+    );
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+    assert!(
+        stderr.contains(HOOK_WARNING),
+        "under --format json the hook relay rides stderr; got stderr:\n{stderr}",
+    );
+
+    // ── no hook output: no delimiter is emitted ──────────────────────────────────
+    let repo = TempDir::new("relay-none");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let out = land_commit_only(
+        repo.path(),
+        home.path(),
+        "relay-no-warning",
+        "relay no warning",
+        None,
+    );
+    assert_eq!(code_of(&out, "no-hook finalize (agent)"), 0);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        !stdout.contains("hook output"),
+        "a finalize with no hook output emits no relay delimiter; got:\n{stdout}",
+    );
 }

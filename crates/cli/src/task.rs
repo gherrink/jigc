@@ -528,7 +528,7 @@ impl TaskArea {
             Some(swept),
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
-            Ok(_hook_output) => {
+            Ok(hook_output) => {
                 // The landed surface: emit the preflight findings envelope on stdout,
                 // symmetric with `task validate` and advisories included — absorb
                 // evidence observed by the sweep is surfaced, never swallowed
@@ -538,6 +538,9 @@ impl TaskArea {
                 if format != Format::Json {
                     println!();
                 }
+                // T2 — relay any non-blocking hook output the commit produced
+                // (`design/finalize.md` → 6. Commit, success-relay).
+                relay_hook_output(format, &hook_output);
                 Ok(ExitCode::SUCCESS)
             }
             Err(err) => {
@@ -764,6 +767,37 @@ pub(crate) fn try_execute_finalize_plan(
         post_sweep,
     );
     Ok(Ok(hook_output))
+}
+
+/// Relay a landed commit's captured non-blocking hook output to the agent
+/// (`design/finalize.md` → 6. Commit, success-relay; M19 review S1). git surfaces a
+/// *non-blocking* `pre-commit`/`commit-msg` hook's stream on a **successful** commit
+/// (the warn-only doc↔code backstop, a linter/formatter that warns-but-exits-0); today
+/// finalize swallowed it on success and only surfaced it on rejection, so the warning
+/// never reached an agent committing through jigc. This closes that loop.
+///
+/// **Deliberate, general behavior change** (recorded so it is not a surprise): the
+/// relay is *not* jigc-backstop-specific — git exposes one combined hook stream and the
+/// CLI cannot single out its own backstop from a user's hook, so **any** non-blocking
+/// hook's output now surfaces. Empty output (no hook spoke) emits nothing — no
+/// delimiter.
+///
+/// **Placement discipline (review S1):** a clearly delimited section that *follows* the
+/// success result, never inside the routing footer or the structured envelope. On
+/// `--format json` the structured envelope owns stdout (an agent parsing it must not
+/// have it corrupted), so the relay goes to **stderr**; on agent-text it is a delimited
+/// section after `render::validation`'s footer.
+fn relay_hook_output(format: Format, hook_output: &str) {
+    let hook_output = hook_output.trim();
+    if hook_output.is_empty() {
+        return;
+    }
+    let section = format!("--- hook output ---\n{hook_output}\n");
+    if format == Format::Json {
+        eprintln!("{section}");
+    } else {
+        println!("{section}");
+    }
 }
 
 /// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged managed
