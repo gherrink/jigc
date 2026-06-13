@@ -540,7 +540,8 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         match crate::task::try_execute_finalize_plan(
             &repo_root, &jigc_root, &dir, &plan, &dir, None,
         )? {
-            Ok(()) => {
+            // T1 captures the aggregate hook output; the milestone relay site (T3) consumes it.
+            Ok(_hook_output) => {
                 // The boundary landed — clean up the per-sub-task working areas too (the
                 // executor only removed the milestone area). On a failure (below) the areas
                 // survive for retry.

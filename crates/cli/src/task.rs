@@ -527,7 +527,8 @@ impl TaskArea {
             &self.dir,
             Some(swept),
         )? {
-            Ok(()) => {
+            // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
+            Ok(_hook_output) => {
                 // The landed surface: emit the preflight findings envelope on stdout,
                 // symmetric with `task validate` and advisories included — absorb
                 // evidence observed by the sweep is surfaced, never swallowed
@@ -696,7 +697,8 @@ pub(crate) fn execute_finalize_plan(
     // The milestone boundary runs no reconcile sweep, so it carries no post-sweep
     // record to persist (`None` — post-commit loads the durable record as before).
     match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir, None)? {
-        Ok(()) => Ok(ExitCode::SUCCESS),
+        // T1 captures the aggregate hook output; the milestone relay site (T3) consumes it.
+        Ok(_hook_output) => Ok(ExitCode::SUCCESS),
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
             Ok(ExitCode::FAILURE)
@@ -705,12 +707,16 @@ pub(crate) fn execute_finalize_plan(
 }
 
 /// The transactional core of [`execute_finalize_plan`]: promote + stage + commit +
-/// post-commit, returning `Ok(())` when the aggregate landed and `Ok(Err(_))` when the
-/// commit was rejected (the promotions already rolled back). The outer `Result` carries
-/// only setup I/O errors (writing the message temp file). The `squash: false` milestone
-/// boundary calls this directly so it can detect the aggregate failure and undo the
-/// per-sub-task commits it laid down ahead of the aggregate (`git_reset_hard`); the
-/// `Ok(Err(_))` carries the original error so the caller can still surface it.
+/// post-commit, returning `Ok(Ok(hook_output))` when the aggregate landed and
+/// `Ok(Err(_))` when the commit was rejected (the promotions already rolled back). The
+/// `hook_output` is the aggregate `git_commit`'s captured non-blocking-hook stream
+/// (empty when no hook spoke) — threaded up so the success-relay sites (per-task T2,
+/// milestone T3) can surface it to the agent (`design/finalize.md` → 6. Commit). The
+/// outer `Result` carries only setup I/O errors (writing the message temp file). The
+/// `squash: false` milestone boundary calls this directly so it can detect the aggregate
+/// failure and undo the per-sub-task commits it laid down ahead of the aggregate
+/// (`git_reset_hard`); the `Ok(Err(_))` carries the original error so the caller can
+/// still surface it.
 ///
 /// `post_sweep` is the per-task preflight's post-sweep file-state record — persisted
 /// by post-commit **only when the commit lands**, so an absorbed OOB baseline advances
@@ -723,11 +729,11 @@ pub(crate) fn try_execute_finalize_plan(
     plan: &engine::finalize::FinalizePlan,
     cleanup_dir: &Path,
     post_sweep: Option<FileStateRecord>,
-) -> Result<Result<()>> {
+) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
         .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
-    let commit_result = (|| -> Result<()> {
+    let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
         promote(repo_root, &plan.promotions)?;
         // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
@@ -736,16 +742,19 @@ pub(crate) fn try_execute_finalize_plan(
         // docs + the code changes.
         ensure_jigc_gitignore(jigc_root)?;
         git_run(repo_root, &["add", "--all"])?;
-        git_commit(repo_root, &msg_path)?;
-        Ok(())
+        git_commit(repo_root, &msg_path)
     })();
     let _ = std::fs::remove_file(&msg_path);
-    if let Err(err) = commit_result {
-        // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore HEAD
-        // content for the promoted paths and delete the promoted copies; no commit landed.
-        rollback_promotions(repo_root, &plan.promotions);
-        return Ok(Err(err));
-    }
+    let hook_output = match commit_result {
+        Ok(hook_output) => hook_output,
+        Err(err) => {
+            // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore
+            // HEAD content for the promoted paths and delete the promoted copies; no
+            // commit landed.
+            rollback_promotions(repo_root, &plan.promotions);
+            return Ok(Err(err));
+        }
+    };
     // Phase 7 — post-commit (best-effort; the commit is already truth).
     post_commit(
         repo_root,
@@ -754,7 +763,7 @@ pub(crate) fn try_execute_finalize_plan(
         &plan.hash_updates,
         post_sweep,
     );
-    Ok(Ok(()))
+    Ok(Ok(hook_output))
 }
 
 /// Phase 4 (`design/finalize.md` → 4. Promote managed docs). Copy each staged managed
@@ -1045,7 +1054,16 @@ fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
 /// `--no-verify`: the user's `pre-commit` / `commit-msg` hooks are policy and the CLI
 /// respects them — a hook rejection surfaces git's stderr verbatim (the correction
 /// signal), and no commit lands.
-fn git_commit(repo_root: &Path, message_file: &Path) -> Result<()> {
+///
+/// On a **successful** commit returns the captured hook output so the relay sites can
+/// surface a non-blocking hook's warning to the agent — e.g. the M19 doc↔code backstop,
+/// which warns but exits 0 (`design/finalize.md` → 6. Commit, success-relay). git
+/// redirects a hook's own stdout to stderr and writes only its own commit summary
+/// ("[branch sha] message", file stats) to stdout, so **stderr is the hook stream**:
+/// capturing it is general (any non-blocking hook, not just jigc's backstop) and a
+/// no-hook commit yields empty. The bytes are merely captured here — placement/printing
+/// is the relay sites' job (M19 increment 2, T2/T3).
+fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
     let out = Command::new("git")
         .arg("commit")
         .arg("-F")
@@ -1053,8 +1071,8 @@ fn git_commit(repo_root: &Path, message_file: &Path) -> Result<()> {
         .current_dir(repo_root)
         .output()
         .context("could not run `git commit` (is git on PATH?)")?;
+    let stderr = String::from_utf8_lossy(&out.stderr);
     if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
         let stdout = String::from_utf8_lossy(&out.stdout);
         bail!(
             "`git commit` was rejected (no commit was made):\n{}{}",
@@ -1062,7 +1080,7 @@ fn git_commit(repo_root: &Path, message_file: &Path) -> Result<()> {
             stderr.trim()
         );
     }
-    Ok(())
+    Ok(stderr.trim_end().to_owned())
 }
 
 /// Commit a per-sub-task authored message in the `squash: false` fan-out finalize
@@ -1215,6 +1233,86 @@ mod tests {
         // Once tracked (added), it is no longer "untracked".
         run(&["add", "new.rs"]);
         assert!(git_untracked(&dir).expect("staged").trim().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The M19 capture layer: a successful `git commit` carries any non-blocking hook
+    /// output back to the caller so the relay sites (per-task / aggregate) can surface
+    /// it (`design/finalize.md` → 6. Commit). `git_commit` returns the combined captured
+    /// stdout/stderr on success; a no-hook control returns empty; a rejecting hook still
+    /// `bail!`s with its stderr (the correction signal, no commit lands).
+    #[test]
+    fn git_commit_returns_hook_output_on_success_and_bails_on_rejection() {
+        let dir = std::env::temp_dir().join(format!("jigc-commit-hook-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mk temp repo");
+        let run = |args: &[&str]| {
+            let out = Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git runs");
+            assert!(out.status.success(), "git {args:?} should succeed");
+        };
+        run(&["init", "-q"]);
+        run(&["config", "user.email", "t@example.com"]);
+        run(&["config", "user.name", "Test"]);
+        run(&["config", "commit.gpgsign", "false"]);
+        let msg = dir.join("msg.txt");
+        std::fs::write(&msg, "test: a commit\n").expect("write msg");
+
+        // Control: no hook, a real (non-empty) commit — returns empty captured output.
+        std::fs::write(dir.join("a.txt"), "a\n").expect("write a");
+        run(&["add", "--all"]);
+        let captured = git_commit(&dir, &msg).expect("no-hook commit lands");
+        assert!(
+            captured.trim().is_empty(),
+            "a no-hook commit returns empty captured output, got {captured:?}"
+        );
+
+        // A non-blocking `pre-commit` hook that prints to stdout and exits 0: the commit
+        // lands and `git_commit` returns the hook's output.
+        let hooks = dir.join(".git").join("hooks");
+        std::fs::create_dir_all(&hooks).expect("mk hooks");
+        let hook = hooks.join("pre-commit");
+        std::fs::write(
+            &hook,
+            "#!/bin/sh\necho 'WARN: doc-code backstop says hi'\nexit 0\n",
+        )
+        .expect("write hook");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod hook");
+        }
+        std::fs::write(dir.join("b.txt"), "b\n").expect("write b");
+        run(&["add", "--all"]);
+        let captured = git_commit(&dir, &msg).expect("hook commit lands");
+        assert!(
+            captured.contains("doc-code backstop says hi"),
+            "a successful non-blocking hook's output is captured, got {captured:?}"
+        );
+
+        // A rejecting hook (exit 1) still bails with its stderr; no commit lands.
+        std::fs::write(
+            &hook,
+            "#!/bin/sh\necho 'BLOCK: this is rejected' 1>&2\nexit 1\n",
+        )
+        .expect("write rejecting hook");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755))
+                .expect("chmod hook");
+        }
+        std::fs::write(dir.join("c.txt"), "c\n").expect("write c");
+        run(&["add", "--all"]);
+        let err = git_commit(&dir, &msg).expect_err("a rejecting hook bails");
+        assert!(
+            format!("{err:#}").contains("this is rejected"),
+            "the rejection surfaces the hook's stderr, got {err:#}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
