@@ -70,8 +70,10 @@ The stage set is "managed docs the task produced + every code-change the tree sh
 
 Outcomes:
 
-- **Commit succeeds** → proceed to phase 7.
+- **Commit succeeds** → **relay any hook output to the agent**, then proceed to phase 7. A successful `git commit` can still produce hook output (a *non-blocking* `pre-commit`/`commit-msg` hook that warns but exits 0 — e.g. the M19 doc↔code backstop, below); the CLI surfaces that captured stdout/stderr to the agent on success, not only on rejection (M19 — resolves the [open question](#open-questions) below). Without this the warning is silently swallowed and the agent never sees it.
 - **Hook rejects, or other git error** → roll back: `git restore --staged --worktree <promoted-paths>` (restores HEAD content for promoted paths), then delete the promoted copies. The working area is untouched; the agent sees the hook's stderr verbatim and re-runs `finalize` after fixing. The hook output **is** the correction signal — never bypassed.
+
+**The M19 doc↔code backstop fires here (and is warn-only by construction).** `jigc setup` can install an assistant-neutral `pre-commit` hook that runs `jigc validate` (the store-wide doc↔code sweep) — so it fires on *this* commit too. It is **warn-only** (always exits 0, surfacing stale-anchor findings but never rejecting): a *blocking* store-sweep here would reject `finalize`'s commit for **unrelated pre-existing drift the task never touched** — re-introducing the masking-trap M18 designed `jigc validate` to avoid ([validation.md](validation.md) → Store-scope re-validation), and self-gating `finalize` on whole-store drift. So the backstop's output reaches the agent via the success-relay above, never as a `finalize` block. ([assistant-adapter.md](assistant-adapter.md) → neutral install; [roadmap.md](../implementation/roadmap.md) → M19.)
 
 ### 7. Post-commit (best-effort)
 
@@ -166,4 +168,4 @@ The rendered shape:
 
 - **Multi-doc promotion ordering** — when a task produces multiple managed docs (e.g., an ADR plus edits to an existing SPEC), the stage set is order-independent for git, and the edge-index updates after commit. Flagged as a non-issue under the current edge-index design; revisit if it surfaces.
 - **`finalize --dry-run`** — `jigc task validate <id>` already previews validation; whether to add a dry-run that also walks render/promote/stage (without commit) is pending. `validate` covers most of the value.
-- **Commit-msg hook output capture** — git surfaces hook stderr to the terminal; the precise shape the CLI uses to relay it back to the agent (so the agent can act on it) needs design alongside the broader blocked/error-payload question ([write-commands.md](write-commands.md#open-questions)).
+- **Commit-msg hook output capture** — **resolved (M19):** the CLI relays the captured `git commit` stdout/stderr to the agent **on success** (not only on rejection — phase 6), so a non-blocking hook's warning (e.g. the M19 doc↔code backstop) reaches the agent instead of being swallowed. The richer structured blocked/error-payload shape ([write-commands.md](write-commands.md#open-questions)) stays the broader open question; M19 settles the success-relay specifically.
