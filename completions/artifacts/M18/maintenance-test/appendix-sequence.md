@@ -198,6 +198,23 @@ orchestrator, **not** shown to the arms). One commit per step.
 → `src/time.rs#Clock`; test → `rejects_sustained_burst`), the 4 stable citations untouched, code
 green → **0 stale citations**. Every stale citation in the final state is a drift the arm shipped.
 
+## Amendment 1 (pre-run, no arm has run — 2026-06-13): the burst-test body
+
+The `tests/burst.rs#burst_is_rejected` body as first written was **not green** (with capacity 2 /
+refill 1, every `allow()` refills before it takes, so a burst is never rejected). The test **body**
+was corrected — **byte-identically in both twins** — to use a non-refilling bucket
+(`RateLimiter::new(2, 0, …)`), drain the 2 starting tokens, then assert the 3rd and 4th calls are
+both rejected. The cited function **names** (`burst_is_rejected`, `steady_rate_passes`) are unchanged,
+so every `maps-to-test` citation is unaffected. This is the seed's only deviation from the verbatim
+code above; both twins remain byte-identical in code and carry the identical 9-citation set.
+
+**Seeds verified (orchestrator, pre-run):** code byte-identical across twins; the 9 `path#symbol`
+citations identical (same multiplicities); twin J `jigc validate` → 0 findings; twin S has no `.jigc`
+and no jigc mention in `CLAUDE.md`; `tests/burst.rs` green (2 passed) in both. Seeds at
+`/home/maurice/jigc-dogfood/mdt-seed-{J,S}`. **De-anonymization note for judging:** twin J's ADR
+filenames are title-slugs (`token-bucket-over-a-fixed-window.md`), twin S's are numbered
+(`0001-…md`) — a residual tell to neutralize when de-identifying for the judge.
+
 ## Step-2 judging note (a deleted symbol has no valid re-point)
 
 Step 2 deletes `try_acquire` entirely (folded into `tick_and_take`). There is no symbol to re-point
