@@ -29,7 +29,7 @@
 use crate::adapter::{self, AdapterProfile};
 use crate::locate;
 use engine::finding::Finding;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The sentinel marker the generated `pre-commit` hook carries on its first body
 /// line — the idempotency handle the neutral install (T2) keys on to find, replace,
@@ -102,6 +102,145 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
          \n\
          exit 0\n"
     )
+}
+
+/// The sentinel that closes the jigc-managed block when it is **wrapped** around a
+/// pre-existing foreign `pre-commit` hook. A fresh (jigc-only) hook is exactly the
+/// rendered [`precommit_hook_body`] and carries no end marker; a wrapped hook
+/// brackets the appended jigc block between [`PRECOMMIT_SENTINEL`] and this line so a
+/// re-install can strip-and-regenerate **only** the jigc block, leaving the foreign
+/// hook verbatim (non-destructive + idempotent).
+const PRECOMMIT_SENTINEL_END: &str = "# jigc-managed pre-commit hook — end";
+
+/// Install the assistant-neutral warn-only `pre-commit` hook for the repo at
+/// `repo_root`, pointing it at the absolute `jigc_path` (`design/assistant-adapter.md`
+/// → neutral install: sentinel-marked, idempotent, non-destructive; honor
+/// `core.hooksPath` + worktrees; regenerated each `setup`).
+///
+/// Resolves the **real** hooks dir via a single `git rev-parse --git-path hooks`
+/// subprocess (honors `core.hooksPath`, the git-worktree `.git`-is-a-file case, and
+/// the common-hooks-dir for linked worktrees — verified live, git 2.53), never the
+/// naive `.git/hooks` join. Then writes the rendered [`precommit_hook_body`]
+/// idempotently and non-destructively:
+///   - no existing hook (or one that is *only* a prior jigc block) → the file becomes
+///     exactly the freshly rendered body (regenerated each `setup`);
+///   - a pre-existing **foreign** hook → its content is preserved **verbatim** and a
+///     jigc block (bracketed by [`PRECOMMIT_SENTINEL`]/[`PRECOMMIT_SENTINEL_END`]) is
+///     appended; a re-install strips and regenerates only that block, so the result
+///     is byte-identical and the sentinel appears exactly once.
+///
+/// The written file is made owner-executable (a git hook must be executable to fire).
+///
+/// `allow(dead_code)`: T3 wires this into `setup::install`; until then it is the
+/// production install path exercised by this task's tests.
+#[allow(dead_code)]
+pub fn install_precommit_hook(repo_root: &Path, jigc_path: &Path) -> std::io::Result<()> {
+    let hooks_dir = resolve_hooks_dir(repo_root)?;
+    std::fs::create_dir_all(&hooks_dir)?;
+    let hook = hooks_dir.join("pre-commit");
+
+    let rendered = precommit_hook_body(jigc_path);
+
+    let next = match std::fs::read_to_string(&hook) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => rendered,
+        Err(e) => return Err(e),
+        Ok(existing) => {
+            let foreign = strip_managed_block(&existing);
+            if foreign.trim().is_empty() {
+                // Empty, or only a prior jigc block: regenerate the standalone hook.
+                rendered
+            } else {
+                // Preserve the foreign hook verbatim; append a wrapped jigc block.
+                // Normalize the foreign remainder's trailing newlines so the
+                // separator is fixed and a re-install is byte-identical.
+                let mut out = foreign.trim_end_matches('\n').to_string();
+                out.push_str("\n\n");
+                out.push_str(&wrapped_managed_block(jigc_path));
+                out
+            }
+        }
+    };
+
+    std::fs::write(&hook, next)?;
+    make_executable(&hook)
+}
+
+/// The jigc-managed block for the **wrap** case: the rendered body with its shebang
+/// line dropped (the foreign hook owns the shebang) and an end-sentinel appended, so
+/// the block is self-delimited for strip-and-regenerate.
+fn wrapped_managed_block(jigc_path: &Path) -> String {
+    let body = precommit_hook_body(jigc_path);
+    // Drop the leading `#!/bin/sh\n` shebang — the wrapped block runs inside the
+    // foreign hook's interpreter.
+    let without_shebang = body
+        .strip_prefix("#!/bin/sh\n")
+        .expect("the rendered body always begins with the sh shebang");
+    format!("{without_shebang}{PRECOMMIT_SENTINEL_END}\n")
+}
+
+/// Remove the jigc-managed block from a pre-existing hook, returning the foreign
+/// remainder. Handles both forms: a **wrapped** block (between [`PRECOMMIT_SENTINEL`]
+/// and [`PRECOMMIT_SENTINEL_END`], inclusive of both markers and the trailing
+/// newline) and a **standalone** jigc hook (the rendered body — sentinel present but
+/// no end marker — which is wholly ours, so the remainder is empty). Content with no
+/// sentinel is returned unchanged.
+fn strip_managed_block(content: &str) -> std::borrow::Cow<'_, str> {
+    let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
+        return std::borrow::Cow::Borrowed(content);
+    };
+    match content[start..].find(PRECOMMIT_SENTINEL_END) {
+        // Wrapped block: cut from the start-sentinel's line through the end marker.
+        Some(rel_end) => {
+            // Back up to the beginning of the start-sentinel's line.
+            let block_start = content[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            // Advance past the end-marker line (its trailing newline if present).
+            let abs_end = start + rel_end + PRECOMMIT_SENTINEL_END.len();
+            let block_end = content[abs_end..]
+                .find('\n')
+                .map(|i| abs_end + i + 1)
+                .unwrap_or(content.len());
+            let mut out = String::from(&content[..block_start]);
+            out.push_str(&content[block_end..]);
+            std::borrow::Cow::Owned(out)
+        }
+        // Standalone jigc hook (no end marker): the whole file is ours.
+        None => std::borrow::Cow::Borrowed(""),
+    }
+}
+
+/// Resolve the repo's **real** hooks directory through git, honoring
+/// `core.hooksPath`, the worktree `.git`-is-a-file case, and the common hooks dir for
+/// linked worktrees. A single `git -C <repo_root> rev-parse --path-format=absolute
+/// --git-path hooks` subprocess — never the naive `.git/hooks` join.
+fn resolve_hooks_dir(repo_root: &Path) -> std::io::Result<PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
+        .output()?;
+    if !out.status.success() {
+        return Err(std::io::Error::other(format!(
+            "git could not resolve the hooks dir for `{}`: {}",
+            repo_root.display(),
+            String::from_utf8_lossy(&out.stderr).trim(),
+        )));
+    }
+    let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if path.is_empty() {
+        return Err(std::io::Error::other(
+            "git returned an empty hooks path".to_string(),
+        ));
+    }
+    Ok(PathBuf::from(path))
+}
+
+/// Make `path` owner/group/other-readable and owner-executable (`0o755`) so git will
+/// fire it as a hook. Unix-only — git hooks are a Unix-shell mechanism here.
+fn make_executable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms)
 }
 
 /// The assistant whose embedded profile MVP `setup` installs. Single-assistant in
@@ -236,7 +375,6 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     /// A throwaway directory that removes itself on drop (the project's
     /// no-tempfile pattern).
@@ -497,6 +635,179 @@ mod tests {
              fi\n\
              \n\
              exit 0\n",
+        );
+    }
+
+    /// Run `git -C <dir> <args...>`, asserting success — the test driver for the
+    /// throwaway `git init` repos the hook-install tests resolve a real hooks dir
+    /// against.
+    fn git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("run git");
+        assert!(
+            status.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&status.stderr),
+        );
+    }
+
+    /// The file mode of `path`, masked to the permission bits.
+    fn mode(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .expect("stat installed hook")
+            .permissions()
+            .mode()
+            & 0o777
+    }
+
+    /// A default `git init` repo gets an executable `.git/hooks/pre-commit` carrying
+    /// the sentinel block (the rendered T1 body), and a second install is
+    /// **byte-identical** (idempotent — the block is regenerated, not appended twice).
+    #[test]
+    fn install_precommit_writes_executable_sentinel_hook_idempotently() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let jigc = PathBuf::from("/abs/install/bin/jigc");
+
+        install_precommit_hook(dir.path(), &jigc).expect("first install succeeds");
+
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        let first = std::fs::read_to_string(&hook).expect("hook written to .git/hooks");
+        assert!(
+            first.contains(PRECOMMIT_SENTINEL),
+            "the installed hook must carry the sentinel block",
+        );
+        assert_eq!(
+            first,
+            precommit_hook_body(&jigc),
+            "a fresh install is exactly the rendered T1 body",
+        );
+        assert_eq!(
+            mode(&hook) & 0o100,
+            0o100,
+            "the hook must be owner-executable"
+        );
+
+        // A second install is byte-identical (regenerated in place, not duplicated).
+        install_precommit_hook(dir.path(), &jigc).expect("second install succeeds");
+        let second = std::fs::read_to_string(&hook).expect("hook still present");
+        assert_eq!(
+            second, first,
+            "a re-install must be byte-identical (idempotent)"
+        );
+        assert_eq!(
+            mode(&hook) & 0o100,
+            0o100,
+            "the hook stays executable on re-install"
+        );
+    }
+
+    /// A repo with `core.hooksPath` set gets the hook in **that** dir, not the naive
+    /// `.git/hooks` join (the resolution must honor `core.hooksPath`).
+    #[test]
+    fn install_precommit_honors_core_hookspath() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hooks = dir.path().join("my-hooks");
+        git(
+            dir.path(),
+            &["config", "core.hooksPath", hooks.to_str().unwrap()],
+        );
+
+        install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("install succeeds");
+
+        assert!(
+            hooks.join("pre-commit").exists(),
+            "the hook must land in the core.hooksPath dir",
+        );
+        assert!(
+            !dir.path().join(".git/hooks/pre-commit").exists(),
+            "with core.hooksPath set, nothing is written to .git/hooks",
+        );
+    }
+
+    /// A linked worktree (the `.git`-is-a-file case) resolves to the **common**
+    /// hooks dir under the main checkout's `.git/hooks`, not a per-worktree dir.
+    #[test]
+    fn install_precommit_resolves_worktree_common_hooks_dir() {
+        let main = TempDir::new();
+        git(main.path(), &["init", "-q"]);
+        git(main.path(), &["config", "user.email", "t@t"]);
+        git(main.path(), &["config", "user.name", "t"]);
+        git(
+            main.path(),
+            &["commit", "-q", "--allow-empty", "-m", "init"],
+        );
+
+        let linked = main.path().join("linked");
+        git(
+            main.path(),
+            &["worktree", "add", "-q", linked.to_str().unwrap()],
+        );
+        // The linked worktree's `.git` is a file (the git-worktree case).
+        assert!(
+            linked.join(".git").is_file(),
+            "the linked worktree's .git must be a file",
+        );
+
+        install_precommit_hook(&linked, Path::new("/abs/bin/jigc")).expect("install succeeds");
+
+        // The hook lands in the COMMON hooks dir (the main checkout's .git/hooks),
+        // not under any per-worktree git dir.
+        assert!(
+            main.path().join(".git/hooks/pre-commit").exists(),
+            "a worktree install resolves to the common .git/hooks dir",
+        );
+    }
+
+    /// A repo with a pre-existing `pre-commit` keeps the original content
+    /// **verbatim** AND gains our sentinel block (non-destructive — the existing
+    /// hook is preserved/wrapped, never clobbered).
+    #[test]
+    fn install_precommit_preserves_existing_hook() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        let existing = "#!/bin/sh\n# someone's hand-rolled hook\necho hello\nexit 0\n";
+        std::fs::write(&hook, existing).expect("seed an existing pre-commit");
+
+        install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("install succeeds");
+
+        let after = std::fs::read_to_string(&hook).expect("hook still present");
+        assert!(
+            after.contains(existing),
+            "the original hook content must be preserved verbatim",
+        );
+        assert!(
+            after.contains(PRECOMMIT_SENTINEL),
+            "the wrapped hook must also carry our sentinel block",
+        );
+        assert_eq!(
+            mode(&hook) & 0o100,
+            0o100,
+            "a wrapped hook stays executable"
+        );
+
+        // Idempotent over a pre-existing hook too: re-install is byte-identical and
+        // does not stack a second sentinel block.
+        let once = after.clone();
+        install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("re-install");
+        let twice = std::fs::read_to_string(&hook).expect("hook present");
+        assert_eq!(
+            twice, once,
+            "re-installing over a wrapped hook is byte-identical"
+        );
+        assert_eq!(
+            twice.matches(PRECOMMIT_SENTINEL).count(),
+            1,
+            "the sentinel block must appear exactly once after a re-install",
         );
     }
 
