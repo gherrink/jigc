@@ -13,9 +13,13 @@
 //! materialized, exactly as production `jigc validate` will.
 //!
 //! It seeds a committed store — a `decisions/`-located `adr` carrying a `cites-code`
-//! anchor (`symbol-exists`) and a `specs/`-located `spec` carrying a criterion
-//! `maps-to-test` anchor (`criterion-maps-to-test`) — over a working tree of real `.rs`
-//! files, and asserts (`validation.md` → Store-scope re-validation; Blocking semantics):
+//! anchor (`symbol-exists`), a `specs/`-located `spec` carrying a criterion
+//! `maps-to-test` anchor (`criterion-maps-to-test`), and an `architecture/`-located
+//! `arch-doc` carrying a `components/<id>/implemented-by` anchor (`symbol-exists`) — over
+//! a working tree of real `.rs` files. The `arch-doc` exercises the **shipped**
+//! `arch-doc.yaml` schema (its `architecture/` location + schema-load interaction is the
+//! one production code-anchor input not otherwise driven through the real sweep), and
+//! asserts (`validation.md` → Store-scope re-validation; Blocking semantics):
 //!
 //! - **(a)** all cited symbols exist → no `doc-code` content finding, `has_blocking()`
 //!   false;
@@ -150,14 +154,17 @@ fn invoker() -> fn(&ProbeRequest) -> std::io::Result<ProbeRun> {
     real_doc_code_invoker
 }
 
-/// The two code-anchor doctypes the store sweep walks, loaded from the **shipped** pack
+/// The three code-anchor doctypes the store sweep walks, loaded from the **shipped** pack
 /// schemas with the dev pack's `code-anchor` field-type declaration:
 /// - `adr` (`decisions/`) — a header `cites-code` (`symbol-exists`);
 /// - `spec` (`specs/`) — a repeatable `criteria` block with `maps-to-test`
-///   (`criterion-maps-to-test`).
+///   (`criterion-maps-to-test`);
+/// - `arch-doc` (`architecture/`) — a repeatable `components` block with a bare
+///   `implemented-by` code-anchor inheriting the type's `symbol-exists` check.
 fn schemas() -> BTreeMap<String, Schema> {
     const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
     const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../pack/schemas/arch-doc.yaml");
     // The dev pack's `code-anchor` field type — the `field-types.yaml` declaration the
     // CLI feeds the engine (`doc.rs`'s `code-anchor → doc-code/symbol-exists` idiom).
     let types = vec![PackTypeDecl {
@@ -173,6 +180,10 @@ fn schemas() -> BTreeMap<String, Schema> {
     m.insert(
         "spec".to_owned(),
         load_schema_with_types(SPEC_YAML, &types).expect("spec.yaml loads"),
+    );
+    m.insert(
+        "arch-doc".to_owned(),
+        load_schema_with_types(ARCH_DOC_YAML, &types).expect("arch-doc.yaml loads"),
     );
     m
 }
@@ -227,6 +238,36 @@ fn spec(rel: &str, symbol: &str) -> String {
     )
 }
 
+/// A committed `arch-doc` (rendered from the **shipped** `arch-doc.yaml`) whose single
+/// component (item id `edge-index`) carries a bare `implemented-by` code-anchor citing
+/// `<rel>#<symbol>` (resolved with the inherited `symbol-exists` predicate — the anchor
+/// address is `arch-doc:<slug>#components/<id>/implemented-by`). The empty `meta` header
+/// renders as `---\n---`, the `## Overview` slot prose, then the `## Components` group:
+/// `### <title>  {#id}`, the `description` slot prose, and the `<!-- fields -->` block
+/// carrying `implemented-by`. The bytes are the canonical render of the shipped schema
+/// (`render(parse(body)) == body`), so the store walk parses them identically.
+fn arch_doc(rel: &str, symbol: &str) -> String {
+    format!(
+        "---\n\
+         ---\n\
+         \n\
+         # Index layer\n\
+         \n\
+         ## Overview\n\
+         \n\
+         The edge index and target surface.\n\
+         \n\
+         ## Components\n\
+         \n\
+         ### Edge index  {{#edge-index}}\n\
+         \n\
+         Walks forward refs.\n\
+         \n\
+         <!-- fields -->\n\
+         - implemented-by: {rel}#{symbol}\n"
+    )
+}
+
 /// A no-delta resolved cascade — the post-pass leaves every emitted severity untouched,
 /// so these sweeps assert the byte-identical no-override path (the same shape the engine
 /// T1 tests use).
@@ -241,10 +282,11 @@ fn no_delta_resolved() -> engine::cascade::Resolved {
 
 /// Seed a committed store over a working tree of real `.rs` files. The `adr` cites
 /// `adr_symbol` in `crates/engine/src/cache.rs`; the `spec`'s criterion maps to
-/// `spec_symbol` in `crates/engine/src/limiter.rs`. The code bodies define `evict_lru`
-/// (a plain `fn`) and `covers_burst` (a `#[test]` fn), so passing those names is the
-/// clean case and any other name is the dangling case.
-fn seed_store(tag: &str, adr_symbol: &str, spec_symbol: &str) -> TempDir {
+/// `spec_symbol` in `crates/engine/src/limiter.rs`; the `arch-doc`'s component anchors
+/// `arch_symbol` in `crates/engine/src/index.rs`. The code bodies define `evict_lru`
+/// (a plain `fn`), `covers_burst` (a `#[test]` fn), and `walk_edges` (a plain `fn`), so
+/// passing those names is the clean case and any other name is the dangling case.
+fn seed_store(tag: &str, adr_symbol: &str, spec_symbol: &str, arch_symbol: &str) -> TempDir {
     let repo = TempDir::new(tag);
     repo.write_code(
         "crates/engine/src/cache.rs",
@@ -253,6 +295,10 @@ fn seed_store(tag: &str, adr_symbol: &str, spec_symbol: &str) -> TempDir {
     repo.write_code(
         "crates/engine/src/limiter.rs",
         "#[test]\nfn covers_burst() {}\nfn plain() {}\n",
+    );
+    repo.write_code(
+        "crates/engine/src/index.rs",
+        "pub fn walk_edges() {}\nfn helper() {}\n",
     );
     repo.commit(
         "decisions",
@@ -263,6 +309,11 @@ fn seed_store(tag: &str, adr_symbol: &str, spec_symbol: &str) -> TempDir {
         "specs",
         "rate-limiting",
         &spec("crates/engine/src/limiter.rs", spec_symbol),
+    );
+    repo.commit(
+        "architecture",
+        "index-layer",
+        &arch_doc("crates/engine/src/index.rs", arch_symbol),
     );
     repo
 }
@@ -339,7 +390,7 @@ fn real_doc_code_probe_over_committed_store() {
     unsafe { std::env::set_var("JIGC_DOC_CODE_PROBE", &probe) };
 
     // --- (a) every cited symbol exists → no doc-code content finding, no block.
-    let clean = seed_store("clean", "evict_lru", "covers_burst");
+    let clean = seed_store("clean", "evict_lru", "covers_burst", "walk_edges");
     let report = validate_store(clean.path(), &schemas(), &no_delta_resolved(), &invoker())
         .expect("store sweep runs");
     assert!(
@@ -365,6 +416,11 @@ fn real_doc_code_probe_over_committed_store() {
         "pub fn vanished() {}\nfn helper() {}\n",
     );
     dangling.write_code("crates/engine/src/limiter.rs", "fn plain() {}\n");
+    // arch-doc's implemented-by symbol renamed away too: `walk_edges` → `gone`.
+    dangling.write_code(
+        "crates/engine/src/index.rs",
+        "pub fn gone() {}\nfn helper() {}\n",
+    );
     dangling.commit(
         "decisions",
         "cache",
@@ -375,6 +431,11 @@ fn real_doc_code_probe_over_committed_store() {
         "rate-limiting",
         &spec("crates/engine/src/limiter.rs", "covers_burst"),
     );
+    dangling.commit(
+        "architecture",
+        "index-layer",
+        &arch_doc("crates/engine/src/index.rs", "walk_edges"),
+    );
     let report = validate_store(
         dangling.path(),
         &schemas(),
@@ -383,6 +444,9 @@ fn real_doc_code_probe_over_committed_store() {
     )
     .expect("store sweep runs");
 
+    // The renamed `adr.cites-code` and `arch-doc.components/<id>/implemented-by` symbols
+    // both surface a `doc-code.symbol-exists` finding (the bare `symbol-exists` check the
+    // type declares), each keyed on its own anchor's address.
     let symbol_exists: Vec<_> = report
         .findings
         .iter()
@@ -390,21 +454,30 @@ fn real_doc_code_probe_over_committed_store() {
         .collect();
     assert_eq!(
         symbol_exists.len(),
-        1,
-        "the renamed cites-code symbol surfaces exactly one symbol-exists finding: {:?}",
+        2,
+        "the renamed cites-code and implemented-by symbols surface two symbol-exists \
+         findings: {:?}",
         report.findings,
     );
-    assert_eq!(
-        symbol_exists[0].severity,
-        engine::finding::Severity::Blocking
+    assert!(
+        symbol_exists
+            .iter()
+            .all(|f| f.severity == engine::finding::Severity::Blocking),
+        "every symbol-exists finding is blocking: {:?}",
+        report.findings,
     );
-    assert_eq!(
-        symbol_exists[0]
-            .location
-            .as_ref()
-            .and_then(|l| l.address.as_deref()),
-        Some("adr:cache#status/cites-code"),
-        "the symbol-exists finding is keyed on the adr anchor's address",
+    let symbol_exists_addrs: Vec<_> = symbol_exists
+        .iter()
+        .filter_map(|f| f.location.as_ref().and_then(|l| l.address.as_deref()))
+        .collect();
+    assert!(
+        symbol_exists_addrs.contains(&"adr:cache#status/cites-code"),
+        "one symbol-exists finding is keyed on the adr anchor's address: {symbol_exists_addrs:?}",
+    );
+    assert!(
+        symbol_exists_addrs.contains(&"arch-doc:index-layer#components/edge-index/implemented-by"),
+        "one symbol-exists finding is keyed on the arch-doc component anchor's address: \
+         {symbol_exists_addrs:?}",
     );
 
     let maps_to_test: Vec<_> = report
@@ -437,7 +510,7 @@ fn real_doc_code_probe_over_committed_store() {
     );
 
     // --- (c) injected probe failure → one blocking pack-probe-integrity meta-finding.
-    let failing = seed_store("failed-probe", "evict_lru", "covers_burst");
+    let failing = seed_store("failed-probe", "evict_lru", "covers_burst", "walk_edges");
 
     // absent program: point the dev/test knob at a path with no executable.
     let missing = TempDir::new("no-probe");
