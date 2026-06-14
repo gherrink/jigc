@@ -396,6 +396,171 @@ fn setup_preserves_seeded_host_content_and_is_idempotent() {
     );
 }
 
+/// The M20 probe-extract acceptance: a `cargo install`-style install (the `jigc`
+/// binary alone in a **probe-less** bin dir, no build-tree `doc-code` sibling, no
+/// `JIGC_DOC_CODE_PROBE` override) has `jigc setup` place a runnable `doc-code`
+/// sibling beside it, applying the pinned write-if-absent / never-clobber policy
+/// (`module-layout.md` → Probe distribution, M20). Driven against the real built
+/// binary copied into a fresh dir so `current_exe().parent()` is that dir.
+///
+/// Asserts: (i) setup writes an executable `doc-code` sibling whose bytes equal the
+/// embedded copy and which runs; (ii) a second setup is a no-op when the sibling
+/// already matches; (iii) a sibling with different bytes is left untouched; (iv) an
+/// unwritable target dir yields exactly one `setup.*` operational error, not a panic.
+#[test]
+fn setup_extracts_runnable_doc_code_probe_into_probe_less_bin_dir() {
+    // A probe-less install dir: copy ONLY the `jigc` binary into it (no sibling
+    // `doc-code`), mirroring a `cargo install` that relocates only the `[[bin]]`.
+    let bin = TempDir::new("probe-extract-bin");
+    let jigc = bin.path().join("jigc");
+    fs::copy(env!("CARGO_BIN_EXE_jigc"), &jigc).expect("copy the built jigc into a probe-less dir");
+    make_executable(&jigc);
+    let probe = bin.path().join("doc-code");
+    assert!(
+        !probe.exists(),
+        "the fresh install dir must start with no doc-code sibling",
+    );
+
+    let repo = TempDir::new("probe-extract-repo");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // (i) First setup writes an executable doc-code sibling = the embedded bytes.
+    let out = run_copied_setup(&jigc, repo.path(), home.path());
+    assert!(
+        out.status.success(),
+        "`jigc setup` from a probe-less install must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(probe.exists(), "setup must extract a doc-code sibling");
+    assert_eq!(
+        mode(&probe) & 0o100,
+        0o100,
+        "the extracted doc-code probe must be owner-executable",
+    );
+    let extracted = fs::read(&probe).expect("read the extracted probe");
+    // The extracted bytes are a native executable (ELF / Mach-O magic) — the embedded
+    // copy that rode in the `jigc` binary, not an empty placeholder. (Byte-equality to
+    // the in-process embedded slice is unit-asserted in `setup.rs`; the build-tree
+    // sibling is not a stable comparand — it can be re-copied by any later `cli`
+    // rebuild after the `jigc` under test was compiled.)
+    assert!(
+        extracted.starts_with(&[0x7f, b'E', b'L', b'F'])
+            || matches!(
+                extracted.get(..4),
+                Some([0xFE, 0xED, 0xFA, 0xCE])
+                    | Some([0xCE, 0xFA, 0xED, 0xFE])
+                    | Some([0xFE, 0xED, 0xFA, 0xCF])
+                    | Some([0xCF, 0xFA, 0xED, 0xFE])
+                    | Some([0xCA, 0xFE, 0xBA, 0xBE])
+                    | Some([0xBE, 0xBA, 0xFE, 0xCA])
+            ),
+        "the extracted probe must be a native executable; first bytes {:02x?}",
+        &extracted[..extracted.len().min(4)],
+    );
+    // …and it RUNS: the probe reads a JSON request on stdin and emits JSON. An empty
+    // request is malformed, but a runnable probe still *starts* and exits — a missing
+    // ELF interpreter or a non-executable would fail to spawn at all. Spawning and
+    // getting any exit status proves the extracted bytes are a runnable executable.
+    let ran = Command::new(&probe)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+    assert!(
+        ran.is_ok(),
+        "the extracted doc-code probe must be a runnable executable; spawn failed: {:?}",
+        ran.err(),
+    );
+
+    // (ii) A second setup is a no-op: the sibling already matches → unchanged.
+    let out2 = run_copied_setup(&jigc, repo.path(), home.path());
+    assert!(out2.status.success(), "second setup must exit 0");
+    assert_eq!(
+        fs::read(&probe).expect("probe still present"),
+        extracted,
+        "a second setup over a matching sibling must leave it byte-identical",
+    );
+
+    // (iii) A pre-existing DIFFERENT sibling is left untouched (never clobbered).
+    let sentinel = b"#!/bin/sh\n# a deliberately-placed dev probe\nexit 0\n";
+    fs::write(&probe, sentinel).expect("seed a different sibling");
+    make_executable(&probe);
+    let out3 = run_copied_setup(&jigc, repo.path(), home.path());
+    assert!(
+        out3.status.success(),
+        "setup over a different sibling must exit 0"
+    );
+    assert_eq!(
+        fs::read(&probe).expect("the different sibling still present"),
+        sentinel,
+        "a pre-existing different doc-code sibling must be left untouched",
+    );
+
+    // (iv) An unwritable target dir yields exactly one `setup.*` operational error,
+    //      not a panic. Remove the sibling first so the write is actually attempted,
+    //      then make the bin dir read-only so the write fails.
+    fs::remove_file(&probe).expect("remove the sibling so a write is attempted");
+    set_dir_readonly(bin.path(), true);
+    let out4 = run_copied_setup(&jigc, repo.path(), home.path());
+    set_dir_readonly(bin.path(), false); // restore so TempDir can clean up
+    assert!(
+        !out4.status.success(),
+        "an unwritable probe target must fail the install (non-zero exit)",
+    );
+    let stderr4 = String::from_utf8_lossy(&out4.stderr);
+    assert!(
+        stderr4.contains("setup.extract-probe"),
+        "an unwritable probe target must surface a `setup.extract-probe` finding, not a \
+         panic; got stderr:\n{stderr4}",
+    );
+    assert!(
+        !stderr4.contains("panicked"),
+        "the unwritable target must NOT panic; got stderr:\n{stderr4}",
+    );
+}
+
+/// Run the **copied** `jigc setup` (a specific binary path, not `CARGO_BIN_EXE_jigc`)
+/// with `cwd = repo` and `$HOME = home`, so `current_exe()` resolves to the
+/// probe-less install dir the extract step writes the probe into.
+fn run_copied_setup(jigc: &Path, repo: &Path, home: &Path) -> std::process::Output {
+    Command::new(jigc)
+        .arg("setup")
+        .current_dir(repo)
+        .env("HOME", home)
+        .output()
+        .expect("run the copied jigc binary")
+}
+
+/// Make `path` owner-executable (`0o755`) — used both for the copied `jigc` and a
+/// seeded sibling probe.
+fn make_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path).expect("stat for chmod").permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).expect("chmod");
+}
+
+/// Toggle a directory between read-only (`0o555`) and writable (`0o755`) so the
+/// extract step's write fails on an unwritable target.
+fn set_dir_readonly(dir: &Path, readonly: bool) {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = if readonly { 0o555 } else { 0o755 };
+    let mut perms = fs::metadata(dir).expect("stat dir for chmod").permissions();
+    perms.set_mode(mode);
+    fs::set_permissions(dir, perms).expect("chmod dir");
+}
+
+/// The permission bits of `path`, masked to the low 9 bits.
+fn mode(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(path)
+        .expect("stat for mode")
+        .permissions()
+        .mode()
+        & 0o777
+}
+
 /// Whether `settings` carries a `hooks.PreToolUse[*].hooks[*]` entry running the
 /// seeded `house-precheck.sh` command — the pre-existing non-jigc hook the merge
 /// must preserve.

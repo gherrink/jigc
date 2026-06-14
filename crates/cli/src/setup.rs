@@ -272,6 +272,40 @@ fn make_executable(path: &Path) -> std::io::Result<()> {
     std::fs::set_permissions(path, perms)
 }
 
+/// The `doc-code` probe executable, embedded into the `jigc` binary so it travels
+/// through `cargo install` (which relocates only declared `[[bin]]` targets — the
+/// build-script sibling does not travel; `module-layout.md` → Probe distribution,
+/// M20). `build.rs` builds the probe and copies it into `OUT_DIR/doc-code`; the
+/// `(I)`-pick is that the include path is nameable only after `build.rs` has run,
+/// hence the `OUT_DIR` indirection. [`extract_doc_code_probe`] writes these bytes
+/// beside the installed `jigc` at `jigc setup` so the production resolution path
+/// (`<jigc-bin-dir>/doc-code`) finds a runnable probe with no manual copy.
+const DOC_CODE_PROBE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/doc-code"));
+
+/// Extract the embedded [`DOC_CODE_PROBE`] beside the running `jigc` at `bin_dir`,
+/// applying the pinned **write-if-absent-or-byte-different** policy (`module-layout.md`
+/// → Probe distribution, M20). This is the **first machine-global** setup write —
+/// every other setup write is repo-local — so its idempotency is judged at the
+/// install-tree scope, not per-repo.
+///
+/// Writes `bin_dir/doc-code` with the exec bit (`0o755`) **only when no sibling
+/// exists**. An existing sibling is left untouched — whether it is byte-identical to
+/// the embedded copy (a no-op) or different (a deliberately-placed build-tree or dev
+/// probe, which may be *newer* than the embedded copy and must not be clobbered by a
+/// possibly-staler embed). A read-only target dir surfaces the underlying IO error to
+/// the caller, which maps it to one operational `setup.*` finding (never a panic).
+fn extract_doc_code_probe(bin_dir: &Path) -> std::io::Result<()> {
+    let dest = bin_dir.join("doc-code");
+    // A sibling already present is left as-is: byte-identical → nothing to do;
+    // different → it is a deliberately-placed probe we must not clobber with a
+    // possibly-staler embedded copy.
+    if dest.exists() {
+        return Ok(());
+    }
+    std::fs::write(&dest, DOC_CODE_PROBE)?;
+    make_executable(&dest)
+}
+
 /// The assistant whose embedded profile MVP `setup` installs. Single-assistant in
 /// the MVP (Claude Code); a `--assistant` selector is post-MVP
 /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
@@ -413,6 +447,30 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
             "setup.install-hook",
             format!("cannot install the `pre-commit` hook into the repo's hooks dir: {err}"),
             "ensure the repo's git hooks directory is writable, then re-run `jigc setup`",
+        )
+    })?;
+
+    // 6. Extract the embedded `doc-code` probe beside the installed `jigc` (the
+    //    production resolution path `<jigc-bin-dir>/doc-code`), so a `cargo
+    //    install`-style install gets a runnable probe with no manual copy. The
+    //    **first machine-global** setup write; write-if-absent so a build-tree
+    //    sibling is never clobbered (`module-layout.md` → Probe distribution, M20).
+    let bin_dir = jigc_path.parent().ok_or_else(|| {
+        Finding::block(
+            "setup.extract-probe",
+            "cannot resolve the directory of the running `jigc` to place the `doc-code` probe"
+                .to_string(),
+            "re-run `jigc setup` from an installed `jigc` (the install resolves its own directory)",
+        )
+    })?;
+    extract_doc_code_probe(bin_dir).map_err(|err| {
+        Finding::block(
+            "setup.extract-probe",
+            format!("cannot write the `doc-code` probe beside `jigc` at `{}`: {err}", bin_dir.display()),
+            format!(
+                "ensure the directory holding the `jigc` binary (`{}`) is writable, then re-run `jigc setup`",
+                bin_dir.display()
+            ),
         )
     })?;
 
@@ -929,6 +987,79 @@ mod tests {
         assert!(
             after.contains(PRECOMMIT_SENTINEL_END),
             "the foreign hook must be wrapped (gain the jigc block), not stripped to ours",
+        );
+    }
+
+    /// The embedded `doc-code` probe is non-empty and begins with a native
+    /// executable magic (ELF on Linux / `0xFEEDFACE`-family Mach-O on macOS). This
+    /// is the cheap proof the `(I)`-pick build-ordering held: `build.rs` actually
+    /// built and copied the probe into `OUT_DIR` *before* `include_bytes!` expanded,
+    /// so a real, runnable executable rides in the `jigc` binary (not a stale/empty
+    /// placeholder).
+    #[test]
+    fn embedded_doc_code_probe_is_a_native_executable() {
+        assert!(
+            !DOC_CODE_PROBE.is_empty(),
+            "the embedded doc-code probe must be non-empty",
+        );
+        let elf = DOC_CODE_PROBE.starts_with(&[0x7f, b'E', b'L', b'F']);
+        // Mach-O: 32/64-bit, little/big-endian, and the fat (universal) magics.
+        let macho = matches!(
+            DOC_CODE_PROBE.get(..4),
+            Some([0xFE, 0xED, 0xFA, 0xCE])
+                | Some([0xCE, 0xFA, 0xED, 0xFE])
+                | Some([0xFE, 0xED, 0xFA, 0xCF])
+                | Some([0xCF, 0xFA, 0xED, 0xFE])
+                | Some([0xCA, 0xFE, 0xBA, 0xBE])
+                | Some([0xBE, 0xBA, 0xFE, 0xCA])
+        );
+        assert!(
+            elf || macho,
+            "the embedded doc-code probe must begin with a native executable magic; \
+             got first bytes {:02x?}",
+            &DOC_CODE_PROBE[..DOC_CODE_PROBE.len().min(4)],
+        );
+    }
+
+    /// `extract_doc_code_probe` writes an executable `doc-code` sibling whose bytes
+    /// equal the embedded copy when the target dir has none; a second extract is a
+    /// no-op (the sibling already matches); a pre-existing **different** sibling is
+    /// left untouched (not clobbered by a possibly-staler embed).
+    #[test]
+    fn extract_writes_absent_noops_on_match_and_preserves_different() {
+        let dir = TempDir::new();
+
+        // (i) Absent → write the embedded bytes, executable.
+        extract_doc_code_probe(dir.path()).expect("extract into an empty dir succeeds");
+        let probe = dir.path().join("doc-code");
+        assert_eq!(
+            std::fs::read(&probe).expect("the probe sibling was written"),
+            DOC_CODE_PROBE,
+            "the written sibling must be byte-identical to the embedded copy",
+        );
+        assert_eq!(
+            mode(&probe) & 0o100,
+            0o100,
+            "the extracted probe must be owner-executable",
+        );
+
+        // (ii) Re-extract over a matching sibling → byte-identical no-op.
+        extract_doc_code_probe(dir.path()).expect("re-extract succeeds");
+        assert_eq!(
+            std::fs::read(&probe).expect("the probe sibling still present"),
+            DOC_CODE_PROBE,
+            "a re-extract over a matching sibling must leave it byte-identical",
+        );
+
+        // (iii) A pre-existing DIFFERENT sibling is left untouched (a build-tree /
+        //       dev probe must not be clobbered by a possibly-staler embed).
+        let sentinel = b"#!/bin/sh\n# a deliberately-placed dev probe\nexit 0\n";
+        std::fs::write(&probe, sentinel).expect("seed a different sibling");
+        extract_doc_code_probe(dir.path()).expect("extract over a different sibling succeeds");
+        assert_eq!(
+            std::fs::read(&probe).expect("the different sibling still present"),
+            sentinel,
+            "a pre-existing different sibling must be left untouched",
         );
     }
 

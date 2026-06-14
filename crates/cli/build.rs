@@ -70,6 +70,19 @@ fn main() {
     let dest = bin_dir.join(exe_name("doc-code"));
     std::fs::copy(&probe_bin, &dest)
         .unwrap_or_else(|e| panic!("copy doc-code probe to {dest:?}: {e}"));
+
+    // Also copy the built probe into `OUT_DIR` under a fixed, macro-nameable name so
+    // the CLI can `include_bytes!(concat!(env!("OUT_DIR"), "/doc-code"))` it into the
+    // `jigc` binary for the `jigc setup` extract path (M20 — the probe rides in the
+    // binary, extracted beside the installed `jigc`). The build-tree sibling copy
+    // (`dest`, above) keeps a normal `cargo build` working without an extract; the
+    // embedded copy is what travels through `cargo install`, which relocates only
+    // declared `[[bin]]` targets. The name is fixed (no `.exe` suffix) — the include
+    // path must be a constant at macro-expansion, and the extract step names the
+    // on-disk sibling itself.
+    let embed = out_dir.join("doc-code");
+    std::fs::copy(&probe_bin, &embed)
+        .unwrap_or_else(|e| panic!("copy doc-code probe into OUT_DIR at {embed:?}: {e}"));
 }
 
 /// The platform's executable file name for `stem` (`.exe` on Windows, bare elsewhere).
