@@ -493,14 +493,34 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     let repo_root = require_project_layer(cwd)?;
     require_doc_code_probe()?;
     let pack = crate::pack::make_pack();
-    let schemas = load_schema_map(pack.as_ref())?;
+    let pack = pack.as_ref();
+    let schemas = load_schema_map(pack)?;
     let project_config = repo_root.join(".jigc").join("config");
-    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
-    engine::validate::validate_store(
+    let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
+
+    // workflow↔refs family: enumerate every cascade-resolved workflow definition
+    // (address-sorted, layer-aware) + the layer-aware step source + the command catalog —
+    // the proven `describe` enumeration idiom (`validation.md` → Completing the envelope).
+    let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
+    let workflows = crate::start::enumerate_workflow_bytes(pack, &defs)?;
+    let workflow_source = crate::start::CascadeStepSource::new(pack, &resolved, &project_config);
+    let catalog = crate::start::load_catalog(pack)?;
+
+    // file↔CLI-state family: the loaded file-state record, read **read-only** (the
+    // detect-without-absorb twin borrows it `&`, opens no write).
+    let jigc_root = repo_root.join(".jigc");
+    let record = engine::file_state::FileStateRecord::load(&jigc_root)
+        .with_context(|| format!("loading the file-state record at {jigc_root:?}"))?;
+
+    engine::validate::validate_store_families(
         &repo_root,
         &schemas,
         &resolved,
         &crate::task::doc_code_invoker,
+        &workflows,
+        &workflow_source,
+        &catalog,
+        &record,
     )
     .with_context(|| format!("validating the committed store at {repo_root:?}"))
 }

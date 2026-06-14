@@ -286,12 +286,84 @@ pub fn validate_store(
     invoke_doc_code: &ProbeInvoker<'_>,
 ) -> std::io::Result<ValidationReport> {
     let (anchors, mut findings) = enumerate_committed_surface(repo_root, schemas)?;
+    findings.extend(store_doc_code(repo_root, anchors, invoke_doc_code)?);
+    Ok(ValidationReport::new(findings, resolved))
+}
+
+/// The store-scope **three-family** sweep — the [`validate_store`] superset the top-level
+/// `jigc validate` drives, folding all three read-only store targets into one
+/// [`ValidationReport`] (`validation.md` → Completing the envelope: host three families
+/// under the uniform exit rule). **Task-less and read-only** throughout: no working area,
+/// no `FileStateRecord` write, no edge-index mutation.
+///
+/// The three families, in a stable sweep order:
+///
+/// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
+/// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding the raw bytes in `workflows`) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, and the **catalog-membership-only** command-ref path. The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource); `catalog` the resolved command catalog.
+/// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`).
+///
+/// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
+/// the schemas, the workflow definitions, the step source + catalog, and the loaded
+/// `FileStateRecord`. Severity is the engine-owned post-pass at [`ValidationReport::new`],
+/// keyed by `(probe, check)` identically to every other entry point (a no-delta `resolved`
+/// leaves every emitted severity untouched).
+// The CLI threads each store target's distinct determinism-boundary inputs in (the engine
+// produces none of them): the committed-store root, the resolved schemas/cascade, the
+// shell-free doc-code seam, the enumerated workflow bytes + their step source/catalog, and
+// the loaded file-state record. Bundling them into a struct would only relocate the same
+// arity, so the lint is allowed at this one composition point.
+#[allow(clippy::too_many_arguments)]
+pub fn validate_store_families(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    resolved: &crate::cascade::Resolved,
+    invoke_doc_code: &ProbeInvoker<'_>,
+    workflows: &[Vec<u8>],
+    workflow_source: &dyn crate::compose::StepSource,
+    catalog: &crate::compose::CommandCatalog,
+    record: &FileStateRecord,
+) -> std::io::Result<ValidationReport> {
+    let mut findings = Vec::new();
+
+    // Family 1 — doc↔code (the only subprocess probe; the one family that can raise a
+    // `pack-probe-integrity.*` meta-finding).
+    let (anchors, guard_findings) = enumerate_committed_surface(repo_root, schemas)?;
+    findings.extend(guard_findings);
+    findings.extend(store_doc_code(repo_root, anchors, invoke_doc_code)?);
+
+    // Family 2 — workflow↔refs over each cascade-resolved definition (task-independent
+    // checks + the membership-only command-ref path; the CLI enumerated + read them).
+    for workflow_bytes in workflows {
+        findings.extend(crate::compose::workflow_refs_store(
+            workflow_bytes,
+            workflow_source,
+            catalog,
+        ));
+    }
+
+    // Family 3 — file↔CLI-state, the read-only detect-without-absorb committed-store twin.
+    findings.extend(crate::file_state::detect_committed_store(
+        record, schemas, repo_root,
+    ));
+
+    Ok(ValidationReport::new(findings, resolved))
+}
+
+/// Drive the `doc-code` subprocess probe over an already-enumerated committed-store anchor
+/// surface — the doc↔code family shared by [`validate_store`] and [`validate_store_families`].
+/// Materializes the serializable [`EffectiveStateSnapshot`] to a temp-dir scratch path
+/// (never under a managed `location:`), drives the CLI-supplied seam over it, ingests the
+/// probe's findings + any `pack-probe-integrity.*` meta-findings, and removes the scratch
+/// before returning. An empty `anchors` (no `code-anchor` leaf) never calls the invoker and
+/// writes no snapshot — the omitting-context inert path.
+fn store_doc_code(
+    repo_root: &Path,
+    anchors: Vec<crate::target_surface::TargetAnchor>,
+    invoke_doc_code: &ProbeInvoker<'_>,
+) -> std::io::Result<Vec<Finding>> {
     if anchors.is_empty() {
-        // No anchor to probe — but a list-valued committed `code-anchor` still surfaces
-        // its loud guard finding (never silently dropped, the store-scope half of the
-        // non-silent-guard contract). The invoker is not called and no snapshot is
-        // written. The guard findings are graded by the same post-pass below.
-        return Ok(ValidationReport::new(findings, resolved));
+        // No anchor to probe. The invoker is not called and no snapshot is written.
+        return Ok(Vec::new());
     }
 
     // The representative target the wire envelope carries (the probe reads the full set
@@ -314,9 +386,7 @@ pub fn validate_store(
     let run = invoke_doc_code(&request);
     // Always clean the scratch file, whether the invoke succeeded or errored.
     let _ = std::fs::remove_file(&scratch);
-    findings.extend(ingest_probe_run(DOC_CODE_PROBE, &run?));
-
-    Ok(ValidationReport::new(findings, resolved))
+    Ok(ingest_probe_run(DOC_CODE_PROBE, &run?))
 }
 
 /// A fresh, process-and-time-unique scratch path under [`std::env::temp_dir`] for the
@@ -2186,6 +2256,7 @@ mod validate_store_tests {
     //! invoker is an in-process double here (the real probe is `T2`'s acceptance).
 
     use super::*;
+    use crate::file_state::hash_bytes;
     use crate::probe::{ProbeRequest, ProbeResponse, ProbeRun, ProbeRunStatus};
     use crate::schema::{dev_pack_field_types, load_schema_with_types};
     use std::cell::RefCell;
@@ -2513,6 +2584,141 @@ Effects.
         assert!(
             !scratch.exists(),
             "the scratch snapshot must be cleaned up after the sweep returns, still at {scratch:?}",
+        );
+    }
+
+    /// A `StepSource` that resolves **no** step id — so a workflow that includes any
+    /// step id surfaces a `workflow-refs.include-resolves` dangling-include finding (the
+    /// task-independent break the store-scope workflow↔refs family catches).
+    struct EmptyStepSource;
+    impl crate::compose::StepSource for EmptyStepSource {
+        fn step(&self, _id: &str) -> Option<crate::compose::StepDef> {
+            None
+        }
+    }
+
+    /// An empty command catalog — the membership-only command-ref path needs one but
+    /// these fixtures carry no command-refs, so it is intentionally bare.
+    fn empty_catalog() -> crate::compose::CommandCatalog {
+        crate::compose::CommandCatalog {
+            commands: BTreeMap::new(),
+        }
+    }
+
+    /// (T3, the done-criterion) **One** `validate_store_families` run folds all three
+    /// content families into one [`ValidationReport`]: a stale **doc↔code** anchor, a
+    /// **workflow↔refs** dangling include, and a **file↔CLI-state** committed-doc drift —
+    /// each surfaces its own content finding in the single report. And with a forced
+    /// `pack-probe-integrity.*` meta-finding present (a crashing invoker), the three
+    /// content families still surface while the report carries the meta-finding too —
+    /// the input the CLI exit rule keys on (only the meta-finding flips the exit, never a
+    /// content finding; `validation.md` → Exit semantics — uniform across all three families).
+    #[test]
+    fn validate_store_folds_three_content_families() {
+        // (i) doc↔code: a committed ADR with a dangling anchor (`vanished_symbol`).
+        let repo = TempRoot::new("three-families");
+        repo.commit("decisions", "dangling", ADR_DANGLING);
+
+        // (iii) file↔CLI-state: the committed ADR's recorded baseline differs from its
+        // on-disk bytes → a `file-state.hash-matches` store-scope drift finding.
+        let drift_path = "decisions/dangling.md";
+        let mut record = FileStateRecord::new();
+        record.record(drift_path, hash_bytes(b"a different baseline"));
+
+        // (ii) workflow↔refs: a workflow whose `{{include: step:not-a-step}}` resolves
+        // to no step in the (empty) source → a `workflow-refs.include-resolves` finding.
+        let dangling_wf: Vec<u8> = b"---\nwhen: x\n---\n{{ include: step:not-a-step }}\n".to_vec();
+        let workflows = vec![dangling_wf];
+        let source = EmptyStepSource;
+        let catalog = empty_catalog();
+
+        // --- A healthy invoker first: all three content families surface, no meta-finding.
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &workflows,
+            &source,
+            &catalog,
+            &record,
+        )
+        .expect("three-family store sweep runs");
+
+        let has = |code: &str| report.findings.iter().any(|f| f.code == code);
+        assert!(
+            has("doc-code.symbol-exists"),
+            "the doc↔code family must surface the dangling anchor: {:?}",
+            report.findings,
+        );
+        assert!(
+            has("workflow-refs.include-resolves"),
+            "the workflow↔refs family must surface the dangling include: {:?}",
+            report.findings,
+        );
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "file-state.hash-matches" && f.message.contains(drift_path)),
+            "the file↔CLI-state family must surface the committed-doc drift: {:?}",
+            report.findings,
+        );
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.probe == "pack-probe-integrity"),
+            "a healthy probe yields no meta-finding: {:?}",
+            report.findings,
+        );
+
+        // --- A crashing invoker: the meta-finding is present AND the content families
+        // still surface (the meta-finding never suppresses content findings).
+        let crashing = |_req: &ProbeRequest| {
+            Ok(ProbeRun {
+                stdout: Vec::new(),
+                status: ProbeRunStatus::Exited { code: Some(2) },
+            })
+        };
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &crashing,
+            &workflows,
+            &source,
+            &catalog,
+            &record,
+        )
+        .expect("three-family store sweep runs with a crashing probe");
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.probe == "pack-probe-integrity"),
+            "a crashing probe must surface a pack-probe-integrity meta-finding: {:?}",
+            report.findings,
+        );
+        let has = |code: &str| report.findings.iter().any(|f| f.code == code);
+        assert!(
+            has("workflow-refs.include-resolves")
+                && report
+                    .findings
+                    .iter()
+                    .any(|f| f.code == "file-state.hash-matches"),
+            "the two engine-native content families must still surface alongside the \
+             meta-finding (it never suppresses them): {:?}",
+            report.findings,
+        );
+
+        // The record is unchanged (the file-state twin opens no write).
+        assert_eq!(
+            record.get(drift_path),
+            Some(hash_bytes(b"a different baseline").as_str()),
+            "the file-state twin must not re-baseline the drift it reports",
         );
     }
 

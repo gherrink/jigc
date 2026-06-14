@@ -1464,7 +1464,7 @@ impl StepSource for FillStepSource<'_> {
 /// the resolved cascade + the project `steps/` dir and drain its sink after a
 /// failed compose, so a missing/malformed project step surfaces its located fault
 /// rather than the generic dangling-include message.
-struct CascadeStepSource<'a> {
+pub(crate) struct CascadeStepSource<'a> {
     pack: &'a dyn PackSource,
     resolved: &'a cascade::Resolved,
     /// The project layer's committed config dir — where `steps/<id>.yaml` lives.
@@ -1485,7 +1485,7 @@ struct CascadeStepSource<'a> {
 impl<'a> CascadeStepSource<'a> {
     /// Build the layer-aware source over the resolved cascade + the project config
     /// dir the `steps/<id>.yaml` files live under.
-    fn new(
+    pub(crate) fn new(
         pack: &'a dyn PackSource,
         resolved: &'a cascade::Resolved,
         project_config: &'a Path,
@@ -2205,6 +2205,30 @@ pub(crate) fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> 
                 "run `jigc start` to see the selectable work-workflows, then re-run `jigc start --workflow <id> \"<intent>\"`",
             ))
         })
+}
+
+/// Enumerate every cascade-resolved workflow definition's raw bytes, **address-sorted**
+/// by workflow id — the store-scope `workflow↔refs` target's deterministic input
+/// (`validation.md` → Completing the envelope: a deterministic, address-sorted
+/// enumeration of every workflow definition the resolved cascade provides). Reads each
+/// id layer-aware via [`CascadeDefs::read_workflow`] (a project whole-file shadow wins),
+/// the proven `describe` enumeration idiom. The bytes are validated per-definition by the
+/// engine's [`engine::compose::workflow_refs_store`]; this only collects them in order.
+pub(crate) fn enumerate_workflow_bytes(
+    pack: &dyn PackSource,
+    defs: &CascadeDefs<'_>,
+) -> Result<Vec<Vec<u8>>> {
+    let mut ids: Vec<String> = pack
+        .list(PackResourceKind::Workflows)
+        .into_iter()
+        .map(|id| id.as_str().to_owned())
+        .collect();
+    ids.sort();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in &ids {
+        out.push(defs.read_workflow(pack, id)?);
+    }
+    Ok(out)
 }
 
 /// Read a pack resource by kind + id, mapping a missing resource to an error.
