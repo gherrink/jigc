@@ -7,7 +7,7 @@ Finding {
     probe: "conformance",
     check: "slot-heading-depth",
     code: "conformance.slot-heading-depth",
-    message: "heading at schema-reserved depth `###` in slot prose at line 11; use `####` or rephrase",
+    message: "heading at schema-reserved depth `###` in slot prose at line 11; use a deeper level or rephrase",
     location: Some(
         Location {
             address: None,

@@ -137,6 +137,15 @@ pub struct ParsedItem {
     /// The item's sentinelled per-item fields, in physical order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<crate::field_block::Field>,
+    /// The item's **nested** repeatable items, in physical order, when the item
+    /// template declares a [`crate::schema::Leaf::Repeatable`] (the M22 multi-level
+    /// lift — a release's nested change-groups). Each nested item renders one
+    /// heading level deeper than this item (`2 + nesting-depth`, capped at H6) and
+    /// is itself a [`ParsedItem`], so nesting recurses to the depth cap. Empty —
+    /// and skip-on-serialize — for a flat single-level item, so every shipped
+    /// single-level golden's bytes are unchanged (the additive guard).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<ParsedItem>,
 }
 
 impl ParsedItem {
@@ -292,6 +301,8 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
 
         match &section.body {
             // A repeatable section: parse its `### …{#id}` items in the region.
+            // Top-level items are nesting-depth 1 (`###`); a nested repeatable
+            // recurses one level deeper (`####`, …).
             SectionBody::Repeatable { repeatable } => {
                 let items = parse_items(
                     source,
@@ -299,6 +310,7 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                     *content_start,
                     region_end,
                     repeatable,
+                    1,
                     &mut findings,
                 );
                 parsed.push(ParsedSection {
@@ -315,8 +327,9 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
                 let slot_end = body_boundary(&blocks, *content_start, region_end);
                 let span = trim_span(source, *content_start, slot_end);
 
-                // Heading-depth ceiling inside the located slot span.
-                for v in ceiling_violations(&blocks, span.start, span.end) {
+                // Heading-depth ceiling inside the located slot span. A section slot
+                // reserves `##` (sections) + `###` (items) — `reserved_max = 3`.
+                for v in ceiling_violations(&blocks, span.start, span.end, 3) {
                     findings.push(v);
                 }
 
@@ -518,6 +531,21 @@ fn line_of(source: &str, offset: usize) -> usize {
     source[..offset].bytes().filter(|&b| b == b'\n').count() + 1
 }
 
+/// The 1-based heading-level number (`H1` → 1, …, `H6` → 6) — the depth arithmetic
+/// the multi-level item scanner does (`2 + nesting-depth`).
+fn level_num(level: HeadingLevel) -> usize {
+    level as usize
+}
+
+/// The ATX heading level a repeatable's items render at for a given 1-based
+/// nesting `depth`: a section is `##` (H2), so depth-`d` items are at level
+/// `2 + d` (depth 1 → `###`, depth 2 → `####`, …). Caller is the recursive item
+/// scanner; the schema loader already capped `depth` at [`MAX_NESTING_DEPTH`]
+/// (H6), so `2 + depth` never exceeds 6.
+fn item_level_num(depth: usize) -> usize {
+    2 + depth
+}
+
 /// The start offset of the next **`##` section heading** at or after `from`, if any.
 /// Deeper (`###`/`####`+) headings are *not* section boundaries — `###` opens a
 /// repeatable item (handled within the section), `####`+ is slot-internal structure.
@@ -530,6 +558,36 @@ fn next_section_heading(blocks: &[Block], from: usize) -> Option<usize> {
                 range,
                 ..
             } if range.start >= from => Some(range.start),
+            _ => None,
+        })
+        .min()
+}
+
+/// The start offset of the first heading **deeper than** `item_level` in
+/// `[from, region_end)`, if any — the byte where this item's first nested sub-item
+/// (one level deeper) begins.
+///
+/// An item at heading level `L` whose block nests a repeatable bounds its own
+/// leaves (slot/fields, which render *before* nested content) at the first heading
+/// of level `L + 1` (the first nested sub-item). `#####`+ headings inside a leading
+/// slot are a slot+nested combination the changelog avoids and the milestone defers
+/// — so the first deeper heading is the nested-region boundary here.
+fn first_nested_heading(
+    blocks: &[Block],
+    from: usize,
+    region_end: usize,
+    item_level: usize,
+) -> Option<usize> {
+    blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading { level, range, .. }
+                if range.start >= from
+                    && range.start < region_end
+                    && level_num(*level) > item_level =>
+            {
+                Some(range.start)
+            }
             _ => None,
         })
         .min()
@@ -704,31 +762,45 @@ fn read_field_block_str(
     }
 }
 
-/// Parse the `### …{#id}` items of a repeatable section in `[from, region_end)`.
+/// Parse the `{#id}` items of a repeatable in `[from, region_end)` at nesting
+/// `depth` (1-based; depth-1 items are `###`, depth-2 `####`, … per
+/// [`item_level_num`]).
 ///
-/// Each `###` heading opens an item: its frozen `{#id}` anchor (re-scanned from the
-/// raw heading source and validated as a slug), its title (heading text), its
-/// opaque slot span (heading end → the item's field-group sentinel or the next
-/// `###`/section end), and its sentinelled per-item fields. Missing / malformed /
-/// duplicate `{#id}` is a located [`Severity::Blocking`] finding.
+/// Each item heading at this depth's level opens an item: its frozen `{#id}`
+/// anchor (re-scanned from the raw heading source and validated as a slug), its
+/// title (heading text), its opaque slot span(s), its sentinelled per-item fields,
+/// and — when the item template carries a nested [`crate::schema::Leaf::Repeatable`]
+/// — its **nested items**, parsed recursively one level deeper within this item's
+/// byte region (each nested item heading is a sub-item boundary inside the parent).
+/// Missing / malformed / duplicate `{#id}` is a located [`Severity::Blocking`]
+/// finding; the duplicate-`seen` set is **scoped to this call** (one parent's
+/// items), so the same anchor across two parents is legitimate while two within one
+/// parent block — review finding C1).
 fn parse_items(
     source: &str,
     blocks: &[Block],
     from: usize,
     region_end: usize,
     repeatable: &crate::schema::Repeatable,
+    depth: usize,
     findings: &mut Vec<Finding>,
 ) -> Vec<ParsedItem> {
-    // The `###` item headings in the section's region, in document order.
+    let item_level = item_level_num(depth);
+    // The item headings at this nesting depth's level, in document order. Deeper
+    // headings are sub-items (handled within their parent's region by recursion);
+    // shallower ones are excluded by `region_end` (the parent/section bound).
     let item_heads: Vec<(usize, usize, &str)> = blocks
         .iter()
         .filter_map(|b| match b {
             Block::Heading {
-                level: HeadingLevel::H3,
+                level,
                 range,
                 content_start,
                 ..
-            } if range.start >= from && range.start < region_end => {
+            } if level_num(*level) == item_level
+                && range.start >= from
+                && range.start < region_end =>
+            {
                 Some((range.start, *content_start, &source[range.clone()]))
             }
             _ => None,
@@ -737,11 +809,13 @@ fn parse_items(
 
     let item_template = ItemTemplate::from(repeatable);
     let mut items = Vec::new();
+    // The `seen` set is per-parent (this call only) — anchor uniqueness is
+    // parent-scoped (review finding C1), so it resets on each recursion.
     let mut seen: Vec<String> = Vec::new();
 
     for (idx, (head_start, content_start, raw)) in item_heads.iter().enumerate() {
         let head_line = line_of(source, *head_start);
-        // The item body runs to the next `###` item or the section's region end.
+        // The item body runs to the next same-level item or the region end.
         let item_end = item_heads
             .get(idx + 1)
             .map(|(s, _, _)| *s)
@@ -782,23 +856,36 @@ fn parse_items(
         }
         seen.push(id.clone());
 
+        // When the item nests a repeatable, the item's *own* leaves (slot/fields)
+        // occupy only the region before the first nested sub-item heading (one level
+        // deeper). Bounding the parent's leaf region here keeps a nested `####` group
+        // out of the parent's slot span and out of its field-group scan; the nested
+        // region `[nested_start, item_end)` is then parsed recursively.
+        let leaf_end = if item_template.has_nested() {
+            first_nested_heading(blocks, *content_start, item_end, item_level).unwrap_or(item_end)
+        } else {
+            item_end
+        };
+
         // The item's slot prose. A **multi-slot** template splits the body by its
-        // `#### <Leaf-Title>` sub-headings (one span per slot leaf, schema order); a
-        // single-slot template keeps the whole body as one bare-prose span.
-        let body_end = body_boundary(blocks, *content_start, item_end);
+        // `<Leaf-Title>` sub-headings one level deeper (one span per slot leaf,
+        // schema order); a single-slot template keeps the whole leaf region as one
+        // bare-prose span.
+        let body_end = body_boundary(blocks, *content_start, leaf_end);
         let (single_slot, multi_slots) = if item_template.is_multi_slot() {
             let slots = parse_item_slots(
                 source,
                 blocks,
                 *content_start,
                 body_end,
+                item_level,
                 &item_template.slot_ids,
                 findings,
             );
             (None, slots)
         } else if item_template.has_slot() {
             let span = trim_span(source, *content_start, body_end);
-            for v in ceiling_violations(blocks, span.start, span.end) {
+            for v in ceiling_violations(blocks, span.start, span.end, item_level) {
                 findings.push(v);
             }
             (Some(span), Vec::new())
@@ -812,7 +899,7 @@ fn parse_items(
                 source,
                 blocks,
                 *content_start,
-                item_end,
+                leaf_end,
                 &item_template.field_keys,
                 findings,
             )
@@ -820,12 +907,30 @@ fn parse_items(
             Vec::new()
         };
 
+        // Nested repeatables: each declared nested leaf parses its own items one
+        // level deeper, within this item's region. The schema loader caps the depth
+        // at H6, so the recursion terminates. Nested items render in document order
+        // (the recursive scan), each carrying its own parent-scoped `seen` set.
+        let mut nested_items = Vec::new();
+        for nested in &item_template.nested {
+            nested_items.extend(parse_items(
+                source,
+                blocks,
+                *content_start,
+                item_end,
+                nested,
+                depth + 1,
+                findings,
+            ));
+        }
+
         items.push(ParsedItem {
             id,
             title: heading_text(raw, true),
             slot: single_slot,
             slots: multi_slots,
             fields: item_fields,
+            items: nested_items,
         });
     }
     items
@@ -847,21 +952,26 @@ fn parse_item_slots(
     blocks: &[Block],
     from: usize,
     body_end: usize,
+    item_level: usize,
     slot_ids: &[String],
     findings: &mut Vec<Finding>,
 ) -> Vec<(String, Span)> {
-    // The `#### <label>` (H4) sub-headings in the item body, in document order:
-    // `(heading start, content_start, label text)`.
+    // The per-leaf sub-headings sit one level deeper than the item (`item_level + 1`
+    // — `####` for a `###` item), in document order: `(start, content_start, label)`.
+    let label_level = item_level + 1;
     let sub_heads: Vec<(usize, usize, String)> = blocks
         .iter()
         .filter_map(|b| match b {
             Block::Heading {
-                level: HeadingLevel::H4,
+                level,
                 range,
                 content_start,
                 text,
                 ..
-            } if range.start >= from && range.start < body_end => {
+            } if level_num(*level) == label_level
+                && range.start >= from
+                && range.start < body_end =>
+            {
                 Some((range.start, *content_start, text.clone()))
             }
             _ => None,
@@ -957,12 +1067,17 @@ pub(crate) struct ItemTemplate {
     pub(crate) slot_ids: Vec<String>,
     has_fields: bool,
     field_keys: Vec<String>,
+    /// The block's nested repeatables, in schema block order (the M22 multi-level
+    /// lift). Each parses its own items one level deeper within the parent item's
+    /// region; empty for a flat single-level template.
+    nested: Vec<crate::schema::Repeatable>,
 }
 
 impl ItemTemplate {
     pub(crate) fn from(repeatable: &crate::schema::Repeatable) -> Self {
         let mut slot_ids = Vec::new();
         let mut field_keys = Vec::new();
+        let mut nested = Vec::new();
         for leaf in &repeatable.block {
             match leaf {
                 crate::schema::Leaf::Slot { id, .. } => slot_ids.push(id.clone()),
@@ -972,13 +1087,11 @@ impl ItemTemplate {
                         field_keys.push(f.id.clone());
                     }
                 }
-                // Nested-repeatable recursion is the depth-aware parse lift
-                // (M22 inc-1 T2); no shipped schema declares a nested
-                // `Leaf::Repeatable` yet, so this template builder cannot reach
-                // one. T2 replaces this with recursive item-region scanning.
-                crate::schema::Leaf::Repeatable { .. } => {
-                    unreachable!("nested repeatable parse is M22 inc-1 T2");
-                }
+                // A nested repeatable: its items parse one level deeper, within the
+                // parent item's region (the depth-aware parse lift, M22 inc-1 T2).
+                crate::schema::Leaf::Repeatable {
+                    repeatable: inner, ..
+                } => nested.push(inner.clone()),
             }
         }
         let has_fields = !field_keys.is_empty();
@@ -986,6 +1099,7 @@ impl ItemTemplate {
             slot_ids,
             has_fields,
             field_keys,
+            nested,
         }
     }
 
@@ -998,6 +1112,11 @@ impl ItemTemplate {
     /// rendered with `#### <Leaf-Title>` sub-headings).
     pub(crate) fn is_multi_slot(&self) -> bool {
         self.slot_ids.len() > 1
+    }
+
+    /// Whether the template declares a nested repeatable (the M22 multi-level form).
+    fn has_nested(&self) -> bool {
+        !self.nested.is_empty()
     }
 }
 
@@ -1063,14 +1182,27 @@ fn trim_span(source: &str, start: usize, end: usize) -> Span {
     }
 }
 
-/// Heading levels that are CLI-owned structural depths, forbidden in slot prose.
-fn is_reserved_depth(level: HeadingLevel) -> bool {
-    matches!(level, HeadingLevel::H2 | HeadingLevel::H3)
+/// Whether a heading `level` is a CLI-owned structural depth forbidden inside a slot
+/// at item heading level `reserved_max`: any level **at or shallower than** the
+/// enclosing item's level (`<= reserved_max`) is a section/item structural marker,
+/// while a deeper level is allowed slot-internal structure. A section slot passes
+/// `reserved_max = 3` (sections `##` + items `###` are reserved); an item slot at
+/// level `L` passes `reserved_max = L` (so a depth-2 `####` item's slot forbids
+/// `<= ####` but admits `#####`+).
+fn is_reserved_depth(level: HeadingLevel, reserved_max: usize) -> bool {
+    level_num(level) <= reserved_max
 }
 
-/// Collect heading-depth-ceiling violations inside a slot span `[start, end)`:
-/// an ATX `##`/`###` heading, or any Setext heading, located by source line.
-fn ceiling_violations(blocks: &[Block], start: usize, end: usize) -> Vec<Finding> {
+/// Collect heading-depth-ceiling violations inside a slot span `[start, end)`: an
+/// ATX heading at or shallower than `reserved_max`, or any Setext heading, located
+/// by source line. `reserved_max` is the enclosing item's heading level (or `3` for
+/// a section slot) — depth-aware so a nested item's slot has a deeper ceiling.
+fn ceiling_violations(
+    blocks: &[Block],
+    start: usize,
+    end: usize,
+    reserved_max: usize,
+) -> Vec<Finding> {
     blocks
         .iter()
         .filter_map(|b| match b {
@@ -1090,17 +1222,13 @@ fn ceiling_violations(blocks: &[Block], start: usize, end: usize) -> Vec<Finding
                         ),
                         Location::at(*line, 1),
                     ))
-                } else if is_reserved_depth(*level) {
-                    let depth = if *level == HeadingLevel::H2 {
-                        "##"
-                    } else {
-                        "###"
-                    };
+                } else if is_reserved_depth(*level, reserved_max) {
+                    let depth = "#".repeat(level_num(*level));
                     Some(Finding::blocking(
                         "conformance.slot-heading-depth",
                         format!(
                             "heading at schema-reserved depth `{depth}` in slot prose \
-                             at line {line}; use `####` or rephrase"
+                             at line {line}; use a deeper level or rephrase"
                         ),
                         Location::at(*line, 1),
                     ))
@@ -1799,6 +1927,247 @@ Fine.
         assert!(
             prose.contains("- status: TBD"),
             "bullets kept as prose: {prose:?}"
+        );
+    }
+
+    /// A `changelog`-shaped schema: a `releases` repeatable (depth 1, items `###`)
+    /// whose block carries a scalar `version` (id-source) field then a **nested**
+    /// `changes` repeatable (depth 2, items `####`), each change-group an `category`
+    /// (id-source) field + a `notes` prose slot. The `Leaf::Repeatable` target shape
+    /// (`design/changelog.md` → engine work #1) — no leading prose slot on the
+    /// release item (review finding B1), so the nested `####` groups are
+    /// unambiguous.
+    fn changelog_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        crate::schema::load_schema(yaml).expect("changelog schema loads")
+    }
+
+    /// (T2, done-criterion (i)) A two-level fixture parses: a release item is reached
+    /// at depth 1 (`###`) with its frozen `{#id}`, and its nested change-group items
+    /// are reachable at the nested level (`####`) — each with its frozen `{#id}`
+    /// anchor in order, each carrying its own `notes` slot prose. The nested items
+    /// live on the new `ParsedItem.items` field.
+    #[test]
+    fn nested_repeatable_items_reachable_at_the_nested_level() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+#### Fixed  {#fixed}
+
+- session fixation on logout
+";
+        let doc = parse_sections(&changelog_schema(), src).expect("conformant changelog parses");
+        let releases = doc.sections.iter().find(|s| s.id == "releases").unwrap();
+        assert_eq!(releases.items.len(), 1, "one release at depth 1");
+        let release = &releases.items[0];
+        assert_eq!(release.id, "1-2-0", "the release's frozen anchor");
+
+        // The nested change-groups are reachable at the nested level, in order, each
+        // with its frozen anchor and its own `notes` slot prose.
+        let nested_ids: Vec<&str> = release.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(nested_ids, ["added", "fixed"], "nested anchors, in order");
+
+        let added = &release.items[0];
+        assert_eq!(added.title, "Added");
+        let added_notes = added.slot.as_ref().expect("nested notes slot").slice(src);
+        assert!(
+            added_notes.contains("- OAuth device-code flow"),
+            "nested slot re-slices to its prose: {added_notes:?}"
+        );
+        let fixed = &release.items[1];
+        let fixed_notes = fixed.slot.as_ref().expect("nested notes slot").slice(src);
+        assert!(
+            fixed_notes.contains("- session fixation on logout"),
+            "nested slot re-slices to its prose: {fixed_notes:?}"
+        );
+    }
+
+    /// (T2) A release item carrying a **scalar field** (`date`) *then* its nested
+    /// change-groups: the parent's own `<!-- fields -->` group is bounded before the
+    /// first nested `####` sub-item, so the field reads cleanly and the nested groups
+    /// are still reached (the fields-before-nested boundary, `design/changelog.md` →
+    /// illustrative render). This is the changelog's exact release shape.
+    #[test]
+    fn release_fields_bounded_before_nested_groups() {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: date, type: date }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"x\" } }
+";
+        let schema = crate::schema::load_schema(yaml).expect("changelog-with-date schema loads");
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+- OAuth device-code flow
+";
+        let doc = parse_sections(&schema, src).expect("conformant changelog parses");
+        let release = &doc
+            .sections
+            .iter()
+            .find(|s| s.id == "releases")
+            .unwrap()
+            .items[0];
+        // The release's own `date` field reads — the field group ends before `####`.
+        assert_eq!(
+            release.fields.len(),
+            1,
+            "the date field is read, nothing else"
+        );
+        assert_eq!(release.fields[0].key, "date");
+        assert_eq!(release.fields[0].value, Value::Scalar("2026-06-14".into()));
+        // The nested change-group is still reached.
+        let nested_ids: Vec<&str> = release.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(nested_ids, ["added"]);
+    }
+
+    /// (T2, done-criterion (ii) — within one parent) Two `#added` change-groups
+    /// **within one release** are a duplicate anchor (per-parent uniqueness) → a
+    /// located Blocking `conformance.item-anchor-duplicate` finding.
+    #[test]
+    fn two_same_anchor_groups_within_one_parent_block() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+#### Added  {#added}
+
+- a second added group, same anchor, same parent
+";
+        let findings = parse_sections(&changelog_schema(), src)
+            .expect_err("two #added within one release blocks");
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "conformance.item-anchor-duplicate"),
+            "expected a duplicate-anchor finding, got: {findings:?}"
+        );
+    }
+
+    /// (T2, done-criterion (ii) — across two parents) The same `#added` anchor across
+    /// **two different releases** is legitimate (the `seen` set resets per parent) →
+    /// parses clean, both nested groups present under their respective parents.
+    #[test]
+    fn same_anchor_across_two_parents_parses_clean() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+### 1.1.0  {#1-1-0}
+
+#### Added  {#added}
+
+- initial login
+";
+        let doc = parse_sections(&changelog_schema(), src)
+            .expect("the same anchor across two parents parses clean");
+        let releases = doc.sections.iter().find(|s| s.id == "releases").unwrap();
+        assert_eq!(releases.items.len(), 2, "two releases");
+        // Each release carries its own `#added` group — the `seen` reset per parent.
+        for rel in &releases.items {
+            let ids: Vec<&str> = rel.items.iter().map(|i| i.id.as_str()).collect();
+            assert_eq!(ids, ["added"], "each parent has its own #added");
+        }
+    }
+
+    /// (T2, done-criterion (iii) — additive guard) A single-level repeatable doc
+    /// parses **byte-identically to today**: same item count, frozen anchors, slot
+    /// prose, and per-item fields — and no nested `items` leak onto a flat item. The
+    /// depth-aware scanner must not perturb the long-shipped single-level path.
+    #[test]
+    fn single_level_doc_parses_unchanged() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds at 100/min  {#rate-limit}
+The gateway rejects the 101st request in a 60s window.
+
+<!-- fields -->
+- maps-to-test: `test/rate_limit_spec.rb#burst`
+
+### Burst allowance  {#burst-allowance}
+A short burst above the limit is tolerated for 2s.
+";
+        let doc = parse_sections(&spec_schema(), src).expect("conformant spec parses");
+        let criteria = doc.sections.iter().find(|s| s.id == "criteria").unwrap();
+        let ids: Vec<&str> = criteria.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(ids, ["rate-limit", "burst-allowance"]);
+        // A flat item carries no nested items (the additive-guard skip-on-empty).
+        for it in &criteria.items {
+            assert!(it.items.is_empty(), "flat item carries no nested items");
+        }
+        // Slot prose + field value unchanged from the long-shipped single-level path.
+        let rl = &criteria.items[0];
+        assert_eq!(
+            rl.slot.as_ref().unwrap().slice(src),
+            "The gateway rejects the 101st request in a 60s window."
+        );
+        assert_eq!(rl.fields.len(), 1);
+        assert_eq!(rl.fields[0].key, "maps-to-test");
+        assert_eq!(
+            rl.fields[0].value,
+            Value::Scalar("`test/rate_limit_spec.rb#burst`".into())
         );
     }
 }
