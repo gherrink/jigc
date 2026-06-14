@@ -74,10 +74,8 @@ impl EmbeddedPack {
     }
 
     /// The methodology pack — the second embedded tree, composed dev-highest at
-    /// `jigc setup` behind the `compose-embedded-methodology` marker. Consumed by
-    /// the pack-source factory (this increment's later task T2); referenced here +
-    /// by the load tests so the embedded tree is proven to compile in and read back.
-    #[allow(dead_code)]
+    /// `jigc setup` behind the `compose-embedded-methodology` marker. Consumed by the
+    /// pack-source factory ([`make_pack_from_marker`]) when the marker is set.
     pub fn methodology() -> Self {
         EmbeddedPack { dir: &METHODOLOGY }
     }
@@ -178,6 +176,42 @@ pub fn read_pack_list(project_config_dir: &std::path::Path) -> anyhow::Result<Ve
     Ok(parsed.packs)
 }
 
+/// The setup-written **compose marker**: whether `<project_config_dir>/packs.yaml`
+/// carries `compose-embedded-methodology: true`. When set, [`make_pack`] composes
+/// the two in-binary packs as `[dev ▸ methodology]` (dev-highest); when absent or
+/// `false`, the pack-set is exactly `[dev]` — byte-identical to today
+/// (`design/multi-pack.md` → Embedded second pack + setup auto-wiring).
+///
+/// This is a **NET-NEW** parse of the same `packs.yaml` [`read_pack_list`] reads —
+/// no new discovery walk. It reads a *different* key (the marker, not `packs:`), so
+/// **absent file** and an **absent/false marker key** both yield `Ok(false)` (the
+/// single-pack floor), never an error; a **malformed** `packs.yaml` is a **located**
+/// `Err` naming the file (parity with [`read_pack_list`]). The marker carries **no
+/// path** (both packs are in-binary), so it sidesteps the CWD-relative-path landmine
+/// of the listed-pack form entirely.
+pub fn read_compose_marker(project_config_dir: &std::path::Path) -> anyhow::Result<bool> {
+    use anyhow::Context;
+
+    let path = project_config_dir.join("packs.yaml");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => {
+            return Err(e).with_context(|| format!("could not read {}", path.display()));
+        }
+    };
+
+    #[derive(serde::Deserialize)]
+    struct MarkerFile {
+        #[serde(rename = "compose-embedded-methodology", default)]
+        compose_embedded_methodology: bool,
+    }
+
+    let parsed: MarkerFile = serde_yaml_ng::from_str(&text)
+        .with_context(|| format!("{} is not a valid pack-set list", path.display()))?;
+    Ok(parsed.compose_embedded_methodology)
+}
+
 /// The pack-source factory — the **single** production construction point for a
 /// [`PackSource`]. Every production path (the orientation/compose front door, the
 /// `jigc config` recording verbs, the task/doc working areas) routes through this
@@ -211,7 +245,13 @@ pub fn make_pack() -> Box<dyn PackSource> {
         eprintln!("warning: {err:#}");
         Vec::new()
     });
-    make_pack_from(std::env::var_os(PACK_DIR_ENV), listed)
+    let compose_methodology = discover_compose_marker().unwrap_or_else(|err| {
+        // Same fail-loud-but-don't-abort posture as the list discovery above: a
+        // malformed `packs.yaml` is surfaced, then treated as no marker (the floor).
+        eprintln!("warning: {err:#}");
+        false
+    });
+    make_pack_from_marker(std::env::var_os(PACK_DIR_ENV), listed, compose_methodology)
 }
 
 /// CWD-discover the project's pre-cascade pack-set: walk up from the process CWD to
@@ -233,10 +273,60 @@ fn discover_pack_list() -> anyhow::Result<Vec<PathBuf>> {
     read_pack_list(&project_config)
 }
 
-/// The testable core of [`make_pack`]: assemble the composite from already-read
-/// inputs (the `JIGC_PACK_DIR` env value + the listed pack dirs) rather than
-/// reading the process environment / CWD, so the assembly is exercised without
-/// mutating global state (parallel-test-safe).
+/// CWD-discover the project's **compose marker** — the same `packs.yaml` walk as
+/// [`discover_pack_list`], reading the `compose-embedded-methodology` key via
+/// [`read_compose_marker`]. No repo / no `.jigc/config/` is no marker (`Ok(false)`)
+/// — the single-pack floor — not an error; only a malformed `packs.yaml` is an
+/// `Err`. No second filesystem walk is introduced: the factory reads the file it
+/// already discovers for the listed-pack set.
+fn discover_compose_marker() -> anyhow::Result<bool> {
+    let Ok(cwd) = std::env::current_dir() else {
+        return Ok(false);
+    };
+    let Some(repo_root) = cwd.ancestors().find(|dir| dir.join(".git").exists()) else {
+        return Ok(false);
+    };
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        return Ok(false);
+    }
+    read_compose_marker(&project_config)
+}
+
+/// The marker-aware testable core of [`make_pack`]: assemble the composite from
+/// already-read inputs (the `JIGC_PACK_DIR` env value, the listed pack dirs, and the
+/// setup-written compose marker) rather than reading the process environment / CWD,
+/// so the assembly is exercised without mutating global state (parallel-test-safe).
+///
+/// **Marker set** (`compose_methodology == true`) composes the two in-binary packs
+/// as `CompositePack([dev, methodology])` — **dev FIRST = dev-highest**, the inverse
+/// of the listed>base convention, so the real `commit`/`default-workflow` collisions
+/// resolve to dev's bytes (`design/multi-pack.md` → Embedded second pack: dev-highest).
+/// This path composes **exactly** `[dev ▸ methodology]`: `JIGC_PACK_DIR` and any
+/// listed packs stay **inert** — the M21 bounded rule (marker + additional listed
+/// packs is out of scope), not a new feature.
+///
+/// **Marker absent/false** is the M14 path delegated to [`make_pack_from`]: listed
+/// packs first (highest-precedence), base last (`JIGC_PACK_DIR`/`EmbeddedPack`). With
+/// no listed packs that is `Composite([base])` — the byte-identity floor, byte-for-byte
+/// what shipped before this task.
+fn make_pack_from_marker(
+    pack_dir: Option<OsString>,
+    listed_dirs: Vec<PathBuf>,
+    compose_methodology: bool,
+) -> Box<dyn PackSource> {
+    if compose_methodology {
+        // Exactly `[dev ▸ methodology]`, both in-binary; dev first = dev-highest.
+        return Box::new(CompositePack::new(vec![
+            Box::new(EmbeddedPack::new()),
+            Box::new(EmbeddedPack::methodology()),
+        ]));
+    }
+    make_pack_from(pack_dir, listed_dirs)
+}
+
+/// The marker-free testable core: assemble the M14 composite from the `JIGC_PACK_DIR`
+/// env value + the listed pack dirs (the [`make_pack_from_marker`] no-marker arm).
 ///
 /// The pack-set is **listed packs first (highest-precedence), base last (lowest)**:
 /// each listed dir becomes a [`FilesystemPack`]; the base is a [`FilesystemPack`]
@@ -1147,6 +1237,121 @@ mod tests {
         }
     }
 
+    mod marker {
+        use super::super::*;
+        use std::path::{Path, PathBuf};
+
+        /// A throwaway directory that removes itself on drop.
+        struct TempDir(PathBuf);
+
+        impl TempDir {
+            fn new() -> Self {
+                let mut path = std::env::temp_dir();
+                path.push(format!(
+                    "jigc-marker-unit-{}-{:?}",
+                    std::process::id(),
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_nanos(),
+                ));
+                std::fs::create_dir_all(&path).expect("create temp dir");
+                TempDir(path)
+            }
+
+            fn path(&self) -> &Path {
+                &self.0
+            }
+        }
+
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+
+        /// The marker key set `true` reads back `true` — the setup-written
+        /// `compose-embedded-methodology: true` the factory composes on. The key is
+        /// a NET-NEW parse of the same `packs.yaml` `read_pack_list` reads (no new
+        /// discovery walk).
+        #[test]
+        fn marker_true_reads_true() {
+            let dir = TempDir::new();
+            std::fs::write(
+                dir.path().join("packs.yaml"),
+                b"compose-embedded-methodology: true\n",
+            )
+            .expect("seed marker");
+            assert!(
+                read_compose_marker(dir.path()).expect("a valid marker reads back"),
+                "`compose-embedded-methodology: true` must read back true",
+            );
+        }
+
+        /// An absent file is `false` (the single-pack floor) — never an error. The
+        /// common cold-start / dev-only case.
+        #[test]
+        fn absent_file_is_false() {
+            let dir = TempDir::new();
+            assert!(
+                !read_compose_marker(dir.path()).expect("an absent file is not an error"),
+                "absent packs.yaml => no marker => false",
+            );
+        }
+
+        /// A present file with no marker key is `false` (the key defaults off) —
+        /// e.g. a hand-written `packs:` list with no marker. The M14 listed-pack
+        /// path keeps composing without tripping the embedded-pair path.
+        #[test]
+        fn absent_key_is_false() {
+            let dir = TempDir::new();
+            std::fs::write(
+                dir.path().join("packs.yaml"),
+                b"packs:\n  - /opt/jigc-packs/x\n",
+            )
+            .expect("seed keyless marker");
+            assert!(
+                !read_compose_marker(dir.path()).expect("a missing marker key is not an error"),
+                "absent marker key => false",
+            );
+        }
+
+        /// An explicit `false` is `false` — a present-but-off marker is inert,
+        /// byte-identical to absent.
+        #[test]
+        fn marker_false_reads_false() {
+            let dir = TempDir::new();
+            std::fs::write(
+                dir.path().join("packs.yaml"),
+                b"compose-embedded-methodology: false\n",
+            )
+            .expect("seed false marker");
+            assert!(
+                !read_compose_marker(dir.path()).expect("`false` is not an error"),
+                "`compose-embedded-methodology: false` must read back false",
+            );
+        }
+
+        /// Garbage YAML is a **located** `Err` naming the file — never a panic. The
+        /// marker is a selection input, so it must fail cleanly on malformed bytes
+        /// (parity with `read_pack_list`).
+        #[test]
+        fn garbage_is_a_located_err() {
+            let dir = TempDir::new();
+            std::fs::write(
+                dir.path().join("packs.yaml"),
+                b"compose-embedded-methodology: : : ][\n",
+            )
+            .expect("seed garbage");
+            let err =
+                read_compose_marker(dir.path()).expect_err("garbage packs.yaml is a clean Err");
+            assert!(
+                format!("{err:#}").contains("packs.yaml"),
+                "the error must locate the offending file; got: {err:#}",
+            );
+        }
+    }
+
     mod factory {
         use super::super::*;
         use std::ffi::OsString;
@@ -1300,6 +1505,128 @@ mod tests {
                 pack.pack_version(),
                 embedded.pack_version(),
                 "Composite([base]).pack_version must equal the base pack's",
+            );
+        }
+
+        /// **Marker set** → the core composes the embedded `[dev ▸ methodology]`
+        /// pair (dev highest): the methodology union (`planning`/`roadmap`) AND the
+        /// dev base (`single-task`) both resolve through the composite, and
+        /// `pack_version` is the binary version (both embedded packs tie to the
+        /// release). Proves the two-embedded-pack path the setup marker wires.
+        #[test]
+        fn marker_composes_the_embedded_dev_methodology_pair() {
+            let pack = make_pack_from_marker(None, Vec::new(), true);
+
+            // The methodology union resolves through the composite ...
+            for id in ["planning", "roadmap"] {
+                assert!(
+                    pack.read(
+                        if id == "roadmap" {
+                            PackResourceKind::Schemas
+                        } else {
+                            PackResourceKind::Workflows
+                        },
+                        &ResourceId::from(id),
+                    )
+                    .is_ok(),
+                    "the methodology `{id}` must resolve through the marker composite",
+                );
+            }
+            // ... and the dev base's `single-task` still resolves (the union).
+            assert!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                )
+                .is_ok(),
+                "the dev base's `single-task` must resolve through the marker composite",
+            );
+            // Both embedded packs tie to the binary release.
+            assert_eq!(
+                pack.pack_version(),
+                EmbeddedPack::new().pack_version(),
+                "the marker composite's pack_version is the binary version",
+            );
+        }
+
+        /// **Dev-highest collision proof.** On the two real cross-pack collisions
+        /// (`Config/knobs`, `Schemas/commit`) the marker composite reads **DEV's**
+        /// bytes — the inverse of the listed>base convention. The composed `commit`
+        /// carries `implements` (dev's; methodology's drops it) and the composed
+        /// `default-workflow` knob declares `router` (dev's; methodology's is
+        /// `dev-task`). Byte-equality against the dev base's own `read` is the proof.
+        #[test]
+        fn marker_resolves_collisions_dev_highest() {
+            let pack = make_pack_from_marker(None, Vec::new(), true);
+            let dev = EmbeddedPack::new();
+
+            let commit = pack
+                .read(PackResourceKind::Schemas, &ResourceId::from("commit"))
+                .expect("the composed commit doctype reads back");
+            assert_eq!(
+                commit,
+                dev.read(PackResourceKind::Schemas, &ResourceId::from("commit"))
+                    .expect("dev ships commit"),
+                "dev-highest: the composed `commit` must be DEV's bytes",
+            );
+            assert!(
+                String::from_utf8(commit).unwrap().contains("implements"),
+                "dev's commit carries `implements` — the methodology drop must be shadowed",
+            );
+
+            let knobs = pack
+                .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+                .expect("the composed knobs declaration reads back");
+            assert_eq!(
+                knobs,
+                dev.read(PackResourceKind::Config, &ResourceId::from("knobs"))
+                    .expect("dev ships knobs"),
+                "dev-highest: the composed `knobs` must be DEV's bytes",
+            );
+            assert!(
+                String::from_utf8(knobs)
+                    .unwrap()
+                    .contains("default: router"),
+                "dev's default-workflow knob declares `router` — methodology's `dev-task` shadowed",
+            );
+        }
+
+        /// **Floor.** Marker absent/false with no listed packs → the core is the
+        /// bare `Composite([base])`, byte-identical to a direct `EmbeddedPack::dev()`
+        /// on `list`/`read`/`pack_version`. The two-embedded-pack path is inert
+        /// without the marker (the single-pack floor that keeps every dev-only test
+        /// green).
+        #[test]
+        fn marker_absent_is_the_base_only_floor() {
+            let pack = make_pack_from_marker(None, Vec::new(), false);
+            let embedded = EmbeddedPack::new();
+
+            assert_eq!(
+                pack.list(PackResourceKind::Workflows),
+                embedded.list(PackResourceKind::Workflows),
+                "no-marker list must equal the bare dev pack's list",
+            );
+            // A methodology-only workflow must NOT resolve without the marker.
+            assert!(
+                pack.read(PackResourceKind::Workflows, &ResourceId::from("planning"))
+                    .is_err(),
+                "without the marker the methodology surface must be absent",
+            );
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                ),
+                embedded.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                ),
+                "no-marker read must equal the bare dev pack's read",
+            );
+            assert_eq!(
+                pack.pack_version(),
+                embedded.pack_version(),
+                "no-marker pack_version must equal the bare dev pack's",
             );
         }
 
