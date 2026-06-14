@@ -240,6 +240,67 @@ Encoding the harness's **harder** workflows (increment / planning / completion) 
 
 **Outcome (2026-06-14).** All four increments built; the build harness **halted once** mid-increment-1 (T3) on **M14 debt** — the `jigc validate` store sweep was never made pack-local for command-refs and `JIGC_PACK_DIR` precedence was inverted — both settled-design-compliance fixes landed as inserted tasks **T2a/T2b** before T3 (the halt prevented shipping a broken `validate` over composed packs). Increment 1 was finished + **independently validated clean** (single-pack floor byte-identical, no over-correction, no scope creep) before a `skipThrough:1` re-launch built increments 2–4. Milestone-completion audit: **code-review + e2e both passed** — all 10 e2e scenarios green through the freshly-built real binary (embed+compose dev-highest, marker, byte-identity floor, zero-commit cold-start + clean first finalize, G6 discoverability, G4 baseline-adopt gate on **both** the store-sweep and finalize-post-commit paths, recursive ingest scan, un-manage + repo-local uninstall with the machine-global probe intact). **1 LOW finding, fixed** (not deferred): `inject_reference` was lossy so the `CLAUDE.md` setup→uninstall round-trip wasn't byte-identical for a non-newline-terminated original — made `inject` reversible (`4facedf`). Commits `0567357…4facedf` (20). **No new doctype, no new check ids, no engine knob-merge primitive** — the collisions resolved by precedence order alone. [DECISIONS.md](../DECISIONS.md) → M21 completion.
 
+## M22 · doctype-expansion — the `changelog` doctype + the four engine lifts it earns — planned (2026-06-14)
+
+**Created 2026-06-14**, the first of the two milestones the paired post-M21 deferral was **split** into ([DECISIONS.md](../DECISIONS.md) → 2026-06-14 split; auto-migration G1 is the *separate later* milestone). Serves **Flow A** (a new project authors a managed doc *through* jigc). Baseline verified by 3 `capability-auditor`s + 4 `gap-detector`s exercising the real binary (one **spiked both schema shapes** — route-around byte-stable, multi-level a real engine change); survived an independent design review (**1 BLOCKING + 4 SHOULD + 5 CONSIDER, all baked** before this cut — the BLOCKING B1 resolved by dropping the release's leading prose slot for an optional `link` field). **Proves:** a new project authors a managed, validated **`changelog`** singleton through jigc — a real-project doc with a **nested** repeatable (release → change-group), cold-created then warm-appended byte-stable + finalize-gated (worked-examples flow 24). The human's call ([DECISIONS.md](../DECISIONS.md) → doctype-expansion planning): **build the four latent engine capabilities, don't route around them** — each lands a real in-milestone target: **`Leaf::Repeatable`** (the release nesting), the **multi-word section-id** parser fix (`## Unreleased Changes`), the **optional slot/field** flag (an optional release `link`), and **doc-level `set: on-create` + `default:`** (honoring `adr`'s long-broken `date`/`status`). Driver = a standalone `record-change` workflow + a `single-task` `allows-create` fold-in (both dev-pack-local). **Honest bound:** Flow-A only — an existing `CHANGELOG.md` still routes `needs-reconcile` until auto-migration (G1). The rest of the project-doctype set is **mapped, not built** ([doctype-map.md](doctype-map.md) → candidate set). **The binary changes** (a new schema variant + parser/validator/writer recursion + a new doctype/workflow), so it must be **rebuilt + re-pinned** (`cargo install --path crates/cli` + `jigc setup`-extract) before any exercise. Design home: [design/changelog.md](../design/changelog.md). Decomposition below.
+
+## Milestone 22 — doctype-expansion (`changelog` + four engine lifts): decomposition
+
+**Planned + settled 2026-06-14** ([DECISIONS.md](../DECISIONS.md) → doctype-expansion planning; design [changelog.md](../design/changelog.md)). **Five increments, risk-first + linear:** the LARGE `Leaf::Repeatable` lift first (fail-fast on the headline risk, and the changelog schema can't load without it), then the two small independent capability fixes, then the isolated adr-scoped doc-level-on-create fix (its front-matter-test churn quarantined — review finding S2), then the changelog doctype + driver that consumes the prior four (earn-from-driver). Every gate carries the forward-review **red obligation** (fire-and-block / round-trip on real input before green — the vacuously-green-managed-doc failure class) and spikes the **cold/empty** state. The `structural-grammar`/`document-type-schema` open-question flips land **at build** in the increment that ships each capability (a flip documents a *landed* capability).
+
+## Increment 1 — `Leaf::Repeatable`: the multi-level repetition lift (the headline risk)
+
+**Deliverable:** the schema model expresses a repeatable nested inside a repeatable, and a two-level instance parses, renders, validates, and is addressable — round-tripping byte-stable. General recursion with a documented depth cap; the changelog exercises exactly two levels.
+
+**Grouped scope:**
+- **Schema variant** — add `Leaf::Repeatable(Repeatable)` to `crates/engine/src/schema.rs` (`Leaf = Slot | Field` today); the loader parses a nested `repeatable:` under a block leaf. **Heading-depth grammar:** item heading level = `2 + nesting-depth` (section `##`, L1 item `###`, L2 item `####`), capped at **H6 (4 levels)** — a documented cap, not silent truncation.
+- **Depth-aware recursive parse** — `parse.rs` (`ItemTemplate::from`, `parse_items`, `next_section_heading`, `is_reserved_depth`): the item-region scanner treats a deeper heading as a sub-item boundary within its parent's region and recurses per the schema block; the duplicate-anchor `seen` check **resets per parent item** (two releases may each carry `#added`; one release with two `#added` blocks).
+- **Recursive render** — `write.rs` `render_item` emits headings at the schema depth and recurses; a nested item's `{#id}` anchor is deterministic from its `id-from`.
+- **Recursive validate** — `validate.rs` `check_repeatable` recurses, running required-slot/required-field/field-value conformance over each nested item's leaves at every level.
+- **Parent-scoped path locator (NOT a vocabulary extension — review finding S1)** — replace the global single-level `write::locate_item_block` (matches at `###`, by anchor alone, globally) with a locator that resolves `item/subitem` by walking each path segment within its parent's byte region; `set_item_slot`/`set_item_field`/`add_item` and the `target_surface.rs` address builder consume it, so `#section/item/subitem/leaf` resolves unambiguously.
+
+**Proves:** a fixture doctype with a two-level repeatable round-trips byte-stable cold and warm; a hand-malformed nested entry (empty required nested slot) **blocks** at `schema-conformance.required-slot-present` naming the **nested** leaf address; two same-anchor groups within one parent block while across two parents pass; nested `add-item`/`set-slot`/`set-field` reach the nested item. Built against [changelog.md](../design/changelog.md) → engine work #1; flips the [structural-grammar.md](../design/structural-grammar.md) "one bounded level" open.
+
+## Increment 2 — multi-word section-id round-trip (the parser fix)
+
+**Deliverable:** a schema section id with a hyphen round-trips instead of making the whole doc non-reparseable.
+
+**Grouped scope:**
+- **`parse::heading_matches`** re-slugs the rendered heading before comparing (`slugify(text) == section_id`), symmetric with the title-casing writer; no writer change. Free-text item titles are unaffected (never matched against a section id).
+
+**Proves:** a doctype with a `## Unreleased Changes` (`unreleased-changes`) section round-trips byte-stable; the pre-fix behaviour is pinned as the regression red. Built against [changelog.md](../design/changelog.md) → engine work #2; **narrows** the deferred `prd` repeatable-requirements blocker ([decisions-pending.md](decisions-pending.md)).
+
+## Increment 3 — optional slot / field (the `optional:` flag)
+
+**Deliverable:** a slot or field marked optional does not block finalize when absent, while required ones still do.
+
+**Grouped scope:**
+- **`optional: bool`** on both `Slot` and `Field` (serde default false, skip-serialize-on-false to keep existing schema goldens byte-stable, mirroring `singleton`); `check_slot_present` / `is_author_required` skip the requiredness check when set, at the simple + repeatable enforcement arms.
+
+**Proves:** an absent optional field/slot finalizes **clean**; an absent required field/slot still **blocks**; an absent optional field renders with **no stray fields-block line** (byte-stable absent form). Built against [changelog.md](../design/changelog.md) → engine work #3.
+
+## Increment 4 — doc-level `set: on-create` + `default:` materialization (adr-scoped, isolated)
+
+**Deliverable:** a doc-level (header/simple-section) `set: on-create` date and a `default:` value are materialized at create — honoring `adr`'s long-broken `date` (set-on-create) + `status: proposed` (default) promises. **Isolated** so its front-matter-test churn lands alone (review finding S2).
+
+**Grouped scope:**
+- **CLI-side `on_create_doc_fields(schema)`** at create walks header/simple fields for `type: date, set: on-create` (stamp `today_iso`) and `default:` (stamp the value), seeding the instance before render — the **engine stays clock-free** (the CLI owns the clock, exactly as the proven item-level path does).
+- **Absorb the front-matter-test churn** — the many tests pinning empty front-matter on `create` update in this increment, in isolation.
+
+**Proves:** a freshly-created `adr` carries today's `date` + `status: proposed`; an `adr` create round-trips with materialized header; the churn is quarantined from the engine-recursion work. Built against [changelog.md](../design/changelog.md) → engine work #4.
+
+## Increment 5 — the `changelog` doctype + `record-change` workflow + `single-task` fold-in (the acceptance)
+
+**Deliverable:** a new project authors a managed `changelog` singleton through jigc end-to-end — the cold-create → warm-append byte-stable proof (flow 24). Consumes increments 1–3 (the schema can't load without `Leaf::Repeatable`, uses the multi-word section + optional field).
+
+**Grouped scope:**
+- **`changelog` schema** (dev pack, `singleton`, `location: changelog/`, edge-free) — `## Unreleased Changes` (single-level repeatable change-groups: `category` enum + `notes` slot) + `## Releases` (two-level: release item = version title + item-level `date` set-on-create + optional `link` field + nested `changes` change-groups). Authored *with* its driver (earn-from-driver).
+- **`record-change` workflow** (dev pack, `creates-task: true, selectable: false`, `allows-create: [{type: changelog, as: changelog}]`) + its steps — idempotent-create the singleton → `add-item` a release + nested change-groups → `set-slot` notes → finalize promotes.
+- **`single-task` fold-in** — add `{type: changelog, as: change}` to `single-task`'s `allows-create` (beside `{type: adr, as: decision}`), pack-local; **regression watch** that the `single-task` ADR-create + superseding-decision acceptance still pass.
+- **Flow 24 acceptance** — spiked against the rebuilt binary (the multi-level authoring path is net-new); the nested-leaf finding address confirmed at the spike (B1/S1).
+
+**Proves:** worked-examples [flow 24](../design/worked-examples.md#24-changelog-authoring--cold-create--warm-append-a-multi-level-singleton-doctype-expansion) — `jigc start --workflow record-change` mints a task (off-router), cold-creates the `changelog` singleton with a nested-group release, finalize promotes byte-stable; a second run warm-re-creates (copy-in preserves the prior release), appends a new release, re-promotes byte-stable with both present; a half-authored nested entry blocks, an absent optional `link` finalizes clean, the multi-word section round-trips, and the `single-task` fold-in appends an unreleased entry through the create-gate. The Flow-A-only bound holds (an existing `CHANGELOG.md` still routes `needs-reconcile`). Built against [changelog.md](../design/changelog.md).
+
 ## Milestone 1 — single-task execution loop (shipped): decomposition
 
 The six-increment decomposition of M1, kept as the shipped record and the worked example of what a milestone-planning cut produces. A usable `jigc` an agent is pointed at, proving the core loop (discover → compose → execute → validate → finalize) beats a plain `CLAUDE.md`. The **superseding-decision** flow ([worked-examples.md](../design/worked-examples.md) → Superseding decision) is the headline acceptance test — it's what converts the differentiators from *supported* to *proven*. Once all the increments below are built, the milestone is finished through the [milestone-completion workflow](milestone-completion-workflow.md) (independent audit → triage → fix → re-verify) — the acceptance gate before it ships.

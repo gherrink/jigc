@@ -18,6 +18,7 @@ The flows:
 12. [Measured run](#21-measured-run--capture-live-on-a-twin-seeds-planted-mid-run-the-record-authored-through-the-binary-m17) — the M17 capture arc: hooks + pinned binary on a twin, both seeded failures planted mid-run after the first promoting finalize, the facts tallied from the raw log, and `record-dogfood` authoring the per-run `dogfood-record` through the binary *(flow 21)*
 13. [Three-arm comparison](#22-three-arm-comparison--the-pre-registered-thesis-protocol-m17-sessions-pending) — the M17 thesis comparison protocol: pre-registration first, three twins from one baseline (jigc · control · static-methodology), one matched intent, a rubric'd judgment naming ≥1 non-seeded observation — authored protocol; the sessions themselves are the P1 phase, not yet run *(flow 22)*
 14. [Compose-both-at-setup](#23-compose-both-at-setup--the-new-project-methodology-default-m21) — the M21 new-project default: `jigc setup` writes the marker, the embedded `[dev ▸ methodology]` pair composes **dev-highest**, and roadmap/`planning` work out of the box — the same mechanism as flow 17 with the opposite precedence *(flow 23)*
+15. [Changelog authoring](#24-changelog-authoring--cold-create--warm-append-a-multi-level-singleton-doctype-expansion) — the doctype-expansion arc: a new project authors a managed `changelog` singleton with a **nested** repeatable (release → change-group), cold-created then warm-appended a new release byte-stable, exercising the four engine lifts *(flow 24)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -1581,3 +1582,78 @@ $ jigc start --task <id> | diff - <first-capture>        # empty diff
 2. **Dev wins both collisions — the new-project default ordering, the same mechanism as flow 17 with opposite precedence.** `default-workflow → router` (so a bare start lands on the selection menu, the MVP on-ramp) and `doctype:commit` keeps `implements→spec` (a spec-driven task can still bind the edge), each surfaced in `--explain` as `won by dev`. Flow 17's **methodology-primary, listed-pack-highest** ordering and this **dev-primary, embedded-pair** ordering are **both valid compositions of the one precedence mechanism** — only the order differs, a deliberate per-configuration choice. Methodology-primary stays the self-hosting dogfood's ordering ([flow 15](#15-self-hosting--the-methodology-pack-dogfooded-on-a-fresh-project-m12-exploratory)), unchanged.
 3. **Methodology's distinct surfaces co-compose — roadmap + `planning` work out of the box.** `roadmap`/`planning`/`decisions-log`/… don't collide with dev, so they all compose under the union; `jigc doc create roadmap` and `jigc start --workflow planning` succeed on a fresh project with no pack staging. (`planning` is **off-router** by design, so it is reached by name, not from the bare-start menu.)
 4. **`JIGC_PACK_DIR` stays the explicit override and supersedes the marker.** The marker is the *new-project default* channel; `JIGC_PACK_DIR` remains the explicit/dogfood channel and **wins** when both are present (the T2a precedence — [flow 15](#15-self-hosting--the-methodology-pack-dogfooded-on-a-fresh-project-m12-exploratory) note), so the methodology-alone / methodology-primary path is untouched by M21.
+
+## 24. Changelog authoring — cold-create → warm-append a multi-level singleton (doctype-expansion)
+
+The doctype-expansion arc ([changelog.md](changelog.md) → Acceptance): a **new** project authors a managed `changelog` singleton *through* jigc — the first dev-pack doctype with a **nested repeatable** (release → change-group), cold-created then warm-appended a new release byte-stable, the same two-run shape as [flow 19](#19-planning-encode--jigc-composes-its-own-milestone-planning-spine-and-maintains-its-running-docs-m16) now one level deeper. The doctype shape, the singleton/edge-free decisions, the driver, and the four engine lifts are the design of record in [changelog.md](changelog.md) and are not restated here. Notation illustrative; the exact verb sequence is **spiked against the real binary at build** (the multi-level authoring path is net-new engine).
+
+The `record-change` workflow is **`creates-task: true, selectable: false`** (the off-router authoring spine, [methodology-docs.md](methodology-docs.md#the-authoring-spine--creates-task-true-selectable-false-the-sub-task-precedent)), dev-pack, `allows-create: [{type: changelog, as: changelog}]`. The everyday `single-task` also gains `{type: changelog, as: change}` beside its `{type: adr, as: decision}`, so a coding task appends an unreleased entry through the same create-gate (the fold-in — not walked here, asserted in bar 5).
+
+### The walk — cut a release, then warm-append a second (run 1: cold-create)
+
+```text
+$ jigc setup                                                  # dev pack (changelog ships in it)
+$ jigc start --workflow record-change "cut 1.0.0"            # off-router, by name; mints a task
+  Scope the change …                                                 ← step:scope (Reason prose)
+  Author the changelog — create-or-update the singleton, add the release + its change-groups …  ← step:author-change
+  — jigc · all writes through `jigc`.
+
+# COLD (no committed changelog yet): idempotent-create mints the fixed-slug singleton (singleton ⇒ slug == type id).
+$ jigc doc create changelog --title Changelog               # → changelog:changelog.md (mints; cold)
+
+# add a release item (the level-1 repeatable; `date` is item-level set:on-create → stamped automatically):
+$ jigc doc add-item  changelog:changelog#releases --title "1.0.0"       # → changelog:changelog#releases/1-0-0
+$ jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/compare/0.9.0...1.0.0  # OPTIONAL field — may be omitted
+
+# add NESTED change-groups under the release (the level-2 repeatable — the Leaf::Repeatable path):
+$ jigc doc add-item  changelog:changelog#releases/1-0-0/changes --title added    # → …/changes/added
+$ jigc doc set-slot  changelog:changelog#releases/1-0-0/changes/added/notes --from-file -   # "- OAuth device-code flow"
+$ jigc doc add-item  changelog:changelog#releases/1-0-0/changes --title fixed
+$ jigc doc set-slot  changelog:changelog#releases/1-0-0/changes/fixed/notes --from-file -
+
+$ jigc task finalize cut-1-0-0
+> validate: clean
+> promote: changelog/changelog.md
+> commit:  docs(changelog): cut 1.0.0           ← one commit, the singleton + the code
+```
+
+The `## Unreleased Changes` section (a **multi-word section id** — the multi-word-section-id fix, not a route-around) round-trips; the committed bytes are **byte-stable** against the staged promote source, nested change-groups included.
+
+### Run 2 (a second release) — warm-append: idempotent-create copies-in, re-promotes byte-stable
+
+```text
+$ jigc start --workflow record-change "cut 1.1.0"
+# WARM (changelog is committed): create copies the committed doc in (read_or_copy_in) — prior 1.0.0 release survives.
+$ jigc doc create changelog --title Changelog               # copy-in: the 1.0.0 release is preserved
+$ jigc doc add-item changelog:changelog#releases --title "1.1.0"
+$ jigc doc add-item changelog:changelog#releases/1-1-0/changes --title changed
+$ jigc doc set-slot changelog:changelog#releases/1-1-0/changes/changed/notes --from-file -
+#   (no `link` authored this release — the OPTIONAL field is left absent)
+$ jigc task finalize cut-1-1-0
+> promote: changelog/changelog.md (re-promoted byte-stable, BOTH 1.0.0 + 1.1.0 present, nested groups intact)
+```
+
+### The reds — each fires on real input, not a fixture
+
+```text
+# RED 1 — a half-authored NESTED entry BLOCKS at validate (recursive repeatable conformance):
+$ jigc doc add-item changelog:changelog#releases/1-1-0/changes --title removed
+#   leave the nested `notes` slot empty
+$ jigc task finalize cut-1-1-0
+> BLOCK schema-conformance.required-slot-present @ changelog:changelog … #releases/1-1-0/changes/removed/notes
+#   the gate names the genuinely-empty NESTED leaf; non-zero exit, NO commit.
+#   (the nested-leaf address depends on the parent-scoped path locator — confirmed at the build spike, B1/S1.)
+
+# RED 2 — the OPTIONAL `link` field, absent, finalizes CLEAN (the optional-field lift):
+$ jigc task finalize cut-1-1-0     # with no `link` on 1.1.0 → no required-field-present finding for it
+> validate: clean                  # an absent OPTIONAL field does not block; an absent REQUIRED field/slot still does
+```
+
+### What it asserts (the acceptance bar)
+
+1. **A new project authors a managed `changelog` through jigc.** `jigc start --workflow record-change` mints a task (off-router), idempotent-create mints the `changelog` singleton, and finalize promotes it to `changelog/changelog.md` byte-stable — Flow-A authoring reach extended to a real-project doc.
+2. **The nested repeatable round-trips (the `Leaf::Repeatable` lift).** A release item carries a nested `changes` repeatable of change-groups (`#### Added`/`#### Fixed`), authored via `add-item`/`set-slot` on the extended `#section/item/subitem/leaf` address, rendered at the depth grammar (`##`/`###`/`####`), round-tripping byte-stable cold and warm.
+3. **Maintained over time across two runs.** Run 1 cold-creates and cuts 1.0.0; run 2 warm-re-creates (copy-in preserves 1.0.0, provenance `edited-from-base`), appends 1.1.0, and re-promotes byte-stable with **both** releases and their nested groups present.
+4. **The conformance gate fires on a real empty NESTED leaf**, and the **optional `link` field, absent, finalizes clean** (with no stray fields-block line) — recursive `required-slot-present` over nested items + the `optional:` lift, each on real input (the vacuously-green-managed-doc-gate guard).
+5. **The multi-word section id round-trips** (`## Unreleased Changes` — the parser fix, not a route-around), and **the `single-task` fold-in** (`allows-create:[{changelog, as: change}]`) lets an everyday task append an unreleased entry through the same create-gate it uses for an ADR.
+6. **The honest bound is observed.** The flow proves **Flow-A authoring** of a new changelog on a fresh project; an existing foreign `CHANGELOG.md` still routes `needs-reconcile` (auto-migration G1 is the separate later milestone — [changelog.md](changelog.md) → honest bounds), and nesting beyond 2 levels is supported-but-unexercised.
