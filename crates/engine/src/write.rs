@@ -1019,14 +1019,15 @@ pub fn remove_item(
 }
 
 /// `set-item-field` (item field present): replace the **value** bytes of `field_key`
-/// on the repeatable item `item_id` in `section_id`, scoped to that item's byte
-/// region — so an identically-keyed field on a sibling item is never matched (the
-/// wrong-item write bug). Not a wrapper over [`set_field`]: that scans globally and
-/// would hit the first matching key. Re-parses for conformance, asserts the item and
-/// its `field_key` are present, then locates the value span *within* the item's block
-/// region ([`locate_item_block`]) via [`field_value_in_lines`] over the item's
-/// sentinelled `- key: value` bullets (`bullet = true`). An absent item / field →
-/// [`SpliceError::NotPresent`].
+/// on the repeatable item `item_id` in `section_id`, scoped to that item's OWN byte
+/// region — so neither a sibling item's identically-keyed field (the wrong-item write
+/// bug) nor a nested child's field block (the parent-region-swallows-child bug) is
+/// matched. Not a wrapper over [`set_field`]: that scans globally and would hit the
+/// first matching key. Re-parses for conformance, asserts the item and its `field_key`
+/// are present, then locates the value span *within* the item's own leaf region
+/// ([`locate_item_path`] narrowed by [`item_own_leaf_region`]) via
+/// [`field_value_in_lines`] over the item's sentinelled `- key: value` bullets
+/// (`bullet = true`). An absent item / field → [`SpliceError::NotPresent`].
 pub fn set_item_field(
     schema: &Schema,
     source: &str,
@@ -1056,11 +1057,17 @@ pub fn set_item_field(
         });
     }
 
-    // The item's byte region — restricting the value scan to this item so a
-    // sibling's identically-keyed bullet is out of range.
-    let region = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
-        what: format!("item {item_id:?} block"),
+    // The item's byte region — resolved through the parent-scoped path locator (a
+    // single-element chain), then narrowed to the item's OWN leaf region so a nested
+    // child's identically-keyed bullet is out of range (the parent's field swallowed by
+    // its child's field block — the corruption bug) just as a sibling item's is.
+    let blocks = parse::scan_blocks(source);
+    let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_id:?} block"),
+        }
     })?;
+    let region = item_own_leaf_region(&blocks, region);
     let value_span = field_value_in_lines(source, region, field_key, true).ok_or_else(|| {
         SpliceError::NotPresent {
             what: format!("field {field_key:?} value line on item {item_id:?}"),
@@ -1125,8 +1132,14 @@ pub fn set_item_slot(
     // `\n`, so a following item / section gets `render_item(item)` + `\n` (one blank
     // line); a trailing item (block runs to EOF) gets the full render, EOF-normalized to
     // one `\n`.
-    let region = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
-        what: format!("item {item_id:?} block"),
+    // The item's full sub-tree region, resolved through the parent-scoped path locator
+    // (a single-element chain) — unambiguous when another parent carries a same-anchor
+    // item. The whole sub-tree is re-rendered (slot prose changes, children preserved by
+    // [`render_item`]'s recursion), so this is the full region, not the leaf region.
+    let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_id:?} block"),
+        }
     })?;
     // Re-derive the item's content (preserving sibling slots + fields) and overwrite
     // the addressed leaf's prose — single-slot updates the bare `slot`, multi-slot
@@ -1599,6 +1612,45 @@ fn item_block_within(
         .min()
         .unwrap_or(region.end);
     Some(start..end)
+}
+
+/// The single-level item's **own leaf region** — its full sub-tree `region` (from
+/// [`locate_item_path`]) narrowed to `[region.start .. first nested child heading)`,
+/// i.e. the bytes the item owns *before* its first nested `####`+ child. A field-group
+/// scan/insert for a top-level field must be bounded to this, not the full sub-tree:
+/// the sub-tree spans the item's nested children, whose field blocks would otherwise be
+/// matched (the parent's field appended INTO a child's group — the corruption this
+/// guards). An item with no nested child keeps its whole region (no deeper heading
+/// inside it).
+///
+/// "First nested child" = the first heading inside `region` deeper than the item's own
+/// heading (the heading at `region.start`); a same-or-shallower heading would already be
+/// outside the item's sub-tree, so [`locate_item_path`] never includes one.
+fn item_own_leaf_region(blocks: &[Block], region: Range<usize>) -> Range<usize> {
+    let own_level = blocks.iter().find_map(|b| match b {
+        Block::Heading { level, range, .. } if range.start == region.start => {
+            Some(level_num_of(*level))
+        }
+        _ => None,
+    });
+    let Some(own_level) = own_level else {
+        return region;
+    };
+    let first_child = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading { level, range, .. }
+                if range.start > region.start
+                    && range.start < region.end
+                    && level_num_of(*level) > own_level =>
+            {
+                Some(range.start)
+            }
+            _ => None,
+        })
+        .min()
+        .unwrap_or(region.end);
+    region.start..first_child
 }
 
 /// The numeric ATX level of a heading (`H1`→1 … `H6`→6) — the writer-side dual of the
@@ -2218,9 +2270,11 @@ pub fn insert_field(
 /// the `<!-- fields -->` sentinel **once** if the item has no field group yet (the
 /// "first field into a freshly-minted empty item" case — [`add_item`] mints items
 /// empty, so the item-leaf write path needs this insert half just as the header path
-/// has [`insert_front_matter_field`]). All scanning is confined to the item's byte
-/// region ([`locate_item_block`]), so a sibling item's identically-keyed bullet is out
-/// of range (the wrong-item write bug, on the insert path). The bullet is appended
+/// has [`insert_front_matter_field`]). The field-group scan is confined to the item's
+/// OWN leaf region ([`locate_item_path`] narrowed by [`item_own_leaf_region`]), so
+/// neither a sibling item's identically-keyed bullet (the wrong-item write bug) nor a
+/// nested child's field group (the parent-region-swallows-child bug) is in range. The
+/// bullet is appended
 /// after the item's present bullets, mirroring [`insert_field`]. A field key already
 /// present on the item → [`GenerateError::AlreadyPresent`] (route to [`set_item_field`]).
 pub fn insert_item_field(
@@ -2243,17 +2297,24 @@ pub fn insert_item_field(
         });
     }
 
-    // The item's byte region — every scan below is confined to it, so a sibling item's
-    // identically-keyed bullet is never matched and never appended to.
-    let region = locate_item_block(source, item_id).ok_or_else(|| GenerateError::WrongShape {
-        what: format!("item {item_id:?} in section {section_id:?} not present"),
-    })?;
+    // The item's byte region, resolved through the parent-scoped path locator (a
+    // single-element chain). The field-group scan is bounded to the item's OWN leaf
+    // region (before its first nested `####` child) so a nested child's field group is
+    // never matched — without this the parent's field is appended INTO a child's group
+    // (the corruption) or the child's same key triggers a false `AlreadyPresent`. The
+    // cold-fill re-render below uses the FULL sub-tree region (children preserved).
     let blocks = parse::scan_blocks(source);
+    let region = locate_item_path(schema, source, section_id, &[item_id]).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_id:?} in section {section_id:?} not present"),
+        }
+    })?;
+    let leaf_region = item_own_leaf_region(&blocks, region.clone());
 
     let bullet = format!("- {}", emit_one_field(field));
 
-    // Is there an existing field group (a sentinel + list) inside the item's region?
-    match field_group_list(&blocks, region.clone()) {
+    // Is there an existing field group (a sentinel + list) inside the item's OWN region?
+    match field_group_list(&blocks, leaf_region.clone()) {
         Some((list_range, items)) => {
             // A present key is a surgical set-item-field, not a generation.
             if field_key_in_list(&blocks, source, &items, &field.key) {
@@ -6408,5 +6469,87 @@ OAuth device-code flow.
         )
         .expect_err("the parent release does not exist");
         assert!(matches!(err, SpliceError::NotPresent { .. }));
+    }
+
+    /// Regression (review finding): a **top-level** item field-write must land in the
+    /// parent's OWN leaf region — before its first nested `####` child — even when that
+    /// child already carries a field block. The single-level setter `locate_item_block`
+    /// bounded the release's region at the next `###`/`##`, *spanning* the nested
+    /// `#### Added`'s field group, so the release's `date` was appended INTO the nested
+    /// group (corrupting the doc) or the nested group's same/other key produced a false
+    /// reject. The fix routes the single-level setters through the parent-scoped path and
+    /// bounds the field scan to the parent's own leaf region.
+    ///
+    /// Fixture: one release whose nested `#### Added` was authored *first* with a `ticket`
+    /// field block; then the top-level `date` is set on the release. `date` must land in
+    /// the release's own region (between its heading and the `#### Added`), and the result
+    /// must re-parse conformant + byte-stable.
+    #[test]
+    fn top_level_field_write_after_nested_child_lands_in_parent_region() {
+        let schema = changelog_schema();
+        // A release carrying ONLY a nested `#### Added` (with a `ticket` field block) —
+        // the release has no own field group yet (the cold-fill-after-nesting case).
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.0.0  {#1-0-0}
+
+#### Added  {#added}
+
+
+
+<!-- fields -->
+- ticket: JIRA-9
+";
+        assert_byte_stable(&schema, src);
+
+        // Set the TOP-LEVEL release `date` field (a single-level item address).
+        let out = set_item_field_or_insert(&schema, src, "releases", "1-0-0", "date", "2026-06-14")
+            .expect("top-level date field write");
+
+        // (a) The result re-parses conformant and is byte-stable.
+        assert_byte_stable(&schema, &out);
+
+        // (b) `date` belongs to the RELEASE, not the nested `#### Added` change-group.
+        let instance = instance_from_source(&schema, &out).expect("conforms");
+        let release = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "releases")
+            .and_then(|s| s.items.iter().find(|i| i.id == "1-0-0"))
+            .expect("release present");
+        assert!(
+            release
+                .fields
+                .iter()
+                .any(|f| f.key == "date"
+                    && matches!(&f.value, Value::Scalar(v) if v == "2026-06-14")),
+            "the release itself carries the date field; out:\n{out}",
+        );
+        let added = release
+            .items
+            .iter()
+            .find(|i| i.id == "added")
+            .expect("nested #added present");
+        assert!(
+            !added.fields.iter().any(|f| f.key == "date"),
+            "the nested #added must NOT have absorbed the release's date; out:\n{out}",
+        );
+        // The nested child keeps its own ticket field intact.
+        assert!(
+            added.fields.iter().any(|f| f.key == "ticket"),
+            "the nested #added keeps its ticket field; out:\n{out}",
+        );
+
+        // (c) Byte placement: the release's `date` bullet precedes its `#### Added`.
+        let date_at = out.find("- date: 2026-06-14").expect("date bullet present");
+        let added_at = out.find("#### Added").expect("nested heading present");
+        assert!(
+            date_at < added_at,
+            "the release's date bullet must sit in the release's OWN region, before its \
+             nested #### Added; out:\n{out}",
+        );
     }
 }

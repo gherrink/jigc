@@ -347,6 +347,26 @@ fn nested_item_addressing_lands_on_the_addressed_nested_item_through_the_binary(
     );
     ok_stdout(field, "set-field 1.2.0/added/ticket");
 
+    // (3b) Regression (review finding): set the TOP-LEVEL `date` field on release 1.2.0
+    // AFTER its nested `#added` (which now carries a `ticket` field block) — the broken
+    // path the increment-1 e2e never exercised. With the bug the release's `date` was
+    // appended INTO the nested group's field block, corrupting the doc; the fix lands it
+    // in the release's own region.
+    let rel_date = run_jigc(
+        repo.path(),
+        home.path(),
+        pack.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("{rel_b}/date"),
+            "--value",
+            "2026-06-14",
+        ],
+        None,
+    );
+    ok_stdout(rel_date, "set-field 1.2.0/date (top-level, after nesting)");
+
     // Re-read the staged doc and assert the nested write landed on 1.2.0's `#added`
     // (the addressed nested item), leaving 1.3.0's same-anchor `#added` untouched.
     let staged = staged_changelog(repo.path(), task, &slug);
@@ -378,6 +398,31 @@ fn nested_item_addressing_lands_on_the_addressed_nested_item_through_the_binary(
         .iter()
         .find(|i| i.id == "added")
         .expect("1.3.0's #added present");
+
+    // The top-level `date` landed on release 1.2.0 itself, NOT on its nested #added.
+    assert!(
+        r120.fields.iter().any(|f| f.key == "date"
+            && matches!(&f.value, engine::field_block::Value::Scalar(v) if v == "2026-06-14")),
+        "the top-level date landed on release 1.2.0 itself; staged:\n{staged}",
+    );
+    assert!(
+        !added_120.fields.iter().any(|f| f.key == "date"),
+        "the nested #added must NOT have absorbed the release's date; staged:\n{staged}",
+    );
+    // Byte placement: the release's `date` bullet precedes its nested `#### Added`.
+    let date_at = staged
+        .find("- date: 2026-06-14")
+        .expect("date bullet present");
+    let added_hdr_at = staged
+        .match_indices("#### Added")
+        .last()
+        .map(|(i, _)| i)
+        .expect("a nested #### Added heading present");
+    assert!(
+        date_at < added_hdr_at,
+        "the release's date must sit in its own region, before the nested #### Added; \
+         staged:\n{staged}",
+    );
 
     // 1.2.0's #added carries the authored notes + the ticket.
     assert_eq!(
