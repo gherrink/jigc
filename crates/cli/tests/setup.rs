@@ -570,6 +570,95 @@ fn mode(path: &Path) -> u32 {
         & 0o777
 }
 
+/// `jigc setup` writes the `compose-embedded-methodology: true` marker into the
+/// project layer's `.jigc/config/packs.yaml` — the marker the pack factory
+/// (`pack::read_compose_marker`) reads to compose the embedded methodology pack, so
+/// a clean `setup` gives a real project the dev+methodology surface out of the box
+/// (M21). The write is repo-local, idempotent, and non-destructive:
+///   (i) after setup, `packs.yaml` carries `compose-embedded-methodology: true`;
+///   (ii) a second setup leaves the file byte-identical (idempotent no-op);
+///   (iii) a pre-seeded `packs:` list survives setup, with the marker added.
+#[test]
+fn setup_writes_compose_embedded_methodology_marker() {
+    // (i) A clean setup writes the marker.
+    let repo = TempDir::new("compose-marker");
+    mark_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_setup(repo.path(), home.path());
+    assert!(
+        out.status.success(),
+        "`jigc setup` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let packs_path = repo.path().join(".jigc/config/packs.yaml");
+    let first = fs::read_to_string(&packs_path).expect("setup must write .jigc/config/packs.yaml");
+    let parsed: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&first).expect("the written packs.yaml must be valid YAML");
+    assert_eq!(
+        parsed
+            .get("compose-embedded-methodology")
+            .and_then(serde_yaml_ng::Value::as_bool),
+        Some(true),
+        "setup must write `compose-embedded-methodology: true`; got:\n{first}",
+    );
+
+    // (ii) A second setup is a byte-identical no-op on the marker file.
+    let out2 = run_setup(repo.path(), home.path());
+    assert!(
+        out2.status.success(),
+        "second `jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out2.stderr),
+    );
+    let second = fs::read_to_string(&packs_path).expect("packs.yaml still present after re-setup");
+    assert_eq!(
+        first, second,
+        "a second `jigc setup` must leave .jigc/config/packs.yaml byte-identical",
+    );
+
+    // (iii) A pre-seeded `packs:` list survives setup (non-destructive), with the
+    //       marker added alongside it.
+    let seeded_repo = TempDir::new("compose-marker-seeded");
+    mark_repo(seeded_repo.path());
+    let seeded_config = seeded_repo.path().join(".jigc/config");
+    fs::create_dir_all(&seeded_config).expect("create the seeded project config dir");
+    fs::write(
+        seeded_config.join("packs.yaml"),
+        "packs:\n  - packs/local-pack\n",
+    )
+    .expect("seed a hand-written packs.yaml carrying a packs: list");
+
+    let out3 = run_setup(seeded_repo.path(), home.path());
+    assert!(
+        out3.status.success(),
+        "`jigc setup` over a seeded packs.yaml must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out3.stderr),
+    );
+    let seeded_after = fs::read_to_string(seeded_config.join("packs.yaml"))
+        .expect("the seeded packs.yaml is present after setup");
+    let seeded_parsed: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&seeded_after).expect("the post-setup seeded packs.yaml is valid");
+    assert_eq!(
+        seeded_parsed
+            .get("compose-embedded-methodology")
+            .and_then(serde_yaml_ng::Value::as_bool),
+        Some(true),
+        "setup must add the marker to a pre-seeded packs.yaml; got:\n{seeded_after}",
+    );
+    let listed = seeded_parsed
+        .get("packs")
+        .and_then(serde_yaml_ng::Value::as_sequence)
+        .expect("the pre-seeded `packs:` list must survive setup (non-destructive)");
+    assert!(
+        listed
+            .iter()
+            .any(|p| p.as_str() == Some("packs/local-pack")),
+        "the pre-seeded pack entry must survive setup; got:\n{seeded_after}",
+    );
+}
+
 /// Whether `settings` carries a `hooks.PreToolUse[*].hooks[*]` entry running the
 /// seeded `house-precheck.sh` command — the pre-existing non-jigc hook the merge
 /// must preserve.

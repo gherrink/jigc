@@ -416,6 +416,24 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         )
     })?;
 
+    // 2b. Write the `compose-embedded-methodology` marker into the project layer's
+    //     `packs.yaml` — the marker `pack::read_compose_marker` reads to compose the
+    //     embedded methodology pack as `[dev ▸ methodology]`, so a clean `setup` gives
+    //     a real project the dev+methodology surface out of the box (M21,
+    //     `design/multi-pack.md` → Embedded second pack + setup auto-wiring). A repo-
+    //     local, non-destructive parse-mutate-serialize: a hand-written `packs:` list
+    //     is preserved and the marker added; idempotent (a second setup is a byte-
+    //     identical no-op).
+    write_compose_marker(repo_root).map_err(|err| {
+        Finding::block(
+            "setup.compose-marker",
+            format!(
+                "cannot write the `compose-embedded-methodology` marker into `.jigc/config/packs.yaml`: {err}"
+            ),
+            "ensure `.jigc/config/` is writable, then re-run `jigc setup`",
+        )
+    })?;
+
     // 3. Allowlist `jigc` so the agent runs it without friction.
     let allowlist_file = profile.allowlist.file.clone();
     adapter::inject_allowlist(repo_root, profile).map_err(|err| {
@@ -487,6 +505,61 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         line_file,
         allowlist_file,
     })
+}
+
+/// The compose-marker key `pack::read_compose_marker` reads from `packs.yaml`.
+const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
+
+/// Write the `compose-embedded-methodology: true` marker into the project layer's
+/// `<repo_root>/.jigc/config/packs.yaml` (step 2b of [`install`]).
+///
+/// **Non-destructive parse-mutate-serialize:** an existing `packs.yaml` (e.g. a
+/// hand-written `packs:` list) is parsed, the marker key is set to `true` alongside
+/// whatever it already carries, and the mapping is re-serialized — so the listed
+/// packs survive. An absent file is created carrying just the marker.
+///
+/// **Idempotent:** the serialized bytes are written only when they differ from what
+/// is on disk, so a second `setup` over an already-marked file is a byte-identical
+/// no-op (`serde_yaml_ng` serialization of a stable mapping is deterministic).
+fn write_compose_marker(repo_root: &Path) -> std::io::Result<()> {
+    use serde_yaml_ng::{Mapping, Value};
+
+    let config_dir = repo_root.join(".jigc").join("config");
+    std::fs::create_dir_all(&config_dir)?;
+    let path = config_dir.join("packs.yaml");
+
+    // Parse the existing file (preserving its content) or start from an empty
+    // mapping. A malformed existing `packs.yaml` is a real authoring fault — surface
+    // it rather than clobbering the human's bytes.
+    let mut mapping = match std::fs::read_to_string(&path) {
+        Ok(text) if text.trim().is_empty() => Mapping::new(),
+        Ok(text) => serde_yaml_ng::from_str::<Value>(&text)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?
+            .as_mapping()
+            .cloned()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{} is not a YAML mapping", path.display()),
+                )
+            })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Mapping::new(),
+        Err(e) => return Err(e),
+    };
+
+    mapping.insert(Value::from(COMPOSE_MARKER_KEY), Value::Bool(true));
+
+    let mut rendered = serde_yaml_ng::to_string(&Value::Mapping(mapping))
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    if !rendered.ends_with('\n') {
+        rendered.push('\n');
+    }
+
+    // Idempotent: write only when the bytes change, so a second setup touches nothing.
+    if std::fs::read_to_string(&path).ok().as_deref() != Some(rendered.as_str()) {
+        std::fs::write(&path, rendered)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
