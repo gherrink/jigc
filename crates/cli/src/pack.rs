@@ -49,12 +49,37 @@ pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, S
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
 static PACK: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
 
-/// `PackSource` over the binary-embedded built-in dev pack.
-pub struct EmbeddedPack;
+/// The methodology pack (the M12 second pack — `roadmap`/`planning`/`completion`/…),
+/// embedded at compile time from `packs/methodology/` by a **second** `include_dir!`.
+/// Pure-YAML data (no `target/` build-tree, so the M20 bloat lesson does not apply);
+/// composed in-binary, never extracted. Selected by [`EmbeddedPack::methodology`].
+/// See `design/multi-pack.md` → Embedded second pack; `module-layout.md` → Pack
+/// distribution.
+static METHODOLOGY: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../packs/methodology");
+
+/// `PackSource` over a binary-embedded pack tree. **Field-carrying:** the selected
+/// `&'static Dir` is the dev base ([`new`](EmbeddedPack::new)) or the methodology
+/// tree ([`methodology`](EmbeddedPack::methodology)), so the two in-binary packs can
+/// be composed. Both selectors report `pack_version = CARGO_PKG_VERSION` — the pack
+/// versions with the binary release regardless of which tree is selected
+/// (`multi-pack.md` → Version ties to the binary).
+pub struct EmbeddedPack {
+    dir: &'static Dir<'static>,
+}
 
 impl EmbeddedPack {
+    /// The dev base pack (the lowest-precedence foundation).
     pub fn new() -> Self {
-        EmbeddedPack
+        EmbeddedPack { dir: &PACK }
+    }
+
+    /// The methodology pack — the second embedded tree, composed dev-highest at
+    /// `jigc setup` behind the `compose-embedded-methodology` marker. Consumed by
+    /// the pack-source factory (this increment's later task T2); referenced here +
+    /// by the load tests so the embedded tree is proven to compile in and read back.
+    #[allow(dead_code)]
+    pub fn methodology() -> Self {
+        EmbeddedPack { dir: &METHODOLOGY }
     }
 }
 
@@ -80,7 +105,7 @@ impl PackSource for EmbeddedPack {
     }
 
     fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
-        let Some(dir) = PACK.get_dir(kind_dir(kind)) else {
+        let Some(dir) = self.dir.get_dir(kind_dir(kind)) else {
             return Vec::new();
         };
         let mut ids: Vec<ResourceId> = dir
@@ -94,7 +119,7 @@ impl PackSource for EmbeddedPack {
     }
 
     fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
-        let dir = PACK.get_dir(kind_dir(kind));
+        let dir = self.dir.get_dir(kind_dir(kind));
         let bytes = dir.and_then(|dir| {
             dir.files()
                 .find(|f| f.path().file_stem().and_then(|s| s.to_str()) == Some(id.as_str()))
@@ -1923,6 +1948,138 @@ mod tests {
                 composite.provenance_segments().len(),
                 "the entry count must mirror the one-segment provenance_segments floor",
             );
+        }
+    }
+
+    /// The second embedded pack — the methodology tree carried in-binary by a
+    /// second `include_dir!`, selected by [`EmbeddedPack::methodology`]. Proves
+    /// the field-carrying `EmbeddedPack` can serve a *different* `&'static Dir`
+    /// than the dev base, that its content loads through the **production**
+    /// loaders, that both selectors honour the binary-version invariant, and that
+    /// the embedded methodology `Dir` carries no `target/`/build subtree (only the
+    /// four resource dirs). See `design/multi-pack.md` → Embedded second pack;
+    /// `module-layout.md` → Pack distribution.
+    mod methodology_pack {
+        use super::super::*;
+
+        /// The methodology selector lists + reads its own workflows and schemas
+        /// back **non-empty** through the production loaders the binary uses
+        /// (`load_workflow_def` for workflow front-matter, `load_pack_schema` for
+        /// the field-type-resolving doctype path) — the bullet-2 "confirm the
+        /// embedded methodology content loads" check. A typo'd key, a mis-nested
+        /// field, or a `deny_unknown_fields` violation on the embedded methodology
+        /// content fails here, so this is the clean real-binary load proof for the
+        /// second pack.
+        #[test]
+        fn methodology_selector_lists_and_loads_through_production_loaders() {
+            let pack = EmbeddedPack::methodology();
+
+            // The methodology workflows compose its surface: dev-task, planning,
+            // completion all ride in-binary.
+            let workflows = pack.list(PackResourceKind::Workflows);
+            for id in ["dev-task", "planning", "completion"] {
+                assert!(
+                    workflows.contains(&ResourceId::from(id)),
+                    "the methodology selector must ship the `{id}` workflow; got {workflows:?}",
+                );
+                let bytes = pack
+                    .read(PackResourceKind::Workflows, &ResourceId::from(id))
+                    .unwrap_or_else(|e| panic!("methodology workflow `{id}` reads back: {e}"));
+                assert!(
+                    !bytes.is_empty(),
+                    "methodology workflow `{id}` must be non-empty YAML",
+                );
+                // Through the production front-matter loader, not a hand-parse.
+                engine::compose::load_workflow_def(&bytes)
+                    .unwrap_or_else(|e| panic!("methodology workflow `{id}` loads: {e:?}"));
+            }
+
+            // The persisted methodology doctype `roadmap` loads through the
+            // field-type-resolving production schema loader.
+            let schemas = pack.list(PackResourceKind::Schemas);
+            assert!(
+                schemas.contains(&ResourceId::from("roadmap")),
+                "the methodology selector must ship the `roadmap` doctype; got {schemas:?}",
+            );
+            let bytes = pack
+                .read(PackResourceKind::Schemas, &ResourceId::from("roadmap"))
+                .expect("the methodology `roadmap` schema reads back");
+            assert!(!bytes.is_empty(), "the `roadmap` schema must be non-empty");
+            load_pack_schema(&pack, &bytes)
+                .expect("the methodology `roadmap` schema loads through load_pack_schema");
+        }
+
+        /// **Binary-version invariant for both selectors.** Both the dev base and
+        /// the methodology selector report `pack_version = CARGO_PKG_VERSION` (the
+        /// binary release) — the methodology pack's own `defaults.yaml: 0.1.0` is
+        /// *not* its embedded version, so override-reconciliation keys both
+        /// embedded packs to one release (`multi-pack.md` → Version ties to the
+        /// binary).
+        #[test]
+        fn both_selectors_report_the_binary_version() {
+            assert_eq!(
+                EmbeddedPack::new().pack_version(),
+                env!("CARGO_PKG_VERSION"),
+                "the dev selector reports the binary version",
+            );
+            assert_eq!(
+                EmbeddedPack::methodology().pack_version(),
+                env!("CARGO_PKG_VERSION"),
+                "the methodology selector reports the binary version, not its 0.1.0 defaults",
+            );
+        }
+
+        /// The two selectors carry **distinct** trees: the methodology selector
+        /// lists `dev-task`/`planning`/… that the dev base does not, and the dev
+        /// base lists `single-task`/`router`/… the methodology pack does not — so
+        /// the field genuinely selects a different `&'static Dir`, not the same one
+        /// twice.
+        #[test]
+        fn the_two_selectors_carry_distinct_trees() {
+            let dev = EmbeddedPack::new().list(PackResourceKind::Workflows);
+            let methodology = EmbeddedPack::methodology().list(PackResourceKind::Workflows);
+
+            assert!(
+                methodology.contains(&ResourceId::from("dev-task")),
+                "methodology lists its own `dev-task`; got {methodology:?}",
+            );
+            assert!(
+                !dev.contains(&ResourceId::from("dev-task")),
+                "the dev base must NOT carry methodology's `dev-task`; got {dev:?}",
+            );
+            assert!(
+                dev.contains(&ResourceId::from("single-task")),
+                "the dev base lists its own `single-task`; got {dev:?}",
+            );
+            assert!(
+                !methodology.contains(&ResourceId::from("single-task")),
+                "the methodology pack must NOT carry dev's `single-task`; got {methodology:?}",
+            );
+        }
+
+        /// The embedded methodology `Dir` carries **only** the four resource dirs
+        /// (`workflows/`, `schemas/`, `steps/`, `config/`) — never a `target/` /
+        /// build subtree. The methodology tree is pure YAML data, so an embed that
+        /// swept a build tree would re-introduce the M20 bloat. Guards that the
+        /// `include_dir!` root holds no `target/`, mirroring
+        /// `embedded_pack_carries_no_probes_directory` for the dev pack.
+        #[test]
+        fn methodology_dir_carries_no_build_subtree() {
+            assert!(
+                METHODOLOGY.get_dir("target").is_none(),
+                "the embedded methodology Dir must not carry a `target/` build subtree",
+            );
+            let top_level: Vec<&str> = METHODOLOGY
+                .dirs()
+                .filter_map(|d| d.path().file_name().and_then(|n| n.to_str()))
+                .collect();
+            for name in &top_level {
+                assert!(
+                    matches!(*name, "workflows" | "schemas" | "steps" | "config"),
+                    "the methodology Dir must hold only the four resource dirs; saw `{name}` \
+                     among {top_level:?}",
+                );
+            }
         }
     }
 }
