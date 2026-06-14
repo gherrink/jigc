@@ -268,6 +268,40 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
     }
 }
 
+/// Recursive reach (G3): a doc in a nested subdirectory (`docs/sub/x.md`) — invisible
+/// to M9's top-level-only scan — now appears in `jigc ingest` output. Drives the real
+/// binary so the recursion is proven end-to-end, not just at the engine unit level.
+#[test]
+fn ingest_discovers_a_nested_subdirectory_doc() {
+    let repo = TempDir::new("nested");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // A freeform doc nested two levels deep — reachable only by recursing from the root.
+    write(repo.path(), "docs/sub/x.md", NON_CONFORMANT_NEAR_MISS);
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+
+    assert!(
+        report.contains("docs/sub/x.md"),
+        "a nested docs/sub/x.md must appear in `jigc ingest` output:\n{report}",
+    );
+}
+
 #[test]
 fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only() {
     let repo = TempDir::new("adopt");

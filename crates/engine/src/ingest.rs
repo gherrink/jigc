@@ -1,8 +1,8 @@
 //! `engine::ingest` — repo-wide candidate discovery for the existing-project
 //! ingestion flow (the brownfield detect-and-route slice).
 //!
-//! See `design/project-setup.md` → Flow 2 (the bounded slice: root + `docs/` +
-//! every schema `location:` dir) and `implementation/roadmap.md` (M9 increment 2).
+//! See `design/project-setup.md` → Flow 2 + Flow 2 hardening (the recursive scan,
+//! G3) and `implementation/roadmap.md` (M9 increment 2, M21 increment 3).
 //!
 //! ## Why this is net-new
 //!
@@ -12,15 +12,14 @@
 //! the *forward* problem: an arbitrary foreign `.md` with no type binding. So
 //! discovery must reach beyond the location dirs.
 //!
-//! ## The bounded slice
+//! ## The recursive walk
 //!
-//! Discovery is conventional, **non-recursive** file-walking over a fixed, bounded
-//! set of directories — the repo root, `docs/`, and every schema's `location:` dir.
-//! Each directory is read flat (matching the existing per-location `read_dir`
-//! discipline); only `*.md` files are collected. `.jigc/` internals are excluded.
-//! The result is the repo-relative path list, **sorted** and **deduped** (the same
-//! schema may appear at a dir already covered, e.g. `docs/` as a `location:`), so
-//! the verdict order downstream is deterministic — same repo in, same list out.
+//! Discovery **recursively** walks the repo from the root down, collecting every
+//! `*.md` file, so docs in `wiki/`, nested `docs/sub/`, `rfcs/`, etc. are reachable
+//! (M21 G3 — M9's non-recursive top-level scan missed them). The internals dirs
+//! (`.jigc/`, `.git/`) are pruned by name. The result is the repo-relative path list,
+//! **sorted** and **deduped**, so the verdict order downstream is deterministic —
+//! same repo in, same list out.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -32,72 +31,61 @@ use crate::parse::parse_sections;
 use crate::schema::Schema;
 use crate::validate::schema_conformance;
 
-/// The `.jigc/` internals dir — never a candidate source.
-const INTERNALS_DIR: &str = ".jigc";
+/// Internals dirs — never a candidate source, never descended into. `.jigc/` is the
+/// adapter/state home; `.git/` is the VCS internals (its hooks/templates carry `.md`).
+const INTERNALS_DIRS: [&str; 2] = [".jigc", ".git"];
 
-/// Discover the sorted, deduped repo-relative `.md` candidate set across the repo
-/// root, `docs/`, and every schema `location:` dir, excluding `.jigc/` internals.
+/// Discover the sorted, deduped repo-relative `.md` candidate set by **recursively**
+/// walking the repo from `repo_root` down, excluding the internals dirs (`.jigc/`,
+/// `.git/`).
 ///
-/// Each directory is scanned **flat** (non-recursive); a missing directory
-/// contributes nothing (no committed docs of that shape yet). Paths are returned as
-/// forward-slash repo-relative strings, sorted lexicographically and deduped — a
-/// `location:` dir that coincides with the root or `docs/` yields each file once.
+/// The walk descends into every subdirectory (`wiki/`, nested `docs/sub/`, `rfcs/`,
+/// …) so a real repo's docs-elsewhere corpus is reachable — only `*.md` files are
+/// collected. Paths are returned as forward-slash repo-relative strings, sorted
+/// lexicographically and deduped. The internals dirs are pruned by name at the top
+/// level, so nothing under them is ever read.
 ///
-/// `schemas` supplies the `location:` dirs; a transient (location-less) type
-/// contributes none. The walk is deterministic: the `BTreeSet` makes the output
-/// order independent of `read_dir`'s natural (filesystem) order.
-pub fn discover_candidates(repo_root: &Path, schemas: &[Schema]) -> Vec<String> {
-    // The bounded dir set: root (the empty relative prefix), `docs/`, and every
-    // declared `location:`. A `BTreeSet` dedups dirs that coincide (e.g. `docs/`
-    // declared as a `location:`).
-    let mut dirs: BTreeSet<&str> = BTreeSet::new();
-    dirs.insert(""); // the repo root itself.
-    dirs.insert("docs");
-    for schema in schemas {
-        if let Some(location) = schema.location.as_deref() {
-            // Normalize a trailing slash off the declared `location:` (`decisions/`).
-            dirs.insert(location.trim_end_matches('/'));
-        }
-    }
-
+/// `schemas` is unused by the recursive walk (recursion reaches every dir a
+/// `location:` could name) but kept in the signature: the caller pairs the candidate
+/// list with the schemas for the downstream classify step. The walk is deterministic:
+/// the `BTreeSet` makes the output order independent of `read_dir`'s natural
+/// (filesystem) order (the hardening-#7 property: same repo in, byte-identical list
+/// out).
+pub fn discover_candidates(repo_root: &Path, _schemas: &[Schema]) -> Vec<String> {
     // A `BTreeSet` collects the candidates, so the output is sorted + deduped
-    // regardless of the per-dir `read_dir` order (the hardening-#7 determinism
-    // property: same repo in, byte-identical list out).
+    // regardless of the per-dir `read_dir` order.
     let mut candidates: BTreeSet<String> = BTreeSet::new();
-    for dir in dirs {
-        let abs = if dir.is_empty() {
-            repo_root.to_path_buf()
+    walk(repo_root, "", &mut candidates);
+    candidates.into_iter().collect()
+}
+
+/// Recursively collect repo-relative `*.md` paths under `dir` (whose repo-relative
+/// prefix is `prefix`, `""` at the root) into `candidates`, pruning the internals
+/// dirs by name. A missing/unreadable dir contributes nothing.
+fn walk(dir: &Path, prefix: &str, candidates: &mut BTreeSet<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return; // dir absent/unreadable: contributes nothing.
+    };
+    for entry in entries.flatten() {
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        let rel = if prefix.is_empty() {
+            name.clone()
         } else {
-            repo_root.join(dir)
+            format!("{prefix}/{name}")
         };
-        let Ok(entries) = std::fs::read_dir(&abs) else {
-            continue; // dir absent: contributes nothing.
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("md") {
+        let path = entry.path();
+        if path.is_dir() {
+            // Prune the internals dirs — never descended into.
+            if INTERNALS_DIRS.contains(&name.as_str()) {
                 continue;
             }
-            if !path.is_file() {
-                continue; // a `*.md` directory is not a candidate.
-            }
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            let rel = if dir.is_empty() {
-                name.to_string()
-            } else {
-                format!("{dir}/{name}")
-            };
-            // Guard the `.jigc/` exclusion even if a stray location pointed inside it.
-            if rel == INTERNALS_DIR || rel.starts_with(&format!("{INTERNALS_DIR}/")) {
-                continue;
-            }
+            walk(&path, &rel, candidates);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("md") {
             candidates.insert(rel);
         }
     }
-
-    candidates.into_iter().collect()
 }
 
 /// The location-aware verdict for one discovered candidate (`project-setup.md` →
@@ -585,6 +573,46 @@ Slightly higher write latency for resilience.
                 "a refused doc records no file-state baseline for {rel_path} (no silent adopt)"
             );
         }
+    }
+
+    /// Recursive reach (G3): a fixture with docs in nested subdirectories — `wiki/`,
+    /// `docs/sub/`, `rfcs/`, plus a root `README.md` and a `decisions/` doc — must
+    /// surface **all five** repo-relative paths, sorted byte-identically regardless of
+    /// `read_dir` order, while **excluding** both internals dirs (`.jigc/`, `.git/`).
+    #[test]
+    fn discovers_nested_docs_excluding_both_internals_dirs() {
+        let root = TempRoot::new("recursive");
+        // Five real candidates spread across nested dirs (deliberately unsorted writes).
+        write(root.path(), "wiki/page.md", "wiki page");
+        write(root.path(), "docs/sub/deep.md", "deeply nested note");
+        write(root.path(), "rfcs/0001.md", "an rfc");
+        write(root.path(), "README.md", "root readme");
+        write(root.path(), "decisions/x.md", "a decision");
+        // Internals that must NEVER be discovered, even though they are `.md`.
+        write(root.path(), ".jigc/internal.md", "adapter internal");
+        write(root.path(), ".git/hooks/x.md", "git internal");
+
+        let got = discover_candidates(root.path(), &[adr_schema()]);
+
+        assert_eq!(
+            got,
+            vec![
+                "README.md".to_string(),
+                "decisions/x.md".to_string(),
+                "docs/sub/deep.md".to_string(),
+                "rfcs/0001.md".to_string(),
+                "wiki/page.md".to_string(),
+            ],
+        );
+        // Both internals dirs are excluded by name (not by `.md` extension).
+        assert!(
+            !got.iter().any(|p| p.starts_with(".jigc/")),
+            "the .jigc/ internals dir is excluded: {got:?}"
+        );
+        assert!(
+            !got.iter().any(|p| p.starts_with(".git/")),
+            "the .git/ internals dir is excluded: {got:?}"
+        );
     }
 
     /// A `docs/` dir that is *also* a declared `location:` yields each file once —
