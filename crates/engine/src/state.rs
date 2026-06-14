@@ -104,8 +104,14 @@ fn empty_instance(schema: &Schema, slug: &str) -> Instance {
 ///
 /// An **empty** `on_create` slice leaves the instance byte-identical to
 /// [`empty_instance`] — the additive-neutrality guard every existing caller relies
-/// on. A non-empty slice is written into the schema's header section's `fields`; a
-/// schema with no header section ignores the slice (no home to seed).
+/// on. Each non-empty seed field is routed to the simple section whose `fields`
+/// **declares a leaf of that id** (mirroring the item-level model where a field lands
+/// in its own block), in the section's own declared field order; the header is just
+/// one such section. A field declared by no simple section is dropped (no home to
+/// seed) — but the CLI collects seeds *from* the schema's simple sections, so every
+/// seed has a declaring section. (Before this routing the slice was written wholesale
+/// into the single header section, silently misplacing a seed declared in a non-header
+/// body section — inert for the shipped header-only doctypes, but a latent gap.)
 fn seeded_instance(
     schema: &Schema,
     slug: &str,
@@ -115,10 +121,21 @@ fn seeded_instance(
     if on_create.is_empty() {
         return instance;
     }
-    if let Some(header) = schema.sections.iter().find(|s| s.header)
-        && let Some(content) = instance.sections.iter_mut().find(|c| c.id == header.id)
-    {
-        content.fields = on_create.to_vec();
+    for section in &schema.sections {
+        let crate::schema::SectionBody::Simple { fields, .. } = &section.body else {
+            continue;
+        };
+        // The seeds this section declares, in the section's own declared field order.
+        let seeded: Vec<crate::field_block::Field> = fields
+            .iter()
+            .filter_map(|decl| on_create.iter().find(|f| f.key == decl.id).cloned())
+            .collect();
+        if seeded.is_empty() {
+            continue;
+        }
+        if let Some(content) = instance.sections.iter_mut().find(|c| c.id == section.id) {
+            content.fields = seeded;
+        }
     }
     instance
 }
@@ -981,6 +998,76 @@ mod tests {
             !tmp.exists(),
             "no leftover temp path after the atomic persist"
         );
+    }
+
+    /// A doc-level seed field declared in a **non-header** simple body section lands
+    /// in **that** section, not the header — the per-section routing fix. The CLI
+    /// collects `set: on-create` / `default:` fields from *every* simple section, so a
+    /// seed declared in a body section must be placed there; the prior wholesale
+    /// header-only seed silently misplaced it (latent: inert for the shipped
+    /// header-only doctypes, but a real correctness gap). The header section keeps its
+    /// own header-declared seed; the body section gets its body-declared seed.
+    #[test]
+    fn seeded_instance_routes_each_field_to_its_declaring_section() {
+        // A fixture with a header section (one seed) AND a non-header body simple
+        // section that itself declares a `default:` field (the latent target).
+        let yaml = br#"
+type: brief
+location: briefs/
+id-from: title
+description: A fixture with a non-header simple section carrying a default field.
+usage: pin per-section seed routing.
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [draft, final], default: draft }
+  - id: summary
+    slot: { hint: "what" }
+    fields:
+      - { id: priority, type: enum, of: [low, high], default: low }
+"#;
+        let schema = crate::schema::load_schema(yaml).expect("fixture brief loads");
+
+        // The CLI-collected seeds, from BOTH simple sections (header `status`, body
+        // `priority`) — the exact slice the CLI's `on_create_doc_fields` hands in.
+        let on_create = vec![
+            crate::field_block::Field {
+                key: "status".to_string(),
+                value: crate::field_block::Value::Scalar("draft".to_string()),
+            },
+            crate::field_block::Field {
+                key: "priority".to_string(),
+                value: crate::field_block::Value::Scalar("low".to_string()),
+            },
+        ];
+
+        let instance = seeded_instance(&schema, "a-brief", &on_create);
+        let meta = instance
+            .sections
+            .iter()
+            .find(|c| c.id == "meta")
+            .expect("meta section present");
+        let summary = instance
+            .sections
+            .iter()
+            .find(|c| c.id == "summary")
+            .expect("summary section present");
+
+        assert_eq!(
+            meta.fields.len(),
+            1,
+            "the header section carries only its own header-declared seed"
+        );
+        assert_eq!(meta.fields[0].key, "status");
+        // The latent gap: the body-declared seed must land in the BODY section, not
+        // be misplaced into the header (the pre-fix behavior).
+        assert_eq!(
+            summary.fields.len(),
+            1,
+            "the non-header body section carries its own body-declared seed"
+        );
+        assert_eq!(summary.fields[0].key, "priority");
     }
 
     /// Copy-in on first touch persists a pre-existing managed doc into the working

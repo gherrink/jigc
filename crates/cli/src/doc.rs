@@ -306,6 +306,13 @@ fn run_add_item(
             nested_section,
         } => {
             let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            // Materialize the nested block's `set: on-create` fields at mint, symmetric
+            // with the top-level branch above (which materializes via
+            // `on_create_item_fields`) — a `date` leaf declared `set: on-create` inside
+            // the nested block is stamped here. A nested block with no such leaf passes
+            // none (the shipped `changes` groups carry only `category` + `notes`).
+            let on_create =
+                on_create_nested_item_fields(&schema, &section, &parents, &nested_section);
             let edited = engine::write::add_nested_item(
                 &schema,
                 &source,
@@ -314,7 +321,7 @@ fn run_add_item(
                 &nested_section,
                 title,
                 None,
-                &[],
+                &on_create,
             )
             .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
             // The minted nested item address is the **section-qualified** chain: the
@@ -416,6 +423,63 @@ fn on_create_item_fields(schema: &Schema, section_id: &str) -> Vec<engine::field
     };
     let today = today_iso();
     repeatable
+        .block
+        .iter()
+        .filter_map(|leaf| match leaf {
+            Leaf::Field(field)
+                if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") =>
+            {
+                Some(engine::field_block::Field {
+                    key: field.id.clone(),
+                    value: Value::Scalar(today.clone()),
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `set: on-create` fields the **nested** repeatable named `nested_section_id`
+/// (reached by walking the section-qualified `parents` chain from `section_id`)
+/// declares, each materialized to its CLI-derived value at mint time — the nested
+/// mirror of [`on_create_item_fields`], so a nested `add-item` is symmetric with the
+/// top-level one (which already materializes via `on_create_item_fields`; before this
+/// the nested branch passed no fields, silently dropping a nested `set: on-create`
+/// date — inert for the shipped changelog `changes` groups, but a latent asymmetry).
+/// The schema walk mirrors the engine's nested-block resolution: descend the parent
+/// chain's **named** nested-section ids. A section/chain that resolves to no nested
+/// repeatable, or a block with no on-create date leaf, yields no fields.
+fn on_create_nested_item_fields(
+    schema: &Schema,
+    section_id: &str,
+    parents: &[String],
+    nested_section_id: &str,
+) -> Vec<engine::field_block::Field> {
+    use engine::schema::{FieldType, Leaf};
+
+    let Some(section) = schema.sections.iter().find(|s| s.id == section_id) else {
+        return Vec::new();
+    };
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return Vec::new();
+    };
+    // The named nested-section chain from the section's own block to the target nested
+    // repeatable: the parent chain alternates `item, nested-section, …` starting at an
+    // item, so the nested-section ids are at odd indices; we then descend by each.
+    let mut chain: Vec<&str> = parents.iter().map(String::as_str).collect();
+    chain.push(nested_section_id);
+    let mut current = repeatable;
+    for segment in chain.iter().skip(1).step_by(2) {
+        let Some(next) = current.block.iter().find_map(|leaf| match leaf {
+            Leaf::Repeatable { id, repeatable } if id == *segment => Some(repeatable),
+            _ => None,
+        }) else {
+            return Vec::new();
+        };
+        current = next;
+    }
+    let today = today_iso();
+    current
         .block
         .iter()
         .filter_map(|leaf| match leaf {
@@ -1253,6 +1317,66 @@ sections:
         assert!(
             on_create_item_fields(&schema, "no-such-section").is_empty(),
             "an unknown section stamps nothing",
+        );
+    }
+
+    /// `on_create_nested_item_fields` materializes a **nested** repeatable block's
+    /// `date` leaf declared `set: on-create` — symmetric with the top-level
+    /// `on_create_item_fields`. Before the fix the nested `add-item` branch passed no
+    /// fields, so a nested on-create date was silently dropped (inert for the shipped
+    /// changelog `changes` groups, which carry only `category` + `notes`).
+    #[test]
+    fn on_create_nested_item_fields_stamps_nested_on_create_date() {
+        // A fixture: a top-level `releases` repeatable nesting a `changes` repeatable
+        // whose block carries a `set: on-create` date (the latent target).
+        let yaml = br#"
+type: log
+location: logs/
+id-from: title
+description: A fixture two-level log.
+usage: pin nested on-create date materialization.
+sections:
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: at, type: date, set: on-create }
+              - { id: notes, slot: { hint: "what" } }
+"#;
+        let schema = load_schema(yaml).expect("fixture log loads");
+
+        let fields =
+            on_create_nested_item_fields(&schema, "releases", &["1-0-0".to_string()], "changes");
+        assert_eq!(
+            fields.len(),
+            1,
+            "exactly the one nested on-create date field"
+        );
+        assert_eq!(fields[0].key, "at", "the stamped nested field is `at`");
+        match &fields[0].value {
+            Value::Scalar(v) => assert_eq!(v, &today_iso(), "stamped with today's date"),
+            other => panic!("the date is a scalar, got {other:?}"),
+        }
+
+        // The shipped changelog `changes` groups carry NO on-create date — symmetric
+        // regression-safety with the top-level path (no fields stamped).
+        const CHANGELOG_YAML: &[u8] = include_bytes!("../pack/schemas/changelog.yaml");
+        let changelog = load_schema(CHANGELOG_YAML).expect("changelog loads");
+        assert!(
+            on_create_nested_item_fields(
+                &changelog,
+                "releases",
+                &["1-0-0".to_string()],
+                "changes",
+            )
+            .is_empty(),
+            "the shipped `changes` group declares no on-create date — stamps nothing",
         );
     }
 
