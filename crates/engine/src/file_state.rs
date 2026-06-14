@@ -186,43 +186,60 @@ pub fn reconcile_committed(
 ) -> Vec<Finding> {
     let current = hash_bytes(bytes);
     match record.get(path) {
-        // UNKNOWN → baseline-adopt (absent-hash is not drift).
-        None => {
-            record.record(path, current);
-            vec![baseline_adopt_finding(path)]
-        }
+        // UNKNOWN → the G4 conformance gate (M21; `project-setup.md` → Flow 2 hardening):
+        // a fresh-checkout doc is baseline-adopted **only if it classifies conformant** —
+        // a foreign non-conformant `.md` squatting in a `location:` dir is routed as an
+        // advisory and **not** recorded (so it re-fires every sweep until the human
+        // resolves it), never silently absorbed.
+        None => match conformance_gate(schema, bytes) {
+            Ok(_) => {
+                record.record(path, current);
+                vec![baseline_adopt_finding(path)]
+            }
+            Err(cause) => vec![conformance_advisory_finding(path, cause)],
+        },
         // IN_SYNC → clean / task-only change: nothing to reconcile here.
         Some(recorded) if recorded == current => Vec::new(),
         // DRIFTED + TOUCHED → conflict-block (both sides moved; no silent merge).
         Some(_) if task_touched => vec![conflict_block_finding(path)],
-        // DRIFTED + UNTOUCHED → the parse classifier.
-        Some(_) => {
-            let source = String::from_utf8_lossy(bytes);
-            match crate::parse::parse_sections(schema, &source) {
-                Ok(doc) => {
-                    let conformance = crate::validate::schema_conformance(schema, &source, &doc);
-                    if conformance.iter().any(|f| f.severity == Severity::Blocking) {
-                        // Schema-invalid → conformance-block, naming the first error.
-                        vec![conformance_block_finding(
-                            path,
-                            conformance.into_iter().next(),
-                        )]
-                    } else {
-                        // Clean → absorb: re-hash + incrementally update the index.
-                        record.record(path, current);
-                        index.absorb_doc(schema, from, &doc);
-                        vec![absorb_finding(path)]
-                    }
-                }
-                // Parse fail → conformance-block, naming the first parse error.
-                Err(parse_findings) => {
-                    vec![conformance_block_finding(
-                        path,
-                        parse_findings.into_iter().next(),
-                    )]
-                }
+        // DRIFTED + UNTOUCHED → the parse classifier (the same conformance gate the
+        // UNKNOWN arm above runs; here a fail is **blocking**, not advisory).
+        Some(_) => match conformance_gate(schema, bytes) {
+            Ok(doc) => {
+                // Clean → absorb: re-hash + incrementally update the index.
+                record.record(path, current);
+                index.absorb_doc(schema, from, &doc);
+                vec![absorb_finding(path)]
+            }
+            // Schema-invalid / parse fail → conformance-block, naming the first error.
+            Err(cause) => vec![conformance_block_finding(path, cause)],
+        },
+    }
+}
+
+/// The shared **conformance gate** — re-parse the on-disk `bytes` against `schema` and
+/// schema-validate the result. Returns the parsed [`Document`](crate::parse::Document) on a
+/// clean classification, or the **first** precise conformance error ([`Finding`]) on a
+/// parse / schema failure. Both the G4 `UNKNOWN` baseline-adopt gate (M21) and the
+/// `DRIFTED + UNTOUCHED` absorb classifier route through it; they differ only in how a
+/// failure is graded (the `UNKNOWN` arm advisory, the `DRIFTED` arm blocking).
+fn conformance_gate(
+    schema: &crate::schema::Schema,
+    bytes: &[u8],
+) -> Result<crate::parse::Document, Option<Finding>> {
+    let source = String::from_utf8_lossy(bytes);
+    match crate::parse::parse_sections(schema, &source) {
+        Ok(doc) => {
+            let conformance = crate::validate::schema_conformance(schema, &source, &doc);
+            match conformance
+                .into_iter()
+                .find(|f| f.severity == Severity::Blocking)
+            {
+                Some(first) => Err(Some(first)),
+                None => Ok(doc),
             }
         }
+        Err(parse_findings) => Err(parse_findings.into_iter().next()),
     }
 }
 
@@ -620,6 +637,33 @@ fn conformance_block_finding(path: &str, cause: Option<Finding>) -> Finding {
     )
 }
 
+/// The **advisory** conformance-block finding for the G4 baseline-adopt gate (M21;
+/// `project-setup.md` → Flow 2 hardening → G4 conformance gate). A foreign
+/// non-conformant `.md` squatting in a `location:` dir is **routed, not recorded** — so
+/// it re-fires every sweep until the human resolves it. Reuses the existing
+/// `reconciliation.conformance-block` check id at [`Severity::Advisory`] (the M21 "no new
+/// check ids" invariant; the id is not knob-remapped, so Advisory stays advisory) and
+/// names the corrective verb in its route. The underlying parse/schema `cause` (re-located
+/// onto the file) names exactly what is wrong.
+fn conformance_advisory_finding(path: &str, cause: Option<Finding>) -> Finding {
+    let (detail, line) = match &cause {
+        Some(f) => (
+            f.message.clone(),
+            f.location.as_ref().map(|l| l.line).unwrap_or(1),
+        ),
+        None => ("the file is not schema-conformant".to_string(), 1),
+    };
+    Finding::graded(
+        Severity::Advisory,
+        "reconciliation.conformance-block",
+        format!("unvetted file `{path}` in a managed location is not schema-conformant: {detail}"),
+        Some(Location::addressed(path, line, 1)),
+        Some(format!(
+            "ingest, migrate, or move `{path}` out of the managed location to resolve it"
+        )),
+    )
+}
+
 /// The blocking **conflict-block** finding (`reconciliation.md` → Conflict — block at
 /// file level): both the on-disk file and the task's working area moved. File
 /// granularity, explicit-discard route, never a silent merge (three-way merge is
@@ -903,6 +947,118 @@ Slightly higher write latency for resilience.
         assert!(
             index.edges.is_empty(),
             "conflict-block does not update the edge index"
+        );
+    }
+
+    /// The G4 baseline-adopt gate (M21; `design/project-setup.md` → Flow 2 hardening →
+    /// G4 conformance gate): a foreign **non-conformant** `.md` with **no** recorded
+    /// hash (the `UNKNOWN` arm) is gated by `parse_sections` + `schema_conformance`
+    /// **before** recording — it routes as **exactly one advisory**
+    /// `reconciliation.conformance-block` (route `Some`), the record is **not** advanced
+    /// (`get(path) == None`), and a second call **re-emits** the advisory (the
+    /// routed-but-not-recorded re-fire). Advisory, never blocking.
+    #[test]
+    fn unknown_nonconformant_routes_advisory_and_does_not_baseline() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+
+        // A freeform notes file squatting in `decisions/` — no recorded hash (UNKNOWN),
+        // and not a conformant ADR (missing the required header + sections).
+        let foreign = b"# notes\n\nrandom thoughts, not an ADR\n";
+        let path = "decisions/notes.md";
+        let from = "adr:notes";
+
+        let findings =
+            reconcile_committed(&mut record, &mut index, &schema, path, from, foreign, false);
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "the non-conformant UNKNOWN doc routes exactly one finding: {findings:?}"
+        );
+        let f = &findings[0];
+        assert_eq!(f.code, "reconciliation.conformance-block");
+        assert_eq!(
+            f.severity,
+            Severity::Advisory,
+            "the G4 gate routes advisory, never blocking: {f:?}"
+        );
+        assert!(
+            f.route.is_some(),
+            "the advisory names the corrective verb (route Some): {f:?}"
+        );
+        assert!(
+            f.message.contains(path),
+            "the advisory names the squatting file: {f:?}"
+        );
+
+        // The record is NOT advanced — a routed-but-not-recorded outcome.
+        assert_eq!(
+            record.get(path),
+            None,
+            "the non-conformant doc is not baseline-adopted (record not advanced)"
+        );
+        // The edge index is untouched (no absorb of a non-conformant doc).
+        assert!(
+            index.edges.is_empty(),
+            "no edges absorbed from a routed doc"
+        );
+
+        // Re-fire: a second call (still UNKNOWN, since the first did not record) emits
+        // the same advisory again — the recurrence the human resolves by ingest/move.
+        let again =
+            reconcile_committed(&mut record, &mut index, &schema, path, from, foreign, false);
+        assert_eq!(
+            again.len(),
+            1,
+            "the advisory re-fires on a second sweep (routed-but-not-recorded): {again:?}"
+        );
+        assert_eq!(again[0].code, "reconciliation.conformance-block");
+        assert_eq!(again[0].severity, Severity::Advisory);
+        assert_eq!(
+            record.get(path),
+            None,
+            "the record still is not advanced after the re-fire"
+        );
+    }
+
+    /// The G4 gate preserves the legitimate `UNKNOWN` case: a **conformant**
+    /// fresh-checkout doc with no recorded hash still **baseline-adopts** cleanly —
+    /// exactly one advisory `file-state.baseline-adopt` and the record **is** advanced
+    /// (the M20 clean-store guarantee holds; `design/project-setup.md` → Flow 2
+    /// hardening → G4 conformance gate).
+    #[test]
+    fn unknown_conformant_doc_still_baselines() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+
+        let findings = reconcile_committed(
+            &mut record,
+            &mut index,
+            &schema,
+            ADR_B_PATH,
+            ADR_B_FROM,
+            ADR_B_BASE.as_bytes(),
+            false,
+        );
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "the conformant UNKNOWN doc emits exactly one finding: {findings:?}"
+        );
+        let f = &findings[0];
+        assert_eq!(f.code, "file-state.baseline-adopt");
+        assert_eq!(f.severity, Severity::Advisory);
+        assert_eq!(f.route, None, "baseline adoption is not a repair");
+
+        // The record IS advanced to the conformant doc's hash.
+        assert_eq!(
+            record.get(ADR_B_PATH),
+            Some(hash_bytes(ADR_B_BASE.as_bytes()).as_str()),
+            "a conformant fresh-checkout doc still baselines (record advances)"
         );
     }
 

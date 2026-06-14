@@ -530,3 +530,362 @@ fn real_doc_code_probe_over_committed_store() {
         .expect("store sweep runs even when the probe crashes");
     assert_one_meta("non-zero exit", &report);
 }
+
+/// M21 inc-3 / T1 — the **G4 baseline-adopt gate** acceptance over the **real binary**.
+///
+/// The store sweep ([`engine::file_state::reconcile_committed_store`], reached by
+/// `jigc task validate`/`finalize`-preflight) no longer silently baseline-adopts an
+/// unvetted foreign `.md` squatting in a `location:` dir. This drives the production
+/// binary (`CARGO_BIN_EXE_jigc`) over a real `git init` repo (the
+/// `file_state_soundness.rs` harness shape):
+///
+/// - a freeform `decisions/notes.md` (no recorded hash → the `UNKNOWN` arm) is routed as
+///   an **advisory** `reconciliation.conformance-block` (the sweep does **not** block —
+///   exit 0) and **not** baseline-adopted, so a second `task validate` **re-fires** the
+///   same advisory (the routed-but-not-recorded recurrence,
+///   `design/project-setup.md` → Flow 2 hardening, consequence note `:115`);
+/// - a conformant jigc-minted `decisions/<slug>.md` baselines **without** a false
+///   conformance-block advisory (the M20 clean-store guarantee holds).
+mod g4_baseline_adopt_gate {
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command;
+
+    /// A throwaway repo dir that removes itself on drop.
+    struct Repo(std::path::PathBuf);
+
+    impl Repo {
+        fn new(tag: &str) -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-g4-{tag}-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            fs::create_dir_all(&path).expect("create temp repo");
+            Repo(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Repo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn git(repo: &Path, args: &[&str]) {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// A real `git init` repo with one commit + the `.jigc/config/` project layer.
+    fn init_repo(repo: &Path) {
+        git(repo, &["init", "-q"]);
+        git(repo, &["config", "user.email", "test@example.com"]);
+        git(repo, &["config", "user.name", "Test"]);
+        fs::write(repo.join("README.md"), "hello\n").expect("write file");
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-q", "-m", "initial"]);
+        fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
+    }
+
+    /// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, capturing output.
+    fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+        Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(args)
+            .current_dir(repo)
+            .env("HOME", home)
+            .output()
+            .expect("run the jigc binary")
+    }
+
+    /// Run `jigc doc <args>`, piping `stdin`, capturing output.
+    fn jigc_doc_stdin(
+        repo: &Path,
+        home: &Path,
+        args: &[&str],
+        stdin: &[u8],
+    ) -> std::process::Output {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+        command
+            .arg("doc")
+            .args(args)
+            .current_dir(repo)
+            .env("HOME", home)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = command.spawn().expect("spawn jigc");
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(stdin)
+            .expect("write stdin");
+        child.wait_with_output().expect("wait for jigc")
+    }
+
+    fn assert_ok(out: &std::process::Output, what: &str) {
+        assert!(
+            out.status.success(),
+            "{what} must succeed; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+
+    /// Start a commit-only `single-task` for `intent` (the task id is the slugified
+    /// intent), stage one code file + fill the commit doc, leaving the caller to drive
+    /// validate.
+    fn stage_commit_only(repo: &Path, home: &Path, task: &str, intent: &str) {
+        let out = jigc(repo, home, &["start", "--workflow", "single-task", intent]);
+        assert_ok(&out, &format!("`jigc start` ({task})"));
+        fs::write(repo.join(format!("{task}.txt")), "the code change\n")
+            .expect("write code change");
+        let set_field = |addr: &str, value: &str| {
+            assert_ok(
+                &jigc_doc_stdin(repo, home, &["set-field", addr, "--value", value], b""),
+                &format!("set-field {addr}"),
+            );
+        };
+        let set_slot = |addr: &str, prose: &[u8]| {
+            assert_ok(
+                &jigc_doc_stdin(repo, home, &["set-slot", addr, "--from-file", "-"], prose),
+                &format!("set-slot {addr}"),
+            );
+        };
+        set_field(&format!("commit:{task}#type"), "feat");
+        set_field(&format!("commit:{task}#scope"), "cache");
+        set_slot(&format!("commit:{task}#summary"), b"change the cache\n");
+        set_slot(&format!("commit:{task}#body"), b"A cache change.\n");
+    }
+
+    /// The findings of a parsed `task validate --format json` envelope.
+    fn validate_findings(repo: &Path, home: &Path, task: &str) -> Vec<serde_json::Value> {
+        let out = jigc(repo, home, &["task", "validate", task, "--format", "json"]);
+        assert!(
+            out.status.success(),
+            "`task validate` must not block on an advisory-only sweep; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        envelope_findings(&out, "task validate")
+    }
+
+    /// The findings of a parsed `task finalize --format json` envelope. The
+    /// finalize-preflight runs the same store sweep, so an advisory-only sweep must
+    /// **land** (exit 0) — the criterion's "exit not blocked" at the finalize boundary.
+    fn finalize_findings(repo: &Path, home: &Path, task: &str) -> Vec<serde_json::Value> {
+        let out = jigc(repo, home, &["task", "finalize", task, "--format", "json"]);
+        assert!(
+            out.status.success(),
+            "`task finalize` must land on an advisory-only sweep; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+        envelope_findings(&out, "task finalize")
+    }
+
+    /// Parse the `findings` array of a `--format json` report envelope.
+    fn envelope_findings(out: &std::process::Output, what: &str) -> Vec<serde_json::Value> {
+        let stdout = String::from_utf8(out.stdout.clone()).expect("utf-8 stdout");
+        let value: serde_json::Value = serde_json::from_str(&stdout)
+            .unwrap_or_else(|e| panic!("{what} envelope must parse ({e}); got:\n{stdout}"));
+        value["findings"]
+            .as_array()
+            .unwrap_or_else(|| {
+                panic!("{what}: the envelope carries a `findings` array; got:\n{stdout}")
+            })
+            .clone()
+    }
+
+    /// Count the advisory `reconciliation.conformance-block` findings naming `path`.
+    fn conformance_advisory_count(findings: &[serde_json::Value], path: &str) -> usize {
+        findings
+            .iter()
+            .filter(|f| {
+                f["code"] == "reconciliation.conformance-block"
+                    && f["severity"] == "advisory"
+                    && f["message"].as_str().is_some_and(|m| m.contains(path))
+            })
+            .count()
+    }
+
+    /// A freeform `notes.md` squatting in `decisions/` (the foreign-file hazard) is
+    /// **routed advisory** and **not** baseline-adopted on a first `task validate`
+    /// sweep (exit not blocked), and the advisory **re-fires** on a second sweep — while
+    /// a conformant jigc-minted ADR in `decisions/` produces **no** false advisory.
+    #[test]
+    fn freeform_notes_in_decisions_routes_advisory_and_recurs() {
+        let repo = Repo::new("notes");
+        let home = Repo::new("home");
+        init_repo(repo.path());
+
+        // A foreign, non-conformant `.md` dropped into the `adr` location dir, committed
+        // in git outside the CLI (the human-in-git channel).
+        const NOTES: &str = "decisions/notes.md";
+        fs::create_dir_all(repo.path().join("decisions")).expect("mk decisions/");
+        fs::write(
+            repo.path().join(NOTES),
+            "# scratch notes\n\nrandom thoughts, not an ADR\n",
+        )
+        .expect("write freeform notes");
+        git(repo.path(), &["add", NOTES]);
+        git(repo.path(), &["commit", "-q", "-m", "wip: stray notes"]);
+
+        // ── first sweep: routed advisory, NOT baseline-adopted, exit not blocked ──────
+        // One task is active at a time: each is finalized before the next starts, so the
+        // internal `doc set-*` calls resolve a single active task. The finalize is also
+        // the finalize-preflight store sweep the criterion names.
+        let task_a = "first-pass";
+        stage_commit_only(repo.path(), home.path(), task_a, task_a);
+        let findings = validate_findings(repo.path(), home.path(), task_a);
+        assert_eq!(
+            conformance_advisory_count(&findings, NOTES),
+            1,
+            "the freeform notes.md is routed exactly one advisory conformance-block; got:\n{findings:#?}",
+        );
+        // The advisory-only sweep lands at the finalize boundary (exit not blocked).
+        let findings = finalize_findings(repo.path(), home.path(), task_a);
+        assert_eq!(
+            conformance_advisory_count(&findings, NOTES),
+            1,
+            "the advisory also surfaces in the finalize-preflight sweep; got:\n{findings:#?}",
+        );
+        // Not baseline-adopted: task_a's landed finalize persisted the record, but the
+        // foreign notes.md was routed-not-recorded, so it never entered the record.
+        let record_path = repo
+            .path()
+            .join(".jigc")
+            .join("state")
+            .join("file-state.json");
+        let record = fs::read_to_string(&record_path)
+            .expect("task_a's landed finalize persists the file-state record");
+        let value: serde_json::Value =
+            serde_json::from_str(&record).expect("file-state.json parses");
+        let hashes = value["hashes"]
+            .as_object()
+            .expect("the record carries a `hashes` map");
+        assert!(
+            !hashes.contains_key(NOTES),
+            "the foreign notes.md must not be baseline-adopted into the record; got:\n{record}",
+        );
+
+        // ── second sweep: the advisory re-fires (routed-but-not-recorded recurrence) ──
+        let task_b = "second-pass";
+        stage_commit_only(repo.path(), home.path(), task_b, task_b);
+        let findings = finalize_findings(repo.path(), home.path(), task_b);
+        assert_eq!(
+            conformance_advisory_count(&findings, NOTES),
+            1,
+            "the advisory re-fires on a second sweep (not silently absorbed); got:\n{findings:#?}",
+        );
+
+        // ── a conformant minted ADR baselines without a false advisory ────────────────
+        let task_c_slug = "decide-the-cache-topology";
+        let out = jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "start",
+                "--workflow",
+                "single-task",
+                "decide the cache topology",
+            ],
+        );
+        assert_ok(&out, "`jigc start` (task C)");
+        let create = jigc_doc_stdin(
+            repo.path(),
+            home.path(),
+            &["create", "adr", "--title", "Cache topology"],
+            b"",
+        );
+        assert_ok(&create, "`jigc doc create adr` (task C)");
+        for (slot, prose) in [
+            ("context", "Session lookups must stay fast.\n"),
+            ("decision", "Replicate the cache across nodes.\n"),
+            ("consequences", "Higher write latency for resilience.\n"),
+        ] {
+            assert_ok(
+                &jigc_doc_stdin(
+                    repo.path(),
+                    home.path(),
+                    &[
+                        "set-slot",
+                        &format!("adr:cache-topology#{slot}"),
+                        "--from-file",
+                        "-",
+                    ],
+                    prose.as_bytes(),
+                ),
+                &format!("set-slot #{slot}"),
+            );
+        }
+        // Stage the commit doc + a code file so the task is finalizable.
+        fs::write(repo.path().join(format!("{task_c_slug}.txt")), "code\n").expect("write code");
+        let set_field = |addr: &str, value: &str| {
+            assert_ok(
+                &jigc_doc_stdin(
+                    repo.path(),
+                    home.path(),
+                    &["set-field", addr, "--value", value],
+                    b"",
+                ),
+                &format!("set-field {addr}"),
+            );
+        };
+        let set_slot = |addr: &str, prose: &[u8]| {
+            assert_ok(
+                &jigc_doc_stdin(
+                    repo.path(),
+                    home.path(),
+                    &["set-slot", addr, "--from-file", "-"],
+                    prose,
+                ),
+                &format!("set-slot {addr}"),
+            );
+        };
+        set_field(&format!("commit:{task_c_slug}#type"), "feat");
+        set_field(&format!("commit:{task_c_slug}#scope"), "cache");
+        set_slot(
+            &format!("commit:{task_c_slug}#summary"),
+            b"replicate the cache\n",
+        );
+        set_slot(&format!("commit:{task_c_slug}#body"), b"A cache change.\n");
+        // Finalize promotes the ADR to decisions/ as a conformant jigc-minted doc.
+        let out = jigc(repo.path(), home.path(), &["task", "finalize", task_c_slug]);
+        assert_ok(&out, "`jigc task finalize` (task C)");
+        const MINTED: &str = "decisions/cache-topology.md";
+        assert!(
+            repo.path().join(MINTED).exists(),
+            "task C must promote {MINTED}",
+        );
+
+        // A sweep over the conformant minted ADR produces NO false conformance-block
+        // advisory for it (the legitimate baseline-adopt path is preserved).
+        let task_d = "after-mint";
+        stage_commit_only(repo.path(), home.path(), task_d, task_d);
+        let findings = validate_findings(repo.path(), home.path(), task_d);
+        assert_eq!(
+            conformance_advisory_count(&findings, MINTED),
+            0,
+            "the conformant minted ADR draws no false conformance-block advisory; got:\n{findings:#?}",
+        );
+    }
+}
