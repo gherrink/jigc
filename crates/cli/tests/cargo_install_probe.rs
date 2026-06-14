@@ -330,8 +330,12 @@ fn run_setup(installed: &Path, repo: &Path, home: &Path) {
 /// gitignored `target/` tree would blow the ceiling.
 #[test]
 fn installed_jigc_binary_is_megabytes_not_gigabytes() {
-    let size = fs::metadata(env!("CARGO_BIN_EXE_jigc"))
-        .expect("stat the built jigc binary")
+    // Measure the copied probe-less *install* itself (not the test harness's own build
+    // artifact) so the guard asserts on the thing it describes — the bytes are identical
+    // (the install is a `fs::copy` of the built binary), but this stays honest to its name.
+    let (_bin, installed_jigc) = probe_less_install();
+    let size = fs::metadata(&installed_jigc)
+        .expect("stat the installed jigc binary")
         .len();
     assert!(
         size < SIZE_CEILING_BYTES,
