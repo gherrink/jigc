@@ -11,17 +11,18 @@ project documents. This walks the MVP loop on a real machine —
 
 ## Install
 
-Build the release binary from the workspace and put it on your `PATH`:
+`jigc` ships as a single binary. Install it from the workspace and put it on
+your `PATH`:
 
 ```sh
-cargo build --release -p cli
-# jigc lands at target/release/jigc, with the doc-code probe beside it
-cp target/release/{jigc,doc-code} /usr/local/bin/   # or anywhere on $PATH
+cargo install --path crates/cli      # or: cargo build --release -p cli
+cp target/release/jigc /usr/local/bin/   # if you built rather than installed
 ```
 
-Copy both: the doc↔code probe (`doc-code`) resolves next to the `jigc`
-binary, so an install without it blocks any finalize that checks code
-anchors.
+Just `jigc` — nothing else to copy. The doc↔code probe (`doc-code`) is
+embedded in the binary and extracted beside it by `jigc setup` (below), so a
+`cargo install` from a fresh machine is a supported install channel: no manual
+probe copy, and code-anchor finalize / `jigc validate` work out of the box.
 
 Confirm it identifies itself:
 
@@ -39,14 +40,20 @@ adapter from the embedded profile and installs it idempotently
 jigc setup
 ```
 
-It does two things:
+It does these things:
 
 - injects a marker-fenced bootstrap line into `CLAUDE.md` (the static floor
-  that tells the agent `jigc` is its interface to the project); and
+  that tells the agent `jigc` is its interface to the project);
 - allowlists `jigc *` in `.claude/settings.json` (so the agent can call the CLI
-  without a permission prompt).
+  without a permission prompt);
+- extracts the embedded `doc-code` probe beside the installed `jigc` (so the
+  doc↔code probe resolves next to the binary — written only if no sibling is
+  already there, so a build-tree probe is never clobbered); and
+- installs a warn-only `pre-commit` hook that runs `jigc validate` over the
+  committed store and **warns** on doc↔code drift. It never blocks the commit
+  (always exits 0) — a backstop for edits made outside the loop, not a gate.
 
-Both edits are idempotent — re-running `jigc setup` leaves the files
+These edits are idempotent — re-running `jigc setup` leaves the files
 byte-identical, so it is safe to run after every upgrade to re-apply the
 adapter.
 
