@@ -42,13 +42,15 @@ jigc setup
 
 It does these things:
 
-- injects a marker-fenced bootstrap line into `CLAUDE.md` (the static floor
-  that tells the agent `jigc` is its interface to the project);
+- writes the managed bootstrap file `.jigc/AGENT.md` and adds a bare
+  `@.jigc/AGENT.md` import to `CLAUDE.md` (the static floor that tells the agent
+  `jigc` is its interface to the project — a plain import line, no marker fence);
 - allowlists `jigc *` in `.claude/settings.json` (so the agent can call the CLI
   without a permission prompt);
 - extracts the embedded `doc-code` probe beside the installed `jigc` (so the
-  doc↔code probe resolves next to the binary — written only if no sibling is
-  already there, so a build-tree probe is never clobbered); and
+  doc↔code probe resolves next to the binary — written if no sibling is present
+  **or** if an existing sibling's bytes differ from the embedded copy, so a
+  stale or corrupt probe self-heals; a byte-identical sibling is left untouched); and
 - installs a warn-only `pre-commit` hook that runs `jigc validate` over the
   committed store and **warns** on doc↔code drift. It never blocks the commit
   (always exits 0) — a backstop for edits made outside the loop, not a gate.

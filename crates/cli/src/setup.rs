@@ -283,23 +283,30 @@ fn make_executable(path: &Path) -> std::io::Result<()> {
 const DOC_CODE_PROBE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/doc-code"));
 
 /// Extract the embedded [`DOC_CODE_PROBE`] beside the running `jigc` at `bin_dir`,
-/// applying the pinned **write-if-absent-or-byte-different** policy (`module-layout.md`
-/// → Probe distribution, M20). This is the **first machine-global** setup write —
-/// every other setup write is repo-local — so its idempotency is judged at the
+/// applying the pinned **heal/upgrade** policy (`module-layout.md` → Probe
+/// distribution, M20): write when no sibling exists **or** when an existing sibling's
+/// bytes differ from the embedded copy. This is the **first machine-global** setup
+/// write — every other setup write is repo-local — so its idempotency is judged at the
 /// install-tree scope, not per-repo.
 ///
-/// Writes `bin_dir/doc-code` with the exec bit (`0o755`) **only when no sibling
-/// exists**. An existing sibling is left untouched — whether it is byte-identical to
-/// the embedded copy (a no-op) or different (a deliberately-placed build-tree or dev
-/// probe, which may be *newer* than the embedded copy and must not be clobbered by a
-/// possibly-staler embed). A read-only target dir surfaces the underlying IO error to
-/// the caller, which maps it to one operational `setup.*` finding (never a panic).
+/// Writes `bin_dir/doc-code` with the exec bit (`0o755`) when the sibling is **absent
+/// or byte-different**, and is a **no-op only** when an existing sibling is
+/// byte-identical to the embedded copy. Overwriting a byte-different sibling **heals** a
+/// corrupt stub (which would otherwise surface as a `pack-probe-integrity` failure) and
+/// **upgrades** a stale probe left behind by a prior `jigc` after an upgrade. (In a
+/// build tree this also overwrites the `build.rs`-placed sibling with the embedded copy;
+/// both are functional probes built from the same source — debug builds simply aren't
+/// byte-reproducible — so the swap is harmless.) A read-only target dir surfaces the
+/// underlying IO error to the caller, which maps it to one operational `setup.*` finding
+/// (never a panic).
 fn extract_doc_code_probe(bin_dir: &Path) -> std::io::Result<()> {
     let dest = bin_dir.join("doc-code");
-    // A sibling already present is left as-is: byte-identical → nothing to do;
-    // different → it is a deliberately-placed probe we must not clobber with a
-    // possibly-staler embedded copy.
-    if dest.exists() {
+    // No-op only when an existing sibling is byte-identical to the embedded copy.
+    // An absent sibling, or one whose bytes differ (a stale post-upgrade probe or a
+    // corrupt stub), is (re)written from the embedded copy — heal/upgrade.
+    if let Ok(existing) = std::fs::read(&dest)
+        && existing == DOC_CODE_PROBE
+    {
         return Ok(());
     }
     std::fs::write(&dest, DOC_CODE_PROBE)?;
@@ -453,8 +460,10 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     // 6. Extract the embedded `doc-code` probe beside the installed `jigc` (the
     //    production resolution path `<jigc-bin-dir>/doc-code`), so a `cargo
     //    install`-style install gets a runnable probe with no manual copy. The
-    //    **first machine-global** setup write; write-if-absent so a build-tree
-    //    sibling is never clobbered (`module-layout.md` → Probe distribution, M20).
+    //    **first machine-global** setup write; heal/upgrade policy — write if absent
+    //    or if the existing sibling's bytes differ from the embedded copy, so a stale
+    //    post-upgrade or corrupt sibling self-heals (`module-layout.md` → Probe
+    //    distribution, M20).
     let bin_dir = jigc_path.parent().ok_or_else(|| {
         Finding::block(
             "setup.extract-probe",
@@ -1021,12 +1030,13 @@ mod tests {
         );
     }
 
-    /// `extract_doc_code_probe` writes an executable `doc-code` sibling whose bytes
-    /// equal the embedded copy when the target dir has none; a second extract is a
-    /// no-op (the sibling already matches); a pre-existing **different** sibling is
-    /// left untouched (not clobbered by a possibly-staler embed).
+    /// `extract_doc_code_probe` applies the **heal/upgrade** policy: it writes an
+    /// executable `doc-code` sibling whose bytes equal the embedded copy when the
+    /// target dir has none; a second extract over a byte-identical sibling is a no-op;
+    /// a pre-existing sibling whose bytes **differ** (a stale post-upgrade probe, or a
+    /// corrupt stub) is **overwritten** with the embedded copy (heal/upgrade).
     #[test]
-    fn extract_writes_absent_noops_on_match_and_preserves_different() {
+    fn extract_writes_absent_noops_on_match_and_heals_different() {
         let dir = TempDir::new();
 
         // (i) Absent → write the embedded bytes, executable.
@@ -1051,15 +1061,22 @@ mod tests {
             "a re-extract over a matching sibling must leave it byte-identical",
         );
 
-        // (iii) A pre-existing DIFFERENT sibling is left untouched (a build-tree /
-        //       dev probe must not be clobbered by a possibly-staler embed).
-        let sentinel = b"#!/bin/sh\n# a deliberately-placed dev probe\nexit 0\n";
+        // (iii) A pre-existing DIFFERENT sibling (stale upgrade leftover / corrupt
+        //       stub) is OVERWRITTEN with the embedded copy and made executable
+        //       (heal/upgrade — a byte-mismatch is healed, never left to surface as a
+        //       probe-integrity failure).
+        let sentinel = b"#!/bin/sh\n# a stale / corrupt leftover probe\nexit 0\n";
         std::fs::write(&probe, sentinel).expect("seed a different sibling");
         extract_doc_code_probe(dir.path()).expect("extract over a different sibling succeeds");
         assert_eq!(
-            std::fs::read(&probe).expect("the different sibling still present"),
-            sentinel,
-            "a pre-existing different sibling must be left untouched",
+            std::fs::read(&probe).expect("the healed sibling is present"),
+            DOC_CODE_PROBE,
+            "a pre-existing byte-different sibling must be overwritten with the embedded copy",
+        );
+        assert_eq!(
+            mode(&probe) & 0o100,
+            0o100,
+            "the healed probe must be owner-executable",
         );
     }
 

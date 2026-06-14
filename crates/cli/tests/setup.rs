@@ -399,14 +399,16 @@ fn setup_preserves_seeded_host_content_and_is_idempotent() {
 /// The M20 probe-extract acceptance: a `cargo install`-style install (the `jigc`
 /// binary alone in a **probe-less** bin dir, no build-tree `doc-code` sibling, no
 /// `JIGC_DOC_CODE_PROBE` override) has `jigc setup` place a runnable `doc-code`
-/// sibling beside it, applying the pinned write-if-absent / never-clobber policy
+/// sibling beside it, applying the pinned heal/upgrade policy (write if absent or if
+/// the existing sibling's bytes differ from the embedded copy)
 /// (`module-layout.md` → Probe distribution, M20). Driven against the real built
 /// binary copied into a fresh dir so `current_exe().parent()` is that dir.
 ///
 /// Asserts: (i) setup writes an executable `doc-code` sibling whose bytes equal the
 /// embedded copy and which runs; (ii) a second setup is a no-op when the sibling
-/// already matches; (iii) a sibling with different bytes is left untouched; (iv) an
-/// unwritable target dir yields exactly one `setup.*` operational error, not a panic.
+/// already matches; (iii) a sibling with different bytes is **healed** — overwritten
+/// with the embedded copy (heal/upgrade); (iv) an unwritable target dir yields exactly
+/// one `setup.*` operational error, not a panic.
 #[test]
 fn setup_extracts_runnable_doc_code_probe_into_probe_less_bin_dir() {
     // A probe-less install dir: copy ONLY the `jigc` binary into it (no sibling
@@ -482,8 +484,9 @@ fn setup_extracts_runnable_doc_code_probe_into_probe_less_bin_dir() {
         "a second setup over a matching sibling must leave it byte-identical",
     );
 
-    // (iii) A pre-existing DIFFERENT sibling is left untouched (never clobbered).
-    let sentinel = b"#!/bin/sh\n# a deliberately-placed dev probe\nexit 0\n";
+    // (iii) A pre-existing DIFFERENT sibling (stale upgrade leftover / corrupt stub)
+    //       is HEALED — overwritten with the embedded copy and made executable.
+    let sentinel = b"#!/bin/sh\n# a stale / corrupt leftover probe\nexit 0\n";
     fs::write(&probe, sentinel).expect("seed a different sibling");
     make_executable(&probe);
     let out3 = run_copied_setup(&jigc, repo.path(), home.path());
@@ -492,9 +495,15 @@ fn setup_extracts_runnable_doc_code_probe_into_probe_less_bin_dir() {
         "setup over a different sibling must exit 0"
     );
     assert_eq!(
-        fs::read(&probe).expect("the different sibling still present"),
-        sentinel,
-        "a pre-existing different doc-code sibling must be left untouched",
+        fs::read(&probe).expect("the healed sibling is present"),
+        extracted,
+        "a pre-existing byte-different doc-code sibling must be healed (overwritten with \
+         the embedded copy)",
+    );
+    assert_eq!(
+        mode(&probe) & 0o100,
+        0o100,
+        "the healed probe must be owner-executable",
     );
 
     // (iv) An unwritable target dir yields exactly one `setup.*` operational error,
