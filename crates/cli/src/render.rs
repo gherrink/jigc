@@ -16,7 +16,7 @@ use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
 use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
-use engine::result::{Orientation, OrientationView, ResolutionTree, ValidationReport};
+use engine::result::{NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport};
 use serde::Serialize;
 
 /// The one-line routing footer appended to every agent-text / human CLI output.
@@ -39,8 +39,11 @@ pub fn orientation(format: Format, view: &OrientationView) -> String {
         Format::Agent | Format::Human => match view {
             OrientationView::UnsetProject { .. } => orientation_unset(),
             OrientationView::Clean {
-                header, workflows, ..
-            } => orientation_clean(header, &Orientation::new(workflows.clone())),
+                header,
+                workflows,
+                next_steps,
+                ..
+            } => orientation_clean(header, &Orientation::new(workflows.clone()), next_steps),
         },
     }
 }
@@ -74,12 +77,24 @@ pub fn orientation_agent_text(orientation: &Orientation) -> String {
 /// Render the **clean, no active task** orientation (`design/bootstrap.md` →
 /// Orientation output examples, state 2): the cascade/provenance `header`, the
 /// available-workflows catalog (`  - id — when` per entry), the `jigc start`
-/// next-step directive, then the universal routing footer.
+/// next-step directive, the **off-catalog** next-step verbs (one route-prose line
+/// per present verb — `design/project-setup.md` → Off-catalog discoverability
+/// (G6)), then the universal routing footer.
+///
+/// The `next_steps` are the off-catalog entry verbs the composed pack-set actually
+/// provides (gated CLI-side on pack membership — `planning`, `ingest-existing`),
+/// each named so a bare-`start` reader discovers it without already knowing the
+/// verb. An empty `next_steps` renders no extra line — the omitting context stays
+/// inert (the dev-only floor omits `planning`).
 ///
 /// Branch/HEAD and the "Recent: …" finalization line from the design example are
 /// deferred — they need git-HEAD inspection and task state, neither of which
 /// exists in increment 1 (bare `start` is read-only, no task store yet).
-pub fn orientation_clean(header: &str, orientation: &Orientation) -> String {
+pub fn orientation_clean(
+    header: &str,
+    orientation: &Orientation,
+    next_steps: &[NextStep],
+) -> String {
     let mut out = String::from("jigc — orientation\n\n");
     out.push_str(header);
     out.push_str("\n\nAvailable workflows:\n");
@@ -93,6 +108,16 @@ pub fn orientation_clean(header: &str, orientation: &Orientation) -> String {
     out.push_str(
         "\nRun: `jigc start \"<intent>\"`   — routes among the workflows above; pick one, then re-run with `--workflow <chosen>`\n",
     );
+    // The off-catalog next-step verbs — one route-prose line per verb the pack-set
+    // ships (same shape for each), so milestone planning + the existing-project
+    // on-ramp are discoverable though they are not in the catalog above.
+    for step in next_steps {
+        out.push_str("Run: `jigc start --workflow ");
+        out.push_str(&step.id);
+        out.push_str("`   — ");
+        out.push_str(&step.gist);
+        out.push('\n');
+    }
     out.push_str(ROUTING_FOOTER);
     out
 }
@@ -594,9 +619,12 @@ mod tests {
     /// single-task mint (`workflow-dialect.md` → Workflow selection).
     #[test]
     fn render_orientation_clean_has_header_catalog_and_footer() {
+        // No off-catalog verbs present → no extra route-prose line (the omitting
+        // context stays inert, byte-identical to before the G6 line).
         let text = orientation_clean(
             "Pack: dev/v0.3.0 · Project config: .jigc/config",
             &fixture(),
+            &[],
         );
 
         insta::assert_snapshot!(text, @r#"
@@ -620,6 +648,52 @@ mod tests {
         assert!(
             !text.contains("default workflow (single-task)"),
             "post-flip orientation must not claim a direct single-task mint; got:\n{text}",
+        );
+        // No off-catalog next-step line when none is present.
+        assert!(
+            !text.contains("--workflow planning") && !text.contains("--workflow ingest-existing"),
+            "the omitting context names no off-catalog verb; got:\n{text}",
+        );
+        assert!(text.ends_with(ROUTING_FOOTER));
+    }
+
+    /// Off-catalog discoverability (G6): each present off-catalog verb renders one
+    /// `Run: jigc start --workflow <id>   — <gist>` route-prose line (same shape for
+    /// each), after the catalog's routing directive and before the footer — so a
+    /// bare-`start` reader finds `planning` + `ingest-existing` though neither is in
+    /// the `Available workflows:` catalog (`design/project-setup.md` → Off-catalog
+    /// discoverability (G6)).
+    #[test]
+    fn render_orientation_clean_names_off_catalog_next_step_verbs() {
+        let text = orientation_clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            &fixture(),
+            &[
+                NextStep::new("planning", "plan a milestone"),
+                NextStep::new("ingest-existing", "bring an existing repo under management"),
+            ],
+        );
+
+        assert!(
+            text.contains("Run: `jigc start --workflow planning`   — plan a milestone\n"),
+            "the `planning` verb renders a route-prose line; got:\n{text}",
+        );
+        assert!(
+            text.contains(
+                "Run: `jigc start --workflow ingest-existing`   — bring an existing repo under management\n"
+            ),
+            "the `ingest-existing` verb renders a route-prose line; got:\n{text}",
+        );
+        // The off-catalog lines follow the catalog's routing directive.
+        let routing_at = text
+            .find("routes among the workflows above")
+            .expect("routing directive present");
+        let planning_at = text
+            .find("--workflow planning")
+            .expect("planning line present");
+        assert!(
+            planning_at > routing_at,
+            "the off-catalog lines follow the catalog routing directive; got:\n{text}",
         );
         assert!(text.ends_with(ROUTING_FOOTER));
     }

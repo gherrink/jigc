@@ -376,6 +376,94 @@ fn without_marker_surface_is_byte_identical_to_the_dev_only_floor() {
 }
 
 #[test]
+fn with_marker_bare_start_orientation_names_both_off_catalog_verbs() {
+    // (G6) Off-catalog discoverability: over the marker-composed `[dev ▸ methodology]`
+    // pack-set, a bare `jigc start` orientation NAMES BOTH off-catalog entry verbs —
+    // `planning` (methodology, `creates-task: true, selectable: false` — off the router
+    // by the M16 invariant, NOT flipped) and `ingest-existing` (dev, `creates-task:
+    // false`) — as next-step route-prose, while the `Available workflows:` catalog still
+    // lists ONLY selectable work-workflows (neither off-catalog verb leaks into it). The
+    // contract holds in BOTH the agent and human formats. Asserted on the EMITTED bytes.
+    let (repo, home) = marker_repo("g6-discover");
+
+    for format in [&["start"][..], &["--format", "human", "start"][..]] {
+        let out = run(repo.path(), home.path(), format);
+        assert!(
+            out.status.success(),
+            "(G6) bare `jigc {format:?}` over the marker path must exit 0; got {:?}\nstderr:\n{}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let text = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+        // Both off-catalog verbs are NAMED as next steps (the route-prose lines).
+        assert!(
+            text.contains("jigc start --workflow planning"),
+            "(G6 {format:?}) orientation must name the off-catalog `planning` verb; got:\n{text}",
+        );
+        assert!(
+            text.contains("jigc start --workflow ingest-existing"),
+            "(G6 {format:?}) orientation must name the off-catalog `ingest-existing` verb; got:\n{text}",
+        );
+
+        // Neither off-catalog verb leaks into the selectable `Available workflows:`
+        // catalog — only the selectable work-workflows are listed there (M16 /
+        // creates-task:false filters hold). The catalog block runs from its header to
+        // the first `Run:` directive; assert neither verb appears as a catalog row.
+        let catalog_start = text
+            .find("Available workflows:\n")
+            .expect("the catalog header is present")
+            + "Available workflows:\n".len();
+        let catalog_end = text[catalog_start..]
+            .find("\nRun:")
+            .map(|rel| catalog_start + rel)
+            .unwrap_or(text.len());
+        let catalog = &text[catalog_start..catalog_end];
+        assert!(
+            !catalog.contains("planning") && !catalog.contains("ingest-existing"),
+            "(G6 {format:?}) no off-catalog verb may appear in the selectable catalog block; \
+             catalog was:\n{catalog}",
+        );
+    }
+}
+
+#[test]
+fn without_marker_bare_start_names_ingest_existing_but_not_planning() {
+    // (G6, hardening #5 — the omitting context) A dev-only (no-marker) project layer is
+    // the pre-M21 floor: dev ships `ingest-existing` (always present) but NOT `planning`
+    // (methodology-only). Bare `jigc start` orientation NAMES `ingest-existing` and does
+    // NOT name `planning` — the feature is inert where the verb is absent, never routing
+    // to a non-resolving workflow. Asserted on the EMITTED bytes over the real binary.
+    let repo = TempDir::new("g6-no-marker");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    // The cleanest "no marker": a project layer with no `packs.yaml` ⇒ the single-pack
+    // dev-only `[base]` floor (methodology absent).
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("project layer");
+
+    let out = run(repo.path(), home.path(), &["start"]);
+    assert!(
+        out.status.success(),
+        "(G6 no-marker) bare `jigc start` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let text = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    // `ingest-existing` is dev-present → named.
+    assert!(
+        text.contains("jigc start --workflow ingest-existing"),
+        "(G6 no-marker) orientation must name dev's `ingest-existing` verb; got:\n{text}",
+    );
+    // `planning` is methodology-only → NOT named (the omitting context stays inert).
+    assert!(
+        !text.contains("--workflow planning"),
+        "(G6 no-marker) orientation must NOT name `planning` (methodology absent — naming it \
+         would route to a non-resolving verb); got:\n{text}",
+    );
+}
+
+#[test]
 fn jigc_pack_dir_supersedes_the_marker_methodology_alone_unchanged() {
     // (v) `JIGC_PACK_DIR` is the explicit/dogfood channel and SUPERSEDES the marker even
     // when one is present (T2a). A normal `jigc setup` writes the marker; a subsequent

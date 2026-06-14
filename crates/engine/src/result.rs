@@ -102,8 +102,9 @@ pub enum OrientationView {
         /// The result-contract schema version (see [`SCHEMA_VERSION`]).
         schema_version: u32,
     },
-    /// Cascade resolved, no active task — carry the provenance `header` and the
-    /// workflow catalog the clean-state renderer prints.
+    /// Cascade resolved, no active task — carry the provenance `header`, the
+    /// workflow catalog the clean-state renderer prints, and the off-catalog
+    /// next-step verbs the composed pack-set actually provides.
     Clean {
         /// The result-contract schema version (see [`SCHEMA_VERSION`]).
         schema_version: u32,
@@ -111,7 +112,42 @@ pub enum OrientationView {
         header: String,
         /// Available workflows, in display order.
         workflows: Catalog,
+        /// The **off-catalog** next-step verbs the composed pack-set provides —
+        /// the discoverability data (`design/project-setup.md` → Off-catalog
+        /// discoverability (G6)). These are entry workflows deliberately absent
+        /// from the selectable `workflows` catalog (`planning` is
+        /// `selectable: false`; `ingest-existing` is `creates-task: false`), so a
+        /// bare-`start` reader can still find them. Each [`NextStep`] is named
+        /// **iff** the composed pack-set ships it (gated CLI-side on
+        /// `pack.list(Workflows)` membership) — naming a verb unconditionally would
+        /// point at a non-resolving workflow in a pack-set that omits it. Empty when
+        /// the pack-set provides none of them, so the omitting context stays inert.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        next_steps: Vec<NextStep>,
     },
+}
+
+/// One off-catalog next-step verb named in the clean-state orientation prose: the
+/// workflow `id` plus the one-line `gist` the route-prose renders. Carries no
+/// presentation (the `Run:`/`jigc start --workflow` framing is the renderer's) —
+/// the engine view holds the data, `cli::render` formats it
+/// (`design/project-setup.md` → Off-catalog discoverability (G6)).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NextStep {
+    /// The off-catalog workflow id (e.g. `planning`, `ingest-existing`).
+    pub id: String,
+    /// The one-line gist of what the verb does, rendered next to the id.
+    pub gist: String,
+}
+
+impl NextStep {
+    /// Build a next-step verb from its id and one-line gist.
+    pub fn new(id: impl Into<String>, gist: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            gist: gist.into(),
+        }
+    }
 }
 
 impl OrientationView {
@@ -123,13 +159,15 @@ impl OrientationView {
         }
     }
 
-    /// The **clean, no active task** orientation view over its provenance header
-    /// and workflow catalog, stamping the current [`SCHEMA_VERSION`].
-    pub fn clean(header: impl Into<String>, workflows: Catalog) -> Self {
+    /// The **clean, no active task** orientation view over its provenance header,
+    /// workflow catalog, and the off-catalog `next_steps` verbs the composed
+    /// pack-set provides, stamping the current [`SCHEMA_VERSION`].
+    pub fn clean(header: impl Into<String>, workflows: Catalog, next_steps: Vec<NextStep>) -> Self {
         Self::Clean {
             schema_version: SCHEMA_VERSION,
             header: header.into(),
             workflows,
+            next_steps,
         }
     }
 }
@@ -675,8 +713,11 @@ mod tests {
                 "single-task",
                 "Implement one well-scoped change.",
             )]),
+            Vec::new(),
         ))
         .expect("serializes");
+        // An empty `next_steps` is omitted (`skip_serializing_if`), so the
+        // no-next-step projection is byte-identical but for the additive field.
         assert_eq!(
             clean,
             serde_json::json!({
@@ -687,6 +728,22 @@ mod tests {
                     { "id": "single-task", "when": "Implement one well-scoped change." }
                 ]
             })
+        );
+
+        // A clean view carrying off-catalog next-step verbs projects them under
+        // `next_steps`, each with its `id` + `gist` (the discoverability data).
+        let with_steps = serde_json::to_value(OrientationView::clean(
+            "Pack: dev/v0.3.0 · Project config: .jigc/config",
+            Catalog::new(vec![CatalogEntry::new(
+                "single-task",
+                "Implement one well-scoped change.",
+            )]),
+            vec![NextStep::new("planning", "plan a milestone")],
+        ))
+        .expect("serializes");
+        assert_eq!(
+            with_steps["next_steps"],
+            serde_json::json!([{ "id": "planning", "gist": "plan a milestone" }]),
         );
     }
 

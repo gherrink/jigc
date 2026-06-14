@@ -20,9 +20,31 @@ use anyhow::{Context, Result};
 use engine::cascade::{self, OverrideLayer, PackDefaultLayer};
 use engine::knobs::load_knobs;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::result::{Catalog, OrientationView};
+use engine::result::{Catalog, NextStep, OrientationView};
 use std::collections::BTreeMap;
 use std::path::Path;
+
+/// The **off-catalog** entry verbs orientation surfaces as next steps when the
+/// composed pack-set provides them — `(id, gist)`, in display order
+/// (`design/project-setup.md` → Off-catalog discoverability (G6)). Each is an
+/// entry workflow deliberately absent from the selectable `Available workflows:`
+/// catalog (`planning` is `selectable: false`, off the router by the M16
+/// invariant — *not* flipped; `ingest-existing` is `creates-task: false`), so a
+/// bare-`start` reader can find them only if orientation names them. A verb is
+/// named **iff** the pack-set ships it (gated below on `pack.list(Workflows)`
+/// membership) — naming one unconditionally would route to a non-resolving
+/// workflow in a pack-set that omits it (`ingest-existing` ships in the
+/// always-present dev pack; `planning` only under the embedded methodology pack).
+const OFF_CATALOG_VERBS: &[(&str, &str)] = &[
+    (
+        "planning",
+        "plan a milestone — decompose it into increments and tasks",
+    ),
+    (
+        "ingest-existing",
+        "bring an existing repo's docs under management",
+    ),
+];
 
 /// The pack-default config key that carries the pack's own cascade id — the
 /// `Pack: <pack-id>/<version>` provenance segment. The pack names itself
@@ -52,11 +74,12 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
     };
 
     // State 2 — clean, no active task: resolve the cascade and build the catalog.
-    let pack_files: Vec<String> = pack
+    let workflow_ids: Vec<String> = pack
         .list(PackResourceKind::Workflows)
         .into_iter()
         .map(|id| id.as_str().to_owned())
         .collect();
+    let pack_files = workflow_ids.clone();
     let pack_id = pack_id_from_config(pack)?;
     let scalars = pack_default_scalars(pack)?;
     let pack_default = PackDefaultLayer::new(pack_id, pack.pack_version(), scalars, pack_files);
@@ -69,9 +92,21 @@ fn orient_with(ctx: &RunContext, pack: &dyn PackSource) -> Result<OrientationVie
     // among, never the router itself (`workflow-dialect.md` → Workflow selection).
     let catalog = Catalog::new(selectable_workflows(pack)?);
 
+    // Off-catalog discoverability (G6): name each off-catalog entry verb **iff**
+    // the composed pack-set actually ships it — gated on `pack.list(Workflows)`
+    // membership, so a pack-set that omits one (the dev-only floor omits
+    // `planning`) routes to no non-resolving verb. The data is presentation-free;
+    // `render::orientation_clean` formats the route-prose line per verb.
+    let next_steps: Vec<NextStep> = OFF_CATALOG_VERBS
+        .iter()
+        .filter(|(id, _)| workflow_ids.iter().any(|w| w == id))
+        .map(|(id, gist)| NextStep::new(*id, *gist))
+        .collect();
+
     Ok(OrientationView::clean(
         compose_pack_header(pack, resolved.provenance()),
         catalog,
+        next_steps,
     ))
 }
 
@@ -316,6 +351,100 @@ mod tests {
             ids,
             vec!["single-task", "quick-fix"],
             "orientation must list the selectable work-workflows and not the router",
+        );
+    }
+
+    /// A `PackSource` that adds the two off-catalog entry verbs (`planning`,
+    /// `ingest-existing`) on top of [`FakePack`]'s router + selectable set, so the
+    /// next-step gating can be exercised over a pack-set that **provides** them.
+    struct OffCatalogPack;
+
+    impl PackSource for OffCatalogPack {
+        fn pack_version(&self) -> String {
+            "v0.3.0".to_owned()
+        }
+
+        fn list(&self, kind: PackResourceKind) -> Vec<ResourceId> {
+            match kind {
+                PackResourceKind::Workflows => vec![
+                    ResourceId::from("router"),
+                    ResourceId::from("single-task"),
+                    ResourceId::from("planning"),
+                    ResourceId::from("ingest-existing"),
+                ],
+                other => FakePack::new().list(other),
+            }
+        }
+
+        fn read(&self, kind: PackResourceKind, id: &ResourceId) -> Result<Vec<u8>, PackError> {
+            match (kind, id.as_str()) {
+                // `planning` is `creates-task: true` but `selectable: false` — off the
+                // selectable catalog by the M16 invariant (named in route-prose only).
+                (PackResourceKind::Workflows, "planning") => Ok(
+                    b"---\nwhen: plan a milestone\ncreates-task: true\nselectable: false\n---\n"
+                        .to_vec(),
+                ),
+                // `ingest-existing` is `creates-task: false` — orient/route shape.
+                (PackResourceKind::Workflows, "ingest-existing") => {
+                    Ok(b"---\nwhen: bring an existing repo under management\ncreates-task: false\n---\n".to_vec())
+                }
+                other => FakePack::new().read(other.0, id),
+            }
+        }
+    }
+
+    /// Off-catalog discoverability (G6): when the pack-set ships `planning` +
+    /// `ingest-existing`, the clean view's `next_steps` names BOTH (in display
+    /// order), while neither leaks into the selectable `workflows` catalog
+    /// (`planning` is `selectable: false`; `ingest-existing` is
+    /// `creates-task: false`). The catalog filter and the off-catalog naming are
+    /// independent surfaces.
+    #[test]
+    fn clean_view_next_steps_name_present_off_catalog_verbs() {
+        let view = orient_with(
+            &ctx(Some(PathBuf::from("/repo/.jigc/config"))),
+            &OffCatalogPack,
+        )
+        .expect("orient succeeds");
+        let OrientationView::Clean {
+            workflows,
+            next_steps,
+            ..
+        } = &view
+        else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
+        let step_ids: Vec<&str> = next_steps.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(
+            step_ids,
+            vec!["planning", "ingest-existing"],
+            "both present off-catalog verbs are named as next steps, in display order",
+        );
+        // Neither off-catalog verb leaks into the selectable catalog.
+        let catalog_ids: Vec<&str> = workflows.entries().iter().map(|e| e.id.as_str()).collect();
+        assert!(
+            !catalog_ids.contains(&"planning") && !catalog_ids.contains(&"ingest-existing"),
+            "an off-catalog verb must NOT appear in the selectable catalog; got {catalog_ids:?}",
+        );
+    }
+
+    /// The omitting-context check (increment-workflow hardening #5): a pack-set that
+    /// ships **neither** off-catalog verb (the bare [`FakePack`] — router + two
+    /// selectable work-workflows only) carries an **empty** `next_steps`, naming no
+    /// non-resolving verb. The feature stays inert where the verbs are absent.
+    #[test]
+    fn clean_view_next_steps_inert_when_off_catalog_verbs_absent() {
+        let view = orient_with(
+            &ctx(Some(PathBuf::from("/repo/.jigc/config"))),
+            &FakePack::new(),
+        )
+        .expect("orient succeeds");
+        let OrientationView::Clean { next_steps, .. } = &view else {
+            panic!("expected the clean view, got:\n{view:?}");
+        };
+        assert!(
+            next_steps.is_empty(),
+            "a pack-set omitting the off-catalog verbs names none; got {next_steps:?}",
         );
     }
 
