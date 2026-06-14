@@ -185,6 +185,57 @@ Encoding the harness's **harder** workflows (increment / planning / completion) 
 
 **Outcome (2026-06-14).** Both increments built + **independently validated clean, 0 fix rounds**; milestone-completion audit (code-review + real-`cargo install` e2e) passed — verified end-to-end through an installed 6.4MB binary (probe extracts at setup + fires; one operational error on absence at both scopes; three families fold under the uniform exit rule; file-state twin byte-for-byte mutation-free; no false drift over the dev pack; order-invariant). 4 LOW findings, all **fixed** (not deferred): the probe-extract write policy → **heal/upgrade** (overwrite iff bytes differ — fixes upgrade-staleness; human-gated at completion); store-sweep schemas → **cascade-aware** (`all_schemas`, honoring project shadows); two doc/test-precision fixes. Commits `290c8f9…b91a7de` (14). [DECISIONS.md](../DECISIONS.md) → M20 completion.
 
+## M21 · production-readiness for real-project live testing — embed methodology + Flow-A cold-start + full Flow-B (minus auto-migration)
+
+**Created 2026-06-14**, the second post-spine hardening milestone ([DECISIONS.md](../DECISIONS.md) → 2026-06-14 direction pivot + M21 planning). Closes the blockers so the human's **two manual live tests** run on a clean install: **Flow A** (new project — vision→milestones→MVP) and **Flow B** (existing project — track docs, then clean up). Baseline re-verified by 4 `capability-auditor`s + 4 `gap-detector`s exercising the real binary (HEAD `71c3df6`); the central forks were settled and **a precedence-order spike** found the clean path; survived an independent design review (**2 BLOCKING + 3 SHOULD + 2 CONSIDER, all baked** before this cut). **Proves:** a fresh `cargo install jigc` → `jigc setup` gives a real project the **methodology pack embedded + auto-wired** (compose `[dev ▸ methodology]`, dev-highest → `default-workflow=router`, `commit` keeps `implements→spec`, full milestone/roadmap authoring out of the box); the Flow-A **zero-commit cold-start crash is gone** and the milestone/ingest verbs are **discoverable**; and **full Flow-B** (recursive scan + the G4 baseline-adopt safety gate + un-manage/uninstall teardown + discoverability) lands — **minus** auto-migration (G1) + new doctype coverage (G2 `changelog`/…), deferred **paired** to a dedicated post-M21 milestone (a `changelog` doctype is unusable for an existing project without auto-migration). **No new doctype, no new check ids, no engine knob-merge primitive** (the collisions resolve by precedence order alone). Design homes: [multi-pack.md](../design/multi-pack.md) → Embedded second pack + setup auto-wiring; [module-layout.md](module-layout.md) → Pack distribution; [project-setup.md](../design/project-setup.md) → Flow 2 hardening. Milestone-level decomposition below.
+
+## Milestone 21 — production-readiness (embed methodology + cold-start + full Flow-B): decomposition
+
+**Planned + settled 2026-06-14** ([DECISIONS.md](../DECISIONS.md) → M21 planning). **Four increments, risk-first + linear:** the embed+compose surgery first (the highest-uncertainty change and the Flow-A milestone wall), then the Flow-A cold-start completers, then the two Flow-B increments (safety+reach, then teardown). **The binary changes** (a second `include_dir!` + factory + `setup` + new verbs), so it must be **rebuilt + re-pinned** (`cargo install --path crates/cli` + `jigc setup`-extract, the M20 re-pin flow) before any exercise that asserts install/compose behavior. Cold-start friction *not* re-fixed: `set-slot --from-file -` stdin was a **stale** claim (already works); the commit `scope`/`body` "optional" friction stays the existing optional-slot deferral (pack-data/UX, no engine primitive).
+
+## Increment 1 — Embed the methodology pack + compose it at setup (the Flow-A milestone wall)
+
+**Deliverable:** a clean `jigc setup` that has written the composition marker gives a real project the **dev + methodology** surface in-binary — `jigc doc create roadmap` resolves, the methodology workflows compose, `default-workflow` resolves to `router`, the composed `commit` keeps `implements→spec` — with **no** on-disk pack tree and **no** `packs.yaml` path. Absent the marker, the pack-set is `[dev]`, byte-identical to today. Exercised against a real rebuilt binary.
+
+**Grouped scope:**
+- **Field-carrying `EmbeddedPack`** — parameterize the unit struct over a selected `&'static Dir` (`crates/cli/src/pack.rs:50,53`) so two embedded packs can be composed; preserve the dev-only `pack_version = binary version` invariant for both.
+- **Second `include_dir!`** of the ~45KB `packs/methodology/` tree (pure data — **verify no `target/`/build-tree is swept**, the M20 bloat lesson; confirm the embedded methodology content loads).
+- **Factory composes `[dev ▸ methodology]` dev-highest** — a `make_pack`/`make_pack_from` path that builds `CompositePack([dev_embedded, methodology_embedded])` **when** `.jigc/config/packs.yaml` carries `compose-embedded-methodology: true` (the key the factory already reads pre-cascade — no new discovery walk). Marker + extra listed filesystem packs is **out of scope** (route/defer).
+- **`jigc setup` writes the marker** — a neutral install step writing `compose-embedded-methodology: true` into `.jigc/config/packs.yaml`; idempotent, non-destructive.
+- Add a **worked-example flow** for the compose-both-at-setup path (and note in [worked-examples.md](../design/worked-examples.md) flow 15 that `JIGC_PACK_DIR` stays the explicit/dogfood channel).
+
+**Proves:** with the marker, `jigc start --explain` shows `default-workflow → won by dev` / `commit → won by dev`, `jigc doc create roadmap` + `jigc start --workflow planning` work, and methodology's `dev-task` body still composes its own test-first `implement` (pack-local); **without** the marker, the surface + composition bytes are byte-identical to the pre-M21 dev-only path (the single-pack floor); methodology-alone (`JIGC_PACK_DIR`) is unchanged. Built against [multi-pack.md](../design/multi-pack.md) → Embedded second pack; [module-layout.md](module-layout.md) → Pack distribution.
+
+## Increment 2 — Flow-A cold-start: zero-commit survival + off-catalog discoverability
+
+**Deliverable:** the literal first commands of a new project run on a **fresh `git init` (zero commits)**, and a bare `jigc start` orientation **names the off-catalog `planning` + `ingest-existing` verbs** so milestones (and the existing-project on-ramp) are discoverable without prior knowledge.
+
+**Grouped scope:**
+- **Zero-commit sentinel** — `read_head` (`start.rs:2255` + the milestone twin `milestone.rs:692`) treats an empty `HEAD` as an **empty-tree-sentinel** `BasePin` (canonical empty-tree SHA) rather than bailing, so every `creates-task` workflow (and the milestone mint) runs pre-first-commit; the first finalize diffs against the empty tree and commits cleanly.
+- **Off-catalog discoverability (G6)** — orientation route-prose that names `planning` (`selectable:false`, off-router by the M16 invariant — **no flip**) and `ingest-existing` (`creates-task:false`), the same shape for each, so "milestones out of the box" is actually delivered (the router catalog alone never surfaces `planning` — design-review B1).
+
+**Proves:** in a fresh zero-commit repo, `jigc setup` then `jigc start --workflow project-setup` (and `--workflow single-task`, and the milestone mint) run without the `git rev-parse HEAD` crash; bare `jigc start` orientation text names the `planning` and `ingest-existing` verbs. Built against [project-setup.md](../design/project-setup.md) → Flow 2 hardening; [DECISIONS.md](../DECISIONS.md) → M21 planning.
+
+## Increment 3 — Flow-B safety + reach: the G4 baseline-adopt gate + recursive scan
+
+**Deliverable:** `finalize`/`validate` no longer silently adopts an unvetted foreign doc sitting in a `location:` dir, and `jigc ingest` discovers docs in nested directories — so an existing project's doc landscape is seen and the trust hazard is closed.
+
+**Grouped scope:**
+- **G4 conformance gate** — `crates/engine/src/file_state.rs` `reconcile_committed`'s `UNKNOWN` arm (`:189-193`) runs `parse_sections` + `schema_conformance` (the call its sibling DRIFTED arm `:201-216` already makes) **before** recording; a non-conformant file is **routed as advisory and NOT recorded** (so it re-fires every finalize until the human resolves it — the route names the corrective verb), while a conformant fresh-checkout doc still baselines cleanly (preserves the M20 clean-store guarantee). Advisory, never blocking.
+- **Recursive scan (G3)** — `crates/engine/src/ingest.rs` `discover_candidates` (`:49`) walks subdirectories (keeping the `.jigc/` exclusion + `BTreeSet` sort-determinism) so `wiki/`, nested `docs/sub/`, `rfcs/` are reachable.
+
+**Proves:** a freeform `notes.md` placed in `decisions/` is routed (advisory) and **not** baseline-adopted at finalize, and the advisory recurs on a second finalize; a nested `docs/sub/x.md` appears in `jigc ingest` output; a conformant jigc-minted doc on a fresh checkout still baselines without a false advisory. Built against [project-setup.md](../design/project-setup.md) → Flow 2 hardening.
+
+## Increment 4 — Flow-B teardown: un-manage a doc + repo-local `jigc uninstall`
+
+**Deliverable:** two cleanup verbs that let a human reverse jigc's footprint — drop a single managed doc, or tear down the whole repo-local install — both idempotent and non-destructive to the user's file bytes.
+
+**Grouped scope:**
+- **Un-manage a doc** — a verb that drops one managed doc from the `FileStateRecord` + its `edges.json` entries (the inverse of `adopt`'s register-only mutation), **leaving the file bytes on disk**; idempotent (re-run on an already-unmanaged doc is a clean no-op).
+- **`jigc uninstall` (repo-local only)** — remove `.jigc/`, unwire the `CLAUDE.md` import line + the `.claude/settings.json` allowlist entry + the `compose-embedded-methodology` marker; **explicitly NOT** the machine-global `doc-code` probe sibling (shared across repos — design-review B2); idempotent (second run is a clean no-op); removes exactly the enumerated repo-local setup-created set.
+
+**Proves:** un-manage drops a doc from jigc's index/state with its on-disk bytes unchanged and is idempotent; `jigc uninstall` removes the repo-local footprint, leaves the probe sibling intact (a sibling repo's `jigc validate` still works), and a second `uninstall` is a clean no-op. Built against [project-setup.md](../design/project-setup.md) → Flow 2 hardening.
+
 ## Milestone 1 — single-task execution loop (shipped): decomposition
 
 The six-increment decomposition of M1, kept as the shipped record and the worked example of what a milestone-planning cut produces. A usable `jigc` an agent is pointed at, proving the core loop (discover → compose → execute → validate → finalize) beats a plain `CLAUDE.md`. The **superseding-decision** flow ([worked-examples.md](../design/worked-examples.md) → Superseding decision) is the headline acceptance test — it's what converts the differentiators from *supported* to *proven*. Once all the increments below are built, the milestone is finished through the [milestone-completion workflow](milestone-completion-workflow.md) (independent audit → triage → fix → re-verify) — the acceptance gate before it ships.
