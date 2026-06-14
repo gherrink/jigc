@@ -564,6 +564,7 @@ impl TaskArea {
             &self.dir,
             &plan,
             &self.dir,
+            &schemas,
             Some(swept),
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
@@ -730,6 +731,7 @@ pub(crate) fn execute_finalize_plan(
     msg_tmp_dir: &Path,
     plan: &engine::finalize::FinalizePlan,
     cleanup_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
     format: Format,
 ) -> Result<ExitCode> {
     // Map the landed/failed `Result` onto the historic `Ok(ExitCode)` contract the
@@ -738,7 +740,15 @@ pub(crate) fn execute_finalize_plan(
     // json` gets the error envelope — and exits `FAILURE`; success exits `SUCCESS`).
     // The milestone boundary runs no reconcile sweep, so it carries no post-sweep
     // record to persist (`None` — post-commit loads the durable record as before).
-    match try_execute_finalize_plan(repo_root, jigc_root, msg_tmp_dir, plan, cleanup_dir, None)? {
+    match try_execute_finalize_plan(
+        repo_root,
+        jigc_root,
+        msg_tmp_dir,
+        plan,
+        cleanup_dir,
+        schemas,
+        None,
+    )? {
         // T3 — relay the aggregate `git_commit`'s non-blocking hook output (the
         // `squash: true` milestone boundary; the per-sub-task `commit_empty_message`
         // commits relay nothing — `design/finalize.md` → 6. Commit, review B1).
@@ -775,6 +785,7 @@ pub(crate) fn try_execute_finalize_plan(
     msg_tmp_dir: &Path,
     plan: &engine::finalize::FinalizePlan,
     cleanup_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
     post_sweep: Option<FileStateRecord>,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
@@ -807,6 +818,7 @@ pub(crate) fn try_execute_finalize_plan(
         repo_root,
         jigc_root,
         cleanup_dir,
+        schemas,
         &plan.hash_updates,
         post_sweep,
     );
@@ -920,10 +932,11 @@ fn post_commit(
     repo_root: &Path,
     jigc_root: &Path,
     cleanup_dir: &Path,
+    schemas: &BTreeMap<String, Schema>,
     hash_updates: &BTreeMap<String, String>,
     post_sweep: Option<FileStateRecord>,
 ) {
-    if let Err(err) = advance_file_state(repo_root, jigc_root, hash_updates, post_sweep) {
+    if let Err(err) = advance_file_state(repo_root, jigc_root, schemas, hash_updates, post_sweep) {
         eprintln!("note: post-commit file-state update failed (self-heals): {err:#}");
     }
     if let Err(err) = engine::index::invalidate(jigc_root) {
@@ -954,6 +967,7 @@ fn post_commit(
 fn advance_file_state(
     repo_root: &Path,
     jigc_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
     hash_updates: &BTreeMap<String, String>,
     post_sweep: Option<FileStateRecord>,
 ) -> Result<()> {
@@ -970,9 +984,18 @@ fn advance_file_state(
     for (path, hash) in hash_updates {
         record.record(path.clone(), hash.clone());
     }
-    // Hash the files the just-landed commit touched, reading their committed bytes.
+    // Hash the files the just-landed commit touched, reading their committed bytes — but
+    // gate each through the G4 baseline-adopt check (`engine::file_state`): a foreign
+    // non-conformant `.md` that `git add --all` swept into the aggregate commit (a freeform
+    // file dropped into a `location:` dir) is **not** recorded, so it stays `UNKNOWN` and
+    // the store-sweep advisory re-fires every finalize until the human resolves it
+    // (`design/project-setup.md` → Flow 2 hardening — the routed-but-not-recorded
+    // recurrence the post-commit path must not defeat). Non-managed paths (code, configs)
+    // are always recorded.
     for path in git_commit_files(repo_root)? {
-        if let Ok(bytes) = git_show_file(repo_root, &path) {
+        if let Ok(bytes) = git_show_file(repo_root, &path)
+            && file_state::committed_path_recordable(schemas, &path, &bytes)
+        {
             record.record(path, file_state::hash_bytes(&bytes));
         }
     }

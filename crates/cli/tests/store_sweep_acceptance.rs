@@ -888,4 +888,75 @@ mod g4_baseline_adopt_gate {
             "the conformant minted ADR draws no false conformance-block advisory; got:\n{findings:#?}",
         );
     }
+
+    /// The **finalize post-commit door** the G4 gate must also guard (M21 inc-3 fix): a
+    /// freeform `notes.md` that is **uncommitted at `jigc start`** and only enters git via
+    /// the finalize aggregate (`git add --all`) must **not** be baseline-adopted by the
+    /// post-commit `advance_file_state` re-hash of the committed working set — else the
+    /// foreign file becomes `IN_SYNC` and the store-sweep advisory never recurs.
+    ///
+    /// Distinct from `freeform_notes_in_decisions_routes_advisory_and_recurs`, where the
+    /// notes are committed to git **before** `jigc start` (so they never appear in the
+    /// finalize commit's changed set). Here the file rides the finalize commit itself —
+    /// the path the validator reproduced. Asserts: finalize 1 emits the advisory once, the
+    /// landed record does **not** contain the foreign path, and a second task's finalize
+    /// **re-fires** the same advisory.
+    #[test]
+    fn freeform_notes_swept_into_finalize_commit_not_baseline_adopted() {
+        let repo = Repo::new("notes-mid-task");
+        let home = Repo::new("home-mid-task");
+        init_repo(repo.path());
+
+        const NOTES: &str = "decisions/notes.md";
+        let record_path = repo
+            .path()
+            .join(".jigc")
+            .join("state")
+            .join("file-state.json");
+
+        // ── task A: drop the foreign notes.md AFTER start (uncommitted), then finalize ──
+        // `git add --all` at the finalize boundary sweeps the freeform file into the
+        // aggregate commit — the door `advance_file_state` re-hashes through.
+        let task_a = "first-pass";
+        stage_commit_only(repo.path(), home.path(), task_a, task_a);
+        fs::create_dir_all(repo.path().join("decisions")).expect("mk decisions/");
+        fs::write(
+            repo.path().join(NOTES),
+            "# scratch notes\n\nrandom thoughts, not an ADR\n",
+        )
+        .expect("write freeform notes");
+
+        let findings = finalize_findings(repo.path(), home.path(), task_a);
+        assert_eq!(
+            conformance_advisory_count(&findings, NOTES),
+            1,
+            "finalize 1 routes the freeform notes.md exactly one advisory; got:\n{findings:#?}",
+        );
+
+        // The finalize aggregate committed notes.md to git, but the post-commit re-hash
+        // must NOT record it (it failed the conformance gate) — it stays UNKNOWN.
+        let record = fs::read_to_string(&record_path)
+            .expect("task A's landed finalize persists the file-state record");
+        let value: serde_json::Value =
+            serde_json::from_str(&record).expect("file-state.json parses");
+        let hashes = value["hashes"]
+            .as_object()
+            .expect("the record carries a `hashes` map");
+        assert!(
+            !hashes.contains_key(NOTES),
+            "the foreign notes.md swept into the finalize commit must not be \
+             baseline-adopted into the record; got:\n{record}",
+        );
+
+        // ── task B: a second finalize re-fires the advisory (still UNKNOWN) ─────────────
+        let task_b = "second-pass";
+        stage_commit_only(repo.path(), home.path(), task_b, task_b);
+        let findings = finalize_findings(repo.path(), home.path(), task_b);
+        assert_eq!(
+            conformance_advisory_count(&findings, NOTES),
+            1,
+            "the advisory re-fires on the second finalize (not silently absorbed at the \
+             post-commit door); got:\n{findings:#?}",
+        );
+    }
 }

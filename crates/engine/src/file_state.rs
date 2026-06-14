@@ -243,6 +243,42 @@ fn conformance_gate(
     }
 }
 
+/// Whether a **just-committed** `path` (its committed `bytes`) may be recorded into the
+/// `file-state` baseline — the finalize post-commit twin of the [`reconcile_committed`]
+/// `UNKNOWN` arm's G4 gate (M21; `project-setup.md` → Flow 2 hardening).
+///
+/// A committed path that is a **managed-doc slot** — a *direct child* `<location>/<slug>.md`
+/// of some persisted schema's `location:`, exactly the non-recursive `<location>/*.md`
+/// namespace [`reconcile_committed_store`] walks — is recordable **only if it classifies
+/// conformant**: a foreign non-conformant `.md` that `git add --all` swept into the
+/// aggregate commit must **not** be baseline-adopted, so it stays `UNKNOWN` and the
+/// advisory re-fires every finalize until the human resolves it (the routed-but-not-
+/// recorded recurrence).
+///
+/// **Direct-child only.** A path *under* a `location:` prefix but *nested* (a `/` in the
+/// slug remainder — e.g. a promoted owner-artifact `completions/artifacts/<run>/audit.md`)
+/// is **not** a managed doc the store sweep ever reaches, so it is always recordable — the
+/// gate guards exactly the managed-doc namespace, never the artifacts the sweep leaves
+/// baselined-as-is. Any path no persisted schema owns (code, configs) is likewise always
+/// recordable.
+pub fn committed_path_recordable(
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    path: &str,
+    bytes: &[u8],
+) -> bool {
+    let managed_doc = schemas.values().find_map(|s| {
+        let loc = s.location.as_deref()?;
+        let slug = path.strip_prefix(loc)?.strip_suffix(".md")?;
+        // The store walk is a non-recursive `<location>/*.md` glob: only a single-segment
+        // slug (no `/`) is a managed doc. A nested path is an unwalked artifact.
+        (!slug.contains('/')).then_some(s)
+    });
+    match managed_doc {
+        Some(schema) => conformance_gate(schema, bytes).is_ok(),
+        None => true,
+    }
+}
+
 /// Sweep the **committed store** for out-of-band drift and route it — the command-
 /// surface wiring of [`reconcile_committed`] + [`detect_rename`] over every tracked
 /// committed managed doc (`reconciliation.md` → Detection timing: the `task validate`

@@ -538,7 +538,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
         // The milestone boundary runs no reconcile sweep → no post-sweep record (`None`).
         match crate::task::try_execute_finalize_plan(
-            &repo_root, &jigc_root, &dir, &plan, &dir, None,
+            &repo_root, &jigc_root, &dir, &plan, &dir, &schemas, None,
         )? {
             Ok(hook_output) => {
                 // T3 — relay ONLY the aggregate `git_commit`'s non-blocking hook output
@@ -569,8 +569,9 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         // area is the cleanup dir removed on a landed commit. The `squash: true` default path
         // lands only the single CLI-synthesized aggregate (no per-sub-task commits), so it is
         // byte-identical to what M7 shipped — left untouched.
-        let code =
-            crate::task::execute_finalize_plan(&repo_root, &jigc_root, &dir, &plan, &dir, format)?;
+        let code = crate::task::execute_finalize_plan(
+            &repo_root, &jigc_root, &dir, &plan, &dir, &schemas, format,
+        )?;
         // On a landed commit, clean up the per-sub-task working areas too (the executor only
         // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves
         // the areas intact for retry.
