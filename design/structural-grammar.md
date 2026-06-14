@@ -42,7 +42,7 @@ Why shallow (not flat, not recursive): flat denies repeated items the individual
 
 ## Repetition
 
-A unit body is **either** one block (simple) **or** a list of blocks (`repeatable`) — the *only* place repetition lives. Each block in the list is an **item** with a minted, stable ID; ordering is a separate list. **One bounded level:** no repeatable-inside-repeatable, and a block still holds leaves only.
+A unit body is **either** one block (simple) **or** a list of blocks (`repeatable`) — the *only* place repetition lives. Each block in the list is an **item** with a minted, stable ID; ordering is a separate list. **Nesting is bounded by depth, not by one level:** a repeatable may itself nest a repeatable (the schema model's `Leaf::Repeatable`, M22), recursively, capped at **four nesting levels** — items render at heading level `2 + nesting-depth` (section `##`, first-level items `###`, nested `####`, …, `######`), so a fifth level (`H7`) is rejected at load (a documented cap, not silent truncation). A block still holds leaves only — and a nested repeatable *is* a leaf.
 
 A repeatable unit must designate one leaf as its **id-source** for slugging (see [Minting](#ids-provenance-and-minting)). It must be an *adjudicable* leaf — in the document dialect, a `field` — never agent-authored prose, because the CLI needs a short, clean value to slug. *On-disk rendering is dialect-specific: in the document dialect, the id-source field is rendered as the item's `###` heading text (with `{#id}` carrying the frozen minted id), not as a trailing `- key: value` field — see [storage.md](storage.md) → Identity.*
 
@@ -123,5 +123,5 @@ Integrity holds at the **`finalize` boundary**, not on every write (else bootstr
 
 ## Open questions
 
-- **Multi-level repetition** — deferred unless a real type forces a second repeatable level.
+- ~~**Multi-level repetition**~~ — **landed (M22).** A repeatable may nest a repeatable, recursively, capped at four nesting levels (`H6`); see [Repetition](#repetition). The `changelog`'s `release → change-group` shape is the first consumer ([design/changelog.md](changelog.md) → engine work #1).
 - **Minting mechanics** — exact slug normalization (case/charset) remains the open edge. The **collision-suffix form is settled for M7**: a numeric `-2`/`-3`/… suffix applied **in task-id order at the `join`** (lower task-id keeps the bare slug), with the renamed instance's intra-document self-references rewritten in lockstep ([storage.md](storage.md#the-by-task-id-join-m7)).

@@ -131,10 +131,11 @@ pub struct Repeatable {
     pub block: Vec<Leaf>,
 }
 
-/// A leaf inside a repeatable item block: a typed field or an LLM-filled slot.
+/// A leaf inside a repeatable item block: a typed field, an LLM-filled slot, or
+/// a **nested repeatable** (a repeatable-inside-a-repeatable — the M22 lift).
 ///
-/// Distinguished on disk by which key is present (`slot:` vs the field's flat
-/// `{id, type, …}` form).
+/// Distinguished on disk by which key is present (`slot:` vs `repeatable:` vs
+/// the field's flat `{id, type, …}` form).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Leaf {
@@ -143,6 +144,19 @@ pub enum Leaf {
         /// The leaf id (and on-disk sub-label).
         id: String,
         slot: Slot,
+    },
+    /// A nested repeatable: an ID'd sub-list of item blocks within a parent
+    /// item's block (e.g. a release's `changes` change-groups). Its items
+    /// render one heading level deeper than the parent's, bounded by the H6
+    /// cap (`design/changelog.md` → engine work #1; `design/structural-grammar.md`
+    /// → Repetition). The leaf `id` is the section's stable id; the inner
+    /// `repeatable` carries the sub-list's `id-from` + block.
+    Repeatable {
+        /// The leaf id (and the source of the nested section's heading).
+        id: String,
+        /// The nested item-template: its id-source field plus the block's
+        /// leaves (which may themselves nest, up to the depth cap).
+        repeatable: Repeatable,
     },
     /// A CLI-adjudicated typed field. Boxed because [`Field`] is much larger
     /// than the slot variant (the `large_enum_variant` lint).
@@ -399,7 +413,29 @@ pub enum SchemaError {
         /// The undeclared type spelling the field named.
         ty: String,
     },
+
+    /// A repeatable nests deeper than the heading-depth cap. Items render at
+    /// heading level `2 + nesting-depth`; the cap is **H6 → 4 nesting levels**
+    /// ([`MAX_NESTING_DEPTH`]). A 5th level would render at `H7`, which Markdown
+    /// has no heading for — so it is rejected loudly at load (a **documented
+    /// cap, not silent truncation**), naming the offending depth.
+    #[error(
+        "repeatable nests to depth {depth}, deeper than the H6 cap (max {} levels)",
+        MAX_NESTING_DEPTH
+    )]
+    NestingTooDeep {
+        /// The (1-based) nesting depth that breached the cap.
+        depth: usize,
+    },
 }
+
+/// The maximum repeatable nesting depth: a section is `##`, so a repeatable at
+/// nesting-depth `d` renders its items at heading level `2 + d`. The deepest
+/// Markdown heading is `H6`, so `d` caps at **4** (top-level items `###` = depth
+/// 1, the changelog's nested change-groups `####` = depth 2, …, `######` = depth
+/// 4). A documented cap, enforced at load (`design/changelog.md` → engine work
+/// #1; `design/structural-grammar.md` → Repetition).
+pub const MAX_NESTING_DEPTH: usize = 4;
 
 /// Parse a doc-type [`Schema`] from raw config-family YAML bytes, with **no**
 /// pack-declared types in scope — engine-native field types only.
@@ -442,16 +478,40 @@ pub fn load_schema_with_types(
                     resolve_field_type(field, pack_types)?;
                 }
             }
+            // A repeatable section's items render at `###` (nesting-depth 1);
+            // its block walks recursively, resolving nested field types and
+            // enforcing the H6 depth cap.
             SectionBody::Repeatable { repeatable } => {
-                for leaf in &mut repeatable.block {
-                    if let Leaf::Field(field) = leaf {
-                        resolve_field_type(field, pack_types)?;
-                    }
-                }
+                resolve_block(&mut repeatable.block, 1, pack_types)?;
             }
         }
     }
     Ok(schema)
+}
+
+/// Recursively resolve every field type in a repeatable block and enforce the
+/// [`MAX_NESTING_DEPTH`] cap. `depth` is the (1-based) nesting depth of the
+/// items this block templates — top-level repeatable items are depth 1, a
+/// nested repeatable's items depth 2, and so on. A block whose own depth
+/// exceeds the cap is a typed [`SchemaError::NestingTooDeep`].
+fn resolve_block(
+    block: &mut [Leaf],
+    depth: usize,
+    pack_types: &[PackTypeDecl],
+) -> Result<(), SchemaError> {
+    if depth > MAX_NESTING_DEPTH {
+        return Err(SchemaError::NestingTooDeep { depth });
+    }
+    for leaf in block {
+        match leaf {
+            Leaf::Field(field) => resolve_field_type(field, pack_types)?,
+            Leaf::Repeatable { repeatable, .. } => {
+                resolve_block(&mut repeatable.block, depth + 1, pack_types)?;
+            }
+            Leaf::Slot { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 /// Resolve one field's (possibly unresolved) [`FieldType::Pack`] against the
@@ -973,6 +1033,205 @@ sections: []
         let schema = load_schema(without_prose).expect("schema without prose loads");
         assert_eq!(schema.description, None);
         assert_eq!(schema.usage, None);
+    }
+
+    /// (M22 inc-1 T1, done-criterion (i)) A schema with a repeatable nested
+    /// inside a repeatable **loads**: the outer repeatable's block carries a
+    /// `Leaf::Repeatable`, reachable with its own inner `id-from` + block leaves,
+    /// and a nested `code-anchor` field resolves its `doc-code` adjudicator when
+    /// the pack-declared set is threaded in. This is the `changelog`'s
+    /// `release → change-group` shape (the `Leaf::Repeatable` target).
+    #[test]
+    fn nested_repeatable_loads_with_inner_id_from_and_resolved_field_types() {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+              - { id: maps-to-test, type: code-anchor }
+";
+        let schema =
+            load_schema_with_types(yaml, &code_anchor_decl()).expect("nested repeatable loads");
+
+        let SectionBody::Repeatable { repeatable } = &schema.sections[0].body else {
+            panic!("releases is repeatable");
+        };
+        assert_eq!(repeatable.id_from, "version");
+        assert_eq!(repeatable.block.len(), 2);
+        assert!(matches!(&repeatable.block[0], Leaf::Field(f) if f.id == "version"));
+
+        // The second leaf is itself a repeatable, reachable with its inner
+        // id-source and block leaves.
+        let Leaf::Repeatable {
+            id,
+            repeatable: changes,
+        } = &repeatable.block[1]
+        else {
+            panic!("changes is a nested repeatable leaf");
+        };
+        assert_eq!(id, "changes");
+        assert_eq!(changes.id_from, "category");
+        assert_eq!(changes.block.len(), 3);
+        assert!(matches!(&changes.block[1], Leaf::Slot { id, .. } if id == "notes"));
+
+        // The nested `code-anchor` field resolves its adjudicator + check —
+        // the recursive loader walks nested blocks, not just top-level ones.
+        let Leaf::Field(anchor) = &changes.block[2] else {
+            panic!("maps-to-test is a nested field leaf");
+        };
+        assert_eq!(
+            anchor.ty,
+            FieldType::Pack(PackFieldType {
+                name: "code-anchor".to_owned(),
+                adjudicator: Some("doc-code".to_owned()),
+                check: Some("symbol-exists".to_owned()),
+            }),
+            "the nested code-anchor resolves through the recursive loader",
+        );
+    }
+
+    /// (M22 inc-1 T1, done-criterion (ii)) A nested-repeatable schema serde
+    /// round-trips (load → serialize → reload equal). The `Leaf::Repeatable`
+    /// arm of the untagged `Leaf` enum survives a full cycle, nested field
+    /// resolution included.
+    #[test]
+    fn nested_repeatable_serde_roundtrips() {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        let schema = load_schema(yaml).expect("nested repeatable loads");
+        let json = serde_json::to_string(&schema).expect("serializes");
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(
+            reloaded, schema,
+            "nested repeatable survives a serde roundtrip"
+        );
+    }
+
+    /// (M22 inc-1 T1, done-criterion (ii)) The additive guard: a schema with
+    /// **no** nesting is byte-unchanged by this lift. A single-level repeatable
+    /// (the shipped `spec`/`arch-doc` shape) still loads and re-serializes
+    /// exactly as before — no nested arm leaks into a flat schema's output.
+    #[test]
+    fn single_level_repeatable_is_byte_unchanged() {
+        // A flat single-level repeatable (the shipped `spec`/`arch-doc` shape),
+        // using only native field types so the JSON round-trip is lossless (a
+        // resolved `Pack` adjudicator is not serialized — that is by design).
+        let yaml = b"\
+type: spec
+sections:
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"The criterion.\" } }
+";
+        let schema = load_schema(yaml).expect("flat repeatable loads");
+        let json = serde_json::to_string(&schema).expect("serializes");
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(reloaded, schema, "a flat schema round-trips unchanged");
+        assert!(
+            !json.contains("\"id-from\":\"category\""),
+            "no nested change-group arm appears in a flat schema's output",
+        );
+    }
+
+    /// (M22 inc-1 T1, done-criterion (iii)) Nesting deeper than the **H6 / 4
+    /// levels** cap fails to load with a typed `SchemaError::NestingTooDeep`
+    /// naming the offending **depth** (a documented cap, not silent
+    /// truncation). A top-level repeatable's items are `###` (depth 1), so a
+    /// 5th nested level would render at `H7` — rejected loudly.
+    #[test]
+    fn nesting_deeper_than_h6_is_a_typed_depth_error() {
+        // Five repeatable levels: depths 1..=5; the 5th (H7) breaches the cap.
+        let yaml = b"\
+type: deep
+sections:
+  - id: l1
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+        - id: l2
+          repeatable:
+            id-from: b
+            block:
+              - { id: b, type: string }
+              - id: l3
+                repeatable:
+                  id-from: c
+                  block:
+                    - { id: c, type: string }
+                    - id: l4
+                      repeatable:
+                        id-from: d
+                        block:
+                          - { id: d, type: string }
+                          - id: l5
+                            repeatable:
+                              id-from: e
+                              block:
+                                - { id: e, type: string }
+";
+        let err = load_schema(yaml).expect_err("over-deep nesting errors");
+        assert!(
+            matches!(&err, SchemaError::NestingTooDeep { depth } if *depth == 5),
+            "expected NestingTooDeep naming depth 5, got {err:?}",
+        );
+    }
+
+    /// (M22 inc-1 T1) The boundary holds: nesting **at** the cap (4 levels, the
+    /// deepest items rendering at `H6`) loads cleanly — the cap is on the 5th
+    /// level, not the 4th (a documented cap, exercised at its edge).
+    #[test]
+    fn nesting_at_the_h6_cap_loads() {
+        let yaml = b"\
+type: deep
+sections:
+  - id: l1
+    repeatable:
+      id-from: a
+      block:
+        - { id: a, type: string }
+        - id: l2
+          repeatable:
+            id-from: b
+            block:
+              - { id: b, type: string }
+              - id: l3
+                repeatable:
+                  id-from: c
+                  block:
+                    - { id: c, type: string }
+                    - id: l4
+                      repeatable:
+                        id-from: d
+                        block:
+                          - { id: d, type: string }
+";
+        load_schema(yaml).expect("4-level nesting (deepest items at H6) loads");
     }
 
     /// An unknown top-level key is rejected (the `deny_unknown_fields` guard),

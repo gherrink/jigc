@@ -972,6 +972,13 @@ impl ItemTemplate {
                         field_keys.push(f.id.clone());
                     }
                 }
+                // Nested-repeatable recursion is the depth-aware parse lift
+                // (M22 inc-1 T2); no shipped schema declares a nested
+                // `Leaf::Repeatable` yet, so this template builder cannot reach
+                // one. T2 replaces this with recursive item-region scanning.
+                crate::schema::Leaf::Repeatable { .. } => {
+                    unreachable!("nested repeatable parse is M22 inc-1 T2");
+                }
             }
         }
         let has_fields = !field_keys.is_empty();

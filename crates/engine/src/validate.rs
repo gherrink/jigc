@@ -756,6 +756,12 @@ fn check_repeatable(
                     }
                     check_item_field(section, item, field, findings);
                 }
+                // Recursive conformance over a nested repeatable's leaves is the
+                // M22 inc-1 T4 lift; no shipped schema declares a nested
+                // `Leaf::Repeatable` yet, so this checker cannot reach one.
+                crate::schema::Leaf::Repeatable { .. } => {
+                    unreachable!("nested repeatable conformance is M22 inc-1 T4");
+                }
             }
         }
     }
