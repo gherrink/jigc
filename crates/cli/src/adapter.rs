@@ -433,16 +433,19 @@ pub fn inject_reference(repo_root: &Path) -> std::io::Result<()> {
                 // The exact reference is already present: a byte-for-byte no-op.
                 return Ok(());
             }
-            // Append the section, separated from existing content by a blank
-            // line. An empty file degenerates to just the section.
+            // Append the section after a **fixed** `"\n"` separator — never
+            // normalizing the existing trailing newline — so [`unwire_reference`]
+            // can strip exactly `"\n" + section` and restore the pre-setup bytes
+            // byte-for-byte regardless of whether the original ended in `\n`. A
+            // newline-terminated original (`X\n`) gets a blank line before the
+            // section (`X\n\nsection`); a non-terminated one (`X`) gets the section
+            // on the next line (`X\nsection`). An empty file degenerates to just
+            // the section.
             if existing.is_empty() {
                 section
             } else {
-                let mut out = String::with_capacity(existing.len() + section.len() + 2);
+                let mut out = String::with_capacity(existing.len() + section.len() + 1);
                 out.push_str(&existing);
-                if !out.ends_with('\n') {
-                    out.push('\n');
-                }
                 out.push('\n');
                 out.push_str(&section);
                 out
@@ -543,12 +546,10 @@ pub fn unwire_reference(repo_root: &Path) -> std::io::Result<()> {
         // setup created the file (it is exactly the section): remove it entirely.
         String::new()
     } else if let Some(stripped) = existing.strip_suffix(&format!("\n{section}")) {
-        // The append form: `inject_reference` writes `existing + "\n" + section`, so
-        // stripping `"\n" + section` restores `existing`'s pre-setup bytes exactly.
-        String::from(stripped)
-    } else if let Some(stripped) = existing.strip_suffix(&section) {
-        // Defensive: the section is the file's exact suffix with no separator (an
-        // existing file that had no trailing newline before the append). Strip it.
+        // The append form: `inject_reference` writes `existing + "\n" + section`
+        // with a **fixed** `"\n"` separator (never normalizing the existing
+        // trailing newline), so stripping `"\n" + section` restores `existing`'s
+        // pre-setup bytes exactly — whether or not the original ended in `\n`.
         String::from(stripped)
     } else {
         // No jigc-injected section to remove: a clean no-op (idempotent — a second
@@ -1172,6 +1173,33 @@ mod tests {
             std::fs::read_to_string(&claude_md).expect("still present"),
             preexisting,
             "a second unwire leaves the restored file byte-identical",
+        );
+    }
+
+    /// A pre-existing `CLAUDE.md` whose content has **no trailing newline** must
+    /// also round-trip byte-for-byte: inject appends a fixed `"\n" + section`
+    /// separator, and unwire strips it, restoring the human's exact bytes.
+    #[test]
+    fn unwire_reference_round_trips_without_a_trailing_newline() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+        let preexisting = "# My Project\n\nHuman rules, no trailing newline.";
+        std::fs::write(&claude_md, preexisting).expect("seed CLAUDE.md");
+
+        inject_reference(dir.path()).expect("inject");
+        assert!(
+            std::fs::read_to_string(&claude_md)
+                .unwrap()
+                .contains(BOOTSTRAP_IMPORT_LINE),
+            "inject must add the import line",
+        );
+
+        unwire_reference(dir.path()).expect("unwire");
+        let after = std::fs::read_to_string(&claude_md).expect("read after unwire");
+        assert_eq!(
+            after, preexisting,
+            "inject→unwire must restore the pre-existing bytes exactly, even with \
+             no trailing newline; got:\n{after}",
         );
     }
 
