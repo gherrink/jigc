@@ -173,6 +173,13 @@ pub struct Slot {
     /// One-line guidance surfaced to the LLM when it fills this slot.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+
+    /// `true` for an **optional** slot: its absence does not block finalize
+    /// (`required-slot-present` is skipped), while a required slot still blocks.
+    /// Skip-on-false (mirrors `singleton`): a schema omitting it leaves every
+    /// existing golden byte-unchanged. See `design/changelog.md` → engine work #3.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub optional: bool,
 }
 
 /// A CLI-adjudicated typed field, with the relation metadata a `ref` carries.
@@ -240,6 +247,13 @@ pub struct Field {
     /// per-field-type predicate selector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub check: Option<String>,
+
+    /// `true` for an **optional** field: its absence does not block finalize
+    /// (`required-field-present` is skipped), while a required field still blocks.
+    /// Skip-on-false (mirrors `singleton`): a schema omitting it leaves every
+    /// existing golden byte-unchanged. See `design/changelog.md` → engine work #3.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub optional: bool,
 }
 
 /// The field type vocabulary — **engine-native variants + a pack-declared
@@ -936,6 +950,104 @@ sections: []
         assert!(
             !plain_json.contains("singleton"),
             "a false singleton flag serializes nothing (skip-on-false); got {plain_json}",
+        );
+    }
+
+    /// (M22 inc-3 T1, done-criterion (iv)) The `optional: true` flag serde-round-trips
+    /// on **both** a `Slot` and a `Field`: a fixture schema declaring each parses
+    /// `optional == true`, re-serializes the flag, and survives a reload. A schema
+    /// **omitting** it defaults to `false` and, mirroring the `singleton` skip-on-false
+    /// discipline, serializes **nothing** — the additive guard that leaves every
+    /// existing golden byte-unchanged. See `design/changelog.md` → engine work #3.
+    #[test]
+    fn optional_flag_serde_roundtrips_and_is_skipped_when_false() {
+        let with_optional = b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+      - { id: link, type: string, optional: true }
+  - id: body
+    slot: { hint: \"The body.\", optional: true }
+";
+        let schema = load_schema(with_optional).expect("optional schema loads");
+
+        // The field carries optional == true.
+        let SectionBody::Simple { slot, fields } = &schema.sections[0].body else {
+            panic!("meta is a simple header section");
+        };
+        let link = fields.iter().find(|f| f.id == "link").unwrap();
+        assert!(link.optional, "the optional flag parses as true on a field");
+        assert!(slot.is_none());
+
+        // The slot carries optional == true.
+        let SectionBody::Simple { slot, .. } = &schema.sections[1].body else {
+            panic!("body is a simple slot section");
+        };
+        assert!(
+            slot.as_ref().expect("body has a slot").optional,
+            "the optional flag parses as true on a slot",
+        );
+
+        // Re-serializes the flag on both, and a reload preserves them (roundtrip).
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            json.matches("\"optional\":true").count() == 2,
+            "the optional flag re-serializes on both slot and field; got {json}",
+        );
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(reloaded, schema, "optional survives a serde roundtrip");
+
+        // A schema omitting it defaults to false on both and serializes nothing —
+        // the skip-on-false additive guard (no existing golden gains a key).
+        let without = b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: body
+    slot: { hint: \"The body.\" }
+";
+        let plain = load_schema(without).expect("non-optional schema loads");
+        let SectionBody::Simple { fields, .. } = &plain.sections[0].body else {
+            panic!("meta is a simple header section");
+        };
+        assert!(
+            !fields[0].optional,
+            "an omitted field flag defaults to false"
+        );
+        let SectionBody::Simple { slot, .. } = &plain.sections[1].body else {
+            panic!("body is a simple slot section");
+        };
+        assert!(
+            !slot.as_ref().expect("body has a slot").optional,
+            "an omitted slot flag defaults to false",
+        );
+        let plain_json = serde_json::to_string(&plain).expect("serializes");
+        assert!(
+            !plain_json.contains("optional"),
+            "a false optional flag serializes nothing (skip-on-false); got {plain_json}",
+        );
+    }
+
+    /// (M22 inc-3 T1, done-criterion (iv)) The shipped `adr` schema loads
+    /// byte-identically after this additive flag lands: its serialized projection is
+    /// unchanged (no `optional` key leaks in), since `adr` declares no optional
+    /// slot/field. The skip-on-false guard, proven over the bytes that ship.
+    #[test]
+    fn shipped_adr_serializes_without_an_optional_key() {
+        let schema =
+            load_schema_with_types(ADR_YAML, &dev_pack_field_types()).expect("adr.yaml loads");
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            !json.contains("\"optional\""),
+            "the shipped adr gains no `optional` key (skip-on-false); got {json}",
         );
     }
 

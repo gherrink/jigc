@@ -712,8 +712,10 @@ pub fn schema_conformance(schema: &Schema, source: &str, doc: &Document) -> Vec<
                 slot: declared_slot,
                 fields: declared_fields,
             } => {
-                // required-slot-present: a declared body slot must hold non-empty prose.
-                if declared_slot.is_some() {
+                // required-slot-present: a declared, non-optional body slot must hold
+                // non-empty prose. An `optional:` slot is exempt — its absence never
+                // blocks finalize (`design/changelog.md` → engine work #3).
+                if declared_slot.as_ref().is_some_and(|s| !s.optional) {
                     check_slot_present(section, parsed, source, &mut findings);
                 }
                 // required-field-present + field-value-conformant over the declared fields.
@@ -770,9 +772,13 @@ fn check_item_leaves(
 ) {
     for leaf in &repeatable.block {
         match leaf {
-            crate::schema::Leaf::Slot { id, .. } => {
+            // A non-optional slot leaf must hold non-empty prose; an `optional:`
+            // slot leaf is exempt (its absence never blocks), mirroring the simple
+            // arm (`design/changelog.md` → engine work #3).
+            crate::schema::Leaf::Slot { id, slot } if !slot.optional => {
                 check_item_slot_present(item_path, item, id, source, findings);
             }
+            crate::schema::Leaf::Slot { .. } => {}
             crate::schema::Leaf::Field(field) => {
                 // The id-source field is the item heading, never a bullet — exempt
                 // at this level just as at the top level.
@@ -944,6 +950,12 @@ fn check_field_value(
 /// → `ref` cardinality + Pack-declared field types; `DECISIONS.md 2026-06-06` → M10 inc-1:
 /// both shipped anchors are optional.)
 fn is_author_required(field: &SchemaField) -> bool {
+    // An `optional:` field is never author-required — its absence does not block
+    // finalize, while a required field still does (`design/changelog.md` → engine
+    // work #3). Covers both the simple-section and repeatable-item field arms.
+    if field.optional {
+        return false;
+    }
     if field.ty == FieldType::Ref && ref_min_cardinality_zero(field) {
         return false;
     }
@@ -1602,6 +1614,261 @@ sections:
             finding.location.as_ref().and_then(|l| l.address.as_deref()),
             Some("releases/1-2-0/added/severity"),
             "the finding must address the NESTED leaf",
+        );
+    }
+}
+
+#[cfg(test)]
+mod optional_slot_field_tests {
+    //! (M22 inc-3 T1) The `optional:` flag exempts a slot/field from the
+    //! requiredness check at **all four** enforcement arms (simple slot, simple
+    //! field, repeatable slot, repeatable field). An absent optional slot/field
+    //! finalizes **clean**; an absent **required** slot/field still **blocks** (the
+    //! masking-test guard: the flag is the only thing suppressing the finding); and
+    //! an absent optional field renders with **no stray `<!-- fields -->` line**
+    //! (the byte-stable absent form, proven through the writer). See
+    //! `design/changelog.md` → engine work #3.
+
+    use super::*;
+    use crate::parse::parse_sections;
+
+    /// A simple-section fixture with both optional levers: an optional `link` field
+    /// (no default/set) and an optional `note` slot section — plus a **required**
+    /// `kind` field and a **required** `body` slot as the masking-test controls.
+    fn simple_schema(optional: bool) -> Schema {
+        let opt = if optional { ", optional: true" } else { "" };
+        let yaml = format!(
+            "\
+type: note
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - {{ id: title, type: string }}
+      - {{ id: kind, type: enum, of: [memo, brief] }}
+      - {{ id: link, type: string{opt} }}
+  - id: body
+    slot: {{ hint: \"The body.\" }}
+  - id: note
+    slot: {{ hint: \"An optional note.\"{opt} }}
+"
+        );
+        crate::schema::load_schema(yaml.as_bytes()).expect("simple schema loads")
+    }
+
+    /// A source that **omits** the optional `link` field (no bullet) and leaves the
+    /// optional `note` slot **empty** (heading present, no prose), while the required
+    /// `kind` field and `body` slot are filled. `required-slot-present` /
+    /// `required-field-present` adjudicate *content presence within a present
+    /// structure* — the section/leaf headings must be present (parse-layer
+    /// requirement), the optional `optional:` flag governs whether their absent
+    /// *content* blocks.
+    const SIMPLE_OMITS_OPTIONAL: &str = "\
+---
+title: A note
+kind: memo
+---
+
+# A note
+
+## Body
+
+The body prose.
+
+## Note
+";
+
+    /// (i, simple arm) An absent optional field AND optional slot yield ZERO
+    /// findings when the flag is set.
+    #[test]
+    fn absent_optional_simple_slot_and_field_are_clean() {
+        let schema = simple_schema(true);
+        let doc = parse_sections(&schema, SIMPLE_OMITS_OPTIONAL)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, SIMPLE_OMITS_OPTIONAL, &doc);
+        assert!(
+            findings.is_empty(),
+            "absent optional simple slot + field must yield no findings, got {findings:?}",
+        );
+    }
+
+    /// (ii, simple arm — masking-test guard) The SAME fixture with the flag removed
+    /// STILL blocks: the absent `link` field fires `required-field-present` and the
+    /// absent `note` slot section fires `required-slot-present`. The flag is the only
+    /// thing suppressing those findings.
+    #[test]
+    fn without_the_flag_the_same_simple_slot_and_field_block() {
+        let schema = simple_schema(false);
+        let doc = parse_sections(&schema, SIMPLE_OMITS_OPTIONAL)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, SIMPLE_OMITS_OPTIONAL, &doc);
+        let codes: Vec<&str> = findings.iter().map(|f| f.code.as_str()).collect();
+        assert!(
+            codes.contains(&"schema-conformance.required-field-present"),
+            "the absent required field must block, got {findings:?}",
+        );
+        assert!(
+            codes.contains(&"schema-conformance.required-slot-present"),
+            "the absent required slot must block, got {findings:?}",
+        );
+        assert!(
+            findings.iter().all(|f| f.severity == Severity::Blocking),
+            "the suppressed-by-flag findings must be blocking, got {findings:?}",
+        );
+    }
+
+    /// A repeatable fixture whose item block carries both optional levers — an
+    /// optional `link` field and an optional `note` slot leaf — plus a **required**
+    /// `kind` field and a **required** `detail` slot as the masking-test controls.
+    /// The `title` id-from field is the heading (exempted).
+    fn repeatable_schema(optional: bool) -> Schema {
+        let opt = if optional { ", optional: true" } else { "" };
+        let yaml = format!(
+            "\
+type: note
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - {{ id: title, type: string }}
+        - {{ id: kind, type: enum, of: [memo, brief] }}
+        - {{ id: link, type: string{opt} }}
+        - {{ id: detail, slot: {{ hint: \"The detail.\" }} }}
+        - {{ id: note, slot: {{ hint: \"An optional note.\"{opt} }} }}
+"
+        );
+        crate::schema::load_schema(yaml.as_bytes()).expect("repeatable schema loads")
+    }
+
+    /// A repeatable item that OMITS the optional `link` field (no bullet) and leaves
+    /// the optional `note` slot leaf **empty** (its `#### Note` sub-heading present,
+    /// no prose) — the M4 omitting-context arm — while the required `kind` field and
+    /// `detail` slot are filled. The multi-slot item renders both `#### Detail` /
+    /// `#### Note` sub-labels (a parse-layer requirement); the `optional:` flag
+    /// governs whether the empty `note` prose blocks.
+    const REPEATABLE_OMITS_OPTIONAL: &str = "\
+---
+---
+
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+
+#### Detail
+
+The detail prose.
+
+#### Note
+
+<!-- fields -->
+- kind: memo
+";
+
+    /// (i, repeatable arm — the M4 omitting-context arm) A repeatable item that omits
+    /// the optional slot leaf AND optional field yields ZERO findings when the flag
+    /// is set.
+    #[test]
+    fn absent_optional_repeatable_slot_and_field_are_clean() {
+        let schema = repeatable_schema(true);
+        let doc = parse_sections(&schema, REPEATABLE_OMITS_OPTIONAL)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, REPEATABLE_OMITS_OPTIONAL, &doc);
+        assert!(
+            findings.is_empty(),
+            "absent optional repeatable slot + field must yield no findings, got {findings:?}",
+        );
+    }
+
+    /// (ii, repeatable arm — masking-test guard) The SAME item with the flag removed
+    /// STILL blocks: the absent `link` field fires `required-field-present` and the
+    /// absent `note` slot leaf fires `required-slot-present`, each addressed at the
+    /// item leaf. The flag is the only thing suppressing them.
+    #[test]
+    fn without_the_flag_the_same_repeatable_slot_and_field_block() {
+        let schema = repeatable_schema(false);
+        let doc = parse_sections(&schema, REPEATABLE_OMITS_OPTIONAL)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, REPEATABLE_OMITS_OPTIONAL, &doc);
+        let codes: Vec<&str> = findings.iter().map(|f| f.code.as_str()).collect();
+        assert!(
+            codes.contains(&"schema-conformance.required-field-present"),
+            "the absent required item field must block, got {findings:?}",
+        );
+        assert!(
+            codes.contains(&"schema-conformance.required-slot-present"),
+            "the absent required item slot must block, got {findings:?}",
+        );
+        assert!(
+            findings.iter().all(|f| f.severity == Severity::Blocking),
+            "the suppressed-by-flag findings must be blocking, got {findings:?}",
+        );
+    }
+
+    /// (iii) The byte-stable absent form, proven through the **writer** (C2): a
+    /// repeatable item whose ONLY field is the optional `link` renders with NO
+    /// `<!-- fields -->` bullet (and no sentinel) when the field is absent, while
+    /// the present form renders the bullet. Both directions asserted byte-for-byte
+    /// via `render(parse(src)) == src` — the emitted artifact is the contract.
+    #[test]
+    fn optional_field_renders_byte_stable_in_both_absent_and_present_forms() {
+        // A schema whose item block carries ONLY the id-from heading + the optional
+        // `link` field, so an absent `link` means an item with NO trailing field
+        // group at all (the sole-field sentinel-suppression case).
+        let yaml = b"\
+type: note
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: link, type: string, optional: true }
+";
+        let schema = crate::schema::load_schema(yaml).expect("schema loads");
+
+        // Absent form: the item carries no `<!-- fields -->` block.
+        let absent = "\
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+";
+        let absent_instance =
+            crate::write::instance_from_source(&schema, absent).expect("absent form parses");
+        let rendered_absent = crate::write::render(&schema, &absent_instance);
+        assert_eq!(
+            rendered_absent, absent,
+            "the absent optional field renders with no stray fields-block line",
+        );
+        assert!(
+            !rendered_absent.contains("<!-- fields -->"),
+            "no sentinel when the sole field is absent, got: {rendered_absent}",
+        );
+
+        // Present form: the item renders the optional field as a single bullet.
+        let present = "\
+# A note
+
+## Entries
+
+### First entry  {#first-entry}
+
+<!-- fields -->
+- link: https://example.com/compare/1.0.0...1.1.0
+";
+        let present_instance =
+            crate::write::instance_from_source(&schema, present).expect("present form parses");
+        let rendered_present = crate::write::render(&schema, &present_instance);
+        assert_eq!(
+            rendered_present, present,
+            "the present optional field renders its bullet byte-for-byte",
         );
     }
 }

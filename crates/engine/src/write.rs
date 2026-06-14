@@ -4434,6 +4434,7 @@ Each service drops its local limiter.
             inverse: None,
             inverse_card: None,
             check: None,
+            optional: false,
         };
 
         // enum
