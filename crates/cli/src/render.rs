@@ -11,7 +11,7 @@
 
 use crate::cli::Format;
 use crate::ingest::IngestReport;
-use crate::setup::SetupSummary;
+use crate::setup::{SetupSummary, UninstallSummary};
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
 use engine::introspect::{DefinitionKind, Description};
@@ -340,6 +340,34 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
         Format::Json => json(finding),
         Format::Agent | Format::Human => {
             let mut out = finding_line(finding);
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// Render a successful `jigc uninstall` teardown to the surface `format` selects
+/// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5)): `agent` /
+/// `human` emit a one-line-per-target summary of what was torn down, followed by the
+/// routing footer; `json` emits a generic object naming the two host targets, with no
+/// footer (tooling-consumed). The summary states the repo-local footprint was removed
+/// (the machine-global `doc-code` probe is left in place — B2).
+pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({
+            "uninstalled": true,
+            "line_file": summary.line_file,
+            "allowlist_file": summary.allowlist_file,
+        })),
+        Format::Agent | Format::Human => {
+            let mut out = String::from("jigc uninstall — repo-local install removed\n\n");
+            out.push_str("  - removed .jigc/\n");
+            out.push_str("  - unwired bootstrap reference ← ");
+            out.push_str(&summary.line_file);
+            out.push('\n');
+            out.push_str("  - removed jigc allowlist ← ");
+            out.push_str(&summary.allowlist_file);
+            out.push('\n');
             out.push_str(ROUTING_FOOTER);
             out
         }

@@ -152,6 +152,16 @@ pub enum Command {
     /// Idempotent; the install the unset-project orientation routes the agent to.
     Setup,
 
+    /// The repo-local teardown — `jigc uninstall` reverses *this project's* jigc
+    /// install: removes `.jigc/`, unwires the `CLAUDE.md` `@.jigc/AGENT.md` import
+    /// section, and drops the `jigc *` permit from `.claude/settings.json`. It does
+    /// **NOT** remove the machine-global `doc-code` probe sibling (shared across every
+    /// jigc repo — deleting it would break sibling repos' `jigc validate`; design-review
+    /// B2). Idempotent + non-destructive: a second run is a clean no-op, and the human's
+    /// own file content is preserved byte-for-byte (`design/project-setup.md` → Flow 2
+    /// hardening → Teardown / cleanup (G5), bullet (b)).
+    Uninstall,
+
     /// The upgrade-reconciliation surface. Runs the `override-default` classifier
     /// over every recorded delta against the **current** pack, renders the findings
     /// and routes through the global `--format`, and **blocks** (exits non-zero) on
@@ -270,6 +280,7 @@ impl Cli {
             Command::Config { verb } => run_config(self.format, verb),
             Command::Milestone { verb } => run_milestone(self.format, verb),
             Command::Setup => run_setup(self.format),
+            Command::Uninstall => run_uninstall(self.format),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
             Command::Unmanage { path } => run_unmanage(self.format, &path),
@@ -325,6 +336,34 @@ fn run_setup(format: Format) -> ExitCode {
     match setup::run(&cwd) {
         Ok(summary) => {
             println!("{}", render::setup_success(format, &summary));
+            ExitCode::SUCCESS
+        }
+        Err(finding) => {
+            eprintln!("{}", render::setup_block(format, &finding));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Run `jigc uninstall` (the repo-local teardown) against the current working
+/// directory: locate the repo root, reverse the enumerated repo-local install
+/// (remove `.jigc/`, unwire the `CLAUDE.md` reference, drop the `jigc *` allowlist
+/// permit — never the machine-global `doc-code` probe), render the outcome through the
+/// selected `format`, and map it to the exit code. Success prints a summary on stdout
+/// and exits 0; a write failure prints a blocking `uninstall.*` finding (with its
+/// route) on stderr and exits non-zero (`design/project-setup.md` → Flow 2 hardening →
+/// Teardown / cleanup (G5), bullet (b)).
+fn run_uninstall(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match setup::run_uninstall(&cwd) {
+        Ok(summary) => {
+            println!("{}", render::uninstall_success(format, &summary));
             ExitCode::SUCCESS
         }
         Err(finding) => {
@@ -913,6 +952,19 @@ mod cli_parse {
     fn setup_parses() {
         let cli = Cli::try_parse_from(["jigc", "setup"]).expect("`jigc setup` parses");
         assert_eq!(cli.command, Command::Setup);
+    }
+
+    #[test]
+    fn uninstall_parses() {
+        let cli = Cli::try_parse_from(["jigc", "uninstall"]).expect("`jigc uninstall` parses");
+        assert_eq!(cli.command, Command::Uninstall);
+    }
+
+    #[test]
+    fn uninstall_takes_no_positional() {
+        let err = Cli::try_parse_from(["jigc", "uninstall", "extra"])
+            .expect_err("`jigc uninstall` takes no positional argument");
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 
     #[test]

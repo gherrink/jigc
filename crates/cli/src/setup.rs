@@ -507,6 +507,111 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     })
 }
 
+/// The result of a `jigc uninstall` teardown: the located repo root, so the
+/// dispatcher can render a precise summary of what was torn down.
+#[derive(Debug)]
+pub struct UninstallSummary {
+    /// The repo-root-relative always-loaded file the bootstrap reference was
+    /// unwired from.
+    pub line_file: String,
+    /// The repo-root-relative settings file the allowlist permit was removed from.
+    pub allowlist_file: String,
+}
+
+/// Run `jigc uninstall` from `start`: locate the repo root and reverse **exactly the
+/// enumerated repo-local** `setup`-created set — remove `.jigc/` (which subsumes the
+/// bootstrap `AGENT.md`, the cascade config layer, the `compose-embedded-methodology`
+/// marker, and the index/state working area), unwire the `CLAUDE.md`
+/// `## Project interface` section + its `@.jigc/AGENT.md` import line, and remove the
+/// `jigc *` permit from `.claude/settings.json`'s `permissions.allow`
+/// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet
+/// (b)).
+///
+/// **Explicitly NOT** the machine-global `doc-code` probe sibling beside the `jigc`
+/// binary — it is shared across every jigc repo on the machine, so deleting it would
+/// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
+/// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
+///
+/// **Idempotent + non-destructive:** an already-absent `.jigc/`, a `CLAUDE.md` that no
+/// longer carries the section, and an `allow` array that no longer carries the permit
+/// are each a clean no-op, so a second `uninstall` exits 0 leaving the (restored) host
+/// files byte-untouched. `Ok(summary)` on a clean teardown; `Err(finding)` is a single
+/// blocking `uninstall.*` finding carrying a route — the dispatcher renders it and
+/// exits non-zero.
+pub fn run_uninstall(start: &Path) -> Result<UninstallSummary, Finding> {
+    let ctx = locate::locate(start).map_err(|err| {
+        Finding::block(
+            "uninstall.repo-root",
+            format!("cannot locate the repository root: {err:#}"),
+            "run `jigc uninstall` from inside the target git repository",
+        )
+    })?;
+
+    let profile = adapter::load_profile(SETUP_ASSISTANT).map_err(|err| {
+        Finding::block(
+            "uninstall.profile-load",
+            format!("cannot load the `{SETUP_ASSISTANT}` adapter profile: {err}"),
+            "reinstall jigc — the embedded adapter profile is missing or malformed",
+        )
+    })?;
+
+    uninstall(&ctx.repo_root, &profile)
+}
+
+/// Reverse the repo-local install against `repo_root` with `profile`, mapping an IO
+/// failure to a blocking `uninstall.*` finding with a route. The testable core of
+/// [`run_uninstall`] (no location step). Each step is independently idempotent, so the
+/// whole teardown is a clean no-op on a re-run.
+fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSummary, Finding> {
+    // 1. Remove the whole `.jigc/` tree — the bootstrap `AGENT.md`, the cascade config
+    //    layer, the compose marker, and the transient index/state working area, all at
+    //    once. An already-absent tree is a clean no-op.
+    let jigc_dir = repo_root.join(".jigc");
+    if jigc_dir.exists() {
+        std::fs::remove_dir_all(&jigc_dir).map_err(|err| {
+            Finding::block(
+                "uninstall.remove-jigc",
+                format!("cannot remove the repo-local `.jigc/` tree: {err}"),
+                "ensure `.jigc/` is writable, then re-run `jigc uninstall`",
+            )
+        })?;
+    }
+
+    // 2. Unwire the `CLAUDE.md` bootstrap reference — strip jigc's appended
+    //    `## Project interface` section, restoring the human's content byte-for-byte.
+    let line_file = profile
+        .reference()
+        .map(|r| r.file.clone())
+        .unwrap_or_else(|| "CLAUDE.md".to_string());
+    adapter::unwire_reference(repo_root).map_err(|err| {
+        Finding::block(
+            "uninstall.unwire-reference",
+            format!("cannot unwire the bootstrap reference from `{line_file}`: {err}"),
+            format!("ensure `{line_file}` is writable, then re-run `jigc uninstall`"),
+        )
+    })?;
+
+    // 3. Remove the `jigc *` permit from the allowlist — leaving unrelated permits and
+    //    keys intact and the file valid JSON.
+    let allowlist_file = profile.allowlist.file.clone();
+    adapter::remove_allowlist(repo_root, profile).map_err(|err| {
+        Finding::block(
+            "uninstall.remove-allowlist",
+            format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
+            format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
+        )
+    })?;
+
+    // The machine-global `doc-code` probe sibling is deliberately left in place (B2):
+    // it is shared across every jigc repo on the machine, so this per-project verb must
+    // not delete it.
+
+    Ok(UninstallSummary {
+        line_file,
+        allowlist_file,
+    })
+}
+
 /// The compose-marker key `pack::read_compose_marker` reads from `packs.yaml`.
 const COMPOSE_MARKER_KEY: &str = "compose-embedded-methodology";
 

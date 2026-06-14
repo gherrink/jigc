@@ -510,6 +510,108 @@ pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
     write_settings(&target, &settings)
 }
 
+/// Idempotently **unwire** the bootstrap reference from the host project's
+/// always-loaded file (`<repo_root>/CLAUDE.md`) — the inverse of
+/// [`inject_reference`] for `jigc uninstall` (`design/project-setup.md` → Flow 2
+/// hardening → Teardown / cleanup (G5), bullet (b)).
+///
+/// Removes the jigc-injected `## Project interface` section (the heading, its blank
+/// line, and the bare `@.jigc/AGENT.md` import line) that [`inject_reference`]
+/// appends, restoring the human's pre-existing content **byte-for-byte**. Matches
+/// the exact appended form — a leading separator newline + the section block — so a
+/// `setup`→`uninstall` round-trip returns `CLAUDE.md` to its pre-setup bytes; if the
+/// file is exactly the section (setup created it), it is removed entirely.
+///
+/// **Idempotent + non-destructive:** a file without the section is left untouched
+/// (a clean no-op, so a second `uninstall` is a no-op), an absent file is a no-op,
+/// and only the exact jigc-injected section is stripped — a human who hand-wrote the
+/// `@.jigc/AGENT.md` line under their own heading keeps their surrounding prose
+/// (only the bare import line + any jigc `## Project interface` block we recognize is
+/// removed; see the matching below).
+pub fn unwire_reference(repo_root: &Path) -> std::io::Result<()> {
+    let target = repo_root.join("CLAUDE.md");
+    let existing = match std::fs::read_to_string(&target) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+        Ok(existing) => existing,
+    };
+
+    // The exact section [`inject_reference`] writes, and the form it appends it in.
+    let section = format!("## Project interface\n\n{BOOTSTRAP_IMPORT_LINE}\n");
+
+    let next = if existing == section {
+        // setup created the file (it is exactly the section): remove it entirely.
+        String::new()
+    } else if let Some(stripped) = existing.strip_suffix(&format!("\n{section}")) {
+        // The append form: `inject_reference` writes `existing + "\n" + section`, so
+        // stripping `"\n" + section` restores `existing`'s pre-setup bytes exactly.
+        String::from(stripped)
+    } else if let Some(stripped) = existing.strip_suffix(&section) {
+        // Defensive: the section is the file's exact suffix with no separator (an
+        // existing file that had no trailing newline before the append). Strip it.
+        String::from(stripped)
+    } else {
+        // No jigc-injected section to remove: a clean no-op (idempotent — a second
+        // `uninstall`, or a file that never carried our section, is untouched).
+        return Ok(());
+    };
+
+    if next.is_empty() {
+        // setup created the file; remove it so uninstall leaves no jigc trace.
+        match std::fs::remove_file(&target) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        }
+    } else {
+        std::fs::write(&target, next)
+    }
+}
+
+/// Idempotently **remove** the profile's allowlist permits from the host project's
+/// assistant settings file (`<repo_root>/<profile.allowlist.file>`) — the
+/// structure-aware-JSON inverse of [`inject_allowlist`] for `jigc uninstall`
+/// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet
+/// (b)).
+///
+/// Parses the settings object, drops each profile permit pattern from the
+/// `permissions.allow` array, and writes back pretty JSON — leaving every unrelated
+/// permit, the `permissions` object, and unrelated top-level keys intact, and the
+/// file valid JSON. **Idempotent + non-destructive:** an absent file, an absent
+/// `permissions`/`allow`, or an array that no longer carries the permit is a clean
+/// no-op (nothing is written, so a second `uninstall` is a no-op).
+pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+    let target = repo_root.join(&profile.allowlist.file);
+
+    // Absent settings file: nothing to remove.
+    if !target.exists() {
+        return Ok(());
+    }
+    let mut settings = read_settings(&target)?;
+
+    // Navigate to `permissions.allow` if present; absent → a clean no-op.
+    let Some(allow) = settings
+        .as_object_mut()
+        .and_then(|root| root.get_mut("permissions"))
+        .and_then(|perms| perms.as_object_mut())
+        .and_then(|perms| perms.get_mut("allow"))
+        .and_then(|allow| allow.as_array_mut())
+    else {
+        return Ok(());
+    };
+
+    let before = allow.len();
+    allow.retain(|v| {
+        v.as_str()
+            .is_none_or(|s| !profile.allowlist.permit.iter().any(|p| p == s))
+    });
+    // No permit was present: leave the file byte-untouched (idempotent no-op).
+    if allow.len() == before {
+        return Ok(());
+    }
+
+    write_settings(&target, &settings)
+}
+
 /// Idempotently install the profile's session-event **hook** into the host
 /// project's assistant settings file (`<repo_root>/<profile.allowlist.file>`,
 /// e.g. `.claude/settings.json`).
@@ -1036,6 +1138,147 @@ mod tests {
         assert_eq!(
             after, preexisting,
             "a file already carrying the reference is left byte-identical, got:\n{after}",
+        );
+    }
+
+    /// [`unwire_reference`] is the inverse of [`inject_reference`]: injecting then
+    /// unwiring restores the human's pre-existing content **byte-for-byte**, and a
+    /// second unwire (no section present) is a clean no-op.
+    #[test]
+    fn unwire_reference_round_trips_to_preexisting_bytes() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+        let preexisting = "# My Project\n\nHuman rules.\n";
+        std::fs::write(&claude_md, preexisting).expect("seed CLAUDE.md");
+
+        inject_reference(dir.path()).expect("inject");
+        assert!(
+            std::fs::read_to_string(&claude_md)
+                .unwrap()
+                .contains(BOOTSTRAP_IMPORT_LINE),
+            "inject must add the import line",
+        );
+
+        unwire_reference(dir.path()).expect("unwire");
+        let after = std::fs::read_to_string(&claude_md).expect("read after unwire");
+        assert_eq!(
+            after, preexisting,
+            "inject→unwire must restore the pre-existing bytes; got:\n{after}",
+        );
+
+        // Idempotent: a second unwire over a section-free file is a clean no-op.
+        unwire_reference(dir.path()).expect("second unwire");
+        assert_eq!(
+            std::fs::read_to_string(&claude_md).expect("still present"),
+            preexisting,
+            "a second unwire leaves the restored file byte-identical",
+        );
+    }
+
+    /// When `setup` **created** `CLAUDE.md` (the file is exactly the injected
+    /// section), [`unwire_reference`] removes the file entirely — no orphan jigc
+    /// trace. An absent file is then a clean no-op.
+    #[test]
+    fn unwire_reference_removes_a_setup_created_file() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+
+        inject_reference(dir.path()).expect("inject creates the file");
+        assert!(claude_md.exists(), "inject creates CLAUDE.md when absent");
+
+        unwire_reference(dir.path()).expect("unwire");
+        assert!(
+            !claude_md.exists(),
+            "unwiring a setup-created CLAUDE.md removes it entirely",
+        );
+
+        // Absent-file no-op.
+        unwire_reference(dir.path()).expect("unwire over absent file is a no-op");
+        assert!(!claude_md.exists(), "an absent CLAUDE.md stays absent");
+    }
+
+    /// [`unwire_reference`] leaves a `CLAUDE.md` that carries **no** jigc section
+    /// byte-untouched — it strips only the recognized injected section, never a
+    /// human's unrelated prose.
+    #[test]
+    fn unwire_reference_leaves_a_section_free_file_untouched() {
+        let dir = TempDir::new();
+        let claude_md = dir.path().join("CLAUDE.md");
+        let human = "# My Project\n\nNo jigc here.\n";
+        std::fs::write(&claude_md, human).expect("seed CLAUDE.md");
+
+        unwire_reference(dir.path()).expect("unwire over a section-free file");
+        assert_eq!(
+            std::fs::read_to_string(&claude_md).expect("present"),
+            human,
+            "a file with no jigc section is left byte-identical",
+        );
+    }
+
+    /// [`remove_allowlist`] drops the profile's permit from `permissions.allow`,
+    /// leaving unrelated permits + unrelated top-level keys intact and the file valid
+    /// JSON; a second remove (permit already gone) is a clean byte-identical no-op.
+    #[test]
+    fn remove_allowlist_drops_permit_preserving_unrelated_and_is_idempotent() {
+        let dir = TempDir::new();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).expect("create .claude");
+        let settings = claude_dir.join("settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        // Inject, then remove — the allowlist round-trip.
+        inject_allowlist(dir.path(), &profile).expect("inject allowlist");
+        // Seed an unrelated permit + key alongside (simulating a human's settings).
+        let mut v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&settings).unwrap()).unwrap();
+        v["model"] = serde_json::Value::String("claude-sonnet-4".to_string());
+        v["permissions"]["allow"]
+            .as_array_mut()
+            .unwrap()
+            .insert(0, serde_json::Value::String("git status".to_string()));
+        std::fs::write(
+            &settings,
+            format!("{}\n", serde_json::to_string_pretty(&v).unwrap()),
+        )
+        .unwrap();
+
+        remove_allowlist(dir.path(), &profile).expect("remove allowlist");
+        let after = std::fs::read_to_string(&settings).expect("read after remove");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&after).expect("settings stays valid JSON");
+        let allow = parsed["permissions"]["allow"].as_array().unwrap();
+        assert!(
+            !allow.iter().any(|x| x == "jigc *"),
+            "the `jigc *` permit must be dropped; got:\n{after}",
+        );
+        assert!(
+            allow.iter().any(|x| x == "git status"),
+            "the unrelated permit must survive; got:\n{after}",
+        );
+        assert_eq!(
+            parsed["model"], "claude-sonnet-4",
+            "the unrelated top-level key must survive; got:\n{after}",
+        );
+
+        // Idempotent: a second remove (permit already gone) is byte-identical.
+        remove_allowlist(dir.path(), &profile).expect("second remove");
+        assert_eq!(
+            std::fs::read_to_string(&settings).expect("present"),
+            after,
+            "a second remove over a permit-free allow list is byte-identical",
+        );
+    }
+
+    /// [`remove_allowlist`] over an **absent** settings file is a clean no-op (no
+    /// file is created) — the idempotent teardown over a project that never had one.
+    #[test]
+    fn remove_allowlist_over_absent_settings_is_a_no_op() {
+        let dir = TempDir::new();
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        remove_allowlist(dir.path(), &profile).expect("remove over absent settings");
+        assert!(
+            !dir.path().join(".claude/settings.json").exists(),
+            "remove over an absent settings file must not create one",
         );
     }
 
