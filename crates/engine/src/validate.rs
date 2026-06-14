@@ -290,6 +290,26 @@ pub fn validate_store(
     Ok(ValidationReport::new(findings, resolved))
 }
 
+/// One cascade-resolved workflow definition fed to the store-scope `workflow↔refs` family
+/// — its top-level `id`, its raw definition `bytes`, and the **origin-pack** command
+/// `catalog` its `{{cli.X}}` refs resolve against. The CLI builds one per enumerated
+/// workflow ([`validate_store_families`]), resolving each `catalog` against the workflow's
+/// own origin pack (mirroring `jigc start`'s `origin_pack` → `load_catalog` idiom) so a
+/// loser-pack workflow's command-refs are checked against ITS OWN pack's catalog, never the
+/// precedence-winner's (`multi-pack.md` → Pack-local body-reference resolution). The `id`
+/// also drives the per-workflow [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow)
+/// call so the same workflow's includes read its own pack's steps. For a single pack the
+/// origin *is* the one pack, so each catalog/scope is byte-identical to a flat resolution.
+pub struct StoreWorkflow {
+    /// The workflow's top-level id — the scope key for origin resolution.
+    pub id: String,
+    /// The raw cascade-resolved definition bytes (a project whole-file shadow already won).
+    pub bytes: Vec<u8>,
+    /// The command catalog of this workflow's **origin pack** — what its `{{cli.X}}` refs
+    /// resolve against (membership-only at store scope).
+    pub catalog: crate::compose::CommandCatalog,
+}
+
 /// The store-scope **three-family** sweep — the [`validate_store`] superset the top-level
 /// `jigc validate` drives, folding all three read-only store targets into one
 /// [`ValidationReport`] (`validation.md` → Completing the envelope: host three families
@@ -299,17 +319,17 @@ pub fn validate_store(
 /// The three families, in a stable sweep order:
 ///
 /// - **doc↔code** — every committed doc's `code-anchor` leaves resolved against the working tree via the CLI-supplied subprocess `invoke_doc_code` seam (the [`validate_store`] body, lifted to [`store_doc_code`]). The only family that can raise a `pack-probe-integrity.*` meta-finding (it is the one subprocess probe).
-/// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding the raw bytes in `workflows`) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, and the **catalog-membership-only** command-ref path. The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource); `catalog` the resolved command catalog.
+/// - **workflow↔refs** — each cascade-resolved workflow definition (the CLI enumerates + reads them, address-sorted, feeding each as a [`StoreWorkflow`] bundling its id, raw bytes, and **origin-pack** command catalog) run through the **task-independent** store-scope checks ([`crate::compose::workflow_refs_store`]): `include-resolves`, `include-cycle-absent`, `body-include-only`, the three marker-shadow checks, `fan-out-join-paired`, and the **catalog-membership-only** command-ref path. The task-data checks stay at `jigc start`. `workflow_source` is the CLI's layer-aware [`StepSource`](crate::compose::StepSource), **scoped per-workflow** to that definition's origin pack via [`StepSource::scope_to_workflow`](crate::compose::StepSource::scope_to_workflow) so a loser-pack workflow's includes + command-refs resolve against ITS OWN pack, never the precedence-winner's catalog (`multi-pack.md` → Pack-local body-reference resolution: `command-ref-resolves` and the include checks fire **per-definition against that definition's own pack**). For a single pack each origin *is* the one pack, so the resolution is byte-identical to a flat catalog (the no-composition floor).
 /// - **file↔CLI-state** — the read-only committed-store hash twin ([`crate::file_state::detect_committed_store`]): each committed managed doc's on-disk hash against its `record` entry, **detect without absorb** (`record` is borrowed `&`, no write, never via `reconcile_committed_store`).
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
-/// the schemas, the workflow definitions, the step source + catalog, and the loaded
-/// `FileStateRecord`. Severity is the engine-owned post-pass at [`ValidationReport::new`],
-/// keyed by `(probe, check)` identically to every other entry point (a no-delta `resolved`
-/// leaves every emitted severity untouched).
+/// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
+/// source, and the loaded `FileStateRecord`. Severity is the engine-owned post-pass at
+/// [`ValidationReport::new`], keyed by `(probe, check)` identically to every other entry
+/// point (a no-delta `resolved` leaves every emitted severity untouched).
 // The CLI threads each store target's distinct determinism-boundary inputs in (the engine
 // produces none of them): the committed-store root, the resolved schemas/cascade, the
-// shell-free doc-code seam, the enumerated workflow bytes + their step source/catalog, and
+// shell-free doc-code seam, the per-workflow definition bundles + their step source, and
 // the loaded file-state record. Bundling them into a struct would only relocate the same
 // arity, so the lint is allowed at this one composition point.
 #[allow(clippy::too_many_arguments)]
@@ -318,9 +338,8 @@ pub fn validate_store_families(
     schemas: &BTreeMap<String, Schema>,
     resolved: &crate::cascade::Resolved,
     invoke_doc_code: &ProbeInvoker<'_>,
-    workflows: &[Vec<u8>],
+    workflows: &[StoreWorkflow],
     workflow_source: &dyn crate::compose::StepSource,
-    catalog: &crate::compose::CommandCatalog,
     record: &FileStateRecord,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
@@ -333,11 +352,19 @@ pub fn validate_store_families(
 
     // Family 2 — workflow↔refs over each cascade-resolved definition (task-independent
     // checks + the membership-only command-ref path; the CLI enumerated + read them).
-    for workflow_bytes in workflows {
+    // Each definition resolves **pack-locally**: the step source is scoped to this
+    // workflow's origin pack (so its `{{include: step:X}}` reads its own pack's step) and
+    // the membership check runs against this workflow's own origin catalog (so a loser-pack
+    // workflow's `{{cli.X}}` resolves against ITS pack, never the precedence-winner's). For
+    // a single pack the origin *is* the pack, so the scope is inert and the catalog is the
+    // same — byte-identical to the pre-fix flat path (`multi-pack.md` → Pack-local
+    // body-reference resolution).
+    for workflow in workflows {
+        workflow_source.scope_to_workflow(&workflow.id);
         findings.extend(crate::compose::workflow_refs_store(
-            workflow_bytes,
+            &workflow.bytes,
             workflow_source,
-            catalog,
+            &workflow.catalog,
         ));
     }
 
@@ -2628,9 +2655,12 @@ Effects.
         // (ii) workflow↔refs: a workflow whose `{{include: step:not-a-step}}` resolves
         // to no step in the (empty) source → a `workflow-refs.include-resolves` finding.
         let dangling_wf: Vec<u8> = b"---\nwhen: x\n---\n{{ include: step:not-a-step }}\n".to_vec();
-        let workflows = vec![dangling_wf];
+        let workflows = vec![StoreWorkflow {
+            id: "dangling".to_string(),
+            bytes: dangling_wf,
+            catalog: empty_catalog(),
+        }];
         let source = EmptyStepSource;
-        let catalog = empty_catalog();
 
         // --- A healthy invoker first: all three content families surface, no meta-finding.
         let seen = RefCell::new(Vec::new());
@@ -2641,7 +2671,6 @@ Effects.
             &dangling_aware_invoker(&seen),
             &workflows,
             &source,
-            &catalog,
             &record,
         )
         .expect("three-family store sweep runs");
@@ -2689,7 +2718,6 @@ Effects.
             &crashing,
             &workflows,
             &source,
-            &catalog,
             &record,
         )
         .expect("three-family store sweep runs with a crashing probe");
@@ -2763,5 +2791,101 @@ Effects.
             report.findings,
         );
         assert!(!report.has_blocking());
+    }
+
+    /// (T2b) The store-sweep `workflow↔refs` family resolves each workflow's command-refs
+    /// against ITS OWN [`StoreWorkflow::catalog`] — **per-definition, not one flat catalog**
+    /// (`multi-pack.md` → Pack-local body-reference resolution). Two workflows, each with a
+    /// lone `{{cli.<id>}}` body line, fed in the SAME sweep with **divergent** catalogs:
+    ///
+    /// - workflow A references `alpha-cmd` and carries a catalog that DEFINES `alpha-cmd`
+    ///   (but NOT `beta-cmd`) → clean, no finding.
+    /// - workflow B references `beta-cmd` and carries a catalog that DEFINES `beta-cmd`
+    ///   (but NOT `alpha-cmd`) → clean, no finding.
+    ///
+    /// Under a single flat catalog (the pre-fix bug) NEITHER catalog is a superset, so
+    /// whichever flat catalog were chosen, the OTHER workflow's ref would surface a false
+    /// `command-ref-resolves` finding. Per-workflow catalogs make both clean. And the
+    /// no-over-correction guard: workflow C references `gamma-cmd` with an EMPTY own
+    /// catalog → it IS still caught (a genuinely-dangling ref in the workflow's own pack).
+    #[test]
+    fn store_sweep_resolves_command_refs_per_workflow_catalog() {
+        // A catalog defining exactly one command id (the minimal shape
+        // `load_command_catalog` accepts: an `args` list + a `hint`).
+        let catalog_with = |id: &str| {
+            let yaml = format!(
+                "commands:\n  - id: {id}\n    command: jigc\n    args: [\"noop\"]\n    hint: \"{id}\"\n"
+            );
+            crate::compose::load_command_catalog(yaml.as_bytes())
+                .unwrap_or_else(|f| panic!("catalog for `{id}` loads: {f:?}"))
+        };
+        // A workflow that includes one step (the `{{cli.X}}` ref lives in a STEP body, not
+        // the workflow body, which is include-only) — the step id is the workflow id.
+        let workflow_with = |id: &str, catalog: crate::compose::CommandCatalog| StoreWorkflow {
+            id: id.to_string(),
+            bytes: format!("---\nwhen: x\n---\n{{{{ include: step:{id} }}}}\n").into_bytes(),
+            catalog,
+        };
+        // A step source mapping each step id to a body carrying its own `{{cli.<id>-cmd}}`
+        // ref — so the expanded step body reaches the membership check (the engine-test
+        // `MapSource` idiom, local to this test).
+        struct CliStepSource;
+        impl crate::compose::StepSource for CliStepSource {
+            fn step(&self, id: &str) -> Option<crate::compose::StepDef> {
+                let body = format!("---\n---\n{{{{ cli.{id}-cmd }}}}\n");
+                Some(crate::compose::load_step_def(id, body.as_bytes()).expect("step loads"))
+            }
+        }
+
+        let repo = TempRoot::new("per-workflow-catalog");
+        let record = FileStateRecord::new();
+        let source = CliStepSource;
+
+        // A + B: each step's `{{cli.<id>-cmd}}` ref resolves against ITS workflow's OWN
+        // catalog (neither catalog is a superset of the other).
+        let workflows = vec![
+            workflow_with("alpha", catalog_with("alpha-cmd")),
+            workflow_with("beta", catalog_with("beta-cmd")),
+        ];
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &(|_req: &ProbeRequest| panic!("no-anchor store: invoker must not run")),
+            &workflows,
+            &source,
+            &record,
+        )
+        .expect("per-workflow-catalog sweep runs");
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "workflow-refs.command-ref-resolves"),
+            "each workflow's command-ref must resolve against its own catalog — no false \
+             command-ref finding: {:?}",
+            report.findings,
+        );
+
+        // C: a genuinely-dangling ref in the workflow's OWN (empty) catalog IS caught —
+        // the fix must not over-correct into silence.
+        let dangling = vec![workflow_with("gamma", empty_catalog())];
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &(|_req: &ProbeRequest| panic!("no-anchor store: invoker must not run")),
+            &dangling,
+            &source,
+            &record,
+        )
+        .expect("dangling-ref sweep runs");
+        assert!(
+            report.findings.iter().any(|f| {
+                f.code == "workflow-refs.command-ref-resolves" && f.message.contains("gamma-cmd")
+            }),
+            "a ref absent from the workflow's own catalog must still be caught: {:?}",
+            report.findings,
+        );
     }
 }

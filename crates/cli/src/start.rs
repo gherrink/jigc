@@ -1499,20 +1499,6 @@ impl<'a> CascadeStepSource<'a> {
         }
     }
 
-    /// Scope the pack-default step read to the **origin pack** of the composing
-    /// workflow — the constituent that defines `workflow_id`'s top-level id, so
-    /// every `{{include: step:X}}` this workflow expands resolves against its own
-    /// pack ([`PackSource::origin_pack`]; `multi-pack.md` → Pack-local
-    /// body-reference resolution → Steps). `compose_core` calls this once per
-    /// compose, before any `step()` runs. For a single pack the origin *is* the
-    /// pack, so the scoped read is byte-identical to the unscoped one (the floor).
-    fn scope_to_workflow(&self, workflow_id: &str) {
-        self.origin.set(Some(self.pack.origin_pack(
-            PackResourceKind::Workflows,
-            &ResourceId::from(workflow_id),
-        )));
-    }
-
     /// Take the located fault recorded by the last failing `step()`, clearing the
     /// sink. `None` when the last `step()` returned `Some` or returned `None`
     /// because no layer owns the id (a plain dangling include the engine reports).
@@ -1562,6 +1548,21 @@ impl<'a> CascadeStepSource<'a> {
 }
 
 impl StepSource for CascadeStepSource<'_> {
+    /// Scope the pack-default step read to the **origin pack** of the composing
+    /// workflow — the constituent that defines `workflow_id`'s top-level id, so
+    /// every `{{include: step:X}}` this workflow expands resolves against its own
+    /// pack ([`PackSource::origin_pack`]; `multi-pack.md` → Pack-local
+    /// body-reference resolution → Steps). `compose_core` calls this once per
+    /// compose (and the store sweep once per enumerated workflow), before any
+    /// `step()` runs. For a single pack the origin *is* the pack, so the scoped
+    /// read is byte-identical to the unscoped one (the floor).
+    fn scope_to_workflow(&self, workflow_id: &str) {
+        self.origin.set(Some(self.pack.origin_pack(
+            PackResourceKind::Workflows,
+            &ResourceId::from(workflow_id),
+        )));
+    }
+
     fn step(&self, id: &str) -> Option<StepDef> {
         match self.resolved.file_owner(id) {
             // The project owns the id → read the project file (a missing/malformed
@@ -2207,17 +2208,27 @@ pub(crate) fn read_workflow(pack: &dyn PackSource, id: &str) -> Result<Vec<u8>> 
         })
 }
 
-/// Enumerate every cascade-resolved workflow definition's raw bytes, **address-sorted**
-/// by workflow id — the store-scope `workflow↔refs` target's deterministic input
-/// (`validation.md` → Completing the envelope: a deterministic, address-sorted
-/// enumeration of every workflow definition the resolved cascade provides). Reads each
-/// id layer-aware via [`CascadeDefs::read_workflow`] (a project whole-file shadow wins),
-/// the proven `describe` enumeration idiom. The bytes are validated per-definition by the
-/// engine's [`engine::compose::workflow_refs_store`]; this only collects them in order.
-pub(crate) fn enumerate_workflow_bytes(
+/// Enumerate every cascade-resolved workflow definition as a [`StoreWorkflow`] bundle —
+/// its id, its raw bytes, and its **origin-pack** command catalog — **address-sorted** by
+/// workflow id, the store-scope `workflow↔refs` target's deterministic input
+/// (`validation.md` → Completing the envelope: a deterministic, address-sorted enumeration
+/// of every workflow definition the resolved cascade provides). Reads each id layer-aware
+/// via [`CascadeDefs::read_workflow`] (a project whole-file shadow wins), the proven
+/// `describe` enumeration idiom.
+///
+/// Each catalog resolves against the workflow's **origin pack** —
+/// `pack.origin_pack(Workflows, id)` then [`load_catalog`] — so a loser-pack workflow's
+/// `{{cli.X}}` refs are checked against ITS OWN pack's `commands.yaml`, never the
+/// precedence-winner's (which need not be a superset). This is the same origin lookup the
+/// emit-path catalog read and the step source's `scope_to_workflow` perform (`multi-pack.md`
+/// → Pack-local body-reference resolution → Command-refs). For a single pack the origin *is*
+/// `pack`, so each catalog is byte-identical to a flat read (the no-composition floor). The
+/// bundles are validated per-definition by [`engine::validate::validate_store_families`];
+/// this only collects them in order.
+pub(crate) fn enumerate_store_workflows(
     pack: &dyn PackSource,
     defs: &CascadeDefs<'_>,
-) -> Result<Vec<Vec<u8>>> {
+) -> Result<Vec<engine::validate::StoreWorkflow>> {
     let mut ids: Vec<String> = pack
         .list(PackResourceKind::Workflows)
         .into_iter()
@@ -2226,7 +2237,14 @@ pub(crate) fn enumerate_workflow_bytes(
     ids.sort();
     let mut out = Vec::with_capacity(ids.len());
     for id in &ids {
-        out.push(defs.read_workflow(pack, id)?);
+        let bytes = defs.read_workflow(pack, id)?;
+        let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(id.as_str()));
+        let catalog = load_catalog(origin)?;
+        out.push(engine::validate::StoreWorkflow {
+            id: id.clone(),
+            bytes,
+            catalog,
+        });
     }
     Ok(out)
 }

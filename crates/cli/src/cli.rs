@@ -494,20 +494,25 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     let project_config = repo_root.join(".jigc").join("config");
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
 
-    // workflow↔refs family: enumerate every cascade-resolved workflow definition
-    // (address-sorted, layer-aware) + the layer-aware step source + the command catalog —
-    // the proven `describe` enumeration idiom (`validation.md` → Completing the envelope).
+    // workflow↔refs family: enumerate every cascade-resolved workflow definition as a
+    // per-workflow bundle (id + bytes + **origin-pack** catalog, address-sorted, layer-aware)
+    // + the layer-aware step source the engine scopes per-workflow — the proven `describe`
+    // enumeration idiom (`validation.md` → Completing the envelope). Resolving each catalog
+    // against the workflow's origin pack (mirroring `jigc start`) is what makes the
+    // command-refs resolve **pack-locally**: once two packs compose, a loser-pack workflow's
+    // `{{cli.X}}` is checked against ITS OWN pack's catalog, never the precedence-winner's
+    // (`multi-pack.md` → Pack-local body-reference resolution).
     let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
 
     // The schema map fed to BOTH the doc↔code family and the file↔CLI-state twin resolves
     // **through the cascade**, not pack-only — a project `schemas/<id>.yaml` whole-file
     // shadow (e.g. one that relocates a doctype's `location:`) must be honored, the same
     // `project > team > pack-default` rule every other definition resolves by (the
-    // workflow↔refs family already reads cascade-aware via `defs.read_workflow`).
+    // workflow↔refs family already reads cascade-aware via `defs.read_workflow`, and its
+    // field-types per-origin via `all_schemas`'s `origin_pack` lookup).
     let schemas = defs.all_schemas(pack)?;
-    let workflows = crate::start::enumerate_workflow_bytes(pack, &defs)?;
+    let workflows = crate::start::enumerate_store_workflows(pack, &defs)?;
     let workflow_source = crate::start::CascadeStepSource::new(pack, &resolved, &project_config);
-    let catalog = crate::start::load_catalog(pack)?;
 
     // file↔CLI-state family: the loaded file-state record, read **read-only** (the
     // detect-without-absorb twin borrows it `&`, opens no write).
@@ -522,7 +527,6 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         &crate::task::doc_code_invoker,
         &workflows,
         &workflow_source,
-        &catalog,
         &record,
     )
     .with_context(|| format!("validating the committed store at {repo_root:?}"))

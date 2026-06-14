@@ -1320,6 +1320,20 @@ fn parse_include_line(line: &str) -> Option<String> {
 pub trait StepSource {
     /// Resolve a step id to its [`StepDef`], or `None` if no layer provides it.
     fn step(&self, id: &str) -> Option<StepDef>;
+
+    /// Scope subsequent pack-default step reads to the **origin pack** of the named
+    /// composing workflow — the constituent pack that defines `workflow_id`'s
+    /// top-level id, so every `{{include: step:X}}` this workflow expands resolves
+    /// against ITS OWN pack rather than the precedence-winner's divergent step
+    /// (`multi-pack.md` → Pack-local body-reference resolution → Steps). The
+    /// store-sweep loop calls this once per enumerated workflow, before that
+    /// workflow's refs are walked, mirroring `jigc start`'s per-compose scoping.
+    ///
+    /// **Default: a no-op.** A single-pack / origin-unaware source (every engine-test
+    /// source) already reads against the only pack, so scoping is inert — the
+    /// store-sweep path stays byte-identical there. Only the CLI's cascade source
+    /// overrides it.
+    fn scope_to_workflow(&self, _workflow_id: &str) {}
 }
 
 /// One leaf of the flattened composition: a step's id and its body, placeholders

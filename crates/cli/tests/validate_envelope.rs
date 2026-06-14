@@ -504,3 +504,84 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
          sweep walks `decisions/` and misses it; stdout:\n{stdout}",
     );
 }
+
+/// The on-disk methodology pack home (`<root>/packs/methodology`) — the listed,
+/// highest-precedence pack the two-pack `[dev ▸ methodology]` store composes.
+fn methodology_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
+}
+
+/// Record the listed pack-set in the in-repo project layer's `packs.yaml` — the
+/// pre-cascade selector `make_pack()` CWD-discovers (the `multi_pack_acceptance.rs`
+/// idiom). The named directory sits at highest precedence; the embedded dev pack is
+/// the implicit base below it.
+fn write_packs_yaml(repo: &Path, listed: &Path) {
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", listed.display()),
+    )
+    .expect("write packs.yaml naming the listed pack");
+}
+
+/// (T2b) The store-sweep `workflow↔refs` family must resolve each workflow's
+/// command-refs **pack-locally**, against the workflow's own origin pack's catalog —
+/// not against one flat precedence-winner catalog (`design/multi-pack.md` → Pack-local
+/// body-reference resolution: "`command-ref-resolves` … fire **per-definition against
+/// that definition's own pack**").
+///
+/// Compose the two-pack `[dev ▸ methodology]` store via `packs.yaml` listing the
+/// on-disk methodology pack over the embedded dev base. methodology's workflows
+/// (`planning` / `completion` / …) include steps whose bodies carry `{{ cli.create-*
+/// }}` command-refs (`create-roadmap`, `create-ledger`, `create-log`,
+/// `create-completion-record`, `create-dogfood-record`) — defined in **methodology's**
+/// `commands.yaml`, ABSENT from dev's catalog (the precedence winner).
+///
+/// Under a flat-catalog sweep, every one of methodology's workflows resolves its
+/// command-refs against dev's catalog and emits a FALSE blocking
+/// `workflow-refs.command-ref-resolves` finding for each methodology-only command — the
+/// M14 settled-rule violation this task fixes. A pack-local sweep resolves each
+/// workflow's refs against ITS OWN pack's catalog, so methodology's command-refs are
+/// found and no such finding surfaces. Content-only (no probe-integrity meta-finding),
+/// so the run exits 0 either way — the assertion is on the emitted findings.
+#[test]
+fn validate_store_sweep_resolves_command_refs_pack_locally_over_two_packs() {
+    let repo = TempDir::new("pack-local-refs");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    write_packs_yaml(repo.path(), &methodology_pack_tree());
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "a content-only two-pack sweep must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    // No command-ref finding at all — every methodology command-ref resolves against
+    // methodology's own catalog, every dev command-ref against dev's.
+    assert!(
+        !stdout.contains("workflow-refs.command-ref-resolves"),
+        "the two-pack store sweep must resolve each workflow's command-refs pack-locally \
+         (against its own origin pack's catalog), so methodology's `create-*` refs raise NO \
+         false `command-ref-resolves` finding; stdout:\n{stdout}",
+    );
+    // Belt-and-braces: name each methodology-only command — none may appear in a finding.
+    for cmd in [
+        "create-roadmap",
+        "create-completion-record",
+        "create-log",
+        "create-ledger",
+        "create-dogfood-record",
+    ] {
+        assert!(
+            !stdout.contains(&format!("cli.{cmd}")),
+            "methodology's `{cmd}` command-ref must resolve against methodology's catalog, \
+             not surface as drift; stdout:\n{stdout}",
+        );
+    }
+}
