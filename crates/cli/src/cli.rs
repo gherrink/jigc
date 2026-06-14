@@ -20,9 +20,6 @@ use crate::task::TaskCommand;
 use crate::upgrade;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use engine::packsource::PackResourceKind;
-use engine::schema::Schema;
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -494,7 +491,6 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     require_doc_code_probe()?;
     let pack = crate::pack::make_pack();
     let pack = pack.as_ref();
-    let schemas = load_schema_map(pack)?;
     let project_config = repo_root.join(".jigc").join("config");
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
 
@@ -502,6 +498,13 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     // (address-sorted, layer-aware) + the layer-aware step source + the command catalog —
     // the proven `describe` enumeration idiom (`validation.md` → Completing the envelope).
     let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
+
+    // The schema map fed to BOTH the doc↔code family and the file↔CLI-state twin resolves
+    // **through the cascade**, not pack-only — a project `schemas/<id>.yaml` whole-file
+    // shadow (e.g. one that relocates a doctype's `location:`) must be honored, the same
+    // `project > team > pack-default` rule every other definition resolves by (the
+    // workflow↔refs family already reads cascade-aware via `defs.read_workflow`).
+    let schemas = defs.all_schemas(pack)?;
     let workflows = crate::start::enumerate_workflow_bytes(pack, &defs)?;
     let workflow_source = crate::start::CascadeStepSource::new(pack, &resolved, &project_config);
     let catalog = crate::start::load_catalog(pack)?;
@@ -540,22 +543,6 @@ fn require_doc_code_probe() -> Result<()> {
         );
     }
     Ok(())
-}
-
-/// Load every shipped schema keyed by doctype — the set the store sweep resolves the
-/// committed docs against (the `task.rs`'s `schemas()` idiom; the engine stays
-/// domain-empty, the CLI feeds the cascade in).
-fn load_schema_map(pack: &dyn engine::packsource::PackSource) -> Result<BTreeMap<String, Schema>> {
-    let mut out = BTreeMap::new();
-    for id in pack.list(PackResourceKind::Schemas) {
-        let bytes = pack
-            .read(PackResourceKind::Schemas, &id)
-            .with_context(|| format!("the `{}` schema reads back", id.as_str()))?;
-        let schema = crate::pack::load_pack_schema(pack, &bytes)
-            .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
-        out.insert(schema.ty.clone(), schema);
-    }
-    Ok(out)
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the store-walk locate

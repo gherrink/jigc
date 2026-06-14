@@ -414,3 +414,93 @@ fn validate_unresolvable_probe_still_exits_non_zero_with_one_error() {
          stderr:\n{stderr}",
     );
 }
+
+/// The cascade-invariant guard: a **project-layer schema shadow** that changes a
+/// doctype's `location:` must be honored by the store sweep — schemas resolve through
+/// the cascade (`project > team > pack-default` for ALL customization), not pack-only.
+///
+/// Seed a clean store, then drop a project `schemas/adr.yaml` whole-file shadow that
+/// relocates `adr` from the pack's `decisions/` to `adrs/`. The cascade auto-shadows the
+/// id (`file_owner(adr) == Project`), so the resolved `adr` schema's `location:` is now
+/// `adrs/`. Commit an `adr` doc at the **project-shadowed** location `adrs/cache.md` with
+/// no baseline record. The file↔CLI-state twin enumerates committed docs by walking each
+/// resolved schema's `location:`, so a cascade-aware sweep walks `adrs/`, finds the
+/// un-baselined doc, and surfaces a `file-state.un-baselined` advisory naming it. A
+/// **pack-only** sweep walks the pack's `decisions/` instead, never sees `adrs/cache.md`,
+/// and emits no such finding — the regression this guards. Content-only, so exit 0.
+#[test]
+fn validate_honors_project_schema_location_shadow_in_store_sweep() {
+    let repo = TempDir::new("schema-shadow");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    // The project schema shadow: the shipped `adr` schema body verbatim EXCEPT its
+    // `location:` is relocated `decisions/` → `adrs/`. A whole-file shadow the cascade
+    // owns by id (`overrides.md` → Authored metadata on a definition resolves by
+    // whole-file shadow), so the resolved `adr` schema's location becomes `adrs/`.
+    let schemas = repo.path().join(".jigc").join("config").join("schemas");
+    fs::create_dir_all(&schemas).expect("create project schemas dir");
+    fs::write(
+        schemas.join("adr.yaml"),
+        "type: adr\n\
+         location: adrs/\n\
+         id-from: title\n\
+         description: A dated architectural decision record.\n\
+         usage: a choice is worth preserving with its rationale.\n\
+         \n\
+         sections:\n\
+        \x20 - id: status\n\
+        \x20   header: true\n\
+        \x20   fields:\n\
+        \x20     - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }\n\
+        \x20     - { id: date, type: date, set: on-create }\n\
+        \x20     - { id: supersedes, type: ref, to: adr, card: \"0..1\", inverse: superseded-by }\n\
+        \x20     - { id: cites-code, type: code-anchor }\n\
+        \x20 - id: context\n\
+        \x20   slot: { hint: \"Why a decision was needed.\" }\n\
+        \x20 - id: decision\n\
+        \x20   slot: { hint: \"What we decided.\" }\n\
+        \x20 - id: consequences\n\
+        \x20   slot: { hint: \"Tradeoffs and follow-on effects.\" }\n",
+    )
+    .expect("write the project adr schema shadow");
+
+    // A committed `adr` at the PROJECT-SHADOWED location `adrs/cache.md` — not baselined,
+    // so the read-only twin classifies it un-baselined once it enumerates `adrs/`.
+    let adrs = repo.path().join("adrs");
+    fs::create_dir_all(&adrs).expect("create adrs dir");
+    fs::write(
+        adrs.join("cache.md"),
+        "---\n\
+         status: accepted\n\
+         date: 2026-06-14\n\
+         ---\n\
+         \n\
+         # The cache decision\n\
+         \n\
+         ## Context\n\
+         Forces.\n\
+         \n\
+         ## Decision\n\
+         Decided.\n\
+         \n\
+         ## Consequences\n\
+         Effects.\n",
+    )
+    .expect("commit the adr at the shadowed location");
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "a content-only sweep (an un-baselined doc) must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("file-state.un-baselined") && stdout.contains("adrs/cache.md"),
+        "the store sweep must resolve the `adr` schema through the cascade and walk the \
+         project-shadowed `adrs/` location, surfacing the un-baselined doc there; a pack-only \
+         sweep walks `decisions/` and misses it; stdout:\n{stdout}",
+    );
+}
