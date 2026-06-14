@@ -428,6 +428,43 @@ fn on_create_item_fields(schema: &Schema, section_id: &str) -> Vec<engine::field
         .collect()
 }
 
+/// The doc-level (header / simple-section) fields a schema declares with a
+/// derived value, each materialized at create time before render — the
+/// engine-clock-free mirror of the proven item-level [`on_create_item_fields`].
+/// Walks the simple-section bodies' `fields` (the header is one such section) for
+/// a `type: date, set: on-create` leaf (stamped with [`today_iso`]) and any field
+/// carrying a literal `default:` (stamped with that value), in schema field order.
+/// A field with neither yields nothing — so a doctype declaring no such field
+/// (e.g. `commit`) is left byte-unchanged (the materializer is inert). Honors the
+/// `adr` doc-level `date` (set-on-create) + `status: proposed` (default) promises
+/// (`design/changelog.md` → engine work #4).
+fn on_create_doc_fields(schema: &Schema) -> Vec<engine::field_block::Field> {
+    use engine::schema::FieldType;
+
+    let today = today_iso();
+    schema
+        .sections
+        .iter()
+        .filter_map(|section| match &section.body {
+            SectionBody::Simple { fields, .. } => Some(fields),
+            SectionBody::Repeatable { .. } => None,
+        })
+        .flatten()
+        .filter_map(|field| {
+            let value = if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create")
+            {
+                today.clone()
+            } else {
+                field.default.clone()?
+            };
+            Some(engine::field_block::Field {
+                key: field.id.clone(),
+                value: Value::Scalar(value),
+            })
+        })
+        .collect()
+}
+
 /// The current UTC date as an ISO `YYYY-MM-DD` string — the CLI-side `set: on-create`
 /// date deriver (`write.rs` → `is_iso_date`: "the canonical-date authority is the CLI
 /// `set: on-create` deriver"). The engine stays a pure function, so clock access lives
@@ -470,6 +507,12 @@ fn run_create(
     let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
+    // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
+    // (clock-side CLI work) so the created instance carries them before render.
+    let on_create = schemas
+        .get(type_name)
+        .map(on_create_doc_fields)
+        .unwrap_or_default();
     let created = state::create_gated(
         &task.dir,
         &schemas,
@@ -477,7 +520,7 @@ fn run_create(
         type_name,
         title,
         &task.repo_root,
-        &[],
+        &on_create,
     )
     .map_err(|f| block(&f, "create", type_name))?;
     println!("{}", created.address);
@@ -1206,6 +1249,41 @@ sections:
         assert!(
             on_create_item_fields(&schema, "no-such-section").is_empty(),
             "an unknown section stamps nothing",
+        );
+    }
+
+    /// `on_create_doc_fields` materializes a doc-level header field's `default:` and
+    /// `set: on-create` — and is **inert** for a header that declares neither (the
+    /// omitting-context guard, M22 engine work #4).
+    #[test]
+    fn on_create_doc_fields_materializes_default_and_on_create() {
+        const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
+        let types = vec![engine::schema::PackTypeDecl {
+            name: "code-anchor".to_owned(),
+            adjudicator: "doc-code".to_owned(),
+            check: "symbol-exists".to_owned(),
+        }];
+        let adr = engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr loads");
+        let fields = on_create_doc_fields(&adr);
+        // Exactly `status` (default: proposed) then `date` (set: on-create), in schema
+        // field order — `supersedes`/`cites-code` carry neither, so they are omitted.
+        assert_eq!(
+            fields.len(),
+            2,
+            "exactly status (default) + date (on-create)"
+        );
+        assert_eq!(fields[0].key, "status");
+        assert_eq!(fields[0].value, Value::Scalar("proposed".into()));
+        assert_eq!(fields[1].key, "date");
+        assert_eq!(fields[1].value, Value::Scalar(today_iso()));
+
+        // The shipped `commit` header (fields `type`/`scope`/`implements`, none
+        // carrying default or set) is the inert witness: the materializer stamps
+        // nothing, so its rendered front-matter is byte-unchanged.
+        let commit = load_schema(COMMIT_YAML).expect("commit loads");
+        assert!(
+            on_create_doc_fields(&commit).is_empty(),
+            "a header with no default/set field stamps nothing (inert)",
         );
     }
 }

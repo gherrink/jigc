@@ -181,14 +181,12 @@ fn inject_supersedes(repo: &Path, task: &str, slug: &str, target: &str) {
         .join("docs")
         .join(format!("adr:{slug}.md"));
     let body = fs::read_to_string(&staged).expect("read staged ADR");
-    let with = body.replacen(
-        "---\n---\n",
-        &format!("---\nsupersedes: {target}\n---\n"),
-        1,
-    );
+    // Insert the `supersedes` line before the closing front-matter fence (the created
+    // ADR now carries materialized `status`/`date` header lines, not an empty fence).
+    let with = body.replacen("\n---\n", &format!("\nsupersedes: {target}\n---\n"), 1);
     assert_ne!(
         body, with,
-        "the staged ADR carries an empty front-matter block"
+        "the staged ADR carries a front-matter block to inject the ref into"
     );
     fs::write(&staged, &with).expect("inject supersedes ref");
 }

@@ -435,14 +435,12 @@ fn finalize_blocks_on_a_dangling_supersedes_ref() {
         .join("docs")
         .join("adr:shared-redis-session-cache.md");
     let body = fs::read_to_string(&staged_adr).expect("read the staged ADR");
-    let with_supersedes = body.replacen(
-        "---\n---\n",
-        "---\nsupersedes: adr:typo-nonexistent\n---\n",
-        1,
-    );
+    // Insert before the closing front-matter fence (the created ADR now carries
+    // materialized `status`/`date` header lines, not an empty fence).
+    let with_supersedes = body.replacen("\n---\n", "\nsupersedes: adr:typo-nonexistent\n---\n", 1);
     assert_ne!(
         body, with_supersedes,
-        "the staged ADR carries an empty front-matter block to inject the ref into"
+        "the staged ADR carries a front-matter block to inject the ref into"
     );
     fs::write(&staged_adr, &with_supersedes).expect("inject the dangling supersedes ref");
 
@@ -552,11 +550,9 @@ fn no_delta_finalize_block_render_is_byte_identical_to_the_baseline() {
         .join("docs")
         .join("adr:shared-redis-session-cache.md");
     let body = fs::read_to_string(&staged_adr).expect("read the staged ADR");
-    let with_supersedes = body.replacen(
-        "---\n---\n",
-        "---\nsupersedes: adr:typo-nonexistent\n---\n",
-        1,
-    );
+    // Insert before the closing front-matter fence (the created ADR now carries
+    // materialized `status`/`date` header lines, not an empty fence).
+    let with_supersedes = body.replacen("\n---\n", "\nsupersedes: adr:typo-nonexistent\n---\n", 1);
     fs::write(&staged_adr, &with_supersedes).expect("inject the dangling supersedes ref");
 
     make_commit_conformant(repo.path(), home.path(), task);

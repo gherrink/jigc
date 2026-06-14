@@ -249,14 +249,12 @@ fn inject_cites_code(repo: &Path, task: &str, slug: &str, anchor: &str) {
         .join("docs")
         .join(format!("adr:{slug}.md"));
     let body = fs::read_to_string(&staged).expect("read staged ADR");
-    let with = body.replacen(
-        "---\n---\n",
-        &format!("---\ncites-code: {anchor}\n---\n"),
-        1,
-    );
+    // Insert the `cites-code` line before the closing front-matter fence (the created
+    // ADR now carries materialized `status`/`date` header lines, not an empty fence).
+    let with = body.replacen("\n---\n", &format!("\ncites-code: {anchor}\n---\n"), 1);
     assert_ne!(
         body, with,
-        "the staged ADR carries an empty front-matter block"
+        "the staged ADR carries a front-matter block to inject the anchor into"
     );
     fs::write(&staged, &with).expect("inject cites-code anchor");
 }
@@ -487,5 +485,85 @@ fn task_validate_probe_present_resolves_clean_control() {
     assert!(
         !rendered.contains("doc-code.symbol-exists"),
         "a present anchor with the real probe must surface no doc-code block; got:\n{rendered}",
+    );
+}
+
+/// The CLI's own `today_iso` (`doc.rs::today_iso`), reproduced in-test from the **same**
+/// `std::time` source — never a hardcoded literal, so the date the materializer stamps
+/// and the date this test expects derive from one clock (M22 inc-4 done-criterion).
+fn today_iso() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let (y, m, d) = (if m <= 2 { y + 1 } else { y }, m, d);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// The `adr` schema, loaded with the dev-pack `code-anchor` field-type (so a re-parse of
+/// the staged bytes resolves `cites-code`) — mirrors `arch_doc_components_materialize`.
+fn adr_schema() -> engine::schema::Schema {
+    const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
+    let types = vec![engine::schema::PackTypeDecl {
+        name: "code-anchor".to_owned(),
+        adjudicator: "doc-code".to_owned(),
+        check: "symbol-exists".to_owned(),
+    }];
+    engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr.yaml loads")
+}
+
+/// M22 inc-4 (engine work #4) — a freshly-created `adr` carries its schema-declared
+/// doc-level materializations: `status: proposed` (from `default`) and `date: <today>`
+/// (from `set: on-create`), in schema field order, with **no** stray `supersedes` /
+/// `cites-code` line (those have neither default nor set). The staged bytes round-trip
+/// byte-stable (`render(parse(staged)) == staged`). The expected date is the CLI's own
+/// `today_iso`, computed in-test from the same `std::time` source — never hardcoded.
+#[test]
+fn created_adr_materializes_doc_level_status_and_date() {
+    let repo = TempDir::new("adr-materialize-repo");
+    let home = TempDir::new("adr-materialize-home");
+    init_repo(repo.path());
+
+    let task = "record-the-cache-call";
+    start_task(repo.path(), home.path(), task);
+    create_adr(
+        repo.path(),
+        home.path(),
+        "Single-node cache",
+        "adr:single-node-cache",
+    );
+
+    let staged = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("adr:single-node-cache.md");
+    let body = fs::read_to_string(&staged).expect("read staged ADR");
+
+    let expected_fm = format!("---\nstatus: proposed\ndate: {}\n---\n", today_iso());
+    assert!(
+        body.starts_with(&expected_fm),
+        "created adr front-matter must be exactly status (default) then date (on-create) in \
+         schema order, no stray supersedes/cites-code line; expected prefix:\n{expected_fm}\ngot:\n{body}",
+    );
+
+    // The materialized doc round-trips byte-stable through the engine.
+    let schema = adr_schema();
+    let parsed = engine::write::instance_from_source(&schema, &body).expect("staged adr re-parses");
+    let rerendered = engine::write::render(&schema, &parsed);
+    assert_eq!(
+        rerendered, body,
+        "render(parse(staged)) must equal the staged bytes",
     );
 }

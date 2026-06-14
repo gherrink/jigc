@@ -306,14 +306,16 @@ fn stage_anchored_task(installed: &Path, repo: &Path, home: &Path, task: &str, s
         .join("docs")
         .join(format!("adr:{slug}.md"));
     let body = fs::read_to_string(&staged).expect("read staged ADR");
+    // Insert before the closing front-matter fence (the created ADR now carries
+    // materialized `status`/`date` header lines, not an empty fence).
     let with = body.replacen(
-        "---\n---\n",
-        "---\ncites-code: src/lib.rs#present_symbol\n---\n",
+        "\n---\n",
+        "\ncites-code: src/lib.rs#present_symbol\n---\n",
         1,
     );
     assert_ne!(
         body, with,
-        "the staged ADR carries an empty front-matter block"
+        "the staged ADR carries a front-matter block to inject the anchor into"
     );
     fs::write(&staged, &with).expect("inject cites-code anchor");
 }
