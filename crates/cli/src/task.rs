@@ -354,6 +354,40 @@ impl TaskArea {
         Ok(out)
     }
 
+    /// The task-scope **probe pre-flight** — the task twin of `cli.rs`'s store-scope
+    /// `require_doc_code_probe`. When the task's effective state carries `code-anchor`
+    /// work (the same surface `schedule_doc_code` invokes the probe over), resolve the
+    /// `doc-code` program (the `JIGC_DOC_CODE_PROBE` override else the `<bin-dir>/doc-code`
+    /// sibling) and require it to be an existing file **before** the engine sweep reaches
+    /// the probe. A missing probe is one misconfiguration to report once — not an
+    /// N-per-anchor `pack-probe-integrity.crash` floor — so this bails with **one**
+    /// operational error naming the resolved path + the override knob, which the verb
+    /// handler routes to stderr with a non-zero exit (`module-layout.md` → Probe
+    /// distribution, the task-scope absence fix; `design/validation.md` → Distribution
+    /// bound). A task whose effective state carries **no** anchor enumerates an empty
+    /// surface, so this is inert — a commit-only no-anchor task is unaffected, matching the
+    /// no-anchor sweep, which never invokes the probe.
+    fn require_doc_code_probe(&self, schemas: &BTreeMap<String, Schema>) -> Result<()> {
+        let (anchors, _guard) =
+            engine::target_surface::enumerate_target_surface(&self.dir, &self.repo_root, schemas)
+                .with_context(|| {
+                format!(
+                    "enumerating the task's code-anchor surface at {:?}",
+                    self.dir
+                )
+            })?;
+        if anchors.is_empty() {
+            return Ok(());
+        }
+        let program = ::cli::invoke::doc_code_program();
+        if !program.is_file() {
+            anyhow::bail!(
+                "`doc-code` probe not found at {program:?} — place the `doc-code` binary beside `jigc` or set `JIGC_DOC_CODE_PROBE` to its path"
+            );
+        }
+        Ok(())
+    }
+
     /// Run the task-scope validation sweep against the committed-state `file-state`
     /// record (`design/validation.md` → How it gates `finalize`; `design/reconciliation.md`
     /// → Detection timing: the `task validate` full sweep).
@@ -381,6 +415,11 @@ impl TaskArea {
     /// exactly the forward-ref block `finalize` gates on.
     fn validate(&self) -> Result<(engine::result::ValidationReport, FileStateRecord)> {
         let schemas = self.schemas()?;
+        // Pre-flight the `doc-code` probe before the engine sweep reaches it, so a missing
+        // probe on an anchored task is one operational error — never an N-per-anchor
+        // `pack-probe-integrity.crash` floor (the store-scope `require_doc_code_probe`
+        // ported to the task path; `module-layout.md` → Probe distribution).
+        self.require_doc_code_probe(&schemas)?;
         let head = git_head(&self.repo_root)?;
         let mut record = FileStateRecord::load(&self.jigc_root).with_context(|| {
             format!(

@@ -133,6 +133,19 @@ fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
         .expect("run the jigc binary")
 }
 
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and an **explicit**
+/// `JIGC_DOC_CODE_PROBE` (the `validate_command.rs` negative idiom) — pointed at an
+/// unresolvable path to drive the probe-absent pre-flight at task scope.
+fn jigc_with_probe(repo: &Path, home: &Path, args: &[&str], probe: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_DOC_CODE_PROBE", probe)
+        .output()
+        .expect("run the jigc binary")
+}
+
 /// Run `jigc doc <args>`, optionally piping `stdin`, capturing output.
 fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
     let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
@@ -351,5 +364,128 @@ fn anchorless_task_produces_no_doc_code_finding() {
     assert!(
         !rendered.contains("doc-code"),
         "an anchor-less task must surface zero doc-code findings; got:\n{rendered}",
+    );
+}
+
+/// Stage an anchored task (a created ADR carrying a `cites-code` over a present symbol,
+/// every author-required slot filled) so the effective state carries code-anchor work —
+/// the surface the task-scope probe pre-flight gates on. The anchor targets the present
+/// symbol so the **control** (real probe) validates/finalizes clean.
+fn stage_anchored_task(repo: &Path, home: &Path, task: &str, slug: &str) {
+    start_task(repo, home, task.replace('-', " ").as_str());
+    create_adr(repo, home, &slug.replace('-', " "), &format!("adr:{slug}"));
+    fill_adr_slots(repo, home, slug);
+    fill_commit(repo, home, task);
+    inject_cites_code(repo, task, slug, "src/lib.rs#present_symbol");
+}
+
+/// T3 — the absence-vs-crash fix: with the `doc-code` probe **unresolvable**
+/// (`JIGC_DOC_CODE_PROBE` at a non-existent path), an anchored task's `jigc task
+/// validate` exits non-zero with **exactly one** `doc-code` probe-not-found operational
+/// error on stderr — not N per-anchor `pack-probe-integrity.crash` findings, and no
+/// crash meta-finding at all (the sweep never ran). The count is asserted so an
+/// N-per-anchor regression fails (`module-layout.md` → Probe distribution, the task-scope
+/// absence fix; `design/validation.md` → Distribution bound).
+#[test]
+fn task_validate_probe_absent_reports_one_operational_error_non_zero() {
+    let repo = TempDir::new("task-validate-absent-repo");
+    let home = TempDir::new("task-validate-absent-home");
+    init_repo(repo.path());
+
+    let task = "validate-probe-absent";
+    stage_anchored_task(repo.path(), home.path(), task, "validate-probe-absent");
+
+    let missing = repo.path().join("nonexistent-doc-code-probe");
+    let out = jigc_with_probe(
+        repo.path(),
+        home.path(),
+        &["task", "validate", task],
+        &missing,
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "a missing probe must make task validate exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert_eq!(
+        stderr.matches("`doc-code` probe not found").count(),
+        1,
+        "exactly one `doc-code probe not found` operational error must surface on stderr \
+         (an N-per-anchor crash regression fails this); stderr:\n{stderr}",
+    );
+    assert!(
+        !stdout.contains("pack-probe-integrity") && !stderr.contains("pack-probe-integrity"),
+        "the sweep must not run when the probe is absent — no pack-probe-integrity meta-finding; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+/// T3 — the same absence-vs-crash fix at the **finalize** commit boundary: an anchored
+/// task's `jigc task finalize` with an unresolvable probe exits non-zero with exactly one
+/// `doc-code` probe-not-found operational error and no `pack-probe-integrity.crash` floor.
+#[test]
+fn task_finalize_probe_absent_reports_one_operational_error_non_zero() {
+    let repo = TempDir::new("task-finalize-absent-repo");
+    let home = TempDir::new("task-finalize-absent-home");
+    init_repo(repo.path());
+
+    let task = "finalize-probe-absent";
+    stage_anchored_task(repo.path(), home.path(), task, "finalize-probe-absent");
+
+    let missing = repo.path().join("nonexistent-doc-code-probe");
+    let out = jigc_with_probe(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", task],
+        &missing,
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "a missing probe must make task finalize exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert_eq!(
+        stderr.matches("`doc-code` probe not found").count(),
+        1,
+        "exactly one `doc-code probe not found` operational error must surface on stderr \
+         (an N-per-anchor crash regression fails this); stderr:\n{stderr}",
+    );
+    assert!(
+        !stdout.contains("pack-probe-integrity") && !stderr.contains("pack-probe-integrity"),
+        "the sweep must not run when the probe is absent — no pack-probe-integrity meta-finding; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+/// T3 control — the present-probe case still works: the same anchored task with the
+/// **real** probe present validates clean (no `doc-code.symbol-exists` block, the anchor
+/// resolves) — proving the pre-flight is inert when the probe is resolvable, not a blanket
+/// block on anchored tasks.
+#[test]
+fn task_validate_probe_present_resolves_clean_control() {
+    let repo = TempDir::new("task-validate-present-repo");
+    let home = TempDir::new("task-validate-present-home");
+    init_repo(repo.path());
+
+    let task = "validate-probe-present";
+    stage_anchored_task(repo.path(), home.path(), task, "validate-probe-present");
+
+    let out = jigc(repo.path(), home.path(), &["task", "validate", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_ok(
+        &out,
+        &format!("validate with the real probe present must stay clean; got:\n{rendered}"),
+    );
+    assert!(
+        !rendered.contains("doc-code.symbol-exists"),
+        "a present anchor with the real probe must surface no doc-code block; got:\n{rendered}",
     );
 }
