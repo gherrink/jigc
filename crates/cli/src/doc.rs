@@ -317,14 +317,18 @@ fn run_add_item(
                 &[],
             )
             .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
-            // The minted nested item address is the parent-scoped id chain plus the
-            // slugger-minted anchor — the 4-hop `#section/parent/<slug>` convention the
-            // validate findings + the nested set verbs address (the nested-section hop is
-            // a *naming* hop on the add-item target only, not on the minted item).
+            // The minted nested item address is the **section-qualified** chain: the
+            // section, the parent-scoped id chain, the nested-section name, then the
+            // slugger-minted anchor — `#section/parent/.../nested-section/<slug>`. This is
+            // the canonical form the design settled (review finding S1,
+            // `design/changelog.md` → engine work #1) and the exact address the
+            // subsequent `set-slot`/`set-field` accept and the validate findings name, so
+            // an agent drives the emitted address verbatim with no re-spelling.
             let minted = format!(
-                "{}/{}/{}",
+                "{}/{}/{}/{}",
                 section,
                 parents.join("/"),
+                nested_section,
                 engine::slug::slugify(title)
             );
             (edited, minted)

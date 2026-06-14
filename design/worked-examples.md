@@ -1601,17 +1601,20 @@ $ jigc start --workflow record-change "cut 1.0.0"            # off-router, by na
 # COLD (no committed changelog yet): idempotent-create mints the fixed-slug singleton (singleton ⇒ slug == type id).
 $ jigc doc create changelog --title Changelog               # → changelog:changelog.md (mints; cold)
 
-# add a release item (the level-1 repeatable; `date` is item-level set:on-create → stamped automatically):
-$ jigc doc add-item  changelog:changelog#releases --title "1.0.0"       # → changelog:changelog#releases/1-0-0
-$ jigc doc set-field changelog:changelog#releases/1-0-0/link --value https://example.com/compare/0.9.0...1.0.0  # OPTIONAL field — may be omitted
+# add a release item (the level-1 repeatable; `date` is item-level set:on-create → stamped automatically).
+# add-item PRINTS the minted address — the slugger drops dots, so `1.0.0` mints id `100`. Drive the
+# PRINTED address verbatim downstream (never re-spell the version):
+$ jigc doc add-item  changelog:changelog#releases --title "1.0.0"       # → changelog:changelog#releases/100
+$ jigc doc set-field changelog:changelog#releases/100/link --value https://example.com/compare/0.9.0...1.0.0  # OPTIONAL field — may be omitted
 
-# add NESTED change-groups under the release (the level-2 repeatable — the Leaf::Repeatable path):
-$ jigc doc add-item  changelog:changelog#releases/1-0-0/changes --title added    # → …/changes/added
-$ jigc doc set-slot  changelog:changelog#releases/1-0-0/changes/added/notes --from-file -   # "- OAuth device-code flow"
-$ jigc doc add-item  changelog:changelog#releases/1-0-0/changes --title fixed
-$ jigc doc set-slot  changelog:changelog#releases/1-0-0/changes/fixed/notes --from-file -
+# add NESTED change-groups under the release (the level-2 repeatable — the Leaf::Repeatable path).
+# the minted group address is SECTION-QUALIFIED (carries the `changes` segment) — the form set-slot accepts:
+$ jigc doc add-item  changelog:changelog#releases/100/changes --title added    # → changelog:changelog#releases/100/changes/added
+$ jigc doc set-slot  changelog:changelog#releases/100/changes/added/notes --from-file -   # "- OAuth device-code flow"
+$ jigc doc add-item  changelog:changelog#releases/100/changes --title fixed    # → …/releases/100/changes/fixed
+$ jigc doc set-slot  changelog:changelog#releases/100/changes/fixed/notes --from-file -
 
-$ jigc task finalize cut-1-0-0
+$ jigc task finalize cut-100
 > validate: clean
 > promote: changelog/changelog.md
 > commit:  docs(changelog): cut 1.0.0           ← one commit, the singleton + the code
@@ -1625,11 +1628,11 @@ The `## Unreleased Changes` section (a **multi-word section id** — the multi-w
 $ jigc start --workflow record-change "cut 1.1.0"
 # WARM (changelog is committed): create copies the committed doc in (read_or_copy_in) — prior 1.0.0 release survives.
 $ jigc doc create changelog --title Changelog               # copy-in: the 1.0.0 release is preserved
-$ jigc doc add-item changelog:changelog#releases --title "1.1.0"
-$ jigc doc add-item changelog:changelog#releases/1-1-0/changes --title changed
-$ jigc doc set-slot changelog:changelog#releases/1-1-0/changes/changed/notes --from-file -
+$ jigc doc add-item changelog:changelog#releases --title "1.1.0"               # → changelog:changelog#releases/110
+$ jigc doc add-item changelog:changelog#releases/110/changes --title changed   # → …/releases/110/changes/changed
+$ jigc doc set-slot changelog:changelog#releases/110/changes/changed/notes --from-file -
 #   (no `link` authored this release — the OPTIONAL field is left absent)
-$ jigc task finalize cut-1-1-0
+$ jigc task finalize cut-110
 > promote: changelog/changelog.md (re-promoted byte-stable, BOTH 1.0.0 + 1.1.0 present, nested groups intact)
 ```
 
@@ -1637,15 +1640,15 @@ $ jigc task finalize cut-1-1-0
 
 ```text
 # RED 1 — a half-authored NESTED entry BLOCKS at validate (recursive repeatable conformance):
-$ jigc doc add-item changelog:changelog#releases/1-1-0/changes --title removed
+$ jigc doc add-item changelog:changelog#releases/110/changes --title removed   # → …/releases/110/changes/removed
 #   leave the nested `notes` slot empty
-$ jigc task finalize cut-1-1-0
-> BLOCK schema-conformance.required-slot-present @ changelog:changelog … #releases/1-1-0/changes/removed/notes
-#   the gate names the genuinely-empty NESTED leaf; non-zero exit, NO commit.
+$ jigc task finalize cut-110
+> BLOCK schema-conformance.required-slot-present @ changelog:changelog … #releases/110/changes/removed/notes
+#   the gate names the genuinely-empty NESTED leaf at its SECTION-QUALIFIED address; non-zero exit, NO commit.
 #   (the nested-leaf address depends on the parent-scoped path locator — confirmed at the build spike, B1/S1.)
 
 # RED 2 — the OPTIONAL `link` field, absent, finalizes CLEAN (the optional-field lift):
-$ jigc task finalize cut-1-1-0     # with no `link` on 1.1.0 → no required-field-present finding for it
+$ jigc task finalize cut-110     # with no `link` on 1.1.0 → no required-field-present finding for it
 > validate: clean                  # an absent OPTIONAL field does not block; an absent REQUIRED field/slot still does
 ```
 

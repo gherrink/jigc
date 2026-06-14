@@ -277,7 +277,9 @@ fn nested_item_addressing_lands_on_the_addressed_nested_item_through_the_binary(
 
     // (2) add-item a nested change-group `#added` into EACH release. The add-item
     // *target* names the nested repeatable via `<release-addr>/changes`; the emitted
-    // minted address is the parent-scoped chain `#releases/<release>/added`.
+    // minted address is the canonical SECTION-QUALIFIED chain
+    // `#releases/<release>/changes/added` (review finding S1 — carries the `changes`
+    // nested-section segment, the exact form set-slot/set-field accept).
     let nested_a = ok_stdout(
         run_jigc(
             repo.path(),
@@ -311,9 +313,16 @@ fn nested_item_addressing_lands_on_the_addressed_nested_item_through_the_binary(
         "add-item nested #added into 1.2.0",
     );
     // Both nested groups carry the SAME `#added` anchor but under DIFFERENT parents —
-    // the emitted addresses differ only by the parent release hop.
-    assert_eq!(nested_a, format!("changelog:{slug}#releases/1-3-0/added"));
-    assert_eq!(nested_b, format!("changelog:{slug}#releases/1-2-0/added"));
+    // the emitted addresses differ only by the parent release hop, and both are
+    // section-qualified (carry the `changes` segment).
+    assert_eq!(
+        nested_a,
+        format!("changelog:{slug}#releases/1-3-0/changes/added")
+    );
+    assert_eq!(
+        nested_b,
+        format!("changelog:{slug}#releases/1-2-0/changes/added")
+    );
     assert_ne!(nested_a, nested_b);
 
     // (3) set-slot + set-field on 1.2.0's nested `#added`, addressing the EMITTED
@@ -454,7 +463,8 @@ fn nested_item_addressing_lands_on_the_addressed_nested_item_through_the_binary(
 
     // (4) a nested set against an address whose PARENT is mis-named must NOT misfire
     // onto the same-anchor #added under a different parent — it fails (no wrong-item
-    // write). `#releases/9-9-9/added/notes` names no release `9-9-9`.
+    // write). `#releases/9-9-9/changes/added/notes` (section-qualified) names no release
+    // `9-9-9`.
     let mis = run_jigc(
         repo.path(),
         home.path(),
@@ -462,7 +472,7 @@ fn nested_item_addressing_lands_on_the_addressed_nested_item_through_the_binary(
         &[
             "doc",
             "set-slot",
-            &format!("changelog:{slug}#releases/9-9-9/added/notes"),
+            &format!("changelog:{slug}#releases/9-9-9/changes/added/notes"),
             "--from-file",
             "-",
         ],

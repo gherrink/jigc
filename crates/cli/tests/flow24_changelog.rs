@@ -12,6 +12,13 @@
 //! address verbatim — never a reconstructed `1-0-0` form — so the test asserts the
 //! bytes an agent would actually run (the masking-test guard).
 //!
+//! The emitted nested-item address is the canonical **section-qualified** form (review
+//! finding S1, `design/changelog.md` → engine work #1): `#releases/<id>/changes/<cat>`,
+//! carrying the `changes` nested-section segment. `set-slot`/`set-field` accept that
+//! exact form and the validate conformance gate names it, so the test drives the
+//! section-qualified address an agent really types — not the segment-less form a prior
+//! divergence emitted (the M22-audit un-masking).
+//!
 //! `worked-examples.md` flow 24 acceptance bar:
 //!   1. a new project authors a managed `changelog` through jigc, promoted byte-stable;
 //!   2. the nested `Leaf::Repeatable` (release → change-group) round-trips;
@@ -245,6 +252,16 @@ fn author_group(
         ),
         &format!("add-item {parent}/changes ({category})"),
     );
+    // The emitted nested-item address is the canonical SECTION-QUALIFIED form (review
+    // finding S1, `design/changelog.md` → engine work #1): it carries the `changes`
+    // nested-section segment, and the `set-slot` below drives it VERBATIM — proving the
+    // address an agent actually types (`#releases/<id>/changes/<cat>/notes`) resolves,
+    // not just the previously-emitted segment-less form (the masking-test guard).
+    assert_eq!(
+        group,
+        format!("{parent}/changes/{category}"),
+        "the minted nested-group address is section-qualified (includes `changes`)",
+    );
     ok_stdout(
         run_jigc(
             repo,
@@ -477,15 +494,22 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         blocked_err.contains("schema-conformance.required-slot-present"),
         "red 1 must fire `schema-conformance.required-slot-present`; stderr:\n{blocked_err}",
     );
-    // The gate names the genuinely-empty NESTED leaf address — the parent-scoped path
-    // (`releases/<v>/changes/<group>/notes` projected to `releases/<v>/<group>`), which
-    // depends on the parent-scoped path locator confirmed at the spike (B1/S1).
-    let nested_leaf = removed
+    // The gate names the genuinely-empty NESTED leaf at its canonical SECTION-QUALIFIED
+    // address — `releases/<v>/changes/<group>/notes`, the same form `add-item` emits and
+    // `set-slot` accepts (review finding S1; the parent-scoped path locator confirmed at
+    // the spike, B1/S1). We assert the full qualified group fragment (which carries the
+    // `changes` segment) appears verbatim, so the gate names the address an agent types.
+    let nested_group = removed
         .strip_prefix("changelog:changelog#")
         .expect("nested group address is a changelog fragment");
     assert!(
-        blocked_err.contains(nested_leaf) && blocked_err.contains("notes"),
-        "red 1 must name the NESTED leaf {nested_leaf}; stderr:\n{blocked_err}",
+        nested_group.contains("/changes/"),
+        "the emitted nested-group address is section-qualified; got {nested_group}",
+    );
+    assert!(
+        blocked_err.contains(nested_group) && blocked_err.contains("notes"),
+        "red 1 must name the section-qualified NESTED group {nested_group} and its `notes` \
+         leaf; stderr:\n{blocked_err}",
     );
     assert_eq!(
         head_count(repo),

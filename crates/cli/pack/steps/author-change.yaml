@@ -5,21 +5,25 @@ is copied in for append):
 {{ cli.create-changelog }}
 
 Then author the change. To cut a release, mint a release item (its id is minted
-from the version title you give; its `date` is stamped on create) and, if there is
-a comparison/diff URL, set the optional `link`:
+from the version title you give — e.g. `1.0.0` mints `100` — and its `date` is
+stamped on create). `add-item` PRINTS the new item's address; use that printed
+address verbatim for every follow-up verb — never re-spell the version string:
 
 jigc doc add-item changelog:changelog#releases --title "<version>" --task {{task.id}}
-jigc doc set-field changelog:changelog#releases/<version>/link --value "<diff-url>" --task {{task.id}}
+#   → prints e.g. changelog:changelog#releases/100  (call this <release-addr>)
+jigc doc set-field <release-addr>/link --value "<diff-url>" --task {{task.id}}
 
 Under that release, add one nested change-group per category and author its notes
 (one bullet per change). The category is the group's id (added / changed /
-deprecated / removed / fixed / security):
+deprecated / removed / fixed / security). Again, drive the printed address verbatim:
 
-jigc doc add-item changelog:changelog#releases/<version>/changes --title "<Category>" --task {{task.id}}
-jigc doc set-slot changelog:changelog#releases/<version>/changes/<category>/notes --from-file - --task {{task.id}}
+jigc doc add-item <release-addr>/changes --title "<category>" --task {{task.id}}
+#   → prints e.g. changelog:changelog#releases/100/changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}
 
 For a change that is not yet cut into a release, add the change-group under the
 staged section instead:
 
-jigc doc add-item changelog:changelog#unreleased-changes --title "<Category>" --task {{task.id}}
-jigc doc set-slot changelog:changelog#unreleased-changes/<category>/notes --from-file - --task {{task.id}}
+jigc doc add-item changelog:changelog#unreleased-changes --title "<category>" --task {{task.id}}
+#   → prints e.g. changelog:changelog#unreleased-changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}

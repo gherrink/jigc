@@ -789,12 +789,17 @@ fn check_item_leaves(
             }
             // A nested repeatable: recurse over this item's nested items one segment
             // deeper, each adjudicated against the nested block's own `id-from`
-            // exemption and addressed at `…/parent/child/leaf`.
+            // exemption and addressed at the **section-qualified**
+            // `…/parent/<nested-section>/child/leaf` (review finding S1,
+            // `design/changelog.md` → engine work #1) — the nested-section id is included
+            // so the address the gate names is exactly the canonical form an agent types
+            // and `set-slot`/`add-item` emit (consistent across every surface).
             crate::schema::Leaf::Repeatable {
-                repeatable: nested, ..
+                id: nested_section,
+                repeatable: nested,
             } => {
                 for child in &item.items {
-                    let child_path = format!("{item_path}/{}", child.id);
+                    let child_path = format!("{item_path}/{nested_section}/{}", child.id);
                     check_item_leaves(&child_path, nested, child, source, findings);
                 }
             }
@@ -1590,8 +1595,11 @@ sections:
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(
             finding.location.as_ref().and_then(|l| l.address.as_deref()),
-            Some("releases/1-2-0/added/notes"),
-            "the finding must address the NESTED leaf, not the parent",
+            // The canonical SECTION-QUALIFIED nested address (review finding S1): the
+            // `changes` nested-section segment is included — the same form `add-item`
+            // emits and `set-slot` accepts, so the gate names the address an agent types.
+            Some("releases/1-2-0/changes/added/notes"),
+            "the finding must address the NESTED leaf (section-qualified), not the parent",
         );
     }
 
@@ -1612,8 +1620,9 @@ sections:
         assert_eq!(finding.severity, Severity::Blocking);
         assert_eq!(
             finding.location.as_ref().and_then(|l| l.address.as_deref()),
-            Some("releases/1-2-0/added/severity"),
-            "the finding must address the NESTED leaf",
+            // Section-qualified nested address (review finding S1) — includes `changes`.
+            Some("releases/1-2-0/changes/added/severity"),
+            "the finding must address the NESTED leaf (section-qualified)",
         );
     }
 }

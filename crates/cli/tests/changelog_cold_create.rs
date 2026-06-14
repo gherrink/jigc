@@ -253,7 +253,10 @@ fn record_change_cold_creates_the_changelog_singleton_byte_stable() {
         ),
         "add-item nested #added",
     );
-    assert_eq!(added, format!("{release}/added"));
+    // The minted nested-group address is the canonical SECTION-QUALIFIED form (review
+    // finding S1) — it carries the `changes` segment, and the `set-slot` below drives it
+    // verbatim, proving the address an agent types resolves (the M22-audit un-masking).
+    assert_eq!(added, format!("{release}/changes/added"));
     ok_stdout(
         run_jigc(
             repo.path(),

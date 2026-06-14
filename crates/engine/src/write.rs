@@ -1240,20 +1240,76 @@ fn field_value_in_lines(
     None
 }
 
-/// Descend a parsed document to the nested [`parse::ParsedItem`] addressed by the id
-/// chain `item_ids` under `section_id` (`["1-2-0", "added"]` → release `1-2-0`'s nested
-/// `#added`). Each segment is matched **within its parent's items** (parent-scoped, the
-/// model the byte locator [`locate_item_path`] enforces on disk), so a same-anchor item
-/// under a different parent is never returned. `None` if any segment is absent.
+/// Strip the **nested-section** segments from a *section-qualified* address chain,
+/// yielding the **physical item-id chain** — the segments that have a `{#id}` heading
+/// in the document (the only ones the byte locator and parsed tree walk).
+///
+/// The canonical nested address is section-qualified (review finding S1,
+/// `design/changelog.md` → engine work #1): `#releases/1-2-0/changes/added/notes` names
+/// the nested-section `changes` between the release item `1-2-0` and the change-group
+/// item `added`. But a nested section is a purely *logical* schema hop — its items
+/// render directly one heading-level under the parent (`#### added`, not a `#### changes`
+/// wrapper), so the document tree has no `changes` node. The chain therefore alternates
+/// `item, nested-section, item, nested-section, …` starting at an item; this walks it
+/// against the schema, keeping each item id and **dropping** each nested-section id after
+/// confirming it names a declared [`Leaf::Repeatable`] at that level (so a mistyped
+/// nested-section segment is rejected, not silently treated as an item id). Returns the
+/// item-only chain (`["1-2-0", "added"]`), or `None` if a nested-section segment names no
+/// declared nested repeatable.
+fn physical_item_chain<'a>(
+    schema: &Schema,
+    section_id: &str,
+    chain: &[&'a str],
+) -> Option<Vec<&'a str>> {
+    let section = schema.sections.iter().find(|s| s.id == section_id)?;
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return None;
+    };
+    let mut block = &repeatable.block;
+    let mut physical: Vec<&str> = Vec::new();
+    let mut expect_item = true;
+    for segment in chain {
+        if expect_item {
+            // An item id at this repeatable level — kept (it has a heading), and its
+            // block becomes the scope for any following nested-section segment.
+            physical.push(segment);
+            expect_item = false;
+        } else {
+            // A nested-section id — must name a `Leaf::Repeatable` declared in the
+            // current block. Dropped from the physical chain (no heading of its own);
+            // its inner block becomes the scope for the next item id.
+            let nested = block.iter().find_map(|leaf| match leaf {
+                crate::schema::Leaf::Repeatable { id, repeatable } if id == segment => {
+                    Some(&repeatable.block)
+                }
+                _ => None,
+            })?;
+            block = nested;
+            expect_item = true;
+        }
+    }
+    Some(physical)
+}
+
+/// Descend a parsed document to the nested [`parse::ParsedItem`] addressed by the
+/// section-qualified id chain `item_ids` under `section_id` (`["1-2-0", "changes",
+/// "added"]` → release `1-2-0`'s nested `#added`). The chain is first reduced to its
+/// **physical** item-id chain ([`physical_item_chain`], dropping the logical
+/// nested-section hops), then each item is matched **within its parent's items**
+/// (parent-scoped, the model the byte locator [`locate_item_path`] enforces on disk), so
+/// a same-anchor item under a different parent is never returned. `None` if any segment
+/// is absent or a nested-section segment is unknown.
 fn nested_parsed_item<'a>(
+    schema: &Schema,
     doc: &'a parse::Document,
     section_id: &str,
     item_ids: &[&str],
 ) -> Option<&'a parse::ParsedItem> {
+    let physical = physical_item_chain(schema, section_id, item_ids)?;
     let section = doc.sections.iter().find(|s| s.id == section_id)?;
     let mut items = &section.items;
     let mut found: Option<&parse::ParsedItem> = None;
-    for id in item_ids {
+    for id in &physical {
         let item = items.iter().find(|i| &i.id == id)?;
         found = Some(item);
         items = &item.items;
@@ -1277,17 +1333,23 @@ pub fn set_nested_item_slot(
     new_prose: &str,
 ) -> Result<String, SpliceError> {
     let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
-    let item =
-        nested_parsed_item(&doc, section_id, item_ids).ok_or_else(|| SpliceError::NotPresent {
+    let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
+        SpliceError::NotPresent {
             what: format!("item {item_ids:?} in section {section_id:?}"),
-        })?;
+        }
+    })?;
     if item.slot_span(leaf_id).is_none() {
         return Err(SpliceError::NotPresent {
             what: format!("slot {leaf_id:?} in item {:?}", item.id),
         });
     }
 
-    let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_ids:?} in section {section_id:?}"),
+        }
+    })?;
+    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         SpliceError::NotPresent {
             what: format!("item {item_ids:?} block"),
         }
@@ -1298,7 +1360,7 @@ pub fn set_nested_item_slot(
     } else if let Some(entry) = content.slots.iter_mut().find(|(id, _)| id == leaf_id) {
         entry.1 = new_prose.to_string();
     }
-    let rendered = render_item_at(&content, item_ids.len());
+    let rendered = render_item_at(&content, physical.len());
     Ok(splice(
         source,
         region.clone(),
@@ -1322,12 +1384,17 @@ pub fn set_nested_item_field_or_insert(
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
-    let item = nested_parsed_item(&doc, section_id, item_ids).ok_or_else(|| {
+    let item = nested_parsed_item(schema, &doc, section_id, item_ids).ok_or_else(|| {
         GenerateError::WrongShape {
             what: format!("item {item_ids:?} in section {section_id:?} not present"),
         }
     })?;
-    let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+        }
+    })?;
+    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
         GenerateError::WrongShape {
             what: format!("item {item_ids:?} block not locatable"),
         }
@@ -1342,7 +1409,7 @@ pub fn set_nested_item_field_or_insert(
             value: Value::Scalar(new_value.to_string()),
         });
     }
-    let rendered = render_item_at(&content, item_ids.len());
+    let rendered = render_item_at(&content, physical.len());
     Ok(splice(
         source,
         region.clone(),
@@ -1372,15 +1439,26 @@ pub fn add_nested_item(
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
-    let parent = nested_parsed_item(&doc, section_id, parent_item_ids).ok_or_else(|| {
-        GenerateError::WrongShape {
-            what: format!("parent item {parent_item_ids:?} in section {section_id:?} not present"),
-        }
-    })?;
+    let parent =
+        nested_parsed_item(schema, &doc, section_id, parent_item_ids).ok_or_else(|| {
+            GenerateError::WrongShape {
+                what: format!(
+                    "parent item {parent_item_ids:?} in section {section_id:?} not present"
+                ),
+            }
+        })?;
+    let parent_physical =
+        physical_item_chain(schema, section_id, parent_item_ids).ok_or_else(|| {
+            GenerateError::WrongShape {
+                what: format!(
+                    "parent item {parent_item_ids:?} in section {section_id:?} not present"
+                ),
+            }
+        })?;
 
     // The nested repeatable named by `nested_section_id` (the leaf id of a
     // `Leaf::Repeatable` in the parent's block), resolved through the schema by walking
-    // the same chain in the section tree.
+    // the section-qualified parent chain in the section tree.
     let nested = nested_repeatable(schema, section_id, parent_item_ids, nested_section_id)
         .ok_or_else(|| GenerateError::WrongShape {
             what: format!(
@@ -1426,14 +1504,14 @@ pub fn add_nested_item(
     };
 
     let region =
-        locate_item_path(schema, source, section_id, parent_item_ids).ok_or_else(|| {
+        locate_item_path(schema, source, section_id, &parent_physical).ok_or_else(|| {
             GenerateError::WrongShape {
                 what: format!("parent item {parent_item_ids:?} block not locatable"),
             }
         })?;
     let mut content = item_content_from_parsed(parent, source);
     content.items.push(new_item);
-    let rendered = render_item_at(&content, parent_item_ids.len());
+    let rendered = render_item_at(&content, parent_physical.len());
     Ok(splice(
         source,
         region.clone(),
@@ -1442,11 +1520,13 @@ pub fn add_nested_item(
 }
 
 /// The nested [`crate::schema::Repeatable`] named `nested_section_id` declared in the
-/// item block reached by walking `parent_item_ids` from `section_id` — the schema dual
-/// of [`nested_parsed_item`]. Each parent segment descends into the matching
-/// `Leaf::Repeatable`'s block (by id-source-free position is wrong — we descend by the
-/// nested leaf whose items carry the next id), so the final lookup is the nested leaf
-/// `nested_section_id` in the deepest parent's block. `None` if absent.
+/// item block reached by walking the **section-qualified** `parent_item_ids` chain from
+/// `section_id` — the schema dual of [`nested_parsed_item`]. The chain
+/// (`parent_item_ids` ++ `nested_section_id`) alternates `item, nested-section, …`
+/// starting at an item; we descend through the schema by the **named** nested-section id
+/// each time (review LOW finding #5 — *not* "the first `Leaf::Repeatable`", which would
+/// silently pick the wrong nested section if a block ever declared two). `None` if any
+/// nested-section segment names no declared nested repeatable at its level.
 fn nested_repeatable(
     schema: &Schema,
     section_id: &str,
@@ -1457,25 +1537,23 @@ fn nested_repeatable(
     let SectionBody::Repeatable { repeatable } = &section.body else {
         return None;
     };
-    // Descend one repeatable per parent segment past the top (the top segment is the
-    // section's own repeatable). Each step picks the *only* nested repeatable on the
-    // path; a block with multiple nested repeatables would need the id to disambiguate,
-    // but the changelog (the driving case) carries exactly one, and the final lookup is
-    // by id regardless.
-    let mut current = repeatable.clone();
-    for _ in 1..parent_item_ids.len() {
-        let next = current.block.iter().find_map(|leaf| match leaf {
-            crate::schema::Leaf::Repeatable { repeatable, .. } => Some(repeatable.clone()),
+    // The section-qualified chain to the nested section: the parent items + the named
+    // nested section. It begins with the top item (the section's own repeatable, already
+    // in hand) and thereafter alternates nested-section, item, …, ending at the named
+    // nested section. We descend by each **named** nested-section segment — the segments
+    // at odd indices (0-indexed) of the full chain — and skip the item-id segments.
+    let mut chain = parent_item_ids.to_vec();
+    chain.push(nested_section_id);
+    let mut current = repeatable;
+    for segment in chain.iter().skip(1).step_by(2) {
+        current = current.block.iter().find_map(|leaf| match leaf {
+            crate::schema::Leaf::Repeatable { id, repeatable } if id == *segment => {
+                Some(repeatable)
+            }
             _ => None,
         })?;
-        current = next;
     }
-    current.block.iter().find_map(|leaf| match leaf {
-        crate::schema::Leaf::Repeatable { id, repeatable } if id == nested_section_id => {
-            Some(repeatable.clone())
-        }
-        _ => None,
-    })
+    Some(current.clone())
 }
 
 /// Build the splice replacement for a re-rendered nested item over its located
@@ -6421,7 +6499,9 @@ OAuth device-code flow.
             &schema,
             TWO_PARENT_TWO_LEVEL,
             "releases",
-            &["1-2-0", "added"],
+            // Section-qualified chain: release `1-2-0` → nested section `changes` → group
+            // `added` (review finding S1 — the canonical form the CLI passes through).
+            &["1-2-0", "changes", "added"],
             "notes",
             "OAuth device-code flow and PKCE.",
         )
@@ -6439,7 +6519,7 @@ OAuth device-code flow.
             &schema,
             TWO_PARENT_TWO_LEVEL,
             "releases",
-            &["1-3-0", "added"],
+            &["1-3-0", "changes", "added"],
             "notes",
             "Audit log export and rotation.",
         )
@@ -6459,7 +6539,7 @@ OAuth device-code flow.
             &schema,
             TWO_PARENT_TWO_LEVEL,
             "releases",
-            &["1-2-0", "added"],
+            &["1-2-0", "changes", "added"],
             "ticket",
             "JIRA-42",
         )
@@ -6520,7 +6600,7 @@ OAuth device-code flow.
             &schema,
             TWO_PARENT_TWO_LEVEL,
             "releases",
-            &["9-9-9", "added"], // no such release
+            &["9-9-9", "changes", "added"], // no such release
             "notes",
             "should not land anywhere",
         )
