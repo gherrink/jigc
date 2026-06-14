@@ -691,8 +691,10 @@ fn owned_location_violation(
 /// field is present (`required-field-present`), and every present field's value is
 /// type-conformant (`field-value-conformant`). A **repeatable** section runs the same
 /// three checks per item over its block leaves (the `id-from` heading field exempted),
-/// findings addressed at `#section/item/leaf`. Returns one blocking [`Finding`] per
-/// violation, in section-document order; a conformant instance yields an empty `Vec`.
+/// recursing into a **nested** repeatable's items at every level (the M22 multi-level
+/// lift), findings addressed at `#section/item/.../leaf` — one segment deeper per
+/// nesting level. Returns one blocking [`Finding`] per violation, in section-document
+/// order; a conformant instance yields an empty `Vec`.
 ///
 /// `ref-resolves` (forward-ref / edge-index integrity) is **not** run here — it is a
 /// *cross-doc* check [`validate_task`] runs once over the whole task, not a per-instance
@@ -729,13 +731,16 @@ pub fn schema_conformance(schema: &Schema, source: &str, doc: &Document) -> Vec<
 
 /// Run the three synthetic checks over each item of a **repeatable** section's
 /// block (`validation.md` → schema-conformance scope: the lifted MVP repeatable
-/// limit). Per item, every declared block leaf is adjudicated — a `slot` leaf via
-/// `required-slot-present`, a `field` leaf via `required-field-present` +
-/// `field-value-conformant` — **except the `id-from` source field**, which renders
-/// as the item heading not a trailing bullet (mirroring [`crate::parse`]'s
-/// `ItemTemplate::from` heading-field exclusion); checking its presence as a bullet
-/// would false-fail every conformant item. Findings address at `#section/item/leaf`
-/// (the M13 fragment vocabulary).
+/// limit), recursing into a **nested** repeatable's items at every level (the M22
+/// multi-level lift; `design/changelog.md` → engine work #1). Per item, every
+/// declared block leaf is adjudicated — a `slot` leaf via `required-slot-present`, a
+/// `field` leaf via `required-field-present` + `field-value-conformant`, a nested
+/// `repeatable` leaf by recursing into the item's nested items one level deeper —
+/// **except the `id-from` source field**, which renders as the item heading not a
+/// trailing bullet (mirroring [`crate::parse`]'s `ItemTemplate::from` heading-field
+/// exclusion at **every** level); checking its presence as a bullet would false-fail
+/// every conformant item. Findings address at `#section/item/.../leaf` (the M13
+/// fragment vocabulary, one segment deeper per nesting level).
 fn check_repeatable(
     section: &Section,
     repeatable: &crate::schema::Repeatable,
@@ -744,23 +749,47 @@ fn check_repeatable(
     findings: &mut Vec<Finding>,
 ) {
     for item in &parsed.items {
-        for leaf in &repeatable.block {
-            match leaf {
-                crate::schema::Leaf::Slot { id, .. } => {
-                    check_item_slot_present(section, item, id, source, findings);
+        // The address path up to and including this item: `section/item` at the top
+        // level, deepening one segment per nesting level as the recursion descends.
+        let item_path = format!("{}/{}", section.id, item.id);
+        check_item_leaves(&item_path, repeatable, item, source, findings);
+    }
+}
+
+/// Adjudicate one repeatable item's declared block leaves, addressed under
+/// `item_path` (the `section/item/.../item` path up to and including this item).
+/// Recurses into a nested `Leaf::Repeatable`'s items one segment deeper. The shared
+/// per-item body of [`check_repeatable`], lifted so the top level and every nested
+/// level run the identical conformance with a deepening address.
+fn check_item_leaves(
+    item_path: &str,
+    repeatable: &crate::schema::Repeatable,
+    item: &ParsedItem,
+    source: &str,
+    findings: &mut Vec<Finding>,
+) {
+    for leaf in &repeatable.block {
+        match leaf {
+            crate::schema::Leaf::Slot { id, .. } => {
+                check_item_slot_present(item_path, item, id, source, findings);
+            }
+            crate::schema::Leaf::Field(field) => {
+                // The id-source field is the item heading, never a bullet — exempt
+                // at this level just as at the top level.
+                if field.id == repeatable.id_from {
+                    continue;
                 }
-                crate::schema::Leaf::Field(field) => {
-                    // The id-source field is the item heading, never a bullet.
-                    if field.id == repeatable.id_from {
-                        continue;
-                    }
-                    check_item_field(section, item, field, findings);
-                }
-                // Recursive conformance over a nested repeatable's leaves is the
-                // M22 inc-1 T4 lift; no shipped schema declares a nested
-                // `Leaf::Repeatable` yet, so this checker cannot reach one.
-                crate::schema::Leaf::Repeatable { .. } => {
-                    unreachable!("nested repeatable conformance is M22 inc-1 T4");
+                check_item_field(item_path, item, field, findings);
+            }
+            // A nested repeatable: recurse over this item's nested items one segment
+            // deeper, each adjudicated against the nested block's own `id-from`
+            // exemption and addressed at `…/parent/child/leaf`.
+            crate::schema::Leaf::Repeatable {
+                repeatable: nested, ..
+            } => {
+                for child in &item.items {
+                    let child_path = format!("{item_path}/{}", child.id);
+                    check_item_leaves(&child_path, nested, child, source, findings);
                 }
             }
         }
@@ -770,9 +799,9 @@ fn check_repeatable(
 /// `required-slot-present` for one repeatable item's declared slot: its prose must
 /// be non-empty. The parser records the item's slot span (the heading is present,
 /// so the section parsed), so an all-whitespace slice is the unfilled-slot case.
-/// Addressed at `#section/item/leaf`.
+/// Addressed at `item_path/leaf` (one segment deeper per nesting level).
 fn check_item_slot_present(
-    section: &Section,
+    item_path: &str,
     item: &ParsedItem,
     leaf_id: &str,
     source: &str,
@@ -790,12 +819,9 @@ fn check_item_slot_present(
         let line = span.map(|span| span.start_line).unwrap_or(1);
         findings.push(blocking_conformance(
             "schema-conformance.required-slot-present",
-            format!(
-                "required slot `{leaf_id}` in item `{}` of section `{}` is empty",
-                item.id, section.id
-            ),
+            format!("required slot `{leaf_id}` in item `{item_path}` is empty"),
             Some(Location::addressed(
-                item_leaf_address(section, item, leaf_id),
+                format!("{item_path}/{leaf_id}"),
                 line,
                 1,
             )),
@@ -805,23 +831,20 @@ fn check_item_slot_present(
 
 /// `required-field-present` + `field-value-conformant` for one repeatable item's
 /// declared block field. An absent author-required field blocks; a present field
-/// whose value fails its declared type blocks. Both address at `#section/item/leaf`.
+/// whose value fails its declared type blocks. Both address at `item_path/leaf`.
 fn check_item_field(
-    section: &Section,
+    item_path: &str,
     item: &ParsedItem,
     declared: &SchemaField,
     findings: &mut Vec<Finding>,
 ) {
-    let address = item_leaf_address(section, item, &declared.id);
+    let address = format!("{item_path}/{}", declared.id);
     match item.fields.iter().find(|f| f.key == declared.id) {
         Some(present) => {
             if let Err(why) = crate::write::check_value(declared, &present.value) {
                 findings.push(blocking_conformance(
                     "schema-conformance.field-value-conformant",
-                    format!(
-                        "field `{}` in item `{}` of section `{}`: {why}",
-                        declared.id, item.id, section.id
-                    ),
+                    format!("field `{}` in item `{item_path}`: {why}", declared.id),
                     Some(Location::addressed(address, 1, 1)),
                 ));
             }
@@ -831,20 +854,14 @@ fn check_item_field(
                 findings.push(blocking_conformance(
                     "schema-conformance.required-field-present",
                     format!(
-                        "required field `{}` is missing from item `{}` of section `{}`",
-                        declared.id, item.id, section.id
+                        "required field `{}` is missing from item `{item_path}`",
+                        declared.id
                     ),
                     Some(Location::addressed(address, 1, 1)),
                 ));
             }
         }
     }
-}
-
-/// The `section/item/leaf` address fragment for a repeatable-item finding (the M13
-/// vocabulary; mirrors [`crate::target_surface`]'s per-item anchor address shape).
-fn item_leaf_address(section: &Section, item: &ParsedItem, leaf_id: &str) -> String {
-    format!("{}/{}/{}", section.id, item.id, leaf_id)
 }
 
 /// `required-slot-present`: the section declares a slot, so its prose must be
@@ -1430,6 +1447,161 @@ The first entry's detail prose.
                 .as_ref()
                 .and_then(|l| l.address.as_deref()),
             Some("entries/first-entry/kind"),
+        );
+    }
+}
+
+#[cfg(test)]
+mod nested_repeatable_conformance_tests {
+    //! (M22 inc-1 T4) `schema-conformance.*` over a **two-level** repeatable: the
+    //! three synthetic checks recurse into each nested item's leaves (the changelog's
+    //! `release → change-group` shape), the `id-from` heading field exempted at
+    //! **every** level, and a nested-leaf finding addressed one hop deeper
+    //! (`<section>/<release>/<change-group>/<leaf>`). A conformant two-level instance
+    //! yields none; a hand-malformed nested entry fires a blocking finding naming the
+    //! **nested** leaf, not the parent. See `design/changelog.md` → engine work #1
+    //! (the validate bullet: recurse, conformance at every level, nested address).
+
+    use super::*;
+    use crate::parse::parse_sections;
+
+    /// A `changelog`-shaped two-level fixture (a test fixture, not pack content): a
+    /// `releases` repeatable (depth 1, items `###`) whose block carries the `version`
+    /// id-source field then a **nested** `changes` repeatable (depth 2, items `####`).
+    /// Each change-group carries the `category` id-source field (exempt), a required
+    /// `notes` slot, and an author-required `severity` enum — the three nested levers,
+    /// so a fixture can violate exactly one at the nested level.
+    fn schema() -> Schema {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: severity, type: enum, of: [minor, major] }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        crate::schema::load_schema(yaml).expect("nested changelog schema loads")
+    }
+
+    fn parse(source: &str) -> Document {
+        parse_sections(&schema(), source)
+            .unwrap_or_else(|f| panic!("fixture must parse; got conformance findings: {f:?}"))
+    }
+
+    /// A fully-conformant two-level instance: one release with one change-group whose
+    /// `notes` slot is filled, whose `severity` enum is a member, and whose `category`
+    /// (the nested id-source heading) carries no trailing bullet.
+    const CONFORMANT: &str = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+<!-- fields -->
+- severity: minor
+";
+
+    /// A nested change-group with an **empty required slot**: the `#### …` group
+    /// heading parses, but its `notes` slot prose is blank.
+    const NESTED_EMPTY_SLOT: &str = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+<!-- fields -->
+- severity: minor
+";
+
+    /// A nested change-group with a **malformed required field value**: `severity` is
+    /// present but not an enum member.
+    const NESTED_MALFORMED_VALUE: &str = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+<!-- fields -->
+- severity: catastrophic
+";
+
+    /// (ii) A conformant two-level instance validates **clean at every level** — the
+    /// nested `category` id-from heading is not false-failed as an absent bullet (the
+    /// exemption must hold at the nested level too).
+    #[test]
+    fn conformant_two_level_instance_yields_no_findings() {
+        let schema = schema();
+        let doc = parse(CONFORMANT);
+        let findings = schema_conformance(&schema, CONFORMANT, &doc);
+        assert!(
+            findings.is_empty(),
+            "a conformant two-level instance must yield no findings, got {findings:?}"
+        );
+    }
+
+    /// (i) An empty required nested slot **blocks** at
+    /// `schema-conformance.required-slot-present`, the finding address naming the
+    /// **nested** leaf (`<section>/<release>/<change-group>/<leaf>`), not the parent.
+    #[test]
+    fn empty_nested_slot_blocks_naming_the_nested_leaf() {
+        let schema = schema();
+        let doc = parse(NESTED_EMPTY_SLOT);
+        let findings = schema_conformance(&schema, NESTED_EMPTY_SLOT, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "an empty nested slot must yield exactly one finding, got {findings:?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.code, "schema-conformance.required-slot-present");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("releases/1-2-0/added/notes"),
+            "the finding must address the NESTED leaf, not the parent",
+        );
+    }
+
+    /// (iii) A nested field whose value fails its declared type **blocks** at
+    /// `schema-conformance.field-value-conformant`, addressed at the nested leaf.
+    #[test]
+    fn malformed_nested_field_value_blocks_at_the_nested_address() {
+        let schema = schema();
+        let doc = parse(NESTED_MALFORMED_VALUE);
+        let findings = schema_conformance(&schema, NESTED_MALFORMED_VALUE, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "a malformed nested field value must yield exactly one finding, got {findings:?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.code, "schema-conformance.field-value-conformant");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("releases/1-2-0/added/severity"),
+            "the finding must address the NESTED leaf",
         );
     }
 }
