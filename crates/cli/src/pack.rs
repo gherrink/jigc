@@ -298,13 +298,18 @@ fn discover_compose_marker() -> anyhow::Result<bool> {
 /// setup-written compose marker) rather than reading the process environment / CWD,
 /// so the assembly is exercised without mutating global state (parallel-test-safe).
 ///
-/// **Marker set** (`compose_methodology == true`) composes the two in-binary packs
-/// as `CompositePack([dev, methodology])` — **dev FIRST = dev-highest**, the inverse
-/// of the listed>base convention, so the real `commit`/`default-workflow` collisions
-/// resolve to dev's bytes (`design/multi-pack.md` → Embedded second pack: dev-highest).
-/// This path composes **exactly** `[dev ▸ methodology]`: `JIGC_PACK_DIR` and any
-/// listed packs stay **inert** — the M21 bounded rule (marker + additional listed
-/// packs is out of scope), not a new feature.
+/// **Marker set** (`compose_methodology == true`) **and no explicit `JIGC_PACK_DIR`**
+/// composes the two in-binary packs as `CompositePack([dev, methodology])` — **dev
+/// FIRST = dev-highest**, the inverse of the listed>base convention, so the real
+/// `commit`/`default-workflow` collisions resolve to dev's bytes (`design/multi-pack.md`
+/// → Embedded second pack: dev-highest). This path composes **exactly**
+/// `[dev ▸ methodology]`: any listed packs stay **inert** — the M21 bounded rule
+/// (marker + additional listed packs is out of scope), not a new feature.
+///
+/// **`JIGC_PACK_DIR` supersedes the marker.** A non-empty `JIGC_PACK_DIR` is the
+/// explicit/dogfood channel: when set it selects the base and the marker does **not**
+/// fire, so the composition is exactly the pre-M21 `make_pack_from` result (e.g.
+/// methodology-alone for the dogfood). `design/worked-examples.md` flow 15.
 ///
 /// **Marker absent/false** is the M14 path delegated to [`make_pack_from`]: listed
 /// packs first (highest-precedence), base last (`JIGC_PACK_DIR`/`EmbeddedPack`). With
@@ -315,7 +320,13 @@ fn make_pack_from_marker(
     listed_dirs: Vec<PathBuf>,
     compose_methodology: bool,
 ) -> Box<dyn PackSource> {
-    if compose_methodology {
+    // `JIGC_PACK_DIR` is the explicit/dogfood channel and supersedes the marker:
+    // when it selects a base the embedded `[dev ▸ methodology]` composition stays
+    // inert (`design/multi-pack.md` → Embedded second pack; `worked-examples.md`
+    // flow 15). An empty `JIGC_PACK_DIR=` is *not* an explicit selection — it falls
+    // through to the embedded base, matching `make_base_pack`'s own empty handling.
+    let explicit_base = pack_dir.as_ref().is_some_and(|dir| !dir.is_empty());
+    if compose_methodology && !explicit_base {
         // Exactly `[dev ▸ methodology]`, both in-binary; dev first = dev-highest.
         return Box::new(CompositePack::new(vec![
             Box::new(EmbeddedPack::new()),
@@ -1627,6 +1638,55 @@ mod tests {
                 pack.pack_version(),
                 embedded.pack_version(),
                 "no-marker pack_version must equal the bare dev pack's",
+            );
+        }
+
+        /// **`JIGC_PACK_DIR` supersedes the marker.** When the base is selected by
+        /// `JIGC_PACK_DIR` (the explicit/dogfood channel), the
+        /// `compose-embedded-methodology` marker must **not** fire: the
+        /// `JIGC_PACK_DIR` base wins exactly as it did pre-M21 (the marker is
+        /// settable repo-wide, but the dogfood's `JIGC_PACK_DIR` must keep selecting
+        /// its base alone — `design/multi-pack.md` → Embedded second pack + setup
+        /// auto-wiring; `worked-examples.md` flow 15). Proven by: a sentinel resource
+        /// present only on the `JIGC_PACK_DIR` tree resolves through the composite,
+        /// AND the dev base's `single-task` does **not** — so the embedded
+        /// `[dev ▸ methodology]` composition is inert.
+        #[test]
+        fn pack_dir_supersedes_the_marker() {
+            let base = TempDir::new();
+            let wf = base.path().join("workflows");
+            std::fs::create_dir_all(&wf).expect("mk workflows/");
+            std::fs::write(wf.join("pack-dir-only.yaml"), b"when: from pack dir\n")
+                .expect("seed pack-dir wf");
+
+            // Marker is set (`true`), but the base comes from `JIGC_PACK_DIR`.
+            let pack =
+                make_pack_from_marker(Some(base.path().as_os_str().to_owned()), Vec::new(), true);
+
+            // The `JIGC_PACK_DIR` base's own workflow resolves through the composite ...
+            assert_eq!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("pack-dir-only"),
+                )
+                .expect("the pack-dir-only workflow reads through the composite"),
+                b"when: from pack dir\n",
+                "`JIGC_PACK_DIR` must select the base when the marker is also set",
+            );
+            // ... and the embedded dev/methodology composition is INERT: neither the
+            // dev base's `single-task` nor the methodology's `planning` resolves.
+            assert!(
+                pack.read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                )
+                .is_err(),
+                "the marker must not fire under `JIGC_PACK_DIR`: dev's `single-task` must be absent",
+            );
+            assert!(
+                pack.read(PackResourceKind::Workflows, &ResourceId::from("planning"))
+                    .is_err(),
+                "the marker must not fire under `JIGC_PACK_DIR`: methodology's `planning` must be absent",
             );
         }
 
