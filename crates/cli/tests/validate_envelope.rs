@@ -1,0 +1,416 @@
+//! M20 inc-2 / T4 — the **headline acceptance** for the completed `jigc validate`
+//! envelope, exercised through the **real `jigc` binary** (the M10 invocation-path-
+//! masking lesson: drive the bytes an operator would actually run, never a
+//! reconstructed equivalent). Composes T1 (the workflow↔refs store target), T2 (the
+//! read-only file↔CLI-state twin), and T3 (the three-family `validate_store` reshape).
+//!
+//! Built against `implementation/roadmap.md` → M20 Increment 2 Deliverable + Proves and
+//! `design/validation.md` → Completing the envelope. The store is set up via `jigc setup`
+//! over a real `git init` temp repo, and the real `doc-code` probe is selected via
+//! `JIGC_DOC_CODE_PROBE` (the `validate_command.rs` idiom) so the probe pre-flight passes.
+//!
+//! The four proofs:
+//!
+//! - **(i) both content families surface, report-only.** A store seeded with (a) a
+//!   project workflow shadow carrying a **dangling workflow-ref** (`{{ include:
+//!   step:not-a-step }}`) and (b) a committed ADR **edited out-of-band** so its on-disk
+//!   hash diverges from its `FileStateRecord` → `jigc validate` **exits 0** and lists
+//!   BOTH a `workflow-refs.*` dangling-ref finding AND a `file-state.hash-matches` drift
+//!   finding (read-only, never gating — `validation.md` → Exit semantics).
+//! - **(ii) the file-state twin is mutation-free.** `.jigc/state/file-state.json` is
+//!   byte-identical before and after the run: the twin detects without absorbing — it
+//!   never re-baselines the very drift it reports.
+//! - **(iii) the B1 no-false-drift guard.** `jigc validate` over a **clean** real-dev-
+//!   pack store emits **no** `workflow-refs.*` finding — the membership-only command-ref
+//!   path fabricates no `task-ref-in-no-task-workflow` / `placeholder-resolves` drift over
+//!   the pack's every workflow (the design-review B1 fix).
+//! - **(iv) the operational-error exit class is intact.** With the `doc-code` probe
+//!   unresolvable, `jigc validate` still exits **non-zero** with the one operational error
+//!   — the content-only-exits-0 rule did not loosen the probe-missing exit.
+//!
+//! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp repo
+//! is a real `git init`, the probe is the real built `doc-code`, and a self-cleaning
+//! `TempDir` keeps the test off the developer's repo.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::OnceLock;
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc-validate-envelope-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Build the pack's `doc-code` probe once (process-wide) and return its binary path —
+/// the **real** tree-sitter subprocess the engine/CLI seam drives, so the `jigc validate`
+/// probe pre-flight resolves (the `validate_command.rs` idiom).
+fn doc_code_probe() -> &'static Path {
+    static PROBE: OnceLock<PathBuf> = OnceLock::new();
+    PROBE.get_or_init(|| {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("probes")
+            .join("doc-code")
+            .join("Cargo.toml");
+        let out = Command::new(env!("CARGO"))
+            .args(["build", "--quiet", "--manifest-path"])
+            .arg(&manifest)
+            .output()
+            .expect("invoke cargo build for doc-code");
+        assert!(
+            out.status.success(),
+            "building the doc-code probe failed:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let bin = manifest
+            .parent()
+            .unwrap()
+            .join("target")
+            .join("debug")
+            .join("doc-code");
+        assert!(bin.is_file(), "doc-code binary missing at {bin:?}");
+        bin
+    })
+}
+
+/// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
+fn git(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string()
+}
+
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and the real `doc-code` probe
+/// selected via `JIGC_DOC_CODE_PROBE` so the validate pre-flight resolves.
+fn jigc(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    jigc_with_probe(repo, home, args, doc_code_probe())
+}
+
+/// Run `jigc <args>` with an explicit `JIGC_DOC_CODE_PROBE` — lets the operational-error
+/// control point the override at a path that does not resolve to an executable.
+fn jigc_with_probe(repo: &Path, home: &Path, args: &[&str], probe: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_DOC_CODE_PROBE", probe)
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Run `jigc doc <args>`, optionally piping `stdin`, capturing output.
+fn jigc_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command.arg("doc").args(args);
+    command
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_DOC_CODE_PROBE", doc_code_probe());
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn().expect("spawn jigc");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// Assert a `jigc` invocation succeeded, surfacing its streams on failure.
+fn assert_ok(out: &std::process::Output, what: &str) {
+    assert!(
+        out.status.success(),
+        "{what} must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Make `root` a real git repo with identity, then run `jigc setup` over it (the
+/// project layer + probe extraction). Returns once the store is a clean, set-up repo.
+fn setup_repo(repo: &Path, home: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+    fs::write(repo.join("README.md"), "hello\n").expect("write file");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+
+    let out = jigc(repo, home, &["setup"]);
+    assert_ok(&out, "`jigc setup`");
+}
+
+/// Fill an ADR's author-required prose slots so a finalize over it validates clean.
+fn fill_adr_slots(repo: &Path, home: &Path, slug: &str) {
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo,
+            home,
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_slot(
+        &format!("adr:{slug}#context"),
+        b"Session lookups must stay sub-millisecond.\n",
+    );
+    set_slot(
+        &format!("adr:{slug}#decision"),
+        b"Keep sessions in a single in-memory node.\n",
+    );
+    set_slot(
+        &format!("adr:{slug}#consequences"),
+        b"A cold node loses its sessions.\n",
+    );
+}
+
+/// Fill every author-required field/slot of the provisioned commit doc.
+fn fill_commit(repo: &Path, home: &Path, task: &str) {
+    let set_field = |addr: &str, value: &str| {
+        let out = jigc_doc(repo, home, &["set-field", addr, "--value", value], None);
+        assert_ok(&out, &format!("set-field {addr}"));
+    };
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo,
+            home,
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_field(&format!("commit:{task}#type"), "feat");
+    set_field(&format!("commit:{task}#scope"), "cache");
+    set_slot(&format!("commit:{task}#summary"), b"change the cache\n");
+    set_slot(&format!("commit:{task}#body"), b"A cache change.\n");
+}
+
+/// Run one whole task that creates + finalizes `adr:single-node-cache`, committing it to
+/// `decisions/single-node-cache.md` and baselining it in the file-state record — the
+/// committed managed doc the OOB edit later drifts (the `superseding_decision.rs` idiom).
+fn commit_baselined_adr(repo: &Path, home: &Path) {
+    let out = jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "cache sessions in a single in-memory node",
+        ],
+    );
+    assert_ok(&out, "`jigc start`");
+    let task = "cache-sessions-in-a-single-in-memory-node";
+
+    let create = jigc_doc(
+        repo,
+        home,
+        &["create", "adr", "--title", "Single-node cache"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr`");
+    let adr = String::from_utf8(create.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string();
+    assert_eq!(adr, "adr:single-node-cache");
+
+    fill_adr_slots(repo, home, "single-node-cache");
+    fill_commit(repo, home, task);
+
+    let out = jigc(repo, home, &["task", "finalize", task]);
+    assert_ok(&out, "`jigc task finalize`");
+
+    // The ADR is committed at its canonical path AND baselined in the file-state record.
+    assert!(
+        repo.join("decisions").join("single-node-cache.md").exists(),
+        "finalize must commit decisions/single-node-cache.md",
+    );
+    assert!(
+        repo.join(".jigc")
+            .join("state")
+            .join("file-state.json")
+            .exists(),
+        "finalize must baseline the committed ADR in the file-state record",
+    );
+}
+
+/// Seed a project workflow shadow `.jigc/config/workflows/single-task.yaml` carrying a
+/// **dangling** `{{ include: step:not-a-step }}` — a native whole-file shadow the cascade
+/// owns (`file_owner(single-task) == Project`), so the store-scope workflow↔refs
+/// enumeration reads it and the task-independent `include-resolves` check flags it.
+fn seed_dangling_workflow_ref(repo: &Path) {
+    let workflows = repo.join(".jigc").join("config").join("workflows");
+    fs::create_dir_all(&workflows).expect("create project workflows dir");
+    fs::write(
+        workflows.join("single-task.yaml"),
+        "---\n\
+         when: implement one scoped change end-to-end\n\
+         creates-task: true\n\
+         ---\n\
+         {{ include: step:not-a-step }}\n",
+    )
+    .expect("write the dangling workflow shadow");
+}
+
+/// (i) + (ii) The headline acceptance: a store carrying a dangling workflow-ref AND an
+/// out-of-band committed-doc edit → `jigc validate` exits 0 listing BOTH content findings
+/// (report-only), and the file-state record is byte-identical across the run (the twin
+/// detects without absorbing).
+#[test]
+fn validate_surfaces_both_content_families_report_only_and_mutation_free() {
+    let repo = TempDir::new("both");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    // A committed, baselined ADR — using the real `single-task` workflow (the dangling
+    // shadow is seeded AFTER, so this task composes the genuine pack workflow).
+    commit_baselined_adr(repo.path(), home.path());
+
+    // (a) The dangling workflow-ref — a project shadow over `single-task`.
+    seed_dangling_workflow_ref(repo.path());
+
+    // (b) The out-of-band edit: rewrite the committed ADR so its on-disk hash diverges
+    //     from the recorded baseline (an OOB edit no `task validate`/`finalize` would see).
+    let committed = repo.path().join("decisions").join("single-node-cache.md");
+    let mut body = fs::read_to_string(&committed).expect("read the committed ADR");
+    body.push_str("\nAn out-of-band human edit appended after baseline.\n");
+    fs::write(&committed, &body).expect("apply the out-of-band edit");
+
+    // Snapshot the file-state record BEFORE the run (the mutation-free comparand).
+    let record_path = repo
+        .path()
+        .join(".jigc")
+        .join("state")
+        .join("file-state.json");
+    let record_before = fs::read(&record_path).expect("read file-state.json before validate");
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // (i) report-only: a content-only run (no probe-integrity meta-finding) exits 0.
+    assert!(
+        out.status.success(),
+        "`jigc validate` over content-only drift must exit 0 (report-only); \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("workflow-refs.include-resolves"),
+        "the dangling workflow-ref must surface a workflow-refs.* finding; stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("file-state.hash-matches")
+            && stdout.contains("decisions/single-node-cache.md"),
+        "the out-of-band committed-doc edit must surface a file-state.hash-matches drift \
+         naming the drifted path; stdout:\n{stdout}",
+    );
+    // A healthy probe over a content-only sweep raises no meta-finding.
+    assert!(
+        !stdout.contains("pack-probe-integrity"),
+        "a content-only sweep must raise no pack-probe-integrity meta-finding; stdout:\n{stdout}",
+    );
+
+    // (ii) mutation-free: the file-state record is byte-identical — the twin did NOT
+    //      re-baseline the drift it just reported.
+    let record_after = fs::read(&record_path).expect("read file-state.json after validate");
+    assert_eq!(
+        record_before, record_after,
+        "the file-state twin must not re-baseline (mutate) the drift it reports",
+    );
+}
+
+/// (iii) The B1 no-false-drift guard: `jigc validate` over a CLEAN real-dev-pack store
+/// (no project workflow shadow, no OOB edit) emits NO `workflow-refs.*` finding — the
+/// membership-only command-ref path fabricates no `task-ref-in-no-task-workflow` /
+/// `placeholder-resolves` drift over the pack's every workflow definition.
+#[test]
+fn validate_clean_dev_pack_store_emits_no_workflow_refs_drift() {
+    let repo = TempDir::new("clean");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "`jigc validate` over a clean dev-pack store must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        !stdout.contains("workflow-refs."),
+        "the workflow↔refs target must emit NO finding over the clean real dev pack \
+         (no fabricated task-ref / placeholder drift); stdout:\n{stdout}",
+    );
+}
+
+/// (iv) The operational-error exit class is intact: with the `doc-code` probe
+/// unresolvable, `jigc validate` still exits non-zero with the one operational error —
+/// the content-only-exits-0 rule did not loosen the probe-missing exit (the
+/// `validate_command.rs` pre-flight contract, held across the completed envelope).
+#[test]
+fn validate_unresolvable_probe_still_exits_non_zero_with_one_error() {
+    let repo = TempDir::new("probe-absent");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    let missing = repo.path().join("nonexistent-doc-code-probe");
+    let out = jigc_with_probe(repo.path(), home.path(), &["validate"], &missing);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "an unresolvable probe must exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    let hits = stderr.matches("`doc-code` probe not found").count();
+    assert_eq!(
+        hits, 1,
+        "exactly one `doc-code probe not found` operational error must surface on stderr; \
+         stderr:\n{stderr}",
+    );
+}
