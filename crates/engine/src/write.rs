@@ -109,6 +109,14 @@ pub struct ItemContent {
     /// The item's per-item field values, in schema order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<Field>,
+    /// The item's **nested** repeatable items, in physical order — the M22
+    /// multi-level lift (a release's nested change-groups). Each renders one heading
+    /// level deeper than this item (`2 + nesting-depth`, capped at H6) and is itself
+    /// an [`ItemContent`], mirroring [`crate::parse::ParsedItem::items`]. Empty (and
+    /// skip-on-serialize) for a flat single-level item, so every shipped
+    /// single-level golden's bytes are unchanged (the additive guard).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub items: Vec<ItemContent>,
 }
 
 /// The reserved field-group boundary marker (`parsing.md` → Field-group delineation).
@@ -182,29 +190,64 @@ fn render_section(section: &Section, content: Option<&SectionContent>) -> String
     out
 }
 
-/// Render one repeatable item: `### <title>  {#id}`, a blank line, the item body,
-/// then an optional trailing field group. Two spaces precede the `{#id}` anchor.
+/// Render a top-level repeatable item (nesting depth 1). The thin entry point the
+/// section renderer + the splice helpers call; [`render_item_at`] carries the
+/// depth-aware recursion.
+fn render_item(item: &ItemContent) -> String {
+    render_item_at(item, 1)
+}
+
+/// Render one repeatable item at nesting `depth`: `<#…> <title>  {#id}` at heading
+/// level `2 + depth` (depth 1 → `###`, depth 2 → `####`, … per the H6 cap), a blank
+/// line, the item body, an optional trailing field group, then — recursively — its
+/// **nested** items one level deeper. Two spaces precede the `{#id}` anchor.
 ///
 /// The body is either the **single-slot** bare prose (`slots` empty — the form every
 /// existing single-slot doctype keeps, byte-identical backward-compat) or, for a
-/// **multi-slot** item (`slots` non-empty), each slot under its `#### <Leaf-Title>`
-/// sub-heading in schema block order with one blank line between the heading and its
-/// prose and one blank line between slots (M16).
-fn render_item(item: &ItemContent) -> String {
+/// **multi-slot** item (`slots` non-empty), each slot under its `<#…> <Leaf-Title>`
+/// sub-heading (one level deeper than the item) in schema block order (M16). A
+/// **nested** item (`items` non-empty — the M22 multi-level lift) renders its
+/// children at `depth + 1` after the field group; the changelog's release item is the
+/// driving case (no slot, a `date` field, then nested `#### change-group` items). A
+/// slot/multi-slot AND nested children in one item is a deferred combination the
+/// changelog avoids, so the slot and nested paths never coincide here.
+fn render_item_at(item: &ItemContent, depth: usize) -> String {
+    let item_hashes = "#".repeat(item_heading_level(depth));
     let mut out = String::new();
-    let _ = writeln!(out, "### {}  {{#{}}}", item.title.trim(), item.id);
-    out.push('\n');
+    let _ = writeln!(
+        out,
+        "{} {}  {{#{}}}",
+        item_hashes,
+        item.title.trim(),
+        item.id
+    );
+    // A **slotless** item (no slot leaf, no multi-slot leaves — the M22 nested-parent
+    // / fields-only case, e.g. a changelog release: `date` field then nested
+    // `#### change-group` items) has no body prose, so the heading is followed directly
+    // by its field group / nested items at a single-blank-line gap. We leave `out`
+    // ending at the heading's `\n` (no extra blank line) so `append_field_group`'s
+    // leading `\n\n` yields `### …\n\n<!-- fields -->`. A slot-bearing item keeps the
+    // existing `### …\n\n<prose>` form (the post-heading blank, byte-identical
+    // backward-compat — incl. the empty-single-slot `### …\n\n\n\n<!-- fields -->`).
+    let slotless = item.slot.is_none() && item.slots.is_empty();
+    if slotless {
+        out.truncate(out.trim_end_matches('\n').len());
+    } else {
+        out.push('\n');
+    }
     if item.slots.is_empty() {
         let prose = item.slot.as_deref().unwrap_or("");
         out.push_str(prose.trim_end());
     } else {
-        // Multi-slot: each leaf renders as `#### <Leaf-Title>\n\n<prose>`, the slots
-        // joined by a single blank line (the same `\n\n` discipline sections use).
+        // Multi-slot: each leaf renders under its sub-heading one level deeper than the
+        // item, the slots joined by a single blank line (the `\n\n` discipline sections
+        // use).
+        let leaf_hashes = "#".repeat(item_heading_level(depth) + 1);
         let blocks: Vec<String> = item
             .slots
             .iter()
             .map(|(leaf_id, prose)| {
-                let mut block = format!("#### {}\n", heading_text(leaf_id));
+                let mut block = format!("{} {}\n", leaf_hashes, heading_text(leaf_id));
                 block.push('\n');
                 block.push_str(prose.trim_end());
                 // Trim a slot whose prose is empty back to just its heading line so an
@@ -216,7 +259,30 @@ fn render_item(item: &ItemContent) -> String {
         out.push_str(&blocks.join("\n\n"));
     }
     append_field_group(&mut out, &item.fields);
+    // Nested items (the M22 multi-level lift): each child renders one level deeper,
+    // after the parent's leaves. `append_field_group` left `out` ending in exactly one
+    // `\n` (the parent body's terminator); re-attach the canonical one-blank-line gap
+    // before the first child and join children with the same single-blank discipline
+    // `render_section` uses, then EOF-normalize to one trailing `\n`.
+    if !item.items.is_empty() {
+        let children: Vec<String> = item
+            .items
+            .iter()
+            .map(|child| render_item_at(child, depth + 1))
+            .collect();
+        let joined = children.join("\n");
+        let body = out.trim_end_matches('\n');
+        out = format!("{body}\n\n{}\n", joined.trim_end_matches('\n'));
+    }
     out
+}
+
+/// The ATX heading level a repeatable item at nesting `depth` renders at: a section
+/// is `##` (H2), so a depth-`d` item is at level `2 + d` (depth 1 → `###`, depth 2 →
+/// `####`, …), the writer-side dual of the parser's `item_level_num`. The schema
+/// loader caps nesting at H6, so the level never exceeds 6.
+fn item_heading_level(depth: usize) -> usize {
+    2 + depth
 }
 
 /// Append a sentinelled trailing field group to a section/item body, *only* when at
@@ -468,6 +534,7 @@ sections:
                             ),
                             slots: Vec::new(),
                             fields: vec![scalar("maps-to-test", "`test/rate_limit_spec.rb#burst`")],
+                            items: Vec::new(),
                         },
                         ItemContent {
                             id: "burst-allowance".to_string(),
@@ -477,6 +544,7 @@ sections:
                             ),
                             slots: Vec::new(),
                             fields: vec![],
+                            items: Vec::new(),
                         },
                     ],
                     ..Default::default()
@@ -752,6 +820,7 @@ sections:
                         slot: Some("A statement.".into()),
                         slots: Vec::new(),
                         fields,
+                        items: Vec::new(),
                     }], ..Default::default() },
                 ],
             };
@@ -1394,6 +1463,13 @@ fn item_content_from_parsed(it: &parse::ParsedItem, source: &str) -> ItemContent
             .map(|(leaf, sp)| (leaf.clone(), sp.slice(source).to_string()))
             .collect(),
         fields: it.fields.clone(),
+        // The item's nested repeatable items, re-derived one level deeper — the M22
+        // recursion that closes the parse→render inverse for a two-level repeatable.
+        items: it
+            .items
+            .iter()
+            .map(|nested| item_content_from_parsed(nested, source))
+            .collect(),
     }
 }
 
@@ -1540,6 +1616,9 @@ pub fn add_item(
                 .map(|leaf| (leaf.clone(), String::new()))
                 .collect(),
             fields: fields.to_vec(),
+            // A freshly-minted item has no nested items yet (they are added later via
+            // their own `add-item` into the nested path — the T5 addressing lift).
+            items: Vec::new(),
         }
     } else {
         ItemContent {
@@ -1548,6 +1627,7 @@ pub fn add_item(
             slot: slot.map(str::to_string),
             slots: Vec::new(),
             fields: fields.to_vec(),
+            items: Vec::new(),
         }
     };
     let item = render_item(&item_content);
@@ -5147,6 +5227,7 @@ mod commit_render {
                 slot: None,
                 slots: Vec::new(),
                 fields: vec![scalar("key", k), scalar("value", v)],
+                items: Vec::new(),
             })
             .collect();
         Instance {
@@ -5527,5 +5608,228 @@ Decomposed.
                 .all(|f| f.code != "schema-conformance.required-slot-present"),
             "a fully-authored multi-slot item yields no empty-slot findings: {none:?}",
         );
+    }
+}
+
+#[cfg(test)]
+mod nested_roundtrip {
+    //! M22 Increment 1, T3 — the recursive-render byte-stable round-trip, cold + warm.
+    //!
+    //! The render half closes the parse→render inverse for a **two-level repeatable**
+    //! (a `changelog` release whose nested `changes` change-groups render one heading
+    //! level deeper — `### release` / `#### change-group`). The oracle is the same the
+    //! whole crate rests on: `render(instance_from_source(src)) == src` over the WHOLE
+    //! document (never a filled subtree — the M13 masking-test ban).
+
+    use super::*;
+    use crate::field_block::Value;
+    use crate::schema::Schema;
+
+    /// A `changelog`-shaped schema: one `# H1` title (id-from), one repeatable
+    /// `releases` section whose item block carries a scalar `date` field then a
+    /// **nested** `changes` repeatable (id-from `category`, a bare-prose `notes`
+    /// slot) — the `release → change-group` two-level shape (`design/changelog.md`).
+    fn changelog_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: date, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        crate::schema::load_schema(yaml).expect("changelog schema loads")
+    }
+
+    /// Round-trip helper: parse `src`, re-derive its instance, re-render — assert
+    /// byte-identical over the WHOLE document (`render(parse(x)) == x`).
+    fn assert_byte_stable(schema: &Schema, src: &str) {
+        let instance = instance_from_source(schema, src)
+            .unwrap_or_else(|f| panic!("source parses: {f:?}\n--- src ---\n{src}"));
+        let rendered = render(schema, &instance);
+        assert_eq!(rendered, src, "render(parse(x)) must equal x");
+    }
+
+    /// A canonical two-level instance: one release (`1.2.0`) carrying a `date` field
+    /// and >=2 nested change-groups (`#added`, `#fixed`), each with bare-prose notes.
+    /// The exact frozen byte form the recursive writer emits — the parent at `###`,
+    /// its field group, then the nested change-groups at `####` (`2 + nesting-depth`).
+    const CANONICAL_TWO_LEVEL: &str = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+OAuth device-code flow.
+
+#### Fixed  {#fixed}
+
+Session fixation on logout.
+";
+
+    /// Done-criterion (i): `render(parse(src)) == src` byte-for-byte on a canonical
+    /// two-level instance (a release with >=2 nested change-groups), and
+    /// `write → parse → write` byte-identical. The nested `####` items survive the
+    /// round-trip in order, each carrying its bare-prose notes.
+    #[test]
+    fn canonical_two_level_round_trips_byte_stable() {
+        let schema = changelog_schema();
+        let src = CANONICAL_TWO_LEVEL;
+
+        // render(parse(src)) == src.
+        assert_byte_stable(&schema, src);
+
+        // The nested change-groups survive the parse, in order, under the release.
+        let instance = instance_from_source(&schema, src).expect("canonical two-level parses");
+        let releases = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "releases")
+            .expect("releases section present");
+        assert_eq!(releases.items.len(), 1, "one release");
+        let release = &releases.items[0];
+        assert_eq!(release.id, "1-2-0");
+        let nested_ids: Vec<&str> = release.items.iter().map(|i| i.id.as_str()).collect();
+        assert_eq!(
+            nested_ids,
+            ["added", "fixed"],
+            "both nested change-groups present, in order",
+        );
+
+        // write → parse → write byte-identical.
+        let first = render(&schema, &instance);
+        let second = render(
+            &schema,
+            &instance_from_source(&schema, &first).expect("re-parses"),
+        );
+        assert_eq!(
+            first, second,
+            "write → parse → write must be byte-identical"
+        );
+    }
+
+    /// Done-criterion (ii) COLD: an **empty** two-level structure round-trips
+    /// byte-stable, then filling one nested leaf at a time keeps EACH intermediate
+    /// whole-document state byte-stable. The assertion is over the WHOLE document at
+    /// every step — never scoped to a filled subtree (the M13 masking-test ban).
+    #[test]
+    fn cold_fill_one_nested_leaf_at_a_time_is_byte_stable() {
+        let schema = changelog_schema();
+
+        // The empty two-level structure: a release with its `date` field and two
+        // empty change-group homes (no notes prose yet) — the canonical empty-skeleton
+        // form, each empty nested change-group carrying the empty-single-slot body
+        // (`#### …{#id}` then two blank lines, the shape `add_item` mints + the parser
+        // round-trips).
+        let empty = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+
+
+#### Fixed  {#fixed}
+";
+        assert_byte_stable(&schema, empty);
+
+        // Fill the FIRST nested leaf (`#added`'s notes); `#fixed` stays empty.
+        let one_filled = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+OAuth device-code flow.
+
+#### Fixed  {#fixed}
+";
+        assert_byte_stable(&schema, one_filled);
+
+        // Fill the SECOND nested leaf (`#fixed`'s notes) too — both authored.
+        assert_byte_stable(&schema, CANONICAL_TWO_LEVEL);
+    }
+
+    /// Done-criterion (iii) WARM: re-parsing a doc with one release and appending a
+    /// **second** release (each with its own nested change-groups) re-renders
+    /// byte-stable with both present. The two same-anchor nested groups (`#added` in
+    /// each release) coexist across two parents — parent-scoped anchor uniqueness.
+    #[test]
+    fn warm_append_a_second_release_is_byte_stable() {
+        let schema = changelog_schema();
+
+        // Re-parse the one-release doc, append a second release in memory, re-render,
+        // and assert the re-render round-trips byte-stable with both releases present.
+        let mut instance =
+            instance_from_source(&schema, CANONICAL_TWO_LEVEL).expect("one-release doc parses");
+        let releases = instance
+            .sections
+            .iter_mut()
+            .find(|s| s.id == "releases")
+            .expect("releases section");
+        releases.items.push(ItemContent {
+            id: "1-3-0".to_string(),
+            title: "1.3.0".to_string(),
+            slot: None,
+            slots: Vec::new(),
+            fields: vec![Field {
+                key: "date".to_string(),
+                value: Value::Scalar("2026-07-01".to_string()),
+            }],
+            items: vec![ItemContent {
+                id: "added".to_string(),
+                title: "Added".to_string(),
+                slot: Some("Audit log export.".to_string()),
+                slots: Vec::new(),
+                fields: Vec::new(),
+                items: Vec::new(),
+            }],
+        });
+
+        let rendered = render(&schema, &instance);
+        // Both releases present, in append order.
+        assert!(
+            rendered.contains("### 1.2.0  {#1-2-0}"),
+            "first release: {rendered}"
+        );
+        assert!(
+            rendered.contains("### 1.3.0  {#1-3-0}"),
+            "second release: {rendered}"
+        );
+        // The same `#added` anchor appears in BOTH releases (parent-scoped).
+        assert_eq!(
+            rendered.matches("#### Added  {#added}").count(),
+            2,
+            "the #added anchor coexists across two parents: {rendered}",
+        );
+        // The re-rendered two-release doc round-trips byte-stable.
+        assert_byte_stable(&schema, &rendered);
     }
 }
