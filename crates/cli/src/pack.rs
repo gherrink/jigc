@@ -654,10 +654,11 @@ mod tests {
     }
 
     /// The single-task workflow ships the full MVP definition: spec-less `when`,
-    /// `creates-task: true`, the `{type: adr, as: decision}` create-gate, and a
-    /// body that is exactly the four ordered step includes. Golden over the bytes
-    /// pins the canonical pack content (no serializer here — the file *is* the
-    /// contract). See workflow-dialect.md → On-disk definition format.
+    /// `creates-task: true`, the `{type: adr, as: decision}, {type: changelog, as:
+    /// change}` create-gate (M22 fold-in), and a body that is exactly the four
+    /// ordered step includes. Golden over the bytes pins the canonical pack content
+    /// (no serializer here — the file *is* the contract). See workflow-dialect.md →
+    /// On-disk definition format.
     #[test]
     fn single_task_workflow_body_is_the_canonical_definition() {
         let pack = EmbeddedPack::new();
@@ -668,7 +669,7 @@ mod tests {
         description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
         usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
         creates-task: true
-        allows-create: [{type: adr, as: decision}]
+        allows-create: [{type: adr, as: decision}, {type: changelog, as: change}]
         ---
         {{ include: step:locate }}
         {{ include: step:implement }}

@@ -3,7 +3,7 @@ when: implement one scoped change end-to-end
 description: An end-to-end scoped change — locate, implement, optionally record a decision, and commit, all as one task.
 usage: the work is one coherent change you can hold in your head and carry from intent to commit in a single pass.
 creates-task: true
-allows-create: [{type: adr, as: decision}]
+allows-create: [{type: adr, as: decision}, {type: changelog, as: change}]
 ---
 {{ include: step:locate }}
 {{ include: step:implement }}
