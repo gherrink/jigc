@@ -2269,7 +2269,20 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
 /// Read HEAD as a [`BasePin`] (full + short SHA) by shelling out to the user's
 /// `git` (`DECISIONS.md` 2026-05-31 → Git invocation: shell out to the `git`
 /// binary, not git2/gitoxide).
+///
+/// A repo with **no commits** (unborn HEAD) pins to the canonical empty-tree
+/// sentinel instead of bailing, so every `creates-task` workflow runs pre-first-commit
+/// and the first finalize diffs against the empty tree (`design/project-setup.md` →
+/// Flow 2 hardening — zero-commit). The unborn case is detected distinctly via
+/// [`crate::task::head_is_unborn`] (`git rev-parse --verify -q HEAD` exit 1, vs 128
+/// for a genuinely broken/missing git), so a real git failure still bails.
 fn read_head(repo_root: &Path) -> Result<BasePin> {
+    if crate::task::head_is_unborn(repo_root)? {
+        return Ok(BasePin::new(
+            crate::task::EMPTY_TREE_SHA,
+            crate::task::EMPTY_TREE_SHORT,
+        ));
+    }
     let sha = git_rev_parse(repo_root, &["rev-parse", "HEAD"])?;
     let short = git_rev_parse(repo_root, &["rev-parse", "--short", "HEAD"])?;
     Ok(BasePin::new(sha, short))

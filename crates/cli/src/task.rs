@@ -1096,10 +1096,52 @@ pub(crate) fn git_untracked_all(repo_root: &Path) -> Result<String> {
     String::from_utf8(out.stdout).context("`git ls-files` produced non-UTF-8 output")
 }
 
+/// The canonical git empty-tree SHA — the sentinel base a **zero-commit** (unborn
+/// HEAD) repo pins to so every `creates-task` workflow runs pre-first-commit and the
+/// first finalize diffs against the empty tree (`design/project-setup.md` → Flow 2
+/// hardening — zero-commit; `implementation/roadmap.md` → M21 Increment 2). `git diff
+/// <empty-tree>` emits the add-everything diff and the first commit lands cleanly.
+pub(crate) const EMPTY_TREE_SHA: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/// The short form of [`EMPTY_TREE_SHA`] (for the [`crate::state::BasePin`]'s
+/// human-facing divergence messages).
+pub(crate) const EMPTY_TREE_SHORT: &str = "4b825dc";
+
+/// Whether `repo_root`'s HEAD is **unborn** — a real repo with no commits yet.
+/// `git rev-parse --verify -q HEAD` exits **1** for an unborn HEAD but **128** for a
+/// genuinely broken/missing git, so the zero-commit sentinel fires for the former
+/// while a real git failure still bails (`design/project-setup.md` → Flow 2 hardening
+/// — zero-commit). Shells out to the user's `git` (`DECISIONS.md` 2026-05-31).
+pub(crate) fn head_is_unborn(repo_root: &Path) -> Result<bool> {
+    let out = Command::new("git")
+        .args(["rev-parse", "--verify", "-q", "HEAD"])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    match out.status.code() {
+        // HEAD resolves: a real commit — not unborn.
+        Some(0) => Ok(false),
+        // Unborn HEAD: a real repo with no commits.
+        Some(1) => Ok(true),
+        // 128 (broken/missing git) or any other code: a genuine failure — bail.
+        _ => bail!(
+            "`git rev-parse --verify -q HEAD` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ),
+    }
+}
+
 /// Read HEAD's full SHA via `git rev-parse HEAD` (the supplied HEAD the planner
 /// checks the base pin against — `design/finalize.md` → 1. Preflight). Shells out to
 /// the user's `git` (`DECISIONS.md` 2026-05-31 → Git invocation).
+///
+/// On a **zero-commit** repo (unborn HEAD) returns the [`EMPTY_TREE_SHA`] sentinel so
+/// the first finalize diffs against the empty tree and the pin guard compares
+/// sentinel-vs-sentinel (`design/project-setup.md` → Flow 2 hardening — zero-commit).
 pub(crate) fn git_head(repo_root: &Path) -> Result<String> {
+    if head_is_unborn(repo_root)? {
+        return Ok(EMPTY_TREE_SHA.to_string());
+    }
     git_capture(repo_root, &["rev-parse", "HEAD"])
 }
 

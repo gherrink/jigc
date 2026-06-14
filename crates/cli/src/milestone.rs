@@ -688,7 +688,19 @@ fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
 /// Read HEAD as a [`BasePin`] (full + short SHA) via the user's `git` — the same
 /// idiom `crate::start::read_head` uses ("CLI orchestrates, git executes";
 /// `DECISIONS.md` 2026-05-31 → Git invocation).
+///
+/// A **zero-commit** repo (unborn HEAD) pins the milestone mint to the canonical
+/// empty-tree sentinel rather than bailing, so the milestone mint runs pre-first-commit
+/// like the single-task mint (`design/project-setup.md` → Flow 2 hardening —
+/// zero-commit). The unborn case is detected distinctly via
+/// [`crate::task::head_is_unborn`] so a real git failure still bails.
 fn read_head(repo_root: &Path) -> Result<BasePin> {
+    if crate::task::head_is_unborn(repo_root)? {
+        return Ok(BasePin::new(
+            crate::task::EMPTY_TREE_SHA,
+            crate::task::EMPTY_TREE_SHORT,
+        ));
+    }
     let sha = git_rev_parse(repo_root, &["rev-parse", "HEAD"])?;
     let short = git_rev_parse(repo_root, &["rev-parse", "--short", "HEAD"])?;
     Ok(BasePin::new(sha, short))
