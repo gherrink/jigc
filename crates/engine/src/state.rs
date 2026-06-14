@@ -95,6 +95,34 @@ fn empty_instance(schema: &Schema, slug: &str) -> Instance {
     }
 }
 
+/// The empty template ([`empty_instance`]) with the caller-supplied **on-create**
+/// field values seeded into its **header** section — the clock-free seam half of
+/// the doc-level `set: on-create` / `default:` materialization (`design/changelog.md`
+/// → engine work #4). The engine places the bytes the caller hands it verbatim,
+/// **never** reading `set:`/`default:` itself: the CLI owns the clock and computes
+/// the slice (mirroring the item-level [`crate::write::add_item`] `on_create` path).
+///
+/// An **empty** `on_create` slice leaves the instance byte-identical to
+/// [`empty_instance`] — the additive-neutrality guard every existing caller relies
+/// on. A non-empty slice is written into the schema's header section's `fields`; a
+/// schema with no header section ignores the slice (no home to seed).
+fn seeded_instance(
+    schema: &Schema,
+    slug: &str,
+    on_create: &[crate::field_block::Field],
+) -> Instance {
+    let mut instance = empty_instance(schema, slug);
+    if on_create.is_empty() {
+        return instance;
+    }
+    if let Some(header) = schema.sections.iter().find(|s| s.header)
+        && let Some(content) = instance.sections.iter_mut().find(|c| c.id == header.id)
+    {
+        content.fields = on_create.to_vec();
+    }
+    instance
+}
+
 /// The provenance-manifest filename inside a task's `docs/` area — the on-disk record
 /// the by-task-id join reads to classify each staged doc (`storage.md` → The by-task-id
 /// join → classification by provenance; `DECISIONS.md` 2026-06-04 → M7 Increment 2 T1).
@@ -216,9 +244,20 @@ pub fn record_doc_provenance(
 ///
 /// Pure working-area filesystem effect — no verbs, no git. The `type` name is read
 /// from the schema; the `slug` is the task-derived id (`commit:<task-id>`).
-pub fn provision_doc(task_dir: &Path, schema: &Schema, slug: &str) -> std::io::Result<PathBuf> {
+///
+/// `on_create` is the additive clock-free **seed seam**: the caller-computed
+/// doc-level `set: on-create` / `default:` header field values, written into the
+/// header section before render ([`seeded_instance`]). An **empty** slice is
+/// byte-neutral — the provisioned bytes equal `write::render` of the unseeded
+/// [`empty_instance`], the form every existing caller passes.
+pub fn provision_doc(
+    task_dir: &Path,
+    schema: &Schema,
+    slug: &str,
+    on_create: &[crate::field_block::Field],
+) -> std::io::Result<PathBuf> {
     let path = instance_path(task_dir, &schema.ty, slug);
-    let bytes = write::render(schema, &empty_instance(schema, slug));
+    let bytes = write::render(schema, &seeded_instance(schema, slug, on_create));
     write_atomic(&path, bytes.as_bytes())?;
     // A minted-here instance: record `created` beside the body for the join's clash rule.
     record_provenance(
@@ -567,6 +606,7 @@ pub fn create(
     type_name: &str,
     id_source: &str,
     repo_root: &Path,
+    on_create: &[crate::field_block::Field],
 ) -> Result<CreatedDoc, Finding> {
     // 1. Unknown doctype → reject before anything is minted or placed.
     let Some(schema) = schemas.get(type_name) else {
@@ -607,8 +647,10 @@ pub fn create(
         return Ok(CreatedDoc { address, path });
     }
 
-    // 5. Provision the empty instance and return its address + path.
-    let path = provision_doc(task_dir, schema, &slug)
+    // 5. Provision the (optionally on-create-seeded) instance and return its
+    //    address + path. The seam is additive: an empty `on_create` slice provisions
+    //    the unchanged empty template.
+    let path = provision_doc(task_dir, schema, &slug, on_create)
         .map_err(|err| io_finding(&address, "provision the instance", &err))?;
     Ok(CreatedDoc { address, path })
 }
@@ -635,6 +677,7 @@ pub fn create_gated(
     type_name: &str,
     id_source: &str,
     repo_root: &Path,
+    on_create: &[crate::field_block::Field],
 ) -> Result<CreatedDoc, Finding> {
     // Step 3: unknown doctype rejects before the gate is consulted.
     if !schemas.contains_key(type_name) {
@@ -645,7 +688,9 @@ pub fn create_gated(
         return Err(gate_blocked_finding(type_name, gate));
     };
     // Step 4: admitted → mint + provision (or copy-in a committed singleton) …
-    let created = create(task_dir, schemas, type_name, id_source, repo_root)?;
+    let created = create(
+        task_dir, schemas, type_name, id_source, repo_root, on_create,
+    )?;
     // … then bind it to the entry's `as:` role if the entry declares one.
     if !entry.as_role.is_empty() {
         let mut roles = RolesRecord::load(task_dir)
@@ -904,7 +949,7 @@ mod tests {
 
         // Provision: the empty commit template lands at docs/commit:<id>.md.
         let path =
-            provision_doc(&task_dir, &schema, "add-rate-limiter").expect("provision succeeds");
+            provision_doc(&task_dir, &schema, "add-rate-limiter", &[]).expect("provision succeeds");
         assert_eq!(
             path,
             task_dir.join("docs").join("commit:add-rate-limiter.md"),
@@ -1017,7 +1062,7 @@ mod tests {
 
         // `provision_doc` stages a minted-here `created` instance.
         let created_path =
-            provision_doc(&task_dir, &schema, "add-rate-limiter").expect("provision succeeds");
+            provision_doc(&task_dir, &schema, "add-rate-limiter", &[]).expect("provision succeeds");
         // `copy_in` stages a base-existing `edited-from-base` instance.
         let source = "---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n";
         let edited_path =
@@ -1085,6 +1130,7 @@ mod tests {
             "commit",
             "Add rate limiter",
             root.path(),
+            &[],
         )
         .expect("create of a known type succeeds");
         assert_eq!(
@@ -1109,7 +1155,7 @@ mod tests {
         let docs_before = std::fs::read_dir(task_dir.join("docs"))
             .expect("docs dir")
             .count();
-        let err = create(&task_dir, &schemas, "spec", "whatever", root.path())
+        let err = create(&task_dir, &schemas, "spec", "whatever", root.path(), &[])
             .expect_err("unknown doctype rejects");
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "create.unknown-doctype");
@@ -1132,6 +1178,7 @@ mod tests {
             "commit",
             "Add rate limiter",
             root.path(),
+            &[],
         )
         .expect_err("a serial collision on an existing instance id rejects");
         assert_eq!(collide.severity, Severity::Blocking);
@@ -1176,6 +1223,7 @@ sections: []
             "roadmap",
             "Some Milestone Plan Title",
             root.path(),
+            &[],
         )
         .expect("singleton create succeeds");
         assert_eq!(
@@ -1195,6 +1243,7 @@ sections: []
             "commit",
             "Add rate limiter",
             root.path(),
+            &[],
         )
         .expect("non-singleton create succeeds");
         assert_eq!(
@@ -1238,7 +1287,7 @@ sections:
         let schemas = singleton_schemas();
 
         // No committed roadmap/roadmap.md under the repo root → cold create.
-        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path())
+        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path(), &[])
             .expect("cold singleton create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
         assert_eq!(
@@ -1293,7 +1342,7 @@ sections:
         std::fs::write(&committed_path, committed).expect("commit the prior roadmap");
 
         // Warm create: copies the committed body in, does NOT mint blank.
-        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path())
+        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path(), &[])
             .expect("warm singleton create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
 
@@ -1363,7 +1412,7 @@ sections:
 
         // First create mints fresh (the committed file does NOT trigger copy-in for a
         // non-singleton): the mint path runs, recording `created`.
-        let first = create(&task_dir, &schemas, "adr", "Rate limit", root.path())
+        let first = create(&task_dir, &schemas, "adr", "Rate limit", root.path(), &[])
             .expect("a non-singleton create mints fresh over a committed slug");
         assert_eq!(first.address, "adr:rate-limit");
         let minted = std::fs::read_to_string(&first.path).expect("read minted");
@@ -1382,7 +1431,7 @@ sections:
 
         // A second create of the same slug rejects with the UNCHANGED blocking
         // serial-collision — copy-in never substituted for the reject.
-        let collide = create(&task_dir, &schemas, "adr", "Rate limit", root.path())
+        let collide = create(&task_dir, &schemas, "adr", "Rate limit", root.path(), &[])
             .expect_err("a non-singleton committed-slug re-create rejects, unchanged");
         assert_eq!(collide.severity, Severity::Blocking);
         assert_eq!(collide.code, "create.serial-collision");
@@ -1393,6 +1442,91 @@ sections:
         assert!(
             collide.route.is_some(),
             "the serial collision carries a route"
+        );
+    }
+
+    /// An adr-shaped fixture with a `status` **header** section carrying the
+    /// `status` (default) + `date` (set-on-create) fields the M22 lift materializes
+    /// — inline (no pack `code-anchor`) so it loads bare in this engine-only test.
+    fn adr_header_schema() -> Schema {
+        let yaml = b"\
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+  - id: decision
+    slot: {}
+";
+        crate::schema::load_schema(yaml).expect("adr header fixture loads")
+    }
+
+    /// (M22 inc-4 T1) The clock-free **on-create seed seam**: `create` threads an
+    /// additive `on_create` field slice into the provisioned instance's header. A
+    /// freshly-created adr seeded with `[status: proposed, date: 2026-01-02]` (the
+    /// values the CLI computes in T2) carries a non-empty front-matter fence in
+    /// schema order and round-trips byte-stable (`render(parse(x)) == x`). The engine
+    /// stays clock-free — it places the bytes the caller supplies, never reads `set:`
+    /// itself (`design/changelog.md` → engine work #4).
+    #[test]
+    fn create_seeds_on_create_header_fields_and_round_trips() {
+        use crate::field_block::{Field, Value};
+
+        let root = TempRoot::new("on-create-seed");
+        let task_dir = root.path().join("tasks").join("seed");
+        let adr = adr_header_schema();
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+
+        let seed = [
+            Field {
+                key: "status".to_string(),
+                value: Value::Scalar("proposed".to_string()),
+            },
+            Field {
+                key: "date".to_string(),
+                value: Value::Scalar("2026-01-02".to_string()),
+            },
+        ];
+
+        let created = create(&task_dir, &schemas, "adr", "Rate limit", root.path(), &seed)
+            .expect("seeded create succeeds");
+        let staged = std::fs::read_to_string(&created.path).expect("read staged");
+
+        assert!(
+            staged.starts_with("---\nstatus: proposed\ndate: 2026-01-02\n---"),
+            "the staged bytes carry the seeded, non-empty header fence in schema order: {staged:?}",
+        );
+
+        // Round-trips byte-stable: `render(parse(staged)) == staged` (the retired
+        // #1-risk byte-stability invariant holds over the seeded header).
+        let reparsed = write::render(
+            &adr,
+            &write::instance_from_source(&adr, &staged).expect("staged adr parses"),
+        );
+        assert_eq!(reparsed, staged, "seeded header round-trips byte-stable");
+    }
+
+    /// (M22 inc-4 T1) **Empty-slice neutrality** — the additive seam is byte-neutral.
+    /// `provision_doc` with `&[]` (the form every existing caller passes) renders
+    /// byte-for-byte identically to `write::render` of the unseeded `empty_instance`,
+    /// so no shipped golden shifts.
+    #[test]
+    fn provision_doc_empty_seed_is_byte_identical_to_empty_instance() {
+        let root = TempRoot::new("on-create-empty");
+        let task_dir = root.path().join("tasks").join("neutral");
+        let adr = adr_header_schema();
+
+        let path = provision_doc(&task_dir, &adr, "rate-limit", &[]).expect("provision succeeds");
+        let staged = std::fs::read_to_string(&path).expect("read staged");
+        assert_eq!(
+            staged,
+            write::render(&adr, &empty_instance(&adr, "rate-limit")),
+            "an empty seed renders byte-identically to the unseeded empty instance",
         );
     }
 
@@ -1417,12 +1551,20 @@ sections:
         }];
 
         // In the gate → proceeds (mints + provisions).
-        let ok = create_gated(&task_dir, &all, &gate, "adr", "Some Decision", root.path())
-            .expect("a gate-admitted type proceeds");
+        let ok = create_gated(
+            &task_dir,
+            &all,
+            &gate,
+            "adr",
+            "Some Decision",
+            root.path(),
+            &[],
+        )
+        .expect("a gate-admitted type proceeds");
         assert_eq!(ok.address, "adr:some-decision");
 
         // Not in the gate → structured gate-block with the loosen route.
-        let blocked = create_gated(&task_dir, &all, &gate, "commit", "x", root.path())
+        let blocked = create_gated(&task_dir, &all, &gate, "commit", "x", root.path(), &[])
             .expect_err("a disallowed type is gate-blocked");
         assert_eq!(blocked.severity, Severity::Blocking);
         assert_eq!(blocked.code, "create.gate-blocked");
@@ -1436,7 +1578,7 @@ sections:
         );
 
         // Unknown type → unknown-doctype reject fires *before* the gate.
-        let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x", root.path())
+        let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x", root.path(), &[])
             .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
     }
@@ -1475,6 +1617,7 @@ sections:
             "adr",
             "Shared Redis session cache",
             root.path(),
+            &[],
         )
         .expect("the gate-admitted adr is created");
         assert_eq!(created.address, "adr:shared-redis-session-cache");
@@ -1505,6 +1648,7 @@ sections:
             "commit",
             "Add rate limiter",
             root.path(),
+            &[],
         )
         .expect("the bare-form-gated commit is created");
         assert!(

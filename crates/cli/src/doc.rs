@@ -477,6 +477,7 @@ fn run_create(
         type_name,
         title,
         &task.repo_root,
+        &[],
     )
     .map_err(|f| block(&f, "create", type_name))?;
     println!("{}", created.address);
