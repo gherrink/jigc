@@ -336,6 +336,111 @@ pub fn reconcile_committed_store(
     findings
 }
 
+/// The **read-only file↔CLI-state store twin** — `jigc validate`'s store-scope
+/// file-state target (`validation.md` → Completing the envelope → read-only
+/// file↔CLI-state at store scope; M20). The *detect-without-absorb* complement of
+/// [`reconcile_committed_store`]: it compares each committed managed doc's on-disk
+/// content hash to its recorded [`FileStateRecord`] and **reports** drift, opening
+/// **no** record write and **never** routing through the mutating reconcile path
+/// (no absorb, no re-baseline, no edge-index touch) — so it cannot silently
+/// re-baseline the very drift the sweep exists to surface.
+///
+/// Mirrors only the [`reconcile_committed_store`] *walk shape* — per persisted
+/// (`location:`-bearing) schema, the path-sorted `<location>/*.md` glob, the
+/// `<location>/<slug>.md` record key — and routes each **present** doc by
+/// [`FileStateRecord::get`] vs [`hash_bytes`] of the on-disk bytes:
+///
+/// - **content drift** (recorded hash ≠ on-disk hash) → exactly one blocking
+///   `file-state.hash-matches` finding (the reused check id) carrying a
+///   **store-scope route** (review / re-author through the owning workflow), never
+///   the task-scope `reconcile <path>` route the mutating path emits.
+/// - **un-baselined** (no recorded hash) → exactly one **advisory**
+///   `file-state.un-baselined` finding — a distinct *not-yet-tracked* outcome,
+///   neither drift nor silent-clean (informational on a fresh / pre-baseline
+///   store, so it does not flip the exit code).
+/// - **in-sync** (recorded hash matches) → no finding.
+///
+/// **Content drift on *present* docs only.** Recorded-but-now-missing docs
+/// (rename / deletion — [`detect_rename`]'s task-scope concern) are **out of scope**:
+/// the twin walks on-disk docs and never enumerates recorded-but-absent paths.
+///
+/// Read-only by construction: `record` is borrowed `&` (no mutation possible) and
+/// the only I/O is reading the committed `.md` bytes. Findings aggregate in a stable
+/// order — persisted schemas by type, then committed docs by path-sorted slug.
+pub fn detect_committed_store(
+    record: &FileStateRecord,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    repo_root: &Path,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for schema in schemas.values() {
+        let Some(location) = schema.location.as_deref() else {
+            continue; // a transient (location-less) type has no committed docs.
+        };
+        let dir = repo_root.join(location);
+        let mut slugs: Vec<String> = match std::fs::read_dir(&dir) {
+            Ok(entries) => entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+                .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_owned))
+                .collect(),
+            Err(_) => Vec::new(), // no committed docs of this type yet.
+        };
+        slugs.sort();
+
+        for slug in &slugs {
+            let path = format!("{location}{slug}.md");
+            let Ok(bytes) = std::fs::read(dir.join(format!("{slug}.md"))) else {
+                continue; // read race: skip; the next sweep re-checks.
+            };
+            let current = hash_bytes(&bytes);
+            match record.get(&path) {
+                None => findings.push(unbaselined_finding(&path)),
+                Some(recorded) if recorded == current => {}
+                Some(_) => findings.push(drift_store_finding(&path)),
+            }
+        }
+    }
+    findings
+}
+
+/// The store-scope drift finding: the on-disk content no longer matches the
+/// recorded hash, surfaced read-only by [`detect_committed_store`]. Reuses the
+/// `file-state.hash-matches` check id (no new id / knob) but carries the
+/// **store-scope route** — there is no task and the mutating reconcile is barred, so
+/// it routes to *review / re-author through the owning workflow*, never
+/// `reconcile <path>` (`validation.md` → Completing the envelope: the reused
+/// `hash-matches` id carries a store-scope route, not `reconcile <path>`).
+fn drift_store_finding(path: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "file-state.hash-matches",
+        format!("on-disk content of `{path}` differs from the recorded state"),
+        Some(Location::addressed(path, 1, 1)),
+        Some(format!(
+            "review the out-of-band edit to `{path}` and re-author it through the owning workflow"
+        )),
+    )
+}
+
+/// The advisory **un-baselined** finding: a committed managed doc with no recorded
+/// hash, surfaced by [`detect_committed_store`]. A distinct *not-yet-tracked*
+/// outcome — neither drift nor silent-clean — so a read-only twin that cannot adopt
+/// a baseline (the mutating path's UNKNOWN resolution) never falsely reports an
+/// untracked doc as clean. Advisory + no route: informational on a fresh /
+/// pre-baseline store, it does not flip the exit code (`validation.md` → Completing
+/// the envelope: UNKNOWN (un-baselined) ≠ clean).
+fn unbaselined_finding(path: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "file-state.un-baselined",
+        format!("committed doc `{path}` is not yet baselined in the file-state record"),
+        Some(Location::addressed(path, 1, 1)),
+        None,
+    )
+}
+
 /// Whether `path` (a `file-state` record key like `decisions/x.md`) lives under a
 /// persisted schema's `location:` — i.e. it is a committed managed doc, not a staged
 /// working-area key (`docs/<type>:<slug>.md`) or a code path. The `:` discriminates
@@ -1062,6 +1167,109 @@ Slightly higher write latency for resilience.
                 .as_deref()
                 .is_some_and(|r| r.contains("restore")),
             "no content-matching suspect exists, so the weak signal routes to restore: {rename:?}"
+        );
+    }
+
+    /// The read-only file↔CLI-state **store twin** ([`detect_committed_store`])
+    /// over a committed store carrying a baselined-and-drifted doc, an
+    /// un-baselined doc, and an in-sync doc (`validation.md` → Completing the
+    /// envelope → read-only file↔CLI-state at store scope):
+    ///
+    /// - the drifted doc → exactly one `file-state.hash-matches` finding whose
+    ///   route is the **store-scope variant** (NOT `reconcile <path>`);
+    /// - the un-baselined committed doc → exactly one distinct **advisory**
+    ///   un-baselined finding (not drift, not silent-clean);
+    /// - the in-sync doc → no finding;
+    /// - the passed `record` is **byte-identical before and after** (the twin
+    ///   takes it by `&` and opens no record write — mutation-free).
+    #[test]
+    fn detect_committed_store_reports_drift_and_unbaselined_without_absorb() {
+        let schema = adr_schema();
+        let mut schemas: std::collections::BTreeMap<String, Schema> =
+            std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), schema);
+
+        let root = TempRoot::new("detect-twin");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+
+        // `drifted`: recorded baseline differs from on-disk bytes → hash-matches.
+        let drifted_path = "decisions/drifted.md";
+        std::fs::write(decisions.join("drifted.md"), ADR_B_EDITED_SUPERSEDES)
+            .expect("write drifted ADR");
+        // `synced`: on-disk bytes equal the recorded baseline → no finding.
+        let synced_path = "decisions/synced.md";
+        std::fs::write(decisions.join("synced.md"), ADR_B_BASE).expect("write synced ADR");
+        // `fresh`: a committed doc with NO recorded hash → un-baselined advisory.
+        let fresh_path = "decisions/fresh.md";
+        std::fs::write(decisions.join("fresh.md"), ADR_B_BASE).expect("write fresh ADR");
+
+        let mut record = FileStateRecord::new();
+        record.record(drifted_path, hash_bytes(ADR_B_BASE.as_bytes())); // pre-edit baseline
+        record.record(synced_path, hash_bytes(ADR_B_BASE.as_bytes())); // matches on-disk
+        // (no record for fresh_path)
+
+        // Clone the record to assert byte-for-byte mutation-freedom after the call.
+        let record_before = record.clone();
+
+        let findings = detect_committed_store(&record, &schemas, root.path());
+
+        // (i) the drifted doc → exactly one hash-matches finding, store-scope route.
+        let drift: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.code == "file-state.hash-matches")
+            .collect();
+        assert_eq!(
+            drift.len(),
+            1,
+            "exactly one hash-matches finding (the drifted doc): {findings:?}"
+        );
+        let drift = drift[0];
+        assert_eq!(drift.severity, Severity::Blocking);
+        assert!(
+            drift.message.contains(drifted_path),
+            "the drift finding names the drifted doc: {drift:?}"
+        );
+        let route = drift
+            .route
+            .as_deref()
+            .expect("the store-scope drift carries a route");
+        assert!(
+            route != format!("reconcile {drifted_path}") && !route.starts_with("reconcile"),
+            "the store-scope route is NOT the task-scope `reconcile <path>` variant: {route:?}"
+        );
+
+        // (iii) the un-baselined doc → exactly one distinct advisory finding.
+        let unbaselined: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.message.contains(fresh_path))
+            .collect();
+        assert_eq!(
+            unbaselined.len(),
+            1,
+            "exactly one finding for the un-baselined doc: {findings:?}"
+        );
+        let unbaselined = unbaselined[0];
+        assert_eq!(
+            unbaselined.severity,
+            Severity::Advisory,
+            "un-baselined is informational, neither drift nor a block: {unbaselined:?}"
+        );
+        assert_ne!(
+            unbaselined.code, "file-state.hash-matches",
+            "un-baselined is a DISTINCT outcome from drift, not silent-clean"
+        );
+
+        // (iv) the in-sync doc → no finding.
+        assert!(
+            findings.iter().all(|f| !f.message.contains(synced_path)),
+            "the in-sync doc emits no finding: {findings:?}"
+        );
+
+        // (ii) mutation-free: the record is byte-identical before and after.
+        assert_eq!(
+            record, record_before,
+            "detect_committed_store must not mutate the record (no absorb, no re-baseline)"
         );
     }
 
