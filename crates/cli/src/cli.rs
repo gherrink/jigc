@@ -17,6 +17,7 @@ use crate::render;
 use crate::setup;
 use crate::start;
 use crate::task::TaskCommand;
+use crate::unmanage;
 use crate::upgrade;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -172,6 +173,19 @@ pub enum Command {
     /// the agent to run it.
     Ingest,
 
+    /// The store-scope teardown verb — `jigc unmanage <path>` drops a single managed
+    /// doc from jigc's index/state: its `edges.json` forward edges + its
+    /// `file-state.json` baseline hash, **leaving the file bytes on disk** (the inverse
+    /// of `ingest`'s register-only `adopt`). Idempotent — a re-run on an
+    /// already-unmanaged doc is a clean no-op (exit 0, nothing persisted)
+    /// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet
+    /// (a) un-manage a doc).
+    Unmanage {
+        /// The repo-relative path of the managed doc to un-manage (its `file-state`
+        /// record key, e.g. `decisions/single-node-cache.md`).
+        path: String,
+    },
+
     /// The self-description surface — `jigc describe` (no positional) emits a
     /// **discursive prose** projection of the resolved definitions: every workflow
     /// (the *unfiltered* set, not the selectable catalog) and doc-type with their
@@ -258,6 +272,7 @@ impl Cli {
             Command::Setup => run_setup(self.format),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
+            Command::Unmanage { path } => run_unmanage(self.format, &path),
             Command::Describe => run_describe(self.format),
             Command::Validate => run_validate_store(self.format),
         }
@@ -418,6 +433,33 @@ fn run_ingest(format: Format) -> ExitCode {
     match ingest::run(&cwd) {
         Ok(report) => {
             println!("{}", render::ingest(format, &report));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{}", render::operational_error(format, &err));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Run `jigc unmanage <rel_path>` against the current working directory: locate the
+/// repo + project layer, load the index + file-state record, drop the doc's forward
+/// edges + its file-state baseline (register-only — the file bytes are left on disk),
+/// and render the outcome through the selected `format`. A clean run (a real drop *or*
+/// an idempotent no-op) exits 0; a locator error (no repo / no project layer) routes to
+/// stderr and exits non-zero (`design/project-setup.md` → Flow 2 hardening → Teardown /
+/// cleanup (G5)).
+fn run_unmanage(format: Format, path: &str) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match unmanage::run(&cwd, path) {
+        Ok(report) => {
+            println!("{}", render::unmanage(format, &report));
             ExitCode::SUCCESS
         }
         Err(err) => {

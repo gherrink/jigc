@@ -229,6 +229,39 @@ pub fn adopt(
     Ok(())
 }
 
+/// **Un-manage** a managed doc — the inverse of [`adopt`]'s register-only mutation
+/// (M21 Increment 4; `project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5),
+/// un-manage a doc). Drops the doc from jigc's index/state, **leaving the file bytes
+/// on disk** (this function has no file-write path of its own):
+///
+/// 1. **`EdgeIndex::drop_doc(from)`** — remove every forward edge originating from the
+///    doc's `<type>:<slug>` identity (the inverse of `adopt`'s `absorb_doc`).
+/// 2. **`FileStateRecord::forget(rel_path)`** — drop the file-state baseline hash keyed
+///    by the doc's `rel_path` (the inverse of `adopt`'s `record`).
+///
+/// `from` is the doc's `<type>:<slug>` identity (re-derived by the caller via the
+/// classify location-match); `rel_path` is the file-state record key (symmetric with
+/// `adopt`'s addressing). Returns `true` iff **either** surface changed — so a re-run on
+/// an already-unmanaged doc returns `false` (a clean no-op, not an error), and the caller
+/// can skip the persist. A `rel_path` under no schema location carries no edges, so only
+/// the file-state entry drops; the index is left byte-identical (zero-edge case).
+///
+/// Register-only by construction (no I/O): the caller persists the mutated `record` +
+/// `index` iff this returns `true`.
+pub fn unmanage(
+    record: &mut FileStateRecord,
+    index: &mut EdgeIndex,
+    from: &str,
+    rel_path: &str,
+) -> bool {
+    // Order is irrelevant (the two surfaces are independent); `|` evaluates both so
+    // neither short-circuits — a doc with edges but no baseline (or vice-versa) still
+    // fully un-manages.
+    let dropped_edges = index.drop_doc(from);
+    let forgot = record.forget(rel_path);
+    dropped_edges | forgot
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,6 +606,97 @@ Slightly higher write latency for resilience.
                 "a refused doc records no file-state baseline for {rel_path} (no silent adopt)"
             );
         }
+    }
+
+    /// The inverse of adopt (M21 Increment 4 / T1): after adopt-ing a conformant adr
+    /// carrying a `supersedes` edge, [`unmanage`] drops **both** the file-state hash
+    /// (`record.get(rel_path) == None`) **and** the `from == adr:<slug>` edges; it
+    /// returns `true` on the first run, and a **second** `unmanage` returns `false` with
+    /// the record + index left **byte-identical** (idempotent no-op).
+    #[test]
+    fn unmanage_drops_baseline_and_edges_and_is_idempotent() {
+        let schema = adr_schema();
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+
+        let rel_path = "decisions/distributed-cache.md";
+        let from = "adr:distributed-cache";
+        let bytes = CONFORMANT_ADR_SUPERSEDES.as_bytes();
+
+        // Adopt: the doc is now managed (indexed + baselined).
+        adopt(&mut record, &mut index, &schema, rel_path, bytes).expect("conformant adr adopts");
+        assert!(record.get(rel_path).is_some(), "adopt baselined the doc");
+        assert!(
+            index.edges.iter().any(|e| e.from == from),
+            "adopt indexed the supersedes edge"
+        );
+
+        // First un-manage: drops both surfaces, returns true.
+        let dropped = unmanage(&mut record, &mut index, from, rel_path);
+        assert!(dropped, "un-managing a managed doc reports a change");
+        assert_eq!(
+            record.get(rel_path),
+            None,
+            "un-manage drops the file-state hash"
+        );
+        assert!(
+            !index.edges.iter().any(|e| e.from == from),
+            "un-manage drops the doc's forward edges: {:?}",
+            index.edges
+        );
+
+        // Snapshot the post-unmanage bytes; a second run must leave them byte-identical.
+        let record_bytes = record.to_bytes();
+        let index_bytes = index.to_bytes();
+
+        // Second un-manage: a clean no-op — returns false, both surfaces unchanged.
+        let again = unmanage(&mut record, &mut index, from, rel_path);
+        assert!(
+            !again,
+            "re-running on an already-unmanaged doc is a no-op (false)"
+        );
+        assert_eq!(
+            record.to_bytes(),
+            record_bytes,
+            "a no-op un-manage leaves the record byte-identical"
+        );
+        assert_eq!(
+            index.to_bytes(),
+            index_bytes,
+            "a no-op un-manage leaves the index byte-identical"
+        );
+    }
+
+    /// A `rel_path` under **no schema location** (the type re-derivation yields a `from`
+    /// matching no edge) drops **only** the file-state entry — zero edges, the index
+    /// left untouched — and is still a clean no-op on re-run.
+    #[test]
+    fn unmanage_with_no_indexed_edges_drops_only_the_baseline() {
+        let mut record = FileStateRecord::new();
+        let mut index = EdgeIndex::default();
+
+        // A baselined path that contributed no edges (e.g. a doc carrying no `ref`).
+        let rel_path = "decisions/edgeless.md";
+        let from = "adr:edgeless";
+        record.record(rel_path, hash_bytes(b"some bytes\n"));
+        let index_before = index.to_bytes();
+
+        let dropped = unmanage(&mut record, &mut index, from, rel_path);
+        assert!(
+            dropped,
+            "dropping a baselined-but-edgeless doc reports a change"
+        );
+        assert_eq!(record.get(rel_path), None, "the baseline is dropped");
+        assert_eq!(
+            index.to_bytes(),
+            index_before,
+            "no edges existed → the index is byte-identical"
+        );
+
+        assert!(
+            !unmanage(&mut record, &mut index, from, rel_path),
+            "a second run is a clean no-op"
+        );
     }
 
     /// Recursive reach (G3): a fixture with docs in nested subdirectories — `wiki/`,

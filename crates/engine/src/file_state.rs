@@ -77,6 +77,16 @@ impl FileStateRecord {
         self.hashes.get(path).map(String::as_str)
     }
 
+    /// **Forget the recorded hash for `path`** — the inverse of
+    /// [`record`](Self::record), the un-manage primitive (M21 Increment 4;
+    /// `project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), un-manage a
+    /// doc). Returns `true` iff a hash was actually removed, so a re-run on an
+    /// already-forgotten path is a clean no-op (idempotency). Drops only jigc's own
+    /// index entry; the file on disk is never touched (this record is byte-only state).
+    pub fn forget(&mut self, path: &str) -> bool {
+        self.hashes.remove(path).is_some()
+    }
+
     /// Serialize to the frozen on-disk byte form: pretty JSON, path-sorted, one
     /// trailing newline (golden-locked, matching the `base.json` convention).
     pub fn to_bytes(&self) -> String {

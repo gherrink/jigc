@@ -393,6 +393,36 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
     }
 }
 
+/// Render a `jigc unmanage <path>` outcome to the surface `format` selects (M21
+/// Increment 4 / T1; `design/project-setup.md` → Flow 2 hardening → Teardown / cleanup
+/// (G5)). `json` emits the report object (tooling-consumed, no footer); `agent` /
+/// `human` emit one summary line distinguishing a real drop (the doc's edges +
+/// baseline were dropped, the file left on disk) from an idempotent no-op (the doc was
+/// already unmanaged), then the routing footer.
+pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> String {
+    match format {
+        Format::Json => json(report),
+        Format::Agent | Format::Human => {
+            let mut out = if report.dropped {
+                match &report.identity {
+                    Some(id) => format!(
+                        "unmanaged {} ({}) — dropped its file-state baseline + forward edges; the file is left on disk\n",
+                        report.path, id,
+                    ),
+                    None => format!(
+                        "unmanaged {} — dropped its file-state baseline; the file is left on disk\n",
+                        report.path,
+                    ),
+                }
+            } else {
+                format!("no-op: {} is not managed (nothing to drop)\n", report.path,)
+            };
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
 /// Render a successful `jigc milestone <verb>` action to the surface `format`
 /// selects: `agent` / `human` emit the action summary line (e.g. `minted
 /// milestone:<id> …`) followed by the routing footer; `json` emits a generic

@@ -21,6 +21,7 @@ mod render;
 mod setup;
 mod start;
 mod task;
+mod unmanage;
 mod upgrade;
 
 use clap::Parser;

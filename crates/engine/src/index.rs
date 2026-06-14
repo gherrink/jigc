@@ -121,6 +121,19 @@ impl EdgeIndex {
         self.edges.sort();
         self.edges.dedup();
     }
+
+    /// **Drop every forward edge originating from `from`** — the inverse of
+    /// [`absorb_doc`](Self::absorb_doc)'s register half (the `retain` with no re-add),
+    /// the un-manage primitive (M21 Increment 4; `project-setup.md` → Flow 2 hardening
+    /// → Teardown / cleanup (G5), un-manage a doc). Returns `true` iff at least one
+    /// edge was removed, so a caller can report a no-op on an already-dropped doc
+    /// (idempotency). The remaining edges stay sorted (a `retain` preserves order), so
+    /// the on-disk bytes are unchanged for any doc that did not contribute an edge.
+    pub fn drop_doc(&mut self, from: &str) -> bool {
+        let before = self.edges.len();
+        self.edges.retain(|e| e.from != from);
+        self.edges.len() != before
+    }
 }
 
 /// Invalidate the persisted committed edge index — the `finalize` post-commit step

@@ -273,7 +273,7 @@ fn read_candidate_bytes(repo_root: &Path, rel_path: &str) -> Result<Vec<u8>> {
 /// classifier runs each candidate against (the engine stays domain-empty; the CLI
 /// feeds the cascade in). Returned in pack-list order (the engine's discovery dedups
 /// + sorts independently).
-fn load_schemas(pack: &dyn engine::packsource::PackSource) -> Result<Vec<Schema>> {
+pub(crate) fn load_schemas(pack: &dyn engine::packsource::PackSource) -> Result<Vec<Schema>> {
     let mut out = Vec::new();
     for id in pack.list(PackResourceKind::Schemas) {
         let bytes = pack
@@ -289,7 +289,7 @@ fn load_schemas(pack: &dyn engine::packsource::PackSource) -> Result<Vec<Schema>
 /// Locate the repo root and its `.jigc/config/` project layer — the same locate
 /// preamble the `jigc upgrade` seam uses. Errors with routed messages when the repo
 /// or the project layer is absent.
-fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
+pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let project_config = repo_root.join(".jigc").join("config");
