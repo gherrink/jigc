@@ -7,7 +7,7 @@
 //! ingest the probe's findings + the `pack-probe-integrity.*` meta-findings into a
 //! [`engine::result::ValidationReport`]. T1's own tests stubbed the invoker in-process.
 //! **This test supplies the real one**: it builds the actual `doc-code` probe executable
-//! (the `build_doc_code_probe` idiom, manifest at `pack/probes/doc-code`) and wraps
+//! (the `build_doc_code_probe` idiom, manifest at `probes/doc-code`) and wraps
 //! [`cli::invoke::invoke_probe`]`(`[`cli::invoke::doc_code_program`]`(), ..,
 //! `[`cli::invoke::DOC_CODE_BUDGET`]`)` — a genuine subprocess over a snapshot the engine
 //! materialized, exactly as production `jigc validate` will.
@@ -91,11 +91,11 @@ impl Drop for TempDir {
 
 /// Build the `doc-code` probe executable (a program **outside** the workspace) and
 /// return its path — the `build_doc_code_probe` idiom (manifest at
-/// `pack/probes/doc-code`), built into its own target dir so it never collides with the
+/// `probes/doc-code`), built into its own target dir so it never collides with the
 /// workspace build.
 fn build_doc_code_probe() -> PathBuf {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack/probes/doc-code/Cargo.toml");
-    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack/probes/doc-code/target");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/Cargo.toml");
+    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/target");
     let out = std::process::Command::new(env!("CARGO"))
         .arg("build")
         .arg("--manifest-path")

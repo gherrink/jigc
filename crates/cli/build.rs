@@ -27,10 +27,10 @@ use std::process::Command;
 fn main() {
     let manifest_dir =
         PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
-    let probe_manifest = manifest_dir.join("pack/probes/doc-code/Cargo.toml");
+    let probe_manifest = manifest_dir.join("probes/doc-code/Cargo.toml");
 
     // Rerun only when the probe's own sources change — not on every `cli` rebuild.
-    let probe_src = manifest_dir.join("pack/probes/doc-code/src");
+    let probe_src = manifest_dir.join("probes/doc-code/src");
     println!("cargo::rerun-if-changed={}", probe_manifest.display());
     println!("cargo::rerun-if-changed={}", probe_src.display());
 
@@ -38,7 +38,7 @@ fn main() {
     // The probe builds in its own target dir (its detached workspace), then we copy the
     // produced binary out. Pin its profile to ours so a release `jigc` ships a release
     // probe.
-    let probe_target = manifest_dir.join("pack/probes/doc-code/target");
+    let probe_target = manifest_dir.join("probes/doc-code/target");
     let mut cargo = Command::new(std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
     cargo
         .args(["build", "--quiet", "--manifest-path"])

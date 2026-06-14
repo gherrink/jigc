@@ -76,7 +76,6 @@ fn real_doc_code_probe() -> &'static Path {
     static PROBE: OnceLock<PathBuf> = OnceLock::new();
     PROBE.get_or_init(|| {
         let manifest = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("pack")
             .join("probes")
             .join("doc-code")
             .join("Cargo.toml");

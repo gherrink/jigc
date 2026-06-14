@@ -504,6 +504,21 @@ mod tests {
         assert_eq!(pack.pack_version(), env!("CARGO_PKG_VERSION"));
     }
 
+    /// The embedded `PACK` carries **only** real pack content — never the
+    /// `doc-code` probe's source tree (and its gitignored multi-hundred-MB
+    /// `target/`). The probe source lives outside the `include_dir!` root
+    /// (`crates/cli/probes/`, not `pack/probes/`), so the embed sweeps no
+    /// `probes/` directory. See module-layout.md → Probe distribution (the
+    /// de-bloat site).
+    #[test]
+    fn embedded_pack_carries_no_probes_directory() {
+        assert!(
+            PACK.get_dir("probes").is_none(),
+            "the embedded PACK must not carry a `probes/` entry — the probe source \
+             lives outside the include_dir! root",
+        );
+    }
+
     /// Read a resource as UTF-8 text (pack definitions are text).
     fn read_text(pack: &EmbeddedPack, kind: PackResourceKind, id: &str) -> String {
         let bytes = pack

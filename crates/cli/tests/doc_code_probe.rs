@@ -58,8 +58,8 @@ impl Drop for TempDir {
 /// return its path. Built once per test via its own manifest, into its own target dir
 /// so it never collides with the workspace build.
 fn build_doc_code_probe() -> PathBuf {
-    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack/probes/doc-code/Cargo.toml");
-    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack/probes/doc-code/target");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/Cargo.toml");
+    let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("probes/doc-code/target");
     let out = std::process::Command::new(env!("CARGO"))
         .arg("build")
         .arg("--manifest-path")
