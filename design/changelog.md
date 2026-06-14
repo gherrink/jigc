@@ -16,7 +16,7 @@ Reading-order note: this reads after [project-setup.md](project-setup.md) (it ea
 | **Doc-level `set: on-create`** (+ doc-level `default:`) materialization | honor `adr`'s long-broken doc-level `date` (set-on-create) **and** `status: proposed` (default) promises |
 
 **Does not prove (honest bounds, recorded so the completion audit can't charge them):**
-- **Flow-A only — existing `CHANGELOG.md` files are not tracked.** This doctype helps a project that *authors its changelog through jigc from the start*. A foreign project's existing `CHANGELOG.md` still classifies `needs-reconcile` (the strict canonical parser rejects most real changelogs) — making it trackable is **auto-migration (G1)**, the *separate later* milestone ([project-setup.md](project-setup.md) → Flow 2 hardening; [DECISIONS.md](../DECISIONS.md) → 2026-06-14 split). The same bounded-capability posture M21 took.
+- **Flow-A only (for M22) — existing `CHANGELOG.md` files are not tracked by *this* doctype alone.** The `changelog` doctype helps a project that *authors its changelog through jigc from the start*. A foreign project's existing `CHANGELOG.md` is **not** adoptable as-is: at repo root it classifies `unmanaged` (outside every `location:` dir, conformant against nothing — left untouched, *not* `needs-reconcile`); only a non-conformant file already sitting in `changelog/` routes `needs-reconcile`. **Making a foreign `CHANGELOG.md` trackable is auto-migration (G1), shipped as M23** ([auto-migration.md](auto-migration.md); [project-setup.md](project-setup.md) → Flow 2 hardening; [DECISIONS.md](../DECISIONS.md) → 2026-06-14 split + M23 planning) — the `jigc migrate` verb rewrites it to conformant shape (Framing A, boundary intact) and adopts it.
 - **One nested level is exercised; deeper nesting is built-but-unproven-beyond-2.** `Leaf::Repeatable` is built as **general recursion with a depth cap** (below), but the changelog uses exactly two repeatable levels — so 3–4-level nesting is a capability the engine *supports* but no shipped doctype *exercises* (stated, not over-claimed).
 - **Entries are prose, not addressable records.** A change-group's individual bullet lines live in a `notes` **slot** (prose), not a third repeatable level — faithful to Keep-a-Changelog (headings + bullets), and it keeps the nesting at the one level the milestone proves. Individually-addressable per-entry records stay future work.
 
@@ -113,7 +113,7 @@ The honest line for the charter's "everything we need for a real project": **mos
 
 ## What stays deferred (logged to [decisions-pending.md](../implementation/decisions-pending.md))
 
-- **Auto-migration (G1)** — rewriting an existing `CHANGELOG.md` to conformant shape; the *separate later* milestone.
+- **Auto-migration (G1)** — rewriting an existing `CHANGELOG.md` to conformant shape; **ships as M23** ([auto-migration.md](auto-migration.md), Framing A, changelog-first).
 - **3rd+ repeatable level / individually-addressable entries** — the engine supports up to 4 nesting levels, but no doctype exercises beyond 2; entries stay prose.
 - **Multi-slot leaves + a nested repeatable in one item block** — the `####`-depth combination the changelog avoids (one slot per release).
 - **The methodology `dev-task` cross-pack fold-in** — needs cross-pack `allows-create` resolution (M14 surface), unexercised.

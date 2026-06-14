@@ -1659,4 +1659,84 @@ $ jigc task finalize cut-110     # with no `link` on 1.1.0 → no required-field
 3. **Maintained over time across two runs.** Run 1 cold-creates and cuts 1.0.0; run 2 warm-re-creates (copy-in preserves 1.0.0, provenance `edited-from-base`), appends 1.1.0, and re-promotes byte-stable with **both** releases and their nested groups present.
 4. **The conformance gate fires on a real empty NESTED leaf**, and the **optional `link` field, absent, finalizes clean** (with no stray fields-block line) — recursive `required-slot-present` over nested items + the `optional:` lift, each on real input (the vacuously-green-managed-doc-gate guard).
 5. **The multi-word section id round-trips** (`## Unreleased Changes` — the parser fix, not a route-around), and **the `single-task` fold-in** (`allows-create:[{changelog, as: change}]`) lets an everyday task append an unreleased entry through the same create-gate it uses for an ADR.
-6. **The honest bound is observed.** The flow proves **Flow-A authoring** of a new changelog on a fresh project; an existing foreign `CHANGELOG.md` still routes `needs-reconcile` (auto-migration G1 is the separate later milestone — [changelog.md](changelog.md) → honest bounds), and nesting beyond 2 levels is supported-but-unexercised.
+6. **The honest bound is observed.** The flow proves **Flow-A authoring** of a new changelog on a fresh project; an existing foreign `CHANGELOG.md` is migrated by [flow 25](#25-changelog-migration--rewrite-a-foreign-changelogmd-to-conformant-shape-and-adopt-it-auto-migration-g1) (M23), and nesting beyond 2 levels is supported-but-unexercised.
+
+## 25. Changelog migration — rewrite a foreign `CHANGELOG.md` to conformant shape and adopt it (auto-migration G1)
+
+The auto-migration arc ([auto-migration.md](auto-migration.md) → Acceptance): an **existing** project's non-conformant foreign `CHANGELOG.md` is **rewritten into conformant `changelog` shape and adopted** — the **transform** arm flow 12's detect-and-route never had. The mechanism (the `jigc migrate` verb, the CLI-owned source seam, the review gate, the retire step, Framing A) is the design of record in [auto-migration.md](auto-migration.md) and is not restated here. Notation illustrative; the net-new surface (verb / seam / review gate / retire) is **red-proven at build**, the reused author + adopt spine is [flow 24](#24-changelog-authoring--cold-create--warm-append-a-multi-level-singleton-doctype-expansion)'s.
+
+The pre-state is the honest one (gap-detector-verified, *not* what older docs claimed): a foreign `CHANGELOG.md` **at repo root** classifies `Unmanaged` — no finding, no route, no hook — so `jigc ingest` leaves it untouched. Only an explicit verb naming the path can reach it.
+
+### The walk — migrate, review, approve, adopt
+
+```text
+$ cat CHANGELOG.md            # the foreign original — Keep-a-Changelog-ish, NOT canonical jigc shape
+  # Changelog
+  All notable changes to this project will be documented in this file.    ← preamble (no schema home → dropped)
+  ## [1.2.0] - 2026-03-01
+  ### Added
+  - OAuth device-code flow
+  ### Performance            ← a NON-KaC category (outside the `category` enum)
+  - Cut cold-start 40%
+  ## [1.1.0] - 2026-01-15
+  ### Fixed
+  - Token refresh race
+
+$ jigc migrate CHANGELOG.md --as changelog      # the new verb: mints an OFF-ROUTER task, stages the foreign bytes
+  Migrating CHANGELOG.md → changelog (task migrate-changelog) …
+  Read the source below and author the canonical changelog through `jigc doc …`:   ← step:author-change
+  {{source}}        ← the foreign content, surfaced by the CLI-owned source seam (deterministic context, read-only)
+  — jigc · all writes through `jigc`.
+
+# the LLM rewrites the foreign prose into canonical shape through the EXISTING write verbs (flow 24's spine):
+$ jigc doc create changelog --title Changelog                                    # → changelog:changelog.md
+$ jigc doc add-item  changelog:changelog#releases --title "1.2.0"                # → …#releases/120
+$ jigc doc set-field changelog:changelog#releases/120/date --value 2026-03-01    # HISTORICAL date overwrites the on-create stamp
+$ jigc doc add-item  changelog:changelog#releases/120/changes --title added      # → …/changes/added
+$ jigc doc set-slot  changelog:changelog#releases/120/changes/added/notes --from-file -   # "- OAuth device-code flow"
+#   the foreign `Performance` category is mapped by the LLM to a valid enum member (`changed`) — NOT coerced by the CLI:
+$ jigc doc add-item  changelog:changelog#releases/120/changes --title changed     # → …/changes/changed
+$ jigc doc set-slot  changelog:changelog#releases/120/changes/changed/notes --from-file -   # "- Cut cold-start 40%"
+$ jigc doc add-item  changelog:changelog#releases --title "1.1.0"                # → …#releases/110  (… etc)
+
+$ jigc task finalize migrate-changelog            # WITHOUT --approve: renders the diff, exits non-zero, commits nothing
+> validate: clean
+> REVIEW the migration before it commits:                       ← the review gate (a net-new finalize --approve gate)
+    CHANGELOG.md (foreign)        →   changelog/changelog.md (canonical)
+    [a fidelity diff: foreign source-seam bytes vs the task working-area rendered doc — what was preserved, reordered, DROPPED (the preamble is gone)]
+  Approve? the strict parse guarantees STRUCTURE, never content-faithfulness — this is the only fidelity check.
+$ jigc task finalize migrate-changelog --approve
+> promote: changelog/changelog.md                               ← the canonical doc written at its home
+> retire:  CHANGELOG.md (removed — the foreign original)        ← jigc's first byte-destructive op, gated by approval
+> adopt:   changelog/changelog.md (parsed, conformance-gated, indexed, baselined)
+> commit:  docs(changelog): migrate CHANGELOG.md to managed shape   ← write + retire + adopt, one transaction
+```
+
+After approval the foreign `CHANGELOG.md` is **gone**, `changelog/changelog.md` is the managed singleton, and a follow-up `jigc ingest` reports it `adoptable … (adopted)` — it is now tracked.
+
+### The reds — each fires on real input
+
+```text
+# RED 1 — a rewrite whose category stays NON-CONFORMANT blocks at the strict gate (enum-on-id-from enforcement):
+$ jigc doc add-item changelog:changelog#releases/120/changes --title Performance   # foreign category; mints id slug `performance`
+$ jigc task finalize migrate-changelog --approve
+> BLOCK schema-conformance.field-value-conformant @ …#releases/120/changes/performance/category
+#   the `category` enum is now enforced even on the id-from field, compared by RE-SLUG: `Performance`→`performance` ∉ enum → BLOCK,
+#   whereas a foreign `Fixed`/`Added` re-slugs to the valid member `fixed`/`added` and PASSES (no coercion by the CLI).
+#   the finding names the item at its slug-cased address (exact code/leaf-suffix pinned at the build spike); non-zero exit, NO commit, NO retire.
+
+# RED 2 — the human REJECTS the fidelity diff at the review gate:
+$ jigc task finalize migrate-changelog          # (a conformant rewrite, but the human judges it lost content)
+> REVIEW … Approve? → rejected
+> task discarded — CHANGELOG.md left untouched, nothing adopted.
+#   rejection is byte-safe: the foreign original survives, the managed doc is not written, the edge index untouched.
+```
+
+### What it asserts (the acceptance bar)
+
+1. **The transform arm exists (Framing A).** `jigc migrate CHANGELOG.md --as changelog` reaches a root `Unmanaged` foreign file, surfaces its content via the CLI-owned source seam, and the LLM rewrites it through the existing write verbs — the determinism boundary intact (LLM proposes prose; the CLI strict-parses + places every structural act). No CLI fuzzy heading-mapping.
+2. **Strict-parse + adopt iff conformant.** A conformant rewrite is parsed, conformance-gated, written at `changelog/changelog.md` byte-stable, and adopted (indexed + baselined); a non-conformant rewrite blocks and is never adopted (RED 1).
+3. **The `enum` is enforced on the `id-from` field.** A foreign category outside the `category` enum (`Performance`) is **rejected** at conformance — the migration's "adopted iff conformant" guarantee is real, not hollow (RED 1). The LLM must map foreign categories to valid members.
+4. **Historical dates survive.** A release's `date` is set from the foreign file's historical date (`set-field` overwrites the `set: on-create` today-stamp), not stamped to today.
+5. **The review gate is the fidelity check, and it is byte-safe both ways.** Approval is required before commit; the foreign original is **retired only on approval** (the first byte-destructive op, CLI-owned, transactional); rejection leaves the foreign original untouched and adopts nothing (RED 2).
+6. **The honest bounds hold.** Changelog only (M24 generalizes); the doc preamble / per-release summary / `[Unreleased]` compare-link have no schema home and are **dropped** (accepted, mostly boilerplate); a foreign changelog whose versions collide under dot-dropping slugify (`1.2.0`/`1.20`→`120`) **blocks loudly** (accept-and-block), never silently suffixed. The migration-quality measure (a small real corpus + round-trip-conformance / fidelity-acceptance / content-preservation) is the milestone's done-bar.
