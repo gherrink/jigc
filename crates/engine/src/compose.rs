@@ -2103,6 +2103,107 @@ pub fn workflow_refs_with_deltas(
     findings
 }
 
+/// The **store-scope** `workflow-refs` target — the task-less complement to
+/// [`workflow_refs`] (`validation.md` → Completing the envelope: workflow↔refs at
+/// store scope). It re-checks a workflow definition's **task-independent**
+/// referential integrity against the current pack, with **no task minted** and **no
+/// data-value context** — the `jigc validate` store sweep, not the `jigc start`
+/// compose gate.
+///
+/// One pass runs only the checks that are well-defined with no task in hand:
+///
+/// - `body-include-only` — the body is include-only at top level
+///   ([`load_workflow_def`]; also surfaces malformed/missing front-matter).
+/// - `include-resolves` / `include-cycle-absent` — every `{{include}}` resolves to a
+///   step in the cascade and the include graph is acyclic ([`expand_includes`]).
+/// - `run-` / `spawn-` / `checkpoint-marker-not-shadowed` — no step prose shadows a
+///   composer-reserved marker ([`find_run_shadow`] / [`find_spawn_shadow`] /
+///   [`find_checkpoint_shadow`]).
+/// - `fan-out-join-paired` — each `fan-out` pairs with a `join` and vice-versa
+///   ([`find_fan_out_join_pairing`]).
+/// - `command-ref-resolves` — **catalog membership only** ([`find_command_ref_membership`]):
+///   each lone `{{cli.<id>}}` names an entry the catalog `get`s, **without** rendering
+///   its args. The store sweep deliberately does **not** call [`render_command`]: the
+///   dev pack gives nearly every command-ref a `task.*` arg, so a task-less full
+///   resolution would emit `task-ref-in-no-task-workflow` for essentially every
+///   command-ref — **fabricated drift, not real** (`validation.md` → the membership-only
+///   load-bearing line; the design-review B1 fix).
+///
+/// The **task-data-dependent** checks — `placeholder-resolves` over `{{task.*}}`,
+/// `at-marker-on-non-scalar` — are inherently compose-time and **stay at `jigc start`**
+/// ([`workflow_refs`]); they are not run here. Reuses the `workflow-refs.*` check ids
+/// (no new id, no severity-inventory growth). A pure function of its inputs (the
+/// determinism boundary; no I/O, clock, or LLM, and — by construction — no task).
+pub fn workflow_refs_store(
+    workflow_bytes: &[u8],
+    source: &dyn StepSource,
+    catalog: &CommandCatalog,
+) -> Vec<Finding> {
+    // body-include-only (and malformed/missing front-matter): a definition that does
+    // not load has no tree to walk.
+    let def = match load_workflow_def(workflow_bytes) {
+        Ok(def) => def,
+        Err(finding) => return vec![finding],
+    };
+
+    // include-resolves / include-cycle-absent: a tree that does not expand cannot be
+    // emitted.
+    let composition = match expand_includes(&def, source) {
+        Ok(composition) => composition,
+        Err(finding) => return vec![finding],
+    };
+
+    // Workflow-level: each `fan-out` step must pair with a `join` step (M8).
+    let mut findings = Vec::new();
+    if let Some(finding) = find_fan_out_join_pairing(&composition) {
+        findings.push(finding);
+    }
+
+    // Per expanded step body: the reserved-marker shadow checks, then the
+    // membership-only command-ref check (no `render_command`, no task data).
+    for step in &composition.steps {
+        if let Some(finding) = find_run_shadow(&step.body) {
+            findings.push(finding);
+        }
+        if let Some(finding) = find_spawn_shadow(&step.body) {
+            findings.push(finding);
+        }
+        if let Some(finding) = find_checkpoint_shadow(&step.body) {
+            findings.push(finding);
+        }
+        findings.extend(find_command_ref_membership(&step.body, catalog));
+    }
+    findings
+}
+
+/// The **membership-only** command-ref check ([`workflow_refs_store`]): for each lone
+/// `{{cli.<id>}}` line in `body`, a blocking `workflow-refs.command-ref-resolves`
+/// [`Finding`] (located at that body-relative line) when the catalog has no entry for
+/// `<id>`; an entry that exists yields none.
+///
+/// This is the store-scope half of `command-ref-resolves`: it checks **only** that the
+/// id is in the catalog ([`CommandCatalog::get`]), never that the entry's args resolve
+/// against a task — [`render_command`] is **not** called (`validation.md` → the
+/// membership-only load-bearing line; the B1 fix). A command-ref whose args are all
+/// `task.*` is therefore clean at store scope, where there is no task to resolve them
+/// against. Mirrors the compose-time emit-path finding ([`emit_line`]) so the reused
+/// check id carries the same message shape, minus the arg-resolution leg.
+fn find_command_ref_membership(body: &str, catalog: &CommandCatalog) -> Vec<Finding> {
+    body.lines()
+        .enumerate()
+        .filter_map(|(offset, line)| {
+            let id = parse_cli_placeholder(line.trim())?;
+            catalog.get(id).is_none().then(|| {
+                Finding::blocking(
+                    "workflow-refs.command-ref-resolves",
+                    format!("command-ref `{{{{cli.{id}}}}}` resolves to no catalog entry"),
+                    Location::at(offset + 1, 1),
+                )
+            })
+        })
+        .collect()
+}
+
 /// The fill-aware `workflow_refs` gate — [`workflow_refs_with_deltas`] extended with
 /// the **two M4 fill checks**, run over **post-phase-5** step bodies (`overrides.md`
 /// → The `{{fill:}}` placeholder: Orphan detection is M4; no nested fills).
@@ -5033,6 +5134,173 @@ reference — make your consequences explain what changes:
         assert!(
             paired.is_empty(),
             "a paired fan-out + join yields zero findings, got {paired:?}"
+        );
+    }
+
+    // --- M20 T1: the store-scope `workflow-refs` target (task-less) ---
+
+    /// `workflow_refs_store` runs only the **task-independent** checks: a clean
+    /// `single-task` yields zero findings, and each task-independent break trips
+    /// **exactly one** blocking finding with the right `code` (and located line). The
+    /// task-data checks (`placeholder-resolves`, `at-marker-on-non-scalar`) are NOT
+    /// run here — they stay at `jigc start` (`validation.md` → Completing the
+    /// envelope: the exact check set).
+    #[test]
+    fn workflow_refs_store_flags_each_task_independent_break() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+
+        // Clean: the shipped single-task store-validates with zero findings.
+        let clean = workflow_refs_store(SINGLE_TASK.as_bytes(), &single_task_source(), &catalog);
+        assert!(
+            clean.is_empty(),
+            "a clean single-task must yield zero store findings, got {clean:?}"
+        );
+        insta::assert_snapshot!(finding_codes(&clean), @"");
+
+        // 1) A dangling include id (no step file in the cascade) → include-resolves.
+        let dangling_wf = b"---\nwhen: x\n---\n{{ include: step:not-a-step }}\n";
+        let dangling = workflow_refs_store(dangling_wf, &single_task_source(), &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&dangling),
+            @"workflow-refs.include-resolves @ 1:1"
+        );
+
+        // 2) An include cycle (A includes B includes A) → include-cycle-absent.
+        let cyclic_src = MapSource::new(&[
+            ("a", "prose a\n{{ include: step:b }}\n"),
+            ("b", "prose b\n{{ include: step:a }}\n"),
+        ]);
+        let cyclic_wf = b"---\nwhen: x\n---\n{{ include: step:a }}\n";
+        let cyclic = workflow_refs_store(cyclic_wf, &cyclic_src, &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&cyclic),
+            @"workflow-refs.include-cycle-absent @ 1:1"
+        );
+
+        // 3) A workflow body with a prose line → body-include-only.
+        let prose_wf = b"---\nwhen: x\n---\n{{ include: step:locate }}\nthis is prose\n";
+        let prose = workflow_refs_store(prose_wf, &single_task_source(), &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&prose),
+            @"workflow-refs.body-include-only @ 5:1"
+        );
+
+        // 4) A step body line starting `Run: ` → run-marker-not-shadowed.
+        let run_src = MapSource::new(&[("only", "do the thing\nRun: jigc do-it\nthen stop\n")]);
+        let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+        let run = workflow_refs_store(only_wf, &run_src, &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&run),
+            @"workflow-refs.run-marker-not-shadowed @ 2:1"
+        );
+
+        // 5) A step body line starting `Spawn: ` → spawn-marker-not-shadowed.
+        let spawn_src = MapSource::new(&[("only", "do the thing\nSpawn: a sub-task\nthen stop\n")]);
+        let spawn = workflow_refs_store(only_wf, &spawn_src, &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&spawn),
+            @"workflow-refs.spawn-marker-not-shadowed @ 2:1"
+        );
+
+        // 6) A step body line starting `Checkpoint: ` → checkpoint-marker-not-shadowed.
+        let cp_src = MapSource::new(&[("only", "do the thing\nCheckpoint: a halt\nthen stop\n")]);
+        let cp = workflow_refs_store(only_wf, &cp_src, &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&cp),
+            @"workflow-refs.checkpoint-marker-not-shadowed @ 2:1"
+        );
+
+        // 7) An unpaired `fan-out` (no `join`) → fan-out-join-paired.
+        let fan_src = MapSource::new(&[(
+            "fan",
+            "---\nfan-out:\n  over: \"{{ milestone.tasks }}\"\n  run: workflow:sub-task\n---\nSpawn a sub-task per item.\n",
+        )]);
+        let fan_wf = b"---\nwhen: x\n---\n{{ include: step:fan }}\n";
+        let fan = workflow_refs_store(fan_wf, &fan_src, &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&fan),
+            @"workflow-refs.fan-out-join-paired @ -"
+        );
+
+        // Every store finding is intrinsic blocking, exactly one per fixture.
+        for findings in [&dangling, &cyclic, &prose, &run, &spawn, &cp, &fan] {
+            assert_eq!(findings.len(), 1, "each fixture trips exactly one check");
+            assert_eq!(
+                findings[0].severity,
+                crate::finding::Severity::Blocking,
+                "every store workflow-refs check is intrinsic-blocking"
+            );
+        }
+    }
+
+    /// The store-scope command-ref path is **membership-only**: a `{{cli.<id>}}`
+    /// naming a catalog-absent id is exactly one `command-ref-resolves` finding
+    /// (located at its body line); a `{{cli.<id>}}` naming a present entry is clean.
+    #[test]
+    fn workflow_refs_store_flags_absent_command_ref_membership() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+
+        // A dangling `{{cli.unknown}}` command-ref → command-ref-resolves at its line.
+        let unknown_src = MapSource::new(&[("only", "first\n{{ cli.unknown }}\nlast\n")]);
+        let unknown = workflow_refs_store(only_wf, &unknown_src, &catalog);
+        insta::assert_snapshot!(
+            finding_codes(&unknown),
+            @"workflow-refs.command-ref-resolves @ 2:1"
+        );
+        assert_eq!(unknown.len(), 1, "exactly the membership check trips");
+        assert_eq!(unknown[0].severity, crate::finding::Severity::Blocking);
+
+        // A present command-ref id → clean (membership passes).
+        let present_src = MapSource::new(&[("only", "{{ cli.validate-task }}\n")]);
+        let present = workflow_refs_store(only_wf, &present_src, &catalog);
+        assert!(
+            present.is_empty(),
+            "a catalog-present command-ref yields zero findings, got {present:?}"
+        );
+    }
+
+    /// The load-bearing **B1** assertion: a command-ref whose entry carries `task.*`
+    /// args (every doc-verb ref in the real dev pack) emits **NO** finding at store
+    /// scope — the membership-only path does not call `render_command`, so no
+    /// fabricated `placeholder-resolves` / `task-ref-in-no-task-workflow` drift over a
+    /// task-less workflow (`validation.md` → the B1 fix). Asserted over the **real**
+    /// catalog's `{ from: "task.id" }`-bearing refs, not a hand-built stub.
+    #[test]
+    fn workflow_refs_store_emits_no_task_ref_drift_for_task_args() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        // `validate-task` / `finalize-task` both render `{ from: "task.id" }`; at store
+        // scope (no task) a full resolution would drift, but membership-only is clean.
+        for id in ["validate-task", "finalize-task", "set-commit-summary"] {
+            assert!(
+                catalog.get(id).expect("ref present").args.iter().any(|a| {
+                    matches!(a, CommandArg::From { from } if from.starts_with("task."))
+                }),
+                "fixture precondition: `{id}` must carry a task.* `from:` arg"
+            );
+            let src = MapSource::new(&[("only", &format!("{{{{ cli.{id} }}}}\n"))]);
+            let only_wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+            let findings = workflow_refs_store(only_wf, &src, &catalog);
+            assert!(
+                findings.is_empty(),
+                "store scope must emit NO finding for the task.*-arg command-ref `{id}` (B1), got {findings:?}"
+            );
+        }
+    }
+
+    /// `workflow_refs_store` is a pure function of `(workflow_bytes, source,
+    /// catalog)` — the determinism boundary, by construction task-less. The same
+    /// inputs twice yield byte-identical findings.
+    #[test]
+    fn workflow_refs_store_is_deterministic() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let src = single_task_source();
+        let first = workflow_refs_store(SINGLE_TASK.as_bytes(), &src, &catalog);
+        let second = workflow_refs_store(SINGLE_TASK.as_bytes(), &src, &catalog);
+        assert_eq!(
+            finding_codes(&first),
+            finding_codes(&second),
+            "same inputs → same store findings"
         );
     }
 
