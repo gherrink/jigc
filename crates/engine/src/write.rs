@@ -2073,8 +2073,25 @@ pub fn add_item(
             let replacement = format!("{}{}", joined.trim_end(), separator);
             return Ok(splice(source, last.start..region.end, &replacement));
         }
-        let at = last_item_end(source, region);
-        Ok(insert_block(source, at, &item))
+        // The section is present but has **no items yet**: its body region (just past
+        // the `## Heading\n`) is all whitespace up to the next `##`/EOF. Replace that
+        // whole empty body with the canonical first item — one blank line under the
+        // heading, the item, then the region's original tail separator (the blank
+        // before a following `##`, or the single EOF `\n`). This consumes the
+        // mint-empty section's blank-line debris so the result is byte-stable whether
+        // the section is trailing (EOF) or followed by another `##` (the M22
+        // empty-non-last-section append: `## Unreleased Changes` before `## Releases`).
+        let tail = &source[region.clone()];
+        let separator = &tail[tail.trim_end().len()..];
+        // A trailing (EOF) empty section's body carries no separator of its own; the
+        // canonical EOF rule is exactly one terminating `\n`.
+        let separator = if separator.is_empty() {
+            "\n"
+        } else {
+            separator
+        };
+        let replacement = format!("\n{}{}", item.trim_end_matches('\n'), separator);
+        Ok(splice(source, region.start..region.end, &replacement))
     } else {
         // The section's home is absent: generate the `## Heading` with the first item
         // as its body, inserted at the section's schema-ordered position.
@@ -2441,7 +2458,7 @@ fn present_body_sections(schema: &Schema, source: &str) -> Vec<(String, usize)> 
         } = &block
             && let Some(id) = body_ids
                 .iter()
-                .find(|id| text.trim().eq_ignore_ascii_case(id.trim()))
+                .find(|id| crate::slug::slugify(text) == **id)
         {
             present.push((id.to_string(), range.start));
         }
@@ -2538,14 +2555,6 @@ fn locate_last_item_block(blocks: &[Block], region: Range<usize>) -> Option<Rang
         })
         .max()?;
     Some(last_start..region.end)
-}
-
-/// The byte offset at the end of a repeatable section's items: the section region's
-/// content, back-trimmed to just past the last item's last non-blank byte — where a
-/// new `### …` item block appends. With no items yet, the section's content start
-/// (just past its heading), back-trimmed.
-fn last_item_end(source: &str, region: Range<usize>) -> usize {
-    region.start + source[region.clone()].trim_end().len()
 }
 
 /// Whether a `### …{#id}` item with anchor `id` is already present in `region`.
@@ -3493,6 +3502,53 @@ title: Auth flow
         assert_eq!(
             rerendered, out,
             "add_item into an empty trailing section is byte-stable (render∘parse == id)",
+        );
+    }
+
+    /// `add-item` into a present **multi-word** section id (`## Unreleased Changes`,
+    /// id `unreleased-changes`) appends under the existing heading rather than
+    /// generating a duplicate `## Unreleased Changes` home. The `present_body_sections`
+    /// heading↔id match must re-slug the heading (`slugify(text) == id`), the same
+    /// convention `parse::heading_matches` adopted for the multi-word-section-id fix —
+    /// a case-insensitive flat compare reports the hyphenated id absent and duplicates
+    /// the section (the M22 inc-5 cold-create defect). The result round-trips
+    /// byte-stable. See `design/changelog.md` → engine work #2.
+    #[test]
+    fn add_item_into_present_multi_word_section_does_not_duplicate_the_heading() {
+        let yaml = b"\
+type: log
+id-from: title
+sections:
+  - id: unreleased-changes
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: note, slot: {} }
+";
+        let schema = crate::schema::load_schema(yaml).expect("schema loads");
+        let src = "\
+# Log
+
+## Unreleased Changes
+";
+        let out = add_item(&schema, src, "unreleased-changes", "Fixed", None, &[])
+            .expect("item appends under the present multi-word section");
+        assert_eq!(
+            out.matches("## Unreleased Changes").count(),
+            1,
+            "the multi-word section heading must NOT be duplicated; got:\n{out}",
+        );
+        assert!(
+            out.contains("### Fixed  {#fixed}"),
+            "the item is appended under the existing section; got:\n{out}",
+        );
+        // Byte-stable: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result re-parses");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "add_item under a multi-word section is byte-stable",
         );
     }
 

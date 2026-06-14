@@ -685,7 +685,7 @@ mod tests {
     /// for front-matter, `load_pack_schema` for the field-type-resolving doctype
     /// path), so this doubles as the clean real-binary pack-load proof: a typo'd
     /// key, a mis-nested field, or a `deny_unknown_fields` violation on any of the
-    /// 9 workflows or 5 doctypes fails here. Asserts presence (`Some`), not the
+    /// 11 workflows or 6 doctypes fails here. Asserts presence (`Some`), not the
     /// prose bytes — wording is review-policed, the per-schema goldens pin the
     /// bytes that ship.
     #[test]
@@ -695,8 +695,8 @@ mod tests {
         let workflows = pack.list(PackResourceKind::Workflows);
         assert_eq!(
             workflows.len(),
-            10,
-            "the shipped pack must carry all 10 workflows; got {workflows:?}",
+            11,
+            "the shipped pack must carry all 11 workflows; got {workflows:?}",
         );
         for id in &workflows {
             let bytes = pack
@@ -719,8 +719,8 @@ mod tests {
         let schemas = pack.list(PackResourceKind::Schemas);
         assert_eq!(
             schemas.len(),
-            5,
-            "the shipped pack must carry all 5 doctypes; got {schemas:?}",
+            6,
+            "the shipped pack must carry all 6 doctypes; got {schemas:?}",
         );
         for id in &schemas {
             let bytes = pack
@@ -741,6 +741,99 @@ mod tests {
         }
     }
 
+    /// The shipped `changelog` doctype is the M22 doctype-expansion deliverable: a
+    /// `singleton: true` Keep-a-Changelog doc at `location: changelog/`, edge-free,
+    /// with a multi-word `unreleased-changes` section (single-level repeatable
+    /// change-groups) and a two-level `releases` section (each release nests a
+    /// repeatable `changes` of change-groups — the `Leaf::Repeatable` target), plus
+    /// an item-level `date` set-on-create and an optional `link` field. Golden over
+    /// the bytes pins the canonical pack content (the file *is* the contract — no
+    /// serializer here). See design/changelog.md → The `changelog` doctype.
+    #[test]
+    fn changelog_schema_is_the_canonical_doctype() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Schemas, "changelog");
+        insta::assert_snapshot!(body, @r###"
+        # changelog — the doctype-expansion (M22) project doctype: a Keep-a-Changelog
+        # singleton maintained over time. A running SINGLETON (fixed slug = the type id,
+        # always `changelog/changelog.md`), so a re-`create` deterministically targets the
+        # same committed file — the premise idempotent warm-append rests on. Edge-free
+        # (no managed relation): entries cross-reference in prose, not a managed ref (the
+        # `commit` target is transient, and a per-entry repeatable edge is deferred —
+        # design/changelog.md → Relations).
+        #
+        # Two sections, the KaC convention:
+        #   - `unreleased-changes` (a MULTI-WORD section id, `## Unreleased Changes`): the
+        #     staging area, a single-level repeatable of change-groups (a `category` enum +
+        #     a `notes` slot). This is the deliberate target for the multi-word-section-id
+        #     parser fix (engine work #2) — it does NOT route around the defect.
+        #   - `releases` (a TWO-LEVEL repeatable): each item is a cut version (free-text item
+        #     title = the version string), carrying an item-level `date` (set on-create) +
+        #     an OPTIONAL `link` field (the KaC diff URL, the optional-field target), and
+        #     each release NESTS a repeatable `changes` of change-groups (same `category`
+        #     enum + `notes` slot — the `Leaf::Repeatable` target).
+        #
+        # NO leading prose slot on a release item (review finding B1): a release holds only
+        # scalar fields then the nested `changes` repeatable — a leading bare-prose slot
+        # would swallow the nested `####` groups. The change-group shape is duplicated
+        # across both sections deliberately (the engine has no schema-fragment reuse, and
+        # the staging-vs-released regions are domain-distinct — review finding S3).
+        # Engine-native types only (no pack field-types declared).
+        # See design/changelog.md → The `changelog` doctype.
+        type: changelog
+        location: changelog/
+        singleton: true
+        id-from: title
+        description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.
+        usage: a user-facing change lands and the project keeps a human-readable record of what changed, staged now and cut into versioned releases over time.
+
+        sections:
+          - id: unreleased-changes
+            repeatable:
+              id-from: category
+              block:
+                - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+                - { id: notes, slot: { hint: "One bullet per change in this category." } }
+          - id: releases
+            repeatable:
+              id-from: title
+              block:
+                - { id: title, type: string }
+                - { id: date, type: date, set: on-create }
+                - { id: link, type: string, optional: true }
+                - id: changes
+                  repeatable:
+                    id-from: category
+                    block:
+                      - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+                      - { id: notes, slot: { hint: "One bullet per change in this category." } }
+        "###);
+    }
+
+    /// The shipped `record-change` workflow is the changelog's standalone driver:
+    /// `creates-task: true`, `selectable: false` (off-router, so no router-golden
+    /// leak by construction), and a create-gate that admits exactly the `changelog`
+    /// (`as: changelog`). Its body is the two ordered step includes
+    /// (`author-change` then the shared `finalize`). Golden over the bytes pins the
+    /// canonical driver. See design/changelog.md → The driver.
+    #[test]
+    fn record_change_workflow_body_is_the_canonical_definition() {
+        let pack = EmbeddedPack::new();
+        let body = read_text(&pack, PackResourceKind::Workflows, "record-change");
+        insta::assert_snapshot!(body, @r###"
+        ---
+        when: record a user-facing change on the project changelog
+        description: Record a change on the changelog — create-or-update the singleton, author a release (or a staged change-group) with its nested category groups, and commit.
+        usage: a user-facing change needs recording on the changelog — staged now, or cut into a versioned release.
+        creates-task: true
+        selectable: false
+        allows-create: [{type: changelog, as: changelog}]
+        ---
+        {{ include: step:author-change }}
+        {{ include: step:finalize }}
+        "###);
+    }
+
     /// list(Steps) yields the MVP step ids, sorted (the pack lists in stem
     /// order). The composer's includes resolve against exactly these — the four
     /// `single-task` steps, `implement-quick` (the ADR-free variant `quick-fix`
@@ -753,7 +846,8 @@ mod tests {
     /// (the M9 new-project on-ramp), plus the `ingest-existing` pair `run-scan` /
     /// `review-verdicts` (the M9 existing-project on-ramp), plus `author-arch-doc`
     /// (the M13 architecture-documentation workflow's create-gated, item-authoring
-    /// arch-doc step).
+    /// arch-doc step), plus `author-change` (the M22 `record-change` workflow's
+    /// create-gated, item-authoring changelog step).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -762,6 +856,7 @@ mod tests {
             steps,
             vec![
                 ResourceId::from("author-arch-doc"),
+                ResourceId::from("author-change"),
                 ResourceId::from("author-commit"),
                 ResourceId::from("author-prd"),
                 ResourceId::from("author-spec"),

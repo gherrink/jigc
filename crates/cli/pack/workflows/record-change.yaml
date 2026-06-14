@@ -1,0 +1,10 @@
+---
+when: record a user-facing change on the project changelog
+description: Record a change on the changelog — create-or-update the singleton, author a release (or a staged change-group) with its nested category groups, and commit.
+usage: a user-facing change needs recording on the changelog — staged now, or cut into a versioned release.
+creates-task: true
+selectable: false
+allows-create: [{type: changelog, as: changelog}]
+---
+{{ include: step:author-change }}
+{{ include: step:finalize }}

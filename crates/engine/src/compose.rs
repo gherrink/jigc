@@ -3338,6 +3338,40 @@ A failed charge retries with exponential backoff, capped at five attempts.
               ],
               "hint": "Create a new arch-doc in the current task."
             },
+            "create-changelog": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "create"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "changelog"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--title"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "Changelog"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
+                }
+              ],
+              "hint": "Create-or-update the running changelog singleton in the current task."
+            },
             "create-prd": {
               "command": "jigc",
               "args": [

@@ -77,6 +77,11 @@ commands:
       - { from: "task.id" }
     hint: "Create a new arch-doc in the current task."
 
+  - id: create-changelog
+    command: jigc
+    args: ["doc", "create", "changelog", "--title", "Changelog", "--task", { from: "task.id" }]
+    hint: "Create-or-update the running changelog singleton in the current task."
+
   - id: bind-spec
     command: jigc
     args:
