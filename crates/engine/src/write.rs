@@ -1227,6 +1227,258 @@ fn field_value_in_lines(
     None
 }
 
+/// Descend a parsed document to the nested [`parse::ParsedItem`] addressed by the id
+/// chain `item_ids` under `section_id` (`["1-2-0", "added"]` → release `1-2-0`'s nested
+/// `#added`). Each segment is matched **within its parent's items** (parent-scoped, the
+/// model the byte locator [`locate_item_path`] enforces on disk), so a same-anchor item
+/// under a different parent is never returned. `None` if any segment is absent.
+fn nested_parsed_item<'a>(
+    doc: &'a parse::Document,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<&'a parse::ParsedItem> {
+    let section = doc.sections.iter().find(|s| s.id == section_id)?;
+    let mut items = &section.items;
+    let mut found: Option<&parse::ParsedItem> = None;
+    for id in item_ids {
+        let item = items.iter().find(|i| &i.id == id)?;
+        found = Some(item);
+        items = &item.items;
+    }
+    found
+}
+
+/// `set-item-slot` for a (possibly nested) repeatable item, addressed by its parent
+/// -scoped id chain `item_ids` (`["1-2-0", "added"]`). The depth-aware dual of
+/// [`set_item_slot`]: it locates the nested item's byte region via [`locate_item_path`]
+/// (so a same-anchor sibling under another parent is out of range), re-renders that item
+/// at its nesting depth via [`render_item_at`], and splices it back with the canonical
+/// inter-block separator — the one item-bytes path, keeping `render(parse(out)) == out`.
+/// An absent item / leaf / non-conformant source → [`SpliceError`].
+pub fn set_nested_item_slot(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    leaf_id: &str,
+    new_prose: &str,
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let item =
+        nested_parsed_item(&doc, section_id, item_ids).ok_or_else(|| SpliceError::NotPresent {
+            what: format!("item {item_ids:?} in section {section_id:?}"),
+        })?;
+    if item.slot_span(leaf_id).is_none() {
+        return Err(SpliceError::NotPresent {
+            what: format!("slot {leaf_id:?} in item {:?}", item.id),
+        });
+    }
+
+    let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_ids:?} block"),
+        }
+    })?;
+    let mut content = item_content_from_parsed(item, source);
+    if content.slots.is_empty() {
+        content.slot = Some(new_prose.to_string());
+    } else if let Some(entry) = content.slots.iter_mut().find(|(id, _)| id == leaf_id) {
+        entry.1 = new_prose.to_string();
+    }
+    let rendered = render_item_at(&content, item_ids.len());
+    Ok(splice(
+        source,
+        region.clone(),
+        &nested_replacement(source, &region, &rendered),
+    ))
+}
+
+/// `set-item-field`-or-insert for a (possibly nested) repeatable item, addressed by its
+/// parent-scoped id chain `item_ids`. The depth-aware dual of
+/// [`set_item_field_or_insert`]: it re-derives the nested item, sets/overwrites the
+/// field, re-renders at the item's nesting depth, and splices canonically. A genuinely
+/// absent item / non-repeatable section → [`GenerateError`].
+pub fn set_nested_item_field_or_insert(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    field_key: &str,
+    new_value: &str,
+) -> Result<String, GenerateError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
+        what: format!("source does not conform to schema for section {section_id:?}"),
+    })?;
+    let item = nested_parsed_item(&doc, section_id, item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+        }
+    })?;
+    let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_ids:?} block not locatable"),
+        }
+    })?;
+
+    let mut content = item_content_from_parsed(item, source);
+    if let Some(existing) = content.fields.iter_mut().find(|f| f.key == field_key) {
+        existing.value = Value::Scalar(new_value.to_string());
+    } else {
+        content.fields.push(Field {
+            key: field_key.to_string(),
+            value: Value::Scalar(new_value.to_string()),
+        });
+    }
+    let rendered = render_item_at(&content, item_ids.len());
+    Ok(splice(
+        source,
+        region.clone(),
+        &nested_replacement(source, &region, &rendered),
+    ))
+}
+
+/// `add-item` into a (possibly nested) repeatable, addressed by the **parent** item id
+/// chain `parent_item_ids` plus the `nested_section_id` naming which nested repeatable
+/// receives the item (`["1-2-0"]`, `"changes"` → a new change-group under release
+/// `1-2-0`). The depth-aware dual of [`add_item`]: it re-derives the parent item,
+/// appends a freshly-minted nested [`ItemContent`] (mint-empty / multi-slot skeleton per
+/// the nested block's template), re-renders the parent at its depth, and splices it back
+/// canonically. A minted id colliding with a present nested item under that parent →
+/// [`GenerateError::AlreadyPresent`]; an unslugable title → [`GenerateError::UnslugableTitle`].
+#[allow(clippy::too_many_arguments)]
+pub fn add_nested_item(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    parent_item_ids: &[&str],
+    nested_section_id: &str,
+    title: &str,
+    slot: Option<&str>,
+    fields: &[Field],
+) -> Result<String, GenerateError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
+        what: format!("source does not conform to schema for section {section_id:?}"),
+    })?;
+    let parent = nested_parsed_item(&doc, section_id, parent_item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("parent item {parent_item_ids:?} in section {section_id:?} not present"),
+        }
+    })?;
+
+    // The nested repeatable named by `nested_section_id` (the leaf id of a
+    // `Leaf::Repeatable` in the parent's block), resolved through the schema by walking
+    // the same chain in the section tree.
+    let nested = nested_repeatable(schema, section_id, parent_item_ids, nested_section_id)
+        .ok_or_else(|| GenerateError::WrongShape {
+            what: format!(
+                "nested repeatable {nested_section_id:?} not declared under {parent_item_ids:?}"
+            ),
+        })?;
+
+    let id = crate::slug::slugify(title);
+    if id.is_empty() {
+        return Err(GenerateError::UnslugableTitle {
+            title: title.to_string(),
+        });
+    }
+    if parent.items.iter().any(|i| i.id == id) {
+        return Err(GenerateError::AlreadyPresent {
+            what: format!("nested item {id:?} under {parent_item_ids:?}"),
+        });
+    }
+
+    let template = parse::ItemTemplate::from(&nested);
+    let new_item = if template.is_multi_slot() {
+        ItemContent {
+            id: id.clone(),
+            title: title.to_string(),
+            slot: None,
+            slots: template
+                .slot_ids
+                .iter()
+                .map(|leaf| (leaf.clone(), String::new()))
+                .collect(),
+            fields: fields.to_vec(),
+            items: Vec::new(),
+        }
+    } else {
+        ItemContent {
+            id: id.clone(),
+            title: title.to_string(),
+            slot: slot.map(str::to_string),
+            slots: Vec::new(),
+            fields: fields.to_vec(),
+            items: Vec::new(),
+        }
+    };
+
+    let region =
+        locate_item_path(schema, source, section_id, parent_item_ids).ok_or_else(|| {
+            GenerateError::WrongShape {
+                what: format!("parent item {parent_item_ids:?} block not locatable"),
+            }
+        })?;
+    let mut content = item_content_from_parsed(parent, source);
+    content.items.push(new_item);
+    let rendered = render_item_at(&content, parent_item_ids.len());
+    Ok(splice(
+        source,
+        region.clone(),
+        &nested_replacement(source, &region, &rendered),
+    ))
+}
+
+/// The nested [`crate::schema::Repeatable`] named `nested_section_id` declared in the
+/// item block reached by walking `parent_item_ids` from `section_id` — the schema dual
+/// of [`nested_parsed_item`]. Each parent segment descends into the matching
+/// `Leaf::Repeatable`'s block (by id-source-free position is wrong — we descend by the
+/// nested leaf whose items carry the next id), so the final lookup is the nested leaf
+/// `nested_section_id` in the deepest parent's block. `None` if absent.
+fn nested_repeatable(
+    schema: &Schema,
+    section_id: &str,
+    parent_item_ids: &[&str],
+    nested_section_id: &str,
+) -> Option<crate::schema::Repeatable> {
+    let section = schema.sections.iter().find(|s| s.id == section_id)?;
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return None;
+    };
+    // Descend one repeatable per parent segment past the top (the top segment is the
+    // section's own repeatable). Each step picks the *only* nested repeatable on the
+    // path; a block with multiple nested repeatables would need the id to disambiguate,
+    // but the changelog (the driving case) carries exactly one, and the final lookup is
+    // by id regardless.
+    let mut current = repeatable.clone();
+    for _ in 1..parent_item_ids.len() {
+        let next = current.block.iter().find_map(|leaf| match leaf {
+            crate::schema::Leaf::Repeatable { repeatable, .. } => Some(repeatable.clone()),
+            _ => None,
+        })?;
+        current = next;
+    }
+    current.block.iter().find_map(|leaf| match leaf {
+        crate::schema::Leaf::Repeatable { id, repeatable } if id == nested_section_id => {
+            Some(repeatable.clone())
+        }
+        _ => None,
+    })
+}
+
+/// Build the splice replacement for a re-rendered nested item over its located
+/// `region` in `source`: the rendered bytes (trailing-newline-trimmed) plus the
+/// **canonical** inter-block separator — `\n\n` before a following heading, `\n` at EOF
+/// — mirroring [`set_item_slot`]'s separator discipline so surrounding items stay
+/// canonically spaced and the whole doc round-trips.
+fn nested_replacement(source: &str, region: &Range<usize>, rendered: &str) -> String {
+    let body = rendered.trim_end_matches('\n');
+    if region.end < source.len() {
+        format!("{body}\n\n")
+    } else {
+        format!("{body}\n")
+    }
+}
+
 /// Locate the whole byte span of the repeatable item whose `{#id}` anchor is `id` —
 /// from its `### …{#id}` heading start to the start of the next `###` item heading or
 /// the next `##` section heading (or EOF), **including** the trailing blank-line
@@ -1265,6 +1517,94 @@ fn locate_item_block(source: &str, id: &str) -> Option<Range<usize>> {
         .unwrap_or(source.len());
 
     Some(start..next_boundary)
+}
+
+/// The **parent-scoped path locator** (review finding S1): resolve the byte region of
+/// a (possibly nested) repeatable item addressed by its id chain, walking each segment
+/// **within its parent's region** rather than matching by anchor globally.
+///
+/// `item_ids` is the item id chain from the section root: `["1-2-0"]` for a top-level
+/// release, `["1-2-0", "added"]` for the `#added` change-group nested inside it. The
+/// walk starts at the section's body region, then for each id finds the item heading at
+/// that nesting depth's level (depth-1 items are `###`, depth-2 `####`, … —
+/// [`item_heading_level`]) whose `{#id}` anchor matches, **bounded to the current
+/// parent's region**, and narrows to that item's own block (its heading start to the
+/// next heading at the same-or-shallower level within the parent, or the parent's end).
+/// The deepest segment's region is returned.
+///
+/// This replaces the global single-level `locate_item_block` (which matched only `###`,
+/// by anchor alone, over the whole source — ambiguous when two parents each carry a
+/// same-anchor nested group, and blind to `####`+ items). A chain segment that names no
+/// present item within its parent's region yields `None` (so a mis-named parent never
+/// misfires onto a same-anchor item under a *different* parent).
+pub fn locate_item_path(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<Range<usize>> {
+    if item_ids.is_empty() {
+        return None;
+    }
+    let blocks = parse::scan_blocks(source);
+    let present = present_body_sections(schema, source);
+    // The section's body region is the depth-1 search scope.
+    let mut region = section_region(&blocks, source, section_id, &present)?;
+
+    for (depth0, id) in item_ids.iter().enumerate() {
+        let level = item_heading_level(depth0 + 1);
+        region = item_block_within(&blocks, source, region.clone(), level, id)?;
+    }
+    Some(region)
+}
+
+/// The byte block of the item at heading `level` whose `{#id}` anchor is `id`, located
+/// **within** the parent byte `region`: from its heading start to the next heading at a
+/// **same-or-shallower** level inside `region` (the item's sub-tree boundary), or
+/// `region.end`. Only headings *inside* `region` are considered, so a same-anchor item
+/// under a different parent is out of range. `None` if no such item heading is present.
+fn item_block_within(
+    blocks: &[Block],
+    source: &str,
+    region: Range<usize>,
+    level: usize,
+    id: &str,
+) -> Option<Range<usize>> {
+    // The matching item heading at `level` within the parent region, by anchor.
+    let start = blocks.iter().find_map(|b| match b {
+        Block::Heading {
+            level: hl, range, ..
+        } if level_num_of(*hl) == level
+            && range.start >= region.start
+            && range.start < region.end
+            && anchor_of(&source[range.clone()]) == Some(id) =>
+        {
+            Some(range.start)
+        }
+        _ => None,
+    })?;
+    // The item's block ends at the next heading at the same-or-shallower level *within*
+    // the parent region (a sibling item, or a structure that closes this item's
+    // sub-tree), else the parent region's end.
+    let end = blocks
+        .iter()
+        .filter_map(|b| match b {
+            Block::Heading {
+                level: hl, range, ..
+            } if range.start > start && range.start < region.end && level_num_of(*hl) <= level => {
+                Some(range.start)
+            }
+            _ => None,
+        })
+        .min()
+        .unwrap_or(region.end);
+    Some(start..end)
+}
+
+/// The numeric ATX level of a heading (`H1`→1 … `H6`→6) — the writer-side dual of the
+/// parser's `level_num`, used by the parent-scoped locator to compare item depths.
+fn level_num_of(level: HeadingLevel) -> usize {
+    level as usize
 }
 
 /// Re-scan a `### …` heading's raw source for its `{#id}` anchor, returning the inner
@@ -5831,5 +6171,242 @@ OAuth device-code flow.
         );
         // The re-rendered two-release doc round-trips byte-stable.
         assert_byte_stable(&schema, &rendered);
+    }
+}
+
+#[cfg(test)]
+mod nested_locator {
+    //! M22 Increment 1, T5 — the parent-scoped path locator + nested splice setters
+    //! (review finding S1/C1). The global single-level `locate_item_block` matched an
+    //! item only at `###`, by anchor alone, **globally** — so it could not reach a
+    //! nested `####` item and would be ambiguous when two parents each carry a same
+    //! -anchor nested group (two releases each with `#added`). The locator here walks
+    //! each path segment **within its parent's byte region**, so a nested write lands
+    //! on exactly the addressed item and leaves its same-anchor sibling under the other
+    //! parent byte-untouched.
+
+    use super::*;
+    use crate::schema::Schema;
+
+    /// The `changelog`-shaped two-level schema (a release → nested change-groups).
+    fn changelog_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: date, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+              - { id: ticket, type: string }
+";
+        crate::schema::load_schema(yaml).expect("changelog schema loads")
+    }
+
+    /// Two releases, **each** carrying a `#added` nested change-group with distinct
+    /// notes — the parent-scoped uniqueness fixture (same anchor across two parents is
+    /// legitimate). The locator must disambiguate them by parent.
+    const TWO_PARENT_TWO_LEVEL: &str = "\
+# Changelog
+
+## Releases
+
+### 1.3.0  {#1-3-0}
+
+<!-- fields -->
+- date: 2026-07-01
+
+#### Added  {#added}
+
+Audit log export.
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+OAuth device-code flow.
+";
+
+    /// Round-trip helper: `render(instance_from_source(src)) == src` over the WHOLE doc.
+    fn assert_byte_stable(schema: &Schema, src: &str) {
+        let instance = instance_from_source(schema, src)
+            .unwrap_or_else(|f| panic!("source parses: {f:?}\n--- src ---\n{src}"));
+        assert_eq!(
+            render(schema, &instance),
+            src,
+            "render(parse(x)) must equal x"
+        );
+    }
+
+    /// The fixture is itself canonical (so whole-doc byte-stability assertions hold).
+    #[test]
+    fn two_parent_fixture_is_canonical() {
+        assert_byte_stable(&changelog_schema(), TWO_PARENT_TWO_LEVEL);
+    }
+
+    /// The parent-scoped locator resolves the nested `#added` under release `1-2-0`
+    /// UNAMBIGUOUSLY — its region is the second `#### Added` block, not the first
+    /// release's same-anchor group.
+    #[test]
+    fn locator_resolves_nested_item_within_its_parent() {
+        let schema = changelog_schema();
+        let region = locate_item_path(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0", "added"],
+        )
+        .expect("nested #added under 1-2-0 located");
+        let block = &TWO_PARENT_TWO_LEVEL[region.clone()];
+        assert!(
+            block.contains("OAuth device-code flow."),
+            "the located block is 1-2-0's #added: {block:?}",
+        );
+        assert!(
+            !block.contains("Audit log export."),
+            "the located block must NOT be 1-3-0's #added: {block:?}",
+        );
+
+        // And the OTHER parent's #added resolves to its own distinct region.
+        let other = locate_item_path(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-3-0", "added"],
+        )
+        .expect("nested #added under 1-3-0 located");
+        assert_ne!(
+            region, other,
+            "the two same-anchor groups locate distinctly"
+        );
+        assert!(TWO_PARENT_TWO_LEVEL[other].contains("Audit log export."));
+    }
+
+    /// A nested `set-slot` on `1-2-0/added/notes` edits exactly that nested item's
+    /// prose and leaves the same-anchor `#added` under `1-3-0` byte-untouched; the
+    /// result round-trips byte-stable.
+    #[test]
+    fn nested_set_slot_targets_the_addressed_nested_item() {
+        let schema = changelog_schema();
+        let out = set_nested_item_slot(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0", "added"],
+            "notes",
+            "OAuth device-code flow and PKCE.",
+        )
+        .expect("nested slot present");
+        // (a) 1-2-0's #added prose updated.
+        assert!(out.contains("OAuth device-code flow and PKCE."));
+        assert!(!out.contains("OAuth device-code flow.\n"));
+        // (b) 1-3-0's same-anchor #added prose byte-untouched.
+        assert!(out.contains("Audit log export."));
+        // (c) round-trips byte-stable.
+        assert_byte_stable(&schema, &out);
+
+        // Inverse: setting 1-3-0/added leaves 1-2-0 untouched — not order-trivial.
+        let out_other = set_nested_item_slot(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-3-0", "added"],
+            "notes",
+            "Audit log export and rotation.",
+        )
+        .expect("nested slot present");
+        assert!(out_other.contains("Audit log export and rotation."));
+        assert!(out_other.contains("OAuth device-code flow."));
+        assert_byte_stable(&schema, &out_other);
+    }
+
+    /// A nested `set-field` (insert-absent) on `1-2-0/added/ticket` lands on exactly
+    /// that nested item's field group and leaves `1-3-0/added` byte-untouched; the
+    /// result round-trips byte-stable.
+    #[test]
+    fn nested_set_field_targets_the_addressed_nested_item() {
+        let schema = changelog_schema();
+        let out = set_nested_item_field_or_insert(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0", "added"],
+            "ticket",
+            "JIRA-42",
+        )
+        .expect("nested field write");
+        // 1-2-0's #added now carries the ticket; 1-3-0's #added does NOT.
+        let idx_120 = out.find("OAuth device-code flow.").unwrap();
+        let idx_130 = out.find("Audit log export.").unwrap();
+        assert!(out.contains("- ticket: JIRA-42"));
+        assert_eq!(
+            out.matches("- ticket: JIRA-42").count(),
+            1,
+            "exactly one ticket"
+        );
+        // The ticket bullet sits in 1-2-0's region (after its notes prose), not 1-3-0's.
+        let ticket_at = out.find("- ticket: JIRA-42").unwrap();
+        assert!(ticket_at > idx_120, "ticket is under 1-2-0");
+        assert!(idx_130 < idx_120, "1-3-0 precedes 1-2-0 in the fixture");
+        // round-trips byte-stable.
+        assert_byte_stable(&schema, &out);
+    }
+
+    /// A nested `add-item` mints a change-group into the addressed release's `changes`
+    /// nested repeatable, scoped to that parent; the result round-trips byte-stable and
+    /// the new group is reachable by the parent-scoped locator.
+    #[test]
+    fn nested_add_item_mints_into_the_addressed_parent() {
+        let schema = changelog_schema();
+        let out = add_nested_item(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0"],
+            "changes",
+            "Changed",
+            None,
+            &[],
+        )
+        .expect("nested add-item");
+        // The new `#### Changed  {#changed}` group sits under 1-2-0, not 1-3-0.
+        assert!(out.contains("#### Changed  {#changed}"));
+        assert_byte_stable(&schema, &out);
+        let region = locate_item_path(&schema, &out, "releases", &["1-2-0", "changed"])
+            .expect("the minted nested group is locatable under 1-2-0");
+        // It is inside 1-2-0's region, after 1-2-0's existing #added.
+        let block = &out[region];
+        assert!(block.contains("#### Changed  {#changed}"));
+        // 1-3-0 still carries only its original #added.
+        assert!(out.contains("Audit log export."));
+    }
+
+    /// Done-criterion (b) "mis-naming its parent": a nested set against an address whose
+    /// parent item id does not exist does NOT misfire onto the same-anchor nested item
+    /// under a *different* parent — it returns `NotPresent`, never a wrong-item write.
+    #[test]
+    fn nested_set_against_a_wrong_parent_does_not_misfire() {
+        let schema = changelog_schema();
+        let err = set_nested_item_slot(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["9-9-9", "added"], // no such release
+            "notes",
+            "should not land anywhere",
+        )
+        .expect_err("the parent release does not exist");
+        assert!(matches!(err, SpliceError::NotPresent { .. }));
     }
 }

@@ -640,9 +640,10 @@ mod tests {
         );
         // A doubled relation hop is empty.
         assert_eq!(Path::parse("task..intent"), Err(ParseError::EmptyHop));
-        // A four-hop fragment overflows the addressing grammar.
+        // A fragment deeper than the H6 nesting cap (>6 hops) overflows the addressing
+        // grammar (a four/five-hop nested fragment is now valid — the M22 lift).
         assert_eq!(
-            Path::parse("task#a/b/c/d"),
+            Path::parse("task#a/b/c/d/e/f/g"),
             Err(ParseError::Fragment(address::ParseError::TooManyHops))
         );
         // An empty type / slug in a literal head.

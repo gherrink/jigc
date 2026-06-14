@@ -25,7 +25,8 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::schema::{Schema, SectionBody};
 use engine::state;
 use engine::write::{
-    set_field_validated, set_item_field_or_insert, set_item_slot, set_slot_validated,
+    set_field_validated, set_item_field_or_insert, set_item_slot, set_nested_item_field_or_insert,
+    set_nested_item_slot, set_slot_validated,
 };
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -196,6 +197,21 @@ fn run_set_field(
                 )
             },
         )?,
+        FieldTarget::NestedItem {
+            section,
+            items,
+            field,
+        } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            set_nested_item_field_or_insert(&schema, &source, &section, &item_ids, &field, value)
+                .map_err(|e| {
+                    block(
+                        &engine::write::generate_error_finding(&e),
+                        "set-field",
+                        addr,
+                    )
+                })?
+        }
     };
 
     persist(&path, &edited)?;
@@ -229,6 +245,15 @@ fn run_set_slot(
             leaf,
         } => set_item_slot(&schema, &source, &section, &item, &leaf, &prose)
             .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?,
+        SlotTarget::NestedItem {
+            section,
+            items,
+            leaf,
+        } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            set_nested_item_slot(&schema, &source, &section, &item_ids, &leaf, &prose)
+                .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?
+        }
     };
 
     persist(&path, &edited)?;
@@ -253,32 +278,121 @@ fn run_add_item(
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
-    let section_id =
-        section_hop(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
+    let target =
+        add_item_target(&address).with_context(|| format!("no section addressed by `{addr}`"))?;
 
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    // Materialize the item block's `set: on-create` fields at mint, mirroring the
-    // doc-level on-create contract: a `date` leaf declared `set: on-create` inside
-    // the repeatable block is stamped with the current date here (the CLI owns the
-    // clock — the engine stays a pure function; `write.rs` names this "the CLI
-    // `set: on-create` deriver"). Single-slot / no-on-create items pass no fields.
-    let on_create = on_create_item_fields(&schema, &section_id);
-    let edited = engine::write::add_item(&schema, &source, &section_id, title, None, &on_create)
-        .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
+    let (edited, minted_path) = match target {
+        AddItemTarget::TopLevel { section } => {
+            // Materialize the item block's `set: on-create` fields at mint, mirroring the
+            // doc-level on-create contract: a `date` leaf declared `set: on-create` inside
+            // the repeatable block is stamped with the current date here (the CLI owns the
+            // clock — the engine stays a pure function; `write.rs` names this "the CLI
+            // `set: on-create` deriver"). Single-slot / no-on-create items pass no fields.
+            let on_create = on_create_item_fields(&schema, &section);
+            let edited =
+                engine::write::add_item(&schema, &source, &section, title, None, &on_create)
+                    .map_err(|e| {
+                        block(&engine::write::generate_error_finding(&e), "add-item", addr)
+                    })?;
+            let minted = format!("{}/{}", section, engine::slug::slugify(title));
+            (edited, minted)
+        }
+        AddItemTarget::Nested {
+            section,
+            parents,
+            nested_section,
+        } => {
+            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            let edited = engine::write::add_nested_item(
+                &schema,
+                &source,
+                &section,
+                &parent_ids,
+                &nested_section,
+                title,
+                None,
+                &[],
+            )
+            .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
+            // The minted nested item address is the parent-scoped id chain plus the
+            // slugger-minted anchor — the 4-hop `#section/parent/<slug>` convention the
+            // validate findings + the nested set verbs address (the nested-section hop is
+            // a *naming* hop on the add-item target only, not on the minted item).
+            let minted = format!(
+                "{}/{}/{}",
+                section,
+                parents.join("/"),
+                engine::slug::slugify(title)
+            );
+            (edited, minted)
+        }
+    };
 
     persist(&path, &edited)?;
-    // The minted item address — the section hop plus the slugger-minted anchor (the
-    // same slugify the engine mints the `{#id}` from, never re-spelled).
+    // The minted item address — the next address an agent fills the item's slot/field
+    // at (the same slugify the engine mints the `{#id}` from, never re-spelled).
     println!(
-        "{}:{}#{}/{}",
+        "{}:{}#{}",
         address.r#type.as_str(),
         address.slug.as_str(),
-        section_id,
-        engine::slug::slugify(title),
+        minted_path,
     );
     Ok(())
+}
+
+/// The resolved destination of an `add-item` address: a **top-level** section
+/// (`#section`) or a **nested** repeatable inside a parent item chain
+/// (`#section/parent/.../nested-section` — the M22 lift). The trailing hop of a nested
+/// target names *which* nested repeatable receives the item; the hops between section
+/// and it are the parent-scoped item id chain.
+enum AddItemTarget {
+    TopLevel {
+        section: String,
+    },
+    Nested {
+        section: String,
+        parents: Vec<String>,
+        nested_section: String,
+    },
+}
+
+/// Resolve the destination an `add-item` address targets. `#section` (1-hop) is a
+/// top-level mint; `#section/parent/nested-section` (3-hop) and deeper name a nested
+/// repeatable inside a parent item chain. The CLI only extracts the hops; the engine
+/// `add_item` / `add_nested_item` adjudicate the *shape* (repeatability, presence).
+fn add_item_target(address: &Address) -> Option<AddItemTarget> {
+    match address.fragment.as_ref()? {
+        Fragment::Unit(u) => Some(AddItemTarget::TopLevel {
+            section: u.as_str().to_string(),
+        }),
+        // `#section/parent/nested-section`: one parent item, the nested repeatable named
+        // by the trailing hop.
+        Fragment::UnitItemLeaf(section, parent, nested) => Some(AddItemTarget::Nested {
+            section: section.as_str().to_string(),
+            parents: vec![parent.as_str().to_string()],
+            nested_section: nested.as_str().to_string(),
+        }),
+        // `#section/parent/.../nested-section`: the leading hop is the section, the
+        // trailing hop names the nested repeatable, the hops between are the parent chain.
+        Fragment::Deep(hops) => {
+            let (section, rest) = hops.split_first()?;
+            let (nested_section, parents) = rest.split_last()?;
+            if parents.is_empty() {
+                return None;
+            }
+            Some(AddItemTarget::Nested {
+                section: section.clone(),
+                parents: parents.to_vec(),
+                nested_section: nested_section.clone(),
+            })
+        }
+        // A bare `#section/item` (no nested-section hop) addresses no repeatable to mint
+        // into; a `#section/leaf` 2-hop likewise names no section to add to.
+        Fragment::UnitLeaf(_, _) | Fragment::UnitItem(_, _) => None,
+    }
 }
 
 /// The `set: on-create` fields the repeatable `section_id`'s item block declares,
@@ -662,6 +776,14 @@ enum FieldTarget {
         item: String,
         field: String,
     },
+    /// A **nested** repeatable-item field, addressed by its parent-scoped id chain
+    /// (`#section/release/change-group/field` and deeper — the M22 multi-level lift).
+    /// `items` is the id chain from the section root; `field` is the trailing leaf.
+    NestedItem {
+        section: String,
+        items: Vec<String>,
+        field: String,
+    },
 }
 
 /// Resolve the destination a `set-field` address targets.
@@ -707,6 +829,21 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
         }),
         // A bare item hop (`#<section>/<item>`) addresses no field leaf.
         Fragment::UnitItem(_, _) => None,
+        // A **nested** path (`#section/item/child/.../field`): the leading hop is the
+        // section, the trailing hop is the field leaf, and the hops between are the
+        // parent-scoped item id chain the engine locator walks (review finding S1).
+        Fragment::Deep(hops) => {
+            let (section, rest) = hops.split_first()?;
+            let (field, items) = rest.split_last()?;
+            if items.is_empty() {
+                return None;
+            }
+            Some(FieldTarget::NestedItem {
+                section: section.clone(),
+                items: items.to_vec(),
+                field: field.clone(),
+            })
+        }
     }
 }
 
@@ -718,6 +855,14 @@ enum SlotTarget {
     Item {
         section: String,
         item: String,
+        leaf: String,
+    },
+    /// A **nested** repeatable-item slot, addressed by its parent-scoped id chain
+    /// (`#section/release/change-group/notes` and deeper — the M22 lift). `items` is the
+    /// id chain from the section root; `leaf` is the trailing slot leaf.
+    NestedItem {
+        section: String,
+        items: Vec<String>,
         leaf: String,
     },
 }
@@ -738,6 +883,21 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
                 leaf: leaf.as_str().to_string(),
             });
         }
+        // A **nested** path (`#section/item/child/.../leaf`): split off the section
+        // (leading) and the slot leaf (trailing); the hops between are the parent-scoped
+        // item id chain.
+        Fragment::Deep(hops) => {
+            let (section, rest) = hops.split_first()?;
+            let (leaf, items) = rest.split_last()?;
+            if items.is_empty() {
+                return None;
+            }
+            return Some(SlotTarget::NestedItem {
+                section: section.clone(),
+                items: items.to_vec(),
+                leaf: leaf.clone(),
+            });
+        }
         _ => return None,
     };
     schema.sections.iter().find_map(|s| match &s.body {
@@ -746,19 +906,6 @@ fn slot_target(schema: &Schema, address: &Address) -> Option<SlotTarget> {
         }
         _ => None,
     })
-}
-
-/// Resolve the `section_id` an `add-item` address targets — the fragment's leading
-/// hop. The CLI only extracts the named section; the engine `add_item` adjudicates
-/// the *shape* (a non-repeatable / unknown section surfaces as a routed
-/// [`engine::write::GenerateError`]), so this never re-checks repeatability here.
-fn section_hop(address: &Address) -> Option<String> {
-    match address.fragment.as_ref()? {
-        Fragment::Unit(u) => Some(u.as_str().to_string()),
-        Fragment::UnitLeaf(u, _) | Fragment::UnitItem(u, _) | Fragment::UnitItemLeaf(u, _, _) => {
-            Some(u.as_str().to_string())
-        }
-    }
 }
 
 /// Wrap a blocking [`Finding`] as a [`DocFailure::Block`], ensuring it carries a

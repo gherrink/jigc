@@ -85,6 +85,13 @@ pub enum Fragment {
     UnitItem(Unit, Item),
     /// `#unit/item/leaf`
     UnitItemLeaf(Unit, Item, Leaf),
+    /// `#unit/item/…/leaf` — a **nested** (≥4-hop) path into a repeatable-inside-a
+    /// -repeatable (the M22 multi-level lift; review finding S1). The parser is purely
+    /// structural, so this carries the raw hop strings in order, *without* assigning
+    /// unit/item/leaf roles (the write-side parent-scoped locator + the schema do that
+    /// when the address is resolved). The depth is bounded by the H6 nesting cap
+    /// (section + up to four item hops + a leaf = six hops).
+    Deep(Vec<String>),
 }
 
 /// A parsed URI-shaped address: a container `ref`, and an optional `fragment`.
@@ -146,10 +153,21 @@ impl Fragment {
                 Item::from(item.to_string()),
                 Leaf::from(leaf.to_string()),
             ),
+            // ≥4 hops is a **nested** path (the M22 multi-level lift). The depth cap is
+            // the H6 nesting ceiling: a section hop, up to four item hops, and a leaf —
+            // six hops; anything deeper overflows the addressable grammar.
+            _ if hops.len() <= MAX_FRAGMENT_HOPS => {
+                Fragment::Deep(hops.iter().map(|h| h.to_string()).collect())
+            }
             _ => return Err(ParseError::TooManyHops),
         })
     }
 }
+
+/// The maximum number of `/`-separated fragment hops the grammar admits: a section
+/// hop, up to four item hops (the H6 nesting cap — items at `###`/`####`/`#####`/
+/// `######`), and a leaf hop. Deeper than this overflows ([`ParseError::TooManyHops`]).
+const MAX_FRAGMENT_HOPS: usize = 6;
 
 impl Address {
     /// Parse an address string against the URI grammar.
@@ -192,6 +210,7 @@ impl fmt::Display for Fragment {
             Fragment::UnitLeaf(u, l) => write!(f, "{u}/{l}"),
             Fragment::UnitItem(u, i) => write!(f, "{u}/{i}"),
             Fragment::UnitItemLeaf(u, i, l) => write!(f, "{u}/{i}/{l}"),
+            Fragment::Deep(hops) => write!(f, "{}", hops.join("/")),
         }
     }
 }
@@ -281,13 +300,83 @@ mod tests {
             ("adr:foo#", ParseError::EmptyFragment),
             ("adr:foo#u/", ParseError::EmptyHop),
             ("adr:foo#/u", ParseError::EmptyHop),
-            ("adr:foo#a/b/c/d", ParseError::TooManyHops),
+            // The depth cap stays real: section + up to four item hops (the H6
+            // nesting cap) + leaf = at most six hops, so a seventh overflows.
+            ("adr:foo#a/b/c/d/e/f/g", ParseError::TooManyHops),
         ] {
             assert_eq!(
                 Address::parse(input),
                 Err(want.clone()),
                 "for input {input:?}"
             );
+        }
+    }
+
+    /// T5 done-criterion (a): a 4-hop and a 5-hop nested fragment parse to the
+    /// variable-depth [`Fragment::Deep`] path and round-trip parse → Display
+    /// byte-identical; the pre-extension 1–3-hop forms still parse to their original
+    /// variants (the lift is additive). The parser is purely structural — it splits by
+    /// hop count without consulting any schema, so both nested-address conventions (the
+    /// T4 `section/item/child/leaf` form and the design's `section/item/nested/child/leaf`
+    /// form) parse identically.
+    #[test]
+    fn nested_deep_fragments_round_trip_and_are_additive() {
+        // The 4-hop nested form T4's validate emits + the worked binary drives
+        // (`#section/release/change-group/leaf`, no nested-section hop).
+        let four = "changelog:cl#releases/1-2-0/added/notes";
+        let addr = Address::parse(four).expect("4-hop nested address parses");
+        assert_eq!(
+            addr.fragment,
+            Some(Fragment::Deep(vec![
+                "releases".to_string(),
+                "1-2-0".to_string(),
+                "added".to_string(),
+                "notes".to_string(),
+            ])),
+        );
+        assert_eq!(addr.to_string(), four, "4-hop round-trips byte-identical");
+
+        // The 5-hop design form carrying the nested-section hop (`changes`).
+        let five = "changelog:cl#releases/1-2-0/changes/added/notes";
+        let addr = Address::parse(five).expect("5-hop nested address parses");
+        assert_eq!(
+            addr.fragment,
+            Some(Fragment::Deep(vec![
+                "releases".to_string(),
+                "1-2-0".to_string(),
+                "changes".to_string(),
+                "added".to_string(),
+                "notes".to_string(),
+            ])),
+        );
+        assert_eq!(addr.to_string(), five, "5-hop round-trips byte-identical");
+
+        // Additive: the pre-extension 1–3-hop forms still parse to their original
+        // (non-`Deep`) variants, byte-identical.
+        for (input, want) in [
+            (
+                "adr:foo#decision",
+                Fragment::Unit(Unit::from("decision".to_string())),
+            ),
+            (
+                "adr:foo#decision/supersedes",
+                Fragment::UnitLeaf(
+                    Unit::from("decision".to_string()),
+                    Leaf::from("supersedes".to_string()),
+                ),
+            ),
+            (
+                "spec:s#criteria/c1/text",
+                Fragment::UnitItemLeaf(
+                    Unit::from("criteria".to_string()),
+                    Item::from("c1".to_string()),
+                    Leaf::from("text".to_string()),
+                ),
+            ),
+        ] {
+            let addr = Address::parse(input).expect("≤3-hop parses");
+            assert_eq!(addr.fragment, Some(want), "for input {input:?}");
+            assert_eq!(addr.to_string(), input, "≤3-hop round-trips for {input:?}");
         }
     }
 }
