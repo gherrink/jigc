@@ -369,12 +369,17 @@ fn is_header_section(section: &crate::schema::Section) -> bool {
     section.header
 }
 
-/// Case-insensitive, whitespace-trimmed match of a heading's text against a
-/// section id. The schema id is the heading's slug-ish source; the MVP schemas use
-/// ids equal to the heading text lowercased (`context`, `decision`), so a
-/// lowercased compare is the conformance check.
+/// Whether a heading's rendered text is the schema-fixed heading for `section_id`.
+///
+/// The section id is a frozen slug; the writer renders it as a Title-Cased heading
+/// (hyphen-split words joined by a space — [`crate::write`] `heading_text`). The
+/// match is the **true inverse**: re-slug the heading text and compare to the
+/// (already-slugged) id, so a multi-word id like `unreleased-changes` ↔ heading
+/// `Unreleased Changes` round-trips. For a single-word id (`context`) this reduces
+/// to the prior lowercased compare (`slugify("Context") == "context"`), and an
+/// out-of-band upper-case heading (`## CONTEXT`) stays tolerated.
 fn heading_matches(text: &str, section_id: &str) -> bool {
-    text.trim().eq_ignore_ascii_case(section_id.trim())
+    crate::slug::slugify(text) == section_id
 }
 
 /// A coarse block: the structural events the schema mapping cares about, each with
@@ -1394,6 +1399,130 @@ Fine.
             .find(|f| f.code == "conformance.slot-heading-depth")
             .expect("a heading-depth ceiling finding");
         insta::assert_debug_snapshot!("slot_forbidden_heading", ceiling);
+    }
+
+    /// A throwaway single-slot doctype whose one body section carries a
+    /// **multi-word (hyphenated) section id** — the `## Unreleased Changes`
+    /// (`unreleased-changes`) shape the changelog earns. Loaded through the real
+    /// YAML path so the test drives the production parser, not a hand-built Schema.
+    fn multiword_section_schema() -> Schema {
+        let yaml = b"\
+type: multiword
+location: notes/
+id-from: title
+sections:
+  - id: title
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: unreleased-changes
+    slot: { hint: \"Staging area for unreleased changes.\" }
+";
+        crate::schema::load_schema(yaml).expect("multiword schema loads")
+    }
+
+    /// Multi-word section-id round-trip (M22 increment 2 / engine work #2).
+    ///
+    /// (i) **Regression red** — pre-fix, `heading_matches` flat-compared the
+    ///     rendered heading text against the raw section id, so `"Unreleased
+    ///     Changes"` never matched `unreleased-changes` and the whole-doc parse
+    ///     aborted with `conformance.section-renamed`. The fix re-slugs the
+    ///     heading before comparing (`slugify(text) == section_id`), the true
+    ///     inverse of the title-casing writer.
+    /// (ii) **The fix** — the same multi-word section parses clean (no
+    ///     `section-renamed` finding) and round-trips byte-stable.
+    #[test]
+    fn multiword_section_id_round_trips() {
+        // (i) Regression red, pinned as the precise pre-fix behaviour: the OLD
+        // flat `eq_ignore_ascii_case` compare returned false for this pair, which
+        // is exactly the bug. The NEW `heading_matches` must return true.
+        assert!(
+            !"Unreleased Changes".eq_ignore_ascii_case("unreleased-changes"),
+            "the pre-fix flat compare rejected the multi-word heading (the regression)"
+        );
+        assert!(
+            heading_matches("Unreleased Changes", "unreleased-changes"),
+            "the fix: re-slugging the heading matches the hyphenated section id"
+        );
+
+        // (ii) The fix end-to-end: a `## Unreleased Changes` doc parses clean and
+        // round-trips byte-stable through the real render path.
+        let src = "\
+---
+title: Release tracking
+---
+
+# Release tracking
+
+## Unreleased Changes
+
+Pending work not yet cut into a version.
+";
+        let schema = multiword_section_schema();
+        let doc = parse_sections(&schema, src).expect("multi-word section parses clean");
+        // No section-renamed finding could have fired (parse returned Ok), and the
+        // body section mapped under its hyphenated id.
+        assert!(
+            doc.sections.iter().any(|s| s.id == "unreleased-changes"),
+            "the hyphenated section mapped: {:?}",
+            doc.sections.iter().map(|s| &s.id).collect::<Vec<_>>()
+        );
+
+        let instance = crate::write::instance_from_source(&schema, src)
+            .expect("conformant doc reads to an instance");
+        let rendered = crate::write::render(&schema, &instance);
+        assert_eq!(rendered, src, "multi-word section round-trips byte-stable");
+    }
+
+    /// Additive guard: an existing **single-word** doctype (`adr`) is unaffected.
+    /// Its sections still match by their lowercase ids (`slugify(id) == id`), an
+    /// out-of-band `## CONTEXT` heading stays case-tolerant, and the conformant
+    /// doc parses to the same three body sections it does today.
+    #[test]
+    fn single_word_sections_unaffected_by_reslug() {
+        // slugify(id) == id for every shipped single-word section id, so re-slugging
+        // the heading is a true superset of the old flat compare.
+        for id in ["context", "decision", "consequences"] {
+            assert_eq!(
+                crate::slug::slugify(id),
+                id,
+                "single-word id is its own slug"
+            );
+            // Title-cased heading still matches.
+            let titled = id[..1].to_uppercase() + &id[1..];
+            assert!(heading_matches(&titled, id), "{titled:?} matches {id:?}");
+        }
+        // Case-tolerance for an OOB upper-case heading is preserved.
+        assert!(
+            heading_matches("CONTEXT", "context"),
+            "an OOB `## CONTEXT` heading stays case-tolerant"
+        );
+
+        let src = "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Rate-limit at the gateway
+
+## CONTEXT
+Per-client limits were enforced ad hoc.
+
+## Decision
+Centralize rate limiting at the gateway.
+
+## Consequences
+Each service drops its local limiter.
+";
+        let doc = parse_sections(&adr_schema(), src).expect("adr with OOB-case heading parses");
+        let body_ids: Vec<&str> = doc
+            .sections
+            .iter()
+            .map(|s| s.id.as_str())
+            .filter(|id| *id != "status")
+            .collect();
+        assert_eq!(body_ids, ["context", "decision", "consequences"]);
     }
 }
 
