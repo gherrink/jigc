@@ -17,6 +17,7 @@ The flows:
 11. [Completion encode](#20-completion-encode--jigc-composes-its-own-milestone-completion-spine-and-the-5-owner-artifact-gate-m16) — the M16 completion half: jigc composes its own milestone-completion spine (the audit/triage/fix/re-verify halts as checkpoints), create-fresh authors the per-milestone completion-record, appends the decisions-log, and `finalize` promotes the owner-artifact in-transaction + fires the #5 presence gate *(flow 20)*
 12. [Measured run](#21-measured-run--capture-live-on-a-twin-seeds-planted-mid-run-the-record-authored-through-the-binary-m17) — the M17 capture arc: hooks + pinned binary on a twin, both seeded failures planted mid-run after the first promoting finalize, the facts tallied from the raw log, and `record-dogfood` authoring the per-run `dogfood-record` through the binary *(flow 21)*
 13. [Three-arm comparison](#22-three-arm-comparison--the-pre-registered-thesis-protocol-m17-sessions-pending) — the M17 thesis comparison protocol: pre-registration first, three twins from one baseline (jigc · control · static-methodology), one matched intent, a rubric'd judgment naming ≥1 non-seeded observation — authored protocol; the sessions themselves are the P1 phase, not yet run *(flow 22)*
+14. [Compose-both-at-setup](#23-compose-both-at-setup--the-new-project-methodology-default-m21) — the M21 new-project default: `jigc setup` writes the marker, the embedded `[dev ▸ methodology]` pair composes **dev-highest**, and roadmap/`planning` work out of the box — the same mechanism as flow 17 with the opposite precedence *(flow 23)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -918,6 +919,8 @@ $ JIGC_PACK_DIR=<pack> jigc setup        # step 0 — start hard-fails without a
 $ git add -A && git commit -qm "chore: jigc setup"     # commit setup artifacts BEFORE the work, so the work commit is code-only
 ```
 
+**`JIGC_PACK_DIR` stays the explicit/dogfood channel — unchanged by M21.** This walk composes the methodology pack **alone** by pointing `JIGC_PACK_DIR` at the pack tree; M21's setup-written `compose-embedded-methodology: true` marker ([flow 23](#23-compose-both-at-setup--the-new-project-methodology-default-m21)) is a *different* channel that wires the embedded `[dev ▸ methodology]` pair. The two never fight: when both are present `JIGC_PACK_DIR` **supersedes the marker** (the T2a precedence — [multi-pack.md](multi-pack.md#embedded-second-pack--setup-auto-wiring-m21)), so the methodology-alone / methodology-primary dogfood ordering this flow drives is **untouched by M21** — the explicit override always wins.
+
 ### The walk — compose the dev-workflow, work the task, finalize one commit
 
 ```text
@@ -1530,3 +1533,51 @@ The M17 thesis comparison ([measurement.md](measurement.md#the-comparison-protoc
 3. **The verdict names ≥1 non-seeded thesis observation** — an organic event or judged difference, never an apparatus-planted one. With flow 21's substrate checks, this is what unlocks cases 2+3 at the pilot gate.
 4. **The honest bounds ride along, named.** The judge is unblinded (transcripts self-identify; rubric + recorded arm order + committed hook logs are the mitigations); control-arm counts are protocol-counted and labeled; n=1 per case — a structured pilot study, not a statistics claim ([measurement.md](measurement.md#honest-bounds)).
 5. **The verdict is recorded, not certified.** A `red` verdict finalizes exactly as readily as a `green` one — the engine promotes the authored judgment without adjudicating it; the genuine green/red audit stays orchestration-level (the single-agent-spine bound, the build-honesty watch — the checkpoints halt and the gate asserts presence, neither scores).
+
+## 23. compose-both-at-setup — the new-project methodology default (M21)
+
+The M21 acceptance: **a fresh project gets the methodology pack composed *with* dev on a clean `cargo install` — no staged pack tree, no hand-written `packs.yaml`.** Where flow 17 composes a **`FilesystemPack` (absolute path)** that the operator stages and lists by hand, M21 embeds the methodology tree **in the binary** as a second `EmbeddedPack` and has `jigc setup` wire it by writing one marker. The result is the **dev-primary** composition: the embedded `[dev ▸ methodology]` pair composed **dev-highest**, the *inverse* of flow 17's listed-pack-highest ordering. The design of record is [multi-pack.md](multi-pack.md#embedded-second-pack--setup-auto-wiring-m21); the embed/extract mechanism, the marker semantics, and the dev-highest precedence table live there and are not restated. Notation illustrative.
+
+### Setup — `jigc setup` writes the marker; both packs ride in-binary
+
+```text
+# a fresh, unconfigured project — nothing staged, no JIGC_PACK_DIR:
+$ cd /tmp/fresh-project && git init -q && git add -A && git commit -qm "baseline"
+
+$ jigc setup                                   # writes the .jigc/config/ cascade AND the compose marker:
+$ cat .jigc/config/packs.yaml
+  compose-embedded-methodology: true           # the marker — no `packs:` list, no path (both packs are in-binary)
+$ git add -A && git commit -qm "chore: jigc setup"
+
+# absent the marker the pack-set is exactly [dev] — byte-identical to today (the single-pack floor, flow 17 assertion 1).
+# the marker is the ONLY thing that fires the two-embedded-pack composition.
+```
+
+### The walk — dev wins the collisions; methodology's distinct surfaces co-compose
+
+```text
+$ jigc start --explain | grep -E "Pack:|collision"
+  Pack: dev/0.0.0 ▸ methodology/0.1.0          ← dev-highest (the inverse of flow 17's methodology-first header)
+  collision: default-workflow → won by dev     ← dev's knobs win → default-workflow = router
+  collision: doctype:commit    → won by dev     ← composed commit KEEPS implements→spec (methodology's is a subset)
+
+# because dev wins `default-workflow`, a bare `jigc start` lands on the ROUTER selection menu (the MVP on-ramp),
+# NOT methodology's dev-task — contrast flow 17, where methodology wins and a bare start composes dev-task:
+$ jigc start                                   # → the router catalog (project-setup / single-task / …)
+  # the milestone half of the on-ramp is orientation route-prose, NOT the router menu (planning is off-catalog) —
+  # see multi-pack.md → Embedded second pack; project-setup.md → Flow 2 hardening.
+
+# methodology's DISTINCT surfaces co-compose (union, not shadowed) — they work out of the box:
+$ jigc doc create roadmap --title "v1 roadmap"           # methodology's roadmap doctype mints
+$ jigc start --workflow planning "plan milestone M1"     # methodology's planning workflow composes (off-router, by name)
+
+# determinism holds under composition (the bar every flow asserts):
+$ jigc start --task <id> | diff - <first-capture>        # empty diff
+```
+
+### What it asserts (the acceptance bar)
+
+1. **The marker is the whole on-ramp — and absent, the floor is byte-identical to today.** `jigc setup` writes `compose-embedded-methodology: true`; the factory reads that key pre-cascade (the existing `discover_pack_list` walk, no new discovery) and composes `[dev ▸ methodology]` from the two in-binary trees. With the marker absent the pack-set is exactly `[dev]` — every dev-only test and the flow-17 single-pack byte-identity floor stay green untouched ([multi-pack.md](multi-pack.md#embedded-second-pack--setup-auto-wiring-m21)).
+2. **Dev wins both collisions — the new-project default ordering, the same mechanism as flow 17 with opposite precedence.** `default-workflow → router` (so a bare start lands on the selection menu, the MVP on-ramp) and `doctype:commit` keeps `implements→spec` (a spec-driven task can still bind the edge), each surfaced in `--explain` as `won by dev`. Flow 17's **methodology-primary, listed-pack-highest** ordering and this **dev-primary, embedded-pair** ordering are **both valid compositions of the one precedence mechanism** — only the order differs, a deliberate per-configuration choice. Methodology-primary stays the self-hosting dogfood's ordering ([flow 15](#15-self-hosting--the-methodology-pack-dogfooded-on-a-fresh-project-m12-exploratory)), unchanged.
+3. **Methodology's distinct surfaces co-compose — roadmap + `planning` work out of the box.** `roadmap`/`planning`/`decisions-log`/… don't collide with dev, so they all compose under the union; `jigc doc create roadmap` and `jigc start --workflow planning` succeed on a fresh project with no pack staging. (`planning` is **off-router** by design, so it is reached by name, not from the bare-start menu.)
+4. **`JIGC_PACK_DIR` stays the explicit override and supersedes the marker.** The marker is the *new-project default* channel; `JIGC_PACK_DIR` remains the explicit/dogfood channel and **wins** when both are present (the T2a precedence — [flow 15](#15-self-hosting--the-methodology-pack-dogfooded-on-a-fresh-project-m12-exploratory) note), so the methodology-alone / methodology-primary path is untouched by M21.
