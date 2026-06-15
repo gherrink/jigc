@@ -204,7 +204,7 @@ const VALIDATION_SCHEMA = {
   required: ['gate_green', 'gate_evidence', 'deliverable_holds', 'blocking', 'advisory', 'verdict'],
   properties: {
     gate_green: { type: 'boolean' },
-    gate_evidence: { type: 'string', description: 'PROOF the FULL gate was run, not a claim: paste the verbatim `test result: ok. N passed; 0 failed` summary line for EVERY test binary from one unfiltered, UNSCOPED `LACON_DISABLE=1 cargo test` run (no -p, no name filter, no single test), plus the fmt/clippy/build exit confirmations. gate_green=true is INVALID without this evidence; a scoped or lacon-trimmed run does not count — the pack/describe goldens live in the `--bin jigc` target a scoped run misses.' },
+    gate_evidence: { type: 'string', description: 'PROOF the FULL gate was run, not a claim: paste the verbatim `test result: ok. N passed; 0 failed` summary line for EVERY test binary from one UNSCOPED `cargo test` run — the WHOLE suite, no -p, no name filter, no single test — plus the fmt/clippy/build exit confirmations. gate_green=true is INVALID without this evidence; a scoped run does not count — the pack/describe goldens live in the `--bin jigc` target a scoped run misses.' },
     deliverable_holds: { type: 'boolean' },
     blocking: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the exact command and its observed output that proves the finding' }, fix_hint: { type: 'string' } } } },
     advisory: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the proof' } } } },
@@ -260,7 +260,7 @@ function execPrompt(inc, task, all) {
   ].join('\n')
 }
 function validatePrompt(inc) {
-  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself, UNSCOPED and UNFILTERED — `LACON_DISABLE=1 cargo test` (no -p, no name filter, no single test — the pack/describe goldens live in the `--bin jigc` target a scoped run silently misses), plus `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo build`. Paste the verbatim `test result:` summary line for EVERY binary into `gate_evidence`. gate_green=true is INVALID without that pasted evidence; any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n')
+  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself, UNSCOPED — `cargo test` over the WHOLE suite (no -p, no name filter, no single test — the pack/describe goldens live in the `--bin jigc` target a scoped run silently misses), plus `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo build`. Paste the verbatim `test result:` summary line for EVERY binary into `gate_evidence`. gate_green=true is INVALID without that pasted evidence; any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n')
 }
 function fixPrompt(inc, f) {
   return [
@@ -375,7 +375,7 @@ for (const inc of increments) {
     const gateProven = v && v.gate_green && typeof v.gate_evidence === 'string' && /test result:/.test(v.gate_evidence)
     if (blocking.length === 0 && gateProven) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
     if (blocking.length === 0 && v && v.gate_green && !gateProven) { log('Increment ' + inc.n + ' — gate claimed green WITHOUT pasted `test result:` evidence; treating as unverified → fix round') }
-    if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length > 0 ? blocking.length + ' blocking finding(s) remain after 3 fix rounds' : 'gate green could not be verified (no pasted `test result:` evidence from a full unfiltered run) after 3 validation rounds — verify the gate by hand', blocking }; break }
+    if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length > 0 ? blocking.length + ' blocking finding(s) remain after 3 fix rounds' : 'gate green could not be verified (no pasted `test result:` evidence from a full unscoped run) after 3 validation rounds — verify the gate by hand', blocking }; break }
     round++
     log('Increment ' + inc.n + ' — fix round ' + round + ': ' + blocking.length + ' blocking finding(s)')
     for (const f of blocking) {
