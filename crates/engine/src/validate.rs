@@ -781,8 +781,19 @@ fn check_item_leaves(
             crate::schema::Leaf::Slot { .. } => {}
             crate::schema::Leaf::Field(field) => {
                 // The id-source field is the item heading, never a bullet — exempt
-                // at this level just as at the top level.
+                // from the bullet-based `check_item_field` at this level just as at
+                // the top level. But when the id-from declares an `enum`, the heading
+                // value is still schema-constrained: re-slug it (the same re-slug the
+                // parser's `heading_matches` uses) and require membership in the
+                // (slug-form) enum members, so `Fixed`→`fixed` passes while a foreign
+                // `Performance`→`performance` ∉ enum blocks — `migrate`'s "adopted iff
+                // conformant" guarantee for the one enum id-from the changelog has
+                // (`design/auto-migration.md` → Engine/validation work #1). A non-enum
+                // id-from carries no such constraint and stays exempt.
                 if field.id == repeatable.id_from {
+                    if field.ty == FieldType::Enum {
+                        check_id_from_enum(item_path, repeatable, item, field, findings);
+                    }
                     continue;
                 }
                 check_item_field(item_path, item, field, findings);
@@ -872,6 +883,42 @@ fn check_item_field(
                 ));
             }
         }
+    }
+}
+
+/// `field-value-conformant` for a repeatable item's **`id-from` enum** field — the
+/// one case where the heading text (not a bullet in `item.fields`) is itself a
+/// schema-constrained value (`design/auto-migration.md` → Engine/validation work #1).
+/// The id-from heading is exempt from the ordinary bullet-based field check, but an
+/// `enum`-typed id-from must still name a member: re-slug the heading (the same
+/// re-slug the parser's `heading_matches` applies, `parse.rs` → `heading_matches`)
+/// and require membership in the (slug-form) declared members. `Fixed`→`fixed` /
+/// `Added`→`added` pass; a foreign `Performance`→`performance` ∉ enum blocks. The
+/// finding addresses `item_path/<id-from>` (the slug-cased item id is already in
+/// `item_path`). A missing `of` (a malformed enum schema) names no members, so any
+/// value is non-conformant — surfaced rather than silently passed.
+fn check_id_from_enum(
+    item_path: &str,
+    repeatable: &crate::schema::Repeatable,
+    item: &ParsedItem,
+    field: &SchemaField,
+    findings: &mut Vec<Finding>,
+) {
+    let slug = crate::slug::slugify(&item.title);
+    let members = field.of.as_deref().unwrap_or(&[]);
+    if !members.iter().any(|m| m == &slug) {
+        findings.push(blocking_conformance(
+            "schema-conformance.field-value-conformant",
+            format!(
+                "id-from field `{}` in item `{item_path}`: `{}` is not an enum member",
+                repeatable.id_from, slug
+            ),
+            Some(Location::addressed(
+                format!("{item_path}/{}", repeatable.id_from),
+                1,
+                1,
+            )),
+        ));
     }
 }
 
@@ -1623,6 +1670,189 @@ sections:
             // Section-qualified nested address (review finding S1) — includes `changes`.
             Some("releases/1-2-0/changes/added/severity"),
             "the finding must address the NESTED leaf (section-qualified)",
+        );
+    }
+}
+
+#[cfg(test)]
+mod id_from_enum_conformance_tests {
+    //! (M23 inc-2 T1) The conformance gate enforces the `enum` on an `id-from`
+    //! field, the one case the changelog has (the change-group's `category` *is* its
+    //! `id-from` and *is* an enum). The id-from value lives in the parsed item
+    //! **heading**, not `item.fields`, so a new check re-slugs the heading text and
+    //! tests membership against the (slug-form) enum members: `Fixed`→`fixed` /
+    //! `Added`→`added` pass, `Performance`→`performance` ∉ enum is rejected at one
+    //! blocking `schema-conformance.field-value-conformant` addressed
+    //! `…/<item>/category`. A **non-enum** `id-from` (a `string` `version`/`title`)
+    //! stays exempt — no new finding (the no-blast-radius regression watch). See
+    //! `design/auto-migration.md` → Engine/validation work #1.
+
+    use super::*;
+    use crate::parse::parse_sections;
+
+    /// A `changelog`-shaped two-level fixture whose **both** repeatable id-from
+    /// fields the check could touch are exercised: the top-level `groups` repeatable
+    /// keys off an `enum` `category` (the change-group itself promoted to top level),
+    /// and a nested `subgroups` repeatable also keys off an `enum` `category`. The
+    /// nested level proves the check fires recursively. (The non-id-from `severity`
+    /// enum is the control that the existing per-field check already covers.)
+    fn schema() -> Schema {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: groups
+    repeatable:
+      id-from: category
+      block:
+        - { id: category, type: enum, of: [added, fixed, removed] }
+        - { id: notes, slot: { hint: \"One bullet per change.\" } }
+        - id: subgroups
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: enum, of: [added, fixed, removed] }
+              - { id: detail, slot: { hint: \"Sub-detail.\" } }
+";
+        crate::schema::load_schema(yaml).expect("changelog enum-id-from schema loads")
+    }
+
+    /// A **non-enum** `id-from` variant of the same shape: `category` is a plain
+    /// `string` (the regression-watch control standing in for every shipped
+    /// doctype's `title`/`key`/`version` id-from). The check must leave it exempt.
+    fn string_id_from_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+sections:
+  - id: groups
+    repeatable:
+      id-from: category
+      block:
+        - { id: category, type: string }
+        - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        crate::schema::load_schema(yaml).expect("string-id-from schema loads")
+    }
+
+    fn parse(schema: &Schema, source: &str) -> Document {
+        parse_sections(schema, source)
+            .unwrap_or_else(|f| panic!("fixture must parse; got conformance findings: {f:?}"))
+    }
+
+    /// (b) Headings that re-slug to a valid enum member at **both** levels fire
+    /// **zero** id-from-enum findings — `Fixed`→`fixed`, `Added`→`added` pass.
+    #[test]
+    fn valid_member_headings_fire_no_finding() {
+        let schema = schema();
+        let source = "\
+# Changelog
+
+## Groups
+
+### Fixed  {#fixed}
+
+A top-level fix.
+
+#### Added  {#added}
+
+A nested addition.
+";
+        let doc = parse(&schema, source);
+        let findings = schema_conformance(&schema, source, &doc);
+        assert!(
+            findings.is_empty(),
+            "headings that re-slug to valid enum members must fire no findings, got {findings:?}"
+        );
+    }
+
+    /// (a) top level — a heading re-slugging OUTSIDE the enum (`### Performance` →
+    /// `performance` ∉ {added, fixed, removed}) fires exactly one blocking
+    /// `schema-conformance.field-value-conformant` addressed `groups/performance/category`.
+    #[test]
+    fn top_level_foreign_category_blocks_at_the_slug_address() {
+        let schema = schema();
+        let source = "\
+# Changelog
+
+## Groups
+
+### Performance  {#performance}
+
+A perf change.
+";
+        let doc = parse(&schema, source);
+        let findings = schema_conformance(&schema, source, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "a foreign top-level category must fire exactly one finding, got {findings:?}"
+        );
+        let finding = &findings[0];
+        // BUILD-PIN: code + slug-cased leaf-suffix pinned against the real binary.
+        assert_eq!(finding.code, "schema-conformance.field-value-conformant");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("groups/performance/category"),
+            "the finding must address the slug-cased id-from leaf",
+        );
+    }
+
+    /// (a) nested level — a nested change-group whose heading re-slugs OUTSIDE the
+    /// enum fires exactly one blocking `field-value-conformant` at the nested,
+    /// section-qualified slug address `groups/fixed/subgroups/performance/category`.
+    #[test]
+    fn nested_foreign_category_blocks_at_the_nested_slug_address() {
+        let schema = schema();
+        let source = "\
+# Changelog
+
+## Groups
+
+### Fixed  {#fixed}
+
+A top-level fix.
+
+#### Performance  {#performance}
+
+A nested perf change.
+";
+        let doc = parse(&schema, source);
+        let findings = schema_conformance(&schema, source, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "a foreign nested category must fire exactly one finding, got {findings:?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(finding.code, "schema-conformance.field-value-conformant");
+        assert_eq!(finding.severity, Severity::Blocking);
+        assert_eq!(
+            finding.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("groups/fixed/subgroups/performance/category"),
+            "the finding must address the section-qualified nested slug leaf",
+        );
+    }
+
+    /// (c) regression watch — a **non-enum** `id-from` (a `string` `category`
+    /// standing in for every shipped doctype's `title`/`key`/`version`) stays
+    /// exempt: an arbitrary foreign heading fires **zero** new findings.
+    #[test]
+    fn non_enum_id_from_stays_exempt() {
+        let schema = string_id_from_schema();
+        let source = "\
+# Changelog
+
+## Groups
+
+### Performance  {#performance}
+
+A perf change.
+";
+        let doc = parse(&schema, source);
+        let findings = schema_conformance(&schema, source, &doc);
+        assert!(
+            findings.is_empty(),
+            "a non-enum string id-from must stay exempt, got {findings:?}"
         );
     }
 }
