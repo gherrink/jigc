@@ -1,0 +1,47 @@
+Migrate the foreign changelog into the managed `changelog` singleton. Below is the
+foreign source the CLI staged for you (read-only context — you author the canonical
+doc through the write verbs, you never edit this file or place anything yourself):
+
+{{ source }}
+
+Rewrite it into canonical shape. First create-or-update the changelog singleton —
+safe whether or not one already exists:
+
+{{ cli.create-changelog }}
+
+Then re-author every RELEASE from the foreign file, oldest to newest. For each cut
+version, mint a release item (its id is minted from the version title — e.g. `1.2.0`
+mints `120`). `add-item` PRINTS the new item's address; use that printed address
+verbatim for every follow-up verb — never re-spell the version string:
+
+jigc doc add-item changelog:changelog#releases --title "<version>" --task {{task.id}}
+#   → prints e.g. changelog:changelog#releases/120  (call this <release-addr>)
+
+Set the release `date` from the foreign file's HISTORICAL date — this OVERWRITES the
+today-stamp `add-item` placed on create, so historical dates survive migration. Use
+the date exactly as it appears in the foreign source (ISO `YYYY-MM-DD`):
+
+jigc doc set-field <release-addr>/date --value "<historical-date>" --task {{task.id}}
+
+If the foreign release carries a compare/diff URL, map it to the optional `link`
+field (otherwise omit it — there is no other home for it and the rest of the foreign
+preamble is dropped):
+
+jigc doc set-field <release-addr>/link --value "<diff-url>" --task {{task.id}}
+
+Under each release, add one nested change-group per category and author its notes
+(one bullet per change). The category is the group's id and MUST be one of:
+added / changed / deprecated / removed / fixed / security — map any foreign category
+heading onto one of these (a heading outside the set is rejected at conformance).
+Drive the printed address verbatim:
+
+jigc doc add-item <release-addr>/changes --title "<category>" --task {{task.id}}
+#   → prints e.g. changelog:changelog#releases/120/changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}
+
+For any foreign change NOT yet cut into a release (an `[Unreleased]` section), add the
+change-group under the staged section instead:
+
+jigc doc add-item changelog:changelog#unreleased-changes --title "<category>" --task {{task.id}}
+#   → prints e.g. changelog:changelog#unreleased-changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}

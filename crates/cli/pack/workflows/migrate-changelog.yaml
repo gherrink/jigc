@@ -1,0 +1,10 @@
+---
+when: migrate a foreign changelog into the managed changelog
+description: Migrate a foreign `CHANGELOG.md` into the managed `changelog` singleton — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant `CHANGELOG.md` and `jigc migrate <path> --as changelog` is rewriting it into the managed changelog. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: changelog, as: changelog}]
+---
+{{ include: step:author-migration }}
+{{ include: step:finalize }}
