@@ -528,6 +528,17 @@ fn emit_line(
         return Ok(emitted);
     }
 
+    // Source seam: a lone `{{source}}` read-only context placeholder — the
+    // CLI-owned foreign bytes the `jigc migrate` verb stages into the task,
+    // emitted **verbatim** (auto-migration.md → The source seam). Syntactically
+    // distinct from a managed-doc `{{@…}}` deref: it carries non-managed bytes,
+    // never an address, so it never reaches the data-value `Path` grammar. An
+    // unfed seam (`ctx.source` is `None`) emits an empty line — empty-not-finding,
+    // mirroring an unbound role.
+    if parse_lone_placeholder(trimmed) == Some("source") {
+        return Ok(ctx.source.clone().unwrap_or_default());
+    }
+
     // Content: a lone `{{@<path>}}` data-value placeholder.
     if let Some(inner) = parse_lone_placeholder(trimmed)
         && let Some(path_text) = inner.strip_prefix('@')
@@ -637,6 +648,7 @@ fn emit_inline_data_values(line: &str, ctx: &crate::data_value::ComposeContext) 
             || inner.starts_with("cli.")
             || inner.starts_with('@')
             || inner.starts_with("include:")
+            || inner == "source"
         {
             rewritten.push_str(&line[cursor..open + 2]);
             cursor = open + 2;
@@ -2509,6 +2521,7 @@ mod tests {
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -2586,6 +2599,106 @@ If your decision supersedes an earlier one, here is that decision:
 
         after
         "###);
+    }
+
+    /// Core done-criterion (M23 inc-1 T1): the **source seam** — a lone
+    /// `{{source}}` read-only context placeholder surfaces the foreign bytes fed
+    /// on [`ComposeContext::source`] **verbatim** into the emitted step body, and
+    /// the `workflow-refs` gate flags no finding for it. The seam is syntactically
+    /// distinct from a managed-doc deref (`{{@…}}`): no `@`, no managed head — it
+    /// carries non-managed raw bytes, never an address.
+    #[test]
+    fn emit_source_seam_verbatim() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let foreign = "\
+# Changelog
+
+## [1.2.0] - 2023-01-15
+### Added
+- A foreign feature line.
+
+## [1.1.0] - 2022-08-01
+### Fixed
+- A foreign bugfix.";
+        let ctx = crate::data_value::ComposeContext {
+            source: Some(foreign.to_owned()),
+            ..emit_ctx()
+        };
+        let body = "Here is the foreign file to rewrite:\n{{ source }}\nRewrite it now.\n";
+        let emitted = emit_step_body(body, &ctx, &catalog).expect("emits");
+
+        // The foreign content appears verbatim, between the framing prose lines.
+        assert!(
+            emitted.contains(foreign),
+            "the foreign bytes must appear verbatim; got {emitted:?}"
+        );
+        insta::assert_snapshot!(emitted, @r###"
+        Here is the foreign file to rewrite:
+        # Changelog
+
+        ## [1.2.0] - 2023-01-15
+        ### Added
+        - A foreign feature line.
+
+        ## [1.1.0] - 2022-08-01
+        ### Fixed
+        - A foreign bugfix.
+        Rewrite it now.
+        "###);
+    }
+
+    /// The source seam is **inert when unfed** (empty-not-finding): a `{{source}}`
+    /// in a composition whose `ComposeContext` carries no foreign bytes emits an
+    /// empty line — never a finding, mirroring the unbound-`@` contract. This is
+    /// the omitting-context guard: the seam composed into a non-migration context
+    /// (`source: None`) is inert, not an error.
+    #[test]
+    fn emit_source_seam_unfed_is_empty_line() {
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        let ctx = emit_ctx(); // source defaults to None
+        let emitted =
+            emit_step_body("before\n{{ source }}\nafter\n", &ctx, &catalog).expect("emits");
+        insta::assert_snapshot!(emitted, @r###"
+        before
+
+        after
+        "###);
+    }
+
+    /// The end-to-end `workflow-refs` gate emits **no finding** for a `{{source}}`
+    /// seam line — driven through the real [`workflow_refs`] gate over a workflow
+    /// whose step body carries the seam, both fed and unfed. A bare `source` is a
+    /// known read-only-context placeholder, not a data-value path (which would
+    /// surface an `undeclared-root` finding). The unfed arm is the omitting-context
+    /// guard: the seam composed into a context with no foreign bytes is inert.
+    #[test]
+    fn source_seam_clears_workflow_refs_gate() {
+        let catalog = load_command_catalog(COMMANDS_YAML).expect("loads");
+        let src = MapSource::new(&[("only", "the foreign file:\n{{ source }}\nrewrite it.\n")]);
+        let wf = b"---\nwhen: x\n---\n{{ include: step:only }}\n";
+
+        // Fed: the gate clears with the foreign bytes present.
+        let fed_ctx = crate::data_value::ComposeContext {
+            source: Some("foreign bytes".to_owned()),
+            ..compose_ctx()
+        };
+        let fed = workflow_refs(wf, &src, &catalog, &fed_ctx);
+        assert!(
+            fed.is_empty(),
+            "a fed source seam must clear the gate, got {fed:?}"
+        );
+
+        // Unfed: the gate clears with no foreign bytes (empty-not-finding).
+        let unfed_ctx = compose_ctx(); // source defaults to None
+        let unfed = workflow_refs(wf, &src, &catalog, &unfed_ctx);
+        assert!(
+            unfed.is_empty(),
+            "an unfed source seam must clear the gate (empty-not-finding), got {unfed:?}"
+        );
     }
 
     /// Core done-criterion (M17 inc-4 T2): an **inline** `{{<path>}}` data-value
@@ -2836,6 +2949,7 @@ Slightly higher write latency for resilience.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -2923,6 +3037,7 @@ Slightly higher write latency for resilience.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         };
         let emitted_unbound =
             emit_step_body_with(body, &ctx_unbound, &catalog, Some(&store_unbound)).expect("emits");
@@ -3051,6 +3166,7 @@ A failed charge retries with exponential backoff, capped at five attempts.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -4147,6 +4263,7 @@ reference — make your consequences explain what changes:
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -4716,6 +4833,7 @@ reference — make your consequences explain what changes:
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -4823,6 +4941,7 @@ reference — make your consequences explain what changes:
             ],
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         };
 
         let emitted = emit_step_body("{{ catalog }}\n", &ctx, &empty_catalog).expect("emits");
@@ -4838,6 +4957,7 @@ reference — make your consequences explain what changes:
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         };
         let emitted_empty =
             emit_step_body("{{ catalog }}\n", &empty_ctx, &empty_catalog).expect("emits");
@@ -4869,6 +4989,7 @@ reference — make your consequences explain what changes:
             catalog: Vec::new(),
             store,
             milestone: Vec::new(),
+            source: None,
         };
 
         // A two-spec store renders one `> <address>` line per instance, fed order.
@@ -4884,6 +5005,7 @@ reference — make your consequences explain what changes:
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         };
         let emitted_empty =
             emit_step_body("{{ store.specs }}\n", &empty_ctx, &empty_catalog).expect("emits");
@@ -6192,6 +6314,7 @@ Follow the house rule.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: ids.iter().map(|s| (*s).to_owned()).collect(),
+            source: None,
         }
     }
 
@@ -6321,6 +6444,7 @@ Follow the house rule.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: list.enumerate(),
+            source: None,
         }
     }
 
@@ -6423,6 +6547,7 @@ Follow the house rule.
             catalog: Vec::new(),
             store: std::collections::BTreeMap::new(),
             milestone: order.iter().map(|s| (*s).to_owned()).collect(),
+            source: None,
         };
         let forward = compose(
             &def,

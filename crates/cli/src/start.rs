@@ -525,6 +525,9 @@ fn compose_core(
             // the lone production site feeding this non-empty (`milestone.rs`
             // `run_execute`; `write-commands.md` → Executing the milestone).
             milestone: milestone_ids.to_vec(),
+            // No source seam on the `start` compose path — the `{{source}}` seam is
+            // fed only by the `jigc migrate` verb (auto-migration.md → The source seam).
+            source: None,
         }
     };
     // Compose-time `workflow-refs` gate over the **post-phase-4** include list +
@@ -1378,6 +1381,8 @@ fn build_context(
         store,
         // No milestone in this single-`start` compose path (see the no-task arm).
         milestone: Vec::new(),
+        // No source seam on the `start` compose path (fed only by `jigc migrate`).
+        source: None,
     }
 }
 

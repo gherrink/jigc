@@ -236,6 +236,19 @@ pub struct ComposeContext {
     /// when the composition has no milestone (no fan-out) or the milestone has no
     /// sub-tasks — the empty collection, not a finding.
     pub milestone: Vec<String>,
+    /// The CLI-owned **source seam** — the raw foreign-document bytes the `jigc
+    /// migrate` verb stages into the task, surfaced verbatim into the composed
+    /// migration workflow by the lone `{{source}}` read-only context placeholder
+    /// ([auto-migration.md](../../../design/auto-migration.md) → The source seam).
+    /// This is **non-managed input to the LLM's reasoning**, never a managed doc or
+    /// an addressable slot — it carries bytes, never an [`Address`], so it lives
+    /// here rather than in the data-value [`Path`] grammar (which is closed over
+    /// managed state). `None` outside a migration composition; a `{{source}}`
+    /// against a `None` seam emits **empty text**, not a finding (the
+    /// empty-not-finding stance, mirroring an unbound role). The CLI feeds the
+    /// staged foreign bytes and the resolver does **no** file I/O (the determinism
+    /// boundary; the CLI owns the read).
+    pub source: Option<String>,
 }
 
 /// What a data-value [`Path`] resolves to against a [`ComposeContext`] — the
@@ -710,6 +723,7 @@ mod tests {
             catalog: Vec::new(),
             store: BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -797,6 +811,7 @@ mod tests {
             catalog: Vec::new(),
             store: BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         };
 
         for path in [
@@ -848,6 +863,7 @@ mod tests {
             ],
             store: BTreeMap::new(),
             milestone: Vec::new(),
+            source: None,
         }
     }
 
@@ -913,6 +929,7 @@ mod tests {
             catalog: Vec::new(),
             store,
             milestone: Vec::new(),
+            source: None,
         }
     }
 
