@@ -50,7 +50,7 @@
 //! branch — there is nothing to roll back before phase 3.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -236,22 +236,40 @@ pub fn plan_finalize(
 /// [`Finding`] (the file is written at mint, so a read fault is a real fault — the
 /// promote/render I/O precedent).
 ///
+/// The **replacement precondition** (review F1, `design/auto-migration.md` →
+/// Retire-the-foreign-original): the retire is byte-destructive, so it fires **only when
+/// the migration actually produced its canonical replacement** — i.e. the promote set
+/// names a persisted managed doc. A migration always stages a fillable `commit:<id>` doc
+/// (transient, never promoted), so an empty promote set means the agent authored **no**
+/// managed doc to replace the foreign original; deleting it then would be irreversible
+/// data loss with no replacement. The planner **blocks** that case
+/// (`finalize.migration-no-replacement`) rather than silently committing an empty
+/// migration that wipes the foreign file.
+///
 /// The **path-collision guard** (`design/auto-migration.md` → Path-collision guard, the
 /// in-location squatter): when the recorded foreign source path **equals** a promote
 /// destination (the canonical managed path `<location>/<slug>.md`), the managed write
 /// *is* the in-place rewrite — the foreign file is not a distinct original, so the
-/// retire is **skipped** (else the plan would delete the doc it just wrote). The common
-/// root-`CHANGELOG.md` ≠ `changelog/changelog.md` case retires the distinct original.
+/// retire is **skipped** (else the plan would delete the doc it just wrote). Both sides
+/// are [`lexical_normalize`]d so the guard holds regardless of the recorded path's
+/// spelling (review F2: a `./`-prefixed or redundant-component spelling of the canonical
+/// path must still be recognized as the squatter). The common root-`CHANGELOG.md` ≠
+/// `changelog/changelog.md` case retires the distinct original.
 fn plan_retirements(
     task_dir: &Path,
     promotions: &[Promotion],
 ) -> Result<Vec<PathBuf>, Vec<Finding>> {
     match crate::state::read_source_path(task_dir) {
         Ok(Some(path)) if !path.trim().is_empty() => {
-            let foreign = PathBuf::from(path.trim());
+            // F1: no managed replacement was promoted — refuse to retire (block), never
+            // delete the foreign original with nothing to take its place.
+            if promotions.is_empty() {
+                return Err(vec![migration_no_replacement_finding(path.trim())]);
+            }
+            let foreign = lexical_normalize(Path::new(path.trim()));
             if promotions
                 .iter()
-                .any(|p| Path::new(&p.destination) == foreign)
+                .any(|p| lexical_normalize(Path::new(&p.destination)) == foreign)
             {
                 Ok(Vec::new()) // in-location squatter — rewritten in place, not retired.
             } else {
@@ -261,6 +279,26 @@ fn plan_retirements(
         Ok(_) => Ok(Vec::new()),
         Err(err) => Err(vec![source_path_io_finding(task_dir, &err)]),
     }
+}
+
+/// Lexically normalize a path — drop `.` components and resolve `..` against the
+/// accumulated prefix — **without touching the filesystem**. The retire path-collision
+/// guard compares the recorded foreign source against each promote destination; this
+/// pass makes the comparison spelling-insensitive (review F2) so a foreign source
+/// recorded as `./changelog/changelog.md` (or with redundant components) still compares
+/// equal to the clean canonical destination `changelog/changelog.md`.
+fn lexical_normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in p.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// The phase-1 decision over a moved base (`design/finalize.md` → Parallel
@@ -513,6 +551,29 @@ fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
         ),
         None,
         None,
+    )
+}
+
+/// A blocking finding (review F1) when a migration task recorded a foreign `source-path`
+/// but staged **no** managed doc to promote in its place — the retire would delete the
+/// foreign original with no canonical replacement. The migration must author its
+/// canonical doc before finalize; refusing here keeps the first byte-destructive write
+/// honest (never delete-with-no-replacement).
+fn migration_no_replacement_finding(source_path: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.migration-no-replacement",
+        format!(
+            "this migration recorded the foreign source `{source_path}` but staged no \
+             managed doc to replace it — the foreign original will not be retired with \
+             nothing to take its place"
+        ),
+        None,
+        Some(
+            "author the canonical doc (e.g. `jigc doc create <doctype> --task <id>`), then \
+             re-run `jigc task finalize <id> --approve`"
+                .to_string(),
+        ),
     )
 }
 
@@ -901,6 +962,9 @@ mod tests {
         let root = TempRoot::new("retire");
         let task_dir = root.path().join("tasks").join("changelog");
         let schema = stage_filled_commit(&task_dir, "changelog");
+        // A promotable managed doc stands in for the migration's authored canonical
+        // replacement (review F1: the retire fires only when one was produced).
+        stage_filled_adr(&task_dir, "single-node-cache");
         let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
 
         // Omitting context: no `source-path` file → an empty retire set.
@@ -941,13 +1005,55 @@ mod tests {
         );
     }
 
+    /// Review F1: a migration task that recorded a foreign `source-path` but staged
+    /// **no** managed doc to promote in its place must **block** — never retire (delete)
+    /// the foreign original with no canonical replacement. The fillable `commit:<id>` doc
+    /// is transient (location-less, never promoted), so a commit-doc-only migration has an
+    /// empty promote set; that is exactly the data-loss case the precondition closes.
+    #[test]
+    fn finalize_plan_blocks_a_migration_that_promoted_no_replacement() {
+        let root = TempRoot::new("retire-no-replacement");
+        let task_dir = root.path().join("tasks").join("changelog");
+        // Only the transient commit doc is staged — no managed (persisted) doc.
+        let schema = stage_filled_commit(&task_dir, "changelog");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        // The migration recorded the foreign original it intends to replace …
+        crate::state::persist(&task_dir.join("source-path"), b"CHANGELOG.md")
+            .expect("record the foreign source path");
+
+        // … but authored nothing to replace it → the planner blocks (no plan, so the CLI
+        // never reaches the byte-destructive retire).
+        let findings = plan_finalize(
+            &task_dir,
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "changelog",
+            &schemas(),
+        )
+        .expect_err("a migration that promoted no replacement must block");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code, "finalize.migration-no-replacement");
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert!(
+            findings[0].message.contains("CHANGELOG.md"),
+            "the finding names the foreign original it refused to retire: {:?}",
+            findings[0]
+        );
+    }
+
     /// The path-collision guard (`design/auto-migration.md` → Path-collision guard,
     /// the in-location squatter): when the recorded foreign source path **equals** the
     /// canonical managed path a staged doc promotes to, the managed write *is* the
     /// in-place rewrite — the planner **skips** the retire (it would otherwise delete
     /// the doc it just wrote). A foreign source at a **distinct** path still retires
     /// (the common root-`CHANGELOG.md` case — T2 — is unaffected). One mechanism, both
-    /// cases.
+    /// cases. Review F2: the guard normalizes both sides, so a `./`-prefixed or
+    /// redundant-component spelling of the canonical path is still recognized as the
+    /// squatter (it would otherwise slip the guard and delete the just-written doc).
     #[test]
     fn finalize_plan_skips_retire_when_source_is_the_promote_destination() {
         let root = TempRoot::new("retire-collision");
@@ -988,6 +1094,34 @@ mod tests {
             plan.promotions[0].destination,
             "decisions/single-node-cache.md",
         );
+
+        // Review F2: a redundantly-spelled foreign source path (`./`-prefixed, or with a
+        // `..` round-trip) of the canonical destination must STILL fire the guard — it is
+        // the same in-location squatter, so retire is skipped (not delete the just-written
+        // doc). Pre-fix these slipped the exact-match guard and deleted the canonical doc.
+        for spelling in [
+            "./decisions/single-node-cache.md",
+            "decisions/../decisions/single-node-cache.md",
+        ] {
+            crate::state::persist(&task_dir.join("source-path"), spelling.as_bytes())
+                .expect("record a redundantly-spelled in-location foreign source path");
+            let plan = plan_finalize(
+                &task_dir,
+                &base(),
+                &base().sha,
+                &clean,
+                true,
+                &schema,
+                "changelog",
+                &schemas(),
+            )
+            .expect("a clean in-place migration yields a plan");
+            assert!(
+                plan.retirements.is_empty(),
+                "the guard normalizes the spelling `{spelling}` — no retire fires against \
+                 the just-written canonical path",
+            );
+        }
 
         // A distinct foreign path still retires — the root-`CHANGELOG.md` case (T2).
         crate::state::persist(&task_dir.join("source-path"), b"CHANGELOG.md")

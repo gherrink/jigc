@@ -840,6 +840,10 @@ pub(crate) fn try_execute_finalize_plan(
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
         .with_context(|| format!("could not write the commit message to {msg_path:?}"))?;
+    // The bytes retire deleted, captured pre-deletion so a rollback can rewrite an
+    // untracked foreign original `git restore` cannot recover (review F3). Empty unless a
+    // migration retire ran.
+    let mut retired: Vec<(PathBuf, Vec<u8>)> = Vec::new();
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
         promote(repo_root, &plan.promotions)?;
@@ -847,7 +851,7 @@ pub(crate) fn try_execute_finalize_plan(
         // Retire-the-foreign-original) — the first byte-destructive write, inside the
         // commit closure so `git add --all` stages the deletion into the same commit as
         // the promoted doc. Empty (inert) on every non-migration finalize.
-        retire(repo_root, &plan.retirements)?;
+        retired = retire(repo_root, &plan.retirements)?;
         // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
@@ -864,7 +868,7 @@ pub(crate) fn try_execute_finalize_plan(
             // HEAD content for the promoted paths and delete the promoted copies, and
             // restore each retired foreign original (review B1) — so an approved-but-failed
             // commit never leaves the foreign file deleted with no commit; no commit landed.
-            rollback_promotions(repo_root, &plan.promotions, &plan.retirements);
+            rollback_promotions(repo_root, &plan.promotions, &plan.retirements, &retired);
             return Ok(Err(err));
         }
     };
@@ -941,19 +945,31 @@ fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<()> {
 /// aborts the transaction (rolling back the promotions). An already-absent path is not
 /// an error (idempotent — the goal is the file gone). Empty on every non-migration
 /// finalize, so this is inert there.
-fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<()> {
+///
+/// **Captures the deleted bytes** keyed by repo-relative path (review F3): a foreign
+/// original that was **untracked** at HEAD has no committed bytes for `git restore` to
+/// recover on a rollback, so the captured bytes are what `rollback_promotions` rewrites
+/// to keep an approved-but-failed commit from permanently losing it.
+fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<u8>)>> {
+    let mut captured = Vec::new();
     for retirement in retirements {
         let path = repo_root.join(retirement);
-        match std::fs::remove_file(&path) {
-            Ok(()) => {}
+        match std::fs::read(&path) {
+            Ok(bytes) => {
+                captured.push((retirement.clone(), bytes));
+                std::fs::remove_file(&path)
+                    .with_context(|| format!("could not retire the foreign original {path:?}"))?;
+            }
+            // Already absent — idempotent (the goal is the file gone); nothing to capture.
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
             Err(err) => {
-                return Err(err)
-                    .with_context(|| format!("could not retire the foreign original {path:?}"));
+                return Err(err).with_context(|| {
+                    format!("could not read the foreign original {path:?} to retire it")
+                });
             }
         }
     }
-    Ok(())
+    Ok(captured)
 }
 
 /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /
@@ -963,10 +979,18 @@ fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<()> {
 /// B1), restore HEAD's content in the index + worktree — the retire deleted a file
 /// present at HEAD and `git add --all` staged that deletion, so `git restore --staged
 /// --worktree` brings its bytes back, ensuring an approved-but-failed commit never leaves
-/// the foreign file deleted with no commit. Best-effort: a failure is logged, never
-/// raised — the commit did not land, so the worst case is a stray copy the next
-/// `finalize`/`discard` overwrites.
-fn rollback_promotions(repo_root: &Path, promotions: &[Promotion], retirements: &[PathBuf]) {
+/// the foreign file deleted with no commit. When the foreign was **untracked** at HEAD
+/// (review F3), `git restore` has no committed bytes to recover and is a no-op — so if the
+/// path is still absent afterward, rewrite the bytes `retire` captured pre-deletion
+/// (`retired`), keyed by repo-relative path, so an untracked foreign is never permanently
+/// lost. Best-effort: a failure is logged, never raised — the commit did not land, so the
+/// worst case is a stray copy the next `finalize`/`discard` overwrites.
+fn rollback_promotions(
+    repo_root: &Path,
+    promotions: &[Promotion],
+    retirements: &[PathBuf],
+    retired: &[(PathBuf, Vec<u8>)],
+) {
     for promotion in promotions {
         let _ = git_run(
             repo_root,
@@ -982,6 +1006,15 @@ fn rollback_promotions(repo_root: &Path, promotions: &[Promotion], retirements: 
     for retirement in retirements {
         let path = retirement.to_string_lossy();
         let _ = git_run(repo_root, &["restore", "--staged", "--worktree", &path]);
+        // `git restore` is a no-op for a foreign that was untracked at HEAD — there are no
+        // committed bytes to recover. If it is still gone, rewrite the captured bytes so an
+        // untracked foreign is never permanently lost on a rolled-back commit (review F3).
+        let abs = repo_root.join(retirement);
+        if !abs.exists()
+            && let Some((_, bytes)) = retired.iter().find(|(p, _)| p == retirement)
+        {
+            let _ = std::fs::write(&abs, bytes);
+        }
     }
 }
 

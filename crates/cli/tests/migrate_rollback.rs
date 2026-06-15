@@ -153,9 +153,19 @@ const FOREIGN: &str = "\
 /// Drive the full migrate + author spine to a conformant staged migration task over a
 /// **committed** foreign `CHANGELOG.md`, plus a conformant commit doc.
 fn committed_staged_migration(repo: &Path, home: &Path, pack: &Path) {
+    staged_migration(repo, home, pack, true);
+}
+
+/// Drive the migrate + author spine over a foreign `CHANGELOG.md`. When `track_foreign`
+/// the foreign is committed first (the design's "foreign committed first" assumption);
+/// otherwise it is left **untracked** — the review-F3 case where `git restore` cannot
+/// recover it on a rolled-back commit.
+fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) {
     fs::write(repo.join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
-    git(repo, &["add", "CHANGELOG.md"]);
-    git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
+    if track_foreign {
+        git(repo, &["add", "CHANGELOG.md"]);
+        git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
+    }
 
     ok(run_jigc(repo, home, pack, &["setup"]), "jigc setup");
     ok(
@@ -409,6 +419,68 @@ fn approved_migration_commit_rejection_rolls_back_retire() {
     );
 
     // The promoted canonical copy is also rolled back — gone from disk.
+    assert!(
+        !repo.path().join("changelog").join("changelog.md").exists(),
+        "the promoted canonical copy must be rolled back on a failed commit",
+    );
+}
+
+/// Review F3: an **untracked** foreign original (never committed at HEAD) + a seeded
+/// commit failure must still leave the foreign file byte-intact on disk. `git restore`
+/// alone cannot recover an untracked file — there are no committed bytes — so the retire
+/// must capture the bytes pre-deletion and the rollback must rewrite them. Pre-fix the
+/// foreign was lost permanently.
+#[test]
+fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
+    let repo = TempDir::new("untracked");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    // The foreign CHANGELOG.md is staged for migration but never committed — untracked.
+    staged_migration(repo.path(), home.path(), &pack, false);
+
+    // Sanity: the foreign is genuinely untracked at HEAD (the precondition under test).
+    assert!(
+        git(repo.path(), &["status", "--porcelain", "CHANGELOG.md"]).starts_with("??"),
+        "the foreign CHANGELOG.md must be untracked for this case",
+    );
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    seed_rejecting_precommit(repo.path());
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+
+    assert!(
+        !out.status.success(),
+        "a hook-rejected --approve finalize must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must be unchanged — no commit landed",
+    );
+
+    // The F3 contract: the untracked foreign original is restored BYTE-INTACT — never
+    // permanently lost just because it was never committed.
+    let restored = repo.path().join("CHANGELOG.md");
+    assert!(
+        restored.exists(),
+        "the untracked foreign original must be restored on a rolled-back commit",
+    );
+    assert_eq!(
+        fs::read_to_string(&restored).expect("read restored foreign"),
+        FOREIGN,
+        "the untracked foreign original must be restored byte-intact",
+    );
+
+    // The promoted canonical copy is rolled back — gone from disk.
     assert!(
         !repo.path().join("changelog").join("changelog.md").exists(),
         "the promoted canonical copy must be rolled back on a failed commit",

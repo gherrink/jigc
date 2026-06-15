@@ -29,7 +29,7 @@ use crate::start;
 use anyhow::{Context, Result, bail};
 use engine::compose::ComposedWorkflow;
 use engine::state;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 /// The working-area filename the staged foreign source bytes live at — the read-only
@@ -61,6 +61,29 @@ pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> ExitCode {
 /// is doctype-parameterized so the workflow id is derived, not hard-wired.
 fn migration_workflow(doctype: &str) -> String {
     format!("migrate-{doctype}")
+}
+
+/// Normalize the verb's `path` arg to a clean repo-relative string for recording as the
+/// retire target (review F2). Strip a `repo_root` prefix from an absolute spelling
+/// (`/abs/repo/changelog/changelog.md` → `changelog/changelog.md`), then drop `.`
+/// components and resolve `..` lexically. Mirrors the engine retire guard's
+/// [`engine::finalize`] normalization so `source-path` is canonical on disk — the
+/// in-location-squatter guard then compares it against the clean canonical promote
+/// destination regardless of how the caller spelled the path.
+fn repo_relative_source_path(repo_root: &Path, path: &str) -> String {
+    let supplied = Path::new(path);
+    let relative = supplied.strip_prefix(repo_root).unwrap_or(supplied);
+    let mut out = PathBuf::new();
+    for component in relative.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out.to_string_lossy().into_owned()
 }
 
 /// Mint the off-router migration task, stage the foreign bytes, and compose the
@@ -100,16 +123,21 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
 
     // Record the repo-relative foreign path so finalize can retire the foreign original
     // inside the commit transaction (`design/auto-migration.md` →
-    // Retire-the-foreign-original). `path` is resolved against the repo root above, so it
-    // is already the repo-relative retire target the engine planner reads back.
-    state::persist(&minted.dir.join(state::SOURCE_PATH_FILE), path.as_bytes()).with_context(
-        || {
-            format!(
-                "could not record the foreign source path for `{}`",
-                minted.id
-            )
-        },
-    )?;
+    // Retire-the-foreign-original). Normalize it to a clean repo-relative form — strip a
+    // `repo_root` prefix from an absolute spelling and drop redundant `./` components —
+    // so the finalize retire's path-collision guard (the in-location squatter) compares
+    // canonically regardless of the spelling the caller passed (review F2).
+    let recorded = repo_relative_source_path(&repo_root, path);
+    state::persist(
+        &minted.dir.join(state::SOURCE_PATH_FILE),
+        recorded.as_bytes(),
+    )
+    .with_context(|| {
+        format!(
+            "could not record the foreign source path for `{}`",
+            minted.id
+        )
+    })?;
 
     // Compose the migration workflow over the minted task with the foreign bytes fed
     // into the source seam — the composed view's `{{source}}` surfaces them verbatim.
@@ -121,4 +149,35 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
         &workflow_id,
         &foreign,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repo_relative_source_path;
+    use std::path::Path;
+
+    /// Review F2: the recorded `source-path` is normalized to a clean repo-relative form
+    /// so the finalize retire's in-location-squatter guard compares canonically. A
+    /// `./`-prefixed, an absolute (repo-root-prefixed), and a `..`-round-trip spelling of
+    /// the canonical changelog path all collapse to `changelog/changelog.md`.
+    #[test]
+    fn records_a_clean_repo_relative_source_path() {
+        let repo_root = Path::new("/abs/repo");
+        assert_eq!(
+            repo_relative_source_path(repo_root, "CHANGELOG.md"),
+            "CHANGELOG.md",
+        );
+        assert_eq!(
+            repo_relative_source_path(repo_root, "./changelog/changelog.md"),
+            "changelog/changelog.md",
+        );
+        assert_eq!(
+            repo_relative_source_path(repo_root, "/abs/repo/changelog/changelog.md"),
+            "changelog/changelog.md",
+        );
+        assert_eq!(
+            repo_relative_source_path(repo_root, "changelog/../changelog/changelog.md"),
+            "changelog/changelog.md",
+        );
+    }
 }
