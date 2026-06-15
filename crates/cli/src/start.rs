@@ -63,6 +63,32 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
     state::mint_task(&jigc_root, intent, FALLBACK_TYPE, workflow_id, base).map_err(finding_to_err)
 }
 
+/// Mint an **off-router migration task** under `repo_root`: read HEAD, open the
+/// working area, and pin the base — mirroring [`mint_in_repo`] but with an **empty
+/// intent** (so the id falls back to the `type_name` doctype, e.g. `changelog`) and a
+/// caller-supplied `workflow_id` (the off-router `migrate-<doctype>` workflow). It
+/// then **provisions the task's commit doc** (the `record-change` shape the migration
+/// task mirrors), so the migration task is provisioned exactly like a `record-change`
+/// task — harmless for the staged-only increment (only the staged target doc is
+/// validated; commit/retire/adopt is a later increment).
+///
+/// The `jigc migrate` verb owns this mint so composition never double-mints; it stages
+/// the foreign source separately and then composes via [`compose_migrate_in_repo`].
+pub(crate) fn mint_migration_in_repo(
+    repo_root: &Path,
+    type_name: &str,
+    workflow_id: &str,
+) -> Result<MintedTask> {
+    let jigc_root = repo_root.join(".jigc");
+    let base = read_head(repo_root)?;
+    // Empty intent → the id slugs from `type_name` (the doctype), a stable migration id.
+    let minted =
+        state::mint_task(&jigc_root, "", type_name, workflow_id, base).map_err(finding_to_err)?;
+    let pack = make_pack();
+    provision_commit_doc(pack.as_ref(), &minted.dir, &minted.id)?;
+    Ok(minted)
+}
+
 /// Provision the task's workflow-provisioned **commit** doc into the working
 /// area as a **fillable form**: the empty skeleton with every schema header field
 /// pre-stamped as an empty `key:` line, materialized at
@@ -243,6 +269,7 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
         &source,
         &overrides,
         &[],
+        None,
     )
 }
 
@@ -282,6 +309,7 @@ pub fn compose_named_in_repo(
         &source,
         &overrides,
         &[],
+        None,
     )
 }
 
@@ -323,7 +351,90 @@ pub fn execute_milestone_in_repo(
         &source,
         &overrides,
         milestone_ids,
+        None,
     )
+}
+
+/// Compose an **already-minted** off-router migration task's workflow over the staged
+/// foreign bytes — the read/compose half the `jigc migrate` verb drives after it has
+/// minted the task + staged the source (`auto-migration.md` → The `jigc migrate` verb
+/// / The source seam). The verb owns the mint (a stable doctype-derived id) + the
+/// source staging; this composes `workflow_id` over the minted `task_id` with the
+/// foreign bytes **fed into [`ComposeContext::source`]**, so the composed workflow's
+/// `{{source}}` placeholder surfaces them verbatim. Mints nothing (the verb already
+/// did) — so the off-router task is not re-minted and never double-provisioned.
+///
+/// Composition feeds the seam off the in-memory bytes the verb just staged; the engine
+/// resolver does **no** file I/O for the seam (the determinism boundary — the CLI owns
+/// the read). The committed store + edge overlay are wired exactly as a resume, so a
+/// `{{@…}}` deref in the migration workflow would resolve, though the staged-only
+/// migration workflow needs only the seam.
+pub(crate) fn compose_migrate_in_repo(
+    repo_root: &Path,
+    project_config: &Path,
+    task_dir: &Path,
+    task_id: &str,
+    workflow_id: &str,
+    foreign: &str,
+) -> Result<ComposedWorkflow> {
+    let pack = make_pack();
+    let pack = pack.as_ref();
+    let (resolved, overrides) = resolve_cascade(pack, project_config)?;
+    let defs = CascadeDefs::new(&resolved, project_config);
+    let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
+    let def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
+
+    let origin = pack.origin_pack(PackResourceKind::Workflows, &ResourceId::from(workflow_id));
+    let commands = load_catalog(origin)?;
+    let selectable = selectable_workflows(pack)?;
+    let schemas = defs.all_schemas(pack)?;
+    let store_feed = committed_store(repo_root, &schemas);
+
+    // The migration task's intent is not a real authoring intent; the seam carries the
+    // foreign content. The bound roles are read from the just-minted task (empty until
+    // the agent creates the changelog through the create-gate).
+    let bound = RolesRecord::load(task_dir)
+        .with_context(|| format!("could not read roles for `{task_id}`"))?;
+    let ctx = build_context(
+        task_id,
+        "",
+        &def,
+        &bound,
+        selectable,
+        store_feed,
+        Some(foreign),
+    );
+
+    let stepsource = CascadeStepSource::new(pack, &resolved, project_config);
+    stepsource.scope_to_workflow(workflow_id);
+    let findings = compose::workflow_refs_with_fills(
+        &workflow_bytes,
+        &[],
+        &overrides.slot_fills,
+        &overrides.fills,
+        &stepsource,
+        &commands,
+        &ctx,
+    );
+    if let Some(finding) = findings
+        .into_iter()
+        .find(|f| f.severity == Severity::Blocking)
+    {
+        return Err(finding_to_err(finding));
+    }
+
+    let filled = FillStepSource {
+        inner: &stepsource,
+        fills: &overrides.fills,
+        ctx: &ctx,
+    };
+    let result = compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err);
+    if result.is_err()
+        && let Some(located) = stepsource.take_error()
+    {
+        return Err(finding_to_err(located));
+    }
+    result
 }
 
 /// The milestone-feeding compose seam — compose the no-task `workflow_id` over an
@@ -363,6 +474,7 @@ pub(crate) fn execute_milestone_core(
         &defs,
         &overrides,
         milestone_ids,
+        None,
     )
 }
 
@@ -372,6 +484,7 @@ pub(crate) fn execute_milestone_core(
 /// in the source's sink (the `Option<StepDef>` contract can't carry it), so a
 /// failed compose surfaces that precise fault rather than the engine's generic
 /// dangling-include message (`CascadeStepSource` doc → Located-error sink).
+#[allow(clippy::too_many_arguments)]
 fn compose_drained(
     repo_root: &Path,
     intent: &str,
@@ -380,6 +493,7 @@ fn compose_drained(
     source: &CascadeStepSource<'_>,
     overrides: &ComposeOverrides,
     milestone_ids: &[String],
+    seam: Option<&str>,
 ) -> Result<ComposedWorkflow> {
     // Scope the step source's pack-default arm to the composing workflow's origin
     // pack, so its `{{include: step:X}}` resolves against the pack that *defines*
@@ -396,6 +510,7 @@ fn compose_drained(
         &source.defs(),
         overrides,
         milestone_ids,
+        seam,
     );
     if result.is_err()
         && let Some(located) = source.take_error()
@@ -453,6 +568,7 @@ fn compose_core(
     defs: &CascadeDefs<'_>,
     overrides: &ComposeOverrides,
     milestone_ids: &[String],
+    seam: Option<&str>,
 ) -> Result<ComposedWorkflow> {
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
@@ -508,6 +624,7 @@ fn compose_core(
             &RolesRecord::new(),
             selectable,
             store,
+            seam,
         )
     } else {
         // The `creates-task: false` compose contract: no mint, no working area,
@@ -525,8 +642,10 @@ fn compose_core(
             // the lone production site feeding this non-empty (`milestone.rs`
             // `run_execute`; `write-commands.md` → Executing the milestone).
             milestone: milestone_ids.to_vec(),
-            // No source seam on the `start` compose path — the `{{source}}` seam is
-            // fed only by the `jigc migrate` verb (auto-migration.md → The source seam).
+            // The CLI-owned source seam — `None` on every `start`/milestone compose
+            // path; fed the staged foreign bytes only by the `jigc migrate` verb
+            // (auto-migration.md → The source seam). A `creates-task: false`
+            // migration workflow is not a shipped shape, so this stays `None` here.
             source: None,
         }
     };
@@ -1205,7 +1324,8 @@ fn compose_task_workflow(
     let schemas = defs.all_schemas(pack)?;
     let store_feed = committed_store(repo_root, &schemas);
 
-    let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed);
+    // No source seam on the resume path — the seam is fed only by `jigc migrate`.
+    let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed, None);
     // Resume reads steps through the layer-aware [`CascadeStepSource`] over the *live*
     // cascade (a project `steps/<id>.yaml` whole-file shadow wins) and scopes its
     // pack-default arm to the resumed workflow's origin pack — so every
@@ -1341,6 +1461,7 @@ fn build_context(
     bound: &RolesRecord,
     catalog: Vec<CatalogEntry>,
     store: BTreeMap<String, Vec<Address>>,
+    seam: Option<&str>,
 ) -> ComposeContext {
     let mut roles: BTreeMap<String, Option<Address>> = BTreeMap::new();
     // The task's commit doc — the engine-native sink, bound to `commit:<id>`.
@@ -1381,8 +1502,9 @@ fn build_context(
         store,
         // No milestone in this single-`start` compose path (see the no-task arm).
         milestone: Vec::new(),
-        // No source seam on the `start` compose path (fed only by `jigc migrate`).
-        source: None,
+        // The CLI-owned source seam — the staged foreign bytes fed by `jigc migrate`,
+        // `None` on every other compose path (`auto-migration.md` → The source seam).
+        source: seam.map(str::to_owned),
     }
 }
 
@@ -2557,6 +2679,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("Form-D compose of ingest-existing");
 
@@ -2669,6 +2792,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("no-task compose");
 
@@ -2773,6 +2897,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
+            None,
         )
         .expect_err("the insert's anchor was removed by the earlier delta");
 
@@ -2832,6 +2957,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
+            None,
         )
         .expect_err("the delta introduces an include cycle");
 
@@ -2889,6 +3015,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
+            None,
         )
         .expect("flow 3a's different-id re-include composes clean");
 
@@ -3004,6 +3131,7 @@ mod tests {
                 &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
                 &ComposeOverrides::structural(deltas),
                 &[],
+                None,
             )
             .expect("flow composes under the replace delta")
             .text
@@ -3074,6 +3202,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("Form-D compose of a creates-task workflow");
 
@@ -3112,6 +3241,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect_err("an unknown --workflow id must reject");
 
@@ -3158,6 +3288,7 @@ mod tests {
             &RolesRecord::new(),
             Vec::new(),
             BTreeMap::new(),
+            None,
         );
 
         // The declared-but-unbound `reads` role resolves to absent/empty text — no
@@ -3689,6 +3820,7 @@ mod tests {
             &source,
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("the loser-pack workflow composes");
 
@@ -3734,6 +3866,7 @@ mod tests {
             &source,
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("the winner-pack workflow composes");
 
@@ -3772,6 +3905,7 @@ mod tests {
             &CascadeStepSource::new(&composite, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("compose over the single-pack composite");
         let over_bare = compose_drained(
@@ -3782,6 +3916,7 @@ mod tests {
             &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("compose over the bare pack");
 
@@ -3869,6 +4004,7 @@ mod tests {
             &source,
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect(
             "the loser-pack workflow must resolve its own `{{cli.low-cmd}}` against ITS pack's catalog",
@@ -3909,6 +4045,7 @@ mod tests {
             &source,
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("the winner-pack workflow composes its own command-ref");
 
@@ -3947,6 +4084,7 @@ mod tests {
             &CascadeStepSource::new(&composite, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("compose over the single-pack composite");
         let over_bare = compose_drained(
@@ -3957,6 +4095,7 @@ mod tests {
             &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("compose over the bare pack");
 
@@ -4807,6 +4946,7 @@ mod tests {
             &defs,
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("shadowed flow composes");
         assert!(
@@ -4827,6 +4967,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), project_config),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("pack-baseline flow composes");
         assert!(
@@ -4851,6 +4992,7 @@ mod tests {
             &defs,
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("unshadowed other composes under the shadow cascade")
         .text;
@@ -4863,6 +5005,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), project_config),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
         )
         .expect("unshadowed other composes under the no-shadow cascade")
         .text;

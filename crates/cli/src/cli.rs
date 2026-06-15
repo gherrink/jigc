@@ -11,6 +11,7 @@ use crate::config::ConfigCommand;
 use crate::describe;
 use crate::doc::DocCommand;
 use crate::ingest;
+use crate::migrate;
 use crate::milestone::MilestoneCommand;
 use crate::orient;
 use crate::render;
@@ -183,6 +184,28 @@ pub enum Command {
     /// the agent to run it.
     Ingest,
 
+    /// The auto-migration trigger — `jigc migrate <path> --as <doctype>` rewrites a
+    /// foreign, non-conformant document into conformant managed shape and (a later
+    /// increment) adopts it. It mints an **off-router migration task**, **stages** the
+    /// foreign file's bytes into the task, and composes the off-router
+    /// `migrate-<doctype>` workflow with the foreign content surfaced through the
+    /// CLI-owned **source seam** (`{{source}}`) — the LLM then authors the canonical
+    /// doc through the existing write verbs. A foreign file at repo root classifies
+    /// `Unmanaged`, which neither `ingest` nor `start` can reach; this explicit verb
+    /// addresses it directly (`design/auto-migration.md` → The `jigc migrate` verb).
+    /// Changelog is the only doctype migrated this milestone; the verb is
+    /// doctype-parameterized for the M24 generalization.
+    Migrate {
+        /// The repo-relative path of the foreign document to migrate (e.g.
+        /// `CHANGELOG.md`).
+        path: String,
+
+        /// The target managed doctype the foreign document is rewritten into. Only
+        /// `changelog` is migrated this milestone.
+        #[arg(long = "as")]
+        r#as: String,
+    },
+
     /// The store-scope teardown verb — `jigc unmanage <path>` drops a single managed
     /// doc from jigc's index/state: its `edges.json` forward edges + its
     /// `file-state.json` baseline hash, **leaving the file bytes on disk** (the inverse
@@ -283,6 +306,7 @@ impl Cli {
             Command::Uninstall => run_uninstall(self.format),
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
+            Command::Migrate { path, r#as } => run_migrate(self.format, &path, &r#as),
             Command::Unmanage { path } => run_unmanage(self.format, &path),
             Command::Describe => run_describe(self.format),
             Command::Validate => run_validate_store(self.format),
@@ -479,6 +503,25 @@ fn run_ingest(format: Format) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Run `jigc migrate <path> --as <doctype>` against the current working directory:
+/// locate the repo + project layer, read the foreign file, mint the off-router
+/// migration task, stage the foreign bytes, compose the `migrate-<doctype>` workflow
+/// over the source seam, render the composed view through the selected `format`, and
+/// print it. A clean run prints on stdout and exits 0; an unknown doctype, a missing
+/// foreign file, a serial collision, or a blocking compose finding surfaces on stderr
+/// (with its route) and exits non-zero (`design/auto-migration.md` → The `jigc migrate`
+/// verb / The source seam).
+fn run_migrate(format: Format, path: &str, doctype: &str) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    migrate::run(&cwd, path, doctype, format)
 }
 
 /// Run `jigc unmanage <rel_path>` against the current working directory: locate the
@@ -1007,6 +1050,33 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "ingest", "extra"])
             .expect_err("`jigc ingest` takes no positional argument");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn migrate_parses_the_path_and_doctype() {
+        let cli = Cli::try_parse_from(["jigc", "migrate", "CHANGELOG.md", "--as", "changelog"])
+            .expect("`jigc migrate <path> --as <doctype>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Migrate {
+                path: "CHANGELOG.md".to_string(),
+                r#as: "changelog".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn migrate_requires_the_as_flag() {
+        let err = Cli::try_parse_from(["jigc", "migrate", "CHANGELOG.md"])
+            .expect_err("`jigc migrate <path>` with no `--as` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn migrate_requires_a_path() {
+        let err = Cli::try_parse_from(["jigc", "migrate", "--as", "changelog"])
+            .expect_err("`jigc migrate --as <doctype>` with no path must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

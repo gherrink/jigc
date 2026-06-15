@@ -14,6 +14,7 @@ mod describe;
 mod doc;
 mod ingest;
 mod locate;
+mod migrate;
 mod milestone;
 mod orient;
 mod pack;
