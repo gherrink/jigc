@@ -1,0 +1,365 @@
+### FILE: 04-commander-multi-release.md  (slug=commander)
+foreign CHANGELOG.md git-blob: b030089427a2efc221cc6cadf7f84df66e33861e
+
+--- migrate (composed view, head) ---
+Migrate the foreign changelog into the managed `changelog` singleton. Below is the
+foreign source the CLI staged for you (read-only context — you author the canonical
+doc through the write verbs, you never edit this file or place anything yourself):
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [12.1.0] (2024-05-18)
+
+### Added
+
+- TypeScript: add `startup` to the `AddHelpTextPosition` type used by `.addHelpText()` ([#2197])
+
+### Changed
+
+- update package-lock to address `braces` advisory ([#2208])
+
+## [12.0.0] (2024-02-03)
+
+### Added
+
+- add `.saveStateBeforeParse()` and `.restoreStateBeforeParse()` for reuse of a configured command ([#2057])
+
+### Changed
+
+- **Breaking:** Commander now requires Node.js v18 or higher ([#2027])
+- **Breaking:** `.parse()` and `.parseAsync()` now accept options as the second parameter ([#2098])
+
+### Deprecated
+
+- the trailing-comma form of `.option()` flag lists is deprecated in favour of explicit arrays ([#2104])
+
+### Removed
+
+- **Breaking:** removed the long-deprecated `.command('*')` default-command form ([#2061])
+
+## [11.1.0] (2023-10-13)
+
+### Added
+
+- allow using `InvalidArgumentError` from custom argument processing ([#1973])
+
+### Fixed
+
+- TypeScript: widen the `Option.argChoices` typing to accept readonly arrays ([#1948])
+
+## [11.0.0] (2023-06-20)
+
+### Changed
+
+- **Breaking:** Commander now requires Node.js v16 or higher ([#1929])
+
+### Fixed
+
+- subcommand help now respects a configured output width ([#1918])
+
+## [10.0.1] (2023-04-15)
+
+### Fixed
+
+- export the `Help.visibleGlobalOptions()` helper missing from the type definitions ([#1896])
+
+
+Rewrite it into canonical shape. First create-or-update the changelog singleton —
+safe whether or not one already exists:
+
+Run: `jigc doc create changelog --title Changelog --task changelog`
+
+Then re-author every RELEASE from the foreign file, oldest to newest. For each cut
+version, mint a release item (its id is minted from the version title — e.g. `1.2.0`
+mints `120`). `add-item` PRINTS the new item's address; use that printed address
+verbatim for every follow-up verb — never re-spell the version string:
+
+jigc doc add-item changelog:changelog#releases --title "<version>" --task changelog
+#   → prints e.g. changelog:changelog#releases/120  (call this <release-addr>)
+
+Set the release `date` from the foreign file's HISTORICAL date — this OVERWRITES the
+today-stamp `add-item` placed on create, so historical dates survive migration. Use
+the date exactly as it appears in the foreign source (ISO `YYYY-MM-DD`):
+
+jigc doc set-field <release-addr>/date --value "<historical-date>" --task changelog
+
+If the foreign release carries a compare/diff URL, map it to the optional `link`
+field (otherwise omit it — there is no other home for it and the rest of the foreign
+preamble is dropped):
+
+jigc doc set-field <release-addr>/link --value "<diff-url>" --task changelog
+
+Under each release, add one nested change-group per category and author its notes
+(one bullet per change). The category is the group's id and MUST be one of:
+added / changed / deprecated / removed / fixed / security — map any foreign category
+heading onto one of these (a heading outside the set is rejected at conformance).
+Drive the printed address verbatim:
+
+jigc doc add-item <release-addr>/changes --title "<category>" --task changelog
+#   → prints e.g. changelog:changelog#releases/120/changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task changelog
+
+For any foreign change NOT yet cut into a release (an `[Unreleased]` section), add the
+change-group under the staged section instead:
+
+jigc doc add-item changelog:changelog#unreleased-changes --title "<category>" --task changelog
+#   → prints e.g. changelog:changelog#unreleased-changes/added  (call this <group-addr>)
+jigc doc set-slot <group-addr>/notes --from-file - --task changelog
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize changelog`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+--- finalize WITHOUT --approve (review gate) ---
+migration review required — nothing committed. Re-run `jigc task finalize changelog --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+--- foreign source (staged seam)
+- # Changelog
+- 
+- All notable changes to this project will be documented in this file.
+- 
+- ## [12.1.0] (2024-05-18)
+- 
+- ### Added
+- 
+- - TypeScript: add `startup` to the `AddHelpTextPosition` type used by `.addHelpText()` ([#2197])
+- 
+- ### Changed
+- 
+- - update package-lock to address `braces` advisory ([#2208])
+- 
+- ## [12.0.0] (2024-02-03)
+- 
+- ### Added
+- 
+- - add `.saveStateBeforeParse()` and `.restoreStateBeforeParse()` for reuse of a configured command ([#2057])
+- 
+- ### Changed
+- 
+- - **Breaking:** Commander now requires Node.js v18 or higher ([#2027])
+- - **Breaking:** `.parse()` and `.parseAsync()` now accept options as the second parameter ([#2098])
+- 
+- ### Deprecated
+- 
+- - the trailing-comma form of `.option()` flag lists is deprecated in favour of explicit arrays ([#2104])
+- 
+- ### Removed
+- 
+- - **Breaking:** removed the long-deprecated `.command('*')` default-command form ([#2061])
+- 
+- ## [11.1.0] (2023-10-13)
+- 
+- ### Added
+- 
+- - allow using `InvalidArgumentError` from custom argument processing ([#1973])
+- 
+- ### Fixed
+- 
+- - TypeScript: widen the `Option.argChoices` typing to accept readonly arrays ([#1948])
+- 
+- ## [11.0.0] (2023-06-20)
+- 
+- ### Changed
+- 
+- - **Breaking:** Commander now requires Node.js v16 or higher ([#1929])
+- 
+- ### Fixed
+- 
+- - subcommand help now respects a configured output width ([#1918])
+- 
+- ## [10.0.1] (2023-04-15)
+- 
+- ### Fixed
+- 
+- - export the `Help.visibleGlobalOptions()` helper missing from the type definitions ([#1896])
++++ canonical rewrite → changelog/changelog.md
++ # changelog
++ 
++ ## Unreleased Changes
++ 
++ 
++ ## Releases
++ 
++ ### 10.0.1  {#1001}
++ 
++ <!-- fields -->
++ - date: 2023-04-15
++ 
++ #### Fixed  {#fixed}
++ 
++ - export the `Help.visibleGlobalOptions()` helper missing from the type definitions ([#1896]).
++ 
++ ### 11.0.0  {#1100}
++ 
++ <!-- fields -->
++ - date: 2023-06-20
++ 
++ #### Changed  {#changed}
++ 
++ - **Breaking:** Commander now requires Node.js v16 or higher ([#1929]).
++ 
++ #### Fixed  {#fixed}
++ 
++ - subcommand help now respects a configured output width ([#1918]).
++ 
++ ### 11.1.0  {#1110}
++ 
++ <!-- fields -->
++ - date: 2023-10-13
++ 
++ #### Added  {#added}
++ 
++ - allow using `InvalidArgumentError` from custom argument processing ([#1973]).
++ 
++ #### Fixed  {#fixed}
++ 
++ - TypeScript: widen the `Option.argChoices` typing to accept readonly arrays ([#1948]).
++ 
++ ### 12.0.0  {#1200}
++ 
++ <!-- fields -->
++ - date: 2024-02-03
++ 
++ #### Added  {#added}
++ 
++ - add `.saveStateBeforeParse()` and `.restoreStateBeforeParse()` for reuse of a configured command ([#2057]).
++ 
++ #### Changed  {#changed}
++ 
++ - **Breaking:** Commander now requires Node.js v18 or higher ([#2027]).
++ - **Breaking:** `.parse()` and `.parseAsync()` now accept options as the second parameter ([#2098]).
++ 
++ #### Deprecated  {#deprecated}
++ 
++ - the trailing-comma form of `.option()` flag lists is deprecated in favour of explicit arrays ([#2104]).
++ 
++ #### Removed  {#removed}
++ 
++ - **Breaking:** removed the long-deprecated `.command('*')` default-command form ([#2061]).
++ 
++ ### 12.1.0  {#1210}
++ 
++ <!-- fields -->
++ - date: 2024-05-18
++ 
++ #### Added  {#added}
++ 
++ - TypeScript: add `startup` to the `AddHelpTextPosition` type used by `.addHelpText()` ([#2197]).
++ 
++ #### Changed  {#changed}
++ 
++ - update package-lock to address `braces` advisory ([#2208]).
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- finalize --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/changelog:changelog.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:changelog.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- canonical changelog/changelog.md on disk ---
+# changelog
+
+## Unreleased Changes
+
+
+## Releases
+
+### 10.0.1  {#1001}
+
+<!-- fields -->
+- date: 2023-04-15
+
+#### Fixed  {#fixed}
+
+- export the `Help.visibleGlobalOptions()` helper missing from the type definitions ([#1896]).
+
+### 11.0.0  {#1100}
+
+<!-- fields -->
+- date: 2023-06-20
+
+#### Changed  {#changed}
+
+- **Breaking:** Commander now requires Node.js v16 or higher ([#1929]).
+
+#### Fixed  {#fixed}
+
+- subcommand help now respects a configured output width ([#1918]).
+
+### 11.1.0  {#1110}
+
+<!-- fields -->
+- date: 2023-10-13
+
+#### Added  {#added}
+
+- allow using `InvalidArgumentError` from custom argument processing ([#1973]).
+
+#### Fixed  {#fixed}
+
+- TypeScript: widen the `Option.argChoices` typing to accept readonly arrays ([#1948]).
+
+### 12.0.0  {#1200}
+
+<!-- fields -->
+- date: 2024-02-03
+
+#### Added  {#added}
+
+- add `.saveStateBeforeParse()` and `.restoreStateBeforeParse()` for reuse of a configured command ([#2057]).
+
+#### Changed  {#changed}
+
+- **Breaking:** Commander now requires Node.js v18 or higher ([#2027]).
+- **Breaking:** `.parse()` and `.parseAsync()` now accept options as the second parameter ([#2098]).
+
+#### Deprecated  {#deprecated}
+
+- the trailing-comma form of `.option()` flag lists is deprecated in favour of explicit arrays ([#2104]).
+
+#### Removed  {#removed}
+
+- **Breaking:** removed the long-deprecated `.command('*')` default-command form ([#2061]).
+
+### 12.1.0  {#1210}
+
+<!-- fields -->
+- date: 2024-05-18
+
+#### Added  {#added}
+
+- TypeScript: add `startup` to the `AddHelpTextPosition` type used by `.addHelpText()` ([#2197]).
+
+#### Changed  {#changed}
+
+- update package-lock to address `braces` advisory ([#2208]).
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- ingest ---
+jigc ingest — 3 candidate(s) classified  (sorted — deterministic report order)
+
+unmanaged CLAUDE.md → (parses against no schema — left untouched)
+unmanaged README.md → (parses against no schema — left untouched)
+adoptable changelog/changelog.md → changelog  (adopted — indexed + baselined, no file moved)
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+--- HEAD commit name-status ---
+6550ba4d609dfd4072aa13fcc5478532dd76d5b1 feat(changelog): adopt the migrated changelog
+
+A	.claude/settings.json
+A	.jigc/.gitignore
+A	.jigc/AGENT.md
+A	.jigc/config/.gitkeep
+A	.jigc/config/packs.yaml
+D	CHANGELOG.md
+A	CLAUDE.md
+A	changelog/changelog.md
