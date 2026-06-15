@@ -110,21 +110,31 @@ pub struct FinalizePlan {
     /// for every promoted managed doc (hashed over the staged bytes — the copy is
     /// byte-stable). Empty when there is nothing to promote.
     pub hash_updates: BTreeMap<String, String>,
+    /// The **retire set** (`design/auto-migration.md` → Retire-the-foreign-original):
+    /// the repo-relative foreign original(s) a migration task replaces, removed
+    /// **inside** the commit closure (before `git add --all`) so the deletion stages
+    /// into the same commit as the promoted doc — the first byte-destructive write,
+    /// transactional with promote + commit. Populated from the migration task's recorded
+    /// `source-path` ([`crate::state::read_source_path`]); **empty** on every
+    /// non-migration task (the milestone sibling never sets it).
+    pub retirements: Vec<PathBuf>,
 }
 
 impl FinalizePlan {
-    /// Build a plan over a rendered message, a promote set, and a post-commit
-    /// hash-update set, stamping the current [`SCHEMA_VERSION`].
+    /// Build a plan over a rendered message, a promote set, a post-commit hash-update
+    /// set, and a retire set, stamping the current [`SCHEMA_VERSION`].
     fn new(
         message: String,
         promotions: Vec<Promotion>,
         hash_updates: BTreeMap<String, String>,
+        retirements: Vec<PathBuf>,
     ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
             message,
             promotions,
             hash_updates,
+            retirements,
         }
     }
 }
@@ -204,11 +214,31 @@ pub fn plan_finalize(
     // doc's blake3 over its staged bytes (byte-stable — the copy equals the source).
     let promote = plan_promotions(task_dir, schemas)?;
 
+    // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
+    // migration task records its repo-relative foreign source path at mint; the planner
+    // names it for retirement inside the commit closure. Empty on every non-migration
+    // task (no `source-path`) — inert. (T4 adds the path-collision filter.)
+    let retirements = plan_retirements(task_dir)?;
+
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
         promote.hash_updates,
+        retirements,
     ))
+}
+
+/// Read the migration task's recorded foreign source path
+/// ([`crate::state::read_source_path`]) into the retire set. A non-migration task has
+/// no `source-path` → an empty set (inert). An I/O failure reading it is a blocking
+/// [`Finding`] (the file is written at mint, so a read fault is a real fault — the
+/// promote/render I/O precedent).
+fn plan_retirements(task_dir: &Path) -> Result<Vec<PathBuf>, Vec<Finding>> {
+    match crate::state::read_source_path(task_dir) {
+        Ok(Some(path)) if !path.trim().is_empty() => Ok(vec![PathBuf::from(path.trim())]),
+        Ok(_) => Ok(Vec::new()),
+        Err(err) => Err(vec![source_path_io_finding(task_dir, &err)]),
+    }
 }
 
 /// The phase-1 decision over a moved base (`design/finalize.md` → Parallel
@@ -325,10 +355,12 @@ pub fn plan_milestone_finalize(
     // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
     // promote + phase 7 hashes are the SHARED sweep over the materialized `docs/`.
     let promote = plan_promotions(staging_dir, schemas)?;
+    // A milestone boundary retires nothing — retire is migration-only (a per-task verb).
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
         promote.hash_updates,
+        Vec::new(),
     ))
 }
 
@@ -456,6 +488,21 @@ fn promote_io_finding(path: &Path, err: &std::io::Error) -> Finding {
         format!(
             "could not read the staged managed doc `{}` to promote it: {err}",
             path.display()
+        ),
+        None,
+        None,
+    )
+}
+
+/// A blocking finding for an I/O failure reading the migration task's recorded
+/// `source-path` while planning the retire set.
+fn source_path_io_finding(task_dir: &Path, err: &std::io::Error) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.source-path-io",
+        format!(
+            "could not read the recorded migration source path under `{}`: {err}",
+            task_dir.display()
         ),
         None,
         None,
@@ -819,6 +866,57 @@ mod tests {
             "a commit-only task stages no persisted doc — nothing to promote"
         );
         assert_eq!(plan.schema_version, SCHEMA_VERSION);
+    }
+
+    /// A **migration** task records the repo-relative foreign source path
+    /// (`<task_dir>/source-path`, written by `jigc migrate`); the planner reads it back
+    /// and names it in [`FinalizePlan::retirements`] — the retire-the-foreign-original
+    /// target (`design/auto-migration.md` → Retire-the-foreign-original). The omitting
+    /// context — a **non-migration** task with no `source-path` — retires **nothing**
+    /// (inert, never an error).
+    #[test]
+    fn finalize_plan_retires_the_recorded_foreign_path() {
+        let root = TempRoot::new("retire");
+        let task_dir = root.path().join("tasks").join("changelog");
+        let schema = stage_filled_commit(&task_dir, "changelog");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        // Omitting context: no `source-path` file → an empty retire set.
+        let plan = plan_finalize(
+            &task_dir,
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "changelog",
+            &schemas(),
+        )
+        .expect("a clean non-migration task yields a plan");
+        assert!(
+            plan.retirements.is_empty(),
+            "a non-migration task retires nothing (inert omitting context)"
+        );
+
+        // A migration task records its foreign source path → the plan retires exactly it.
+        crate::state::persist(&task_dir.join("source-path"), b"CHANGELOG.md")
+            .expect("record the foreign source path");
+        let plan = plan_finalize(
+            &task_dir,
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "changelog",
+            &schemas(),
+        )
+        .expect("a clean migration task yields a plan");
+        assert_eq!(
+            plan.retirements,
+            vec![PathBuf::from("CHANGELOG.md")],
+            "the recorded repo-relative foreign path is the retire target",
+        );
     }
 
     /// A missing task working area aborts preflight before anything else.

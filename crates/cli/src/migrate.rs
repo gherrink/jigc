@@ -98,6 +98,19 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
     state::persist(&source_path, foreign.as_bytes())
         .with_context(|| format!("could not stage the foreign source for `{}`", minted.id))?;
 
+    // Record the repo-relative foreign path so finalize can retire the foreign original
+    // inside the commit transaction (`design/auto-migration.md` →
+    // Retire-the-foreign-original). `path` is resolved against the repo root above, so it
+    // is already the repo-relative retire target the engine planner reads back.
+    state::persist(&minted.dir.join(state::SOURCE_PATH_FILE), path.as_bytes()).with_context(
+        || {
+            format!(
+                "could not record the foreign source path for `{}`",
+                minted.id
+            )
+        },
+    )?;
+
     // Compose the migration workflow over the minted task with the foreign bytes fed
     // into the source seam — the composed view's `{{source}}` surfaces them verbatim.
     start::compose_migrate_in_repo(

@@ -54,6 +54,13 @@ const INTENT_FILE: &str = "intent";
 /// `intent` (read back byte-for-byte).
 const WORKFLOW_FILE: &str = "workflow";
 
+/// The working-area file recording a migration task's repo-relative foreign source
+/// path (`jigc migrate <path>`), read back at finalize to retire the foreign original
+/// (`design/auto-migration.md` → Retire-the-foreign-original). Absent on every
+/// non-migration task — the retire set is then empty. Public so the CLI `migrate`
+/// verb writes it under the same name the engine planner reads ([`read_source_path`]).
+pub const SOURCE_PATH_FILE: &str = "source-path";
+
 /// The working-area sub-directory holding a task's staged doc instances
 /// (`DECISIONS.md` 2026-05-31 → Task working-area on-disk layout: a staged instance
 /// lives at `.jigc/tasks/<id>/docs/<type>:<slug>.md`).
@@ -456,6 +463,20 @@ pub fn read_intent(task_dir: &Path) -> std::io::Result<String> {
 pub fn read_workflow_id(task_dir: &Path) -> std::io::Result<Option<String>> {
     match std::fs::read_to_string(task_dir.join(WORKFLOW_FILE)) {
         Ok(id) => Ok(Some(id)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
+/// Read the persisted **foreign source path** of a migration task from its working
+/// area (`<task_dir>/source-path`) — the repo-relative path of the foreign original
+/// `jigc migrate` recorded at mint, read back at finalize to name the
+/// retire-the-foreign-original target (`design/auto-migration.md` →
+/// Retire-the-foreign-original). A missing file yields [`None`] — the clear
+/// non-migration case (the retire set is then empty), never an error.
+pub fn read_source_path(task_dir: &Path) -> std::io::Result<Option<String>> {
+    match std::fs::read_to_string(task_dir.join(SOURCE_PATH_FILE)) {
+        Ok(path) => Ok(Some(path)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err),
     }

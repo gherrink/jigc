@@ -843,6 +843,11 @@ pub(crate) fn try_execute_finalize_plan(
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
         promote(repo_root, &plan.promotions)?;
+        // Retire each foreign original (`design/auto-migration.md` →
+        // Retire-the-foreign-original) — the first byte-destructive write, inside the
+        // commit closure so `git add --all` stages the deletion into the same commit as
+        // the promoted doc. Empty (inert) on every non-migration finalize.
+        retire(repo_root, &plan.retirements)?;
         // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
@@ -924,6 +929,28 @@ fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<()> {
                 promotion.source.display()
             )
         })?;
+    }
+    Ok(())
+}
+
+/// The retire step (`design/auto-migration.md` → Retire-the-foreign-original) — the
+/// first byte-destructive write on a repo file. Remove each recorded foreign original
+/// (repo-relative) so the subsequent `git add --all` stages the deletion into the same
+/// commit as the promoted managed doc. Runs inside the commit closure, so a failure
+/// aborts the transaction (rolling back the promotions). An already-absent path is not
+/// an error (idempotent — the goal is the file gone). Empty on every non-migration
+/// finalize, so this is inert there.
+fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<()> {
+    for retirement in retirements {
+        let path = repo_root.join(retirement);
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err)
+                    .with_context(|| format!("could not retire the foreign original {path:?}"));
+            }
+        }
     }
     Ok(())
 }
