@@ -201,9 +201,10 @@ const EXEC_TASK_SCHEMA = {
 }
 const VALIDATION_SCHEMA = {
   type: 'object',
-  required: ['gate_green', 'deliverable_holds', 'blocking', 'advisory', 'verdict'],
+  required: ['gate_green', 'gate_evidence', 'deliverable_holds', 'blocking', 'advisory', 'verdict'],
   properties: {
     gate_green: { type: 'boolean' },
+    gate_evidence: { type: 'string', description: 'PROOF the FULL gate was run, not a claim: paste the verbatim `test result: ok. N passed; 0 failed` summary line for EVERY test binary from one unfiltered, UNSCOPED `LACON_DISABLE=1 cargo test` run (no -p, no name filter, no single test), plus the fmt/clippy/build exit confirmations. gate_green=true is INVALID without this evidence; a scoped or lacon-trimmed run does not count — the pack/describe goldens live in the `--bin jigc` target a scoped run misses.' },
     deliverable_holds: { type: 'boolean' },
     blocking: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the exact command and its observed output that proves the finding' }, fix_hint: { type: 'string' } } } },
     advisory: { type: 'array', items: { type: 'object', required: ['title', 'evidence'], properties: { title: { type: 'string' }, evidence: { type: 'string', description: 'file:line + the proof' } } } },
@@ -259,7 +260,7 @@ function execPrompt(inc, task, all) {
   ].join('\n')
 }
 function validatePrompt(inc) {
-  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.'].join('\n')
+  return [milestone + ' — ' + header(inc), '', 'Validate this increment against that roadmap spec per your validator role; exercise every grouped-scope bullet through the real binary or tests.', '', 'GATE IS A FACT, NOT A CLAIM: run the FULL gate yourself, UNSCOPED and UNFILTERED — `LACON_DISABLE=1 cargo test` (no -p, no name filter, no single test — the pack/describe goldens live in the `--bin jigc` target a scoped run silently misses), plus `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo build`. Paste the verbatim `test result:` summary line for EVERY binary into `gate_evidence`. gate_green=true is INVALID without that pasted evidence; any non-zero exit / any `FAILED` is a BLOCKING finding. Do not trust the executor\'s claim — re-run it.'].join('\n')
 }
 function fixPrompt(inc, f) {
   return [
@@ -368,8 +369,13 @@ for (const inc of increments) {
     const v = await agentR(validatePrompt(inc), { label: 'validate:inc' + inc.n + ':r' + round, phase: 'Build increments', agentType: 'increment-validator', schema: VALIDATION_SCHEMA })
     lastValidation = v
     const blocking = v && v.blocking ? v.blocking : []
-    if (blocking.length === 0 && v && v.gate_green) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
-    if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length + ' blocking finding(s) remain after 3 fix rounds', blocking }; break }
+    // gate_green must be BACKED by pasted evidence (a real `test result:` summary line),
+    // not a bare boolean — an evidence-less green is treated as not-green (M23: inc-1
+    // landed a red gate because the validator claimed green off a scoped/lacon-trimmed run).
+    const gateProven = v && v.gate_green && typeof v.gate_evidence === 'string' && /test result:/.test(v.gate_evidence)
+    if (blocking.length === 0 && gateProven) { log('Increment ' + inc.n + ' — validated CLEAN'); break }
+    if (blocking.length === 0 && v && v.gate_green && !gateProven) { log('Increment ' + inc.n + ' — gate claimed green WITHOUT pasted `test result:` evidence; treating as unverified → fix round') }
+    if (round >= 3) { halted = { increment: inc.n, phase: 'validate', reason: blocking.length > 0 ? blocking.length + ' blocking finding(s) remain after 3 fix rounds' : 'gate green could not be verified (no pasted `test result:` evidence from a full unfiltered run) after 3 validation rounds — verify the gate by hand', blocking }; break }
     round++
     log('Increment ' + inc.n + ' — fix round ' + round + ': ' + blocking.length + ' blocking finding(s)')
     for (const f of blocking) {
