@@ -217,8 +217,10 @@ pub fn plan_finalize(
     // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
     // migration task records its repo-relative foreign source path at mint; the planner
     // names it for retirement inside the commit closure. Empty on every non-migration
-    // task (no `source-path`) — inert. (T4 adds the path-collision filter.)
-    let retirements = plan_retirements(task_dir)?;
+    // task (no `source-path`) — inert. The path-collision guard (→ Path-collision guard)
+    // excludes a foreign source that equals a promote destination — the in-location
+    // squatter the managed write rewrites in place is not a distinct original to retire.
+    let retirements = plan_retirements(task_dir, &promote.promotions)?;
 
     Ok(FinalizePlan::new(
         message,
@@ -233,9 +235,29 @@ pub fn plan_finalize(
 /// no `source-path` → an empty set (inert). An I/O failure reading it is a blocking
 /// [`Finding`] (the file is written at mint, so a read fault is a real fault — the
 /// promote/render I/O precedent).
-fn plan_retirements(task_dir: &Path) -> Result<Vec<PathBuf>, Vec<Finding>> {
+///
+/// The **path-collision guard** (`design/auto-migration.md` → Path-collision guard, the
+/// in-location squatter): when the recorded foreign source path **equals** a promote
+/// destination (the canonical managed path `<location>/<slug>.md`), the managed write
+/// *is* the in-place rewrite — the foreign file is not a distinct original, so the
+/// retire is **skipped** (else the plan would delete the doc it just wrote). The common
+/// root-`CHANGELOG.md` ≠ `changelog/changelog.md` case retires the distinct original.
+fn plan_retirements(
+    task_dir: &Path,
+    promotions: &[Promotion],
+) -> Result<Vec<PathBuf>, Vec<Finding>> {
     match crate::state::read_source_path(task_dir) {
-        Ok(Some(path)) if !path.trim().is_empty() => Ok(vec![PathBuf::from(path.trim())]),
+        Ok(Some(path)) if !path.trim().is_empty() => {
+            let foreign = PathBuf::from(path.trim());
+            if promotions
+                .iter()
+                .any(|p| Path::new(&p.destination) == foreign)
+            {
+                Ok(Vec::new()) // in-location squatter — rewritten in place, not retired.
+            } else {
+                Ok(vec![foreign])
+            }
+        }
         Ok(_) => Ok(Vec::new()),
         Err(err) => Err(vec![source_path_io_finding(task_dir, &err)]),
     }
@@ -916,6 +938,75 @@ mod tests {
             plan.retirements,
             vec![PathBuf::from("CHANGELOG.md")],
             "the recorded repo-relative foreign path is the retire target",
+        );
+    }
+
+    /// The path-collision guard (`design/auto-migration.md` → Path-collision guard,
+    /// the in-location squatter): when the recorded foreign source path **equals** the
+    /// canonical managed path a staged doc promotes to, the managed write *is* the
+    /// in-place rewrite — the planner **skips** the retire (it would otherwise delete
+    /// the doc it just wrote). A foreign source at a **distinct** path still retires
+    /// (the common root-`CHANGELOG.md` case — T2 — is unaffected). One mechanism, both
+    /// cases.
+    #[test]
+    fn finalize_plan_skips_retire_when_source_is_the_promote_destination() {
+        let root = TempRoot::new("retire-collision");
+        let task_dir = root.path().join("tasks").join("changelog");
+        let schema = stage_filled_commit(&task_dir, "changelog");
+        // A staged doc whose canonical destination is `decisions/single-node-cache.md`.
+        stage_filled_adr(&task_dir, "single-node-cache");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        // Collision: the recorded foreign source IS the staged doc's promote
+        // destination — the in-location squatter rewritten in place.
+        crate::state::persist(
+            &task_dir.join("source-path"),
+            b"decisions/single-node-cache.md",
+        )
+        .expect("record the in-location foreign source path");
+        let plan = plan_finalize(
+            &task_dir,
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "changelog",
+            &schemas(),
+        )
+        .expect("a clean in-place migration yields a plan");
+        assert!(
+            plan.retirements.is_empty(),
+            "no retire fires against the just-written canonical path (in-place rewrite)",
+        );
+        assert_eq!(
+            plan.promotions.len(),
+            1,
+            "the squatter is still promoted (written in place)",
+        );
+        assert_eq!(
+            plan.promotions[0].destination,
+            "decisions/single-node-cache.md",
+        );
+
+        // A distinct foreign path still retires — the root-`CHANGELOG.md` case (T2).
+        crate::state::persist(&task_dir.join("source-path"), b"CHANGELOG.md")
+            .expect("record a distinct foreign source path");
+        let plan = plan_finalize(
+            &task_dir,
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "changelog",
+            &schemas(),
+        )
+        .expect("a clean distinct-path migration yields a plan");
+        assert_eq!(
+            plan.retirements,
+            vec![PathBuf::from("CHANGELOG.md")],
+            "a distinct foreign original still retires (the T2 root-file case)",
         );
     }
 
