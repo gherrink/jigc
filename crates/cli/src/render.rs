@@ -540,6 +540,64 @@ fn suffix_of(
     }
 }
 
+/// Render a **migration review gate** block (`design/auto-migration.md` → The review
+/// gate): a finalize over a migration task that has not been `--approve`d. `agent` /
+/// `human` emit the fidelity diff — both inputs visible — so the human can judge whether
+/// the agent's rewrite faithfully preserved the foreign content (the strict parse
+/// guarantees *structure*, never *content-faithfulness*; the human is its only check),
+/// followed by the routing footer; `json` emits the generic projection (both inputs +
+/// the destinations), no footer (tooling-consumed). The diff format is an elaboration —
+/// the contract is that both the foreign source and each canonical rewrite are visible.
+/// Each rewrite block prefixes the foreign lines `-` and the canonical lines `+`: a
+/// migration is a wholesale rewrite, so the honest framing is that the human reviews the
+/// whole of both sides. The command commits nothing (exit 4); the agent never approves
+/// (a human-only gate).
+pub fn migration_review(
+    format: Format,
+    task_id: &str,
+    foreign: &str,
+    rewrites: &[(String, String)],
+) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({
+            "review": "pending",
+            "task": task_id,
+            "source": foreign,
+            "rewrites": rewrites
+                .iter()
+                .map(|(destination, rendered)| {
+                    serde_json::json!({ "destination": destination, "rendered": rendered })
+                })
+                .collect::<Vec<_>>(),
+        })),
+        Format::Agent | Format::Human => {
+            let mut out = format!(
+                "migration review required — nothing committed. Re-run \
+                 `jigc task finalize {task_id} --approve` to write the canonical doc, \
+                 retire the foreign original, and commit.\n\nThe rewrite is the agent's; \
+                 the CLI guarantees structure, never content-faithfulness — review the \
+                 fidelity diff below, then approve.\n\n",
+            );
+            for (destination, rendered) in rewrites {
+                out.push_str("--- foreign source (staged seam)\n");
+                for line in foreign.lines() {
+                    out.push_str("- ");
+                    out.push_str(line);
+                    out.push('\n');
+                }
+                out.push_str(&format!("+++ canonical rewrite → {destination}\n"));
+                for line in rendered.lines() {
+                    out.push_str("+ ");
+                    out.push_str(line);
+                    out.push('\n');
+                }
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
 /// Render an **operational error** (an orchestration/`anyhow` failure — not a
 /// validation outcome) to the surface `format` selects: `json` emits the single-key
 /// envelope `{"error": "<anyhow chain>"}` (so a tooling consumer on `--format json`

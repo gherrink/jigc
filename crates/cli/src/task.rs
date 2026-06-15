@@ -54,6 +54,15 @@ use std::process::{Command, ExitCode};
 /// blocks and git/hook commit rejections are NOT validation outcomes and stay 1.
 pub(crate) const EXIT_VALIDATION_BLOCKED: u8 = 3;
 
+/// The exit code a **migration** `finalize` returns when it blocks at the review gate
+/// (`design/auto-migration.md` → The review gate): the human has not yet `--approve`d
+/// the fidelity diff, so nothing is committed. Distinct from [`EXIT_VALIDATION_BLOCKED`]
+/// (3) — the rewrite is structurally conformant; this is a *human-fidelity* hold, not a
+/// validation outcome — and from the operational error (1), so a harness-side tally can
+/// discriminate a pending review from a real block by the exit code alone
+/// (`design/measurement.md` → exit-code hygiene).
+pub(crate) const EXIT_REVIEW_PENDING: u8 = 4;
+
 /// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`
 /// (`design/write-commands.md` → Lifecycle).
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
@@ -77,6 +86,12 @@ pub enum TaskCommand {
     Finalize {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,
+        /// Approve a **migration** task's fidelity diff and proceed through the commit
+        /// transaction. Without it, a migration `finalize` renders the diff and blocks
+        /// (exit 4, nothing committed). Inert on a non-migration task — the existing
+        /// path runs unchanged (`design/auto-migration.md` → The review gate).
+        #[arg(long)]
+        approve: bool,
     },
     /// Bind an already-committed doc to one of the task's declared context roles,
     /// so `task.<role>` resolves to it on the resume re-compose
@@ -101,7 +116,9 @@ impl TaskCommand {
             TaskCommand::Diff { id } => run_diff(cwd, &id),
             TaskCommand::Validate { id } => return run_validate(cwd, &id, format),
             TaskCommand::Discard { id } => run_discard(cwd, &id),
-            TaskCommand::Finalize { id } => return run_finalize(cwd, &id, format),
+            TaskCommand::Finalize { id, approve } => {
+                return run_finalize(cwd, &id, format, approve);
+            }
             TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id),
         };
         match result {
@@ -230,7 +247,7 @@ const COMMIT_TYPE: &str = "commit";
 /// aborts non-zero with git's stderr surfaced and no working-area change. On a successful
 /// commit, run post-commit (advance the file-state hashes, remove the working area) —
 /// best-effort: a failure there is logged, not raised (the commit is already truth).
-fn run_finalize(cwd: &Path, id: &str, format: Format) -> ExitCode {
+fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool) -> ExitCode {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
@@ -238,7 +255,7 @@ fn run_finalize(cwd: &Path, id: &str, format: Format) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match task.finalize(id, format) {
+    match task.finalize(id, format, approve) {
         Ok(code) => code,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -487,7 +504,7 @@ impl TaskArea {
     /// on a hook/git rejection (git's stderr surfaced, no envelope — not a validation
     /// outcome). An orchestration error (git unavailable, malformed pin) bubbles as
     /// `Err`.
-    fn finalize(&self, id: &str, format: Format) -> Result<ExitCode> {
+    fn finalize(&self, id: &str, format: Format, approve: bool) -> Result<ExitCode> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
@@ -554,6 +571,38 @@ impl TaskArea {
             Ok(plan) => plan,
             Err(findings) => return self.blocked(findings, format),
         };
+
+        // The migration review gate (`design/auto-migration.md` → The review gate). On a
+        // migration task (the source seam is staged), finalize without `--approve` renders
+        // the fidelity diff — the staged source-seam bytes vs each staged canonical doc,
+        // both read pre-commit — and blocks (exit 4, committing nothing), because the
+        // strict parse guarantees structure, never content-faithfulness; the human is its
+        // only check. `--approve` falls through to the transaction. Inert on a
+        // non-migration task: no source seam, so the existing path runs unchanged.
+        let source_seam = self.dir.join(crate::migrate::SOURCE_FILE);
+        if source_seam.exists() && !approve {
+            let foreign = std::fs::read_to_string(&source_seam).with_context(|| {
+                format!("could not read the staged source seam at {source_seam:?}")
+            })?;
+            let mut rewrites = Vec::with_capacity(plan.promotions.len());
+            for promotion in &plan.promotions {
+                let rendered = std::fs::read_to_string(&promotion.source).with_context(|| {
+                    format!(
+                        "could not read the staged canonical doc at {:?}",
+                        promotion.source
+                    )
+                })?;
+                rewrites.push((promotion.destination.clone(), rendered));
+            }
+            print!(
+                "{}",
+                render::migration_review(format, id, &foreign, &rewrites)
+            );
+            if format != Format::Json {
+                println!();
+            }
+            return Ok(ExitCode::from(EXIT_REVIEW_PENDING));
+        }
 
         // Phases 4–7: the shared transactional core — promote + stage + commit +
         // rollback + post-commit. The working area is the cleanup dir removed on a

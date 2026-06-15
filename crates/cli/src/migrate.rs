@@ -35,7 +35,7 @@ use std::process::ExitCode;
 /// The working-area filename the staged foreign source bytes live at — the read-only
 /// source artifact the source seam surfaces. Plain bytes, read back verbatim (the same
 /// diff-friendly style as the `intent`/`workflow` task files).
-const SOURCE_FILE: &str = "source";
+pub(crate) const SOURCE_FILE: &str = "source";
 
 /// Run `jigc migrate <path> --as <doctype>` against `cwd`: locate the repo + project
 /// layer, read the foreign file, mint the off-router migration task, stage the foreign
