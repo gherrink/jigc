@@ -1,0 +1,416 @@
+//! M23 Increment 3, T3 — extend `rollback_promotions` to restore retired paths
+//! (review B1).
+//!
+//! The retire step ([auto-migration.md](../../../design/auto-migration.md) →
+//! Retire-the-foreign-original) is the first byte-destructive write, run **inside** the
+//! commit closure so the deletion stages into the same commit as the promoted managed
+//! doc. The transaction is all-or-nothing: if the `git commit` is **rejected** (a
+//! seeded `pre-commit` hook that exits non-zero — the M19 hook-rejection-rollback
+//! idiom), nothing may land AND no byte may be lost. This drives the failure branch:
+//!   - the commit fails non-zero and **no** commit lands (HEAD unchanged);
+//!   - the foreign original is **restored byte-intact** on disk (never left
+//!     deleted-with-no-commit — the B1 defect this task closes);
+//!   - the promoted canonical copy is **also** rolled back (gone from disk).
+//!
+//! Drives the built `jigc` binary against a throwaway `git init` temp repo over the
+//! shipped dev pack.
+
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+
+/// A throwaway directory that removes itself on drop.
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> Self {
+        let mut path = std::env::temp_dir();
+        let unique = format!(
+            "jigc-rollback-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        );
+        path.push(unique);
+        fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// The embedded dev pack tree on disk — selected via `JIGC_PACK_DIR`.
+fn dev_pack() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+}
+
+/// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
+fn git(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8")
+        .trim()
+        .to_string()
+}
+
+/// Initialize a real git repo with one commit plus the `.jigc/config/` project layer.
+fn init_repo(root: &Path) {
+    git(root, &["init", "-q"]);
+    git(root, &["config", "user.email", "test@example.com"]);
+    git(root, &["config", "user.name", "Test"]);
+    fs::write(root.join("README.md"), "hello\n").expect("write file");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
+}
+
+/// Run a `jigc` subcommand with `cwd = repo`, `$HOME = home`, `JIGC_PACK_DIR = pack`.
+fn run_jigc(repo: &Path, home: &Path, pack: &Path, args: &[&str]) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    command
+        .spawn()
+        .expect("spawn jigc")
+        .wait_with_output()
+        .expect("wait for jigc")
+}
+
+/// Run a `jigc` subcommand piping `stdin`.
+fn run_jigc_stdin(
+    repo: &Path,
+    home: &Path,
+    pack: &Path,
+    args: &[&str],
+    stdin: &[u8],
+) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", pack)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn jigc");
+    child
+        .stdin
+        .take()
+        .expect("stdin piped")
+        .write_all(stdin)
+        .expect("write stdin");
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// Assert a `jigc` invocation exits 0.
+fn ok(out: std::process::Output, what: &str) {
+    assert!(
+        out.status.success(),
+        "`{what}` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// The off-router migration task id — `migrate` mints from the doctype-name fallback.
+const TASK: &str = "changelog";
+
+/// The single-release foreign file (the cold/empty spike input).
+const FOREIGN: &str = "\
+# Changelog
+
+## [0.1.0] - 2021-03-09
+### Added
+- First public release.
+";
+
+/// Drive the full migrate + author spine to a conformant staged migration task over a
+/// **committed** foreign `CHANGELOG.md`, plus a conformant commit doc.
+fn committed_staged_migration(repo: &Path, home: &Path, pack: &Path) {
+    fs::write(repo.join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    git(repo, &["add", "CHANGELOG.md"]);
+    git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
+
+    ok(run_jigc(repo, home, pack, &["setup"]), "jigc setup");
+    ok(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+        ),
+        "jigc migrate",
+    );
+    ok(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "create",
+                "changelog",
+                "--title",
+                "Changelog",
+                "--task",
+                TASK,
+            ],
+        ),
+        "doc create changelog",
+    );
+    let release = String::from_utf8(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "0.1.0",
+                "--task",
+                TASK,
+            ],
+        )
+        .stdout,
+    )
+    .expect("utf-8")
+    .trim()
+    .to_owned();
+    ok(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-field",
+                &format!("{release}/date"),
+                "--value",
+                "2021-03-09",
+                "--task",
+                TASK,
+            ],
+        ),
+        "set-field date",
+    );
+    let group = String::from_utf8(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "add-item",
+                &format!("{release}/changes"),
+                "--title",
+                "Added",
+                "--task",
+                TASK,
+            ],
+        )
+        .stdout,
+    )
+    .expect("utf-8")
+    .trim()
+    .to_owned();
+    ok(
+        run_jigc_stdin(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-slot",
+                &format!("{group}/notes"),
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
+            b"First public release.\n",
+        ),
+        "set-slot notes",
+    );
+    // The provisioned commit doc.
+    ok(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{TASK}#type"),
+                "--value",
+                "feat",
+                "--task",
+                TASK,
+            ],
+        ),
+        "set-field commit type",
+    );
+    ok(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{TASK}#scope"),
+                "--value",
+                "changelog",
+                "--task",
+                TASK,
+            ],
+        ),
+        "set-field commit scope",
+    );
+    ok(
+        run_jigc_stdin(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{TASK}#summary"),
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
+            b"adopt the migrated changelog\n",
+        ),
+        "set-slot commit summary",
+    );
+    ok(
+        run_jigc_stdin(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{TASK}#body"),
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
+            b"Migrate the foreign CHANGELOG.md into managed shape.\n",
+        ),
+        "set-slot commit body",
+    );
+}
+
+/// Seed a `pre-commit` hook that always rejects (exits non-zero), made executable —
+/// the M19 hook-rejection idiom. Overwrites any hook `jigc setup` installed.
+fn seed_rejecting_precommit(repo: &Path) {
+    let hooks = repo.join(".git").join("hooks");
+    fs::create_dir_all(&hooks).expect("mk hooks dir");
+    let hook = hooks.join("pre-commit");
+    fs::write(&hook, "#!/bin/sh\necho REJECTING-HOOK >&2\nexit 1\n").expect("write hook");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).expect("chmod hook");
+    }
+}
+
+#[test]
+fn approved_migration_commit_rejection_rolls_back_retire() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+
+    // The rejecting hook fires on the finalize's `git commit` (never `--no-verify`).
+    seed_rejecting_precommit(repo.path());
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+
+    // The commit is rejected: non-zero exit, nothing landed.
+    assert!(
+        !out.status.success(),
+        "a hook-rejected --approve finalize must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must be unchanged — no commit landed",
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        count_before,
+        "no new commit",
+    );
+
+    // The B1 contract: the foreign original is restored BYTE-INTACT — never left
+    // deleted-with-no-commit.
+    let restored = repo.path().join("CHANGELOG.md");
+    assert!(
+        restored.exists(),
+        "the foreign original must be restored on a rolled-back commit",
+    );
+    assert_eq!(
+        fs::read_to_string(&restored).expect("read restored foreign"),
+        FOREIGN,
+        "the foreign original must be restored byte-intact",
+    );
+    // And its restoration reaches the index too (the staged deletion is undone), so the
+    // worktree is clean of any pending CHANGELOG.md change.
+    assert!(
+        !git(repo.path(), &["status", "--porcelain", "CHANGELOG.md"]).contains("CHANGELOG.md"),
+        "the foreign original's staged deletion must be rolled back (index + worktree)",
+    );
+
+    // The promoted canonical copy is also rolled back — gone from disk.
+    assert!(
+        !repo.path().join("changelog").join("changelog.md").exists(),
+        "the promoted canonical copy must be rolled back on a failed commit",
+    );
+}

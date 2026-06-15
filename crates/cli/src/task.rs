@@ -861,9 +861,10 @@ pub(crate) fn try_execute_finalize_plan(
         Ok(hook_output) => hook_output,
         Err(err) => {
             // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore
-            // HEAD content for the promoted paths and delete the promoted copies; no
-            // commit landed.
-            rollback_promotions(repo_root, &plan.promotions);
+            // HEAD content for the promoted paths and delete the promoted copies, and
+            // restore each retired foreign original (review B1) — so an approved-but-failed
+            // commit never leaves the foreign file deleted with no commit; no commit landed.
+            rollback_promotions(repo_root, &plan.promotions, &plan.retirements);
             return Ok(Err(err));
         }
     };
@@ -956,11 +957,16 @@ fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<()> {
 }
 
 /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /
-/// 6. Commit). For each promoted path, restore HEAD's content in the index + worktree
-/// (undoing the stage) and delete the promoted copy. Best-effort: a failure is logged,
-/// never raised — the commit did not land, so the worst case is a stray copy the next
+/// 6. Commit; `design/auto-migration.md` → Retire-the-foreign-original, the rollback).
+/// For each promoted path, restore HEAD's content in the index + worktree (undoing the
+/// stage) and delete the promoted copy. For each **retired** foreign original (review
+/// B1), restore HEAD's content in the index + worktree — the retire deleted a file
+/// present at HEAD and `git add --all` staged that deletion, so `git restore --staged
+/// --worktree` brings its bytes back, ensuring an approved-but-failed commit never leaves
+/// the foreign file deleted with no commit. Best-effort: a failure is logged, never
+/// raised — the commit did not land, so the worst case is a stray copy the next
 /// `finalize`/`discard` overwrites.
-fn rollback_promotions(repo_root: &Path, promotions: &[Promotion]) {
+fn rollback_promotions(repo_root: &Path, promotions: &[Promotion], retirements: &[PathBuf]) {
     for promotion in promotions {
         let _ = git_run(
             repo_root,
@@ -972,6 +978,10 @@ fn rollback_promotions(repo_root: &Path, promotions: &[Promotion]) {
         if !path_at_head(repo_root, &promotion.destination) {
             let _ = std::fs::remove_file(&dest);
         }
+    }
+    for retirement in retirements {
+        let path = retirement.to_string_lossy();
+        let _ = git_run(repo_root, &["restore", "--staged", "--worktree", &path]);
     }
 }
 
