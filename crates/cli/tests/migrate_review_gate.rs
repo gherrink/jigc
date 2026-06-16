@@ -497,6 +497,63 @@ fn review_gate_names_dropped_release_as_fuzzy_advisory_and_feeds_nothing_structu
 }
 
 #[test]
+fn review_gate_renders_none_when_nothing_dropped() {
+    // M24 Inc 7 — the affirmative structural signal (auto-migration.md → Hardening #5;
+    // worked-examples.md flow 26). On a fully-migrated source (the agent's rewrite keeps
+    // every release the foreign source carries), the release-delta line must STILL render,
+    // in the affirmative `(none)` form — an absent line is ambiguous (did the scan run? was
+    // nothing dropped? is the feature active?). FOREIGN carries only 0.1.0 and the rewrite
+    // authors 0.1.0, so nothing is dropped.
+    let repo = TempDir::new("repo-none");
+    let home = TempDir::new("home-none");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    staged_migration(repo.path(), home.path(), &pack, FOREIGN, &["0.1.0"]);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK],
+        None,
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "finalize without --approve on a migration task must exit 4 (review-pending); \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The affirmative form renders verbatim (worked-examples.md flow 26).
+    let summary_line = rendered
+        .lines()
+        .find(|l| l.contains("source releases absent from the rewrite"))
+        .unwrap_or_else(|| {
+            panic!(
+                "the gate must render the release-delta summary on the happy path; got:\n{rendered}"
+            )
+        });
+    assert!(
+        summary_line.contains("source releases absent from the rewrite: (none)"),
+        "the nothing-dropped path must render the affirmative `(none)` form; got:\n{summary_line}"
+    );
+    // Still labeled fuzzy/heuristic — the empty case stays inside the advisory framing.
+    let lower = summary_line.to_lowercase();
+    assert!(
+        lower.contains("fuzzy") || lower.contains("heuristic"),
+        "the `(none)` line must still carry the fuzzy/heuristic label; got:\n{summary_line}"
+    );
+}
+
+#[test]
 fn non_migration_finalize_ignores_approve() {
     // The omitting-context arm: a plain single-task finalize WITH --approve runs the
     // existing transactional path unchanged (the gate is inert with no source seam).

@@ -624,13 +624,19 @@ pub fn migration_review(
             // (DECISIONS C4, Framing A): display-only — labeled fuzzy, feeds no gate, no
             // agent logic, no structural decision; never a second structural authority.
             let dropped = dropped_release_versions(foreign, rewrites);
-            if !dropped.is_empty() {
-                out.push_str(&format!(
-                    "fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no \
-                     structural decision): source releases absent from the rewrite: {}\n\n",
-                    dropped.join(", "),
-                ));
-            }
+            // Always render the line — the affirmative `(none)` form on the nothing-dropped
+            // happy path (matching `design/worked-examples.md` flow 26) gives the reviewer a
+            // trustworthy positive signal that the scan ran and found nothing missing; an
+            // absent line is ambiguous. Display-only either way (DECISIONS C4, Framing A).
+            let absent = if dropped.is_empty() {
+                "(none)".to_string()
+            } else {
+                dropped.join(", ")
+            };
+            out.push_str(&format!(
+                "fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no \
+                 structural decision): source releases absent from the rewrite: {absent}\n\n",
+            ));
             for (destination, rendered) in rewrites {
                 out.push_str("--- foreign source (staged seam)\n");
                 for line in foreign.lines() {
