@@ -635,7 +635,12 @@ pub struct CreatedDoc {
 ///    other doctype: a non-singleton committed-slug collision is *not* this case (the
 ///    working-area collision below still rejects, and a `single-task` ADR re-create
 ///    keeps mint-or-reject). Copy-in does **not** reconcile (review I-1) — OOB drift
-///    over the committed doc is caught at finalize-preflight, not here.
+///    over the committed doc is caught at finalize-preflight, not here. **Exception:**
+///    the in-location squatter ([`migration_targets_canonical_destination`],
+///    `auto-migration.md` → Hardening #8) — a migration task whose recorded
+///    `source-path` is this slug's canonical destination seeds **blank** (skips the
+///    copy-in) so the author sequence builds onto a clean skeleton, not the
+///    non-conformant foreign body.
 /// 5. **Provision** the empty instance at `docs/<type>:<slug>.md` via
 ///    [`provision_doc`] and return its [`CreatedDoc`] address + path.
 pub fn create(
@@ -674,7 +679,17 @@ pub fn create(
     //    committed `<location>/<ty>.md` under `repo_root` is copied in for editing
     //    rather than minted blank (the B-5 clobber fix). Copy-in records
     //    `edited-from-base`; drift is finalize-preflight's concern, not copy-in's.
-    if schema.singleton
+    //    **Exception — the in-location squatter** (`design/auto-migration.md` →
+    //    Path-collision guard / Hardening #8): when a migration task's recorded
+    //    `source-path` IS this slug's canonical destination, the committed body is the
+    //    non-conformant foreign file being replaced, so seed **blank** (skip the
+    //    copy-in) and let the author sequence build onto a clean skeleton. The
+    //    discriminator is the source-path match, never singleton-ness — so a
+    //    non-migration create, and an off-canonical migration, both still copy in.
+    let migration_squatter = migration_targets_canonical_destination(task_dir, schema, &slug)
+        .map_err(|err| io_finding(&address, "read the migration source path", &err))?;
+    if !migration_squatter
+        && schema.singleton
         && let Some(committed) = crate::store::canonical_path(repo_root, schema, &slug)
         && committed.is_file()
     {
@@ -739,6 +754,41 @@ pub fn create_gated(
             .map_err(|err| io_finding(&created.address, "record the bound role", &err))?;
     }
     Ok(created)
+}
+
+/// Does a **migration** task target this slug's own canonical destination? — the
+/// create-side half of the in-location-squatter discriminator (`design/auto-migration.md`
+/// → Path-collision guard / Hardening #8). Reads the task's recorded `source-path`
+/// ([`read_source_path`]); when present and **canonically equal** — via the shared
+/// [`crate::store::lexical_normalize`], so a `./`-prefixed or `..`-round-tripping spelling
+/// still matches (review C1/F2) — to this slug's repo-relative canonical destination
+/// `<location>/<slug>.md` (the same destination form the retire-side guard compares
+/// against), the committed file *is* the foreign doc being replaced, so [`create`] seeds
+/// the working area blank rather than copying that (non-conformant) squatter body in.
+///
+/// The discriminator is the **source-path match, never singleton-ness**: a non-migration
+/// task has no `source-path` → `false` (the M16 clobber-fix copy-in stays intact for every
+/// non-migration caller), and an off-canonical migration (e.g. a root `CHANGELOG.md` while
+/// the canonical singleton lives at `changelog/changelog.md`) → `false` (still copies in).
+/// A location-less (transient) type has no canonical destination → `false`.
+fn migration_targets_canonical_destination(
+    task_dir: &Path,
+    schema: &Schema,
+    slug: &str,
+) -> std::io::Result<bool> {
+    let Some(location) = schema.location.as_deref() else {
+        return Ok(false);
+    };
+    let Some(source) = read_source_path(task_dir)? else {
+        return Ok(false);
+    };
+    let source = source.trim();
+    if source.is_empty() {
+        return Ok(false);
+    }
+    let destination = format!("{}/{slug}.md", location.trim_end_matches('/'));
+    Ok(crate::store::lexical_normalize(Path::new(source))
+        == crate::store::lexical_normalize(Path::new(&destination)))
 }
 
 /// The unknown-doctype block: a blocking finding naming the unrecognized type,
@@ -1763,5 +1813,136 @@ sections:
             !RolesRecord::path_in(&bare_dir).exists(),
             "a bare-form entry (no `as:` role) binds nothing — no roles.json written"
         );
+    }
+
+    /// (M24 inc-5 T2 — seed-blank) The **in-location squatter** create-side guard. A
+    /// **migration** task whose recorded `source-path` canonically equals the committed
+    /// singleton's canonical destination seeds the working area **blank** (the empty
+    /// template), NOT the committed non-conformant squatter body — so the author
+    /// sequence builds onto a clean canonical skeleton, not a Frankenstein base, and the
+    /// M23 e2e squatter FAIL now passes. The discriminator is the source-path match
+    /// (extended from the retire side); provenance is `created` (a fresh mint, not an
+    /// edit-from-base). See `design/auto-migration.md` → Path-collision guard / Hardening #8.
+    #[test]
+    fn migration_squatter_create_seeds_blank_not_the_committed_body() {
+        let root = TempRoot::new("squatter-seed-blank");
+        let task_dir = root.path().join("tasks").join("migrate-roadmap");
+        let schema = singleton_schema();
+        let schemas = singleton_schemas();
+
+        // A non-conformant squatter committed AT the canonical path under the repo.
+        let squatter = "# Whatever\n\nnon-conformant prior content\n";
+        let committed_path = crate::store::canonical_path(root.path(), &schema, "roadmap")
+            .expect("singleton has a canonical path");
+        std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk roadmap/");
+        std::fs::write(&committed_path, squatter).expect("commit the squatter");
+
+        // This is a MIGRATION task whose source-path IS the canonical destination.
+        persist(&task_dir.join(SOURCE_PATH_FILE), b"roadmap/roadmap.md")
+            .expect("record the in-location source path");
+
+        let created = create(&task_dir, &schemas, "roadmap", "M24", root.path(), &[])
+            .expect("squatter migration create succeeds");
+        assert_eq!(created.address, "roadmap:roadmap");
+
+        // Seeded BLANK — the empty template, never the committed squatter body.
+        let staged = std::fs::read_to_string(&created.path).expect("read staged");
+        assert_eq!(
+            staged,
+            write::render(&schema, &empty_instance(&schema, "roadmap")),
+            "a migration squatter seeds the empty template, never the committed squatter body",
+        );
+        assert_ne!(
+            staged,
+            write::first_touch_canonicalize(squatter),
+            "the non-conformant committed body is NOT copied in",
+        );
+
+        // Provenance is `created` (a fresh mint), not `edited-from-base`.
+        assert_eq!(
+            ProvenanceRecord::load(&task_dir)
+                .expect("provenance loads")
+                .get("roadmap:roadmap"),
+            Some(Provenance::Created),
+            "the squatter seed-blank records `created`, not `edited-from-base`",
+        );
+    }
+
+    /// (M24 inc-5 T2 — discriminator is path-match, not migration-ness) The seed-blank
+    /// guard fires ONLY on a `source-path == canonical-destination` match: a migration
+    /// whose recorded `source-path` is the **non-canonical** root `CHANGELOG.md`, with a
+    /// committed body at the canonical singleton path, STILL copies the committed body in
+    /// (`edited-from-base`) — the M16 clobber-fix intact. The discriminator is the path
+    /// match, never the mere presence of a migration `source-path`; else the in-location
+    /// guard would resurrect the clobber for every off-canonical migration. (The
+    /// no-source-path M16 regression is
+    /// `singleton_create_warm_copies_committed_body_in_no_clobber`.)
+    #[test]
+    fn migration_off_canonical_source_still_copies_committed_body_in() {
+        let root = TempRoot::new("squatter-off-canonical");
+        let task_dir = root.path().join("tasks").join("migrate-roadmap");
+        let schema = singleton_schema();
+        let schemas = singleton_schemas();
+
+        let committed = "---\n---\n\n# roadmap\n\n## Overview\n\nPrior authored content.\n";
+        let committed_path = crate::store::canonical_path(root.path(), &schema, "roadmap")
+            .expect("singleton has a canonical path");
+        std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk roadmap/");
+        std::fs::write(&committed_path, committed).expect("commit the prior body");
+
+        // A migration whose source-path is the NON-canonical root file.
+        persist(&task_dir.join(SOURCE_PATH_FILE), b"CHANGELOG.md")
+            .expect("record the off-canonical source path");
+
+        let created = create(&task_dir, &schemas, "roadmap", "M24", root.path(), &[])
+            .expect("off-canonical migration create succeeds");
+
+        let staged = std::fs::read_to_string(&created.path).expect("read staged");
+        assert_eq!(
+            staged,
+            write::first_touch_canonicalize(committed),
+            "an off-canonical migration still copies the committed body in (M16 clobber-fix intact)",
+        );
+        assert_eq!(
+            ProvenanceRecord::load(&task_dir)
+                .expect("provenance loads")
+                .get("roadmap:roadmap"),
+            Some(Provenance::EditedFromBase),
+            "an off-canonical migration records `edited-from-base`",
+        );
+    }
+
+    /// (M24 inc-5 T2 — agreement, review C1/F2) The create-side seed-blank and the
+    /// retire-side skip share one path-normalization routine
+    /// ([`crate::store::lexical_normalize`]), so a redundantly-spelled `source-path` —
+    /// `./`-prefixed or carrying a `..` round-trip — is still recognized as the
+    /// in-location squatter and seeds blank. (The retire side proves the same spellings
+    /// at `finalize_plan_skips_retire_when_source_is_the_promote_destination`.)
+    #[test]
+    fn migration_squatter_seeds_blank_for_redundant_source_path_spellings() {
+        let schema = singleton_schema();
+        let schemas = singleton_schemas();
+        for spelling in ["./roadmap/roadmap.md", "roadmap/../roadmap/roadmap.md"] {
+            let root = TempRoot::new("squatter-spelling");
+            let task_dir = root.path().join("tasks").join("migrate-roadmap");
+
+            let committed = "# squatter\n\nnon-conformant\n";
+            let committed_path = crate::store::canonical_path(root.path(), &schema, "roadmap")
+                .expect("singleton has a canonical path");
+            std::fs::create_dir_all(committed_path.parent().unwrap()).expect("mk roadmap/");
+            std::fs::write(&committed_path, committed).expect("commit the squatter");
+
+            persist(&task_dir.join(SOURCE_PATH_FILE), spelling.as_bytes())
+                .expect("record a redundantly-spelled in-location source path");
+
+            let created = create(&task_dir, &schemas, "roadmap", "M24", root.path(), &[])
+                .expect("squatter migration create succeeds");
+            let staged = std::fs::read_to_string(&created.path).expect("read staged");
+            assert_eq!(
+                staged,
+                write::render(&schema, &empty_instance(&schema, "roadmap")),
+                "the `{spelling}` spelling is recognized as the squatter → seeds blank",
+            );
+        }
     }
 }
