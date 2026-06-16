@@ -1015,7 +1015,15 @@ pub fn remove_item(
     let span = locate_item_block(source, item_id).ok_or_else(|| SpliceError::NotPresent {
         what: format!("item {item_id:?} block"),
     })?;
-    Ok(splice(source, span, ""))
+    // LAST-block edge: a span ending at EOF carries no trailing separator, so consume
+    // the one `\n` of the preceding blank-line separator to avoid a dangling blank line
+    // (the same edge `remove_nested_item` handles — keeping `render(parse(out)) == out`).
+    let start = if span.end == source.len() && source[..span.start].ends_with('\n') {
+        span.start - 1
+    } else {
+        span.start
+    };
+    Ok(splice(source, start..span.end, ""))
 }
 
 /// `set-item-field` (item field present): replace the **value** bytes of `field_key`
@@ -2974,6 +2982,43 @@ A short burst is tolerated.
         assert!(out.contains("### Burst allowance  {#burst-allowance}"));
         assert!(out.contains("A short burst is tolerated."));
         assert!(!out.contains("rate-limit"));
+    }
+
+    /// Removing the **last** item must round-trip byte-stable — the last item's
+    /// block ends at EOF, so splicing it to empty leaves the preceding blank-line
+    /// separator (`\n\n`) dangling unless the last-block edge is consumed (the same
+    /// edge `remove_nested_item` already handles). Regression guard for the M24
+    /// Increment 3 halt: `remove_item` was byte-stable only for non-last items.
+    #[test]
+    fn remove_last_item_round_trips_byte_stable() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+
+### Burst allowance  {#burst-allowance}
+
+A short burst is tolerated.
+";
+        let out =
+            remove_item(&spec_schema(), src, "criteria", "burst-allowance").expect("item present");
+        // The surviving doc round-trips byte-stable (no dangling trailing blank line).
+        let reparsed = instance_from_source(&spec_schema(), &out).expect("result still conforms");
+        assert_eq!(
+            render(&spec_schema(), &reparsed),
+            out,
+            "removing the last item must leave a byte-stable document"
+        );
+        assert!(out.contains("### Rate limit holds  {#rate-limit}"));
+        assert!(!out.contains("burst-allowance"));
     }
 
     /// A repeatable-block schema whose item template carries a plain `string` field
