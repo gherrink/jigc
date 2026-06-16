@@ -4,44 +4,58 @@ doc through the write verbs, you never edit this file or place anything yourself
 
 {{ source }}
 
-Rewrite it into canonical shape. First create-or-update the changelog singleton —
-safe whether or not one already exists:
+Author the WHOLE canonical changelog in ONE declarative batch payload — the CLI
+creates-or-updates the singleton and places every release, change-group and notes
+slot over a single staged buffer, so migrating dozens of releases is one call, not
+hundreds. Pipe the payload on stdin:
 
-{{ cli.create-changelog }}
+jigc doc author changelog --from - --task {{task.id}} <<'EOF'
+title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: "<version>"          # the version string, oldest release first
+        set:
+          date: "<historical-date>" # see the date rule below — OMIT this key when dateless
+          link: "<diff-url>"         # OPTIONAL — omit when the release carries no compare/diff URL
+        sections:
+          - id: changes
+            items:
+              - title: "<category>"  # one of the six members below — the group's id
+                set:
+                  notes: "<<- one bullet per change in this category>>"
+EOF
 
-Then re-author every RELEASE from the foreign file, oldest to newest. For each cut
-version, mint a release item (its id is minted from the version title — e.g. `1.2.0`
-mints `120`). `add-item` PRINTS the new item's address; use that printed address
-verbatim for every follow-up verb — never re-spell the version string:
+Re-author every RELEASE from the foreign file, oldest to newest, as an item under
+`releases`. The item `title` is the version string (its id is minted from it — e.g.
+`1.2.0` mints `120`).
 
-jigc doc add-item changelog:changelog#releases --title "<version>" --task {{task.id}}
-#   → prints e.g. changelog:changelog#releases/120  (call this <release-addr>)
+The change-group `title` is the CATEGORY and MUST be one of the six enum members:
+added / changed / deprecated / removed / fixed / security. Map each foreign category
+heading onto exactly one member, and MERGE many-to-one where two foreign headings
+land on the same member (e.g. "Improvements" + "Enhancements" → `changed`): the enum
+is the group's id, so two foreign categories collapsing onto one member share its
+SINGLE group — emit one `changes` item for that member and merge both sets of bullets
+into its `notes`. A category outside the six is rejected at the write.
 
-Set the release `date` from the foreign file's HISTORICAL date — this OVERWRITES the
-today-stamp `add-item` placed on create, so historical dates survive migration. Use
-the date exactly as it appears in the foreign source (ISO `YYYY-MM-DD`):
+When a foreign file carries NO category headings at all, infer the member from each
+change's commit prefix: a `feat:` change is `added`, a `fix:` change is `fixed`
+(fall back to `changed` for anything else).
 
-jigc doc set-field <release-addr>/date --value "<historical-date>" --task {{task.id}}
+Set each release `date` from the foreign file's HISTORICAL date when one is present
+(use it exactly as it appears, ISO `YYYY-MM-DD`). When the foreign source is DATELESS,
+OMIT the `date` key entirely — no date is stamped, so no history is fabricated.
 
 If the foreign release carries a compare/diff URL, map it to the optional `link`
-field (otherwise omit it — there is no other home for it and the rest of the foreign
-preamble is dropped):
+field; otherwise omit it (there is no other home for it, and the rest of the foreign
+preamble is dropped).
 
-jigc doc set-field <release-addr>/link --value "<diff-url>" --task {{task.id}}
+For any foreign change NOT yet cut into a release (an `[Unreleased]` section), author
+its change-groups under the `unreleased-changes` section instead — same category
+map+merge rule, the staging area rather than a release:
 
-Under each release, add one nested change-group per category and author its notes
-(one bullet per change). The category is the group's id and MUST be one of:
-added / changed / deprecated / removed / fixed / security — map any foreign category
-heading onto one of these (a heading outside the set is rejected at conformance).
-Drive the printed address verbatim:
-
-jigc doc add-item <release-addr>/changes --title "<category>" --task {{task.id}}
-#   → prints e.g. changelog:changelog#releases/120/changes/added  (call this <group-addr>)
-jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}
-
-For any foreign change NOT yet cut into a release (an `[Unreleased]` section), add the
-change-group under the staged section instead:
-
-jigc doc add-item changelog:changelog#unreleased-changes --title "<category>" --task {{task.id}}
-#   → prints e.g. changelog:changelog#unreleased-changes/added  (call this <group-addr>)
-jigc doc set-slot <group-addr>/notes --from-file - --task {{task.id}}
+  - id: unreleased-changes
+    items:
+      - title: "<category>"
+        set:
+          notes: "<<- one bullet per staged change in this category>>"

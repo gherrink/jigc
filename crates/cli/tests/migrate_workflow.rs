@@ -6,8 +6,9 @@
 //! view carries both
 //!   - the resolved foreign content (the source seam — `{{ source }}` surfaces the
 //!     staged foreign bytes verbatim), and
-//!   - the author-spine command guidance (the create-changelog command-ref + the
-//!     add-item / set-field date / set-slot / finalize directions),
+//!   - the author-spine command guidance (the declarative `jigc doc author changelog
+//!     --from` batch directive + the category map+merge / infer-from-prefix / dateless
+//!     clauses + finalize directions),
 //!
 //! and the workflow + step load and pass the compose-time workflow-refs gate (a clean
 //! exit 0 — a dangling command-ref or step-include would block composition).
@@ -153,30 +154,51 @@ fn migrate_composes_the_shipped_workflow_with_seam_and_author_spine() {
         "the composed shipped workflow must surface the foreign content (the source seam); stdout:\n{stdout}",
     );
 
-    // (2) The author spine is present — the create-changelog command-ref resolved to
-    // its real command (proving the workflow-refs gate accepted it), plus the
-    // add-item / set-slot directions through the write verbs.
+    // (2) The author spine is the declarative BATCH directive: the whole canonical doc
+    // is authored in ONE payload via `jigc doc author changelog --from` (the inc-1 verb,
+    // create + every leaf over one staged buffer), NOT the per-leaf create/add-item walk.
     assert!(
-        stdout.contains("jigc doc create changelog"),
-        "the create-changelog command-ref must resolve into the composed view; stdout:\n{stdout}",
-    );
-    assert!(
-        stdout.contains("jigc doc add-item changelog:changelog#releases"),
-        "the release add-item guidance must be present; stdout:\n{stdout}",
-    );
-    assert!(
-        stdout.contains("set-slot"),
-        "the notes set-slot guidance must be present; stdout:\n{stdout}",
+        stdout.contains("jigc doc author changelog --from"),
+        "the declarative batch directive must be present; stdout:\n{stdout}",
     );
 
-    // (3) The historical-date clause: the step directs `set-field <release>/date` from
-    // the FOREIGN historical date (overwriting the on-create stamp). Grouped scope.
+    // (3) The category map+merge instruction: map each foreign category onto exactly one
+    // of the six enum members AND merge many-to-one (the enum is the id-from, so two
+    // foreign categories collapsing onto one member share its single group). Grouped scope.
+    for member in [
+        "added",
+        "changed",
+        "deprecated",
+        "removed",
+        "fixed",
+        "security",
+    ] {
+        assert!(
+            stdout.contains(member),
+            "the category enum member `{member}` must be surfaced; stdout:\n{stdout}",
+        );
+    }
     assert!(
-        stdout.contains("set-field") && stdout.contains("/date"),
-        "the historical-date set-field guidance must be present; stdout:\n{stdout}",
+        stdout.contains("merge"),
+        "the many-to-one MERGE instruction must be present; stdout:\n{stdout}",
     );
 
-    // (4) The finalize step composed in (the spine ends at finalize).
+    // (4) The infer-from-prefix instruction: when a foreign file carries NO category
+    // headings, infer the member from each change's `feat:` / `fix:` commit prefix.
+    assert!(
+        stdout.contains("feat:") && stdout.contains("fix:"),
+        "the infer-from-prefix-when-headingless instruction must be present; stdout:\n{stdout}",
+    );
+
+    // (5) The historical-date clause survives the batch rewrite: provide the FOREIGN
+    // historical `date` when present, OMIT it when the source is dateless (no fabricated
+    // history). Grouped scope.
+    assert!(
+        stdout.contains("date") && stdout.contains("omit"),
+        "the historical-date / dateless-omit guidance must be present; stdout:\n{stdout}",
+    );
+
+    // (6) The finalize step composed in (the spine ends at finalize).
     assert!(
         stdout.contains("jigc task finalize") || stdout.contains("finalize"),
         "the finalize step must compose in; stdout:\n{stdout}",
