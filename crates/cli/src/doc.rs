@@ -66,6 +66,18 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
+    /// Remove a repeatable item — a top-level item (`<type>:<slug>#<section>/<id>`) or a
+    /// nested one (`#<section>/<parent>/.../<nested-section>/<id>`) — without discarding
+    /// the task (a general recovery verb over the engine's `remove_item` /
+    /// `remove_nested_item`).
+    RemoveItem {
+        /// The item address — top-level `<type>:<slug>#<section>/<id>` or the nested
+        /// section-qualified chain `#<section>/<parent>/.../<nested-section>/<id>`.
+        addr: String,
+        /// The active task to scope the write to (see `Create::task`).
+        #[arg(long)]
+        task: Option<String>,
+    },
     /// Set a field leaf's value (inline, adjudicated at write time).
     SetField {
         /// The leaf address — `<type>:<slug>#<field>` (or `#<section>/<field>`).
@@ -140,6 +152,7 @@ impl DocCommand {
             DocCommand::AddItem { addr, title, task } => {
                 run_add_item(cwd, &addr, &title, task.as_deref())
             }
+            DocCommand::RemoveItem { addr, task } => run_remove_item(cwd, &addr, task.as_deref()),
             DocCommand::SetField { addr, value, task } => {
                 run_set_field(cwd, &addr, &value, task.as_deref())
             }
@@ -517,6 +530,89 @@ fn add_item_target(address: &Address) -> Option<AddItemTarget> {
         // A bare `#section/item` (no nested-section hop) addresses no repeatable to mint
         // into; a `#section/leaf` 2-hop likewise names no section to add to.
         Fragment::UnitLeaf(_, _) | Fragment::UnitItem(_, _) => None,
+    }
+}
+
+/// `jigc doc remove-item <addr>` — remove a repeatable item without discarding the
+/// task (a general recovery verb). Clones the `run_add_item` shape: resolve the active
+/// task, parse the address, map its fragment to a top-level or nested target, read (or
+/// copy-in) the staged instance, call the proven engine `remove_item` /
+/// `remove_nested_item` (both byte-stable, including the last/only block), and persist.
+/// An absent item / non-repeatable section routes the engine's [`engine::write::SpliceError`]
+/// through the shared blocking [`Finding`] mapping (`design/write-commands.md`).
+fn run_remove_item(cwd: &Path, addr: &str, task_id: Option<&str>) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
+    let address = parse_addr(addr)?;
+    let schema = task.schema(address.r#type.as_str())?;
+    let target =
+        remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
+
+    let path = staged_path(&task.dir, &address, &task.id)?;
+    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+
+    let edited = match target {
+        RemoveItemTarget::TopLevel { section, item } => {
+            engine::write::remove_item(&schema, &source, &section, &item).map_err(|e| {
+                block(
+                    &engine::write::splice_error_finding(&e),
+                    "remove-item",
+                    addr,
+                )
+            })?
+        }
+        RemoveItemTarget::Nested { section, items } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            engine::write::remove_nested_item(&schema, &source, &section, &item_ids).map_err(
+                |e| {
+                    block(
+                        &engine::write::splice_error_finding(&e),
+                        "remove-item",
+                        addr,
+                    )
+                },
+            )?
+        }
+    };
+
+    persist(&path, &edited)?;
+    Ok(())
+}
+
+/// The resolved destination of a `remove-item` address: a **top-level** repeatable item
+/// (`#section/id`, removed via `remove_item`) or a **nested** one (`#section/parent/.../
+/// nested-section/id`, removed via `remove_nested_item`). For the nested form `items` is
+/// the parent-scoped id chain from the section root down to the item being removed (the
+/// whole chain after the section), matching the chain the engine locator walks.
+enum RemoveItemTarget {
+    TopLevel { section: String, item: String },
+    Nested { section: String, items: Vec<String> },
+}
+
+/// Resolve the item a `remove-item` address targets. The two-hop `#section/id`
+/// ([`Fragment::UnitLeaf`]) is a top-level item; a deeper section-qualified chain
+/// ([`Fragment::Deep`]) is a nested item — the leading hop is the section, every hop
+/// after it is the parent-scoped id chain down to the removed item. The CLI only
+/// extracts the hops; the engine `remove_item` / `remove_nested_item` adjudicate
+/// presence (an absent item / wrong-parent chain → `SpliceError::NotPresent`).
+fn remove_item_target(address: &Address) -> Option<RemoveItemTarget> {
+    match address.fragment.as_ref()? {
+        Fragment::UnitLeaf(section, item) => Some(RemoveItemTarget::TopLevel {
+            section: section.as_str().to_string(),
+            item: item.as_str().to_string(),
+        }),
+        Fragment::Deep(hops) => {
+            let (section, items) = hops.split_first()?;
+            if items.is_empty() {
+                return None;
+            }
+            Some(RemoveItemTarget::Nested {
+                section: section.clone(),
+                items: items.to_vec(),
+            })
+        }
+        // A bare `#section` (no item hop) names no item to remove; a `#section/item/leaf`
+        // mix without the section-qualified chain is not a remove target.
+        Fragment::Unit(_) | Fragment::UnitItem(_, _) | Fragment::UnitItemLeaf(_, _, _) => None,
     }
 }
 
