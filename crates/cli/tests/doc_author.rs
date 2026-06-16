@@ -124,15 +124,30 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
+/// The task's staged-docs directory in the working area.
+fn docs_dir(repo: &Path, task: &str) -> PathBuf {
+    repo.join(".jigc").join("tasks").join(task).join("docs")
+}
+
 /// The staged `changelog:changelog` instance in the task working area.
 fn staged_changelog(repo: &Path, task: &str) -> String {
-    let path = repo
-        .join(".jigc")
-        .join("tasks")
-        .join(task)
-        .join("docs")
-        .join("changelog:changelog.md");
+    let path = docs_dir(repo, task).join("changelog:changelog.md");
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("read staged {path:?}: {e}"))
+}
+
+/// The `.md` files currently staged in the task's docs directory (absent dir ⇒ none).
+fn staged_docs(repo: &Path, task: &str) -> Vec<String> {
+    let dir = docs_dir(repo, task);
+    let mut names: Vec<String> = match fs::read_dir(&dir) {
+        Ok(entries) => entries
+            .filter_map(std::result::Result::ok)
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.ends_with(".md"))
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    names.sort();
+    names
 }
 
 /// The shipped changelog schema, for the byte-stable round-trip assertion.
@@ -368,5 +383,109 @@ fn batch_author_round_trips_and_matches_the_per_leaf_chain() {
         engine::write::render(&schema, &parsed),
         batch,
         "the batch-authored changelog is byte-stable across parse → render",
+    );
+}
+
+/// A payload whose leaves all parse cleanly but whose **last** leaf is a structural
+/// reject: a first release authors fully (create + add-item + nested add-item + slot,
+/// all over the in-memory buffer), then an `add-item` into an undeclared section
+/// `nonsuch` fails at the engine splice (`write.unknown-section`). The create already
+/// persisted the empty singleton before the chain, so atomicity demands the staged
+/// doc be **gone** after the mid-chain failure — the "rejected whole, nothing
+/// persisted" contract (`design/auto-migration.md` → Hardening #1).
+const MID_CHAIN_BAD_PAYLOAD: &str = r#"title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.2.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: "<<- OAuth device-code flow.>>"
+  - id: nonsuch
+    items:
+      - title: Boom
+"#;
+
+#[test]
+fn mid_chain_leaf_failure_stages_nothing() {
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    let repo = TempDir::new("midchain");
+    let task = ready_repo(repo.path(), home.path(), &pack, "author midchain");
+    // The workflow itself provisions a `commit` doc at start; the batch must add
+    // nothing beyond that baseline once it fails.
+    let baseline = staged_docs(repo.path(), &task);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["doc", "author", "changelog", "--from", "-"],
+        Some(MID_CHAIN_BAD_PAYLOAD.as_bytes()),
+    );
+
+    // Non-zero exit carrying the offending leaf's BLOCK finding (the engine's
+    // unknown-section reject, surfaced through the batch verb's `add-item` block).
+    assert!(
+        !out.status.success(),
+        "a mid-chain bad leaf must fail the whole batch; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("write.unknown-section"),
+        "the failure surfaces the failing leaf's block finding; stderr:\n{stderr}",
+    );
+
+    // Atomicity: the empty changelog `create_gated` staged before the chain must be
+    // rolled back, so the staged set is byte-for-byte the pre-author baseline — the
+    // batch persisted nothing.
+    assert_eq!(
+        staged_docs(repo.path(), &task),
+        baseline,
+        "a mid-chain failure leaves the staged set unchanged from the pre-author baseline",
+    );
+}
+
+#[test]
+fn disallowed_doctype_is_gate_blocked_through_the_batch() {
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    let repo = TempDir::new("gate");
+    let task = ready_repo(repo.path(), home.path(), &pack, "author gate");
+    let baseline = staged_docs(repo.path(), &task);
+
+    // `commit` is a shipped doctype the `record-change` gate does NOT admit — the
+    // create-gate is inherited because the batch creates through `create_gated`.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["doc", "author", "commit", "--from", "-"],
+        Some(b"title: x\n"),
+    );
+
+    assert!(
+        !out.status.success(),
+        "an un-allowed doctype must be gate-blocked through the batch; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("create.gate-blocked"),
+        "the gate-block finding fires through the batch; stderr:\n{stderr}",
+    );
+
+    // The gate rejects before any provision, so the staged set is unchanged from the
+    // pre-author baseline — the batch stages nothing.
+    assert_eq!(
+        staged_docs(repo.path(), &task),
+        baseline,
+        "a gate-blocked author leaves the staged set unchanged from the pre-author baseline",
     );
 }

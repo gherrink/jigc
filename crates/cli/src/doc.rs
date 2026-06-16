@@ -709,9 +709,20 @@ fn run_author(
         .expect("create_gated admitted the doctype, so it is in the schema set");
 
     // Chain every leaf over the single in-memory buffer, no persist between leaves.
+    // Atomicity (`design/auto-migration.md` → Hardening #1): `create_gated` already
+    // persisted the empty instance before the chain, so a mid-chain leaf failure must
+    // **also** discard that staged file — otherwise an empty doc leaks for a batch that
+    // "persisted nothing". Rollback = drop the in-memory buffer + remove the staged
+    // file `create_gated` provisioned; the block finding propagates unchanged.
     let mut buffer = read_staged(&created.path, &created.address)?;
     for leaf in &plan.leaves {
-        buffer = apply_leaf(schema, &buffer, &created.address, leaf)?;
+        match apply_leaf(schema, &buffer, &created.address, leaf) {
+            Ok(edited) => buffer = edited,
+            Err(failure) => {
+                let _ = std::fs::remove_file(&created.path);
+                return Err(failure);
+            }
+        }
     }
     // Persist once: the single write the batch promises.
     persist(&created.path, &buffer)?;
