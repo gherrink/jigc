@@ -789,11 +789,10 @@ fn check_item_leaves(
                 // `Performance`→`performance` ∉ enum blocks — `migrate`'s "adopted iff
                 // conformant" guarantee for the one enum id-from the changelog has
                 // (`design/auto-migration.md` → Engine/validation work #1). A non-enum
-                // id-from carries no such constraint and stays exempt.
+                // id-from carries no such constraint and stays exempt — the shared
+                // [`id_from_enum_violation`] adjudicator yields `None` for it.
                 if field.id == repeatable.id_from {
-                    if field.ty == FieldType::Enum {
-                        check_id_from_enum(item_path, repeatable, item, field, findings);
-                    }
+                    check_id_from_enum(item_path, repeatable, item, findings);
                     continue;
                 }
                 check_item_field(item_path, item, field, findings);
@@ -886,29 +885,65 @@ fn check_item_field(
     }
 }
 
+/// The finding code both the `add-item` write-time pre-check and finalize's
+/// [`check_id_from_enum`] emit for a foreign id-from enum heading — one shared constant
+/// so the two call sites cannot drift (review S3: M25 copies this discipline to four
+/// doctypes, so the code lives in one place, not a mirrored literal). The leaf-suffix of
+/// the *address* may differ by call site (no parsed item yet at add-item time); only the
+/// **code** is identical across the two check times (`design/write-commands.md` → Two
+/// check times).
+pub const ID_FROM_ENUM_CODE: &str = "schema-conformance.field-value-conformant";
+
+/// The shared id-from-enum adjudicator — the single owner of the re-slug + membership
+/// discipline both check times route through (review S3). A repeatable's `id-from` value
+/// lives in the item *heading* (rendered `### <Title>  {#slug}`), so when that id-from
+/// field is an `enum` the heading is itself schema-constrained: re-slug `title` (the same
+/// re-slug the parser's `heading_matches` applies — **not** [`crate::write::check_value`],
+/// whose literal compare would reject `Fixed` for the `fixed` member) and test membership
+/// in the declared enum members. Returns the slug-cased id when it is **not** a member
+/// (the violation the caller addresses), else `None`.
+///
+/// A **non-enum** id-from (every shipped doctype's `title`/`key`/`version`) carries no
+/// such constraint and yields `None` (the exempt path); a malformed enum schema (no `of`)
+/// names no members, so any value is non-conformant — surfaced, not silently passed.
+/// (`design/auto-migration.md` → Engine/validation work #1 / Hardening #3.)
+pub fn id_from_enum_violation(
+    repeatable: &crate::schema::Repeatable,
+    title: &str,
+) -> Option<String> {
+    let field = repeatable.block.iter().find_map(|leaf| match leaf {
+        crate::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
+        _ => None,
+    })?;
+    if field.ty != FieldType::Enum {
+        return None;
+    }
+    let slug = crate::slug::slugify(title);
+    let members = field.of.as_deref().unwrap_or(&[]);
+    if members.iter().any(|m| m == &slug) {
+        None
+    } else {
+        Some(slug)
+    }
+}
+
 /// `field-value-conformant` for a repeatable item's **`id-from` enum** field — the
 /// one case where the heading text (not a bullet in `item.fields`) is itself a
 /// schema-constrained value (`design/auto-migration.md` → Engine/validation work #1).
-/// The id-from heading is exempt from the ordinary bullet-based field check, but an
-/// `enum`-typed id-from must still name a member: re-slug the heading (the same
-/// re-slug the parser's `heading_matches` applies, `parse.rs` → `heading_matches`)
-/// and require membership in the (slug-form) declared members. `Fixed`→`fixed` /
-/// `Added`→`added` pass; a foreign `Performance`→`performance` ∉ enum blocks. The
-/// finding addresses `item_path/<id-from>` (the slug-cased item id is already in
-/// `item_path`). A missing `of` (a malformed enum schema) names no members, so any
-/// value is non-conformant — surfaced rather than silently passed.
+/// The id-from heading is exempt from the ordinary bullet-based field check; the shared
+/// [`id_from_enum_violation`] adjudicator owns the re-slug + membership test (a non-enum
+/// id-from yields `None`, staying exempt). `Fixed`→`fixed` / `Added`→`added` pass; a
+/// foreign `Performance`→`performance` ∉ enum blocks. The finding addresses
+/// `item_path/<id-from>` (the slug-cased item id is already in `item_path`).
 fn check_id_from_enum(
     item_path: &str,
     repeatable: &crate::schema::Repeatable,
     item: &ParsedItem,
-    field: &SchemaField,
     findings: &mut Vec<Finding>,
 ) {
-    let slug = crate::slug::slugify(&item.title);
-    let members = field.of.as_deref().unwrap_or(&[]);
-    if !members.iter().any(|m| m == &slug) {
+    if let Some(slug) = id_from_enum_violation(repeatable, &item.title) {
         findings.push(blocking_conformance(
-            "schema-conformance.field-value-conformant",
+            ID_FROM_ENUM_CODE,
             format!(
                 "id-from field `{}` in item `{item_path}`: `{}` is not an enum member",
                 repeatable.id_from, slug

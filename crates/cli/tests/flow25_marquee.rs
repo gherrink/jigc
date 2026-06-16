@@ -14,11 +14,13 @@
 //!      `changelog/changelog.md` byte-stable, retires the foreign original (gone), lands
 //!      exactly ONE commit carrying the added doc + the deletion, and a follow-up
 //!      `jigc ingest` reports it adopted;
-//!   2. **RED 1** — a `Performance` change-group → `finalize --approve` BLOCKs at
-//!      `schema-conformance.field-value-conformant` naming the slug-cased
-//!      `…/changes/performance/category` address, exit `EXIT_VALIDATION_BLOCKED` = 3,
-//!      with no commit / retire / adopt. The enum-block fires at exit 3 BEFORE the
-//!      review gate's exit-4 path (the planner block runs first), confirming the wiring.
+//!   2. **RED 1** — a `Performance` change-group is rejected **at the `add-item` write
+//!      verb** (M24 inc-2 moved the id-from enum to write time): non-zero exit, the
+//!      finding code `schema-conformance.field-value-conformant` naming the slug-cased
+//!      `…/changes/performance/category` address, with no commit / retire / adopt. The
+//!      reject fires before the bad group is ever authored, so finalize is never reached
+//!      (the finalize-time enum check still backstops an out-of-band foreign category —
+//!      the engine `validate.rs` unit tests cover that path);
 //!   3. **RED 2** — `finalize` without `--approve` leaves the foreign original
 //!      byte-intact AND the persisted edge index unchanged (the byte-safe, state-safe
 //!      human-reject path).
@@ -495,9 +497,12 @@ fn flow25_migrate_review_approve_adopt_walk() {
 }
 
 /// RED 1: a `Performance` change-group (a foreign category outside the `category`
-/// enum) → `finalize --approve` BLOCKs at `schema-conformance.field-value-conformant`
-/// naming the slug-cased `…/changes/performance/category` address, exit 3, with no
-/// commit / retire / adopt. The enum-block fires BEFORE the review gate's exit-4 path.
+/// enum) is rejected **at the `add-item` write verb** (M24 inc-2 moved the id-from
+/// enum to write time) — non-zero exit, finding `schema-conformance.field-value-conformant`
+/// naming the slug-cased `…/changes/performance/category` address, with no commit /
+/// retire / adopt. The reject fires before the bad group is authored, so the migration
+/// never reaches finalize (the finalize-time enum check still backstops an out-of-band
+/// foreign category — the engine `validate.rs` unit tests cover that path).
 #[test]
 fn flow25_red1_performance_group_blocks_at_enum_conformance() {
     let repo = TempDir::new("repo");
@@ -506,23 +511,6 @@ fn flow25_red1_performance_group_blocks_at_enum_conformance() {
     init_repo(repo.path());
 
     let rel_120 = drive_conformant_migration(repo.path(), home.path(), &pack);
-
-    // A NON-KaC category outside the enum — authored conformant in every other respect
-    // (notes filled), so the ONLY block is the id-from enum on `category`.
-    let group = add_item(
-        repo.path(),
-        home.path(),
-        &pack,
-        &format!("{rel_120}/changes"),
-        "Performance",
-    );
-    set_slot(
-        repo.path(),
-        home.path(),
-        &pack,
-        &format!("{group}/notes"),
-        b"Cut cold-start 40%.\n",
-    );
 
     // The id-from slug = `performance`; the finding address is rooted at the release id
     // the binary minted (driven verbatim, not hand-built).
@@ -536,21 +524,32 @@ fn flow25_red1_performance_group_blocks_at_enum_conformance() {
         .parse()
         .unwrap();
 
+    // A NON-KaC category outside the enum — rejected at the add-item write verb, before
+    // any byte is staged. `--format json` so the emitted finding envelope is parseable.
     let out = run_jigc(
         repo.path(),
         home.path(),
         &pack,
-        &["--format", "json", "task", "finalize", TASK, "--approve"],
+        &[
+            "--format",
+            "json",
+            "doc",
+            "add-item",
+            &format!("{rel_120}/changes"),
+            "--title",
+            "Performance",
+            "--task",
+            TASK,
+        ],
         None,
     );
 
-    // Exit 3 (validation-blocked) — NOT the review gate's exit 4: the planner block runs
-    // first, so the enum-conformance failure intercepts even with `--approve`.
-    assert_eq!(
-        out.status.code(),
-        Some(3),
-        "an out-of-enum change-group blocks at exit 3 (validation-blocked), before the \
-         review gate; stdout:\n{}\nstderr:\n{}",
+    // The write verb blocks (non-zero exit) — the bad category never reaches the staged
+    // doc, so finalize is never invoked.
+    assert!(
+        !out.status.success(),
+        "a foreign category blocks at the add-item write verb (non-zero exit); \
+         stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );

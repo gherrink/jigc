@@ -1527,7 +1527,11 @@ pub fn add_nested_item(
 /// each time (review LOW finding #5 — *not* "the first `Leaf::Repeatable`", which would
 /// silently pick the wrong nested section if a block ever declared two). `None` if any
 /// nested-section segment names no declared nested repeatable at its level.
-fn nested_repeatable(
+///
+/// `pub` so the CLI's `add-item` write-time id-from-enum pre-check can resolve the
+/// destination nested repeatable the same way the mint path does (review S3 — one
+/// navigation, not a CLI copy).
+pub fn nested_repeatable(
     schema: &Schema,
     section_id: &str,
     parent_item_ids: &[&str],

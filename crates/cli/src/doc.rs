@@ -360,6 +360,14 @@ fn apply_add_item_target(
     addr: &str,
     title: &str,
 ) -> Result<(String, String), DocFailure> {
+    // Write-time id-from-enum reject (`design/auto-migration.md` → Hardening #3;
+    // write-commands.md → Two check times): when the destination repeatable's `id-from`
+    // is an enum the `--title` re-slugs outside, block here — fast feedback at the point
+    // of the mistake, not deferred to finalize. The batch (`apply_leaf`) inherits this
+    // by sharing this path.
+    if let Some(finding) = id_from_enum_block(schema, &target, title) {
+        return Err(DocFailure::Block(finding));
+    }
     Ok(match target {
         AddItemTarget::TopLevel { section } => {
             // Materialize the item block's `set: on-create` fields at mint, mirroring the
@@ -414,6 +422,50 @@ fn apply_add_item_target(
             (edited, minted)
         }
     })
+}
+
+/// The write-time id-from-enum reject for an `add-item` mint (`design/auto-migration.md`
+/// → Hardening #3; write-commands.md → Two check times). Resolves the destination
+/// repeatable — the section's own for a top-level mint, the named nested one (via the
+/// engine's [`engine::write::nested_repeatable`], the same navigation the mint path uses)
+/// for a nested mint — and runs the shared [`engine::validate::id_from_enum_violation`]
+/// adjudicator over the `--title`. When the id-from is an enum the title re-slugs outside
+/// its members, returns a blocking finding carrying the **shared** code
+/// [`engine::validate::ID_FROM_ENUM_CODE`] (identical to finalize's) addressed at the
+/// slug-cased id-from address. A non-enum id-from / a member title yields `None` — the
+/// inert path, mirroring finalize's exemption (so `Fixed`→`fixed` passes).
+fn id_from_enum_block(schema: &Schema, target: &AddItemTarget, title: &str) -> Option<Finding> {
+    let (repeatable, prefix) = match target {
+        AddItemTarget::TopLevel { section } => {
+            let body = &schema.sections.iter().find(|s| &s.id == section)?.body;
+            let SectionBody::Repeatable { repeatable } = body else {
+                return None;
+            };
+            (repeatable.clone(), section.clone())
+        }
+        AddItemTarget::Nested {
+            section,
+            parents,
+            nested_section,
+        } => {
+            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            let repeatable =
+                engine::write::nested_repeatable(schema, section, &parent_ids, nested_section)?;
+            (
+                repeatable,
+                format!("{section}/{}/{nested_section}", parents.join("/")),
+            )
+        }
+    };
+    let slug = engine::validate::id_from_enum_violation(&repeatable, title)?;
+    Some(Finding::blocking(
+        engine::validate::ID_FROM_ENUM_CODE,
+        format!(
+            "add-item rejected: `{slug}` is not an enum member of id-from field `{}`",
+            repeatable.id_from
+        ),
+        Location::addressed(format!("{prefix}/{slug}/{}", repeatable.id_from), 1, 1),
+    ))
 }
 
 /// The resolved destination of an `add-item` address: a **top-level** section

@@ -278,6 +278,130 @@ fn nested_add_item_materializes_an_on_create_date_on_the_change_group() {
     }
 }
 
+/// The embedded dev pack tree on disk (selected via `JIGC_PACK_DIR` so the binary
+/// composes the bytes it ships) — its changelog nests a `changes` repeatable keyed by
+/// an `enum` id-from (`category`), the nested write-time reject target.
+fn dev_pack() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
+}
+
+/// M24 inc-2 T1 — a **nested** `add-item` (`{release}/changes`) whose `--title`
+/// re-slugs OUTSIDE the nested repeatable's `id-from` enum is rejected **at the write
+/// verb** (non-zero exit), not deferred to finalize. Symmetric with the top-level
+/// reject: `Improvements` ∉ {added, changed, …} blocks with the SHARED finalize code
+/// `schema-conformance.field-value-conformant` naming the section-qualified slug-cased
+/// id-from address, while a valid member `Added`→`added` passes. Driven over the real
+/// binary against the shipped dev pack, so the block is the emitted contract.
+#[test]
+fn nested_foreign_category_blocks_at_the_add_item_verb() {
+    let repo = TempDir::new("nested-block-repo");
+    let home = TempDir::new("nested-block-home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"]),
+        "jigc setup",
+    );
+    ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["start", "--workflow", "record-change", "cut the release"],
+        ),
+        "jigc start --workflow record-change",
+    );
+    ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["doc", "create", "changelog", "--title", "Changelog"],
+        ),
+        "jigc doc create changelog",
+    );
+
+    // A top-level release to nest the change-group under (its id is the slugged version
+    // title — drive the EMITTED address verbatim).
+    let release = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "1.2.0",
+            ],
+        ),
+        "add-item release 1.2.0",
+    );
+    let release_id = release
+        .strip_prefix("changelog:changelog#releases/")
+        .expect("release address is under #releases/")
+        .to_owned();
+
+    // The foreign nested category — blocks at the write verb.
+    let blocked = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &[
+            "doc",
+            "add-item",
+            &format!("{release}/changes"),
+            "--title",
+            "Improvements",
+            "--format",
+            "json",
+        ],
+    );
+    assert!(
+        !blocked.status.success(),
+        "a foreign nested id-from enum category must block at the add-item verb; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&blocked.stderr);
+    let report: serde_json::Value = serde_json::from_str(stderr.trim())
+        .unwrap_or_else(|e| panic!("stderr is JSON: {e}; got:\n{stderr}"));
+    let finding = &report["findings"][0];
+    assert_eq!(
+        finding["code"], "schema-conformance.field-value-conformant",
+        "the nested block carries the SHARED finalize code; got:\n{stderr}",
+    );
+    let address = finding["location"]["address"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the finding is addressed; got:\n{stderr}"));
+    assert_eq!(
+        address,
+        format!("releases/{release_id}/changes/improvements/category"),
+        "the finding names the section-qualified slug-cased nested id-from address",
+    );
+
+    // A valid member passes — `Added` re-slugs to the `added` enum member (the
+    // composing-context guard: the reject is not always-on).
+    ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "add-item",
+                &format!("{release}/changes"),
+                "--title",
+                "Added",
+            ],
+        ),
+        "add-item nested #added (valid member)",
+    );
+}
+
 /// The fixture changelog schema, loaded for the re-read assertions (mirrors the bytes
 /// the fixture pack ships).
 fn changelog_schema() -> engine::schema::Schema {
