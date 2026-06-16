@@ -1527,6 +1527,52 @@ pub fn add_nested_item(
     ))
 }
 
+/// `remove-item` for a (possibly nested) repeatable item, addressed by its parent-scoped
+/// id chain `item_ids` (`["1-2-0", "changes", "added"]`). The depth-aware dual of
+/// [`remove_item`]: it re-parses for conformance, asserts the nested item is present via
+/// [`nested_parsed_item`] (so a same-anchor sibling under a *different* parent is never
+/// the target), reduces the chain to its physical form, locates the item's OWN byte block
+/// via [`locate_item_path`], and splices that span to empty — the nested analogue of
+/// top-level [`remove_item`]'s `splice(src, span, "")`.
+///
+/// A non-last nested sibling's region already absorbs its trailing blank-line separator
+/// (it ends at the next heading start within the parent), so splice-to-empty leaves the
+/// survivors canonically spaced. The genuinely LAST block of the document has no trailing
+/// separator to absorb (its region ends at EOF), so the splice extends back over the one
+/// `\n` of the *leading* separator — otherwise that blank line would dangle and break
+/// `render(parse(out)) == out`. An absent item / non-conformant source → [`SpliceError`].
+pub fn remove_nested_item(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
+        return Err(SpliceError::NotPresent {
+            what: format!("item {item_ids:?} in section {section_id:?}"),
+        });
+    }
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_ids:?} in section {section_id:?}"),
+        }
+    })?;
+    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_ids:?} block"),
+        }
+    })?;
+    // LAST-block edge: a region ending at EOF carries no trailing separator, so consume
+    // the one `\n` of the preceding blank-line separator to avoid a dangling blank line.
+    let start = if region.end == source.len() && source[..region.start].ends_with('\n') {
+        region.start - 1
+    } else {
+        region.start
+    };
+    Ok(splice(source, start..region.end, ""))
+}
+
 /// The nested [`crate::schema::Repeatable`] named `nested_section_id` declared in the
 /// item block reached by walking the **section-qualified** `parent_item_ids` chain from
 /// `section_id` — the schema dual of [`nested_parsed_item`]. The chain
@@ -6681,6 +6727,100 @@ OAuth device-code flow.
             "should not land anywhere",
         )
         .expect_err("the parent release does not exist");
+        assert!(matches!(err, SpliceError::NotPresent { .. }));
+    }
+
+    /// `remove_nested_item` on the LAST block of the document — release `1-2-0`'s nested
+    /// `#added`, whose region ends at EOF (no trailing separator to absorb). Removing it
+    /// must leave the release's surviving `date` block canonically spaced (no dangling
+    /// blank line), the same-anchor `#added` under `1-3-0` byte-untouched, and the result
+    /// round-trips byte-stable. This is the edge the splice's leading-separator trim
+    /// guards — asserted, not assumed.
+    #[test]
+    fn remove_nested_item_last_sibling_round_trips() {
+        let schema = changelog_schema();
+        let out = remove_nested_item(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0", "changes", "added"],
+        )
+        .expect("nested #added under 1-2-0 present");
+        // (a) 1-2-0's #added group is gone.
+        assert!(!out.contains("OAuth device-code flow."));
+        assert!(
+            out.matches("#### Added  {#added}").count() == 1,
+            "only 1-3-0's #added survives: {out:?}"
+        );
+        // (b) the same-anchor #added under 1-3-0 is byte-untouched.
+        assert!(out.contains("Audit log export."));
+        let added_130 = locate_item_path(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-3-0", "added"],
+        )
+        .expect("1-3-0/added located in source");
+        assert!(
+            out.contains(&TWO_PARENT_TWO_LEVEL[added_130]),
+            "1-3-0's #added block survives byte-for-byte"
+        );
+        // (c) the surviving release ends canonically — no dangling blank line.
+        assert!(out.ends_with("- date: 2026-06-14\n"));
+        // (d) round-trips byte-stable.
+        assert_byte_stable(&schema, &out);
+    }
+
+    /// `remove_nested_item` on a NON-last nested sibling — release `1-2-0` is first given a
+    /// second change-group (`#### Changed`) so its `#added` precedes a sibling within the
+    /// same parent; removing `#added` must leave `#### Changed` byte-intact and the result
+    /// byte-stable (the region absorbs its own trailing separator).
+    #[test]
+    fn remove_nested_item_non_last_sibling_round_trips() {
+        let schema = changelog_schema();
+        // Build a 1-2-0 carrying both #added (first) and #changed (second).
+        let two_groups = add_nested_item(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0"],
+            "changes",
+            "Changed",
+            Some("Token refresh window widened."),
+            &[],
+        )
+        .expect("nested add-item mints #changed under 1-2-0");
+        assert_byte_stable(&schema, &two_groups); // the derived fixture is itself canonical
+
+        let out = remove_nested_item(
+            &schema,
+            &two_groups,
+            "releases",
+            &["1-2-0", "changes", "added"],
+        )
+        .expect("1-2-0/added present");
+        // The non-last sibling is gone; the following #### Changed survives byte-intact.
+        assert!(!out.contains("OAuth device-code flow."));
+        assert!(out.contains("#### Changed  {#changed}"));
+        assert!(out.contains("Token refresh window widened."));
+        // 1-3-0's same-anchor #added is untouched.
+        assert!(out.contains("Audit log export."));
+        assert_byte_stable(&schema, &out);
+    }
+
+    /// `remove_nested_item` against a mis-named nested item id routes a clean block —
+    /// `SpliceError::NotPresent`, source unchanged — never a wrong-item delete onto the
+    /// same-anchor sibling under a different parent.
+    #[test]
+    fn remove_nested_item_mis_named_blocks_unchanged() {
+        let schema = changelog_schema();
+        let err = remove_nested_item(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0", "changes", "removed"], // no #removed group under 1-2-0
+        )
+        .expect_err("no such nested group");
         assert!(matches!(err, SpliceError::NotPresent { .. }));
     }
 
