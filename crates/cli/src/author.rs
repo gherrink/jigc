@@ -21,7 +21,8 @@
 //! wrapped in `<<…>>` is slot prose (the delimiters stripped), any other scalar is an
 //! inline field value (the pinned `<<slot>>`/scalar convention).
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use engine::schema::{Field, Leaf as SchemaLeaf, Schema, Section, SectionBody, Slot};
 use engine::slug::slugify;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -98,28 +99,153 @@ enum LeafValue {
     Slot(String),
 }
 
+/// Whether a `set` value carries the `<<…>>` slot marker (after trimming surrounding
+/// whitespace) — the single syntactic predicate the slot/field split rests on.
+fn is_slot_wrapped(raw: &str) -> bool {
+    let trimmed = raw.trim();
+    trimmed.len() >= 4 && trimmed.starts_with("<<") && trimmed.ends_with(">>")
+}
+
 /// Classify a `set` value by the pinned convention: a value that (after trimming
 /// surrounding whitespace) opens with `<<` and closes with `>>` is **slot prose**
 /// with those delimiters stripped; anything else is an **inline field** value
 /// (carried unchanged — the splice path trims its own ends).
 fn classify(raw: &str) -> LeafValue {
-    let trimmed = raw.trim();
-    if trimmed.len() >= 4 && trimmed.starts_with("<<") && trimmed.ends_with(">>") {
+    if is_slot_wrapped(raw) {
+        let trimmed = raw.trim();
         LeafValue::Slot(trimmed[2..trimmed.len() - 2].to_string())
     } else {
         LeafValue::Field(raw.to_string())
     }
 }
 
+/// The leaf-kind the **schema** declares for a `set` key — the source of truth the
+/// syntactic `<<…>>` marker is cross-checked against.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DeclaredKind {
+    Slot,
+    Field,
+}
+
+/// Cross-check a `set` value's syntactic form against the schema-declared leaf-kind,
+/// rejecting the whole payload (at parse, before any persist) on a mismatch — the
+/// silent-misroute guard (`design/auto-migration.md` → Hardening; `DECISIONS.md`
+/// 2026-06-16 batch-payload serialization). The `<<…>>` marker stays the *settled*
+/// payload format: this does **not** re-route by schema, it makes a deviation **loud
+/// and located** so a bare value for a slot leaf (silently misrouted into a trailing
+/// `<!-- fields -->` block today) and a `<<…>>`-wrapped value for a field leaf are
+/// both hard parse-time rejects naming the offending address.
+fn check_kind(declared: DeclaredKind, raw: &str, addr: &str) -> Result<()> {
+    match (declared, is_slot_wrapped(raw)) {
+        (DeclaredKind::Slot, false) => {
+            bail!("doc author payload: value for slot `{addr}` must be wrapped in <<…>>")
+        }
+        (DeclaredKind::Field, true) => {
+            bail!("doc author payload: value for field `{addr}` must not be wrapped in <<…>>")
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The schema view at one section level: the leaf-kind lookups a payload section's
+/// `set` keys and items are cross-checked against. Derived from a top-level
+/// [`Section`] or a nested [`SchemaLeaf::Repeatable`]; [`SchemaCtx::None`] when the
+/// payload addresses a section the schema does not declare (left to the engine's
+/// downstream `write.unknown-section` reject — the cross-check is purely additive).
+enum SchemaCtx<'a> {
+    None,
+    Simple {
+        slot: &'a Option<Slot>,
+        fields: &'a [Field],
+    },
+    Repeatable {
+        block: &'a [SchemaLeaf],
+    },
+}
+
+impl<'a> SchemaCtx<'a> {
+    /// The context for a top-level payload section, resolved against the schema by id.
+    fn from_section(section: Option<&'a Section>) -> Self {
+        match section.map(|s| &s.body) {
+            Some(SectionBody::Simple { slot, fields }) => SchemaCtx::Simple { slot, fields },
+            Some(SectionBody::Repeatable { repeatable }) => SchemaCtx::Repeatable {
+                block: &repeatable.block,
+            },
+            None => SchemaCtx::None,
+        }
+    }
+
+    /// The context for a payload section nested under an item — the [`SchemaLeaf::
+    /// Repeatable`] this level's block declares with the matching id, if any.
+    fn nested(&self, id: &str) -> Self {
+        let SchemaCtx::Repeatable { block } = self else {
+            return SchemaCtx::None;
+        };
+        block
+            .iter()
+            .find_map(|leaf| match leaf {
+                SchemaLeaf::Repeatable {
+                    id: leaf_id,
+                    repeatable,
+                } if leaf_id == id => Some(SchemaCtx::Repeatable {
+                    block: &repeatable.block,
+                }),
+                _ => None,
+            })
+            .unwrap_or(SchemaCtx::None)
+    }
+
+    /// The declared leaf-kind of a **section-level** `set` key (a simple section): a
+    /// declared field id is a field; otherwise the section's own slot, if it has one.
+    fn section_set_kind(&self, key: &str) -> Option<DeclaredKind> {
+        match self {
+            SchemaCtx::Simple { slot, fields } => {
+                if fields.iter().any(|f| f.id == key) {
+                    Some(DeclaredKind::Field)
+                } else if slot.is_some() {
+                    Some(DeclaredKind::Slot)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// The declared leaf-kind of an **item-level** `set` key — the matching block leaf
+    /// (a nested repeatable is not a `set` key, so it yields no kind).
+    fn item_set_kind(&self, key: &str) -> Option<DeclaredKind> {
+        let SchemaCtx::Repeatable { block } = self else {
+            return None;
+        };
+        block.iter().find_map(|leaf| match leaf {
+            SchemaLeaf::Slot { id, .. } if id == key => Some(DeclaredKind::Slot),
+            SchemaLeaf::Field(field) if field.id == key => Some(DeclaredKind::Field),
+            _ => None,
+        })
+    }
+}
+
 /// Parse a declarative batch payload (YAML) into the ordered leaf-write [`AuthorPlan`].
 /// A structurally-malformed payload (bad YAML, a missing required `title`/item-`title`,
 /// or an unknown key) is rejected **whole**, here, before anything could persist.
-pub fn parse_author_payload(payload: &str) -> Result<AuthorPlan> {
+///
+/// The `schema` is the doctype the payload authors (`None` when the doctype is unknown
+/// — that case is rejected by the create-gate downstream): it is threaded through the
+/// lowering only to **cross-check** each `set` value's `<<…>>` form against the declared
+/// leaf-kind (see [`check_kind`]) — a kind mismatch is a parse-time reject, so a bare
+/// value for a slot leaf can no longer be silently misrouted into a `<!-- fields -->`
+/// block. Where the payload addresses a section/leaf the schema does not declare, the
+/// cross-check stands down and the engine's downstream reject handles it.
+pub fn parse_author_payload(schema: Option<&Schema>, payload: &str) -> Result<AuthorPlan> {
     let parsed: AuthorPayload =
         serde_yaml_ng::from_str(payload).context("malformed `doc author` payload")?;
     let mut leaves = Vec::new();
     for section in &parsed.sections {
-        flatten_section(section, &[], &mut leaves);
+        let ctx = SchemaCtx::from_section(
+            schema.and_then(|s| s.sections.iter().find(|sec| sec.id == section.id)),
+        );
+        flatten_section(&ctx, section, &[], &mut leaves)?;
     }
     Ok(AuthorPlan {
         title: parsed.title,
@@ -131,11 +257,24 @@ pub fn parse_author_payload(payload: &str) -> Result<AuthorPlan> {
 /// `parent` is the item id-chain hops above this section (empty at the document root,
 /// the enclosing item's chain when this is a nested section). Item ids are minted with
 /// the same [`slugify`] the engine `add_item` uses, so the chain the parser builds for
-/// a nested leaf matches the id the engine mints — by construction.
-fn flatten_section(section: &PayloadSection, parent: &[String], leaves: &mut Vec<Leaf>) {
+/// a nested leaf matches the id the engine mints — by construction. `ctx` is this
+/// section's schema view, used to cross-check the slot/field form of every `set` value.
+fn flatten_section(
+    ctx: &SchemaCtx,
+    section: &PayloadSection,
+    parent: &[String],
+    leaves: &mut Vec<Leaf>,
+) -> Result<()> {
     // Doc-level (simple-section) leaves: a scalar field is addressed `…/<section>/<key>`;
     // the section's slot is the section itself (`…/<section>`, no key hop).
     for (key, raw) in &section.set {
+        if let Some(declared) = ctx.section_set_kind(key) {
+            check_kind(
+                declared,
+                raw,
+                &join(parent, [section.id.as_str(), key.as_str()]),
+            )?;
+        }
         match classify(raw) {
             LeafValue::Field(value) => leaves.push(Leaf::SetField {
                 fragment: join(parent, [section.id.as_str(), key.as_str()]),
@@ -159,6 +298,9 @@ fn flatten_section(section: &PayloadSection, parent: &[String], leaves: &mut Vec
         let mut item_hops = section_hops.clone();
         item_hops.push(slugify(&item.title));
         for (key, raw) in &item.set {
+            if let Some(declared) = ctx.item_set_kind(key) {
+                check_kind(declared, raw, &join(&item_hops, [key.as_str()]))?;
+            }
             match classify(raw) {
                 LeafValue::Field(value) => leaves.push(Leaf::SetField {
                     fragment: join(&item_hops, [key.as_str()]),
@@ -171,9 +313,10 @@ fn flatten_section(section: &PayloadSection, parent: &[String], leaves: &mut Vec
             }
         }
         for nested in &item.sections {
-            flatten_section(nested, &item_hops, leaves);
+            flatten_section(&ctx.nested(&nested.id), nested, &item_hops, leaves)?;
         }
     }
+    Ok(())
 }
 
 /// Join a hop prefix with trailing hops into a `/`-separated fragment.
@@ -186,6 +329,21 @@ fn join<'a>(prefix: &[String], tail: impl IntoIterator<Item = &'a str>) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use engine::schema::load_schema;
+
+    /// The shipped `changelog` schema (two-level repeatable: releases → changes), the
+    /// cross-check target for the changelog-shaped payloads.
+    fn changelog_schema() -> Schema {
+        load_schema(include_bytes!("../pack/schemas/changelog.yaml"))
+            .expect("shipped changelog schema loads")
+    }
+
+    /// The shipped `commit` schema (`header` fields + a `summary`/`body` slot), the
+    /// cross-check target for the doc-level simple-section payload.
+    fn commit_schema() -> Schema {
+        load_schema(include_bytes!("../pack/schemas/commit.yaml"))
+            .expect("shipped commit schema loads")
+    }
 
     /// A multi-release **dated-changelog-shaped** payload lowers to the expected
     /// ordered plan: the `create` id-source, then — in document order — each release's
@@ -218,7 +376,8 @@ sections:
                   notes: "<<- A first bug fix.>>"
 "#;
 
-        let plan = parse_author_payload(payload).expect("the changelog payload parses");
+        let plan = parse_author_payload(Some(&changelog_schema()), payload)
+            .expect("the changelog payload parses");
         assert_eq!(plan.title, "Changelog");
         assert_eq!(
             plan.leaves,
@@ -271,7 +430,8 @@ sections:
     set:
       summary: \"<<Add a token-bucket rate limiter.>>\"
 ";
-        let plan = parse_author_payload(payload).expect("the payload parses");
+        let plan =
+            parse_author_payload(Some(&commit_schema()), payload).expect("the payload parses");
         assert_eq!(plan.title, "Add rate limiter");
         assert_eq!(
             plan.leaves,
@@ -301,15 +461,16 @@ sections:
     #[test]
     fn malformed_payload_is_rejected_whole_at_parse() {
         assert!(
-            parse_author_payload("sections: []\n").is_err(),
+            parse_author_payload(None, "sections: []\n").is_err(),
             "a payload missing the required `title` create id-source is rejected",
         );
         assert!(
-            parse_author_payload("title: X\nsectons: []\n").is_err(),
+            parse_author_payload(None, "title: X\nsectons: []\n").is_err(),
             "an unknown top-level key (a typo) is rejected, never silently dropped",
         );
         assert!(
             parse_author_payload(
+                None,
                 "\
 title: X
 sections:
@@ -322,8 +483,80 @@ sections:
             "an item missing its `title` id-source is rejected",
         );
         assert!(
-            parse_author_payload("title: X\n  : :\n").is_err(),
+            parse_author_payload(None, "title: X\n  : :\n").is_err(),
             "input that is not valid YAML is rejected",
+        );
+    }
+
+    /// A `set` value whose `<<…>>` form contradicts the schema-declared leaf-kind is a
+    /// **parse-time reject** naming the offending address — the silent-misroute guard.
+    /// Two directions, both over the shipped changelog schema: a bare value for the
+    /// `notes` **slot** (silently misrouted into a `<!-- fields -->` block before this
+    /// guard), and a `<<…>>`-wrapped value for the `link` **field**.
+    #[test]
+    fn leaf_kind_mismatch_is_rejected_whole_at_parse() {
+        let schema = changelog_schema();
+
+        let bare_slot = "\
+title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.2.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: \"- A bare slot value.\"
+";
+        let err = parse_author_payload(Some(&schema), bare_slot)
+            .expect_err("a bare value for the `notes` slot is rejected, never misrouted");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("slot") && msg.contains("notes") && msg.contains("<<"),
+            "the slot reject names the leaf-kind, the address, and the expected form: {msg}",
+        );
+
+        let wrapped_field = "\
+title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.2.0
+        set:
+          link: \"<<https://example.com/x>>\"
+";
+        let err = parse_author_payload(Some(&schema), wrapped_field)
+            .expect_err("a `<<…>>`-wrapped value for the `link` field is rejected");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("field") && msg.contains("link") && msg.contains("<<"),
+            "the field reject names the leaf-kind, the address, and the form: {msg}",
+        );
+    }
+
+    /// The cross-check stands down when the doctype schema is unknown (`None`) or the
+    /// payload addresses a section the schema does not declare — the lowering stays
+    /// purely structural so the engine's downstream reject handles the unknown target.
+    #[test]
+    fn unknown_schema_target_skips_the_cross_check() {
+        let payload = "\
+title: X
+sections:
+  - id: nonsuch
+    items:
+      - title: Boom
+        set:
+          whatever: \"a bare value for an undeclared leaf\"
+";
+        assert!(
+            parse_author_payload(None, payload).is_ok(),
+            "no schema ⇒ no cross-check; the structural lowering still succeeds",
+        );
+        assert!(
+            parse_author_payload(Some(&changelog_schema()), payload).is_ok(),
+            "an undeclared section ⇒ no cross-check; the engine rejects it downstream",
         );
     }
 }

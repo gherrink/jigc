@@ -846,13 +846,16 @@ fn run_author(
     task_id: Option<&str>,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    // Parse runs before any persist: a structurally-malformed payload is rejected
-    // whole here, nothing staged (`design/write-commands.md` → Batch authoring).
     let payload = read_handoff(from)?;
-    let plan = ::cli::author::parse_author_payload(&payload)?;
-
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
+    // Parse runs before any persist: a structurally-malformed payload — or a `set`
+    // value whose `<<…>>` form contradicts the schema-declared leaf-kind (the
+    // silent-misroute guard) — is rejected whole here, nothing staged
+    // (`design/write-commands.md` → Batch authoring). The doctype schema is passed for
+    // that cross-check; an unknown doctype (absent here) skips it and is rejected by
+    // the create-gate below.
+    let plan = ::cli::author::parse_author_payload(schemas.get(doctype), &payload)?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
     // (the same clock-side CLI work `run_create` does) so the created instance carries
     // them before the leaves chain over it.

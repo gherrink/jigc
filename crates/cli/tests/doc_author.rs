@@ -520,6 +520,65 @@ fn batch_with_non_member_category_stages_nothing() {
     );
 }
 
+/// A payload that parses structurally but whose `notes` **slot** carries a **bare**
+/// (un-`<<…>>`-wrapped) value — the silent-misroute trap. Before the leaf-kind
+/// cross-check, the bare value classified as an inline *field* and was silently
+/// written into a trailing `<!-- fields -->` block, leaving the slot empty with NO
+/// error. The cross-check now rejects the whole payload at parse — before any persist
+/// — naming the offending slot address (`design/auto-migration.md` → Hardening; the
+/// `<<…>>` convention itself is unchanged, only the deviation is made loud).
+const BARE_SLOT_PAYLOAD: &str = r#"title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.2.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: "- OAuth device-code flow."
+"#;
+
+#[test]
+fn bare_slot_value_is_rejected_and_stages_nothing() {
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    let repo = TempDir::new("bare-slot");
+    let task = ready_repo(repo.path(), home.path(), &pack, "author bare slot");
+    let baseline = staged_docs(repo.path(), &task);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["doc", "author", "changelog", "--from", "-"],
+        Some(BARE_SLOT_PAYLOAD.as_bytes()),
+    );
+
+    // Non-zero exit: the slot/field cross-check rejects the whole payload at parse.
+    assert!(
+        !out.status.success(),
+        "a bare value for a slot leaf must reject the whole batch; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("slot") && stderr.contains("notes") && stderr.contains("<<"),
+        "the reject names the slot, its address, and the expected `<<…>>` form; stderr:\n{stderr}",
+    );
+
+    // Atomicity: the reject is at parse, before `create_gated`, so the staged set is
+    // byte-for-byte the pre-author baseline — nothing persisted, no misrouted fields
+    // block, no silently-emptied slot.
+    assert_eq!(
+        staged_docs(repo.path(), &task),
+        baseline,
+        "a bare-slot reject leaves the staged set unchanged from the pre-author baseline",
+    );
+}
+
 /// A SINGLE-release dated changelog — the cold spike's minimal multi-leaf case (one
 /// release with its optional `link`, one nested change-group carrying slot prose). It
 /// exercises the same create + add-item + set-field + set-slot chain as the marquee
