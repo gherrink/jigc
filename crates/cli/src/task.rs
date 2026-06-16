@@ -1010,6 +1010,10 @@ fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<Vec<(PathBuf, Vec
 /// - jigc's git-*tracked* config layer (`.jigc/config/` + `.jigc/.gitignore`) — `jigc
 ///   setup` writes it but never commits, so the first migration commit is what lands it
 ///   (review B2); without it a naive {promote + retire} narrowing would strand the setup.
+///   Each fixed pathspec is guarded on existence ([`existing_pathspecs`]): a `git add`
+///   pathspec that matches no file is fatal (exit 128) and stages **nothing**, so an
+///   absent layer would abort the whole byte-destructive migration commit — skipping it
+///   keeps the present paths staging while never aborting (Inc 6 advisory / review LOW).
 ///
 /// This deliberately excludes arbitrary user WIP (the whole point of #9a). The general
 /// dirty-tree-sweep redesign for non-migration tasks stays deferred.
@@ -1031,11 +1035,26 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
             pathspecs.push(spec.to_owned());
         }
     }
-    pathspecs.push(".jigc/config".to_owned());
-    pathspecs.push(".jigc/.gitignore".to_owned());
+    pathspecs.extend(existing_pathspecs(
+        repo_root,
+        &[".jigc/config", ".jigc/.gitignore"],
+    ));
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
     git_run(repo_root, &args)
+}
+
+/// Keep only the fixed `candidates` (repo-relative) that actually exist on disk under
+/// `repo_root`. A `git add -- <pathspec>` that matches no file is fatal (exit 128) and
+/// stages **nothing**, so feeding a `git add` an absent fixed pathspec would abort the
+/// entire stage; an absent path has nothing to stage anyway, so dropping it is correct,
+/// not a loss. Returns the survivors in input order (review LOW / Inc 6 advisory).
+fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
+    candidates
+        .iter()
+        .filter(|spec| repo_root.join(spec).exists())
+        .map(|spec| (*spec).to_owned())
+        .collect()
 }
 
 /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /
@@ -1642,6 +1661,71 @@ mod tests {
         assert!(
             format!("{err:#}").contains("this is rejected"),
             "the rejection surfaces the hook's stderr, got {err:#}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The migration stage guards its fixed jigc-config pathspecs on existence (Inc 6
+    /// advisory / review LOW): a `git add -- <existing> <absent>` is **fatal (exit 128)
+    /// and stages nothing**, which would abort the byte-destructive migration commit. The
+    /// first half reproduces that abort directly; the second proves `existing_pathspecs`
+    /// drops the absent member so the present one still stages cleanly.
+    #[test]
+    fn existing_pathspecs_drops_absent_so_git_add_never_aborts() {
+        let dir = std::env::temp_dir().join(format!("jigc-pathspec-guard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mk temp repo");
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(&dir)
+                .output()
+                .expect("git runs")
+        };
+        assert!(run(&["init", "-q"]).status.success());
+        // The jigc-config layer is present; `.jigc/.gitignore` is **absent** (the missing
+        // fixed pathspec the fix defends against).
+        std::fs::create_dir_all(dir.join(".jigc").join("config")).expect("mk config layer");
+        std::fs::write(dir.join(".jigc").join("config").join("packs.yaml"), "{}\n")
+            .expect("write config");
+        assert!(!dir.join(".jigc").join(".gitignore").exists());
+
+        // Reproduce the abort: feeding `git add --` the absent pathspec is fatal and
+        // stages nothing — the failure mode the byte-destructive migration commit must
+        // never hit.
+        let unfiltered = run(&["add", "--", ".jigc/config", ".jigc/.gitignore"]);
+        assert!(
+            !unfiltered.status.success(),
+            "a `git add` with an absent pathspec is fatal (the abort the fix defends against)"
+        );
+        let staged_after_abort = run(&["diff", "--cached", "--name-only"]);
+        assert!(
+            String::from_utf8_lossy(&staged_after_abort.stdout)
+                .trim()
+                .is_empty(),
+            "the aborted `git add` stages nothing"
+        );
+
+        // The fix: `existing_pathspecs` drops the absent member, keeping input order.
+        let specs = existing_pathspecs(&dir, &[".jigc/config", ".jigc/.gitignore"]);
+        assert_eq!(
+            specs,
+            vec![".jigc/config".to_string()],
+            "only the existing fixed pathspec survives"
+        );
+
+        // Staging just the survivors succeeds and lands the config layer in the index.
+        let mut args: Vec<String> = vec!["add".into(), "--".into()];
+        args.extend(specs);
+        let filtered = run(&args.iter().map(String::as_str).collect::<Vec<_>>());
+        assert!(
+            filtered.status.success(),
+            "staging only the existing pathspec succeeds (no abort)"
+        );
+        let staged = run(&["diff", "--cached", "--name-only"]);
+        assert!(
+            String::from_utf8_lossy(&staged.stdout).contains(".jigc/config/packs.yaml"),
+            "the present config layer is staged"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
