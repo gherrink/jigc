@@ -47,6 +47,21 @@ use std::process::Command;
 /// provisioning: the task's commit doc).
 const FALLBACK_TYPE: &str = "commit";
 
+/// The well-known commit-doc field/section ids the migration auto-provisioner fills.
+/// The CLI names them by string here for the same reason
+/// [`engine::write::render_commit_message`] does — the commit doctype is the one type
+/// whose sink is the VCS message, a deliberate documented coupling for the single
+/// VCS-sink type (`DECISIONS.md` 2026-05-31 → commit-message projection coupling).
+const COMMIT_FIELD_TYPE: &str = "type";
+const COMMIT_FIELD_SCOPE: &str = "scope";
+const COMMIT_SLOT_SUMMARY: &str = "summary";
+const COMMIT_SLOT_BODY: &str = "body";
+
+/// The conventional-commit `type` an auto-provisioned migration commit always carries:
+/// a migration is a documentation change, so it is formulaically `docs`
+/// (`auto-migration.md` → Hardening #4).
+const MIGRATION_COMMIT_TYPE: &str = "docs";
+
 /// Mint a task in the repo containing `start`: read HEAD, then open the working
 /// area + base pin under `<repo_root>/.jigc/`.
 ///
@@ -67,10 +82,15 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
 /// working area, and pin the base — mirroring [`mint_in_repo`] but with an **empty
 /// intent** (so the id falls back to the mint id-source) and a caller-supplied
 /// `workflow_id` (the off-router `migrate-<doctype>` workflow). It
-/// then **provisions the task's commit doc** (the `record-change` shape the migration
-/// task mirrors), so the migration task is provisioned exactly like a `record-change`
-/// task — harmless for the staged-only increment (only the staged target doc is
-/// validated; commit/retire/adopt is a later increment).
+/// then **auto-provisions the task's commit doc *filled*** (`auto-migration.md` →
+/// Hardening #4): a migration commit is mechanical, so the CLI fills it rather than
+/// blocking finalize on empty author-required commit fields. `type`/`scope` are filled
+/// as **field** values (`docs` / `doctype`) — the same deterministic CLI materialization
+/// the doc-level `default:`/`set: on-create` seed performs, no boundary crossing — and
+/// `summary`/`body` as **slot** prose from a CLI template that is a *pure deterministic
+/// function of (`source_path` + `doctype`)*, never judgment (the bounded slot-fill rule,
+/// `DECISIONS.md` S2). The agent then authors only the canonical doc and never touches
+/// the commit form.
 ///
 /// The task id is `migrate-<doctype>`, **not** the bare `doctype` name: the bare name
 /// collides with both `--task <doctype>` (resuming a `doctype`-slugged task) and the
@@ -85,6 +105,7 @@ pub(crate) fn mint_migration_in_repo(
     repo_root: &Path,
     doctype: &str,
     workflow_id: &str,
+    source_path: &str,
 ) -> Result<MintedTask> {
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(repo_root)?;
@@ -94,7 +115,7 @@ pub(crate) fn mint_migration_in_repo(
     let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base)
         .map_err(finding_to_err)?;
     let pack = make_pack();
-    provision_commit_doc(pack.as_ref(), &minted.dir, &minted.id)?;
+    provision_migration_commit_doc(pack.as_ref(), &minted.dir, &minted.id, source_path, doctype)?;
     Ok(minted)
 }
 
@@ -113,23 +134,105 @@ pub(crate) fn mint_migration_in_repo(
 /// `write-commands.md` → Instance provisioning; `DECISIONS.md` 2026-05-31 → inc-4
 /// fillable-form provisioning.)
 fn provision_commit_doc(pack: &dyn PackSource, dir: &Path, id: &str) -> Result<()> {
-    let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
-    let schema = crate::pack::load_pack_schema(pack, &bytes)
-        .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))?;
+    let schema = load_commit_schema(pack)?;
     let instance = fillable_form(&schema, id);
+    persist_provisioned_commit(&schema, dir, id, &instance)
+}
+
+/// Auto-provision the **migration** task's commit doc into the working area already
+/// **filled** — Hardening #4's no-author finalize. Unlike [`provision_commit_doc`]'s
+/// empty fillable form, the migration form carries the formulaic `docs`/`doctype` header
+/// fields plus a templated `summary`/`body` (a pure deterministic function of
+/// `source_path` and `doctype`), so the migration finalizes without the agent authoring
+/// the commit doc (`auto-migration.md` → Hardening #4; `DECISIONS.md` S2 → bounded fill).
+fn provision_migration_commit_doc(
+    pack: &dyn PackSource,
+    dir: &Path,
+    id: &str,
+    source_path: &str,
+    doctype: &str,
+) -> Result<()> {
+    let schema = load_commit_schema(pack)?;
+    let instance = migration_commit_form(&schema, id, source_path, doctype);
+    persist_provisioned_commit(&schema, dir, id, &instance)
+}
+
+/// Load + parse the embedded `commit` schema — the one read both commit-doc
+/// provisioners share.
+fn load_commit_schema(pack: &dyn PackSource) -> Result<Schema> {
+    let bytes = read_pack(pack, PackResourceKind::Schemas, FALLBACK_TYPE)?;
+    crate::pack::load_pack_schema(pack, &bytes)
+        .map_err(|e| anyhow::anyhow!("the `{FALLBACK_TYPE}` schema is malformed: {e}"))
+}
+
+/// Render `instance` to the task's `docs/commit:<id>.md` and record the commit doc as
+/// `created` in the manifest the by-task-id join consumes — the persist tail both
+/// provisioners share. A commit doc must appear in the manifest, and it is collision-safe
+/// by construction (`commit:<id>` is task-id-derived, unique per area, so it never reaches
+/// the join's same-slug suffix/clash rules) (`write-commands.md` → copy-on-first-touch).
+/// Write-once: a re-entry never flips it.
+fn persist_provisioned_commit(
+    schema: &Schema,
+    dir: &Path,
+    id: &str,
+    instance: &engine::write::Instance,
+) -> Result<()> {
     let path = state::instance_path(dir, &schema.ty, id);
-    let rendered = engine::write::render(&schema, &instance);
+    let rendered = engine::write::render(schema, instance);
     state::persist(&path, rendered.as_bytes())
         .with_context(|| format!("could not provision the commit doc for `{id}`"))?;
-    // Record the per-sub-task commit doc as `created` in the manifest the by-task-id
-    // join consumes — a commit doc must appear there, and it is collision-safe by
-    // construction (`commit:<sub-id>` is sub-task-id-derived, unique per sub-area, so
-    // it never reaches the join's same-slug suffix/clash rules) (`write-commands.md`
-    // → copy-on-first-touch). Write-once: a re-entry never flips it.
     let address = format!("{}:{id}", schema.ty);
     state::record_doc_provenance(dir, &address, engine::state::Provenance::Created)
         .with_context(|| format!("could not record provenance for the commit doc `{address}`"))?;
     Ok(())
+}
+
+/// The filled migration commit instance: the [`fillable_form`] skeleton with the
+/// `type`/`scope` header fields materialized (`docs` / `doctype`) and the
+/// `summary`/`body` slots filled from the deterministic migration template. Every filled
+/// value is a pure function of (`source_path`, `doctype`) — structural facts, never
+/// judgment (the bounded slot-fill rule).
+fn migration_commit_form(
+    schema: &Schema,
+    id: &str,
+    source_path: &str,
+    doctype: &str,
+) -> engine::write::Instance {
+    use engine::field_block::Value;
+    let mut instance = fillable_form(schema, id);
+    for section in &mut instance.sections {
+        for field in &mut section.fields {
+            match field.key.as_str() {
+                COMMIT_FIELD_TYPE => {
+                    field.value = Value::Scalar(MIGRATION_COMMIT_TYPE.to_string());
+                }
+                COMMIT_FIELD_SCOPE => field.value = Value::Scalar(doctype.to_string()),
+                _ => {}
+            }
+        }
+        match section.id.as_str() {
+            COMMIT_SLOT_SUMMARY => {
+                section.slot = Some(migration_commit_summary(source_path, doctype));
+            }
+            COMMIT_SLOT_BODY => section.slot = Some(migration_commit_body(source_path, doctype)),
+            _ => {}
+        }
+    }
+    instance
+}
+
+/// The templated commit **subject** prose — a pure deterministic function of the source
+/// path + doctype (the bounded slot-fill rule). Rendered into `docs(<doctype>): <this>`.
+fn migration_commit_summary(source_path: &str, doctype: &str) -> String {
+    format!("adopt {source_path} as a managed {doctype}")
+}
+
+/// The templated commit **body** prose — a pure deterministic function of the source path
+/// + doctype (the bounded slot-fill rule).
+fn migration_commit_body(source_path: &str, doctype: &str) -> String {
+    format!(
+        "Migrate the foreign {source_path} into the managed {doctype} document and retire the original."
+    )
 }
 
 /// Provision the sub-workflow's deterministic commit doc into the sub-task's

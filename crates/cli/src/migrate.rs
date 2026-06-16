@@ -113,21 +113,25 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
         )
     })?;
 
-    // Mint the off-router migration task (the `record-change` shape) + provision its
-    // commit doc, then stage the foreign bytes into the working area.
+    // The repo-relative foreign path — recorded so finalize can retire the foreign
+    // original inside the commit transaction (`design/auto-migration.md` →
+    // Retire-the-foreign-original), and fed to the mint so the auto-provisioned commit
+    // doc's templated summary/body name it (Hardening #4). Normalized to a clean
+    // repo-relative form — strip a `repo_root` prefix from an absolute spelling and drop
+    // redundant `./` components — so the finalize retire's path-collision guard (the
+    // in-location squatter) compares canonically regardless of the caller's spelling
+    // (review F2).
+    let recorded = repo_relative_source_path(&repo_root, path);
+
+    // Mint the off-router migration task (the `record-change` shape) + auto-provision its
+    // commit doc *filled* off the recorded source path + doctype, then stage the foreign
+    // bytes into the working area.
     let workflow_id = migration_workflow(doctype);
-    let minted = start::mint_migration_in_repo(&repo_root, doctype, &workflow_id)?;
+    let minted = start::mint_migration_in_repo(&repo_root, doctype, &workflow_id, &recorded)?;
     let source_path = minted.dir.join(SOURCE_FILE);
     state::persist(&source_path, foreign.as_bytes())
         .with_context(|| format!("could not stage the foreign source for `{}`", minted.id))?;
 
-    // Record the repo-relative foreign path so finalize can retire the foreign original
-    // inside the commit transaction (`design/auto-migration.md` →
-    // Retire-the-foreign-original). Normalize it to a clean repo-relative form — strip a
-    // `repo_root` prefix from an absolute spelling and drop redundant `./` components —
-    // so the finalize retire's path-collision guard (the in-location squatter) compares
-    // canonically regardless of the spelling the caller passed (review F2).
-    let recorded = repo_relative_source_path(&repo_root, path);
     state::persist(
         &minted.dir.join(state::SOURCE_PATH_FILE),
         recorded.as_bytes(),
