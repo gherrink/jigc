@@ -5,6 +5,7 @@
 //! command dispatch (which wires the invoker into the validate path in T3).
 //!
 //! The binary (`main.rs`) keeps its own command-dispatch module tree; only the
-//! cross-cutting, separately-testable invoker lives here.
+//! cross-cutting, separately-testable items live here.
 
+pub mod author;
 pub mod invoke;
