@@ -1739,4 +1739,79 @@ $ jigc task finalize migrate-changelog          # (a conformant rewrite, but the
 3. **The `enum` is enforced on the `id-from` field.** A foreign category outside the `category` enum (`Performance`) is **rejected** at conformance — the migration's "adopted iff conformant" guarantee is real, not hollow (RED 1). The LLM must map foreign categories to valid members.
 4. **Historical dates survive.** A release's `date` is set from the foreign file's historical date (`set-field` overwrites the `set: on-create` today-stamp), not stamped to today.
 5. **The review gate is the fidelity check, and it is byte-safe both ways.** Approval is required before commit; the foreign original is **retired only on approval** (the first byte-destructive op, CLI-owned, transactional); rejection leaves the foreign original untouched and adopts nothing (RED 2).
-6. **The honest bounds hold.** Changelog only (M24 generalizes); the doc preamble / per-release summary / `[Unreleased]` compare-link have no schema home and are **dropped** (accepted, mostly boilerplate); a foreign changelog whose versions collide under dot-dropping slugify (`1.2.0`/`1.20`→`120`) **blocks loudly** (accept-and-block), never silently suffixed. The migration-quality measure (a small real corpus + round-trip-conformance / fidelity-acceptance / content-preservation) is the milestone's done-bar.
+6. **The honest bounds hold.** Changelog only (**M25** generalizes to `adr`/`spec`/`prd`; **M24** first hardens this changelog reference — flow 26); the doc preamble / per-release summary / `[Unreleased]` compare-link have no schema home and are **dropped** (accepted, mostly boilerplate); a foreign changelog whose versions collide under dot-dropping slugify (`1.2.0`/`1.20`→`120`) **blocks loudly** (accept-and-block), never silently suffixed. The migration-quality measure (a small real corpus + round-trip-conformance / fidelity-acceptance / content-preservation) is the milestone's done-bar.
+
+## 26. Changelog migration, hardened — the full real-repo live migration through the batch path (M24)
+
+The M24 hardening of flow 25 ([auto-migration.md](auto-migration.md) → Hardening; [DECISIONS.md](../DECISIONS.md) → 2026-06-16 M24 planning). Flow 25 proved the migrate spine on a small synthetic file; flow 26 is the **done-bar** — the **full** live migration of two real, dateless repos (`project-delta` ≈ 12 releases, `project-gamma` ≈ 50, on throwaway clones), authored through the **declarative batch** so it isn't hundreds of round-trips, and measured (incl. **agent-call count**). The spine (verb / seam / review gate / retire / adopt) is flow 25's and is not restated; flow 26 exercises the seven hardening behaviours. Notation illustrative; each behaviour is red-proven at build.
+
+### The walk — batch authoring at scale, no fabricated dates
+
+```text
+$ git clone ~/Projects/project-delta /tmp/jigc-m24-project-delta && cd /tmp/jigc-m24-project-delta
+$ jigc setup && jigc ingest                 # root CHANGELOG.md classifies Unmanaged (left untouched)
+$ jigc migrate CHANGELOG.md --as changelog  # mints OFF-ROUTER task `migrate-changelog` (NOT named `changelog` — #9b), stages bytes
+  Read the source and author the canonical changelog in ONE payload via `jigc doc author`:
+  {{source}}                                ← the 127-line foreign content, source seam, read-only
+
+# the LLM authors the WHOLE changelog as ONE declarative payload — the CLI applies every leaf atomically (#1):
+$ jigc doc author changelog --from - <<'EOF'
+releases:
+  - version: "1.4.0"            # NO date: key — the foreign source is dateless, so NONE is stamped (#6)
+    changes:
+      - category: changed       # foreign "Improvements" + "Changes" MERGED onto one member (#7) — two groups can't share an id
+        notes: |
+          - <<the merged prose the LLM mapped from both foreign categories>>
+      - category: fixed
+        notes: |
+          - <<…>>
+  - version: "1.3.2"            # … all 12 releases in one payload, ~1 agent call instead of ~80
+    changes: [ … ]
+EOF
+> applied: create changelog + 12 releases + 27 change-groups + 27 notes slots — one staged buffer, byte-stable.
+
+$ jigc task finalize migrate-changelog       # WITHOUT --approve → the review gate
+> validate: clean
+> REVIEW the migration before it commits:
+>   CHANGELOG.md (foreign)  →  changelog/changelog.md (canonical)
+>   [the raw fidelity diff, AND a structural release-delta summary (#5):]
+>   ── source releases: 1.4.0, 1.3.2, 1.3.1, … (12)   rewrite releases: 1.4.0, 1.3.2, … (12)
+>   ── source releases absent from the rewrite: (none)            ← the reviewer needn't eyeball 12 releases
+> Approve? structure is guaranteed; content-faithfulness is your call.
+$ jigc task finalize migrate-changelog --approve
+> promote changelog/changelog.md · retire CHANGELOG.md · adopt · commit (auto-provisioned commit doc, #4)
+>   docs(changelog): migrate CHANGELOG.md to managed shape        ← formulaic message, CLI-provided, NOT authored by the agent
+> committed: D CHANGELOG.md  A changelog/changelog.md  A .jigc/config/…  A .jigc/.gitignore   ← the migration set + jigc's own tracked config; NO unrelated user WIP swept in (#9a)
+```
+
+The committed `changelog/changelog.md` carries all 12 releases, dateless ones rendered **with no date line** (no fabricated history), byte-stable; `jigc ingest` reports it adopted. The project-gamma run is the same path at ~50 releases.
+
+### The hardening reds — each fires on real input
+
+```text
+# #3 write-time enum reject — fires at the AUTHORING point, not finalize:
+$ jigc doc add-item changelog:changelog#releases/140/changes --title Improvements   # ∉ enum
+> BLOCK schema-conformance.field-value-conformant @ …/changes/improvements   ← rejected NOW (re-slug membership), not at finalize
+
+# #2 item-field value reject at write time (the closed parity gap):
+$ jigc doc set-field changelog:changelog#releases/140/date --value "March 2026"     # not ISO
+> BLOCK schema-conformance.field-value-conformant — date "March 2026" is not an ISO date   ← at write, not finalize
+
+# #1 remove-item retracts a mis-authored NESTED change-group (top-level remove_item couldn't reach it):
+$ jigc doc remove-item changelog:changelog#releases/140/changes/changed     # removes the nested group + its notes
+> removed.
+
+# #8 in-location squatter now authors end-to-end (was the M23 clean-fail):
+$ jigc migrate changelog/changelog.md --as changelog   # a non-conformant file AT the canonical path
+> working area seeded BLANK over the occupied canonical path (source-path == destination) — authors clean, no Frankenstein doc.
+```
+
+### What it asserts (the M24 acceptance bar)
+
+1. **Real-repo scale, measured.** The full project-delta + project-gamma changelogs migrate end-to-end; the four facts are recorded (round-trip conformance · fidelity-acceptance · content-preservation · **agent-call count**), the call-count cut being the batch path's payoff over per-leaf authoring.
+2. **The declarative batch authors the whole doc atomically (#1)**, byte-stable, doctype-general, without touching the source seam (boundary intact: agent authors the payload, CLI places every leaf).
+3. **Dateless sources don't fabricate history (#6)** — a release with no foreign date renders with no date, not today's.
+4. **Write-time validation gives immediate feedback (#2/#3)** — id-from enum and item-field values are rejected at the authoring point, not deferred to finalize.
+5. **`remove-item` retracts a mistake, including a nested change-group (#1)** — no whole-task discard needed.
+6. **The migration commit doc is auto-provided (#4)**, the review gate carries a structural release-delta summary (#5), categories map-and-merge onto the enum (#7), the in-location squatter authors end-to-end (#8), and finalize commits only the migration set {promote + retire + jigc's own tracked config}, not unrelated user WIP (#9a).
+7. **No new schemas, Framing A intact.** Every hardening fix is CLI/engine/guidance over the existing `changelog`/`commit` schemas; the strict parser stays the sole structural authority.
