@@ -134,18 +134,48 @@ fn ok(out: std::process::Output, what: &str) {
     );
 }
 
+/// Assert a `jigc` invocation exits 0, returning its trimmed stdout (the minted address
+/// an `add-item` echoes for the next splice).
+fn ok_stdout(out: std::process::Output, what: &str) -> String {
+    assert!(
+        out.status.success(),
+        "`{what}` must exit 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8 stdout")
+        .trim_end_matches('\n')
+        .to_owned()
+}
+
 /// The off-router migration task id — `migrate` mints `migrate-<doctype>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
 const TASK: &str = "migrate-changelog";
 
-/// A single-release foreign changelog body (the migration input).
+/// A single-release foreign changelog body (the migration input) — the raw Keep-a-Changelog
+/// shape, NON-conformant to the managed `changelog` schema (no `{#…}` anchors, no
+/// `<!-- fields -->` block), so an in-location squatter at the canonical path is a genuine
+/// non-conformant body the copy-in would otherwise build a Frankenstein onto.
 const FOREIGN: &str = "\
 # Changelog
 
 ## [0.1.0] - 2021-03-09
 ### Added
 - First public release.
+";
+
+/// The seeded BLANK changelog template — the empty managed skeleton `doc create` mints
+/// when it skips the copy-in. The contrast against `FOREIGN` is the whole point: the
+/// in-location squatter seeds THIS, never the foreign body.
+const EMPTY: &str = "\
+# changelog
+
+## Unreleased Changes
+
+
+## Releases
 ";
 
 /// Author a conformant `commit:<TASK>` doc (the transient sink) in the migration task.
@@ -379,4 +409,212 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
             "an absolute spelling must be normalized to the canonical repo-relative path",
         );
     }
+}
+
+/// The shipped changelog schema, loaded for the round-trip byte-stability assertion.
+fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
+    let yaml = fs::read(pack.join("schemas").join("changelog.yaml")).expect("read shipped schema");
+    engine::schema::load_schema(&yaml).expect("shipped changelog schema loads")
+}
+
+/// M24 inc-5 — the in-location squatter, end-to-end (the M23 e2e FAIL now passes;
+/// [auto-migration.md](../../../design/auto-migration.md) → Path-collision guard /
+/// Hardening #8, worked-examples flow 26 #8). A NON-conformant changelog committed
+/// already AT the canonical managed path (`changelog/changelog.md`) migrates end-to-end:
+///   - `doc create` over the occupied canonical path seeds the working area **BLANK** —
+///     the empty template, NOT the foreign squatter body. This targets the precise M23
+///     failure point: the idempotent-create copy-in (the M16 clobber-fix) read the
+///     foreign bytes in as the edit base, so the author sequence built onto
+///     non-conformant bytes and finalize blocked on a Frankenstein doc;
+///   - the author sequence builds a conformant release onto the clean skeleton;
+///   - `finalize --approve` rewrites the canonical doc **in place** (the retire is
+///     SKIPPED — the `source-path == promote-destination` guard), byte-stable, and the
+///     committed doc is the authored doc, not a foreign/authored merge.
+#[test]
+fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
+    let repo = TempDir::new("squatter-e2e");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    // A committed NON-conformant changelog squatter AT the canonical managed path.
+    fs::create_dir_all(repo.path().join("changelog")).expect("mk changelog dir");
+    fs::write(repo.path().join("changelog").join("changelog.md"), FOREIGN)
+        .expect("write in-location squatter");
+    git(repo.path(), &["add", "changelog/changelog.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "track in-location squatter"],
+    );
+
+    ok(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"]),
+        "setup",
+    );
+    ok(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["migrate", "changelog/changelog.md", "--as", "changelog"],
+        ),
+        "migrate changelog/changelog.md",
+    );
+
+    // `doc create` over the occupied canonical path seeds BLANK — the empty template, NOT
+    // the foreign squatter bytes (the precise M23 failure point).
+    ok(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "create",
+                "changelog",
+                "--title",
+                "Changelog",
+                "--task",
+                TASK,
+            ],
+        ),
+        "doc create changelog",
+    );
+    let staged = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(TASK)
+        .join("docs")
+        .join("changelog:changelog.md");
+    let seeded = fs::read_to_string(&staged).expect("read staged changelog");
+    assert_eq!(
+        seeded, EMPTY,
+        "the working area must seed the BLANK empty template over the occupied canonical path",
+    );
+    assert_ne!(
+        seeded, FOREIGN,
+        "the foreign squatter bytes must NOT be copied in as the edit base (the M23 failure point)",
+    );
+
+    // Author a conformant single release over the clean skeleton.
+    let release = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "0.1.0",
+                "--task",
+                TASK,
+            ],
+        ),
+        "add-item release",
+    );
+    ok(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "set-field",
+                &format!("{release}/date"),
+                "--value",
+                "2021-03-09",
+                "--task",
+                TASK,
+            ],
+        ),
+        "set-field date",
+    );
+    let group = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "add-item",
+                &format!("{release}/changes"),
+                "--title",
+                "Added",
+                "--task",
+                TASK,
+            ],
+        ),
+        "add-item change-group",
+    );
+    ok(
+        run_jigc_stdin(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "set-slot",
+                &format!("{group}/notes"),
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
+            b"- First public release.\n",
+        ),
+        "set-slot notes",
+    );
+    author_commit_doc(repo.path(), home.path(), &pack);
+
+    // The authored staged buffer — the canonical doc must equal exactly THIS after
+    // finalize (no foreign/authored merge).
+    let authored = fs::read_to_string(&staged).expect("read authored staged changelog");
+    assert_ne!(
+        authored, EMPTY,
+        "the author sequence must have written a release over the skeleton",
+    );
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    assert!(
+        out.status.success(),
+        "finalize --approve on the in-location squatter must land clean (exit 0); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The canonical doc holds the AUTHORED doc (no Frankenstein) and round-trips
+    // byte-stable.
+    let canonical = repo.path().join("changelog").join("changelog.md");
+    let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
+    assert_eq!(
+        committed, authored,
+        "the committed canonical doc is exactly the authored doc — not a foreign/authored merge",
+    );
+    let schema = shipped_changelog_schema(&pack);
+    let parsed = engine::write::instance_from_source(&schema, &committed)
+        .expect("the committed changelog re-parses");
+    assert_eq!(
+        engine::write::render(&schema, &parsed),
+        committed,
+        "the committed changelog is byte-stable across parse -> render:\n{committed}",
+    );
+
+    // The retire is SKIPPED — the file is rewritten in place (Modified), never deleted.
+    let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
+    assert!(
+        name_status.contains("M\tchangelog/changelog.md"),
+        "the squatter is rewritten in place (Modified), not retired:\n{name_status}",
+    );
+    assert!(
+        !name_status.contains("D\tchangelog/changelog.md"),
+        "the in-location squatter retire must be SKIPPED — no deletion of the just-written doc:\n{name_status}",
+    );
 }
