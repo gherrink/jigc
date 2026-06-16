@@ -1157,9 +1157,9 @@ fn field_target(schema: &Schema, address: &Address) -> Option<FieldTarget> {
         }
         // The item-leaf field hop. The CLI only extracts the `(section, item, field)`
         // triple; the engine `set_item_field_or_insert` adjudicates shape (item/section
-        // presence). PARITY GAP (DECISIONS.md 2026-06-07): item-leaf field writes carry
-        // NO value-type / heading-ceiling adjudication — unlike the section-level
-        // `set_field_validated` path — so a malformed item-field value is not rejected here.
+        // presence) AND the value's declared type — the 2026-06-07 parity gap is closed
+        // (M24 inc-2 T2): a malformed item-field value is rejected at the write verb with
+        // finalize's `schema-conformance.field-value-conformant` code.
         Fragment::UnitItemLeaf(section, item, field) => Some(FieldTarget::Item {
             section: section.as_str().to_string(),
             item: item.as_str().to_string(),

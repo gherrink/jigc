@@ -537,3 +537,133 @@ fn add_item_into_a_non_repeatable_section_blocks_with_a_routed_finding() {
         "the block carries a route directing the agent's next action; got:\n{stderr}"
     );
 }
+
+/// The shipped `changelog` schema (engine-native types only), so the byte-stable
+/// round-trip asserts against exactly the bytes the pack ships.
+fn changelog_schema() -> engine::schema::Schema {
+    const CHANGELOG_YAML: &[u8] = include_bytes!("../pack/schemas/changelog.yaml");
+    engine::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads")
+}
+
+/// The staged `changelog:changelog` singleton instance in the task working area.
+fn staged_changelog(repo: &Path, task: &str) -> String {
+    let path = repo
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("changelog:changelog.md");
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("read staged {path:?}: {e}"))
+}
+
+/// M24 inc-2 T2 — the item-field parity gap is closed: a `set-field` on a repeatable
+/// **item** field whose value fails its declared type is rejected **at the write verb**
+/// (not deferred to finalize), carrying the finding code finalize's item-field path
+/// emits (`schema-conformance.field-value-conformant`). The changelog release `date`
+/// (`type date`) is the one malformable item bullet field; a non-ISO value blocks, a
+/// valid ISO value passes and round-trips byte-stable. Driven over the real binary so
+/// the block is the emitted contract.
+#[test]
+fn malformed_item_field_date_blocks_at_the_set_field_verb() {
+    let (repo, home) = started_repo_on("record-change", "cut the release");
+    let task = "cut-the-release";
+
+    let created = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "changelog", "--title", "Changelog"],
+        None,
+    );
+    assert!(
+        created.status.success(),
+        "`jigc doc create changelog` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    // Mint a release item (title = the version string). The `date` materializes
+    // on-create; we then overwrite it via `set-field`. The minted item address prints
+    // on stdout — the address an agent next targets the `date` leaf at.
+    let added = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            "changelog:changelog#releases",
+            "--title",
+            "1.0.0",
+        ],
+        None,
+    );
+    assert!(
+        added.status.success(),
+        "`jigc doc add-item …#releases` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&added.stderr)
+    );
+    let item_addr = String::from_utf8_lossy(&added.stdout)
+        .trim_end_matches('\n')
+        .to_string();
+    let date_addr = format!("{item_addr}/date");
+
+    // A non-ISO date must block at the write verb, naming finalize's item-field code.
+    let blocked = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            &date_addr,
+            "--value",
+            "June 16, 2026",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        !blocked.status.success(),
+        "a non-ISO item-field date must block at the set-field verb (non-zero exit); \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&blocked.stderr);
+    let report: serde_json::Value = serde_json::from_str(stderr.trim())
+        .unwrap_or_else(|e| panic!("stderr is JSON: {e}; got:\n{stderr}"));
+    assert_eq!(
+        report["findings"][0]["code"], "schema-conformance.field-value-conformant",
+        "the block carries the code finalize's item-field path emits; got:\n{stderr}",
+    );
+
+    // The rejected write must persist nothing — the staged release carries no bad date.
+    assert!(
+        !staged_changelog(repo.path(), task).contains("June 16, 2026"),
+        "a rejected item-field write must persist nothing",
+    );
+
+    // A valid ISO date passes and round-trips byte-stable.
+    let ok = run_doc(
+        repo.path(),
+        home.path(),
+        &["set-field", &date_addr, "--value", "2026-06-16"],
+        None,
+    );
+    assert!(
+        ok.status.success(),
+        "a valid ISO item-field date must pass; stderr:\n{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+
+    let staged = staged_changelog(repo.path(), task);
+    assert!(
+        staged.contains("date: 2026-06-16"),
+        "the staged release carries the new ISO date; got:\n{staged}"
+    );
+
+    let schema = changelog_schema();
+    let instance =
+        engine::write::instance_from_source(&schema, &staged).expect("staged changelog re-parses");
+    let rerendered = engine::write::render(&schema, &instance);
+    assert_eq!(
+        rerendered, staged,
+        "the item-field-edited changelog is byte-stable across parse → render",
+    );
+}

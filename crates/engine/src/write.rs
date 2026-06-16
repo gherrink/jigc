@@ -1371,8 +1371,11 @@ pub fn set_nested_item_slot(
 /// `set-item-field`-or-insert for a (possibly nested) repeatable item, addressed by its
 /// parent-scoped id chain `item_ids`. The depth-aware dual of
 /// [`set_item_field_or_insert`]: it re-derives the nested item, sets/overwrites the
-/// field, re-renders at the item's nesting depth, and splices canonically. A genuinely
-/// absent item / non-repeatable section → [`GenerateError`].
+/// field, re-renders at the item's nesting depth, and splices canonically. Like its
+/// top-level dual it **adjudicates the value's declared type before touching bytes**
+/// (closing the 2026-06-07 item-field parity gap) — a malformed value is rejected as
+/// [`GenerateError::MalformedValue`]. A genuinely absent item / non-repeatable section →
+/// [`GenerateError`].
 pub fn set_nested_item_field_or_insert(
     schema: &Schema,
     source: &str,
@@ -1381,6 +1384,11 @@ pub fn set_nested_item_field_or_insert(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, GenerateError> {
+    if let Some(field) = item_field_schema(schema, section_id, item_ids, field_key)
+        && let Err(why) = check_value(field, &Value::Scalar(new_value.to_string()))
+    {
+        return Err(GenerateError::MalformedValue { why });
+    }
     let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
         what: format!("source does not conform to schema for section {section_id:?}"),
     })?;
@@ -1990,6 +1998,16 @@ pub enum GenerateError {
         /// The rejected title, verbatim.
         title: String,
     },
+    /// A repeatable item-field `set-field` value fails its declared schema type (a
+    /// non-ISO `date`, a non-member enum, …). The item-field write-time parity of the
+    /// header path's [`set_field_validated`] type check, closing the 2026-06-07 gap
+    /// (`design/write-commands.md` → Two check times). Mapped to finalize's item-field
+    /// code `schema-conformance.field-value-conformant`, so the two check times emit the
+    /// identical code.
+    MalformedValue {
+        /// The type-check failure message from [`check_value`].
+        why: String,
+    },
 }
 
 /// `set-slot` (section **absent**): materialize the absent body section `section_id`'s
@@ -2469,10 +2487,11 @@ pub fn insert_item_field(
 /// generation). [`add_item`] mints items *empty* (heading + empty slot span, no field
 /// bullets), so the first write of any declared item field always lands on the
 /// insert-absent half — exactly the header path's splice-or-generate shape
-/// ([`set_field`] ↔ [`insert_front_matter_field`]). This does **not** adjudicate the
-/// value's type or the slot heading-ceiling (the item-leaf adjudication-parity gap is
-/// pinned and deferred by the planner — see `DECISIONS.md` 2026-06-07): it is purely
-/// the byte-level write, generating the absent bullet. A genuinely absent item or a
+/// ([`set_field`] ↔ [`insert_front_matter_field`]). It **adjudicates the value's
+/// declared type before touching bytes** (the item-field write-time parity of the
+/// header path's [`set_field_validated`], closing the 2026-06-07 gap —
+/// `design/write-commands.md` → Two check times): a value failing its declared type is
+/// rejected as [`GenerateError::MalformedValue`]. A genuinely absent item or a
 /// non-repeatable section surfaces as [`GenerateError::WrongShape`].
 pub fn set_item_field_or_insert(
     schema: &Schema,
@@ -2482,6 +2501,11 @@ pub fn set_item_field_or_insert(
     field_key: &str,
     new_value: &str,
 ) -> Result<String, GenerateError> {
+    if let Some(field) = item_field_schema(schema, section_id, &[item_id], field_key)
+        && let Err(why) = check_value(field, &Value::Scalar(new_value.to_string()))
+    {
+        return Err(GenerateError::MalformedValue { why });
+    }
     match set_item_field(schema, source, section_id, item_id, field_key, new_value) {
         Ok(edited) => Ok(edited),
         // The field bullet is absent on a present item ⇒ generate it. (`set_item_field`
@@ -4417,6 +4441,14 @@ pub fn generate_error_finding(err: &GenerateError) -> Finding {
             "write.unslugable-title",
             format!("write rejected: title {title:?} has no slug-able content for an item id"),
         ),
+        // The item-field value-type reject emits finalize's item-field code (the same
+        // `field-value-conformant` literal `crate::validate::check_field_value` uses) so
+        // the two check times are byte-identical in their code; only the address leaf
+        // differs by call site (`design/write-commands.md` → Two check times).
+        GenerateError::MalformedValue { why } => (
+            "schema-conformance.field-value-conformant",
+            format!("write rejected: {why}"),
+        ),
     };
     Finding::blocking(code, message, Location::at(1, 1))
 }
@@ -4434,6 +4466,46 @@ fn field_schema<'a>(
         SectionBody::Repeatable { .. } => return None,
     };
     fields.iter().find(|f| f.id == field_key)
+}
+
+/// Find the [`SchemaField`] declared for `field_key` in the repeatable block a
+/// (possibly nested) item id chain bottoms out in: the section's own repeatable for a
+/// top-level chain (`["1-0-0"]`), descending one nested repeatable per nested-section
+/// segment for a deeper chain (`["1-0-0", "changes", "added"]`). The chain alternates
+/// item-id / nested-section-id segments (the shape [`physical_item_chain`] walks), so the
+/// returned field is declared exactly where the addressed item lives. `None` if the
+/// section is not repeatable, a nested-section segment names no declared repeatable, or
+/// the field is not declared at that level (an unknown item field stays unadjudicated
+/// here — the engine does not invent a type to check against).
+fn item_field_schema<'a>(
+    schema: &'a Schema,
+    section_id: &str,
+    item_chain: &[&str],
+    field_key: &str,
+) -> Option<&'a SchemaField> {
+    let section = schema.sections.iter().find(|s| s.id == section_id)?;
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return None;
+    };
+    let mut block = &repeatable.block;
+    let mut expect_item = true;
+    for segment in item_chain {
+        if expect_item {
+            expect_item = false;
+        } else {
+            block = block.iter().find_map(|leaf| match leaf {
+                crate::schema::Leaf::Repeatable { id, repeatable } if id == segment => {
+                    Some(&repeatable.block)
+                }
+                _ => None,
+            })?;
+            expect_item = true;
+        }
+    }
+    block.iter().find_map(|leaf| match leaf {
+        crate::schema::Leaf::Field(field) if field.id == field_key => Some(&**field),
+        _ => None,
+    })
 }
 
 /// Render a [`SpliceError`] as the gate's blocking [`Finding`].
