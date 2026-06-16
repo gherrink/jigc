@@ -578,6 +578,21 @@ pub fn migration_review(
                  the CLI guarantees structure, never content-faithfulness — review the \
                  fidelity diff below, then approve.\n\n",
             );
+            // The structural fidelity summary (`design/auto-migration.md` → Hardening #5):
+            // a release-level delta naming the source releases the rewrite dropped, so a
+            // reviewer needn't eyeball that N of M releases survived. The canonical side is
+            // conformant (release versions read off its `### …` item headings); the foreign
+            // side is non-conformant, so it is a HEURISTIC version-scan. Negative guard
+            // (DECISIONS C4, Framing A): display-only — labeled fuzzy, feeds no gate, no
+            // agent logic, no structural decision; never a second structural authority.
+            let dropped = dropped_release_versions(foreign, rewrites);
+            if !dropped.is_empty() {
+                out.push_str(&format!(
+                    "fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no \
+                     structural decision): source releases absent from the rewrite: {}\n\n",
+                    dropped.join(", "),
+                ));
+            }
             for (destination, rendered) in rewrites {
                 out.push_str("--- foreign source (staged seam)\n");
                 for line in foreign.lines() {
@@ -596,6 +611,62 @@ pub fn migration_review(
             out
         }
     }
+}
+
+/// The heuristic release-delta for the fidelity summary (`design/auto-migration.md` →
+/// Hardening #5): the version-like tokens scanned out of the `foreign` source that are
+/// absent from the conformant `rewrites`' release-item headings, sorted + de-duplicated
+/// for a stable display. Fuzzy by construction (the foreign side is non-conformant, so
+/// the scan can miss or invent a release); the result is **display-only** and feeds no
+/// structural decision (DECISIONS C4, Framing A).
+fn dropped_release_versions(foreign: &str, rewrites: &[(String, String)]) -> Vec<String> {
+    // The conformant side: release versions live on the `### …` item headings (an H3
+    // repeatable item — `### 1.0.0  {#100}`); a deeper `#### …` change-group heading and
+    // the H2 section headings carry no version token, so this naturally excludes them.
+    let mut kept: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for (_destination, rendered) in rewrites {
+        for line in rendered.lines() {
+            if let Some(title) = line.trim_start().strip_prefix("### ") {
+                kept.extend(scan_version_tokens(title));
+            }
+        }
+    }
+    let mut dropped: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for token in scan_version_tokens(foreign) {
+        if !kept.contains(&token) {
+            dropped.insert(token);
+        }
+    }
+    dropped.into_iter().collect()
+}
+
+/// Every maximal dotted-numeric run in `text` (e.g. `1.0.0`, `0.9`) — a deliberately
+/// fuzzy version-token scan: at least one `.` with a digit on each side, no leading or
+/// trailing/doubled dot. Dash-separated dates (`2021-06-01`) carry no `.` and so never
+/// match. Heuristic only — see [`dropped_release_versions`].
+fn scan_version_tokens(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut tokens = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
+            }
+            let token = &text[start..i];
+            if token.contains('.')
+                && !token.starts_with('.')
+                && !token.ends_with('.')
+                && !token.contains("..")
+            {
+                tokens.push(token.to_string());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    tokens
 }
 
 /// Render an **operational error** (an orchestration/`anyhow` failure — not a

@@ -173,9 +173,11 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
     );
 }
 
-/// Drive the migrate + author spine to a conformant staged `changelog:changelog` over a
-/// single-release foreign file, plus a conformant commit doc — the state finalize gates.
-fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str) {
+/// Drive the migrate + author spine to a conformant staged `changelog:changelog` whose
+/// releases are exactly `release_titles` (in order), over `foreign`, plus a conformant
+/// commit doc — the state finalize gates. Authoring fewer releases than `foreign` carries
+/// is the dropped-release case the fidelity summary surfaces.
+fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, release_titles: &[&str]) {
     ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
     fs::write(repo.join("CHANGELOG.md"), foreign).expect("write foreign CHANGELOG.md");
     ok_stdout(
@@ -206,78 +208,80 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str) {
         ),
         "doc create changelog",
     );
-    let release = ok_stdout(
-        run_jigc(
-            repo,
-            home,
-            pack,
-            &[
-                "doc",
-                "add-item",
-                "changelog:changelog#releases",
-                "--title",
-                "0.1.0",
-                "--task",
-                TASK,
-            ],
-            None,
-        ),
-        "add-item release",
-    );
-    ok_stdout(
-        run_jigc(
-            repo,
-            home,
-            pack,
-            &[
-                "doc",
-                "set-field",
-                &format!("{release}/date"),
-                "--value",
-                "2021-03-09",
-                "--task",
-                TASK,
-            ],
-            None,
-        ),
-        "set-field date",
-    );
-    let group = ok_stdout(
-        run_jigc(
-            repo,
-            home,
-            pack,
-            &[
-                "doc",
-                "add-item",
-                &format!("{release}/changes"),
-                "--title",
-                "Added",
-                "--task",
-                TASK,
-            ],
-            None,
-        ),
-        "add-item change-group",
-    );
-    ok_stdout(
-        run_jigc(
-            repo,
-            home,
-            pack,
-            &[
-                "doc",
-                "set-slot",
-                &format!("{group}/notes"),
-                "--from-file",
-                "-",
-                "--task",
-                TASK,
-            ],
-            Some(b"First public release.\n"),
-        ),
-        "set-slot notes",
-    );
+    for title in release_titles {
+        let release = ok_stdout(
+            run_jigc(
+                repo,
+                home,
+                pack,
+                &[
+                    "doc",
+                    "add-item",
+                    "changelog:changelog#releases",
+                    "--title",
+                    title,
+                    "--task",
+                    TASK,
+                ],
+                None,
+            ),
+            "add-item release",
+        );
+        ok_stdout(
+            run_jigc(
+                repo,
+                home,
+                pack,
+                &[
+                    "doc",
+                    "set-field",
+                    &format!("{release}/date"),
+                    "--value",
+                    "2021-03-09",
+                    "--task",
+                    TASK,
+                ],
+                None,
+            ),
+            "set-field date",
+        );
+        let group = ok_stdout(
+            run_jigc(
+                repo,
+                home,
+                pack,
+                &[
+                    "doc",
+                    "add-item",
+                    &format!("{release}/changes"),
+                    "--title",
+                    "Added",
+                    "--task",
+                    TASK,
+                ],
+                None,
+            ),
+            "add-item change-group",
+        );
+        ok_stdout(
+            run_jigc(
+                repo,
+                home,
+                pack,
+                &[
+                    "doc",
+                    "set-slot",
+                    &format!("{group}/notes"),
+                    "--from-file",
+                    "-",
+                    "--task",
+                    TASK,
+                ],
+                Some(b"First public release.\n"),
+            ),
+            "set-slot notes",
+        );
+    }
     make_commit_conformant(repo, home, pack, TASK);
 }
 
@@ -295,7 +299,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
-    staged_migration(repo.path(), home.path(), &pack, FOREIGN);
+    staged_migration(repo.path(), home.path(), &pack, FOREIGN, &["0.1.0"]);
 
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
     let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
@@ -388,6 +392,107 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
     assert!(
         repo.path().join(".jigc").join("tasks").join(TASK).exists(),
         "a blocked review must keep the working area for the --approve re-run"
+    );
+}
+
+/// A foreign changelog carrying TWO releases — the dropped-release case: the agent's
+/// canonical rewrite authors only `1.0.0`, silently dropping `0.9.0`.
+const FOREIGN_MULTI: &str = "\
+# Changelog
+
+## [1.0.0] - 2022-01-01
+### Added
+- Stable release.
+
+## [0.9.0] - 2021-06-01
+### Added
+- Beta release.
+";
+
+#[test]
+fn review_gate_names_dropped_release_as_fuzzy_advisory_and_feeds_nothing_structural() {
+    // M24 Inc 6 / T3 — the structural fidelity summary (auto-migration.md → Hardening #5;
+    // DECISIONS C4). The foreign source carries 1.0.0 + 0.9.0; the authored canonical
+    // rewrite carries only 1.0.0, so 0.9.0 is dropped. The review gate must surface the
+    // release-delta as a FUZZY, ADVISORY aid — and feed NOTHING structural (the gate still
+    // exits 4 regardless, and a follow-up `--approve` still proceeds to commit).
+    let repo = TempDir::new("repo-delta");
+    let home = TempDir::new("home-delta");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    staged_migration(repo.path(), home.path(), &pack, FOREIGN_MULTI, &["1.0.0"]);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK],
+        None,
+    );
+    // The delta feeds nothing structural: the gate still exits 4 (review-pending),
+    // exactly as it would with no dropped release.
+    assert_eq!(
+        out.status.code(),
+        Some(4),
+        "the fidelity summary must not change the gate's exit code; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // The advisory line names the dropped release and is labeled fuzzy/heuristic.
+    let summary_line = rendered
+        .lines()
+        .find(|l| l.contains("source releases absent from the rewrite"))
+        .unwrap_or_else(|| {
+            panic!("the gate must render the release-delta summary; got:\n{rendered}")
+        });
+    assert!(
+        summary_line.contains("0.9.0"),
+        "the summary must name the dropped 0.9.0; got:\n{summary_line}"
+    );
+    let lower = summary_line.to_lowercase();
+    assert!(
+        lower.contains("fuzzy") || lower.contains("heuristic"),
+        "the summary must carry a fuzzy/heuristic label (Framing A — never a second \
+         structural authority); got:\n{summary_line}"
+    );
+    // The kept release is NOT listed as absent (the canonical side is precise).
+    assert!(
+        !summary_line.contains("1.0.0"),
+        "the kept release must not be reported as dropped; got:\n{summary_line}"
+    );
+
+    // The summary feeds nothing structural: a follow-up `--approve` still proceeds to
+    // commit, identical to a migration with no dropped release.
+    let log_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    let approved = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+        None,
+    );
+    assert!(
+        approved.status.success(),
+        "`--approve` must proceed to commit despite the dropped release; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approved.stdout),
+        String::from_utf8_lossy(&approved.stderr),
+    );
+    let log_after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(
+        log_after,
+        log_before + 1,
+        "`--approve` must land exactly one commit (the delta gates nothing)"
     );
 }
 
