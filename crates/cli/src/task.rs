@@ -580,7 +580,10 @@ impl TaskArea {
         // only check. `--approve` falls through to the transaction. Inert on a
         // non-migration task: no source seam, so the existing path runs unchanged.
         let source_seam = self.dir.join(crate::migrate::SOURCE_FILE);
-        if source_seam.exists() && !approve {
+        // A migration task is identified once by the staged source seam (T2): it gates
+        // both the review block below and the narrowed `git add` in the transaction.
+        let is_migration = source_seam.exists();
+        if is_migration && !approve {
             let foreign = std::fs::read_to_string(&source_seam).with_context(|| {
                 format!("could not read the staged source seam at {source_seam:?}")
             })?;
@@ -615,6 +618,7 @@ impl TaskArea {
             &self.dir,
             &schemas,
             Some(swept),
+            is_migration,
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
             Ok(hook_output) => {
@@ -797,6 +801,9 @@ pub(crate) fn execute_finalize_plan(
         cleanup_dir,
         schemas,
         None,
+        // The milestone single-commit boundary is never a migration — it keeps the
+        // blanket `git add --all` sweep (the general dirty-tree redesign stays deferred).
+        false,
     )? {
         // T3 — relay the aggregate `git_commit`'s non-blocking hook output (the
         // `squash: true` milestone boundary; the per-sub-task `commit_empty_message`
@@ -828,6 +835,14 @@ pub(crate) fn execute_finalize_plan(
 /// by post-commit **only when the commit lands**, so an absorbed OOB baseline advances
 /// durably exactly once (`design/reconciliation.md` → Persistence of the shifted
 /// baseline). The milestone callers run no sweep and pass `None`.
+///
+/// `is_migration` narrows the stage step: a migration finalize stages only its own paths
+/// (see [`stage_migration`]) instead of the blanket `git add --all` every other caller
+/// passes `false` to use.
+// The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
+// roots, the plan, schemas, the post-sweep record, the migration flag); each is a real
+// input, not incidental coupling, so an allow is clearer here than a parameter struct.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn try_execute_finalize_plan(
     repo_root: &Path,
     jigc_root: &Path,
@@ -836,6 +851,7 @@ pub(crate) fn try_execute_finalize_plan(
     cleanup_dir: &Path,
     schemas: &BTreeMap<String, Schema>,
     post_sweep: Option<FileStateRecord>,
+    is_migration: bool,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -857,7 +873,18 @@ pub(crate) fn try_execute_finalize_plan(
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
         ensure_jigc_gitignore(jigc_root)?;
-        git_run(repo_root, &["add", "--all"])?;
+        if is_migration {
+            // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
+            // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
+            // changes — the promoted canonical doc(s), each retired original's deletion,
+            // and jigc's git-tracked config layer (`.jigc/config/` + `.jigc/.gitignore`,
+            // which `setup` writes but never commits, so this first migration commit must
+            // land them) — never arbitrary user WIP. The general dirty-tree-sweep
+            // redesign for non-migration tasks stays deferred.
+            stage_migration(repo_root, plan)?;
+        } else {
+            git_run(repo_root, &["add", "--all"])?;
+        }
         git_commit(repo_root, &msg_path)
     })();
     let _ = std::fs::remove_file(&msg_path);
@@ -970,6 +997,45 @@ fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<Vec<(PathBuf, Vec
         }
     }
     Ok(captured)
+}
+
+/// The narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
+/// `DECISIONS.md` B2). A migration touches no code, so instead of the blanket `git add
+/// --all` the non-migration finalize uses, stage exactly the migration's own paths:
+///
+/// - each promoted canonical doc (`plan.promotions[*].destination`);
+/// - each retired foreign original (`plan.retirements[*]`) — already deleted from the
+///   worktree by [`retire`], so `git add -- <path>` stages the **removal** (git ≥ 2.0
+///   stages deletions for a pathspec);
+/// - jigc's git-*tracked* config layer (`.jigc/config/` + `.jigc/.gitignore`) — `jigc
+///   setup` writes it but never commits, so the first migration commit is what lands it
+///   (review B2); without it a naive {promote + retire} narrowing would strand the setup.
+///
+/// This deliberately excludes arbitrary user WIP (the whole point of #9a). The general
+/// dirty-tree-sweep redesign for non-migration tasks stays deferred.
+fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> Result<()> {
+    let mut pathspecs: Vec<String> = Vec::new();
+    for promotion in &plan.promotions {
+        pathspecs.push(promotion.destination.clone());
+    }
+    for retirement in &plan.retirements {
+        let spec = retirement
+            .to_str()
+            .with_context(|| format!("retirement path {retirement:?} is not valid UTF-8"))?;
+        // [`retire`] has already deleted the original from the worktree. Stage that
+        // deletion only when the file was **tracked** at HEAD — a `git add` pathspec that
+        // matches nothing (an untracked-then-deleted foreign original) is a fatal error,
+        // whereas the blanket `git add --all` tolerated it. An untracked deletion needs no
+        // staging (it was never in the index), so skipping it is correct, not a loss.
+        if path_at_head(repo_root, spec) {
+            pathspecs.push(spec.to_owned());
+        }
+    }
+    pathspecs.push(".jigc/config".to_owned());
+    pathspecs.push(".jigc/.gitignore".to_owned());
+    let mut args: Vec<&str> = vec!["add", "--"];
+    args.extend(pathspecs.iter().map(String::as_str));
+    git_run(repo_root, &args)
 }
 
 /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /

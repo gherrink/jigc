@@ -538,7 +538,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
         // The milestone boundary runs no reconcile sweep → no post-sweep record (`None`).
         match crate::task::try_execute_finalize_plan(
-            &repo_root, &jigc_root, &dir, &plan, &dir, &schemas, None,
+            &repo_root, &jigc_root, &dir, &plan, &dir, &schemas, None, false,
         )? {
             Ok(hook_output) => {
                 // T3 — relay ONLY the aggregate `git_commit`'s non-blocking hook output
