@@ -316,13 +316,15 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             "allowlist_file": summary.allowlist_file,
         })),
         Format::Agent | Format::Human => {
-            let mut out = String::from("jigc setup — adapter installed\n\n");
+            let mut out = String::from(
+                "jigc setup — adapter installed\n\njigc is now wired into this project; two host files were updated:\n",
+            );
             out.push_str("  - bootstrap reference → ");
             out.push_str(&summary.line_file);
-            out.push('\n');
+            out.push_str("   (orients your assistant to `jigc start` each session)\n");
             out.push_str("  - jigc allowlist → ");
             out.push_str(&summary.allowlist_file);
-            out.push('\n');
+            out.push_str("   (pre-approves the `jigc` commands the agent runs)\n");
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -415,11 +417,47 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                     out.push_str(&finding_line(finding));
                 }
             }
+            // The verdict legend (#9c — less-terse triage): one line per verdict class
+            // **actually present**, each stating why a row classified that way and the
+            // next action. Keyed to the rows (never a static menu that claims an absent
+            // class), in a fixed display order, so a report with one class names only
+            // that one and an empty report renders no legend at all (inert).
+            if !report.rows.is_empty() {
+                out.push_str("\nWhat the verdicts above mean, and what to do next:\n");
+                for (verdict, gloss) in VERDICT_LEGEND {
+                    if report.rows.iter().any(|row| row.verdict == *verdict) {
+                        out.push_str("  ");
+                        out.push_str(verdict);
+                        out.push_str(" — ");
+                        out.push_str(gloss);
+                        out.push('\n');
+                    }
+                }
+            }
             out.push_str(ROUTING_FOOTER);
             out
         }
     }
 }
+
+/// The verdict legend (`design/auto-migration.md` → Hardening #9c): the why + next
+/// action for each ingest verdict class, in fixed display order. Only the entries
+/// whose verdict is present in a report render, so the legend never claims a class
+/// the scan didn't produce.
+const VERDICT_LEGEND: &[(&str, &str)] = &[
+    (
+        "adoptable",
+        "conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).",
+    ),
+    (
+        "needs-reconcile",
+        "parses as the named type but conflicts; fix it per the row's route, then re-run `jigc ingest`.",
+    ),
+    (
+        "unmanaged",
+        "matches no managed schema; left as-is — bring it under management with `jigc migrate <path> --as <doctype>`.",
+    ),
+];
 
 /// Render a `jigc unmanage <path>` outcome to the surface `format` selects (M21
 /// Increment 4 / T1; `design/project-setup.md` → Flow 2 hardening → Teardown / cleanup
@@ -1459,18 +1497,114 @@ mod tests {
           route: reconcile decisions/auth-choice.md against the `adr` schema
         adoptable decisions/rate-limit.md → adr  (adopted — indexed + baselined, no file moved)
         unmanaged docs/notes.md → (parses against no schema — left untouched)
+
+        What the verdicts above mean, and what to do next:
+          adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+          needs-reconcile — parses as the named type but conflicts; fix it per the row's route, then re-run `jigc ingest`.
+          unmanaged — matches no managed schema; left as-is — bring it under management with `jigc migrate <path> --as <doctype>`.
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        assert!(agent.ends_with(ROUTING_FOOTER));
+        // The legend names only the verdicts actually present, each with its why +
+        // next action (less-terse triage, #9c) — and never claims an absent verdict.
+        assert!(
+            agent.contains("unmanaged — matches no managed schema")
+                && agent.contains("jigc migrate <path> --as <doctype>"),
+            "the unmanaged legend states why + the next action; got:\n{agent}",
+        );
+        assert!(
+            agent.contains("adoptable — conformant at its managed location"),
+            "the adoptable legend states why it was adopted; got:\n{agent}",
+        );
+        // Human renders identically to agent in the MVP.
+        assert_eq!(ingest(Format::Human, &report), agent);
+
+        // JSON is the generic projection — parseable, no footer, and carries NONE of
+        // the agent-text legend prose (the structured shape is unchanged — #9c regression
+        // watch).
+        let json_out = ingest(Format::Json, &report);
+        assert!(!json_out.contains(ROUTING_FOOTER));
+        assert!(!json_out.contains("What the verdicts"));
+        assert!(!json_out.contains("bring it under management"));
+        assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
+        assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
+        assert!(json_out.contains("\"adopted\": true"));
+    }
+
+    /// A report carrying only one verdict class names **only that verdict** in the
+    /// legend — the legend is keyed to the verdicts actually present, never a static
+    /// menu that claims absent classes (#9c — "why *this* row classified that way").
+    #[test]
+    fn render_ingest_legend_names_only_present_verdicts() {
+        use crate::ingest::{IngestReport, TriageRow};
+
+        let report = IngestReport {
+            rows: vec![TriageRow {
+                file: "docs/notes.md".to_string(),
+                best_match: None,
+                verdict: "unmanaged",
+                finding: None,
+                adopted: false,
+            }],
+        };
+
+        let agent = ingest(Format::Agent, &report);
+        assert!(
+            agent.contains("unmanaged — matches no managed schema"),
+            "the present verdict is explained; got:\n{agent}",
+        );
+        assert!(
+            !agent.contains("adoptable —") && !agent.contains("needs-reconcile —"),
+            "the legend names no absent verdict; got:\n{agent}",
+        );
+    }
+
+    /// An empty report renders no legend block (the omitting context stays inert — no
+    /// dangling "What the verdicts mean" heading over zero rows).
+    #[test]
+    fn render_ingest_empty_report_renders_no_legend() {
+        use crate::ingest::IngestReport;
+
+        let agent = ingest(Format::Agent, &IngestReport { rows: Vec::new() });
+        assert!(
+            !agent.contains("What the verdicts"),
+            "no rows → no legend heading; got:\n{agent}",
+        );
+        assert!(agent.ends_with(ROUTING_FOOTER));
+    }
+
+    /// The successful-setup summary names each installed target **and what it is for**
+    /// (#9c — less-terse setup output), ending with the routing footer; the JSON shape
+    /// is unchanged (the `installed`/`line_file`/`allowlist_file` keys, no explanatory
+    /// prose — regression watch).
+    #[test]
+    fn render_setup_success_names_what_was_installed() {
+        let summary = SetupSummary {
+            line_file: "CLAUDE.md".to_string(),
+            allowlist_file: ".claude/settings.json".to_string(),
+        };
+
+        let agent = setup_success(Format::Agent, &summary);
+        insta::assert_snapshot!(agent, @r"
+        jigc setup — adapter installed
+
+        jigc is now wired into this project; two host files were updated:
+          - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
+          - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
         // Human renders identically to agent in the MVP.
-        assert_eq!(ingest(Format::Human, &report), agent);
+        assert_eq!(setup_success(Format::Human, &summary), agent);
 
-        // JSON is the generic projection — parseable, no footer.
-        let json_out = ingest(Format::Json, &report);
+        // JSON is unchanged: the three stable keys, none of the explanatory prose.
+        let json_out = setup_success(Format::Json, &summary);
         assert!(!json_out.contains(ROUTING_FOOTER));
-        assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
-        assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
-        assert!(json_out.contains("\"adopted\": true"));
+        assert!(!json_out.contains("wired into this project"));
+        assert!(!json_out.contains("orients your assistant"));
+        assert!(json_out.contains("\"installed\": true"));
+        assert!(json_out.contains("\"line_file\": \"CLAUDE.md\""));
+        assert!(json_out.contains("\"allowlist_file\": \".claude/settings.json\""));
     }
 
     /// The free-prose `describe` renderer frames the engine's woven definition
