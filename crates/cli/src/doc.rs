@@ -347,7 +347,8 @@ fn run_add_item(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let (edited, minted_path) = apply_add_item_target(&schema, &source, target, addr, title)?;
+    let (edited, minted_path) =
+        apply_add_item_target(&schema, &source, target, addr, title, task.is_migration()?)?;
 
     persist(&path, &edited)?;
     // The minted item address — the next address an agent fills the item's slot/field
@@ -366,12 +367,21 @@ fn run_add_item(
 /// shared by the per-leaf `add-item` verb (which prints the minted fragment) and the
 /// batch `doc author` apply (which discards it). No I/O (the [`apply_field_target`]
 /// sibling). The minted fragment is the canonical section-qualified chain.
+///
+/// `migration` suppresses the `set: on-create` date stamp (`design/auto-migration.md`
+/// → Hardening #6): a release migrated from a *dateless* foreign file must render with
+/// **no date** rather than fabricating the migration day as false history — so in
+/// migration mode no on-create fields are materialized (top-level AND nested), and an
+/// absent `set: on-create` date finalizes clean (it is not author-required). Authoring
+/// (`migration = false`) keeps stamping today; an explicit `set-field date` is a
+/// separate leaf, unaffected either way.
 fn apply_add_item_target(
     schema: &Schema,
     source: &str,
     target: AddItemTarget,
     addr: &str,
     title: &str,
+    migration: bool,
 ) -> Result<(String, String), DocFailure> {
     // Write-time id-from-enum reject (`design/auto-migration.md` → Hardening #3;
     // write-commands.md → Two check times): when the destination repeatable's `id-from`
@@ -388,7 +398,12 @@ fn apply_add_item_target(
             // the repeatable block is stamped with the current date here (the CLI owns the
             // clock — the engine stays a pure function; `write.rs` names this "the CLI
             // `set: on-create` deriver"). Single-slot / no-on-create items pass no fields.
-            let on_create = on_create_item_fields(schema, &section);
+            // Migration mode suppresses the stamp entirely (no false-history date).
+            let on_create = if migration {
+                Vec::new()
+            } else {
+                on_create_item_fields(schema, &section)
+            };
             let edited = engine::write::add_item(schema, source, &section, title, None, &on_create)
                 .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
             let minted = format!("{}/{}", section, engine::slug::slugify(title));
@@ -405,8 +420,14 @@ fn apply_add_item_target(
             // `on_create_item_fields`) — a `date` leaf declared `set: on-create` inside
             // the nested block is stamped here. A nested block with no such leaf passes
             // none (the shipped `changes` groups carry only `category` + `notes`).
-            let on_create =
-                on_create_nested_item_fields(schema, &section, &parents, &nested_section);
+            // Migration mode suppresses the stamp entirely (symmetric with the
+            // top-level branch — inert for the dateless `changes` groups, kept for
+            // parity should a nested on-create date leaf ever ship).
+            let on_create = if migration {
+                Vec::new()
+            } else {
+                on_create_nested_item_fields(schema, &section, &parents, &nested_section)
+            };
             let edited = engine::write::add_nested_item(
                 schema,
                 source,
@@ -862,9 +883,10 @@ fn run_author(
     // **also** discard that staged file — otherwise an empty doc leaks for a batch that
     // "persisted nothing". Rollback = drop the in-memory buffer + remove the staged
     // file `create_gated` provisioned; the block finding propagates unchanged.
+    let migration = task.is_migration()?;
     let mut buffer = read_staged(&created.path, &created.address)?;
     for leaf in &plan.leaves {
-        match apply_leaf(schema, &buffer, &created.address, leaf) {
+        match apply_leaf(schema, &buffer, &created.address, leaf, migration) {
             Ok(edited) => buffer = edited,
             Err(failure) => {
                 let _ = std::fs::remove_file(&created.path);
@@ -889,6 +911,7 @@ fn apply_leaf(
     source: &str,
     head: &str,
     leaf: &::cli::author::Leaf,
+    migration: bool,
 ) -> Result<String, DocFailure> {
     use ::cli::author::Leaf;
     match leaf {
@@ -897,7 +920,8 @@ fn apply_leaf(
             let address = parse_addr(&addr)?;
             let target = add_item_target(&address)
                 .with_context(|| format!("no section addressed by `{addr}`"))?;
-            let (edited, _minted) = apply_add_item_target(schema, source, target, &addr, title)?;
+            let (edited, _minted) =
+                apply_add_item_target(schema, source, target, &addr, title, migration)?;
             Ok(edited)
         }
         Leaf::SetField { fragment, value } => {
@@ -1025,6 +1049,17 @@ impl ActiveTask {
         }
         // Neither staged nor committed → the unchanged absent-instance reject.
         Ok(read_staged(path, addr)?)
+    }
+
+    /// Whether this task is a **migration** task — minted by `jigc migrate`, the only
+    /// writer of the recorded `source-path` (`migrate.rs`; `jigc start` never writes
+    /// it). The discriminator the on-create date suppression reads
+    /// (`design/auto-migration.md` → Hardening #6): a migration's dateless release must
+    /// not fabricate the migration day, so the `set: on-create` stamp is dropped here.
+    fn is_migration(&self) -> Result<bool> {
+        Ok(state::read_source_path(&self.dir)
+            .context("could not read the task's migration source path")?
+            .is_some())
     }
 
     /// Load the schema for `type_name` from the embedded pack.
