@@ -88,6 +88,23 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
+    /// Author a **whole** instance from one declarative payload — the doctype-general
+    /// batch verb (`design/write-commands.md` → Batch authoring; `design/auto-migration.md`
+    /// → Hardening #1). Applies the equivalent `create` + N `add-item` / `set-slot` /
+    /// `set-field` over a **single in-memory buffer**, persisting **once**. The agent
+    /// authors the payload (the prose + which-content-goes-where); the CLI places every
+    /// leaf (the boundary intact).
+    Author {
+        /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
+        doctype: String,
+        /// The payload source: a path, or `-` for stdin (the whole-doc payload is
+        /// large, so it arrives the same way slot prose does — never inline).
+        #[arg(long)]
+        from: String,
+        /// The active task to scope the write to (see `Create::task`).
+        #[arg(long)]
+        task: Option<String>,
+    },
 }
 
 /// A `doc` verb's failure: a write-time **block** (a structured [`Finding`],
@@ -131,6 +148,11 @@ impl DocCommand {
                 from_file,
                 task,
             } => run_set_slot(cwd, &addr, &from_file, task.as_deref()),
+            DocCommand::Author {
+                doctype,
+                from,
+                task,
+            } => run_author(cwd, &doctype, &from, task.as_deref()),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -175,10 +197,28 @@ fn run_set_field(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let edited = match target {
+    let edited = apply_field_target(&schema, &source, target, addr, value)?;
+
+    persist(&path, &edited)?;
+    Ok(())
+}
+
+/// Splice a resolved field write into the in-memory `source`, returning the edited
+/// buffer — the source→source transform shared by the per-leaf `set-field` verb and
+/// the batch `doc author` apply (the chain-the-primitives B1 path). It does **no**
+/// I/O: the caller reads the buffer (per-leaf: from the staged file; batch: the
+/// running in-memory buffer) and persists the result.
+fn apply_field_target(
+    schema: &Schema,
+    source: &str,
+    target: FieldTarget,
+    addr: &str,
+    value: &str,
+) -> Result<String, DocFailure> {
+    Ok(match target {
         FieldTarget::Section { section, field } => set_field_validated(
-            &schema,
-            &source,
+            schema,
+            source,
             &section,
             &field,
             &Value::Scalar(value.to_string()),
@@ -188,7 +228,7 @@ fn run_set_field(
             section,
             item,
             field,
-        } => set_item_field_or_insert(&schema, &source, &section, &item, &field, value).map_err(
+        } => set_item_field_or_insert(schema, source, &section, &item, &field, value).map_err(
             |e| {
                 block(
                     &engine::write::generate_error_finding(&e),
@@ -203,7 +243,7 @@ fn run_set_field(
             field,
         } => {
             let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
-            set_nested_item_field_or_insert(&schema, &source, &section, &item_ids, &field, value)
+            set_nested_item_field_or_insert(schema, source, &section, &item_ids, &field, value)
                 .map_err(|e| {
                     block(
                         &engine::write::generate_error_finding(&e),
@@ -212,10 +252,7 @@ fn run_set_field(
                     )
                 })?
         }
-    };
-
-    persist(&path, &edited)?;
-    Ok(())
+    })
 }
 
 /// `jigc doc set-slot <addr> --from-file <path|->` — splice slot prose (stdin/file).
@@ -236,14 +273,30 @@ fn run_set_slot(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let edited = match target {
-        SlotTarget::Section(section) => set_slot_validated(&schema, &source, &section, &prose)
+    let edited = apply_slot_target(&schema, &source, target, addr, &prose)?;
+
+    persist(&path, &edited)?;
+    Ok(())
+}
+
+/// Splice resolved slot prose into the in-memory `source`, returning the edited
+/// buffer — the source→source transform shared by the per-leaf `set-slot` verb and
+/// the batch `doc author` apply. No I/O (the [`apply_field_target`] sibling).
+fn apply_slot_target(
+    schema: &Schema,
+    source: &str,
+    target: SlotTarget,
+    addr: &str,
+    prose: &str,
+) -> Result<String, DocFailure> {
+    Ok(match target {
+        SlotTarget::Section(section) => set_slot_validated(schema, source, &section, prose)
             .map_err(|f| block(&f, "set-slot", addr))?,
         SlotTarget::Item {
             section,
             item,
             leaf,
-        } => set_item_slot(&schema, &source, &section, &item, &leaf, &prose)
+        } => set_item_slot(schema, source, &section, &item, &leaf, prose)
             .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?,
         SlotTarget::NestedItem {
             section,
@@ -251,13 +304,10 @@ fn run_set_slot(
             leaf,
         } => {
             let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
-            set_nested_item_slot(&schema, &source, &section, &item_ids, &leaf, &prose)
+            set_nested_item_slot(schema, source, &section, &item_ids, &leaf, prose)
                 .map_err(|e| block(&engine::write::splice_error_finding(&e), "set-slot", addr))?
         }
-    };
-
-    persist(&path, &edited)?;
-    Ok(())
+    })
 }
 
 /// `jigc doc add-item <addr>#<section> --title <…>` — mint a repeatable item into a
@@ -284,19 +334,42 @@ fn run_add_item(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
-    let (edited, minted_path) = match target {
+    let (edited, minted_path) = apply_add_item_target(&schema, &source, target, addr, title)?;
+
+    persist(&path, &edited)?;
+    // The minted item address — the next address an agent fills the item's slot/field
+    // at (the same slugify the engine mints the `{#id}` from, never re-spelled).
+    println!(
+        "{}:{}#{}",
+        address.r#type.as_str(),
+        address.slug.as_str(),
+        minted_path,
+    );
+    Ok(())
+}
+
+/// Mint a repeatable item into the resolved `target` over the in-memory `source`,
+/// returning `(edited buffer, minted item fragment)` — the source→source transform
+/// shared by the per-leaf `add-item` verb (which prints the minted fragment) and the
+/// batch `doc author` apply (which discards it). No I/O (the [`apply_field_target`]
+/// sibling). The minted fragment is the canonical section-qualified chain.
+fn apply_add_item_target(
+    schema: &Schema,
+    source: &str,
+    target: AddItemTarget,
+    addr: &str,
+    title: &str,
+) -> Result<(String, String), DocFailure> {
+    Ok(match target {
         AddItemTarget::TopLevel { section } => {
             // Materialize the item block's `set: on-create` fields at mint, mirroring the
             // doc-level on-create contract: a `date` leaf declared `set: on-create` inside
             // the repeatable block is stamped with the current date here (the CLI owns the
             // clock — the engine stays a pure function; `write.rs` names this "the CLI
             // `set: on-create` deriver"). Single-slot / no-on-create items pass no fields.
-            let on_create = on_create_item_fields(&schema, &section);
-            let edited =
-                engine::write::add_item(&schema, &source, &section, title, None, &on_create)
-                    .map_err(|e| {
-                        block(&engine::write::generate_error_finding(&e), "add-item", addr)
-                    })?;
+            let on_create = on_create_item_fields(schema, &section);
+            let edited = engine::write::add_item(schema, source, &section, title, None, &on_create)
+                .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
             let minted = format!("{}/{}", section, engine::slug::slugify(title));
             (edited, minted)
         }
@@ -312,10 +385,10 @@ fn run_add_item(
             // the nested block is stamped here. A nested block with no such leaf passes
             // none (the shipped `changes` groups carry only `category` + `notes`).
             let on_create =
-                on_create_nested_item_fields(&schema, &section, &parents, &nested_section);
+                on_create_nested_item_fields(schema, &section, &parents, &nested_section);
             let edited = engine::write::add_nested_item(
-                &schema,
-                &source,
+                schema,
+                source,
                 &section,
                 &parent_ids,
                 &nested_section,
@@ -340,18 +413,7 @@ fn run_add_item(
             );
             (edited, minted)
         }
-    };
-
-    persist(&path, &edited)?;
-    // The minted item address — the next address an agent fills the item's slot/field
-    // at (the same slugify the engine mints the `{#id}` from, never re-spelled).
-    println!(
-        "{}:{}#{}",
-        address.r#type.as_str(),
-        address.slug.as_str(),
-        minted_path,
-    );
-    Ok(())
+    })
 }
 
 /// The resolved destination of an `add-item` address: a **top-level** section
@@ -593,6 +655,107 @@ fn run_create(
     .map_err(|f| block(&f, "create", type_name))?;
     println!("{}", created.address);
     Ok(())
+}
+
+/// `jigc doc author <doctype> --from <payload>` — author a **whole** instance from one
+/// declarative payload (`design/write-commands.md` → Batch authoring; `design/
+/// auto-migration.md` → Hardening #1). **Path A** (`DECISIONS.md` 2026-06-16, review
+/// B1): the create runs through the shared [`state::create_gated`] (so the create-gate
+/// is enforced and the in-location-squatter blank-seed fix applies — both live in
+/// `state::create`), which persists the empty doc; then each lowered `add-item` /
+/// `set-field` / `set-slot` leaf is chained over a **single in-memory buffer** with
+/// **no persist between leaves**, persisting **once** at the end. This is exactly the
+/// per-leaf verb chain minus the intermediate persists (which are byte no-ops), so
+/// byte-stability + the create-gate + the squatter seam are inherited unchanged — it
+/// deliberately does **not** build an `Instance` and `render` it. The boundary holds:
+/// the agent authors the payload (the prose + which-content-goes-where); the CLI places
+/// every leaf.
+fn run_author(
+    cwd: &Path,
+    doctype: &str,
+    from: &str,
+    task_id: Option<&str>,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
+    // Parse runs before any persist: a structurally-malformed payload is rejected
+    // whole here, nothing staged (`design/write-commands.md` → Batch authoring).
+    let payload = read_handoff(from)?;
+    let plan = ::cli::author::parse_author_payload(&payload)?;
+
+    let schemas = task.schemas()?;
+    let gate = task.workflow_gate()?;
+    // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
+    // (the same clock-side CLI work `run_create` does) so the created instance carries
+    // them before the leaves chain over it.
+    let on_create = schemas
+        .get(doctype)
+        .map(on_create_doc_fields)
+        .unwrap_or_default();
+    // The create persists the empty doc through the gated path (gate + squatter seams).
+    let created = state::create_gated(
+        &task.dir,
+        &schemas,
+        &gate.allows_create,
+        doctype,
+        &plan.title,
+        &task.repo_root,
+        &on_create,
+    )
+    .map_err(|f| block(&f, "author", doctype))?;
+    // `create_gated` admitted the doctype, so it is in the loaded set — resolve the
+    // schema from there rather than re-reading the pack.
+    let schema = schemas
+        .get(doctype)
+        .expect("create_gated admitted the doctype, so it is in the schema set");
+
+    // Chain every leaf over the single in-memory buffer, no persist between leaves.
+    let mut buffer = read_staged(&created.path, &created.address)?;
+    for leaf in &plan.leaves {
+        buffer = apply_leaf(schema, &buffer, &created.address, leaf)?;
+    }
+    // Persist once: the single write the batch promises.
+    persist(&created.path, &buffer)?;
+    println!("{}", created.address);
+    Ok(())
+}
+
+/// Apply one lowered batch [`Leaf`](::cli::author::Leaf) over the in-memory `source`,
+/// returning the edited buffer. The leaf's `fragment` is the address tail relative to
+/// the created instance; prepending `head` (`<doctype>:<slug>`) reconstitutes the full
+/// address the existing per-leaf target resolvers (`field_target` / `slot_target` /
+/// `add_item_target`) accept verbatim — so the batch reuses the same resolution +
+/// splice primitives the per-leaf verbs do (the shared `apply_*_target` helpers).
+fn apply_leaf(
+    schema: &Schema,
+    source: &str,
+    head: &str,
+    leaf: &::cli::author::Leaf,
+) -> Result<String, DocFailure> {
+    use ::cli::author::Leaf;
+    match leaf {
+        Leaf::AddItem { fragment, title } => {
+            let addr = format!("{head}#{fragment}");
+            let address = parse_addr(&addr)?;
+            let target = add_item_target(&address)
+                .with_context(|| format!("no section addressed by `{addr}`"))?;
+            let (edited, _minted) = apply_add_item_target(schema, source, target, &addr, title)?;
+            Ok(edited)
+        }
+        Leaf::SetField { fragment, value } => {
+            let addr = format!("{head}#{fragment}");
+            let address = parse_addr(&addr)?;
+            let target = field_target(schema, &address)
+                .with_context(|| format!("no field addressed by `{addr}`"))?;
+            apply_field_target(schema, source, target, &addr, value)
+        }
+        Leaf::SetSlot { fragment, prose } => {
+            let addr = format!("{head}#{fragment}");
+            let address = parse_addr(&addr)?;
+            let target = slot_target(schema, &address)
+                .with_context(|| format!("no slot addressed by `{addr}`"))?;
+            apply_slot_target(schema, source, target, &addr, prose)
+        }
+    }
 }
 
 /// The active task: its working-area directory + the embedded pack to resolve
