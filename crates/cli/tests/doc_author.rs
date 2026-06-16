@@ -451,6 +451,75 @@ fn mid_chain_leaf_failure_stages_nothing() {
     );
 }
 
+/// A payload whose leaves all parse cleanly but whose **last** nested change-group
+/// carries a non-member `category`: a first release authors fully (create + add-item +
+/// nested add-item + slot), then a `changes` group titled `Improvements` re-slugs to
+/// `improvements` — outside the `category` enum (`added`/`changed`/…/`security`). The
+/// `id-from: category` enum reject (M24 inc-2 T1) must fire **mid-chain** through the
+/// batch's shared `add-item` path, not be deferred to finalize, so a long authoring run
+/// fails fast at the point of the mistake (`design/auto-migration.md` → Hardening #3;
+/// `design/write-commands.md` → Two check times). The create already persisted the empty
+/// singleton before the chain, so atomicity demands nothing stays staged.
+const BAD_CATEGORY_PAYLOAD: &str = r#"title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.2.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: "<<- OAuth device-code flow.>>"
+              - title: Improvements
+"#;
+
+#[test]
+fn batch_with_non_member_category_stages_nothing() {
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    let repo = TempDir::new("bad-category");
+    let task = ready_repo(repo.path(), home.path(), &pack, "author bad category");
+    let baseline = staged_docs(repo.path(), &task);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["doc", "author", "changelog", "--from", "-"],
+        Some(BAD_CATEGORY_PAYLOAD.as_bytes()),
+    );
+
+    // Non-zero exit carrying the **shared** id-from-enum block code — identical to
+    // finalize's (`schema-conformance.field-value-conformant`); the batch inherits the
+    // write-verb reject by chaining the same `add-item` primitive (reuse is verified, not
+    // assumed — red if the batch's add-item path bypasses the check).
+    assert!(
+        !out.status.success(),
+        "a batch leaf with a non-member category must fail the whole batch; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("schema-conformance.field-value-conformant"),
+        "the failure surfaces the shared id-from-enum block code; stderr:\n{stderr}",
+    );
+    // The block addresses the slug-cased id-from leaf, not the raw `--title`.
+    assert!(
+        stderr.contains("improvements"),
+        "the block names the slug-cased offending category; stderr:\n{stderr}",
+    );
+
+    // Atomicity: the empty changelog `create_gated` staged before the chain must roll
+    // back, so the staged set is byte-for-byte the pre-author baseline — nothing persisted.
+    assert_eq!(
+        staged_docs(repo.path(), &task),
+        baseline,
+        "a non-member-category batch leaves the staged set unchanged from the pre-author baseline",
+    );
+}
+
 /// A SINGLE-release dated changelog — the cold spike's minimal multi-leaf case (one
 /// release with its optional `link`, one nested change-group carrying slot prose). It
 /// exercises the same create + add-item + set-field + set-slot chain as the marquee
