@@ -169,13 +169,43 @@ fn migrate_mints_off_router_task_and_feeds_the_source_seam() {
     );
     let stdout = ok_stdout(out, "jigc migrate CHANGELOG.md --as changelog");
 
-    // The off-router migration task is minted: its working area + base pin exist.
-    // The intent slugs from the changelog type-name fallback, so the id is stable.
-    let task = "changelog";
+    // The off-router migration task is minted under the `migrate-<doctype>` id — NOT
+    // the bare doctype name, which collides with `--task changelog` / the `changelog`
+    // doctype namespace (`auto-migration.md` → Hardening #9). Its working area + base
+    // pin exist, and the bare `changelog` namespace stays free.
+    let task = "migrate-changelog";
     let task_dir = repo.path().join(".jigc").join("tasks").join(task);
     assert!(
         task_dir.join("base.json").is_file(),
         "the migration task's base pin must exist at {task_dir:?}",
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".jigc")
+            .join("tasks")
+            .join("changelog")
+            .exists(),
+        "the migration must not squat the bare `changelog` task namespace",
+    );
+
+    // The bare `changelog` namespace stays free: an independent task minted at
+    // `changelog` does not serial-collide with the migration.
+    let independent = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "single-task", "changelog"],
+    );
+    ok_stdout(independent, "jigc start --workflow single-task changelog");
+    assert!(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join("changelog")
+            .join("base.json")
+            .is_file(),
+        "an independent `changelog` task mints without colliding with the migration",
     );
 
     // The recorded minting workflow is the off-router migrate workflow — NOT a

@@ -65,25 +65,34 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
 
 /// Mint an **off-router migration task** under `repo_root`: read HEAD, open the
 /// working area, and pin the base — mirroring [`mint_in_repo`] but with an **empty
-/// intent** (so the id falls back to the `type_name` doctype, e.g. `changelog`) and a
-/// caller-supplied `workflow_id` (the off-router `migrate-<doctype>` workflow). It
+/// intent** (so the id falls back to the mint id-source) and a caller-supplied
+/// `workflow_id` (the off-router `migrate-<doctype>` workflow). It
 /// then **provisions the task's commit doc** (the `record-change` shape the migration
 /// task mirrors), so the migration task is provisioned exactly like a `record-change`
 /// task — harmless for the staged-only increment (only the staged target doc is
 /// validated; commit/retire/adopt is a later increment).
 ///
+/// The task id is `migrate-<doctype>`, **not** the bare `doctype` name: the bare name
+/// collides with both `--task <doctype>` (resuming a `doctype`-slugged task) and the
+/// `doctype` id-space itself, so a migration task named after its doctype would block
+/// an independent task at that name (`auto-migration.md` → Hardening #9). The
+/// `migrate-` prefix is fed as the empty-intent id-source fallback (`mint_task`'s
+/// `type_name` arg), so the mint slugs it to a stable, collision-free `migrate-<doctype>`.
+///
 /// The `jigc migrate` verb owns this mint so composition never double-mints; it stages
 /// the foreign source separately and then composes via [`compose_migrate_in_repo`].
 pub(crate) fn mint_migration_in_repo(
     repo_root: &Path,
-    type_name: &str,
+    doctype: &str,
     workflow_id: &str,
 ) -> Result<MintedTask> {
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(repo_root)?;
-    // Empty intent → the id slugs from `type_name` (the doctype), a stable migration id.
-    let minted =
-        state::mint_task(&jigc_root, "", type_name, workflow_id, base).map_err(finding_to_err)?;
+    // Empty intent → the id slugs from this `migrate-<doctype>` fallback, keeping the
+    // bare `<doctype>` task namespace free.
+    let mint_id_source = format!("migrate-{doctype}");
+    let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base)
+        .map_err(finding_to_err)?;
     let pack = make_pack();
     provision_commit_doc(pack.as_ref(), &minted.dir, &minted.id)?;
     Ok(minted)

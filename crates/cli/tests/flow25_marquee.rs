@@ -141,8 +141,10 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
-/// The off-router migration task id — `migrate` mints from the doctype-name fallback.
-const TASK: &str = "changelog";
+/// The off-router migration task id — `migrate` mints `migrate-<doctype>` (the empty
+/// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
+/// namespace free (`auto-migration.md` -> Hardening #9).
+const TASK: &str = "migrate-changelog";
 
 /// The shipped changelog schema, loaded for the byte-stable round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
