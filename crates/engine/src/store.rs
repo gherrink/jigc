@@ -27,7 +27,7 @@
 //! 2026-05-31).
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use crate::address::{Address, Fragment};
 use crate::finding::{Finding, Location, Severity};
@@ -43,6 +43,29 @@ use crate::schema::Schema;
 pub fn canonical_path(repo_root: &Path, schema: &Schema, slug: &str) -> Option<PathBuf> {
     let location = schema.location.as_deref()?;
     Some(repo_root.join(location).join(format!("{slug}.md")))
+}
+
+/// Lexically normalize a path — drop `.` components and resolve `..` against the
+/// accumulated prefix — **without touching the filesystem**.
+///
+/// The path-collision guards (`design/auto-migration.md` → Path-collision guard)
+/// compare a recorded foreign source path against a canonical managed path; this
+/// pass makes those comparisons spelling-insensitive (review F2/C1) so a path
+/// recorded as `./changelog/changelog.md` (or with redundant `..` components) still
+/// compares equal to the clean canonical `changelog/changelog.md`. Shared so the
+/// retire-side (finalize) and create-side (state) guards normalize identically.
+pub fn lexical_normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in p.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                out.pop();
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
 }
 
 /// Read the committed managed doc named by `address` and slice its `#fragment` to
@@ -246,6 +269,21 @@ mod tests {
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+
+    #[test]
+    fn lexical_normalize_collapses_curdir_and_parentdir() {
+        // The shared path-collision normalization (review C1): a `./`-prefixed or
+        // redundant-`..` spelling of the canonical path collapses to the clean form,
+        // so retire-side and create-side guards compare equal regardless of spelling.
+        assert_eq!(
+            lexical_normalize(Path::new("./changelog/changelog.md")),
+            PathBuf::from("changelog/changelog.md"),
+        );
+        assert_eq!(
+            lexical_normalize(Path::new("changelog/../changelog/changelog.md")),
+            PathBuf::from("changelog/changelog.md"),
+        );
+    }
 
     /// A throwaway directory that removes itself on drop — keeps store-read tests
     /// off any real repo tree.

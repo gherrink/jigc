@@ -50,7 +50,7 @@
 //! branch — there is nothing to roll back before phase 3.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -251,7 +251,7 @@ pub fn plan_finalize(
 /// destination (the canonical managed path `<location>/<slug>.md`), the managed write
 /// *is* the in-place rewrite — the foreign file is not a distinct original, so the
 /// retire is **skipped** (else the plan would delete the doc it just wrote). Both sides
-/// are [`lexical_normalize`]d so the guard holds regardless of the recorded path's
+/// are [`crate::store::lexical_normalize`]d so the guard holds regardless of the recorded path's
 /// spelling (review F2: a `./`-prefixed or redundant-component spelling of the canonical
 /// path must still be recognized as the squatter). The common root-`CHANGELOG.md` ≠
 /// `changelog/changelog.md` case retires the distinct original.
@@ -266,10 +266,10 @@ fn plan_retirements(
             if promotions.is_empty() {
                 return Err(vec![migration_no_replacement_finding(path.trim())]);
             }
-            let foreign = lexical_normalize(Path::new(path.trim()));
+            let foreign = crate::store::lexical_normalize(Path::new(path.trim()));
             if promotions
                 .iter()
-                .any(|p| lexical_normalize(Path::new(&p.destination)) == foreign)
+                .any(|p| crate::store::lexical_normalize(Path::new(&p.destination)) == foreign)
             {
                 Ok(Vec::new()) // in-location squatter — rewritten in place, not retired.
             } else {
@@ -279,26 +279,6 @@ fn plan_retirements(
         Ok(_) => Ok(Vec::new()),
         Err(err) => Err(vec![source_path_io_finding(task_dir, &err)]),
     }
-}
-
-/// Lexically normalize a path — drop `.` components and resolve `..` against the
-/// accumulated prefix — **without touching the filesystem**. The retire path-collision
-/// guard compares the recorded foreign source against each promote destination; this
-/// pass makes the comparison spelling-insensitive (review F2) so a foreign source
-/// recorded as `./changelog/changelog.md` (or with redundant components) still compares
-/// equal to the clean canonical destination `changelog/changelog.md`.
-fn lexical_normalize(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for component in p.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
 }
 
 /// The phase-1 decision over a moved base (`design/finalize.md` → Parallel
