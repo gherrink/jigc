@@ -368,13 +368,16 @@ fn run_add_item(
 /// batch `doc author` apply (which discards it). No I/O (the [`apply_field_target`]
 /// sibling). The minted fragment is the canonical section-qualified chain.
 ///
-/// `migration` suppresses the `set: on-create` date stamp (`design/auto-migration.md`
+/// `migration` suppresses the `set: on-create` **date** stamp (`design/auto-migration.md`
 /// → Hardening #6): a release migrated from a *dateless* foreign file must render with
 /// **no date** rather than fabricating the migration day as false history — so in
-/// migration mode no on-create fields are materialized (top-level AND nested), and an
-/// absent `set: on-create` date finalizes clean (it is not author-required). Authoring
-/// (`migration = false`) keeps stamping today; an explicit `set-field date` is a
-/// separate leaf, unaffected either way.
+/// migration mode the date stamp (and only the date stamp) is dropped, top-level AND
+/// nested, and an absent `set: on-create` date finalizes clean (it is not
+/// author-required). The scoping is date-specific by predicate, not a blanket drop of
+/// every create-time field: a non-date `set: on-create`/`default` leaf (none ships on the
+/// changelog release block today, but M25 generalizes this path to adr/spec/prd) still
+/// materializes under migration. Authoring (`migration = false`) keeps stamping today; an
+/// explicit `set-field date` is a separate leaf, unaffected either way.
 fn apply_add_item_target(
     schema: &Schema,
     source: &str,
@@ -398,12 +401,10 @@ fn apply_add_item_target(
             // the repeatable block is stamped with the current date here (the CLI owns the
             // clock — the engine stays a pure function; `write.rs` names this "the CLI
             // `set: on-create` deriver"). Single-slot / no-on-create items pass no fields.
-            // Migration mode suppresses the stamp entirely (no false-history date).
-            let on_create = if migration {
-                Vec::new()
-            } else {
-                on_create_item_fields(schema, &section)
-            };
+            // Migration mode drops the date stamp (and only the date stamp — no
+            // false-history date) inside the deriver, leaving any other create-time
+            // field materializing normally.
+            let on_create = on_create_item_fields(schema, &section, migration);
             let edited = engine::write::add_item(schema, source, &section, title, None, &on_create)
                 .map_err(|e| block(&engine::write::generate_error_finding(&e), "add-item", addr))?;
             let minted = format!("{}/{}", section, engine::slug::slugify(title));
@@ -420,14 +421,16 @@ fn apply_add_item_target(
             // `on_create_item_fields`) — a `date` leaf declared `set: on-create` inside
             // the nested block is stamped here. A nested block with no such leaf passes
             // none (the shipped `changes` groups carry only `category` + `notes`).
-            // Migration mode suppresses the stamp entirely (symmetric with the
-            // top-level branch — inert for the dateless `changes` groups, kept for
-            // parity should a nested on-create date leaf ever ship).
-            let on_create = if migration {
-                Vec::new()
-            } else {
-                on_create_nested_item_fields(schema, &section, &parents, &nested_section)
-            };
+            // Migration mode drops the date stamp (and only the date stamp), symmetric
+            // with the top-level branch — inert for the dateless `changes` groups, kept
+            // for parity should a nested on-create date leaf ever ship.
+            let on_create = on_create_nested_item_fields(
+                schema,
+                &section,
+                &parents,
+                &nested_section,
+                migration,
+            );
             let edited = engine::write::add_nested_item(
                 schema,
                 source,
@@ -637,14 +640,49 @@ fn remove_item_target(address: &Address) -> Option<RemoveItemTarget> {
     }
 }
 
-/// The `set: on-create` fields the repeatable `section_id`'s item block declares,
-/// each materialized to its CLI-derived value at mint time. Currently the only
-/// derived `set:` is `on-create` over a `date` leaf — stamped with [`today_iso`]
-/// (the doc-level `set: on-create` contract, applied to a repeatable item). A
-/// non-repeatable / unknown section, or a block with no such leaf, yields no
-/// fields (the existing single-slot/no-date `add-item` behavior is unchanged).
-fn on_create_item_fields(schema: &Schema, section_id: &str) -> Vec<engine::field_block::Field> {
-    use engine::schema::{FieldType, Leaf};
+/// One repeatable-block field leaf's create-time materialization, shared by the
+/// item and nested-item on-create derivers (the per-item mirror of the doc-level
+/// [`on_create_doc_fields`] leaf logic): a `set: on-create` `date` leaf stamps
+/// [`today_iso`], a field carrying a literal `default:` stamps that default, any other
+/// leaf yields nothing. `migration` drops the date stamp — and **only** the date stamp
+/// (the dateless-history concern, `design/auto-migration.md` → Hardening #6, scoped to
+/// the date by predicate, not a blanket drop of every create-time field): a non-date
+/// `set: on-create`/`default` leaf still materializes under migration, so when M25
+/// generalizes this path to adr/spec/prd a non-date create-time field is not silently
+/// suppressed.
+fn on_create_block_field(
+    field: &engine::schema::Field,
+    today: &str,
+    migration: bool,
+) -> Option<engine::field_block::Field> {
+    use engine::schema::FieldType;
+
+    let value = if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") {
+        if migration {
+            return None;
+        }
+        today.to_owned()
+    } else {
+        field.default.clone()?
+    };
+    Some(engine::field_block::Field {
+        key: field.id.clone(),
+        value: Value::Scalar(value),
+    })
+}
+
+/// The create-time fields the repeatable `section_id`'s item block declares, each
+/// materialized to its value at mint time via [`on_create_block_field`] — a `set:
+/// on-create` `date` (stamped with [`today_iso`], suppressed under `migration`) and any
+/// literal `default:` leaf. A non-repeatable / unknown section, or a block with no such
+/// leaf, yields no fields (the existing single-slot/no-date `add-item` behavior is
+/// unchanged).
+fn on_create_item_fields(
+    schema: &Schema,
+    section_id: &str,
+    migration: bool,
+) -> Vec<engine::field_block::Field> {
+    use engine::schema::Leaf;
 
     let Some(section) = schema.sections.iter().find(|s| s.id == section_id) else {
         return Vec::new();
@@ -657,36 +695,30 @@ fn on_create_item_fields(schema: &Schema, section_id: &str) -> Vec<engine::field
         .block
         .iter()
         .filter_map(|leaf| match leaf {
-            Leaf::Field(field)
-                if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") =>
-            {
-                Some(engine::field_block::Field {
-                    key: field.id.clone(),
-                    value: Value::Scalar(today.clone()),
-                })
-            }
+            Leaf::Field(field) => on_create_block_field(field, &today, migration),
             _ => None,
         })
         .collect()
 }
 
-/// The `set: on-create` fields the **nested** repeatable named `nested_section_id`
-/// (reached by walking the section-qualified `parents` chain from `section_id`)
-/// declares, each materialized to its CLI-derived value at mint time — the nested
-/// mirror of [`on_create_item_fields`], so a nested `add-item` is symmetric with the
-/// top-level one (which already materializes via `on_create_item_fields`; before this
-/// the nested branch passed no fields, silently dropping a nested `set: on-create`
-/// date — inert for the shipped changelog `changes` groups, but a latent asymmetry).
-/// The schema walk mirrors the engine's nested-block resolution: descend the parent
-/// chain's **named** nested-section ids. A section/chain that resolves to no nested
-/// repeatable, or a block with no on-create date leaf, yields no fields.
+/// The create-time fields the **nested** repeatable named `nested_section_id` (reached
+/// by walking the section-qualified `parents` chain from `section_id`) declares, each
+/// materialized at mint time via [`on_create_block_field`] (`set: on-create` date —
+/// suppressed under `migration` — plus any literal `default:`) — the nested mirror of
+/// [`on_create_item_fields`], so a nested `add-item` is symmetric with the top-level one
+/// (before this the nested branch passed no fields, silently dropping a nested `set:
+/// on-create` date — inert for the shipped changelog `changes` groups, but a latent
+/// asymmetry). The schema walk mirrors the engine's nested-block resolution: descend the
+/// parent chain's **named** nested-section ids. A section/chain that resolves to no
+/// nested repeatable, or a block with no create-time leaf, yields no fields.
 fn on_create_nested_item_fields(
     schema: &Schema,
     section_id: &str,
     parents: &[String],
     nested_section_id: &str,
+    migration: bool,
 ) -> Vec<engine::field_block::Field> {
-    use engine::schema::{FieldType, Leaf};
+    use engine::schema::Leaf;
 
     let Some(section) = schema.sections.iter().find(|s| s.id == section_id) else {
         return Vec::new();
@@ -714,14 +746,7 @@ fn on_create_nested_item_fields(
         .block
         .iter()
         .filter_map(|leaf| match leaf {
-            Leaf::Field(field)
-                if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") =>
-            {
-                Some(engine::field_block::Field {
-                    key: field.id.clone(),
-                    value: Value::Scalar(today.clone()),
-                })
-            }
+            Leaf::Field(field) => on_create_block_field(field, &today, migration),
             _ => None,
         })
         .collect()
@@ -1645,7 +1670,7 @@ mod tests {
         }];
         let spec = engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec loads");
         assert!(
-            on_create_item_fields(&spec, "criteria").is_empty(),
+            on_create_item_fields(&spec, "criteria", false).is_empty(),
             "a block with no `set: on-create` field stamps nothing",
         );
 
@@ -1666,7 +1691,7 @@ sections:
         - { id: body, slot: { hint: "what" } }
 "#;
         let schema = load_schema(yaml).expect("fixture ledger loads");
-        let fields = on_create_item_fields(&schema, "entries");
+        let fields = on_create_item_fields(&schema, "entries", false);
         assert_eq!(fields.len(), 1, "exactly the one on-create date field");
         assert_eq!(fields[0].key, "date", "the stamped field is `date`");
         match &fields[0].value {
@@ -1675,8 +1700,83 @@ sections:
         }
         // An unknown / non-repeatable section yields nothing.
         assert!(
-            on_create_item_fields(&schema, "no-such-section").is_empty(),
+            on_create_item_fields(&schema, "no-such-section", false).is_empty(),
             "an unknown section stamps nothing",
+        );
+    }
+
+    /// Migration mode (`design/auto-migration.md` → Hardening #6) suppresses the
+    /// `set: on-create` **date** stamp — and ONLY the date stamp — so a release migrated
+    /// from a *dateless* foreign file renders with no date rather than fabricating the
+    /// migration day as false history. The suppression is scoped to the date by
+    /// predicate, not a blanket drop of every create-time field: a non-date `default:`
+    /// leaf in the same item block still materializes under migration (the latent trap
+    /// M25 inherits when it generalizes this path to adr/spec/prd — proved here on the
+    /// reference). The shipped changelog release block carries only a `date` on-create
+    /// field, so this fixture augments it with a non-date `default:` leaf to make the
+    /// scoping observable; the byte-identical authoring path (`migration = false`) keeps
+    /// stamping today.
+    #[test]
+    fn migration_suppresses_only_the_on_create_date_not_other_create_fields() {
+        // A fixture item block carrying BOTH a `set: on-create` date AND a non-date
+        // field with a literal `default:` — the two create-time leaf kinds.
+        let yaml = br#"
+type: ledger
+location: ledger/
+id-from: title
+description: A fixture running ledger.
+usage: pin date-scoped migration suppression.
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: date, type: date, set: on-create }
+        - { id: kind, type: enum, of: [note, fix], default: note }
+        - { id: body, slot: { hint: "what" } }
+"#;
+        let schema = load_schema(yaml).expect("fixture ledger loads");
+
+        // Authoring mode stamps BOTH the on-create date and the default.
+        let authored = on_create_item_fields(&schema, "entries", false);
+        assert_eq!(
+            authored.len(),
+            2,
+            "authoring stamps the on-create date AND the default"
+        );
+        assert!(
+            authored
+                .iter()
+                .any(|f| f.key == "date" && f.value == Value::Scalar(today_iso())),
+            "authoring stamps today's date",
+        );
+        assert!(
+            authored
+                .iter()
+                .any(|f| f.key == "kind" && f.value == Value::Scalar("note".into())),
+            "authoring stamps the default",
+        );
+
+        // Migration mode drops the date stamp but KEEPS the non-date default.
+        let migrated = on_create_item_fields(&schema, "entries", true);
+        assert_eq!(
+            migrated.len(),
+            1,
+            "migration drops the date stamp but keeps the non-date default"
+        );
+        assert_eq!(
+            migrated[0].key, "kind",
+            "the surviving field is the non-date default, not the date"
+        );
+        assert_eq!(
+            migrated[0].value,
+            Value::Scalar("note".into()),
+            "the default materializes unchanged under migration"
+        );
+        assert!(
+            !migrated.iter().any(|f| f.key == "date"),
+            "no false-history date is fabricated under migration",
         );
     }
 
@@ -1711,8 +1811,13 @@ sections:
 "#;
         let schema = load_schema(yaml).expect("fixture log loads");
 
-        let fields =
-            on_create_nested_item_fields(&schema, "releases", &["1-0-0".to_string()], "changes");
+        let fields = on_create_nested_item_fields(
+            &schema,
+            "releases",
+            &["1-0-0".to_string()],
+            "changes",
+            false,
+        );
         assert_eq!(
             fields.len(),
             1,
@@ -1734,6 +1839,7 @@ sections:
                 "releases",
                 &["1-0-0".to_string()],
                 "changes",
+                false,
             )
             .is_empty(),
             "the shipped `changes` group declares no on-create date — stamps nothing",
