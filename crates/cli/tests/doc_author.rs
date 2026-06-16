@@ -451,6 +451,214 @@ fn mid_chain_leaf_failure_stages_nothing() {
     );
 }
 
+/// A SINGLE-release dated changelog — the cold spike's minimal multi-leaf case (one
+/// release with its optional `link`, one nested change-group carrying slot prose). It
+/// exercises the same create + add-item + set-field + set-slot chain as the marquee
+/// multi-release payload, at the smallest non-empty scale.
+const SINGLE_RELEASE_PAYLOAD: &str = r#"title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.0.0
+        set:
+          link: https://example.com/releases/1.0.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: "<<- Initial public release.>>"
+"#;
+
+/// The create-only payload — no `sections`, so the parser lowers it to ZERO leaves.
+/// It drives the cold path: `create_gated` then persist once, no chained leaves.
+const EMPTY_PAYLOAD: &str = "title: Changelog\n";
+
+/// Author a changelog in ONE `doc author` call from an arbitrary declarative payload,
+/// returning the staged bytes. (The marquee test's `author_via_batch` is hardcoded to
+/// the multi-release payload; the spike needs the same call over varying input.)
+fn author_payload_via_batch(
+    repo: &Path,
+    home: &Path,
+    pack: &Path,
+    intent: &str,
+    payload: &str,
+) -> String {
+    let task = ready_repo(repo, home, pack, intent);
+    let created = ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["doc", "author", "changelog", "--from", "-"],
+            Some(payload.as_bytes()),
+        ),
+        "jigc doc author changelog",
+    );
+    assert_eq!(
+        created, "changelog:changelog",
+        "the batch verb prints the minted singleton address",
+    );
+    staged_changelog(repo, &task)
+}
+
+/// Author the single-release changelog through the per-leaf verb chain, in document
+/// order — driving the EMITTED add-item addresses verbatim downstream.
+fn author_single_release_via_leaf(repo: &Path, home: &Path, pack: &Path) -> String {
+    let task = ready_repo(repo, home, pack, "single chain");
+    let run = |args: &[&str], stdin: Option<&[u8]>, what: &str| {
+        ok_stdout(run_jigc(repo, home, pack, args, stdin), what)
+    };
+
+    assert_eq!(
+        run(
+            &["doc", "create", "changelog", "--title", "Changelog"],
+            None,
+            "create"
+        ),
+        "changelog:changelog",
+    );
+    let r100 = run(
+        &[
+            "doc",
+            "add-item",
+            "changelog:changelog#releases",
+            "--title",
+            "1.0.0",
+        ],
+        None,
+        "add 1.0.0",
+    );
+    run(
+        &[
+            "doc",
+            "set-field",
+            &format!("{r100}/link"),
+            "--value",
+            "https://example.com/releases/1.0.0",
+        ],
+        None,
+        "set link",
+    );
+    let added = run(
+        &[
+            "doc",
+            "add-item",
+            &format!("{r100}/changes"),
+            "--title",
+            "Added",
+        ],
+        None,
+        "add Added",
+    );
+    run(
+        &[
+            "doc",
+            "set-slot",
+            &format!("{added}/notes"),
+            "--from-file",
+            "-",
+        ],
+        Some(b"- Initial public release."),
+        "notes Added",
+    );
+
+    staged_changelog(repo, &task)
+}
+
+/// Author a bare changelog through the per-leaf `create` verb alone — the create-only
+/// equivalent of the empty batch payload.
+fn author_create_only_via_leaf(repo: &Path, home: &Path, pack: &Path) -> String {
+    let task = ready_repo(repo, home, pack, "create only chain");
+    assert_eq!(
+        ok_stdout(
+            run_jigc(
+                repo,
+                home,
+                pack,
+                &["doc", "create", "changelog", "--title", "Changelog"],
+                None,
+            ),
+            "jigc doc create changelog",
+        ),
+        "changelog:changelog",
+    );
+    staged_changelog(repo, &task)
+}
+
+/// Assert a staged changelog round-trips byte-stable over the shipped schema:
+/// `render(parse(bytes)) == bytes`.
+fn assert_byte_stable(pack: &Path, bytes: &str) {
+    let schema = shipped_changelog_schema(pack);
+    let parsed =
+        engine::write::instance_from_source(&schema, bytes).expect("staged changelog re-parses");
+    assert_eq!(
+        engine::write::render(&schema, &parsed),
+        bytes,
+        "the batch-authored changelog is byte-stable across parse → render",
+    );
+}
+
+#[test]
+fn single_release_batch_round_trips_and_matches_the_per_leaf_chain() {
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+
+    let batch_repo = TempDir::new("single-batch");
+    let batch = author_payload_via_batch(
+        batch_repo.path(),
+        home.path(),
+        &pack,
+        "single batch",
+        SINGLE_RELEASE_PAYLOAD,
+    );
+
+    let chain_repo = TempDir::new("single-chain");
+    let chain = author_single_release_via_leaf(chain_repo.path(), home.path(), &pack);
+
+    // The single-release batch bytes are byte-identical to the per-leaf chain.
+    assert_eq!(
+        batch, chain,
+        "the single-release batch changelog is byte-identical to the per-leaf chain\n\
+         batch:\n{batch}\n---\nchain:\n{chain}",
+    );
+
+    // The authored content actually landed.
+    assert!(
+        batch.contains("1.0.0") && batch.contains("Initial public release."),
+        "the single-release content is authored; staged:\n{batch}",
+    );
+
+    assert_byte_stable(&pack, &batch);
+}
+
+#[test]
+fn empty_payload_authors_a_byte_stable_create_only_instance() {
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+
+    let batch_repo = TempDir::new("empty-batch");
+    let batch = author_payload_via_batch(
+        batch_repo.path(),
+        home.path(),
+        &pack,
+        "empty batch",
+        EMPTY_PAYLOAD,
+    );
+
+    // A create-only batch (zero leaves) is byte-identical to a bare `doc create`: the
+    // cold path is just `create_gated` + persist once.
+    let chain_repo = TempDir::new("empty-chain");
+    let chain = author_create_only_via_leaf(chain_repo.path(), home.path(), &pack);
+    assert_eq!(
+        batch, chain,
+        "the empty (create-only) batch is byte-identical to a bare `doc create`\n\
+         batch:\n{batch}\n---\nchain:\n{chain}",
+    );
+
+    assert_byte_stable(&pack, &batch);
+}
+
 #[test]
 fn disallowed_doctype_is_gate_blocked_through_the_batch() {
     let home = TempDir::new("home");
