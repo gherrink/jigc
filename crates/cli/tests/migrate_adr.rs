@@ -885,3 +885,249 @@ fn a_non_migration_doc_create_adr_still_stamps_today() {
          {date_line:?}\n{staged}",
     );
 }
+
+// ---------------------------------------------------------------------------
+// M25 Increment 4, T2 — finalize-promote clobber guard acceptance (the deliverable's
+// Proves; `auto-migration.md` → Honest bounds → the data-loss clobber guard;
+// `worked-examples.md` → flow 27). A migration whose promote destination already holds a
+// committed managed doc **blocks at finalize-promote** instead of silently clobbering it —
+// driven end-to-end through the built binary on the NON-SINGLETON `adr` shape. Without T1's
+// guard each block below would instead promote-clobber and land a commit, so every
+// "commits nothing / byte-intact / squatter intact" assertion is tied to the guard firing.
+// ---------------------------------------------------------------------------
+
+/// The **per-file** migration task id for an arbitrary repo-relative source `rel` — the
+/// production derivation ([`crate::start::mint_migration_in_repo`]): strip `.md`, fold path
+/// separators to `-`, slugify. The hard-coded [`migration_task`] above is the `docs/adr/`
+/// specialization; the squatter arm migrates a source under `decisions/`, so it needs the
+/// general form.
+fn migration_task_for(rel: &str) -> String {
+    let stem = rel.strip_suffix(".md").unwrap_or(rel);
+    let folded: String = stem
+        .chars()
+        .map(|c| if c == '/' { '-' } else { c })
+        .collect();
+    format!("migrate-adr-{}", engine::slug::slugify(&folded))
+}
+
+/// `task finalize <task> --approve` raw output (the clobber arm asserts the BLOCK, so it
+/// cannot use the success-asserting [`migrate_one`] tail).
+fn finalize_approve(repo: &Path, home: &Path, pack: &Path, task: &str) -> std::process::Output {
+    run_jigc(
+        repo,
+        home,
+        pack,
+        &["task", "finalize", task, "--approve"],
+        None,
+    )
+}
+
+/// (a) **Title-slug collision across the doctype dir** — with `decisions/use-postgresql.md`
+/// already committed (a first migration), a SECOND foreign ADR at a distinct off-canonical
+/// path whose authored title slugs to the SAME `use-postgresql` must **block at
+/// finalize-promote** (`finalize.promote-clobber`): no clobber, nothing committed, the
+/// committed ADR byte-intact, and the 2nd foreign original NOT retired (the all-or-nothing
+/// transaction never ran). The data-loss case is conformant-over-conformant.
+#[test]
+fn a_title_slug_collision_blocks_at_finalize_promote() {
+    let repo = TempDir::new("collision");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    // First migration lands a committed managed ADR at `decisions/use-postgresql.md`.
+    migrate_one(
+        repo.path(),
+        home.path(),
+        &pack,
+        "0001-use-postgresql",
+        FOREIGN_POSTGRES,
+        PAYLOAD_POSTGRES,
+        "use-postgresql",
+    );
+    let committed_before =
+        fs::read(repo.path().join("decisions").join("use-postgresql.md")).expect("committed adr");
+    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+
+    // A SECOND foreign ADR at a DISTINCT off-canonical path; the agent authors it with the
+    // SAME title (`Use PostgreSQL`), which slugs to the already-occupied `use-postgresql`.
+    let rel = commit_foreign_adr(repo.path(), "0009-postgres-again", FOREIGN_POSTGRES);
+    let count_with_foreign: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    migrate(repo.path(), home.path(), &pack, &rel);
+    let task = migration_task_for("docs/adr/0009-postgres-again.md");
+    let authored = ok_stdout(
+        author_adr(repo.path(), home.path(), &pack, &task, PAYLOAD_POSTGRES),
+        "jigc doc author adr (colliding title)",
+    );
+    assert_eq!(
+        authored, "adr:use-postgresql",
+        "the 2nd author succeeds in the working area — the collision is a finalize-promote \
+         concern, not a write-time one",
+    );
+
+    // finalize --approve must BLOCK with `finalize.promote-clobber` naming the destination.
+    let out = finalize_approve(repo.path(), home.path(), &pack, &task);
+    assert!(
+        !out.status.success(),
+        "a colliding title must block at finalize-promote (exit non-zero); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let streams = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        streams.contains("finalize.promote-clobber")
+            && streams.contains("decisions/use-postgresql.md"),
+        "the block is the clobber guard naming the destination it refused to overwrite:\n{streams}",
+    );
+
+    // Commits nothing (the all-or-nothing transaction never ran).
+    assert_eq!(
+        count_with_foreign,
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        "the clobber block commits nothing past the foreign-tracking commit",
+    );
+    assert_eq!(
+        count_with_foreign,
+        count_before + 1,
+        "only the foreign-tracking commit landed — the migration did not",
+    );
+    // The committed ADR is byte-intact — never clobbered.
+    assert_eq!(
+        fs::read(repo.path().join("decisions").join("use-postgresql.md")).expect("committed adr"),
+        committed_before,
+        "the already-committed ADR is byte-intact after the refused clobber",
+    );
+    // The 2nd foreign original is NOT retired (no transaction ran).
+    assert!(
+        repo.path().join(&rel).exists(),
+        "the blocked migration does not retire the 2nd foreign original",
+    );
+}
+
+/// (b) **In-location squatter** — `jigc migrate decisions/<slug>.md --as adr` where the
+/// canonical path itself holds a committed managed doc must **block at finalize-promote**,
+/// the squatter intact. The retire-skip (source == destination, [`plan_retirements`]) and
+/// the promote-block compose to **no data loss**. Bounded: this proves only the BLOCK —
+/// end-to-end authoring over an in-location squatter stays off-canonical-foreign-path-
+/// bounded (`auto-migration.md` → Honest bounds; M24 blank-seed is singleton-gated).
+#[test]
+fn an_in_location_squatter_blocks_at_finalize_promote() {
+    let repo = TempDir::new("squatter");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    // Land a committed managed ADR at the canonical `decisions/use-postgresql.md` — the
+    // squatter the in-location migration would overwrite.
+    migrate_one(
+        repo.path(),
+        home.path(),
+        &pack,
+        "0001-use-postgresql",
+        FOREIGN_POSTGRES,
+        PAYLOAD_POSTGRES,
+        "use-postgresql",
+    );
+    let squatter_rel = "decisions/use-postgresql.md";
+    let squatter_before = fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk");
+    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+
+    // Migrate the canonical doc IN PLACE: source-path == the canonical destination. The
+    // agent re-authors the same title, so the promote destination is the squatter's path.
+    migrate(repo.path(), home.path(), &pack, squatter_rel);
+    let task = migration_task_for(squatter_rel);
+    let authored = ok_stdout(
+        author_adr(repo.path(), home.path(), &pack, &task, PAYLOAD_POSTGRES),
+        "jigc doc author adr (in-location squatter)",
+    );
+    assert_eq!(
+        authored, "adr:use-postgresql",
+        "the in-location author succeeds in the working area (adr is non-singleton — no \
+         committed-store copy-in)",
+    );
+
+    let out = finalize_approve(repo.path(), home.path(), &pack, &task);
+    assert!(
+        !out.status.success(),
+        "an in-location squatter must block at finalize-promote (exit non-zero); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let streams = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        streams.contains("finalize.promote-clobber")
+            && streams.contains("decisions/use-postgresql.md"),
+        "the block is the clobber guard naming the canonical destination:\n{streams}",
+    );
+    // No data loss: the squatter is byte-intact and nothing was committed (retire-skip +
+    // promote-block compose to leave the committed doc exactly as it was).
+    assert_eq!(
+        fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk"),
+        squatter_before,
+        "the in-location squatter is byte-intact after the refused clobber",
+    );
+    assert_eq!(
+        count_before,
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        "the squatter block commits nothing",
+    );
+}
+
+/// (c) **Regression** — a normal first-time `jigc migrate <foreign>.md --as adr` into a
+/// non-colliding, empty `decisions/` is **unaffected** by the guard: it promotes, retires
+/// the foreign original, commits, and a follow-up `jigc ingest` reports it **adopted**. The
+/// guard's negative case, proven adjacent to the blocks so the acceptance is self-contained.
+#[test]
+fn a_first_time_migration_into_empty_decisions_is_unaffected() {
+    let repo = TempDir::new("regression");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    assert!(
+        !repo.path().join("decisions").exists(),
+        "the regression starts with no `decisions/` directory (no possible collision)",
+    );
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    // The guard must NOT fire — the canonical destination is unoccupied. `migrate_one`
+    // asserts the approve lands + the foreign original is retired + byte-stability.
+    migrate_one(
+        repo.path(),
+        home.path(),
+        &pack,
+        "0001-use-postgresql",
+        FOREIGN_POSTGRES,
+        PAYLOAD_POSTGRES,
+        "use-postgresql",
+    );
+    assert_ingest_adopted(repo.path(), home.path(), &pack, "use-postgresql");
+}
