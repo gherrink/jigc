@@ -633,7 +633,7 @@ mod tests {
         let supersedes = fields.iter().find(|f| f.id == "supersedes").unwrap();
         assert_eq!(supersedes.ty, FieldType::Ref);
         assert_eq!(supersedes.to.as_deref(), Some("adr"));
-        assert_eq!(supersedes.card.as_deref(), Some("0..1"));
+        assert_eq!(supersedes.card.as_deref(), Some("0..*"));
         assert_eq!(supersedes.inverse.as_deref(), Some("superseded-by"));
     }
 

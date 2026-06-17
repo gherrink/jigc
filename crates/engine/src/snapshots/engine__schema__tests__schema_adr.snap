@@ -32,7 +32,7 @@ expression: json
           "id": "supersedes",
           "type": "ref",
           "to": "adr",
-          "card": "0..1",
+          "card": "0..*",
           "inverse": "superseded-by"
         },
         {

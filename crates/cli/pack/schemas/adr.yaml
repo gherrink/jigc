@@ -18,7 +18,7 @@ sections:
     fields:
       - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
       - { id: date, type: date, set: on-create }
-      - { id: supersedes, type: ref, to: adr, card: "0..1", inverse: superseded-by }
+      - { id: supersedes, type: ref, to: adr, card: "0..*", inverse: superseded-by }
       - { id: cites-code, type: code-anchor }
   - id: context
     slot: { hint: "Why a decision was needed — the forces at play." }

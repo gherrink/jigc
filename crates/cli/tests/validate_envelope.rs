@@ -454,7 +454,7 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
         \x20   fields:\n\
         \x20     - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }\n\
         \x20     - { id: date, type: date, set: on-create }\n\
-        \x20     - { id: supersedes, type: ref, to: adr, card: \"0..1\", inverse: superseded-by }\n\
+        \x20     - { id: supersedes, type: ref, to: adr, card: \"0..*\", inverse: superseded-by }\n\
         \x20     - { id: cites-code, type: code-anchor }\n\
         \x20 - id: context\n\
         \x20   slot: { hint: \"Why a decision was needed.\" }\n\

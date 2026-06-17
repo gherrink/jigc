@@ -1028,7 +1028,7 @@ fn check_field_value(
 
 /// A field is author-required iff the author must supply it — no `default:`, no
 /// `set:` (CLI-derived), not an **optional `ref`** (forward `card:` with a minimum
-/// of 0, e.g. the ADR `supersedes` relation's `0..1`), and not a **pack-declared
+/// of 0, e.g. the ADR `supersedes` relation's `0..*`), and not a **pack-declared
 /// field type** (e.g. `code-anchor`). An optional ref and a pack-declared anchor
 /// both carry no author obligation: presence is the agent's choice and its
 /// *adjudication* — not its presence — is the finalize-time probe's job (`ref-resolves`
@@ -2544,6 +2544,33 @@ Slightly higher write latency for resilience.
         std::fs::write(dir.join("single-node-cache.md"), ADR_A).expect("write A");
     }
 
+    /// A committed ADR `C` (a second supersede target), distinct from `A`, so a
+    /// 2-element `supersedes` list can name two real committed docs.
+    const ADR_C: &str = "\
+---
+status: accepted
+date: 2026-05-24
+---
+
+# Round-robin session router
+
+## Context
+Routing must spread session load evenly.
+
+## Decision
+A round-robin router spreads session load across nodes.
+
+## Consequences
+A failed node's sessions are re-routed on next request.
+";
+
+    /// Commit ADR `C` at `decisions/round-robin-router.md`.
+    fn commit_adr_c(repo_root: &Path) {
+        let dir = repo_root.join("decisions");
+        std::fs::create_dir_all(&dir).expect("mk decisions/");
+        std::fs::write(dir.join("round-robin-router.md"), ADR_C).expect("write C");
+    }
+
     /// Stage a working-area ADR `B` at `<task_dir>/docs/adr:<slug>.md`.
     fn stage_adr_b(task_dir: &Path, slug: &str, supersedes: &str) {
         let docs = task_dir.join(DOCS_DIR);
@@ -2649,6 +2676,111 @@ Slightly higher write latency for resilience.
         assert!(
             !report.has_blocking(),
             "a clean task with a resolvable supersedes must not block, got {:?}",
+            report.findings
+        );
+    }
+
+    /// `supersedes` is `0..*`: a staged ADR may supersede MORE than one committed
+    /// decision. A 2-element list (`[adr:single-node-cache, adr:round-robin-router]`)
+    /// whose every target is committed resolves CLEAN — both edges find their target
+    /// in the committed store, so `validate_task` surfaces no `ref-resolves` finding
+    /// and does not block (the multi-element resolve path the single-supersedes tests
+    /// never exercised). (`auto-migration.md` → Edge migration; `supersedes` widened
+    /// 0..1 → 0..*.)
+    #[test]
+    fn validate_task_passes_on_resolvable_multi_supersedes() {
+        let repo = TempRoot::new("multi-resolve-repo");
+        let jigc = repo.path().join(".jigc");
+        let task_dir = jigc.join("tasks").join("supersede-cache");
+        commit_adr_a(repo.path());
+        commit_adr_c(repo.path());
+        stage_adr_b(
+            &task_dir,
+            "shared-redis-session-cache",
+            "[adr:single-node-cache, adr:round-robin-router]",
+        );
+
+        let mut record = FileStateRecord::new();
+        let report = validate_task(
+            &task_dir,
+            &schemas(),
+            &mut record,
+            repo.path(),
+            &jigc,
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+        )
+        .expect("sweep runs");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "schema-conformance.ref-resolves"),
+            "both elements of a 2-element supersedes resolve in the committed store, \
+             so no ref-resolves finding, got {:?}",
+            report.findings
+        );
+        assert!(
+            !report.has_blocking(),
+            "a clean task with a fully-resolvable multi-element supersedes must not \
+             block, got {:?}",
+            report.findings
+        );
+    }
+
+    /// The partial-dangle variant of the `0..*` list: one element of the 2-element
+    /// `supersedes` is committed, the other dangles. The ref-resolves walk aggregates
+    /// EXACTLY ONE blocking finding (for the dangling element only — the resolvable
+    /// one yields nothing), naming the missing target, so `finalize` blocks.
+    #[test]
+    fn validate_task_blocks_on_partially_dangling_multi_supersedes() {
+        let repo = TempRoot::new("multi-dangle-repo");
+        let jigc = repo.path().join(".jigc");
+        let task_dir = jigc.join("tasks").join("supersede-cache");
+        commit_adr_a(repo.path());
+        stage_adr_b(
+            &task_dir,
+            "shared-redis-session-cache",
+            "[adr:single-node-cache, adr:typo-nonexistent]",
+        );
+
+        let mut record = FileStateRecord::new();
+        let report = validate_task(
+            &task_dir,
+            &schemas(),
+            &mut record,
+            repo.path(),
+            &jigc,
+            "HEAD",
+            &no_delta_resolved(),
+            &unused_invoker(),
+            &never_tracked(),
+        )
+        .expect("sweep runs");
+
+        let refresolves: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.ref-resolves")
+            .collect();
+        assert_eq!(
+            refresolves.len(),
+            1,
+            "exactly one ref-resolves finding — only the dangling element of the list, \
+             got {:?}",
+            report.findings
+        );
+        assert!(
+            refresolves[0].message.contains("adr:typo-nonexistent"),
+            "the finding names the dangling element: {}",
+            refresolves[0].message
+        );
+        assert!(
+            report.has_blocking(),
+            "a partially-dangling forward-ref list must make the task block, got {:?}",
             report.findings
         );
     }
