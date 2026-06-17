@@ -143,7 +143,20 @@ fn migration_task_id_source(doctype: &str, source_path: &str) -> String {
         .chars()
         .map(|c| if matches!(c, '/' | '\\') { '-' } else { c })
         .collect();
-    format!("migrate-{doctype}-{}", engine::slug::slugify(&folded))
+    let slug = engine::slug::slugify(&folded);
+    if slug.is_empty() {
+        // The whole path slugged away (all non-Latin, e.g. `日本語.md`). Falling back
+        // to the bare `migrate-<doctype>` would re-introduce the singleton serial-
+        // collision the per-file id exists to remove (`auto-migration.md` → Hardening
+        // #9): every empty-slug source would mint the same id. Disambiguate on a
+        // blake3 of the repo-relative path — distinct paths → distinct ids, the same
+        // path → the same id (re-migration still collides into the resume/discard
+        // route, never double-mints). The hex prefix is itself a clean slug, so the
+        // mint's own empty-intent slugify stays the identity.
+        let hash = engine::file_state::hash_bytes(source_path.as_bytes());
+        return format!("migrate-{doctype}-{}", &hash[..12]);
+    }
+    format!("migrate-{doctype}-{slug}")
 }
 
 /// Provision the task's workflow-provisioned **commit** doc into the working
@@ -2715,6 +2728,33 @@ mod tests {
         assert_eq!(
             migration_task_id_source("changelog", "CHANGELOG.md"),
             "migrate-changelog-changelog",
+        );
+    }
+
+    /// A source path whose every char slugs away (all non-Latin, e.g. `日本語.md`)
+    /// must still yield a per-file, non-singleton id: two DISTINCT empty-slug paths
+    /// must get DISTINCT ids (else they serial-collide on the bare `migrate-<doctype>`
+    /// the per-file mint exists to avoid — `auto-migration.md` → Hardening #9), while
+    /// the SAME path stays stable (so re-migration collides into the resume/discard
+    /// route, never double-mints).
+    #[test]
+    fn migration_task_id_source_disambiguates_paths_that_slug_to_empty() {
+        // Two distinct all-non-Latin paths -> distinct ids (no collapse to singleton).
+        assert_ne!(
+            migration_task_id_source("adr", "日本語.md"),
+            migration_task_id_source("adr", "中文.md"),
+        );
+        // Same empty-slug path -> same id (deterministic; re-migration collides).
+        assert_eq!(
+            migration_task_id_source("adr", "日本語.md"),
+            migration_task_id_source("adr", "日本語.md"),
+        );
+        // The fallback id never collapses to the bare `migrate-<doctype>` singleton.
+        assert_ne!(migration_task_id_source("adr", "日本語.md"), "migrate-adr");
+        // The fallback is a clean slug, so the mint's own slugify is the identity.
+        assert_eq!(
+            engine::slug::slugify(&migration_task_id_source("adr", "日本語.md")),
+            migration_task_id_source("adr", "日本語.md"),
         );
     }
 
