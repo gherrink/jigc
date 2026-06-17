@@ -10,9 +10,10 @@ over a single staged buffer. Pipe the payload on stdin:
 
 jigc doc author adr --from - --task {{task.id}} <<'EOF'
 title: "<the decision, as a short noun phrase>"
-set:
-  status: "<proposed | accepted | superseded>"
 sections:
+  - id: status
+    set:
+      status: "<proposed | accepted | superseded>"
   - id: context
     set:
       context: "<<the forces at play that made the decision necessary>>"
