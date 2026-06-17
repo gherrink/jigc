@@ -122,7 +122,22 @@ export const meta = {
 // args may arrive as the object { milestone, base } or as a bare milestone string
 // (the /milestone-build slash command passes its positional arg as a string, which
 // would otherwise drop the milestone — and silently take the auto-find base path).
-const a = typeof args === 'string' ? { milestone: args } : (args || {})
+// GUARD (M24/M25): args sometimes arrives JSON-STRINGIFIED — a string that is itself
+// a serialized object `{"milestone":...,"base":...,"skipThrough":...}`. Without this
+// parse, the `typeof args === 'string'` branch below would take the WHOLE JSON blob as
+// the milestone and silently drop base/skipThrough — which broke a skipThrough resume
+// in M24. So: if args is a string that parses to an object, use the parsed object.
+let parsedArgs = args
+if (typeof args === 'string') {
+  const s = args.trim()
+  if (s.startsWith('{') || s.startsWith('[')) {
+    try {
+      const p = JSON.parse(s)
+      if (p && typeof p === 'object') parsedArgs = p
+    } catch (_) { /* not JSON — keep the bare-milestone-string handling below */ }
+  }
+}
+const a = typeof parsedArgs === 'string' ? { milestone: parsedArgs } : (parsedArgs || {})
 const milestone = a.milestone ? String(a.milestone) : 'the next milestone'
 const base = a.base ? String(a.base) : null
 // skipThrough — the deterministic, cache-independent resume (see RESUMING note 6).
