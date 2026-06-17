@@ -42,7 +42,27 @@ rejected at the write.
 The `date` is stamped by the CLI at create — do NOT author it; no historical date is
 carried (an ADR's date is when the record is adopted here).
 
-EDGE-FREE: this migration authors PROSE only. If the foreign ADR references another
-decision it supersedes, names related ADRs, or links to code, there is no edge home for
-it this pass — fold the reference into the `context` or `consequences` prose. Do NOT
-author a `supersedes` or `cites-code` field; cross-reference wiring is a later pass.
+SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
+`supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
+also migrating in this pass, author the edge: add a `supersedes` field to the `status`
+section's `set:` block as a typed bracket-list of the target slug(s) —
+
+  - id: status
+    set:
+      status: "<...>"
+      supersedes: "[adr:<slug-of-the-superseded-decision>, …]"
+
+Each element is `adr:<slug>` (the per-title slug the target migrated under). A bare slug,
+a wrong-type ref, or the unbracketed comma form is rejected at the write.
+
+Dependency-ordering contract: a `supersedes` forward-ref resolves against the COMMITTED
+store. So migrate and finalize the superseded target ADR FIRST,
+before the ADR that supersedes it — otherwise the superseding ADR's finalize blocks on an
+unresolved ref.
+
+Out-of-set drop: a `supersedes` whose target is NOT (and will not be) a migrated ADR — it
+predates the corpus, or is deliberately left foreign — has no edge to resolve and would
+block finalize forever. Fold that reference into the `context` or `consequences` prose
+instead; never author it as a dangling `supersedes` ref. The same drop-to-prose posture
+applies to "Related ADRs", "See also", and plain links: only an in-set supersession
+becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)

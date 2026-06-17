@@ -851,7 +851,8 @@ mod tests {
     /// create-gated, item-authoring changelog step), plus `author-migration` (the
     /// M23 `migrate-changelog` workflow's foreign-source-driven changelog step), plus
     /// `author-migration-adr` (the M25 `migrate-adr` workflow's foreign-source-driven,
-    /// adr-shaped migration step — heading map + foreign-status→enum + edge-free prose).
+    /// adr-shaped migration step — heading map + foreign-status→enum + supersedes edge
+    /// guidance: in-set bracket-list, ordering contract, out-of-set drop-to-prose).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();

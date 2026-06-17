@@ -281,11 +281,27 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
         );
     }
 
-    // (5) EDGE-FREE: the guidance must route a `supersedes`/code reference to PROSE, not
-    // author the edge field — cross-ref wiring is Increment 2.
+    // (5) M25 Increment 2 (T3): the EDGE-FREE prose block is REPLACED with the
+    // `supersedes` edge guidance. The view no longer carries the edge-free disclaimer.
     assert!(
-        stdout.contains("supersedes") && stdout.contains("prose"),
-        "the edge-free drop-to-prose guidance must be present; stdout:\n{stdout}",
+        !stdout.contains("EDGE-FREE"),
+        "the edge-free disclaimer must be gone — Increment 2 wires the supersedes edge; stdout:\n{stdout}",
+    );
+    // (5a) The in-set supersession is authored as a typed bracket-list under the status section.
+    assert!(
+        stdout.contains("supersedes: \"[adr:"),
+        "the bracket-list `supersedes: \"[adr:<slug>, …]\"` form must be shown; stdout:\n{stdout}",
+    );
+    // (5b) The dependency-ordering contract: finalize the target before the ADR that supersedes it.
+    assert!(
+        stdout.contains("before the ADR that supersedes it"),
+        "the dependency-ordering contract must be present; stdout:\n{stdout}",
+    );
+    // (5c) The out-of-set drop: a target that will not be migrated folds into prose, never a
+    // dangling ref.
+    assert!(
+        stdout.contains("will not be") && stdout.contains("prose"),
+        "the out-of-set drop-to-prose escape must be present; stdout:\n{stdout}",
     );
 
     // (6) The finalize step composed in (the spine ends at finalize).
@@ -293,4 +309,51 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
         stdout.contains("finalize"),
         "the finalize step must compose in; stdout:\n{stdout}",
     );
+
+    // (7) Masking guard (inc-1/T3 class): the heredoc payload skeleton the agent actually
+    // fills must still parse through the SAME parser `doc author` runs — a stray doc-level
+    // key or a slot/field mismatch leaked by the edge guidance would silently break every
+    // migration while this green compose test masks it.
+    let skeleton = extract_author_skeleton(&stdout);
+    let schema = shipped_adr_schema(&pack);
+    let parsed = cli::author::parse_author_payload(Some(&schema), &skeleton);
+    assert!(
+        parsed.is_ok(),
+        "the migrate-adr guidance payload skeleton must parse as a valid adr author payload; \
+         skeleton:\n{skeleton}\nerror: {:?}",
+        parsed.err(),
+    );
+}
+
+/// Extract the `doc author adr --from -` heredoc payload skeleton from the composed
+/// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
+/// the agent-facing artifact the LLM fills + pipes.
+fn extract_author_skeleton(composed: &str) -> String {
+    let mut lines = composed.lines();
+    for line in lines.by_ref() {
+        if line.contains("doc author adr --from") && line.contains("<<'EOF'") {
+            break;
+        }
+    }
+    let mut body = String::new();
+    for line in lines {
+        if line == "EOF" {
+            return body;
+        }
+        body.push_str(line);
+        body.push('\n');
+    }
+    panic!("no `doc author adr` heredoc skeleton in the composed migrate guidance:\n{composed}");
+}
+
+/// Load the SHIPPED `adr` schema with the `code-anchor → doc-code` pack type threaded in
+/// (the schema only loads with that decl; mirrors the shipped pack).
+fn shipped_adr_schema(pack: &Path) -> engine::schema::Schema {
+    let yaml = fs::read(pack.join("schemas").join("adr.yaml")).expect("read shipped adr schema");
+    let types = vec![engine::schema::PackTypeDecl {
+        name: "code-anchor".to_owned(),
+        adjudicator: "doc-code".to_owned(),
+        check: "symbol-exists".to_owned(),
+    }];
+    engine::schema::load_schema_with_types(&yaml, &types).expect("shipped adr schema loads")
 }
