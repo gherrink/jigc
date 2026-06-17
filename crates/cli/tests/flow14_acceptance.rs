@@ -137,8 +137,19 @@ fn author_single_task_shadow(project_config: &Path) {
 /// unshadowed definition.
 fn narration_for<'a>(out: &'a str, id: &str) -> &'a str {
     let needle = format!("{id} is ");
+    // Match the needle only at a definition boundary, not as the tail of a longer id
+    // (the `adr` doctype must not match inside `migrate-adr is …`): the byte before the
+    // match must not continue an id (`[\w-]`).
     let start = out
-        .find(&needle)
+        .match_indices(&needle)
+        .find(|(idx, _)| {
+            *idx == 0
+                || !out[..*idx]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        })
+        .map(|(idx, _)| idx)
         .unwrap_or_else(|| panic!("`{id}` must be narrated; got:\n{out}"));
     let after = &out[start..];
     // The narration ends at the first ". " that closes the usage clause (the woven

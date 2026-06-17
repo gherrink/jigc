@@ -204,3 +204,93 @@ fn migrate_composes_the_shipped_workflow_with_seam_and_author_spine() {
         "the finalize step must compose in; stdout:\n{stdout}",
     );
 }
+
+/// A realistic foreign Nygard/MADR-shaped ADR — the four canonical headings plus an
+/// in-enum status. The body references another decision (no edge home this increment:
+/// the guidance must route it to prose, not author a `supersedes` field).
+const FOREIGN_ADR: &str = "\
+# Use PostgreSQL for primary storage
+
+## Status
+Accepted
+
+## Context
+We need a relational store with strong consistency guarantees and mature tooling,
+superseding the earlier key-value sketch in ADR 0001.
+
+## Decision
+We will use PostgreSQL 15 as the primary data store for the service.
+
+## Consequences
+Operational familiarity is high; we accept the cost of running a managed instance.
+";
+
+#[test]
+fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
+    // T2 (M25 inc-1): `jigc migrate <adr>.md --as adr` composes the SHIPPED `migrate-adr`
+    // workflow (NOT a test shadow) — the source seam surfaces the foreign ADR verbatim
+    // and the composed view carries the adr-specific author guidance. A clean exit 0 IS
+    // the workflow-refs gate passing (a dangling step-include or command-ref blocks it).
+    let repo = TempDir::new("adr-repo");
+    let home = TempDir::new("adr-home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    ok_stdout(setup, "jigc setup");
+
+    // No project shadow: the SHIPPED `migrate-adr` workflow + its `author-migration-adr`
+    // step must compose on their own. Cold spike — no `decisions/` exists yet.
+    fs::write(repo.path().join("decision.md"), FOREIGN_ADR).expect("write foreign ADR");
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "decision.md", "--as", "adr"],
+    );
+    let stdout = ok_stdout(out, "jigc migrate decision.md --as adr");
+
+    // (1) The source seam resolved: the foreign ADR is surfaced verbatim.
+    assert!(
+        stdout.contains(FOREIGN_ADR.trim_end()),
+        "the composed migrate-adr workflow must surface the foreign ADR (the source seam); stdout:\n{stdout}",
+    );
+
+    // (2) The adr author spine is the declarative batch directive against the `adr`
+    // doctype (NOT the changelog one) — create + every leaf over one staged buffer.
+    assert!(
+        stdout.contains("jigc doc author adr --from"),
+        "the adr-specific batch directive must be present; stdout:\n{stdout}",
+    );
+
+    // (3) The Status/Context/Decision/Consequences heading map (the adr schema's four
+    // canonical parts).
+    for heading in ["Status", "Context", "Decision", "Consequences"] {
+        assert!(
+            stdout.contains(heading),
+            "the adr heading `{heading}` must be surfaced in the map; stdout:\n{stdout}",
+        );
+    }
+
+    // (4) The foreign-status → 3-enum mapping: proposed / accepted / superseded.
+    for member in ["proposed", "accepted", "superseded"] {
+        assert!(
+            stdout.contains(member),
+            "the status enum member `{member}` must be surfaced; stdout:\n{stdout}",
+        );
+    }
+
+    // (5) EDGE-FREE: the guidance must route a `supersedes`/code reference to PROSE, not
+    // author the edge field — cross-ref wiring is Increment 2.
+    assert!(
+        stdout.contains("supersedes") && stdout.contains("prose"),
+        "the edge-free drop-to-prose guidance must be present; stdout:\n{stdout}",
+    );
+
+    // (6) The finalize step composed in (the spine ends at finalize).
+    assert!(
+        stdout.contains("finalize"),
+        "the finalize step must compose in; stdout:\n{stdout}",
+    );
+}

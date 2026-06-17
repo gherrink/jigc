@@ -1,0 +1,47 @@
+Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+{{ source }}
+
+Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
+record at `decisions/<title-slug>` and places its status field and every prose slot
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author adr --from - --task {{task.id}} <<'EOF'
+title: "<the decision, as a short noun phrase>"
+set:
+  status: "<proposed | accepted | superseded>"
+sections:
+  - id: context
+    set:
+      context: "<<the forces at play that made the decision necessary>>"
+  - id: decision
+    set:
+      decision: "<<what we decided, in a sentence or two>>"
+  - id: consequences
+    set:
+      consequences: "<<the tradeoffs and follow-on effects>>"
+EOF
+
+Map the foreign ADR's headings onto this fixed four-part schema:
+
+  - the foreign Status / state line maps to the `status` field (see the enum map below);
+  - the foreign Context / Background / Problem heading maps to the `context` slot;
+  - the foreign Decision heading maps to the `decision` slot;
+  - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
+
+The `status` field is one of exactly three members: proposed / accepted / superseded.
+Map the foreign status onto the nearest member — `Proposed`/`Draft` to proposed,
+`Accepted` to accepted, `Superseded`/`Deprecated`/`Rejected` to superseded — and record
+the foreign status word verbatim in the `context` prose when it carries nuance the
+three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
+rejected at the write.
+
+The `date` is stamped by the CLI at create — do NOT author it; no historical date is
+carried (an ADR's date is when the record is adopted here).
+
+EDGE-FREE: this migration authors PROSE only. If the foreign ADR references another
+decision it supersedes, names related ADRs, or links to code, there is no edge home for
+it this pass — fold the reference into the `context` or `consequences` prose. Do NOT
+author a `supersedes` or `cites-code` field; cross-reference wiring is a later pass.

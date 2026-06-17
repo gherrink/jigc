@@ -696,8 +696,8 @@ mod tests {
         let workflows = pack.list(PackResourceKind::Workflows);
         assert_eq!(
             workflows.len(),
-            12,
-            "the shipped pack must carry all 12 workflows; got {workflows:?}",
+            13,
+            "the shipped pack must carry all 13 workflows; got {workflows:?}",
         );
         for id in &workflows {
             let bytes = pack
@@ -849,7 +849,9 @@ mod tests {
     /// (the M13 architecture-documentation workflow's create-gated, item-authoring
     /// arch-doc step), plus `author-change` (the M22 `record-change` workflow's
     /// create-gated, item-authoring changelog step), plus `author-migration` (the
-    /// M23 `migrate-changelog` workflow's foreign-source-driven changelog step).
+    /// M23 `migrate-changelog` workflow's foreign-source-driven changelog step), plus
+    /// `author-migration-adr` (the M25 `migrate-adr` workflow's foreign-source-driven,
+    /// adr-shaped migration step — heading map + foreign-status→enum + edge-free prose).
     #[test]
     fn embedded_pack_lists_the_mvp_steps() {
         let pack = EmbeddedPack::new();
@@ -861,6 +863,7 @@ mod tests {
                 ResourceId::from("author-change"),
                 ResourceId::from("author-commit"),
                 ResourceId::from("author-migration"),
+                ResourceId::from("author-migration-adr"),
                 ResourceId::from("author-prd"),
                 ResourceId::from("author-spec"),
                 ResourceId::from("develop-idea"),
