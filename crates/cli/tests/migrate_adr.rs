@@ -666,6 +666,40 @@ fn shipped_guidance_payload_skeleton_parses_as_a_valid_adr_payload() {
     );
 }
 
+/// The shipped `migrate-adr` guidance must instruct the agent to TRANSCRIBE a dated
+/// source's historical date into the payload — NOT to drop it. The engine preserves an
+/// authored date verbatim (proven by `an_explicit_payload_date_survives_a_migration_verbatim`)
+/// and suppresses the today-stamp only for dateless sources, but a guidance-following
+/// agent on the dominant real-corpus (dated) ADR shape authors exactly what the guidance
+/// says. Guidance that says "do NOT author it; no historical date is carried" loses every
+/// dated ADR's date — so we assert on the emitted bytes verbatim (`auto-migration.md`:117:
+/// an explicit date survives, so only dateless ADRs are dropped).
+#[test]
+fn shipped_guidance_instructs_transcribing_a_dated_sources_date() {
+    let repo = TempDir::new("date-guidance");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+    let rel = commit_foreign_adr(repo.path(), "0001-dated", FOREIGN_POSTGRES);
+    let composed = migrate(repo.path(), home.path(), &pack, &rel);
+
+    // The defect: guidance that instructs dropping the historical date.
+    assert!(
+        !composed.contains("no historical date is carried"),
+        "the migrate-adr guidance must NOT instruct dropping the foreign date:\n{composed}",
+    );
+    // The fix: guidance that instructs transcribing the foreign date for dated sources.
+    assert!(
+        composed.contains("TRANSCRIBE") && composed.to_lowercase().contains("date"),
+        "the migrate-adr guidance must instruct transcribing a dated source's date into \
+         the payload (it survives — proven):\n{composed}",
+    );
+}
+
 /// A *dateless* foreign ADR — Nygard-shaped but carrying NO `Date:` line (the common
 /// real-corpus case the doc-level date-suppression fix targets;
 /// `auto-migration.md` → Doc-level date-suppression).

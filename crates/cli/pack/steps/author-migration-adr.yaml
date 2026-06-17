@@ -39,8 +39,12 @@ the foreign status word verbatim in the `context` prose when it carries nuance t
 three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
 rejected at the write.
 
-The `date` is stamped by the CLI at create — do NOT author it; no historical date is
-carried (an ADR's date is when the record is adopted here).
+The `date` records WHEN the decision was adopted. TRANSCRIBE the foreign source's date
+(its `Date:` line or dated heading) verbatim into the `status` section's `set:` block as
+`date: "<YYYY-MM-DD>"` — an authored date overwrites the CLI's on-create stamp and
+survives the migration. OMIT `date` ONLY when the foreign source carries no date: in
+migration the CLI does NOT fabricate today's date, so a dateless source stays dateless
+(no false decision history).
 
 SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
 `supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
