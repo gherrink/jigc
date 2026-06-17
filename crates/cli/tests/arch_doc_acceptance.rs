@@ -197,6 +197,19 @@ fn set_field(repo: &Path, home: &Path, addr: &str, value: &str) {
     assert_ok(&out, &format!("set-field {addr}"));
 }
 
+/// Read the single staged copy of `addr` (`<type>:<slug>`) from the lone live task's
+/// working area — the verbatim bytes the writer spliced.
+fn staged_doc(repo: &Path, addr: &str) -> String {
+    let tasks = repo.join(".jigc").join("tasks");
+    for entry in fs::read_dir(&tasks).expect("read tasks dir").flatten() {
+        let candidate = entry.path().join("docs").join(format!("{addr}.md"));
+        if candidate.is_file() {
+            return fs::read_to_string(&candidate).expect("read staged doc");
+        }
+    }
+    panic!("no staged {addr} under {tasks:?}");
+}
+
 /// Fill the commit doc bound to `task` with the conventional `docs(arch-doc):` shape so
 /// finalize renders a clean git message and the only pass/block lever is `cites`.
 fn fill_commit(repo: &Path, home: &Path, task: &str) {
@@ -488,5 +501,82 @@ fn arch_doc_finalize_blocks_on_ref_resolves_when_cites_dangles() {
             .join("cache-layer.md")
             .exists(),
         "a blocked finalize promotes nothing",
+    );
+}
+
+/// Regression (M25 Inc 2) — a **multi-element** `cites` bracket-list authors clean
+/// through the real `doc author` write path against the live `arch-doc` schema, and a
+/// wrong-type element is rejected element-wise at the write verb. `cites` is a `0..*`
+/// `ref → adr` (`arch-doc.yaml:26`) — the same shape as `adr.supersedes`. The engine
+/// unit coverage exercises a synthetic `to: adr` ref via the `Value::List` branch the
+/// production write path never reaches: `doc author` passes the canonical inline-flow
+/// bracket-list (`[adr:a, adr:b]`) as one `Value::Scalar` the writer splices verbatim.
+/// This proves the agent-facing form end-to-end against the real field — closing the
+/// "no test authors a multi-element cites bracket through doc author" gap (the green of
+/// the pass/block tests above never authors more than one cites target).
+#[test]
+fn arch_doc_author_accepts_multi_element_cites_bracket_list() {
+    let repo = TempDir::new("cites-list-repo");
+    let home = TempDir::new("cites-list-home");
+    init_repo(repo.path());
+
+    let started = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "architecture-documentation",
+            "document the queue layer",
+        ],
+    );
+    assert_ok(
+        &started,
+        "`jigc start --workflow architecture-documentation`",
+    );
+
+    // The canonical inline-flow bracket-list — the shipped migration-guidance form —
+    // arrives as one quoted scalar the writer splices verbatim.
+    let good = jigc_doc(
+        repo.path(),
+        home.path(),
+        &["author", "arch-doc", "--from", "-"],
+        Some(b"title: Queue overview\nsections:\n  - id: meta\n    set:\n      cites: \"[adr:a, adr:b]\"\n"),
+    );
+    assert_ok(
+        &good,
+        &format!(
+            "a multi-element cites bracket-list must author clean through `doc author`; got:\n{}",
+            String::from_utf8_lossy(&good.stderr),
+        ),
+    );
+
+    // The writer spliced the verbatim bracket-list carrying BOTH edges.
+    let staged = staged_doc(repo.path(), "arch-doc:queue-overview");
+    assert!(
+        staged.contains("cites: [adr:a, adr:b]"),
+        "the authored arch-doc carries the two-element cites edge verbatim; got:\n{staged}",
+    );
+
+    // The green is not hollow: validation runs element-wise on the real cites field —
+    // a wrong-type element blocks at the write verb (not deferred to a finalize dangle).
+    let bad = jigc_doc(
+        repo.path(),
+        home.path(),
+        &["author", "arch-doc", "--from", "-"],
+        Some(b"title: Bad overview\nsections:\n  - id: meta\n    set:\n      cites: \"[adr:a, spec:b]\"\n"),
+    );
+    assert!(
+        !bad.status.success(),
+        "a wrong-type cites element must block at the write verb",
+    );
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&bad.stdout),
+        String::from_utf8_lossy(&bad.stderr),
+    );
+    assert!(
+        rendered.contains("write.malformed-value"),
+        "the wrong-type cites element blocks as write.malformed-value; got:\n{rendered}",
     );
 }
