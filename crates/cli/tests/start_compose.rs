@@ -878,7 +878,8 @@ fn form_d_plan_mints_on_workflow_plan_and_emits_the_create_spec_gate() {
 }
 
 #[test]
-fn form_d_project_setup_mints_and_emits_the_create_prd_gate_with_three_author_slots() {
+fn form_d_project_setup_mints_and_emits_the_create_prd_gate_with_two_author_slots_and_requirement_items()
+ {
     let repo = TempDir::new("form-d-project-setup");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -887,8 +888,10 @@ fn form_d_project_setup_mints_and_emits_the_create_prd_gate_with_three_author_sl
     // It is `creates-task: true` with `allows-create: [{type: prd, as: brief}]`, so
     // Form D mints + composes it end-to-end. Its `author-prd` step carries the
     // create-gate, which the composer emits as a `Run: jigc doc create prd` line,
-    // followed by the three `<<author: …>>` slot lines for prd's fixed prose slots
-    // (vision / requirements / context). `{{task.intent}}` interpolates the idea.
+    // followed by the two `<<author: …>>` slot lines for prd's fixed prose slots
+    // (vision / context) plus the per-requirement `add-item`/`set-slot` guidance for
+    // the repeatable `requirements` section (M25 Inc 5). `{{task.intent}}`
+    // interpolates the idea.
     let out = run_start(
         repo.path(),
         home.path(),
@@ -933,15 +936,28 @@ fn form_d_project_setup_mints_and_emits_the_create_prd_gate_with_three_author_sl
         "the author-prd step must emit the `jigc doc create prd` create-gate; got:\n{stdout}",
     );
 
-    // ... and the three fixed prose slots emit as three `<<author: …>>` lines (the
-    // prd is not created yet, so each slot address resolves empty — `<<author: >>`).
+    // ... and the two fixed prose slots emit as exactly two `<<author: …>>` lines
+    // (vision/context; the prd is not created yet, so each resolves empty —
+    // `<<author: >>`). `requirements` is now a repeatable section, NOT a slot, so it
+    // does not emit an author line.
     let author_lines = stdout
         .lines()
         .filter(|l| l.trim_start().starts_with("<<author:"))
         .count();
     assert_eq!(
-        author_lines, 3,
-        "author-prd must emit exactly three `<<author: …>>` slot lines (vision/requirements/context); got:\n{stdout}",
+        author_lines, 2,
+        "author-prd must emit exactly two `<<author: …>>` slot lines (vision/context); got:\n{stdout}",
+    );
+
+    // The per-requirement item verbs compose: add-item mints a requirement, then its
+    // statement slot is set on the item leaf — mirroring the arch-doc component path.
+    assert!(
+        stdout.contains("jigc doc add-item prd:<slug>#requirements"),
+        "author-prd must carry the per-requirement `add-item` guidance; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("#requirements/<id>/statement"),
+        "author-prd must carry the per-requirement `set-slot …/statement` guidance; got:\n{stdout}",
     );
 
     assert!(

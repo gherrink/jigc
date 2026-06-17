@@ -1475,28 +1475,66 @@ mod tests {
         }
     }
 
-    /// RED STEP (G2, DECISIONS.md 2026-06-06): the `prd` schema loads, and a
-    /// hand-authored `prd` instance with all three **single-word** prose slots
-    /// (`vision`/`requirements`/`context`) filled **canonical-writes then re-parses
-    /// idempotently** — proving the single-word-id constraint holds for the new
-    /// shape, never trusting it. The round-trip is `write::render` → write to the
-    /// canonical `prds/<slug>.md` → `store::read_slice` (which re-parses the
-    /// committed bytes against the real schema and slices each section by its id):
-    /// a multi-word id would trip the logged title-case reparse defect — the writer
-    /// emits a title-cased `## <Heading>` the parser's flat id-compare misses, so the
-    /// slice would fail. Single-word ids route around it, so every slot resolves
-    /// byte-for-byte to its source prose.
+    /// Re-derive an [`engine::write::Instance`] from a parsed prd over `source`,
+    /// owning every slot's prose (re-slicing the spans) — the bridge that lets the
+    /// cold/empty spike assert `render(parse(bytes)) == bytes` on the new repeatable
+    /// shape. prd items are flat single-level (a `title` heading + a single
+    /// `statement` slot, no fields, no nesting), so the re-derive copies those leaves
+    /// verbatim.
+    fn prd_reparse_to_instance(schema: &Schema, source: &str) -> engine::write::Instance {
+        let doc = engine::parse::parse_sections(schema, source).expect("rendered prd parses");
+        let title = source
+            .lines()
+            .find_map(|l| l.strip_prefix("# "))
+            .unwrap_or("")
+            .to_string();
+        let sections = doc
+            .sections
+            .iter()
+            .map(|s| engine::write::SectionContent {
+                id: s.id.clone(),
+                slot: s.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+                fields: s.fields.clone(),
+                items: s
+                    .items
+                    .iter()
+                    .map(|it| engine::write::ItemContent {
+                        id: it.id.clone(),
+                        title: it.title.clone(),
+                        slot: it.slot.as_ref().map(|sp| sp.slice(source).to_string()),
+                        slots: it
+                            .slots
+                            .iter()
+                            .map(|(k, sp)| (k.clone(), sp.slice(source).to_string()))
+                            .collect(),
+                        fields: it.fields.clone(),
+                        items: Vec::new(),
+                    })
+                    .collect(),
+            })
+            .collect();
+        engine::write::Instance { title, sections }
+    }
+
+    /// M25 Inc 5 (T1): the `prd` schema loads with `requirements` as a **repeatable
+    /// section** (per-requirement `title` field + `statement` slot, mirroring
+    /// `spec.criteria` minus the code-anchor), while `vision`/`context` stay fixed
+    /// slots. A hand-authored instance with two requirement items **canonical-writes
+    /// then re-parses** so that each requirement's `#requirements/<id>/statement`
+    /// resolves byte-for-byte to its source prose, and the two fixed slots round-trip
+    /// through `store::read_slice`. (`add-item` + the multi-word-heading parser fix
+    /// cleared the M9 blockers; `design/auto-migration.md` → prd.)
     #[test]
-    fn prd_schema_loads_and_single_word_slots_round_trip() {
+    fn prd_schema_loads_and_repeatable_requirements_round_trip() {
         let schema = load_schema(PRD_YAML).expect("prd.yaml loads");
         assert_eq!(schema.ty, "prd");
         assert_eq!(schema.location.as_deref(), Some("prds/"));
         assert_eq!(schema.id_from.as_deref(), Some("title"));
 
         let vision = "A deterministic context compiler for coding agents.";
-        let requirements =
-            "- Assemble exactly the slices a task needs.\n\n- Own every structural write.";
         let context = "Static rules files drift; this replaces them.";
+        let req_one = "Assemble exactly the slices a task needs, just-in-time.";
+        let req_two = "Own every structural write, leaving the LLM only the prose.";
 
         let instance = engine::write::Instance {
             title: "Context compiler".to_string(),
@@ -1508,7 +1546,20 @@ mod tests {
                 },
                 engine::write::SectionContent {
                     id: "requirements".to_string(),
-                    slot: Some(requirements.to_string()),
+                    items: vec![
+                        engine::write::ItemContent {
+                            id: "just-in-time-slices".to_string(),
+                            title: "Just-in-time slices".to_string(),
+                            slot: Some(req_one.to_string()),
+                            ..Default::default()
+                        },
+                        engine::write::ItemContent {
+                            id: "own-every-write".to_string(),
+                            title: "Own every write".to_string(),
+                            slot: Some(req_two.to_string()),
+                            ..Default::default()
+                        },
+                    ],
                     ..Default::default()
                 },
                 engine::write::SectionContent {
@@ -1528,26 +1579,111 @@ mod tests {
         std::fs::write(&path, &bytes).expect("write committed prd");
 
         let mut schemas = BTreeMap::new();
-        schemas.insert("prd".to_string(), schema);
+        schemas.insert("prd".to_string(), schema.clone());
 
-        for (section, expected) in [
-            ("vision", vision),
-            ("requirements", requirements),
-            ("context", context),
-        ] {
+        // The two fixed slots round-trip through the single-hop store-read path.
+        for (section, expected) in [("vision", vision), ("context", context)] {
             let address =
                 Address::parse(&format!("prd:context-compiler#{section}")).expect("valid address");
             let got = engine::store::read_slice(root.0.as_path(), &schemas, &address)
                 .expect("conformant prd slice re-parses and resolves");
-            // The writer trim_ends prose and the parser trims the span, so the
-            // recorded slot bytes are the trimmed prose; the canonical render places
-            // it contiguously, so trimmed == the prose itself.
             assert_eq!(
                 got,
                 expected.trim(),
-                "the `{section}` single-word slot round-trips byte-for-byte",
+                "the `{section}` fixed slot round-trips byte-for-byte",
             );
         }
+
+        // Each requirement's `#requirements/<id>/statement` re-reads byte-for-byte:
+        // re-parse the committed bytes and resolve each item leaf by its frozen id.
+        let committed = std::fs::read_to_string(&path).expect("re-read committed prd");
+        let doc = engine::parse::parse_sections(&schema, &committed)
+            .expect("committed repeatable prd re-parses");
+        let reqs = doc
+            .sections
+            .iter()
+            .find(|s| s.id == "requirements")
+            .expect("requirements section present");
+        assert_eq!(
+            reqs.items.len(),
+            2,
+            "exactly the two minted requirements re-parse"
+        );
+        for (id, expected) in [
+            ("just-in-time-slices", req_one),
+            ("own-every-write", req_two),
+        ] {
+            let item = reqs
+                .items
+                .iter()
+                .find(|i| i.id == id)
+                .unwrap_or_else(|| panic!("requirement {id} present"));
+            let statement = item
+                .slot
+                .as_ref()
+                .map(|sp| sp.slice(&committed))
+                .unwrap_or("");
+            assert_eq!(
+                statement.trim(),
+                expected.trim(),
+                "`#requirements/{id}/statement` re-reads byte-for-byte",
+            );
+        }
+    }
+
+    /// M25 Inc 5 (T1) cold/empty spike: a prd minted with **zero** `requirements`
+    /// items renders + reparses byte-stable, and so does the same prd after **one**
+    /// requirement is added. The repeatable item carries no on-create / default field
+    /// at mint (title is a plain `string`, statement a slot), so the new shape does
+    /// not trip the empty-slot+field-group byte-instability — proven here, not
+    /// trusted.
+    #[test]
+    fn prd_repeatable_requirements_cold_then_one_item_round_trip() {
+        let schema = load_schema(PRD_YAML).expect("prd.yaml loads");
+
+        // Cold: the `requirements` section has zero items.
+        let cold = engine::write::Instance {
+            title: "Empty prd".to_string(),
+            sections: vec![
+                engine::write::SectionContent {
+                    id: "vision".to_string(),
+                    slot: Some("A one-line vision.".to_string()),
+                    ..Default::default()
+                },
+                engine::write::SectionContent {
+                    id: "requirements".to_string(),
+                    ..Default::default()
+                },
+                engine::write::SectionContent {
+                    id: "context".to_string(),
+                    slot: Some("The shaping constraints.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        let cold_bytes = engine::write::render(&schema, &cold);
+        let cold_again =
+            engine::write::render(&schema, &prd_reparse_to_instance(&schema, &cold_bytes));
+        assert_eq!(
+            cold_bytes, cold_again,
+            "a zero-item prd renders + reparses byte-stable",
+        );
+
+        // One added requirement: same byte-stability with an item present.
+        let mut warm = cold;
+        warm.sections[1].items.push(engine::write::ItemContent {
+            id: "single-tap-log".to_string(),
+            title: "Single-tap log".to_string(),
+            slot: Some("Log a habit in one tap.".to_string()),
+            ..Default::default()
+        });
+        let warm_bytes = engine::write::render(&schema, &warm);
+        let warm_again =
+            engine::write::render(&schema, &prd_reparse_to_instance(&schema, &warm_bytes));
+        assert_eq!(
+            warm_bytes, warm_again,
+            "a one-item prd renders + reparses byte-stable (no empty-slot+field-group drift)",
+        );
     }
 
     /// The `implements` ref on `commit` resolves through `field_target` by both

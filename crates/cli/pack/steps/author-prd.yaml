@@ -2,5 +2,10 @@ Create the prd, then author its slots:
 
 {{ cli.create-prd }}
 <<author: {{ task.brief#vision }}>>
-<<author: {{ task.brief#requirements }}>>
 <<author: {{ task.brief#context }}>>
+
+Then add one requirement per thing the product must do. For each, mint the item
+and write its requirement in prose:
+
+jigc doc add-item prd:<slug>#requirements --title "<requirement>" --task {{task.id}}
+jigc doc set-slot prd:<slug>#requirements/<id>/statement --from-file - --task {{task.id}}

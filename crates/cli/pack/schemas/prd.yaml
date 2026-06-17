@@ -1,17 +1,18 @@
 # prd — the M9 new-project doc-type: the first managed document a fresh repo
-# develops its idea into. Persisted to prds/; three fixed prose slots and
-# nothing else. Per the M9 scope decision (G2, DECISIONS.md 2026-06-06),
-# requirements are FIXED PROSE SLOTS — not a repeatable section — so `prd` is
-# pure pack data with zero engine work (a repeatable section would hit the
-# stubbed `add-item` authoring wall). `id-from: title` derives the slug from
-# the document H1, exactly like `adr`/`spec` (no declared `title` field).
+# develops its idea into. Persisted to prds/; `vision`/`context` are fixed prose
+# slots, and `requirements` is a REPEATABLE section — one addressable record per
+# requirement (a `title` field + a `statement` slot), mirroring `spec.criteria`
+# minus the code-anchor. `id-from: title` derives the slug from the document H1,
+# exactly like `adr`/`spec` (no declared `title` field); each requirement item's
+# id derives from its own title the same way.
 #
-# Section ids are SINGLE WORDS ONLY (`vision`/`requirements`/`context`): a
-# multi-word id trips the logged title-case reparse defect (writer title-cases
-# `out-of-scope` → "Out Of Scope", parser flat-compares the raw id), deferred
-# in M9 — these slots route around it. No repeatable section, no ref edge.
-# See project-setup.md → Flow 1 (the prd doctype); document-type-schema.md;
-# DECISIONS.md 2026-06-06 → G2.
+# (M25: the repeatable shape replaces the original fixed `requirements` slot —
+# the M9-era `add-item` authoring wall and the single-word-id title-case reparse
+# defect were cleared by the M13 add-item verb and the M22 multi-word-heading
+# parser fix, so a foreign PRD's requirements now get individually-addressable
+# structure and the greenfield flow authors them per-item.) No ref edge —
+# `prd —decomposes-into→ spec` stays deferred (no migration driver).
+# See auto-migration.md → prd; project-setup.md → Flow 1; document-type-schema.md.
 type: prd
 location: prds/
 id-from: title
@@ -22,6 +23,10 @@ sections:
   - id: vision
     slot: { hint: "The product vision in a sentence or two." }
   - id: requirements
-    slot: { hint: "The product requirements, as a prose bullet list." }
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: "The requirement, in a sentence or two." } }
   - id: context
     slot: { hint: "Why it is needed and the constraints that shape it." }

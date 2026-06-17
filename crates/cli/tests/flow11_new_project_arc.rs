@@ -13,7 +13,8 @@
 //!   `jigc setup`
 //!     → `jigc start --workflow project-setup "<idea>"`
 //!     → `jigc doc create prd --title "…"`   (the create-gate mints `prd:<slug>`)
-//!     → set-slot vision/requirements/context (the three fixed prose slots)
+//!     → set-slot vision/context (the two fixed prose slots)
+//!     → add-item + set-slot per requirement (the repeatable `requirements` section)
 //!     → set-field commit#type=docs + set-slot commit#summary/body
 //!     → (NO code change)
 //!     → `jigc task finalize <id>`
@@ -173,7 +174,7 @@ fn new_project_arc_finalizes_into_one_docs_prd_commit() {
         .to_string();
     assert_eq!(prd, "prd:habit-tracker");
 
-    // ── author the prd — all three fixed prose slots ─────────────────────────────
+    // ── author the prd — the two fixed prose slots ───────────────────────────────
     let set_slot = |addr: &str, prose: &[u8]| {
         let out = jigc_doc(
             repo.path(),
@@ -190,10 +191,48 @@ fn new_project_arc_finalizes_into_one_docs_prd_commit() {
         "prd:habit-tracker#vision",
         b"A tracker that turns intentions into daily streaks.",
     );
+
+    // ── author the prd — the repeatable `requirements` section (M25 Inc 5) ────────
+    // Mint each requirement, then fill its `statement` slot at the EMITTED item
+    // address verbatim (the addr the agent runs next — never a reconstructed one).
+    let add_requirement = |title: &str| -> String {
+        let out = jigc_doc(
+            repo.path(),
+            home.path(),
+            &[
+                "add-item",
+                "prd:habit-tracker#requirements",
+                "--title",
+                title,
+            ],
+            None,
+        );
+        assert_ok(&out, &format!("add-item requirements --title {title:?}"));
+        let addr = String::from_utf8(out.stdout)
+            .expect("utf-8")
+            .trim_end_matches('\n')
+            .to_string();
+        assert!(
+            addr.starts_with("prd:habit-tracker#requirements/"),
+            "add-item must emit the minted requirement item address; got {addr:?}",
+        );
+        addr
+    };
+    let req_one = add_requirement("Log a habit in one tap");
+    let req_two = add_requirement("Show the current streak");
+    // Deliberately NO trailing newline on req_one's statement: it is NON-TERMINAL
+    // (req_two's `### …` heading follows it), so the writer must still separate the
+    // statement prose from the next item heading — the fuse-onto-heading masking guard
+    // on the new repeatable shape.
     set_slot(
-        "prd:habit-tracker#requirements",
-        b"- Log a habit in one tap.\n- Show the current streak.\n",
+        &format!("{req_one}/statement"),
+        b"Logging a habit takes a single tap from the home screen.",
     );
+    set_slot(
+        &format!("{req_two}/statement"),
+        b"The current streak is shown front and center.\n",
+    );
+
     set_slot(
         "prd:habit-tracker#context",
         b"Built for solo users who abandon heavyweight planners.\n",
@@ -258,6 +297,27 @@ fn new_project_arc_finalizes_into_one_docs_prd_commit() {
     assert!(
         files.lines().any(|l| l == "prds/habit-tracker.md"),
         "the promoted prd must be in the commit; files:\n{files}",
+    );
+
+    // (c′) the committed prd carries the per-requirement repeatable items + their
+    // statements (M25 Inc 5): the `## Requirements` section holds both minted
+    // requirements as `### …` items, each followed by its own statement prose.
+    let prd_body = String::from_utf8(committed.stdout).expect("utf-8 prd body");
+    assert!(
+        prd_body.contains("### Log a habit in one tap"),
+        "the committed prd must carry the first requirement item; got:\n{prd_body}",
+    );
+    assert!(
+        prd_body.contains("Logging a habit takes a single tap from the home screen."),
+        "the committed prd must carry the first requirement's statement; got:\n{prd_body}",
+    );
+    assert!(
+        prd_body.contains("### Show the current streak"),
+        "the committed prd must carry the second requirement item; got:\n{prd_body}",
+    );
+    assert!(
+        prd_body.contains("The current streak is shown front and center."),
+        "the committed prd must carry the second requirement's statement; got:\n{prd_body}",
     );
 
     // (d) the rendered commit subject carries `docs`.
