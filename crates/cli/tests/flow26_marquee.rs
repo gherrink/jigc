@@ -147,10 +147,10 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
-/// The off-router migration task id — `jigc migrate` mints `migrate-<doctype>` (the empty
+/// The off-router migration task id — `jigc migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` → Hardening #9).
-const TASK: &str = "migrate-changelog";
+const TASK: &str = "migrate-changelog-changelog";
 
 /// The shipped changelog schema, loaded for the byte-stable round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
@@ -222,12 +222,12 @@ sections:
                   notes: "<<- First public release.>>"
 "#;
 
-/// The staged `changelog:changelog` instance in the migration task's working area.
-fn staged_changelog(repo: &Path) -> String {
+/// The staged `changelog:changelog` instance in the migration `task`'s working area.
+fn staged_changelog(repo: &Path, task: &str) -> String {
     let path = repo
         .join(".jigc")
         .join("tasks")
-        .join(TASK)
+        .join(task)
         .join("docs")
         .join("changelog:changelog.md");
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("read staged {path:?}: {e}"))
@@ -247,7 +247,7 @@ fn assert_byte_stable(pack: &Path, staged: &str) {
 
 /// Write + **commit** the foreign original at `source_path` (so its retirement lands as a
 /// tracked deletion), then `setup` and `jigc migrate <source_path> --as changelog`,
-/// minting the off-router `migrate-changelog` task. Returns the composed migrate stdout.
+/// minting the off-router `migrate-changelog-changelog` task. Returns the composed migrate stdout.
 fn setup_and_migrate(
     repo: &Path,
     home: &Path,
@@ -277,14 +277,14 @@ fn setup_and_migrate(
 }
 
 /// Author the whole canonical changelog in ONE `doc author --from` batch against the
-/// migration task, asserting it stages the singleton address.
-fn author_via_batch(repo: &Path, home: &Path, pack: &Path, payload: &str) {
+/// migration `task`, asserting it stages the singleton address.
+fn author_via_batch(repo: &Path, home: &Path, pack: &Path, task: &str, payload: &str) {
     let created = ok_stdout(
         run_jigc(
             repo,
             home,
             pack,
-            &["doc", "author", "changelog", "--from", "-", "--task", TASK],
+            &["doc", "author", "changelog", "--from", "-", "--task", task],
             Some(payload.as_bytes()),
         ),
         "jigc doc author changelog --from -",
@@ -307,11 +307,11 @@ fn flow26_full_batch_migration_walk() {
     init_repo(repo.path());
 
     setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", FOREIGN);
-    author_via_batch(repo.path(), home.path(), &pack, HAPPY_PAYLOAD);
+    author_via_batch(repo.path(), home.path(), &pack, TASK, HAPPY_PAYLOAD);
 
     // The batch-authored staged doc round-trips byte-stable, carries all three versions
     // and the merged/inferred groups, and renders NO date line (dateless source, #6).
-    let staged = staged_changelog(repo.path());
+    let staged = staged_changelog(repo.path(), TASK);
     assert_byte_stable(&pack, &staged);
     assert!(
         staged.contains("### 1.2.0")
@@ -601,7 +601,7 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
     init_repo(repo.path());
 
     setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", FOREIGN);
-    author_via_batch(repo.path(), home.path(), &pack, HAPPY_PAYLOAD);
+    author_via_batch(repo.path(), home.path(), &pack, TASK, HAPPY_PAYLOAD);
 
     // 1.2.0 carries `changed` + `fixed`; retract the `changed` group.
     let removed = run_jigc(
@@ -619,7 +619,7 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
     );
     ok_stdout(removed, "doc remove-item nested change-group");
 
-    let staged = staged_changelog(repo.path());
+    let staged = staged_changelog(repo.path(), TASK);
     assert!(
         !staged.contains("#### Changed"),
         "the removed change-group heading is gone:\n{staged}",
@@ -646,7 +646,11 @@ fn flow26_red_in_location_squatter_seeds_blank_and_authors_via_batch() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    // A NON-conformant changelog squatting AT the canonical managed path.
+    // A NON-conformant changelog squatting AT the canonical managed path. The per-file
+    // migration id folds the (extension-stripped, separator-folded) source path into the
+    // slug, so this `changelog/changelog.md` source mints a distinct task id from the
+    // root-`CHANGELOG.md` tests above.
+    const SQUATTER_TASK: &str = "migrate-changelog-changelog-changelog";
     const SQUATTER: &str = "# Whatever\n\nnon-conformant prior content at the canonical path\n";
     setup_and_migrate(
         repo.path(),
@@ -670,9 +674,15 @@ sections:
                 set:
                   notes: "<<- First public release.>>"
 "#;
-    author_via_batch(repo.path(), home.path(), &pack, SQUATTER_PAYLOAD);
+    author_via_batch(
+        repo.path(),
+        home.path(),
+        &pack,
+        SQUATTER_TASK,
+        SQUATTER_PAYLOAD,
+    );
 
-    let staged = staged_changelog(repo.path());
+    let staged = staged_changelog(repo.path(), SQUATTER_TASK);
     assert!(
         !staged.contains("non-conformant prior content"),
         "the squatter body must NOT be copied in as the edit base (no Frankenstein doc):\n{staged}",
@@ -687,7 +697,7 @@ sections:
         repo.path(),
         home.path(),
         &pack,
-        &["task", "finalize", TASK, "--approve"],
+        &["task", "finalize", SQUATTER_TASK, "--approve"],
         None,
     );
     assert!(
@@ -754,7 +764,7 @@ sections:
                 set:
                   notes: "<<- Device-code OAuth flow.>>"
 "#;
-    author_via_batch(repo.path(), home.path(), &pack, DROPPED_PAYLOAD);
+    author_via_batch(repo.path(), home.path(), &pack, TASK, DROPPED_PAYLOAD);
 
     let out = run_jigc(
         repo.path(),

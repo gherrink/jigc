@@ -92,12 +92,15 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
 /// `DECISIONS.md` S2). The agent then authors only the canonical doc and never touches
 /// the commit form.
 ///
-/// The task id is `migrate-<doctype>`, **not** the bare `doctype` name: the bare name
-/// collides with both `--task <doctype>` (resuming a `doctype`-slugged task) and the
-/// `doctype` id-space itself, so a migration task named after its doctype would block
-/// an independent task at that name (`auto-migration.md` → Hardening #9). The
-/// `migrate-` prefix is fed as the empty-intent id-source fallback (`mint_task`'s
-/// `type_name` arg), so the mint slugs it to a stable, collision-free `migrate-<doctype>`.
+/// The task id is **per-file** — `migrate-<doctype>-<slug(source_path)>`, **not** the
+/// singleton `migrate-<doctype>`: a corpus of N foreign docs migrates sequentially
+/// (each file mints its own task), where the fixed `migrate-<doctype>` would serial-
+/// collide on the second file. It is also **not** the bare `doctype` name: the bare
+/// name collides with both `--task <doctype>` (resuming a `doctype`-slugged task) and
+/// the `doctype` id-space itself, so a migration task named after its doctype would
+/// block an independent task at that name (`auto-migration.md` → Hardening #9). The
+/// [`migration_task_id_source`] is fed as the empty-intent id-source fallback
+/// (`mint_task`'s `type_name` arg), so the mint slugs it to a stable, collision-free id.
 ///
 /// The `jigc migrate` verb owns this mint so composition never double-mints; it stages
 /// the foreign source separately and then composes via [`compose_migrate_in_repo`].
@@ -109,14 +112,38 @@ pub(crate) fn mint_migration_in_repo(
 ) -> Result<MintedTask> {
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(repo_root)?;
-    // Empty intent → the id slugs from this `migrate-<doctype>` fallback, keeping the
-    // bare `<doctype>` task namespace free.
-    let mint_id_source = format!("migrate-{doctype}");
+    // Empty intent → the id slugs from this per-file `migrate-<doctype>-<slug>` fallback,
+    // keeping the bare `<doctype>` task namespace free and the migration task per-file.
+    let mint_id_source = migration_task_id_source(doctype, source_path);
     let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base)
         .map_err(finding_to_err)?;
     let pack = make_pack();
     provision_migration_commit_doc(pack.as_ref(), &minted.dir, &minted.id, source_path, doctype)?;
     Ok(minted)
+}
+
+/// Derive the **per-file** migration task id-source from `(doctype, source_path)` — a
+/// pure, path-aware function so a corpus of N foreign docs migrates sequentially (each
+/// file its own task) rather than serial-colliding on a singleton `migrate-<doctype>`.
+///
+/// The slug folds the **repo-relative source path** (extension stripped, path separators
+/// folded to `-`) into the id, so two same-stem files in different directories
+/// (`a/CHANGELOG.md` vs `b/CHANGELOG.md`) yield distinct ids. It is the deterministic
+/// inverse the (I)-pick settled on (`DECISIONS.md` 2026-06-17 → M25 Inc 1): re-migrating
+/// the *same* file produces the *same* id, so it collides into the existing serial-
+/// collision route (resume/discard) instead of double-minting — `mint_task` hard-rejects
+/// a serial collision, never suffixes. The result is already a clean slug, so the mint's
+/// own `slugify` of the empty-intent fallback is the identity (the id-source is the id).
+fn migration_task_id_source(doctype: &str, source_path: &str) -> String {
+    // Strip the extension and fold path separators to '-' before slugging, so the
+    // directory survives into the slug (slugify would otherwise drop a bare '/').
+    let stem = Path::new(source_path).with_extension("");
+    let folded: String = stem
+        .to_string_lossy()
+        .chars()
+        .map(|c| if matches!(c, '/' | '\\') { '-' } else { c })
+        .collect();
+    format!("migrate-{doctype}-{}", engine::slug::slugify(&folded))
 }
 
 /// Provision the task's workflow-provisioned **commit** doc into the working
@@ -2655,6 +2682,39 @@ mod tests {
         assert!(
             msg.contains("add-rate-limiter") && msg.contains("route:"),
             "serial collision must name the task and carry a route; got: {msg}"
+        );
+    }
+
+    /// The per-file migration task id-source is a pure, path-aware function of
+    /// `(doctype, source_path)`: the same path yields the same id (so re-migrating a
+    /// file collides into the existing serial-collision route, not a double-mint), two
+    /// distinct paths yield distinct ids (so a corpus migrates sequentially without the
+    /// singleton blocker), and two same-stem files in different directories yield
+    /// distinct ids (the path is folded in, not just the stem). The changelog root file
+    /// lands at the documented `migrate-changelog-changelog`.
+    #[test]
+    fn migration_task_id_source_is_per_file_and_path_aware() {
+        // Same path -> same id (deterministic; re-migration collides, never double-mints).
+        assert_eq!(
+            migration_task_id_source("adr", "decisions/0001-cache.md"),
+            migration_task_id_source("adr", "decisions/0001-cache.md"),
+        );
+        // Two distinct paths -> distinct ids.
+        assert_ne!(
+            migration_task_id_source("adr", "decisions/0001-cache.md"),
+            migration_task_id_source("adr", "decisions/0002-retry.md"),
+        );
+        // Same stem in different directories -> distinct ids (the path, not just the
+        // stem, is folded into the slug).
+        assert_ne!(
+            migration_task_id_source("adr", "a/CHANGELOG.md"),
+            migration_task_id_source("adr", "b/CHANGELOG.md"),
+        );
+        // The result is already a clean slug, so the mint's own slugify is the identity:
+        // the id-source IS the minted task id.
+        assert_eq!(
+            migration_task_id_source("changelog", "CHANGELOG.md"),
+            "migrate-changelog-changelog",
         );
     }
 

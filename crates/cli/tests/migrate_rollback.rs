@@ -138,10 +138,10 @@ fn ok(out: std::process::Output, what: &str) {
     );
 }
 
-/// The off-router migration task id — `migrate` mints `migrate-<doctype>` (the empty
+/// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog";
+const TASK: &str = "migrate-changelog-changelog";
 
 /// The single-release foreign file (the cold/empty spike input).
 const FOREIGN: &str = "\

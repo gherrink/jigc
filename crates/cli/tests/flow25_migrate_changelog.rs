@@ -148,11 +148,11 @@ fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
     engine::schema::load_schema(&yaml).expect("shipped changelog schema loads")
 }
 
-/// The off-router migration task id — `migrate` mints `migrate-<doctype>` (the empty
+/// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), so a `--as changelog` migration
-/// always lands at `migrate-changelog`, keeping the bare `changelog` namespace free
+/// always lands at `migrate-changelog-changelog`, keeping the bare `changelog` namespace free
 /// (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog";
+const TASK: &str = "migrate-changelog-changelog";
 
 /// `jigc migrate CHANGELOG.md --as changelog`: write the foreign file, run the verb,
 /// and return the composed view's stdout — asserting it surfaced the foreign content

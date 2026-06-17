@@ -139,8 +139,8 @@ fn staged_changelog(repo: &Path, task: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("read staged {path:?}: {e}"))
 }
 
-/// The migration task id — `jigc migrate` mints `migrate-<doctype>`.
-const MIGRATE_TASK: &str = "migrate-changelog";
+/// The migration task id — `jigc migrate` mints a per-file `migrate-<doctype>-<slug(path)>`.
+const MIGRATE_TASK: &str = "migrate-changelog-changelog";
 
 /// A dateless foreign Keep-a-Changelog file — the common case (no `- YYYY-MM-DD`).
 const DATELESS_FOREIGN: &str = "\
@@ -152,7 +152,7 @@ const DATELESS_FOREIGN: &str = "\
 ";
 
 /// Run `jigc migrate CHANGELOG.md --as changelog` over a dateless foreign file, minting
-/// the off-router `migrate-changelog` task (recording the `source-path` = migration mode).
+/// the off-router `migrate-changelog-changelog` task (recording the `source-path` = migration mode).
 fn start_migration(repo: &Path, home: &Path, pack: &Path) {
     fs::write(repo.join("CHANGELOG.md"), DATELESS_FOREIGN).expect("write foreign CHANGELOG.md");
     ok_stdout(

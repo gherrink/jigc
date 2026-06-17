@@ -149,10 +149,15 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
-/// The off-router migration task id — `migrate` mints `migrate-<doctype>` (the empty
+/// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog";
+const TASK: &str = "migrate-changelog-changelog";
+
+/// The per-file migration task id for a source AT the canonical managed path
+/// (`changelog/changelog.md`) — the path is folded into the slug, so this in-location
+/// squatter mints a distinct id from the root-`CHANGELOG.md` `TASK` above.
+const SQUATTER_TASK: &str = "migrate-changelog-changelog-changelog";
 
 /// A single-release foreign changelog body (the migration input) — the raw Keep-a-Changelog
 /// shape, NON-conformant to the managed `changelog` schema (no `{#…}` anchors, no
@@ -178,8 +183,8 @@ const EMPTY: &str = "\
 ## Releases
 ";
 
-/// Author a conformant `commit:<TASK>` doc (the transient sink) in the migration task.
-fn author_commit_doc(repo: &Path, home: &Path, pack: &Path) {
+/// Author a conformant `commit:<task>` doc (the transient sink) in the migration `task`.
+fn author_commit_doc(repo: &Path, home: &Path, pack: &Path, task: &str) {
     ok(
         run_jigc(
             repo,
@@ -188,11 +193,11 @@ fn author_commit_doc(repo: &Path, home: &Path, pack: &Path) {
             &[
                 "doc",
                 "set-field",
-                &format!("commit:{TASK}#type"),
+                &format!("commit:{task}#type"),
                 "--value",
                 "feat",
                 "--task",
-                TASK,
+                task,
             ],
         ),
         "set-field commit type",
@@ -205,11 +210,11 @@ fn author_commit_doc(repo: &Path, home: &Path, pack: &Path) {
             &[
                 "doc",
                 "set-field",
-                &format!("commit:{TASK}#scope"),
+                &format!("commit:{task}#scope"),
                 "--value",
                 "changelog",
                 "--task",
-                TASK,
+                task,
             ],
         ),
         "set-field commit scope",
@@ -222,11 +227,11 @@ fn author_commit_doc(repo: &Path, home: &Path, pack: &Path) {
             &[
                 "doc",
                 "set-slot",
-                &format!("commit:{TASK}#summary"),
+                &format!("commit:{task}#summary"),
                 "--from-file",
                 "-",
                 "--task",
-                TASK,
+                task,
             ],
             b"adopt the migrated changelog\n",
         ),
@@ -240,11 +245,11 @@ fn author_commit_doc(repo: &Path, home: &Path, pack: &Path) {
             &[
                 "doc",
                 "set-slot",
-                &format!("commit:{TASK}#body"),
+                &format!("commit:{task}#body"),
                 "--from-file",
                 "-",
                 "--task",
-                TASK,
+                task,
             ],
             b"Migrate the foreign changelog into managed shape.\n",
         ),
@@ -285,7 +290,7 @@ fn approved_migration_without_a_replacement_does_not_delete_the_foreign() {
         "migrate",
     );
     // Fill the commit doc but DELIBERATELY skip `doc create changelog` — no managed doc.
-    author_commit_doc(repo.path(), home.path(), &pack);
+    author_commit_doc(repo.path(), home.path(), &pack, TASK);
 
     let out = run_jigc(
         repo.path(),
@@ -325,11 +330,11 @@ fn approved_migration_without_a_replacement_does_not_delete_the_foreign() {
 
 /// Read the `source-path` `jigc migrate` recorded for the minted migration task — the
 /// retire target the finalize collision guard reads back.
-fn recorded_source_path(repo: &Path) -> String {
+fn recorded_source_path(repo: &Path, task: &str) -> String {
     fs::read_to_string(
         repo.join(".jigc")
             .join("tasks")
-            .join(TASK)
+            .join(task)
             .join("source-path"),
     )
     .expect("read recorded source-path")
@@ -370,7 +375,7 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
             "migrate ./changelog/changelog.md",
         );
         assert_eq!(
-            recorded_source_path(repo.path()),
+            recorded_source_path(repo.path(), SQUATTER_TASK),
             "changelog/changelog.md",
             "a `./`-prefixed spelling must be normalized to the canonical repo-relative path",
         );
@@ -404,7 +409,7 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
             "migrate <absolute path>",
         );
         assert_eq!(
-            recorded_source_path(repo.path()),
+            recorded_source_path(repo.path(), SQUATTER_TASK),
             "changelog/changelog.md",
             "an absolute spelling must be normalized to the canonical repo-relative path",
         );
@@ -475,7 +480,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
                 "--title",
                 "Changelog",
                 "--task",
-                TASK,
+                SQUATTER_TASK,
             ],
         ),
         "doc create changelog",
@@ -484,7 +489,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
         .path()
         .join(".jigc")
         .join("tasks")
-        .join(TASK)
+        .join(SQUATTER_TASK)
         .join("docs")
         .join("changelog:changelog.md");
     let seeded = fs::read_to_string(&staged).expect("read staged changelog");
@@ -510,7 +515,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
                 "--title",
                 "0.1.0",
                 "--task",
-                TASK,
+                SQUATTER_TASK,
             ],
         ),
         "add-item release",
@@ -527,7 +532,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
                 "--value",
                 "2021-03-09",
                 "--task",
-                TASK,
+                SQUATTER_TASK,
             ],
         ),
         "set-field date",
@@ -544,7 +549,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
                 "--title",
                 "Added",
                 "--task",
-                TASK,
+                SQUATTER_TASK,
             ],
         ),
         "add-item change-group",
@@ -561,13 +566,13 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
                 "--from-file",
                 "-",
                 "--task",
-                TASK,
+                SQUATTER_TASK,
             ],
             b"- First public release.\n",
         ),
         "set-slot notes",
     );
-    author_commit_doc(repo.path(), home.path(), &pack);
+    author_commit_doc(repo.path(), home.path(), &pack, SQUATTER_TASK);
 
     // The authored staged buffer — the canonical doc must equal exactly THIS after
     // finalize (no foreign/authored merge).
@@ -581,7 +586,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
         repo.path(),
         home.path(),
         &pack,
-        &["task", "finalize", TASK, "--approve"],
+        &["task", "finalize", SQUATTER_TASK, "--approve"],
     );
     assert!(
         out.status.success(),

@@ -129,10 +129,10 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
-/// The off-router migration task id — `migrate` mints `migrate-<doctype>` (the empty
+/// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog";
+const TASK: &str = "migrate-changelog-changelog";
 
 /// Fill every author-required field/slot of the provisioned commit doc for `task` so a
 /// `finalize` over it validates clean.
