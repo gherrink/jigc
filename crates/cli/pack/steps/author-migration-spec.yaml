@@ -1,0 +1,47 @@
+Migrate the foreign spec into a managed `spec` at `specs/`. Below is the foreign source
+the CLI staged for you (read-only context — you author the canonical record through the
+write verbs, you never edit this file or place anything yourself):
+
+{{ source }}
+
+Author the WHOLE canonical spec in ONE declarative batch payload — the CLI creates the
+record at `specs/<title-slug>` and places its goal/context slots and every criterion over
+a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author spec --from - --task {{task.id}} <<'EOF'
+title: "<the spec's subject, as a short noun phrase>"
+sections:
+  - id: goal
+    set:
+      goal: "<<what this spec delivers — the outcome, in a sentence or two>>"
+  - id: context
+    set:
+      context: "<<why it is needed and the constraints that shape it>>"
+  - id: criteria
+    items:
+      - title: "<a short label for this criterion>"
+        set:
+          statement: "<<the criterion, testably phrased>>"
+      - title: "<a short label for the next criterion>"
+        set:
+          statement: "<<the next criterion, testably phrased>>"
+EOF
+
+Map the foreign spec's headings onto this fixed shape:
+
+  - the foreign Goal / Overview / Summary / Objective heading maps to the `goal` slot;
+  - the foreign Context / Background / Motivation / Constraints heading maps to the
+    `context` slot;
+  - the foreign Acceptance Criteria / Requirements / Done-when list maps to the repeatable
+    `criteria` — author ONE item per criterion, each a short `title` plus a testably-phrased
+    `statement`. A bullet list, a numbered list, or a table of criteria all fold to one item
+    each; keep them one statement apiece, never lumped into a single block.
+
+The `maps-to-test` field is OPTIONAL. A foreign spec that names no test does NOT get a
+fabricated anchor — leave `maps-to-test` off the item entirely; a migrated spec with no
+test anchors finalizes clean. Wire `maps-to-test` only when the foreign criterion already
+cites a concrete test symbol you can carry over verbatim.
+
+A foreign "decided by ADR-X" / "see the auth ADR" reference has no structural edge in the
+spec schema (there is no `decided-by` relation) — fold it into the `context` prose instead;
+never invent a field for it.

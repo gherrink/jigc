@@ -1,0 +1,10 @@
+---
+when: migrate a foreign spec into a managed specification
+description: Migrate a foreign specification into a managed `spec` at `specs/` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant spec (a free-form requirements or acceptance-criteria file under `docs/specs/` or similar) and `jigc migrate <path> --as spec` is rewriting it into a managed `spec`. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: spec, as: spec}]
+---
+{{ include: step:author-migration-spec }}
+{{ include: step:finalize }}
