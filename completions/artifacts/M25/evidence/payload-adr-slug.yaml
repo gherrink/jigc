@@ -1,0 +1,20 @@
+# Framing-A agent rewrite of log4brains docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md
+# Migrated SECOND — after its target (use-the-adr-number-as-its-unique-id) is COMMITTED, so the
+# forward `supersedes` ref resolves against the committed store (edge integrity across the set).
+# Bracket-list (0..* widened) form — the comma footgun avoided. Date 2020-10-16 transcribed.
+title: "Use the ADR slug as its unique ID"
+sections:
+  - id: status
+    set:
+      status: accepted
+      date: "2020-10-16"
+      supersedes: "[adr:use-the-adr-number-as-its-unique-id]"
+  - id: context
+    set:
+      context: "<<ADR files were named NNNN-adr-title.md. When two developers each created a new ADR on separate branches, the incremental number collided and caused a git-merge conflict, because an ADR number must be unique.>>"
+  - id: decision
+    set:
+      decision: "<<Stop using ADR numbers. An ADR is uniquely identified by its slug (filename without extension), with files named YYYYMMDD-adr-title.md; the date prefix keeps them sorted in the IDE. The core library owns sorting.>>"
+  - id: consequences
+    set:
+      consequences: "<<No more merge conflicts from colliding numbers; ADRs sort by the Date field, then git creation date, then file creation date, then slug.>>"

@@ -1,0 +1,227 @@
+### PRD ARM — SYNTHESIZED, LABELED-SYNTHETIC foreign PRD (prd has no real corpus standard)
+repo: /tmp/jigc-m25-prd
+foreign PRD: PRD.md (fabricated — see synthetic-prd-source.md)
+
+jigc setup — adapter installed
+
+jigc is now wired into this project; two host files were updated:
+  - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
+  - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+==================================================================
+### FILE: PRD.md   (--as prd)   tag=prd-habit
+foreign git-blob: 1a652c2f589adf760be06fbddaa1f28d373742b9
+foreign line count: 28
+
+--- jigc migrate PRD.md --as prd (composed view) ---
+Migrate the foreign PRD into a managed `prd` at `prds/`. Below is the foreign source the
+CLI staged for you (read-only context — you author the canonical record through the write
+verbs, you never edit this file or place anything yourself):
+
+<!--
+  SYNTHETIC — FABRICATED FOR THE M25 MEASURE, NOT A REAL FOREIGN CORPUS.
+  prd has no real foreign-corpus standard (auto-migration.md → Honest bounds: "prd has no
+  real foreign corpus standard — its acceptance arm is a synthesized, labeled-as-synthetic
+  PRD; the measured-on-real-corpus claim is honestly weaker for prd"). This file stands in
+  for a foreign product brief so the prd migration arm can run the same one-file spine.
+-->
+# Product Brief: FocusFlow
+
+## Overview / Vision
+
+FocusFlow is a lightweight mobile app that turns vague good intentions into visible daily
+streaks, so solo users who abandon heavyweight planners actually stick with their habits.
+
+## What it must do
+
+We need the following before launch:
+
+- A user can log a habit with a single tap from the home screen — no menus, no forms.
+- The current streak for each habit is shown front and center, large and unmissable.
+- A gentle daily reminder nudges the user at a time they choose.
+- The user can review a 30-day history of completions as a simple calendar heatmap.
+
+## Constraints & background
+
+Built for individuals, not teams — there is no sharing, no accounts to manage, no backend
+beyond anonymous sync. The bet is that radical simplicity is what keeps people coming back,
+so every feature must justify itself against the one-tap-logging core.
+
+
+Author the WHOLE canonical prd in ONE declarative batch payload — the CLI creates the
+record at `prds/<title-slug>` and places its vision/context slots and every requirement
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author prd --from - --task migrate-prd-prd <<'EOF'
+title: "<the prd's subject, as a short noun phrase>"
+sections:
+  - id: vision
+    set:
+      vision: "<<the product vision — the outcome, in a sentence or two>>"
+  - id: requirements
+    items:
+      - title: "<a short label for this requirement>"
+        set:
+          statement: "<<the requirement, in a sentence or two>>"
+      - title: "<a short label for the next requirement>"
+        set:
+          statement: "<<the next requirement, in a sentence or two>>"
+  - id: context
+    set:
+      context: "<<why it is needed and the constraints that shape it>>"
+EOF
+
+Map the foreign PRD's headings onto this fixed shape:
+
+  - the foreign Vision / Overview / Summary / Goal heading maps to the `vision` slot;
+  - the foreign Context / Background / Motivation / Constraints heading maps to the
+    `context` slot;
+  - the foreign Requirements / Features / Must-haves / User-stories list maps to the
+    repeatable `requirements` — author ONE item per requirement, each a short `title` plus
+    a `statement`. A bullet list, a numbered list, or a table of requirements all fold to
+    one item each; keep them one statement apiece, never lumped into a single block.
+
+A foreign "decomposes into spec X" / "see the auth spec" reference has no structural edge
+in the prd schema (there is no `decomposes-into` relation) — fold it into the `context`
+prose instead; never invent a field for it.
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize migrate-prd-prd`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+MIGRATION_TASK=migrate-prd-prd
+
+--- jigc doc author prd --from <payload> (ONE batch) ---
+AUTHOR_MINTED=prd:focusflow
+
+--- jigc task finalize migrate-prd-prd   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-prd-prd --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- <!--
+-   SYNTHETIC — FABRICATED FOR THE M25 MEASURE, NOT A REAL FOREIGN CORPUS.
+-   prd has no real foreign-corpus standard (auto-migration.md → Honest bounds: "prd has no
+-   real foreign corpus standard — its acceptance arm is a synthesized, labeled-as-synthetic
+-   PRD; the measured-on-real-corpus claim is honestly weaker for prd"). This file stands in
+-   for a foreign product brief so the prd migration arm can run the same one-file spine.
+- -->
+- # Product Brief: FocusFlow
+- 
+- ## Overview / Vision
+- 
+- FocusFlow is a lightweight mobile app that turns vague good intentions into visible daily
+- streaks, so solo users who abandon heavyweight planners actually stick with their habits.
+- 
+- ## What it must do
+- 
+- We need the following before launch:
+- 
+- - A user can log a habit with a single tap from the home screen — no menus, no forms.
+- - The current streak for each habit is shown front and center, large and unmissable.
+- - A gentle daily reminder nudges the user at a time they choose.
+- - The user can review a 30-day history of completions as a simple calendar heatmap.
+- 
+- ## Constraints & background
+- 
+- Built for individuals, not teams — there is no sharing, no accounts to manage, no backend
+- beyond anonymous sync. The bet is that radical simplicity is what keeps people coming back,
+- so every feature must justify itself against the one-tap-logging core.
++++ canonical rewrite → prds/focusflow.md
++ # focusflow
++ 
++ ## Vision
++ 
++ A lightweight mobile app that turns vague good intentions into visible daily streaks, so solo users who abandon heavyweight planners actually stick with their habits.
++ 
++ ## Requirements
++ 
++ ### Log a habit in one tap  {#log-a-habit-in-one-tap}
++ 
++ A user can log a habit with a single tap from the home screen — no menus, no forms.
++ 
++ ### Show the current streak  {#show-the-current-streak}
++ 
++ The current streak for each habit is shown front and center, large and unmissable.
++ 
++ ### Daily reminder  {#daily-reminder}
++ 
++ A gentle daily reminder nudges the user at a time they choose.
++ 
++ ### 30-day history heatmap  {#30-day-history-heatmap}
++ 
++ The user can review a 30-day history of completions as a simple calendar heatmap.
++ 
++ ## Context
++ 
++ Built for individuals, not teams — no sharing, no managed accounts, no backend beyond anonymous sync. The bet is that radical simplicity keeps people coming back, so every feature must justify itself against the one-tap-logging core.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-prd-prd --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-prd-prd.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/prd:focusflow.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical prds/focusflow.md ---
+# focusflow
+
+## Vision
+
+A lightweight mobile app that turns vague good intentions into visible daily streaks, so solo users who abandon heavyweight planners actually stick with their habits.
+
+## Requirements
+
+### Log a habit in one tap  {#log-a-habit-in-one-tap}
+
+A user can log a habit with a single tap from the home screen — no menus, no forms.
+
+### Show the current streak  {#show-the-current-streak}
+
+The current streak for each habit is shown front and center, large and unmissable.
+
+### Daily reminder  {#daily-reminder}
+
+A gentle daily reminder nudges the user at a time they choose.
+
+### 30-day history heatmap  {#30-day-history-heatmap}
+
+The user can review a 30-day history of completions as a simple calendar heatmap.
+
+## Context
+
+Built for individuals, not teams — no sharing, no managed accounts, no backend beyond anonymous sync. The bet is that radical simplicity keeps people coming back, so every feature must justify itself against the one-tap-logging core.
+
+canonical line count:     27
+canonical 'date:' count:  0
+canonical '## ' count:    3
+canonical '### ' count:   4
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable prds/focusflow.md → prd  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable prds/focusflow.md → prd  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+63ee752a60fc1d22940454d42e8430de0731ad11
+docs(prd): adopt PRD.md as a managed prd
+Migrate the foreign PRD.md into the managed prd document and retire the original.
+
+
+A	.jigc/.gitignore
+A	.jigc/config/.gitkeep
+A	.jigc/config/packs.yaml
+D	PRD.md
+A	prds/focusflow.md
+
+RESULT prd-habit: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=prd:focusflow

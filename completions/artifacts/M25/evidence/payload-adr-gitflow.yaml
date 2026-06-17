@@ -1,0 +1,20 @@
+# Framing-A agent rewrite of log4brains docs/adr/20240926-transition-to-simplified-git-flow.md
+# Chain-2 supersession TARGET — migrated FIRST. Foreign "Status: superseded by [...]" -> `superseded`;
+# authors NO supersedes ref (the inverse edge comes from the ghflow ADR). Date 2024-09-26 transcribed.
+# MADR "Decision Drivers"/"Considered Options"/"Pros and Cons" -> accepted-drop (folded into prose);
+# the Positive + Negative Consequences sections fold into the single `consequences` slot.
+title: "Transition to Simplified Git Flow"
+sections:
+  - id: status
+    set:
+      status: superseded
+      date: "2024-09-26"
+  - id: context
+    set:
+      context: "<<The existing GitHub Flow lacked clarity for stable releases and was overly manual, making it hard to delegate and streamline contributions. A more structured yet simple workflow was needed — automating releases, letting work merge quickly without breaking the stable branch while beta testers try new features, easing delegation to new maintainers, and clearly separating ongoing development from stable releases.>>"
+  - id: decision
+    set:
+      decision: "<<Adopt Simplified Git Flow: a `develop` branch for ongoing work and a `stable` branch for releases, with automated canary/beta releases from `develop`. It adds structure without the full complexity of release-branch Git Flow.>>"
+  - id: consequences
+    set:
+      consequences: "<<Positive: clear separation of development and stable branches, automated beta releases for early testing, easier delegation, and streamlined versioning via Conventional Commits. Negative: contributors must open PRs against `develop` instead of `stable`, and there is a small learning curve for Conventional Commits.>>"

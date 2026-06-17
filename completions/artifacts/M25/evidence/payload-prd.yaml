@@ -1,0 +1,27 @@
+# Framing-A agent rewrite of the SYNTHETIC foreign PRD (synthetic-prd-source.md) into a canonical
+# jigc `prd`: vision <- Overview/Vision, requirements <- the four "What it must do" bullets as a
+# REPEATABLE section (per-requirement title + statement item), context <- Constraints & background.
+# LABELED SYNTHETIC — prd has no real foreign-corpus standard (the honest bound). No `decomposes-into`
+# edge (deferred — no migration driver). Section order vision, requirements, context (schema order).
+title: "FocusFlow"
+sections:
+  - id: vision
+    set:
+      vision: "<<A lightweight mobile app that turns vague good intentions into visible daily streaks, so solo users who abandon heavyweight planners actually stick with their habits.>>"
+  - id: requirements
+    items:
+      - title: "Log a habit in one tap"
+        set:
+          statement: "<<A user can log a habit with a single tap from the home screen — no menus, no forms.>>"
+      - title: "Show the current streak"
+        set:
+          statement: "<<The current streak for each habit is shown front and center, large and unmissable.>>"
+      - title: "Daily reminder"
+        set:
+          statement: "<<A gentle daily reminder nudges the user at a time they choose.>>"
+      - title: "30-day history heatmap"
+        set:
+          statement: "<<The user can review a 30-day history of completions as a simple calendar heatmap.>>"
+  - id: context
+    set:
+      context: "<<Built for individuals, not teams — no sharing, no managed accounts, no backend beyond anonymous sync. The bet is that radical simplicity keeps people coming back, so every feature must justify itself against the one-tap-logging core.>>"

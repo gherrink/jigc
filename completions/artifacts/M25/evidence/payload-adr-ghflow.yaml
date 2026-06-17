@@ -1,0 +1,20 @@
+# Framing-A agent rewrite of log4brains docs/adr/20241217-switch-back-to-github-flow.md
+# Chain-2 superseder — migrated FOURTH, after its target (transition-to-simplified-git-flow) is
+# COMMITTED, so `supersedes: [adr:transition-to-simplified-git-flow]` resolves against the store.
+# Date 2024-12-17 transcribed. "Decision Drivers"/"Considered Options" -> accepted-drop into prose.
+title: "Switch back to GitHub Flow"
+sections:
+  - id: status
+    set:
+      status: accepted
+      date: "2024-12-17"
+      supersedes: "[adr:transition-to-simplified-git-flow]"
+  - id: context
+    set:
+      context: "<<The Simplified Git Flow (a `develop` plus `stable` branch) aimed to separate development from releases and enable automated beta releases, but Lerna — which manages the monorepo — does not integrate well with a two-branch Git Flow: it cannot publish a stable release from a branch other than the main one.>>"
+  - id: decision
+    set:
+      decision: "<<Switch back to GitHub Flow while keeping the automated beta releases, rather than patching Lerna. Pull requests still merge quickly without cutting a stable release, the automated beta release is preserved, and the stable release becomes a manual script run by maintainers — which makes Lerna work again and meets all the requirements.>>"
+  - id: consequences
+    set:
+      consequences: "<<Lerna publishes stable releases again from the main branch; the benefits of the prior workflow (fast merges, beta testing, easier delegation, clear dev/stable separation) are retained, at the cost of a manual maintainer-run stable-release step.>>"

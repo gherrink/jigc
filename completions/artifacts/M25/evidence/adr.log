@@ -1,0 +1,1005 @@
+### ADR ARM — thomvaill/log4brains docs/adr/ (real MADR set, two supersession chains)
+clone: /tmp/jigc-m25-adr
+foreign ADRs:
+docs/adr/20200924-use-markdown-architectural-decision-records.md
+docs/adr/20200925-multi-packages-architecture-in-a-monorepo-with-yarn-and-lerna.md
+docs/adr/20200925-use-prettier-eslint-airbnb-for-the-code-style.md
+docs/adr/20200926-use-the-adr-number-as-its-unique-id.md
+docs/adr/20200927-avoid-default-exports.md
+docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md
+docs/adr/20201026-the-core-api-is-responsible-for-enhancing-the-adr-markdown-body-with-mdx.md
+docs/adr/20201103-use-lunr-for-search.md
+docs/adr/20210113-distribute-log4brains-as-a-global-npm-package.md
+docs/adr/20240926-transition-to-simplified-git-flow.md
+docs/adr/20241217-switch-back-to-github-flow.md
+docs/adr/README.md
+docs/adr/index.md
+docs/adr/template.md
+
+jigc setup — adapter installed
+
+jigc is now wired into this project; two host files were updated:
+  - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
+  - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+==================================================================
+### FILE: docs/adr/20200926-use-the-adr-number-as-its-unique-id.md   (--as adr)   tag=adr-number
+foreign git-blob: 3728f4d67f503f9f22db8d713966c0026562b018
+foreign line count: 25
+
+--- jigc migrate docs/adr/20200926-use-the-adr-number-as-its-unique-id.md --as adr (composed view) ---
+Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+# Use the ADR number as its unique ID
+
+- Status: superseded by [20201016-use-the-adr-slug-as-its-unique-id](20201016-use-the-adr-slug-as-its-unique-id.md)
+- Date: 2020-09-26
+
+## Context and Problem Statement
+
+We need to be able to identify uniquely an ADR, especially in these contexts:
+
+- Web: to build its URL
+- CLI: to identify an ADR in a command argument (example: "edit", or "preview")
+
+## Considered Options
+
+- ADR number (ie. filename prefixed number, example: `0001-use-markdown-architectural-decision-records.md`)
+- ADR filename
+- ADR title
+
+## Decision Outcome
+
+Chosen option: "ADR number", because
+
+- It is possible to have duplicated titles
+- The filename is too long to enter without autocompletion, but we could support it as a second possible identifier for the CLI in the future
+- Other ADR tools like [adr-tools](https://github.com/npryce/adr-tools) already use the number as a unique ID
+
+
+Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
+record at `decisions/<title-slug>` and places its status field and every prose slot
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author adr --from - --task migrate-adr-docs-adr-20200926-use-the-adr-number <<'EOF'
+title: "<the decision, as a short noun phrase>"
+sections:
+  - id: status
+    set:
+      status: "<proposed | accepted | superseded>"
+  - id: context
+    set:
+      context: "<<the forces at play that made the decision necessary>>"
+  - id: decision
+    set:
+      decision: "<<what we decided, in a sentence or two>>"
+  - id: consequences
+    set:
+      consequences: "<<the tradeoffs and follow-on effects>>"
+EOF
+
+Map the foreign ADR's headings onto this fixed four-part schema:
+
+  - the foreign Status / state line maps to the `status` field (see the enum map below);
+  - the foreign Context / Background / Problem heading maps to the `context` slot;
+  - the foreign Decision heading maps to the `decision` slot;
+  - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
+
+The `status` field is one of exactly three members: proposed / accepted / superseded.
+Map the foreign status onto the nearest member — `Proposed`/`Draft` to proposed,
+`Accepted` to accepted, `Superseded`/`Deprecated`/`Rejected` to superseded — and record
+the foreign status word verbatim in the `context` prose when it carries nuance the
+three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
+rejected at the write.
+
+The `date` is stamped by the CLI at create — do NOT author it; no historical date is
+carried (an ADR's date is when the record is adopted here).
+
+SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
+`supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
+also migrating in this pass, author the edge: add a `supersedes` field to the `status`
+section's `set:` block as a typed bracket-list of the target slug(s) —
+
+  - id: status
+    set:
+      status: "<...>"
+      supersedes: "[adr:<slug-of-the-superseded-decision>, …]"
+
+Each element is `adr:<slug>` (the per-title slug the target migrated under). A bare slug,
+a wrong-type ref, or the unbracketed comma form is rejected at the write.
+
+Dependency-ordering contract: a `supersedes` forward-ref resolves against the COMMITTED
+store. So migrate and finalize the superseded target ADR FIRST,
+before the ADR that supersedes it — otherwise the superseding ADR's finalize blocks on an
+unresolved ref.
+
+Out-of-set drop: a `supersedes` whose target is NOT (and will not be) a migrated ADR — it
+predates the corpus, or is deliberately left foreign — has no edge to resolve and would
+block finalize forever. Fold that reference into the `context` or `consequences` prose
+instead; never author it as a dangling `supersedes` ref. The same drop-to-prose posture
+applies to "Related ADRs", "See also", and plain links: only an in-set supersession
+becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize migrate-adr-docs-adr-20200926-use-the-adr-number`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+MIGRATION_TASK=migrate-adr-docs-adr-20200926-use-the-adr-number
+
+--- jigc doc author adr --from <payload> (ONE batch) ---
+AUTHOR_MINTED=adr:use-the-adr-number-as-its-unique-id
+
+--- jigc task finalize migrate-adr-docs-adr-20200926-use-the-adr-number   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-adr-docs-adr-20200926-use-the-adr-number --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- # Use the ADR number as its unique ID
+- 
+- - Status: superseded by [20201016-use-the-adr-slug-as-its-unique-id](20201016-use-the-adr-slug-as-its-unique-id.md)
+- - Date: 2020-09-26
+- 
+- ## Context and Problem Statement
+- 
+- We need to be able to identify uniquely an ADR, especially in these contexts:
+- 
+- - Web: to build its URL
+- - CLI: to identify an ADR in a command argument (example: "edit", or "preview")
+- 
+- ## Considered Options
+- 
+- - ADR number (ie. filename prefixed number, example: `0001-use-markdown-architectural-decision-records.md`)
+- - ADR filename
+- - ADR title
+- 
+- ## Decision Outcome
+- 
+- Chosen option: "ADR number", because
+- 
+- - It is possible to have duplicated titles
+- - The filename is too long to enter without autocompletion, but we could support it as a second possible identifier for the CLI in the future
+- - Other ADR tools like [adr-tools](https://github.com/npryce/adr-tools) already use the number as a unique ID
++++ canonical rewrite → decisions/use-the-adr-number-as-its-unique-id.md
++ ---
++ status: superseded
++ date: 2020-09-26
++ ---
++ 
++ # use-the-adr-number-as-its-unique-id
++ 
++ ## Context
++ 
++ An ADR needs a unique identifier — to build its web URL and to name it in CLI commands like edit or preview.
++ 
++ ## Decision
++ 
++ Identify each ADR by its number — the numeric filename prefix (e.g. 0001-...). Titles can be duplicated and full filenames are long to type, whereas the number is already what tools like adr-tools use as the unique ID.
++ 
++ ## Consequences
++ 
++ Each ADR is addressed by its number; the full filename could later be supported as a secondary CLI identifier.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-adr-docs-adr-20200926-use-the-adr-number --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/adr:use-the-adr-number-as-its-unique-id.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-adr-docs-adr-20200926-use-the-adr-number.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical decisions/use-the-adr-number-as-its-unique-id.md ---
+---
+status: superseded
+date: 2020-09-26
+---
+
+# use-the-adr-number-as-its-unique-id
+
+## Context
+
+An ADR needs a unique identifier — to build its web URL and to name it in CLI commands like edit or preview.
+
+## Decision
+
+Identify each ADR by its number — the numeric filename prefix (e.g. 0001-...). Titles can be duplicated and full filenames are long to type, whereas the number is already what tools like adr-tools use as the unique ID.
+
+## Consequences
+
+Each ADR is addressed by its number; the full filename could later be supported as a secondary CLI identifier.
+
+canonical line count:     18
+canonical 'date:' count:  1
+canonical '## ' count:    3
+canonical '### ' count:   0
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+35466607bf19e5b43265bee59b6994d8042a452f
+docs(adr): adopt docs/adr/20200926-use-the-adr-number-as-its-unique-id.md as a managed adr
+Migrate the foreign docs/adr/20200926-use-the-adr-number-as-its-unique-id.md into the managed adr document and retire the original.
+
+
+A	.jigc/.gitignore
+A	.jigc/config/.gitkeep
+A	.jigc/config/packs.yaml
+A	decisions/use-the-adr-number-as-its-unique-id.md
+D	docs/adr/20200926-use-the-adr-number-as-its-unique-id.md
+
+RESULT adr-number: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=adr:use-the-adr-number-as-its-unique-id
+==================================================================
+### FILE: docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md   (--as adr)   tag=adr-slug
+foreign git-blob: 2cd9ced164679130a9b33fd8976f8ce33da206b1
+foreign line count: 30
+
+--- jigc migrate docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md --as adr (composed view) ---
+Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+# Use the ADR slug as its unique ID
+
+- Status: accepted
+- Date: 2020-10-16
+
+## Context and Problem Statement
+
+Currently, ADR files follow this format: `NNNN-adr-title.md`, with NNNN being an incremental number from `0000` to `9999`.
+It causes an issue during a `git merge` when two developers have created a new ADR on their respective branch.
+There is a conflict because [an ADR number must be unique](20200926-use-the-adr-number-as-its-unique-id.md).
+
+## Decision
+
+From now on, we won't use ADR numbers anymore.
+An ADR will be uniquely identified by its slug (ie. its filename without the extension), and its filename will have the following format: `YYYYMMDD-adr-title.md`, with `YYYYMMDD` being the date of creation of the file.
+
+As a result, there won't have conflicts anymore and the files will still be correctly sorted in the IDE thanks to the date.
+
+Finally, the ADRs will be sorted with these rules (ordered by priority):
+
+1. By Date field, in the markdown file (if present)
+2. By Git creation date (does not follow renames)
+3. By file creation date if no versioned yet
+4. By slug
+
+The core library is responsible for sorting.
+
+## Links
+
+- Supersedes [20200926-use-the-adr-number-as-its-unique-id](20200926-use-the-adr-number-as-its-unique-id.md)
+
+
+Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
+record at `decisions/<title-slug>` and places its status field and every prose slot
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author adr --from - --task migrate-adr-docs-adr-20201016-use-the-adr-slug-as <<'EOF'
+title: "<the decision, as a short noun phrase>"
+sections:
+  - id: status
+    set:
+      status: "<proposed | accepted | superseded>"
+  - id: context
+    set:
+      context: "<<the forces at play that made the decision necessary>>"
+  - id: decision
+    set:
+      decision: "<<what we decided, in a sentence or two>>"
+  - id: consequences
+    set:
+      consequences: "<<the tradeoffs and follow-on effects>>"
+EOF
+
+Map the foreign ADR's headings onto this fixed four-part schema:
+
+  - the foreign Status / state line maps to the `status` field (see the enum map below);
+  - the foreign Context / Background / Problem heading maps to the `context` slot;
+  - the foreign Decision heading maps to the `decision` slot;
+  - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
+
+The `status` field is one of exactly three members: proposed / accepted / superseded.
+Map the foreign status onto the nearest member — `Proposed`/`Draft` to proposed,
+`Accepted` to accepted, `Superseded`/`Deprecated`/`Rejected` to superseded — and record
+the foreign status word verbatim in the `context` prose when it carries nuance the
+three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
+rejected at the write.
+
+The `date` is stamped by the CLI at create — do NOT author it; no historical date is
+carried (an ADR's date is when the record is adopted here).
+
+SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
+`supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
+also migrating in this pass, author the edge: add a `supersedes` field to the `status`
+section's `set:` block as a typed bracket-list of the target slug(s) —
+
+  - id: status
+    set:
+      status: "<...>"
+      supersedes: "[adr:<slug-of-the-superseded-decision>, …]"
+
+Each element is `adr:<slug>` (the per-title slug the target migrated under). A bare slug,
+a wrong-type ref, or the unbracketed comma form is rejected at the write.
+
+Dependency-ordering contract: a `supersedes` forward-ref resolves against the COMMITTED
+store. So migrate and finalize the superseded target ADR FIRST,
+before the ADR that supersedes it — otherwise the superseding ADR's finalize blocks on an
+unresolved ref.
+
+Out-of-set drop: a `supersedes` whose target is NOT (and will not be) a migrated ADR — it
+predates the corpus, or is deliberately left foreign — has no edge to resolve and would
+block finalize forever. Fold that reference into the `context` or `consequences` prose
+instead; never author it as a dangling `supersedes` ref. The same drop-to-prose posture
+applies to "Related ADRs", "See also", and plain links: only an in-set supersession
+becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize migrate-adr-docs-adr-20201016-use-the-adr-slug-as`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+MIGRATION_TASK=migrate-adr-docs-adr-20201016-use-the-adr-slug-as
+
+--- jigc doc author adr --from <payload> (ONE batch) ---
+AUTHOR_MINTED=adr:use-the-adr-slug-as-its-unique-id
+
+--- jigc task finalize migrate-adr-docs-adr-20201016-use-the-adr-slug-as   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-adr-docs-adr-20201016-use-the-adr-slug-as --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- # Use the ADR slug as its unique ID
+- 
+- - Status: accepted
+- - Date: 2020-10-16
+- 
+- ## Context and Problem Statement
+- 
+- Currently, ADR files follow this format: `NNNN-adr-title.md`, with NNNN being an incremental number from `0000` to `9999`.
+- It causes an issue during a `git merge` when two developers have created a new ADR on their respective branch.
+- There is a conflict because [an ADR number must be unique](20200926-use-the-adr-number-as-its-unique-id.md).
+- 
+- ## Decision
+- 
+- From now on, we won't use ADR numbers anymore.
+- An ADR will be uniquely identified by its slug (ie. its filename without the extension), and its filename will have the following format: `YYYYMMDD-adr-title.md`, with `YYYYMMDD` being the date of creation of the file.
+- 
+- As a result, there won't have conflicts anymore and the files will still be correctly sorted in the IDE thanks to the date.
+- 
+- Finally, the ADRs will be sorted with these rules (ordered by priority):
+- 
+- 1. By Date field, in the markdown file (if present)
+- 2. By Git creation date (does not follow renames)
+- 3. By file creation date if no versioned yet
+- 4. By slug
+- 
+- The core library is responsible for sorting.
+- 
+- ## Links
+- 
+- - Supersedes [20200926-use-the-adr-number-as-its-unique-id](20200926-use-the-adr-number-as-its-unique-id.md)
++++ canonical rewrite → decisions/use-the-adr-slug-as-its-unique-id.md
++ ---
++ status: accepted
++ date: 2020-10-16
++ supersedes: [adr:use-the-adr-number-as-its-unique-id]
++ ---
++ 
++ # use-the-adr-slug-as-its-unique-id
++ 
++ ## Context
++ 
++ ADR files were named NNNN-adr-title.md. When two developers each created a new ADR on separate branches, the incremental number collided and caused a git-merge conflict, because an ADR number must be unique.
++ 
++ ## Decision
++ 
++ Stop using ADR numbers. An ADR is uniquely identified by its slug (filename without extension), with files named YYYYMMDD-adr-title.md; the date prefix keeps them sorted in the IDE. The core library owns sorting.
++ 
++ ## Consequences
++ 
++ No more merge conflicts from colliding numbers; ADRs sort by the Date field, then git creation date, then file creation date, then slug.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-adr-docs-adr-20201016-use-the-adr-slug-as --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/adr:use-the-adr-slug-as-its-unique-id.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-adr-docs-adr-20201016-use-the-adr-slug-as.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical decisions/use-the-adr-slug-as-its-unique-id.md ---
+---
+status: accepted
+date: 2020-10-16
+supersedes: [adr:use-the-adr-number-as-its-unique-id]
+---
+
+# use-the-adr-slug-as-its-unique-id
+
+## Context
+
+ADR files were named NNNN-adr-title.md. When two developers each created a new ADR on separate branches, the incremental number collided and caused a git-merge conflict, because an ADR number must be unique.
+
+## Decision
+
+Stop using ADR numbers. An ADR is uniquely identified by its slug (filename without extension), with files named YYYYMMDD-adr-title.md; the date prefix keeps them sorted in the IDE. The core library owns sorting.
+
+## Consequences
+
+No more merge conflicts from colliding numbers; ADRs sort by the Date field, then git creation date, then file creation date, then slug.
+
+canonical line count:     19
+canonical 'date:' count:  1
+canonical '## ' count:    3
+canonical '### ' count:   0
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+337052dae53661802532969b5177c95e4c0a6208
+docs(adr): adopt docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md as a managed adr
+Migrate the foreign docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md into the managed adr document and retire the original.
+
+
+A	decisions/use-the-adr-slug-as-its-unique-id.md
+D	docs/adr/20201016-use-the-adr-slug-as-its-unique-id.md
+
+RESULT adr-slug: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=adr:use-the-adr-slug-as-its-unique-id
+==================================================================
+### FILE: docs/adr/20240926-transition-to-simplified-git-flow.md   (--as adr)   tag=adr-gitflow
+foreign git-blob: bcbf9e32cc7295bd4be4f28b31bcfcc2f6c3b56c
+foreign line count: 60
+
+--- jigc migrate docs/adr/20240926-transition-to-simplified-git-flow.md --as adr (composed view) ---
+Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+# Transition to Simplified Git Flow
+
+- Status: superseded by [20241217-switch-back-to-github-flow](20241217-switch-back-to-github-flow.md)
+- Date: 2024-09-26
+
+## Context and Problem Statement
+
+The existing GitHub Flow process lacked clarity for stable releases and was overly manual, making it hard to delegate and streamline contributions. The need was for a more structured yet simple workflow that would facilitate testing and contributions while automating releases.
+
+Additional context in [Discussion #108: Does this project need a new maintainer?](https://github.com/thomvaill/log4brains/discussions/108)
+
+## Decision Drivers
+
+- Need for automation in releases.
+- Be able to merge more quickly whithout breaking the stable branch, while making it possible for beta testers to test the new features.
+- Easier delegation to new maintainers.
+- Simplified yet structured process for contributors.
+- Clearer separation between ongoing development and stable releases.
+
+## Considered Options
+
+- Continue with GitHub Flow.
+- Transition to Simplified Git Flow.
+- Full Git Flow with release branches.
+
+## Decision Outcome
+
+Chosen option: **Simplified Git Flow**, because it provides structure (separating development from stable releases) without excessive complexity. It also allows for automated canary/beta releases and easier delegation for merging feature branches to `develop`.
+
+### Positive Consequences
+
+- Clear separation of development (`develop`) and stable (`stable`) branches.
+- Automated beta releases from `develop` to facilitate early testing.
+- Allows contributors to participate in testing beta features and reduces the manual overhead of testing and releasing stable versions
+- Easier to delegate responsibilities (Canary vs. Core Maintainers, see [CONTRIBUTING.md](CONTRIBUTING.md)).
+- More streamlined versioning via Conventional Commits.
+
+### Negative Consequences
+
+- Contributors need to adjust to using `develop` for PRs instead of `stable`.
+- Slight learning curve for Conventional Commits.
+
+## Pros and Cons of the Options
+
+### Continue with GitHub Flow
+
+- Good, because it’s simpler with fewer branches.
+- Bad, because it lacks separation of development and stable code.
+- Bad, because manual testing and release increase bottlenecks.
+
+### Simplified Git Flow
+
+- Good, because it balances structure with simplicity.
+- Good, because it allows easier delegation to maintainers.
+- Bad, because it introduces a new `develop` branch, which may need adjustment for contributors.
+
+### Full Git Flow
+
+- Good, because it provides a full release management process.
+- Bad, because it adds unnecessary complexity for smaller open-source projects.
+
+
+Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
+record at `decisions/<title-slug>` and places its status field and every prose slot
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author adr --from - --task migrate-adr-docs-adr-20240926-transition-to <<'EOF'
+title: "<the decision, as a short noun phrase>"
+sections:
+  - id: status
+    set:
+      status: "<proposed | accepted | superseded>"
+  - id: context
+    set:
+      context: "<<the forces at play that made the decision necessary>>"
+  - id: decision
+    set:
+      decision: "<<what we decided, in a sentence or two>>"
+  - id: consequences
+    set:
+      consequences: "<<the tradeoffs and follow-on effects>>"
+EOF
+
+Map the foreign ADR's headings onto this fixed four-part schema:
+
+  - the foreign Status / state line maps to the `status` field (see the enum map below);
+  - the foreign Context / Background / Problem heading maps to the `context` slot;
+  - the foreign Decision heading maps to the `decision` slot;
+  - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
+
+The `status` field is one of exactly three members: proposed / accepted / superseded.
+Map the foreign status onto the nearest member — `Proposed`/`Draft` to proposed,
+`Accepted` to accepted, `Superseded`/`Deprecated`/`Rejected` to superseded — and record
+the foreign status word verbatim in the `context` prose when it carries nuance the
+three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
+rejected at the write.
+
+The `date` is stamped by the CLI at create — do NOT author it; no historical date is
+carried (an ADR's date is when the record is adopted here).
+
+SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
+`supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
+also migrating in this pass, author the edge: add a `supersedes` field to the `status`
+section's `set:` block as a typed bracket-list of the target slug(s) —
+
+  - id: status
+    set:
+      status: "<...>"
+      supersedes: "[adr:<slug-of-the-superseded-decision>, …]"
+
+Each element is `adr:<slug>` (the per-title slug the target migrated under). A bare slug,
+a wrong-type ref, or the unbracketed comma form is rejected at the write.
+
+Dependency-ordering contract: a `supersedes` forward-ref resolves against the COMMITTED
+store. So migrate and finalize the superseded target ADR FIRST,
+before the ADR that supersedes it — otherwise the superseding ADR's finalize blocks on an
+unresolved ref.
+
+Out-of-set drop: a `supersedes` whose target is NOT (and will not be) a migrated ADR — it
+predates the corpus, or is deliberately left foreign — has no edge to resolve and would
+block finalize forever. Fold that reference into the `context` or `consequences` prose
+instead; never author it as a dangling `supersedes` ref. The same drop-to-prose posture
+applies to "Related ADRs", "See also", and plain links: only an in-set supersession
+becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize migrate-adr-docs-adr-20240926-transition-to`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+MIGRATION_TASK=migrate-adr-docs-adr-20240926-transition-to
+
+--- jigc doc author adr --from <payload> (ONE batch) ---
+AUTHOR_MINTED=adr:transition-to-simplified-git-flow
+
+--- jigc task finalize migrate-adr-docs-adr-20240926-transition-to   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-adr-docs-adr-20240926-transition-to --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- # Transition to Simplified Git Flow
+- 
+- - Status: superseded by [20241217-switch-back-to-github-flow](20241217-switch-back-to-github-flow.md)
+- - Date: 2024-09-26
+- 
+- ## Context and Problem Statement
+- 
+- The existing GitHub Flow process lacked clarity for stable releases and was overly manual, making it hard to delegate and streamline contributions. The need was for a more structured yet simple workflow that would facilitate testing and contributions while automating releases.
+- 
+- Additional context in [Discussion #108: Does this project need a new maintainer?](https://github.com/thomvaill/log4brains/discussions/108)
+- 
+- ## Decision Drivers
+- 
+- - Need for automation in releases.
+- - Be able to merge more quickly whithout breaking the stable branch, while making it possible for beta testers to test the new features.
+- - Easier delegation to new maintainers.
+- - Simplified yet structured process for contributors.
+- - Clearer separation between ongoing development and stable releases.
+- 
+- ## Considered Options
+- 
+- - Continue with GitHub Flow.
+- - Transition to Simplified Git Flow.
+- - Full Git Flow with release branches.
+- 
+- ## Decision Outcome
+- 
+- Chosen option: **Simplified Git Flow**, because it provides structure (separating development from stable releases) without excessive complexity. It also allows for automated canary/beta releases and easier delegation for merging feature branches to `develop`.
+- 
+- ### Positive Consequences
+- 
+- - Clear separation of development (`develop`) and stable (`stable`) branches.
+- - Automated beta releases from `develop` to facilitate early testing.
+- - Allows contributors to participate in testing beta features and reduces the manual overhead of testing and releasing stable versions
+- - Easier to delegate responsibilities (Canary vs. Core Maintainers, see [CONTRIBUTING.md](CONTRIBUTING.md)).
+- - More streamlined versioning via Conventional Commits.
+- 
+- ### Negative Consequences
+- 
+- - Contributors need to adjust to using `develop` for PRs instead of `stable`.
+- - Slight learning curve for Conventional Commits.
+- 
+- ## Pros and Cons of the Options
+- 
+- ### Continue with GitHub Flow
+- 
+- - Good, because it’s simpler with fewer branches.
+- - Bad, because it lacks separation of development and stable code.
+- - Bad, because manual testing and release increase bottlenecks.
+- 
+- ### Simplified Git Flow
+- 
+- - Good, because it balances structure with simplicity.
+- - Good, because it allows easier delegation to maintainers.
+- - Bad, because it introduces a new `develop` branch, which may need adjustment for contributors.
+- 
+- ### Full Git Flow
+- 
+- - Good, because it provides a full release management process.
+- - Bad, because it adds unnecessary complexity for smaller open-source projects.
++++ canonical rewrite → decisions/transition-to-simplified-git-flow.md
++ ---
++ status: superseded
++ date: 2024-09-26
++ ---
++ 
++ # transition-to-simplified-git-flow
++ 
++ ## Context
++ 
++ The existing GitHub Flow lacked clarity for stable releases and was overly manual, making it hard to delegate and streamline contributions. A more structured yet simple workflow was needed — automating releases, letting work merge quickly without breaking the stable branch while beta testers try new features, easing delegation to new maintainers, and clearly separating ongoing development from stable releases.
++ 
++ ## Decision
++ 
++ Adopt Simplified Git Flow: a `develop` branch for ongoing work and a `stable` branch for releases, with automated canary/beta releases from `develop`. It adds structure without the full complexity of release-branch Git Flow.
++ 
++ ## Consequences
++ 
++ Positive: clear separation of development and stable branches, automated beta releases for early testing, easier delegation, and streamlined versioning via Conventional Commits. Negative: contributors must open PRs against `develop` instead of `stable`, and there is a small learning curve for Conventional Commits.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-adr-docs-adr-20240926-transition-to --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/adr:transition-to-simplified-git-flow.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-adr-docs-adr-20240926-transition-to.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical decisions/transition-to-simplified-git-flow.md ---
+---
+status: superseded
+date: 2024-09-26
+---
+
+# transition-to-simplified-git-flow
+
+## Context
+
+The existing GitHub Flow lacked clarity for stable releases and was overly manual, making it hard to delegate and streamline contributions. A more structured yet simple workflow was needed — automating releases, letting work merge quickly without breaking the stable branch while beta testers try new features, easing delegation to new maintainers, and clearly separating ongoing development from stable releases.
+
+## Decision
+
+Adopt Simplified Git Flow: a `develop` branch for ongoing work and a `stable` branch for releases, with automated canary/beta releases from `develop`. It adds structure without the full complexity of release-branch Git Flow.
+
+## Consequences
+
+Positive: clear separation of development and stable branches, automated beta releases for early testing, easier delegation, and streamlined versioning via Conventional Commits. Negative: contributors must open PRs against `develop` instead of `stable`, and there is a small learning curve for Conventional Commits.
+
+canonical line count:     18
+canonical 'date:' count:  1
+canonical '## ' count:    3
+canonical '### ' count:   0
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable decisions/transition-to-simplified-git-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable decisions/transition-to-simplified-git-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+fa9b3e64ddec54c0f51ff3895d2a1850d0bd0da4
+docs(adr): adopt docs/adr/20240926-transition-to-simplified-git-flow.md as a managed adr
+Migrate the foreign docs/adr/20240926-transition-to-simplified-git-flow.md into the managed adr document and retire the original.
+
+
+A	decisions/transition-to-simplified-git-flow.md
+D	docs/adr/20240926-transition-to-simplified-git-flow.md
+
+RESULT adr-gitflow: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=adr:transition-to-simplified-git-flow
+==================================================================
+### FILE: docs/adr/20241217-switch-back-to-github-flow.md   (--as adr)   tag=adr-ghflow
+foreign git-blob: 9f895ae65f60f000e337c7d99f857e70134984f6
+foreign line count: 31
+
+--- jigc migrate docs/adr/20241217-switch-back-to-github-flow.md --as adr (composed view) ---
+Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+# Switch back to GitHub Flow, but keeping the automated beta releases
+
+- Status: accepted
+- Date: 2024-12-17
+
+## Context and Problem Statement
+
+The previous decision to adopt a Simplified Git Flow with a `develop` and `stable` branch aimed to provide clearer separation between development and releases while enabling automated beta releases. However, we faced tooling limitations.
+
+Specifically, **Lerna**, which we use for managing our monorepo, does not integrate well with Git Flow processes ([Lerna issue #2023](https://github.com/lerna/lerna/issues/2023#issuecomment-480402592)), when managing both a `develop` and `stable` branches: we cannot make Lerna publish a stable release from a different branch than the main one.
+
+## Decision Drivers <!-- optional -->
+
+- Make Lerna work again for stable releases
+- Keep the benefits of the previous workflow:
+  - Need for automation in releases.
+  - Be able to merge more quickly whithout breaking the stable branch, while making it possible for beta testers to test the new features.
+  - Easier delegation to new maintainers.
+  - Simplified yet structured process for contributors.
+  - Clearer separation between ongoing development and stable releases.
+
+## Considered Options
+
+- Option 1: Patch Lerna to keep the Simplified Git Flow (as described in the link above)
+- Option 2: Switch back to Github Flow, but keeping the automated beta releases
+
+## Decision Outcome
+
+Chosen option: "Option 2: Switch back to Github Flow, but keeping the automated beta releases", because it fullfils all the requirements.
+In fact, we can still merge quickly pull requests without releasing a stable release, while keeping the automated beta release.
+The stable release is a manual script executed by maintainers.
+
+
+Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
+record at `decisions/<title-slug>` and places its status field and every prose slot
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author adr --from - --task migrate-adr-docs-adr-20241217-switch-back-to <<'EOF'
+title: "<the decision, as a short noun phrase>"
+sections:
+  - id: status
+    set:
+      status: "<proposed | accepted | superseded>"
+  - id: context
+    set:
+      context: "<<the forces at play that made the decision necessary>>"
+  - id: decision
+    set:
+      decision: "<<what we decided, in a sentence or two>>"
+  - id: consequences
+    set:
+      consequences: "<<the tradeoffs and follow-on effects>>"
+EOF
+
+Map the foreign ADR's headings onto this fixed four-part schema:
+
+  - the foreign Status / state line maps to the `status` field (see the enum map below);
+  - the foreign Context / Background / Problem heading maps to the `context` slot;
+  - the foreign Decision heading maps to the `decision` slot;
+  - the foreign Consequences / Outcome / Tradeoffs heading maps to the `consequences` slot.
+
+The `status` field is one of exactly three members: proposed / accepted / superseded.
+Map the foreign status onto the nearest member — `Proposed`/`Draft` to proposed,
+`Accepted` to accepted, `Superseded`/`Deprecated`/`Rejected` to superseded — and record
+the foreign status word verbatim in the `context` prose when it carries nuance the
+three-member enum drops (`Accepted (revised)`, `Rejected`). A value outside the three is
+rejected at the write.
+
+The `date` is stamped by the CLI at create — do NOT author it; no historical date is
+carried (an ADR's date is when the record is adopted here).
+
+SUPERSEDES edges — wire only an IN-SET supersession. The `adr` schema carries a
+`supersedes` (adr→adr) relation. When the foreign ADR supersedes a prior decision you ARE
+also migrating in this pass, author the edge: add a `supersedes` field to the `status`
+section's `set:` block as a typed bracket-list of the target slug(s) —
+
+  - id: status
+    set:
+      status: "<...>"
+      supersedes: "[adr:<slug-of-the-superseded-decision>, …]"
+
+Each element is `adr:<slug>` (the per-title slug the target migrated under). A bare slug,
+a wrong-type ref, or the unbracketed comma form is rejected at the write.
+
+Dependency-ordering contract: a `supersedes` forward-ref resolves against the COMMITTED
+store. So migrate and finalize the superseded target ADR FIRST,
+before the ADR that supersedes it — otherwise the superseding ADR's finalize blocks on an
+unresolved ref.
+
+Out-of-set drop: a `supersedes` whose target is NOT (and will not be) a migrated ADR — it
+predates the corpus, or is deliberately left foreign — has no edge to resolve and would
+block finalize forever. Fold that reference into the `context` or `consequences` prose
+instead; never author it as a dangling `supersedes` ref. The same drop-to-prose posture
+applies to "Related ADRs", "See also", and plain links: only an in-set supersession
+becomes a structural edge. (The `cites-code` field is a separate cross-code pass.)
+
+Validate and commit the task as one logical commit:
+
+Run: `jigc task finalize migrate-adr-docs-adr-20241217-switch-back-to`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+MIGRATION_TASK=migrate-adr-docs-adr-20241217-switch-back-to
+
+--- jigc doc author adr --from <payload> (ONE batch) ---
+AUTHOR_MINTED=adr:switch-back-to-github-flow
+
+--- jigc task finalize migrate-adr-docs-adr-20241217-switch-back-to   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-adr-docs-adr-20241217-switch-back-to --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- # Switch back to GitHub Flow, but keeping the automated beta releases
+- 
+- - Status: accepted
+- - Date: 2024-12-17
+- 
+- ## Context and Problem Statement
+- 
+- The previous decision to adopt a Simplified Git Flow with a `develop` and `stable` branch aimed to provide clearer separation between development and releases while enabling automated beta releases. However, we faced tooling limitations.
+- 
+- Specifically, **Lerna**, which we use for managing our monorepo, does not integrate well with Git Flow processes ([Lerna issue #2023](https://github.com/lerna/lerna/issues/2023#issuecomment-480402592)), when managing both a `develop` and `stable` branches: we cannot make Lerna publish a stable release from a different branch than the main one.
+- 
+- ## Decision Drivers <!-- optional -->
+- 
+- - Make Lerna work again for stable releases
+- - Keep the benefits of the previous workflow:
+-   - Need for automation in releases.
+-   - Be able to merge more quickly whithout breaking the stable branch, while making it possible for beta testers to test the new features.
+-   - Easier delegation to new maintainers.
+-   - Simplified yet structured process for contributors.
+-   - Clearer separation between ongoing development and stable releases.
+- 
+- ## Considered Options
+- 
+- - Option 1: Patch Lerna to keep the Simplified Git Flow (as described in the link above)
+- - Option 2: Switch back to Github Flow, but keeping the automated beta releases
+- 
+- ## Decision Outcome
+- 
+- Chosen option: "Option 2: Switch back to Github Flow, but keeping the automated beta releases", because it fullfils all the requirements.
+- In fact, we can still merge quickly pull requests without releasing a stable release, while keeping the automated beta release.
+- The stable release is a manual script executed by maintainers.
++++ canonical rewrite → decisions/switch-back-to-github-flow.md
++ ---
++ status: accepted
++ date: 2024-12-17
++ supersedes: [adr:transition-to-simplified-git-flow]
++ ---
++ 
++ # switch-back-to-github-flow
++ 
++ ## Context
++ 
++ The Simplified Git Flow (a `develop` plus `stable` branch) aimed to separate development from releases and enable automated beta releases, but Lerna — which manages the monorepo — does not integrate well with a two-branch Git Flow: it cannot publish a stable release from a branch other than the main one.
++ 
++ ## Decision
++ 
++ Switch back to GitHub Flow while keeping the automated beta releases, rather than patching Lerna. Pull requests still merge quickly without cutting a stable release, the automated beta release is preserved, and the stable release becomes a manual script run by maintainers — which makes Lerna work again and meets all the requirements.
++ 
++ ## Consequences
++ 
++ Lerna publishes stable releases again from the main branch; the benefits of the prior workflow (fast merges, beta testing, easier delegation, clear dev/stable separation) are retained, at the cost of a manual maintainer-run stable-release step.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-adr-docs-adr-20241217-switch-back-to --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/adr:switch-back-to-github-flow.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-adr-docs-adr-20241217-switch-back-to.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical decisions/switch-back-to-github-flow.md ---
+---
+status: accepted
+date: 2024-12-17
+supersedes: [adr:transition-to-simplified-git-flow]
+---
+
+# switch-back-to-github-flow
+
+## Context
+
+The Simplified Git Flow (a `develop` plus `stable` branch) aimed to separate development from releases and enable automated beta releases, but Lerna — which manages the monorepo — does not integrate well with a two-branch Git Flow: it cannot publish a stable release from a branch other than the main one.
+
+## Decision
+
+Switch back to GitHub Flow while keeping the automated beta releases, rather than patching Lerna. Pull requests still merge quickly without cutting a stable release, the automated beta release is preserved, and the stable release becomes a manual script run by maintainers — which makes Lerna work again and meets all the requirements.
+
+## Consequences
+
+Lerna publishes stable releases again from the main branch; the benefits of the prior workflow (fast merges, beta testing, easier delegation, clear dev/stable separation) are retained, at the cost of a manual maintainer-run stable-release step.
+
+canonical line count:     19
+canonical 'date:' count:  1
+canonical '## ' count:    3
+canonical '### ' count:   0
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable decisions/switch-back-to-github-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/transition-to-simplified-git-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable decisions/switch-back-to-github-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/transition-to-simplified-git-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+1357add903aca2655fc402859e2ddede50bbe2e6
+docs(adr): adopt docs/adr/20241217-switch-back-to-github-flow.md as a managed adr
+Migrate the foreign docs/adr/20241217-switch-back-to-github-flow.md into the managed adr document and retire the original.
+
+
+A	decisions/switch-back-to-github-flow.md
+D	docs/adr/20241217-switch-back-to-github-flow.md
+
+RESULT adr-ghflow: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=adr:switch-back-to-github-flow
+
+--- FINAL: all four adopted? ---
+adoptable decisions/switch-back-to-github-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/transition-to-simplified-git-flow.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-number-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)
+adoptable decisions/use-the-adr-slug-as-its-unique-id.md → adr  (adopted — indexed + baselined, no file moved)

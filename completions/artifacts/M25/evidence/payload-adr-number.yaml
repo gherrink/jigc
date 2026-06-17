@@ -1,0 +1,21 @@
+# Framing-A agent rewrite of log4brains docs/adr/20200926-use-the-adr-number-as-its-unique-id.md
+# The supersession TARGET of the slug-ADR — migrated FIRST (dependency-ordering contract).
+# Foreign "Status: superseded by [...]" -> the 3-enum `superseded`; the inverse `superseded-by`
+# edge is derived from the slug-ADR's `supersedes`, so this target authors NO supersedes ref.
+# Date 2020-09-26 transcribed (date-survival path). MADR "Considered Options" -> accepted-drop
+# (folded into the decision rationale prose, not authored as structure).
+title: "Use the ADR number as its unique ID"
+sections:
+  - id: status
+    set:
+      status: superseded
+      date: "2020-09-26"
+  - id: context
+    set:
+      context: "<<An ADR needs a unique identifier — to build its web URL and to name it in CLI commands like edit or preview.>>"
+  - id: decision
+    set:
+      decision: "<<Identify each ADR by its number — the numeric filename prefix (e.g. 0001-...). Titles can be duplicated and full filenames are long to type, whereas the number is already what tools like adr-tools use as the unique ID.>>"
+  - id: consequences
+    set:
+      consequences: "<<Each ADR is addressed by its number; the full filename could later be supported as a secondary CLI identifier.>>"
