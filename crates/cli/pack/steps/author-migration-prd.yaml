@@ -1,0 +1,42 @@
+Migrate the foreign PRD into a managed `prd` at `prds/`. Below is the foreign source the
+CLI staged for you (read-only context — you author the canonical record through the write
+verbs, you never edit this file or place anything yourself):
+
+{{ source }}
+
+Author the WHOLE canonical prd in ONE declarative batch payload — the CLI creates the
+record at `prds/<title-slug>` and places its vision/context slots and every requirement
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author prd --from - --task {{task.id}} <<'EOF'
+title: "<the prd's subject, as a short noun phrase>"
+sections:
+  - id: vision
+    set:
+      vision: "<<the product vision — the outcome, in a sentence or two>>"
+  - id: requirements
+    items:
+      - title: "<a short label for this requirement>"
+        set:
+          statement: "<<the requirement, in a sentence or two>>"
+      - title: "<a short label for the next requirement>"
+        set:
+          statement: "<<the next requirement, in a sentence or two>>"
+  - id: context
+    set:
+      context: "<<why it is needed and the constraints that shape it>>"
+EOF
+
+Map the foreign PRD's headings onto this fixed shape:
+
+  - the foreign Vision / Overview / Summary / Goal heading maps to the `vision` slot;
+  - the foreign Context / Background / Motivation / Constraints heading maps to the
+    `context` slot;
+  - the foreign Requirements / Features / Must-haves / User-stories list maps to the
+    repeatable `requirements` — author ONE item per requirement, each a short `title` plus
+    a `statement`. A bullet list, a numbered list, or a table of requirements all fold to
+    one item each; keep them one statement apiece, never lumped into a single block.
+
+A foreign "decomposes into spec X" / "see the auth spec" reference has no structural edge
+in the prd schema (there is no `decomposes-into` relation) — fold it into the `context`
+prose instead; never invent a field for it.
