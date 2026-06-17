@@ -665,3 +665,223 @@ fn shipped_guidance_payload_skeleton_parses_as_a_valid_adr_payload() {
         parsed.err(),
     );
 }
+
+/// A *dateless* foreign ADR — Nygard-shaped but carrying NO `Date:` line (the common
+/// real-corpus case the doc-level date-suppression fix targets;
+/// `auto-migration.md` → Doc-level date-suppression).
+const FOREIGN_DATELESS: &str = "\
+# 4. Cache with Redis
+
+## Status
+
+Accepted
+
+## Context
+
+We need a fast cache.
+
+## Decision
+
+We will use Redis.
+
+## Consequences
+
+Another service to operate.
+";
+
+/// The canonical rewrite payload for the dateless ADR — carrying NO `date:` (the agent
+/// has no foreign date to transcribe).
+const PAYLOAD_DATELESS: &str = r#"title: "Cache with Redis"
+sections:
+  - id: status
+    set:
+      status: accepted
+  - id: context
+    set:
+      context: "<<We need a fast cache.>>"
+  - id: decision
+    set:
+      decision: "<<We will use Redis.>>"
+  - id: consequences
+    set:
+      consequences: "<<Another service to operate.>>"
+"#;
+
+/// The same canonical rewrite, but the agent transcribes an EXPLICIT foreign date into
+/// the `status` section's `date` field — which must survive the migration verbatim (the
+/// on-create stamp is overwritable on the write path; suppression only drops the
+/// *fabricated* today-stamp, never an authored value).
+const PAYLOAD_DATED: &str = r#"title: "Cache with Redis"
+sections:
+  - id: status
+    set:
+      status: accepted
+      date: "2014-05-09"
+  - id: context
+    set:
+      context: "<<We need a fast cache.>>"
+  - id: decision
+    set:
+      decision: "<<We will use Redis.>>"
+  - id: consequences
+    set:
+      consequences: "<<Another service to operate.>>"
+"#;
+
+/// Migrate the dateless foreign ADR end-to-end with the supplied author `payload`,
+/// asserting `finalize --approve` lands clean, then returning the committed canonical
+/// body (byte-stable across parse -> render).
+fn migrate_dateless(repo: &Path, home: &Path, pack: &Path, payload: &str) -> String {
+    let rel = commit_foreign_adr(repo, "0004-cache-with-redis", FOREIGN_DATELESS);
+    migrate(repo, home, pack, &rel);
+    let task = migration_task("0004-cache-with-redis");
+    ok_stdout(
+        author_adr(repo, home, pack, &task, payload),
+        "jigc doc author adr",
+    );
+    let approve = run_jigc(
+        repo,
+        home,
+        pack,
+        &["task", "finalize", &task, "--approve"],
+        None,
+    );
+    assert!(
+        approve.status.success(),
+        "a dateless adr migration finalizes clean — a `set: on-create` date is not \
+         author-required, so its absence does not block (the item-level precedent, now \
+         exercised doc-level); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approve.stdout),
+        String::from_utf8_lossy(&approve.stderr),
+    );
+    assert_committed_byte_stable(repo, pack, "cache-with-redis")
+}
+
+/// (a) The deliverable: a *dateless* foreign ADR migrates with NO date line rendered —
+/// the migration day is **not** fabricated as false decision history — and the finalize
+/// lands clean (an absent doc-level `set: on-create` date is not author-required). The
+/// doc-level twin of M24's item-level date-suppression fix.
+#[test]
+fn dateless_adr_migration_renders_no_date_and_finalizes_clean() {
+    let repo = TempDir::new("dateless");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    let body = migrate_dateless(repo.path(), home.path(), &pack, PAYLOAD_DATELESS);
+
+    // No `date:` header line — the today-stamp was suppressed, not fabricated.
+    assert!(
+        !body.contains("date:"),
+        "a dateless adr migration renders no date line (no fabricated today):\n{body}",
+    );
+    // The rest of the record still landed — scoped suppression, not a blanket drop.
+    assert!(
+        body.contains("status: accepted") && body.contains("We will use Redis"),
+        "the dateless migration still lands the mapped status + authored prose:\n{body}",
+    );
+}
+
+/// (b) An EXPLICIT date in the author payload survives the migration verbatim into the
+/// promoted doc — suppression drops only the fabricated today-stamp, never an authored
+/// value (the on-create stamp stays overwritable on the write path).
+#[test]
+fn an_explicit_payload_date_survives_a_migration_verbatim() {
+    let repo = TempDir::new("dated");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    let body = migrate_dateless(repo.path(), home.path(), &pack, PAYLOAD_DATED);
+    assert!(
+        body.contains("date: 2014-05-09"),
+        "an explicit payload date survives the migration verbatim:\n{body}",
+    );
+}
+
+/// (c) Regression: a NON-migration `jigc doc create adr` still stamps a `date:` header
+/// line (today's on-create stamp) — the suppression is scoped to migration tasks and
+/// must not bleed into ordinary authoring. The exact `today_iso() == today` equality is
+/// unit-pinned in `doc.rs`; here the integration witness is that the flag-false create
+/// path stamps a well-formed on-create date at all (the only thing suppression could
+/// have wrongly dropped).
+#[test]
+fn a_non_migration_doc_create_adr_still_stamps_today() {
+    let repo = TempDir::new("regression");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    ok_stdout(
+        run_jigc(repo.path(), home.path(), &pack, &["setup"], None),
+        "jigc setup",
+    );
+
+    // Mint an ordinary (NON-migration) task via the single-task work-workflow, then
+    // create an adr through its create-gate — the `migration = false` write path.
+    ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["start", "--workflow", "single-task", "add a thing"],
+            None,
+        ),
+        "jigc start --workflow single-task",
+    );
+    let created = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "create",
+                "adr",
+                "--title",
+                "Pick a Datastore",
+                "--task",
+                "add-a-thing",
+            ],
+            None,
+        ),
+        "jigc doc create adr",
+    );
+    assert_eq!(
+        created, "adr:pick-a-datastore",
+        "the non-migration create mints the per-title slug",
+    );
+
+    // The staged working doc carries an on-create `date:` line with a well-formed ISO
+    // date — the non-migration path is unaffected by the migration date-suppression.
+    let staged = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join("add-a-thing")
+            .join("docs")
+            .join("adr:pick-a-datastore.md"),
+    )
+    .expect("the staged adr is on disk");
+    let date_line = staged
+        .lines()
+        .find_map(|l| l.strip_prefix("date: "))
+        .unwrap_or_else(|| panic!("a non-migration create stamps a date line:\n{staged}"));
+    let parts: Vec<&str> = date_line.split('-').collect();
+    assert!(
+        parts.len() == 3
+            && parts[0].len() == 4
+            && parts[0].chars().all(|c| c.is_ascii_digit())
+            && parts[1].parse::<u32>().is_ok_and(|m| (1..=12).contains(&m))
+            && parts[2].parse::<u32>().is_ok_and(|d| (1..=31).contains(&d)),
+        "the non-migration create stamps a well-formed on-create (today) ISO date; got: \
+         {date_line:?}\n{staged}",
+    );
+}
