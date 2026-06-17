@@ -4217,13 +4217,38 @@ fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
 /// (when `to` is present), and `<slug>` must be a well-formed slug
 /// ([`crate::slug::is_slug`]). Validating the slug *body* catches the unbracketed
 /// comma form (`adr:a, adr:b` arrives as one scalar whose body `a, adr:b` is not a
-/// slug), closing that footgun at write (review S3). A list ref is checked
-/// element-wise by [`check_value`], so each element flows through here. The real
-/// adjudication — that the target *resolves* against the edge index — is the
-/// finalize-time probe (`design/auto-migration.md` → Write-time ref-shape check).
+/// slug), closing that footgun at write (review S3). A **list-cardinality** ref
+/// authors as an inline-flow bracket-list `[e1, e2, …]` — its canonical on-disk
+/// form, which the writer splices verbatim and [`crate::field_block`] re-parses to a
+/// [`Value::List`]. The production write path passes that scalar as one
+/// [`Value::Scalar`] (never a `Value::List`), so this shape check recognizes the
+/// bracket wrapper and validates each element through the same `<type>:<slug>` rule;
+/// the unbracketed comma form is *not* bracketed and stays one scalar, so the
+/// slug-body check still rejects it. The real adjudication — that the target
+/// *resolves* against the edge index, and forward cardinality — is the finalize-time
+/// probe (`design/auto-migration.md` → Write-time ref-shape check).
 fn check_ref(field: &SchemaField, value: &str) -> Result<(), String> {
     // Floor first: non-empty + single-line (control chars rejected).
     check_opaque_scalar(field, value)?;
+    // Inline-flow bracket-list `[e1, e2, …]`: validate each element's ref shape. An
+    // empty list `[]` carries no edges (clean). The bracket wrapper is what
+    // distinguishes the list form from the rejected unbracketed comma form.
+    if let Some(inner) = value.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        let inner = inner.trim();
+        if inner.is_empty() {
+            return Ok(());
+        }
+        for elem in inner.split(',') {
+            check_ref_shape(field, elem.trim())?;
+        }
+        return Ok(());
+    }
+    check_ref_shape(field, value)
+}
+
+/// The `<type>:<slug>` shape check for a single ref element — `<type>` must equal the
+/// field's declared `to:` (when present) and `<slug>` must be a well-formed slug.
+fn check_ref_shape(field: &SchemaField, value: &str) -> Result<(), String> {
     let (ty, slug) = value
         .split_once(':')
         .ok_or_else(|| format!("{value:?} is not a ref (expected `<type>:<slug>`)"))?;
@@ -4874,6 +4899,18 @@ Each service drops its local limiter.
             )
             .is_err()
         );
+        // The *production* write path passes the inline-flow bracket-list as one
+        // `Value::Scalar` (the writer splices it verbatim; the reader re-parses it as
+        // a list). So the bracket scalar `[adr:a, adr:b]` — the shipped migration
+        // guidance form — must author clean, validated element-wise.
+        assert!(check_value(&r_to_adr, &scalar("[adr:a, adr:b]")).is_ok());
+        // an empty bracket-list carries no edges — clean.
+        assert!(check_value(&r_to_adr, &scalar("[]")).is_ok());
+        // a bracket-list whose element is the wrong type is rejected element-wise.
+        assert!(check_value(&r_to_adr, &scalar("[adr:a, spec:b]")).is_err());
+        // the UNbracketed comma form stays rejected: it is one scalar whose slug
+        // body (`a, adr:b`) is not a well-formed slug (review S3 footgun).
+        assert!(check_value(&r_to_adr, &scalar("adr:a, adr:b")).is_err());
 
         // code-anchor (a pack-declared type): non-empty + single-line + parses as
         // `path#symbol` (a bare path is the file-existence form and also passes).
