@@ -1815,3 +1815,106 @@ $ jigc migrate changelog/changelog.md --as changelog   # a non-conformant file A
 5. **`remove-item` retracts a mistake, including a nested change-group (#1)** — no whole-task discard needed.
 6. **The migration commit doc is auto-provided (#4)**, the review gate carries a structural release-delta summary (#5), categories map-and-merge onto the enum (#7), the in-location squatter authors end-to-end (#8), and finalize commits only the migration set {promote + retire + jigc's own tracked config}, not unrelated user WIP (#9a).
 7. **No new schemas, Framing A intact.** Every hardening fix is CLI/engine/guidance over the existing `changelog`/`commit` schemas; the strict parser stays the sole structural authority.
+
+## 27. Migration generalized — a cross-referencing ADR corpus + a spec + a prd, one file at a time (M25)
+
+The M25 generalization of the corrected changelog pattern ([auto-migration.md](auto-migration.md) → Generalizing to adr/spec/prd; [DECISIONS.md](../DECISIONS.md) → 2026-06-17 M25 planning) to the **location-bearing, multi-instance** doctypes. The spine (verb / source seam / review gate / retire / batch) is flows 25–26's and is not restated; flow 27 exercises the *shape differences* — **N-instance per-file migration**, **per-title-slug minting at the location**, **edge-wiring across a migrated set with the dependency-ordering contract**, the **write-time ref-shape check**, **doc-level date-suppression**, and the **prd repeatable-requirements** shape. The done-bar is the **real corpus** measured on the M23/M24 facts: a real **MADR/Nygard ADR** set (headline — with supersession chains), a **real-but-idiosyncratic spec**, and a **synthesized-and-labeled prd**. Notation illustrative; each behaviour is red-proven at build.
+
+### The walk — migrate ADRs one file at a time, supersession targets first
+
+```text
+$ git clone <real-MADR-repo> /tmp/jigc-m25-adrs && cd /tmp/jigc-m25-adrs
+$ jigc setup && jigc ingest        # docs/adr/0001-*.md … classify Unmanaged (left untouched, off-canonical path)
+
+# ADR-0001 first (it is a supersession TARGET of 0007) — the ordering contract (one-file-one-task, sequential):
+$ jigc migrate docs/adr/0001-use-mysql.md --as adr   # mints OFF-ROUTER task `migrate-adr-0001-use-mysql` (per-FILE id, not the singleton `migrate-adr`)
+  Read the source and author the canonical ADR in ONE payload via `jigc doc author`:
+  {{source}}                                          ← the foreign ADR content, source seam, read-only
+
+$ jigc doc author adr --from - <<'EOF'
+title: Use MySQL
+sections:
+  - id: status
+    set:
+      status: superseded          # foreign "Rejected"/"Deprecated" → mapped onto the 3-enum; here it was later superseded
+      # NO date: key → the foreign ADR is dateless, so NO today-stamp is fabricated (doc-level date-suppression)
+  - id: context
+    set: { context: "<<why a datastore choice was needed>>" }
+  - id: decision
+    set: { decision: "<<we chose MySQL>>" }
+  - id: consequences
+    set: { consequences: "<<the tradeoffs>>" }
+EOF
+> applied: create adr:use-mysql + status header + 3 slots — one staged buffer, byte-stable.
+$ jigc task finalize migrate-adr-0001-use-mysql --approve
+> promote decisions/use-mysql.md · retire docs/adr/0001-use-mysql.md · adopt · commit   ← per-title slug at decisions/
+
+# ADR-0007 supersedes 0001 — now 0001 is COMMITTED, so the forward-ref resolves against the store:
+$ jigc migrate docs/adr/0007-use-postgres.md --as adr
+$ jigc doc author adr --from - <<'EOF'
+title: Use PostgreSQL
+sections:
+  - id: status
+    set:
+      status: accepted
+      supersedes: "[adr:use-mysql]"     # BRACKET-list (0..* widened) — a real ADR may supersede several; comma form is the footgun
+  - id: context
+    set: { context: "<<…>>" }
+  - id: decision
+    set: { decision: "<<…>>" }
+  - id: consequences
+    set: { consequences: "<<…>>" }
+EOF
+$ jigc task finalize migrate-adr-0007-use-postgres --approve
+> validate: clean — supersedes adr:use-mysql resolves in the committed store   ← edge integrity across the migrated set
+> promote decisions/use-postgres.md · retire docs/adr/0007-use-postgres.md · adopt · commit
+```
+
+A spec and a prd migrate the same one-file-one-task way:
+
+```text
+$ jigc migrate docs/specs/auth.md --as spec      # → specs/auth.md ; criteria with NO maps-to-test finalize clean (optional anchor)
+$ jigc migrate docs/PRD.md --as prd              # → prds/<title-slug>.md ; requirements author as a REPEATABLE section (per-requirement items)
+$ jigc doc author prd --from - <<'EOF'
+title: Product Brief
+sections:
+  - id: vision
+    set: { vision: "<<the product vision>>" }
+  - id: requirements                              # repeatable now — each foreign requirement is an individually-addressable item
+    items:
+      - title: Account signup
+        set: { statement: "<<a user can create an account>>" }
+      - title: Password reset
+        set: { statement: "<<a user can reset a forgotten password>>" }
+  - id: context
+    set: { context: "<<constraints>>" }
+EOF
+```
+
+### The reds — each fires on real input
+
+```text
+# write-time ref-shape check — a bare slug is rejected NOW, not at finalize with a misleading "resolves in neither":
+$ jigc doc set-field adr:use-postgres#status/supersedes --value "use-mysql"   # missing the adr: type prefix
+> BLOCK write.malformed-value — ref "use-mysql" must be of the form <type>:<slug> (expected type: adr)   ← immediate
+
+# the ordering contract enforced by reality — supersede a NOT-YET-migrated sibling → forward-ref dangles:
+$ jigc task finalize migrate-adr-0007-use-postgres          # 0001 not yet migrated/committed
+> BLOCK schema-conformance.ref-resolves — target 'adr:use-mysql' resolves in neither the committed store nor this task's working area
+
+# foreign status outside the enum must be mapped, not passed through:
+$ jigc doc author adr --from - <<'EOF'   # status: Rejected   (∉ {proposed, accepted, superseded})
+> BLOCK write.malformed-value — "Rejected" is not a member of enum "status"   ← guidance maps foreign status onto the 3-enum
+
+# human-reject of the fidelity diff leaves the foreign original untouched (the spine's invariant, byte-safe):
+$ jigc task finalize migrate-adr-0001-use-mysql           # WITHOUT --approve → renders the raw diff, exits non-zero, commits nothing
+```
+
+### What it asserts (the M25 acceptance bar)
+
+1. **A real ADR corpus migrates end-to-end, one file at a time** — each foreign ADR → a per-title-slug managed doc at `decisions/`, retired + adopted, byte-stable; the per-file migration task id (`migrate-<doctype>-<slug>`) lets a corpus of N ADRs migrate sequentially (the singleton `migrate-<doctype>` id collision is fixed). Measured on round-trip conformance · fidelity-acceptance · content-preservation · agent-call count.
+2. **Edge-wiring across the migrated set holds** — `adr.supersedes` (widened `0..*`, bracket-list) resolves against the committed store; the **dependency-ordering contract** (migrate + finalize a supersession target first) is what makes forward-ref integrity hold under the one-file-one-task model, and a forward-ref to a not-yet-migrated sibling **blocks** (no cross-task transaction machinery). A `supersedes` whose target is **outside the migration set** (a prior the operator won't migrate) is **dropped to prose**, never authored as a dangling ref.
+3. **The write-time ref-shape check gives immediate feedback** — a bare slug or wrong-type ref is rejected at the authoring point as `write.malformed-value`, not deferred to a misleading finalize dangle.
+4. **Dateless ADRs don't fabricate history** — the doc-level on-create date-suppression renders no date when the foreign source has none (the M24 item-level fix, now threaded to the doc-level header path adr's `date` uses).
+5. **spec and prd migrate cleanly** — spec criteria without `maps-to-test` finalize clean (optional anchor); **prd requirements author as a repeatable section** (per-requirement items, pack-only — no `decomposes-into` edge).
+6. **The honest bounds hold** — adr accepted-drops (Considered Options / Related ADRs / Deciders / out-of-enum status mapped-or-dropped); a **finalize-promote clobber-guard** blocks any create-provenance doc whose destination already holds a committed managed doc (covering the in-location squatter *and* a title-slug collision across the corpus); migrated titles render as the **slug in the H1** (`# use-mysql`, not `# Use MySQL`) — an accepted pre-existing bound, not data loss; prd's acceptance arm is a **synthesized, labeled** PRD; the review gate falls back to the raw foreign-vs-canonical diff (no per-doctype structural summary). Framing A intact throughout — LLM proposes prose, the CLI strict-parses + places every structural act.
