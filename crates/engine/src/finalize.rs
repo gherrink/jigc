@@ -157,17 +157,21 @@ impl FinalizePlan {
 /// domain-empty — the CLI feeds it in); `commit_slug` is the task-derived id the
 /// commit instance was provisioned under (`commit:<id>`). `schemas` is the full
 /// cascade-resolved schema set (keyed by type), used in phase 4 to resolve each staged
-/// doc's `location:`. Returns the [`FinalizePlan`] on a clean run, or the blocking
-/// findings that aborted it.
+/// doc's `location:`. `repo_root` is the repo root the planner probes for the promote
+/// **clobber guard** (review S1) — a create-provenance doc whose canonical destination
+/// already holds a committed managed doc blocks rather than silently overwriting it.
+/// Returns the [`FinalizePlan`] on a clean run, or the blocking findings that aborted it.
 ///
-/// Performs no git and no commit. Reads only the task working area (the engine's
-/// existing filesystem effect); never shells out.
+/// Performs no git and no commit. Reads the task working area + stats `repo_root`
+/// promote destinations for the clobber guard (the engine's existing filesystem effect);
+/// never shells out.
 // The planner is a pure decision over a deliberately explicit set of inputs (the
 // determinism contract feeds every layer in rather than re-deriving it); bundling
 // them into a params struct would be churn without clarifying the contract.
 #[allow(clippy::too_many_arguments)]
 pub fn plan_finalize(
     task_dir: &Path,
+    repo_root: &Path,
     base: &BasePin,
     head_sha: &str,
     report: &ValidationReport,
@@ -213,6 +217,14 @@ pub fn plan_finalize(
     // location-less type) is excluded. Phase 7's hash-update set carries each promoted
     // doc's blake3 over its staged bytes (byte-stable — the copy equals the source).
     let promote = plan_promotions(task_dir, schemas)?;
+
+    // The clobber guard (review S1, `design/auto-migration.md` → Honest bounds, the
+    // data-loss clobber guard): a **create-provenance** staged doc whose canonical
+    // destination already holds a committed managed doc would silently overwrite it at
+    // promote — irreversible data loss. Block before retire. The in-place migration
+    // rewrite (the doc replacing the very foreign original at its own canonical path) is
+    // excluded via the retire guard's source-path == destination discriminator.
+    plan_clobber_guard(task_dir, repo_root, &promote.promotions, schemas)?;
 
     // The retire set (`design/auto-migration.md` → Retire-the-foreign-original): a
     // migration task records its repo-relative foreign source path at mint; the planner
@@ -279,6 +291,117 @@ fn plan_retirements(
         Ok(_) => Ok(Vec::new()),
         Err(err) => Err(vec![source_path_io_finding(task_dir, &err)]),
     }
+}
+
+/// The finalize-promote **clobber guard** (review S1, `design/auto-migration.md` →
+/// Honest bounds → the data-loss clobber guard): a **create-provenance** staged doc whose
+/// canonical promote destination already holds a committed managed doc would silently
+/// overwrite it at promote — irreversible data loss. The planner blocks it
+/// (`finalize.promote-clobber`), covering the title-slug collision across a doctype dir
+/// AND the off-canonical in-location squatter together, **regardless of conformance or
+/// migration-ness** (the colliding-corpus case is conformant-over-conformant).
+///
+/// Gated to [`crate::state::Provenance::Created`] — the load-bearing regression hinge: an
+/// [`crate::state::Provenance::EditedFromBase`] doc was copied in from the committed store
+/// at base and edited, so re-promoting it over its own canonical path is the intended
+/// copy-on-first-touch update (the NGT committed-field-update path), never a clobber.
+///
+/// The **in-place SINGLETON migration rewrite** is excluded — and *only* the singleton one:
+/// when a **`singleton`** doctype's recorded foreign `source-path` IS this destination, the
+/// committed file is the very foreign original being rewritten in place (the M24 blank-seed
+/// path, `auto-migration.md` → Path-collision guard / Hardening #8, which is itself
+/// `state.rs` step-4 `&& schema.singleton`-gated) — overwriting it is the whole point. A
+/// **non-singleton** in-location squatter (source == destination) is bounded *out* of
+/// end-to-end authoring (`auto-migration.md` → Honest bounds: "bounded to off-canonical
+/// foreign paths") and must still **block** — the retire-skip ([`plan_retirements`] skips
+/// source == destination) and this promote-block then compose to *no data loss*. Both
+/// path sides are [`crate::store::lexical_normalize`]d so a `./`-prefixed or
+/// redundant-component spelling still matches.
+///
+/// Each staged promotion's `<type>:<slug>` address is recovered from its source file stem
+/// (the [`plan_promotions`] naming convention) and looked up in the task's provenance
+/// manifest ([`crate::state::ProvenanceRecord`]); its `<type>` resolves the schema in
+/// `schemas` (for the singleton check). A staged doc with no recorded provenance (none was
+/// minted/copied-in here) is not create-provenance, so it never trips the guard.
+fn plan_clobber_guard(
+    task_dir: &Path,
+    repo_root: &Path,
+    promotions: &[Promotion],
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<(), Vec<Finding>> {
+    let provenance = crate::state::ProvenanceRecord::load(task_dir)
+        .map_err(|err| vec![provenance_io_finding(task_dir, &err)])?;
+    // The in-place migration rewrite's destination (if any) — the foreign source path the
+    // managed write replaces at its own canonical path, normalized for the comparison.
+    let in_place = crate::state::read_source_path(task_dir)
+        .map_err(|err| vec![source_path_io_finding(task_dir, &err)])?
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .map(|s| crate::store::lexical_normalize(Path::new(&s)));
+
+    let mut clobbers = Vec::new();
+    for promotion in promotions {
+        let Some(address) = promotion.source.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if provenance.get(address) != Some(crate::state::Provenance::Created) {
+            continue; // edited-from-base / unrecorded → never a clobber.
+        }
+        // Only a SINGLETON doctype's in-place rewrite is excluded (the M24 blank-seed path
+        // is singleton-gated); a non-singleton in-location squatter must still block.
+        let singleton = address
+            .split_once(':')
+            .and_then(|(ty, _)| schemas.get(ty))
+            .is_some_and(|schema| schema.singleton);
+        let dest_norm = crate::store::lexical_normalize(Path::new(&promotion.destination));
+        if singleton && in_place.as_ref() == Some(&dest_norm) {
+            continue; // in-place singleton rewrite — replacing the very foreign original.
+        }
+        if repo_root.join(&promotion.destination).is_file() {
+            clobbers.push(clobber_finding(&promotion.destination));
+        }
+    }
+    if clobbers.is_empty() {
+        Ok(())
+    } else {
+        Err(clobbers)
+    }
+}
+
+/// A blocking finding (review S1, `design/auto-migration.md` → Honest bounds → the
+/// data-loss clobber guard) when a create-provenance doc's canonical promote destination
+/// already holds a committed managed doc — promoting would silently overwrite it
+/// (irreversible data loss). Names the destination it refused to clobber.
+fn clobber_finding(destination: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.promote-clobber",
+        format!(
+            "promoting this task's doc to `{destination}` would overwrite a committed \
+             managed doc already there — refusing to clobber it"
+        ),
+        None,
+        Some(format!(
+            "another committed doc already occupies `{destination}`; retitle this one so it \
+             slugs differently, or resolve the collision, then re-run `jigc task finalize`"
+        )),
+    )
+}
+
+/// A blocking finding for an I/O failure loading the task's provenance manifest while
+/// planning the clobber guard (the manifest is written at stage time, so a read fault is a
+/// real fault — the promote/source-path I/O precedent).
+fn provenance_io_finding(task_dir: &Path, err: &std::io::Error) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.provenance-io",
+        format!(
+            "could not read the task provenance manifest under `{}`: {err}",
+            task_dir.display()
+        ),
+        None,
+        None,
+    )
 }
 
 /// The phase-1 decision over a moved base (`design/finalize.md` → Parallel
@@ -708,6 +831,7 @@ mod tests {
 
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -718,12 +842,25 @@ mod tests {
             .expect("adr.yaml loads")
     }
 
+    /// The `changelog` singleton (fixed slug = the type id, location `changelog/`) — the
+    /// clobber guard's in-place-rewrite exclusion is `singleton`-gated, so the in-place
+    /// test needs a real singleton schema.
+    fn changelog_schema() -> Schema {
+        crate::schema::load_schema_with_types(
+            CHANGELOG_YAML,
+            &crate::schema::dev_pack_field_types(),
+        )
+        .expect("changelog.yaml loads")
+    }
+
     /// The cascade-resolved schema set the planner reads in phase 4: the `commit`
-    /// (transient, location-less) + `adr` (persisted to `decisions/`) types.
+    /// (transient, location-less) + `adr` (persisted to `decisions/`) + `changelog`
+    /// (a persisted singleton) types.
     fn schemas() -> BTreeMap<String, Schema> {
         let mut m = BTreeMap::new();
         m.insert("commit".to_string(), commit_schema());
         m.insert("adr".to_string(), adr_schema());
+        m.insert("changelog".to_string(), changelog_schema());
         m
     }
 
@@ -837,6 +974,7 @@ mod tests {
         // (Preflight) base-pin != supplied HEAD → divergence block, no plan.
         let err = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
             &clean,
@@ -872,6 +1010,7 @@ mod tests {
         let report = ValidationReport::new(vec![advisory, blocking.clone()], &no_delta_resolved());
         let err = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &report,
@@ -890,6 +1029,7 @@ mod tests {
         // (Empty-commit guard) validate clean but no diff → produced-no-diff abort.
         let err = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -911,6 +1051,7 @@ mod tests {
         // rendered message + the empty (commit-only) post-commit hash set.
         let plan = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -950,6 +1091,7 @@ mod tests {
         // Omitting context: no `source-path` file → an empty retire set.
         let plan = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -969,6 +1111,7 @@ mod tests {
             .expect("record the foreign source path");
         let plan = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -1006,6 +1149,7 @@ mod tests {
         // never reaches the byte-destructive retire).
         let findings = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -1052,6 +1196,7 @@ mod tests {
         .expect("record the in-location foreign source path");
         let plan = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -1087,6 +1232,7 @@ mod tests {
                 .expect("record a redundantly-spelled in-location foreign source path");
             let plan = plan_finalize(
                 &task_dir,
+                root.path(),
                 &base(),
                 &base().sha,
                 &clean,
@@ -1108,6 +1254,7 @@ mod tests {
             .expect("record a distinct foreign source path");
         let plan = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -1133,6 +1280,7 @@ mod tests {
 
         let err = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,
@@ -1145,6 +1293,243 @@ mod tests {
         assert_eq!(err.len(), 1);
         assert_eq!(err[0].code, "finalize.no-task");
         assert_eq!(err[0].severity, Severity::Blocking);
+    }
+
+    /// The finalize-promote **clobber guard** (review S1, `design/auto-migration.md` →
+    /// Honest bounds → the data-loss clobber guard): a **Created**-provenance staged doc
+    /// whose canonical destination already holds a committed managed doc **blocks** with
+    /// exactly one `finalize.promote-clobber` — never silently overwriting it. This is the
+    /// title-slug-collision / off-canonical-squatter data-loss case (a 2nd ADR slugging to
+    /// an already-committed slug).
+    #[test]
+    fn finalize_plan_blocks_a_created_doc_that_clobbers_a_committed_doc() {
+        let root = TempRoot::new("clobber");
+        let task_dir = root.path().join("tasks").join("migrate-adr-second");
+        let schema = stage_filled_commit(&task_dir, "migrate-adr-second");
+        // A doc minted in THIS task (Created provenance) targeting `decisions/<slug>.md`.
+        stage_filled_adr(&task_dir, "single-node-cache");
+        state::record_doc_provenance(
+            &task_dir,
+            "adr:single-node-cache",
+            state::Provenance::Created,
+        )
+        .expect("record created provenance");
+        // A managed doc is ALREADY committed at that canonical destination.
+        state::persist(
+            &root.path().join("decisions").join("single-node-cache.md"),
+            b"# a different decision already committed here\n",
+        )
+        .expect("commit a prior managed doc at the destination");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "migrate-adr-second",
+            &schemas(),
+        )
+        .expect_err("a created doc clobbering a committed managed doc must block");
+        assert_eq!(findings.len(), 1, "exactly one clobber finding");
+        assert_eq!(findings[0].code, "finalize.promote-clobber");
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert!(
+            findings[0]
+                .message
+                .contains("decisions/single-node-cache.md"),
+            "the block names the destination it refused to clobber: {:?}",
+            findings[0].message
+        );
+    }
+
+    /// Regression: an **EditedFromBase** staged doc whose destination already holds a
+    /// committed file does **not** block — it was copied in from the committed store at
+    /// base and edited, so re-promoting it over its own canonical path is the intended
+    /// copy-on-first-touch update (the NGT committed-field-update path), never a clobber.
+    /// `Provenance::Created` gating is the load-bearing regression hinge.
+    #[test]
+    fn finalize_plan_allows_an_edited_from_base_doc_over_a_committed_doc() {
+        let root = TempRoot::new("clobber-edited");
+        let task_dir = root.path().join("tasks").join("update-adr");
+        let schema = stage_filled_commit(&task_dir, "update-adr");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        // Copy-on-first-touch: the doc existed at base and was copied in for editing.
+        state::record_doc_provenance(
+            &task_dir,
+            "adr:single-node-cache",
+            state::Provenance::EditedFromBase,
+        )
+        .expect("record edited-from-base provenance");
+        state::persist(
+            &root.path().join("decisions").join("single-node-cache.md"),
+            b"# the committed base of this very doc\n",
+        )
+        .expect("commit the base doc at the destination");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let plan = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "update-adr",
+            &schemas(),
+        )
+        .expect("an edited-from-base re-promote does not clobber");
+        assert_eq!(plan.promotions.len(), 1, "the edited doc still promotes");
+        assert_eq!(
+            plan.promotions[0].destination,
+            "decisions/single-node-cache.md"
+        );
+    }
+
+    /// Regression: a **Created** doc whose canonical destination is **absent** does not
+    /// block — the normal first-time migration / fresh-mint promote (nothing to clobber).
+    #[test]
+    fn finalize_plan_allows_a_created_doc_to_an_absent_destination() {
+        let root = TempRoot::new("clobber-absent");
+        let task_dir = root.path().join("tasks").join("migrate-adr-first");
+        let schema = stage_filled_commit(&task_dir, "migrate-adr-first");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        state::record_doc_provenance(
+            &task_dir,
+            "adr:single-node-cache",
+            state::Provenance::Created,
+        )
+        .expect("record created provenance");
+        // No committed file at `decisions/single-node-cache.md` → first-time promote.
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let plan = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "migrate-adr-first",
+            &schemas(),
+        )
+        .expect("a first-time created promote does not clobber");
+        assert_eq!(plan.promotions.len(), 1);
+        assert_eq!(
+            plan.promotions[0].destination,
+            "decisions/single-node-cache.md"
+        );
+    }
+
+    /// Regression (the M24 **singleton** in-location squatter, `auto-migration.md` →
+    /// Path-collision guard / Hardening #8): a **Created** doc of a **`singleton`** doctype
+    /// whose destination already holds a committed file does **not** block when the
+    /// migration's recorded `source-path` IS that destination — the committed file is the
+    /// very foreign original being rewritten in place (the M24 blank-seed path), not a
+    /// distinct managed doc. The exclusion is `singleton`-gated and matches the retire
+    /// guard's source-path == destination discriminator; a redundantly-spelled source-path
+    /// (`./`-prefixed) still matches. Without this exclusion the M24 changelog-squatter
+    /// rewrite (flow 26) regresses.
+    #[test]
+    fn finalize_plan_allows_the_in_place_singleton_rewrite() {
+        let root = TempRoot::new("clobber-in-place");
+        let task_dir = root.path().join("tasks").join("migrate-in-place");
+        let schema = stage_filled_commit(&task_dir, "migrate-in-place");
+        // A staged singleton instance (fixed slug = type id) → `changelog/changelog.md`.
+        state::persist(
+            &state::instance_path(&task_dir, "changelog", "changelog"),
+            b"# Changelog\n\nblank-seeded then authored in place\n",
+        )
+        .expect("stage the singleton instance");
+        state::record_doc_provenance(&task_dir, "changelog:changelog", state::Provenance::Created)
+            .expect("record created provenance (blank-seeded squatter)");
+        // The committed file at the canonical destination IS the foreign original.
+        state::persist(
+            &root.path().join("changelog").join("changelog.md"),
+            b"non-conformant foreign squatter at the canonical path\n",
+        )
+        .expect("commit the foreign squatter at the destination");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        for source_path in ["changelog/changelog.md", "./changelog/changelog.md"] {
+            state::persist(&task_dir.join("source-path"), source_path.as_bytes())
+                .expect("record the in-place migration source path");
+            let plan = plan_finalize(
+                &task_dir,
+                root.path(),
+                &base(),
+                &base().sha,
+                &clean,
+                true,
+                &schema,
+                "migrate-in-place",
+                &schemas(),
+            )
+            .unwrap_or_else(|_| panic!("the in-place rewrite `{source_path}` must not clobber"));
+            assert_eq!(
+                plan.promotions[0].destination, "changelog/changelog.md",
+                "the singleton squatter is rewritten in place (source-path `{source_path}`)",
+            );
+        }
+    }
+
+    /// The contrast that proves the exclusion is **`singleton`-gated** (T2(b), the
+    /// non-singleton in-location squatter, `auto-migration.md` → Honest bounds): a
+    /// **non-singleton** (adr) Created doc whose `source-path` IS its own destination — an
+    /// in-location squatter at the canonical path — still **blocks**, because the M24
+    /// blank-seed / in-place authoring is singleton-gated and does not apply. The retire
+    /// guard skips the source == destination retire AND this promote-block fires, so the
+    /// two compose to **no data loss**.
+    #[test]
+    fn finalize_plan_blocks_a_non_singleton_in_location_squatter() {
+        let root = TempRoot::new("clobber-nonsingleton-inplace");
+        let task_dir = root.path().join("tasks").join("migrate-adr-inplace");
+        let schema = stage_filled_commit(&task_dir, "migrate-adr-inplace");
+        stage_filled_adr(&task_dir, "single-node-cache");
+        state::record_doc_provenance(
+            &task_dir,
+            "adr:single-node-cache",
+            state::Provenance::Created,
+        )
+        .expect("record created provenance");
+        state::persist(
+            &root.path().join("decisions").join("single-node-cache.md"),
+            b"# a committed managed doc already at the canonical path\n",
+        )
+        .expect("commit a managed doc at the destination");
+        // source-path == destination, but adr is NON-singleton → the exclusion does NOT
+        // apply, so the clobber guard still fires.
+        state::persist(
+            &task_dir.join("source-path"),
+            b"decisions/single-node-cache.md",
+        )
+        .expect("record the in-location source path");
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let findings = plan_finalize(
+            &task_dir,
+            root.path(),
+            &base(),
+            &base().sha,
+            &clean,
+            true,
+            &schema,
+            "migrate-adr-inplace",
+            &schemas(),
+        )
+        .expect_err("a non-singleton in-location squatter must still block");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].code, "finalize.promote-clobber");
+        assert!(
+            findings[0]
+                .message
+                .contains("decisions/single-node-cache.md")
+        );
     }
 
     /// GOLDEN: a task that staged both a commit doc and an `adr:single-node-cache`
@@ -1162,6 +1547,7 @@ mod tests {
 
         let plan = plan_finalize(
             &task_dir,
+            root.path(),
             &base(),
             &base().sha,
             &clean,

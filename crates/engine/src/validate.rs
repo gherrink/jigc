@@ -3121,6 +3121,7 @@ The audit landed green.
         let base = BasePin::new("HEAD", "HEAD");
         let plan = plan_finalize(
             &task_dir,
+            repo.path(),
             &base,
             "HEAD",
             &report,

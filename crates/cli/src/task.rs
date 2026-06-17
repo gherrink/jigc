@@ -560,6 +560,7 @@ impl TaskArea {
         // The engine plans; the CLI executes. A blocking branch returns the findings.
         let plan = match plan_finalize(
             &self.dir,
+            &self.repo_root,
             &base,
             &head,
             &report,
