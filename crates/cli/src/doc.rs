@@ -761,10 +761,13 @@ fn on_create_nested_item_fields(
 /// A field with neither yields nothing — so a doctype declaring no such field
 /// (e.g. `commit`) is left byte-unchanged (the materializer is inert). Honors the
 /// `adr` doc-level `date` (set-on-create) + `status: proposed` (default) promises
-/// (`design/changelog.md` → engine work #4).
-fn on_create_doc_fields(schema: &Schema) -> Vec<engine::field_block::Field> {
-    use engine::schema::FieldType;
-
+/// (`design/changelog.md` → engine work #4). `migration` suppresses the
+/// `set: on-create` **date** header stamp — and only that stamp (delegating the
+/// per-field decision to the proven [`on_create_block_field`]) — so a *dateless*
+/// foreign ADR migrates with no date rather than fabricating the migration day as
+/// false decision history (`design/auto-migration.md` → Doc-level date-suppression).
+/// An explicit payload date still overwrites the (now-absent) stamp on the write path.
+fn on_create_doc_fields(schema: &Schema, migration: bool) -> Vec<engine::field_block::Field> {
     let today = today_iso();
     schema
         .sections
@@ -774,18 +777,7 @@ fn on_create_doc_fields(schema: &Schema) -> Vec<engine::field_block::Field> {
             SectionBody::Repeatable { .. } => None,
         })
         .flatten()
-        .filter_map(|field| {
-            let value = if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create")
-            {
-                today.clone()
-            } else {
-                field.default.clone()?
-            };
-            Some(engine::field_block::Field {
-                key: field.id.clone(),
-                value: Value::Scalar(value),
-            })
-        })
+        .filter_map(|field| on_create_block_field(field, &today, migration))
         .collect()
 }
 
@@ -832,10 +824,12 @@ fn run_create(
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
-    // (clock-side CLI work) so the created instance carries them before render.
+    // (clock-side CLI work) so the created instance carries them before render. In
+    // migration mode the `set: on-create` date is suppressed (no fabricated history).
+    let migration = task.is_migration()?;
     let on_create = schemas
         .get(type_name)
-        .map(on_create_doc_fields)
+        .map(|s| on_create_doc_fields(s, migration))
         .unwrap_or_default();
     let created = state::create_gated(
         &task.dir,
@@ -883,10 +877,13 @@ fn run_author(
     let plan = ::cli::author::parse_author_payload(schemas.get(doctype), &payload)?;
     // Materialize the doctype's doc-level `default:` / `set: on-create` header fields
     // (the same clock-side CLI work `run_create` does) so the created instance carries
-    // them before the leaves chain over it.
+    // them before the leaves chain over it. The migration discriminator (reused below
+    // for the per-leaf chain) suppresses the `set: on-create` date stamp in migration
+    // mode (no fabricated history for a dateless foreign doc).
+    let migration = task.is_migration()?;
     let on_create = schemas
         .get(doctype)
-        .map(on_create_doc_fields)
+        .map(|s| on_create_doc_fields(s, migration))
         .unwrap_or_default();
     // The create persists the empty doc through the gated path (gate + squatter seams).
     let created = state::create_gated(
@@ -911,7 +908,6 @@ fn run_author(
     // **also** discard that staged file — otherwise an empty doc leaks for a batch that
     // "persisted nothing". Rollback = drop the in-memory buffer + remove the staged
     // file `create_gated` provisioned; the block finding propagates unchanged.
-    let migration = task.is_migration()?;
     let mut buffer = read_staged(&created.path, &created.address)?;
     for leaf in &plan.leaves {
         match apply_leaf(schema, &buffer, &created.address, leaf, migration) {
@@ -1858,7 +1854,7 @@ sections:
             check: "symbol-exists".to_owned(),
         }];
         let adr = engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr loads");
-        let fields = on_create_doc_fields(&adr);
+        let fields = on_create_doc_fields(&adr, false);
         // Exactly `status` (default: proposed) then `date` (set: on-create), in schema
         // field order — `supersedes`/`cites-code` carry neither, so they are omitted.
         assert_eq!(
@@ -1876,8 +1872,69 @@ sections:
         // nothing, so its rendered front-matter is byte-unchanged.
         let commit = load_schema(COMMIT_YAML).expect("commit loads");
         assert!(
-            on_create_doc_fields(&commit).is_empty(),
+            on_create_doc_fields(&commit, false).is_empty(),
             "a header with no default/set field stamps nothing (inert)",
         );
+    }
+
+    /// Migration mode (`design/auto-migration.md` → Doc-level date-suppression)
+    /// suppresses the doc-level `set: on-create` **date** header stamp — and ONLY that
+    /// stamp — so a *dateless* foreign ADR migrates with no date rather than fabricating
+    /// the migration day as false decision history (the doc-level twin of the proven
+    /// item-level fix). The default-bearing `status: proposed` still materializes under
+    /// migration (scoped suppression, not a blanket drop). The byte-identical authoring
+    /// path (`migration = false`) keeps stamping today, so a non-migration `doc create
+    /// adr` is unaffected. `spec`/`prd` carry no date field, so the flag is invariant.
+    #[test]
+    fn migration_suppresses_only_the_doc_level_on_create_date() {
+        let types = vec![engine::schema::PackTypeDecl {
+            name: "code-anchor".to_owned(),
+            adjudicator: "doc-code".to_owned(),
+            check: "symbol-exists".to_owned(),
+        }];
+
+        const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
+        let adr = engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr loads");
+
+        // Migration mode drops the date stamp but KEEPS the `status: proposed` default.
+        let migrated = on_create_doc_fields(&adr, true);
+        assert_eq!(
+            migrated.len(),
+            1,
+            "migration drops the date stamp but keeps the default"
+        );
+        assert_eq!(
+            migrated[0].key, "status",
+            "the surviving field is the default"
+        );
+        assert_eq!(migrated[0].value, Value::Scalar("proposed".into()));
+        assert!(
+            !migrated.iter().any(|f| f.key == "date"),
+            "no false-history date is fabricated under migration",
+        );
+
+        // Authoring mode (the regression witness) still stamps BOTH.
+        let authored = on_create_doc_fields(&adr, false);
+        assert_eq!(authored.len(), 2, "authoring stamps status + the date");
+        assert!(
+            authored
+                .iter()
+                .any(|f| f.key == "date" && f.value == Value::Scalar(today_iso())),
+            "authoring stamps today's date",
+        );
+
+        // `spec` carries no date field, so the flag is invariant (moot for spec/prd).
+        const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
+        let spec = engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec loads");
+        assert_eq!(
+            on_create_doc_fields(&spec, true),
+            on_create_doc_fields(&spec, false),
+            "a doctype with no date field is flag-invariant",
+        );
+
+        // `commit` (no default/set header field) stays inert under both flags.
+        let commit = load_schema(COMMIT_YAML).expect("commit loads");
+        assert!(on_create_doc_fields(&commit, true).is_empty());
+        assert!(on_create_doc_fields(&commit, false).is_empty());
     }
 }
