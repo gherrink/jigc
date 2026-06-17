@@ -4171,9 +4171,14 @@ fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
         // presence — is the intrinsic finalize-time #5 owner-artifact gate). So
         // `field-value-conformant` never fires for it beyond the shared floor (any
         // non-empty single-line value passes), regardless of the value's safety.
-        FieldType::String | FieldType::Ref | FieldType::OwnedLocation => {
-            check_opaque_scalar(field, value)
-        }
+        FieldType::String | FieldType::OwnedLocation => check_opaque_scalar(field, value),
+        // A `ref` carries a *shape* over the opaque floor: `<type>:<slug>` with the
+        // type matching the field's `to:` (when declared) and a well-formed slug
+        // body. Split out of the opaque floor so a malformed migrated edge — a bare
+        // slug, a wrong type, the unbracketed comma form — is caught at the write
+        // verb, not deferred to a misleading finalize dangle. The real adjudication
+        // (target *resolves*) is still the finalize-time edge-index probe.
+        FieldType::Ref => check_ref(field, value),
         // A pack-declared type. Its **real** adjudicator is the bound finalize-time
         // probe (built in a later increment); here we run only the type's optional,
         // cheap *write-time shape check* — the `String | Ref` arm above split out so
@@ -4205,6 +4210,39 @@ fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+/// The `ref` write-time *shape* check: the opaque floor (non-empty + single-line)
+/// then the `<type>:<slug>` form — `<type>` must equal the field's declared `to:`
+/// (when `to` is present), and `<slug>` must be a well-formed slug
+/// ([`crate::slug::is_slug`]). Validating the slug *body* catches the unbracketed
+/// comma form (`adr:a, adr:b` arrives as one scalar whose body `a, adr:b` is not a
+/// slug), closing that footgun at write (review S3). A list ref is checked
+/// element-wise by [`check_value`], so each element flows through here. The real
+/// adjudication — that the target *resolves* against the edge index — is the
+/// finalize-time probe (`design/auto-migration.md` → Write-time ref-shape check).
+fn check_ref(field: &SchemaField, value: &str) -> Result<(), String> {
+    // Floor first: non-empty + single-line (control chars rejected).
+    check_opaque_scalar(field, value)?;
+    let (ty, slug) = value
+        .split_once(':')
+        .ok_or_else(|| format!("{value:?} is not a ref (expected `<type>:<slug>`)"))?;
+    // Type-equality only when `to` is declared; the `<type>:<slug>` shape + slug
+    // grammar are always validated (no shipped ref carries `to: None`).
+    if let Some(to) = &field.to
+        && ty != to.as_str()
+    {
+        return Err(format!(
+            "{value:?} targets type {ty:?} but field {:?} references type {to:?}",
+            field.id
+        ));
+    }
+    if !crate::slug::is_slug(slug) {
+        return Err(format!(
+            "{value:?} is not a ref (expected `<type>:<slug>` with a well-formed slug)"
+        ));
+    }
+    Ok(())
 }
 
 /// The `code-anchor` write-time *shape* check: non-empty, single-line, and parses
@@ -4717,6 +4755,23 @@ Each service drops its local limiter.
         assert_eq!(finding.code, "write.malformed-value");
     }
 
+    /// (c) A `set-field` whose new `ref` value is malformed (a bare slug — no
+    /// `<type>:` prefix) is rejected with a Blocking [`Finding`] at the write verb,
+    /// `write.malformed-value` — not deferred to a misleading finalize dangle.
+    #[test]
+    fn malformed_ref_value_is_blocking_finding() {
+        let finding = set_field_validated(
+            &adr_schema(),
+            CANONICAL_ADR,
+            "status",
+            "supersedes",
+            &scalar("use-postgres"),
+        )
+        .expect_err("a bare-slug ref ⇒ abort");
+        assert_eq!(finding.severity, crate::finding::Severity::Blocking);
+        assert_eq!(finding.code, "write.malformed-value");
+    }
+
     /// The type-check primitive accepts well-formed values and rejects malformed ones,
     /// per declared [`crate::schema::FieldType`]: enum membership, ISO date, bool, int.
     /// `string`/`ref`/`code-anchor` accept any non-empty opaque value (full ref /
@@ -4773,16 +4828,52 @@ Each service drops its local limiter.
         let name = field(FieldType::String, None);
         assert!(check_value(&name, &scalar("anything goes")).is_ok());
         assert!(check_value(&name, &scalar("")).is_err());
+        // ref: floor (non-empty + single-line) PLUS the `<type>:<slug>` shape —
+        // the slug body must be a well-formed slug; with no `to:` declared the
+        // type element is unconstrained. The real adjudication (target resolves)
+        // is the finalize-time edge-index probe.
         let r = field(FieldType::Ref, None);
         assert!(check_value(&r, &scalar("adr:single-node-cache")).is_ok());
-        // a `ref` value carrying `#`/`/` (no code-anchor parse) stays accepted —
-        // String/Ref are *not* subject to the code-anchor shape check.
-        assert!(check_value(&r, &scalar("adr:auth#criteria/rate-limit")).is_ok());
+        // a bare slug (no `<type>:` prefix) is rejected — the migration footgun.
+        assert!(check_value(&r, &scalar("use-postgres")).is_err());
+        // the unbracketed comma form arrives as one scalar whose slug body
+        // (`a, adr:b`) is not a slug — rejected at write (review S3).
+        assert!(check_value(&r, &scalar("adr:a, adr:b")).is_err());
+        // a `#`-fragment / `/` slug body is not a well-formed slug — rejected.
+        // (The `#`-bearing forms are read-path placeholder addresses; they never
+        // reach `check_value` on the write path.)
+        assert!(check_value(&r, &scalar("adr:auth#criteria/rate-limit")).is_err());
         // scalar values are single-line: a control char (newline/tab) is rejected,
         // so a value can never inject a second field line on splice.
         assert!(check_value(&name, &scalar("line one\nline two")).is_err());
         assert!(check_value(&r, &scalar("adr:a\nadr:b")).is_err());
         assert!(check_value(&r, &scalar("adr:a\tb")).is_err());
+
+        // ref with a declared `to:` — the type element must equal `to`.
+        let r_to_adr = SField {
+            to: Some("adr".into()),
+            ..field(FieldType::Ref, None)
+        };
+        assert!(check_value(&r_to_adr, &scalar("adr:use-postgres")).is_ok());
+        // wrong type for a `to: adr` field is rejected.
+        assert!(check_value(&r_to_adr, &scalar("spec:foo")).is_err());
+        // a 2-element bracket list authors clean (each element checked
+        // element-wise) — the `arch-doc.cites` / multi-supersede shape.
+        assert!(
+            check_value(
+                &r_to_adr,
+                &Value::List(vec!["adr:a".into(), "adr:b".into()])
+            )
+            .is_ok()
+        );
+        // a list whose element carries the wrong type is rejected element-wise.
+        assert!(
+            check_value(
+                &r_to_adr,
+                &Value::List(vec!["adr:a".into(), "spec:b".into()])
+            )
+            .is_err()
+        );
 
         // code-anchor (a pack-declared type): non-empty + single-line + parses as
         // `path#symbol` (a bare path is the file-existence form and also passes).

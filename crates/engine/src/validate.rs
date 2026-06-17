@@ -1353,6 +1353,58 @@ The record body prose.
             "a present `owned-location` value must not fire field-value-conformant, got {findings:?}",
         );
     }
+
+    /// A present `ref` value that fails the write-time shape check (a bare slug —
+    /// no `<type>:` prefix) fires exactly one blocking
+    /// `schema-conformance.field-value-conformant` at the `supersedes` leaf — the
+    /// conformance gate routing through the same [`crate::write::check_value`] as
+    /// the write verb, so a malformed migrated edge is caught here, not deferred to
+    /// a misleading finalize dangle (`design/auto-migration.md` → Write-time
+    /// ref-shape check; review S2 — the second of the two call sites).
+    #[test]
+    fn malformed_supersedes_ref_fires_one_field_value_conformant() {
+        let yaml = b"\
+type: adr
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: supersedes, type: ref, to: adr, card: \"0..1\" }
+  - id: body
+    slot: { hint: \"The decision body.\" }
+";
+        let schema = crate::schema::load_schema(yaml).expect("adr-like schema loads");
+        let source = "\
+---
+supersedes: use-postgres
+---
+
+# A decision
+
+## Body
+
+The body.
+";
+        let doc = parse_sections(&schema, source)
+            .unwrap_or_else(|f| panic!("fixture must parse; got {f:?}"));
+        let findings = schema_conformance(&schema, source, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "a malformed `supersedes` ref must fire exactly one finding, got {findings:?}",
+        );
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(
+            findings[0].code,
+            "schema-conformance.field-value-conformant"
+        );
+        assert!(
+            findings[0].message.contains("supersedes"),
+            "the finding must name the `supersedes` leaf, got: {}",
+            findings[0].message,
+        );
+    }
 }
 
 #[cfg(test)]

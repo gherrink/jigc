@@ -44,6 +44,26 @@ pub fn suffixed(slug: &str, nth: usize) -> String {
     }
 }
 
+/// Whether `s` is a **well-formed slug**: a non-empty `[a-z0-9-]` string with no
+/// leading, trailing, or doubled `-`. This is the *recognition* predicate — the
+/// grammar a minted or authored slug must match — and the dual of [`slugify`]'s
+/// *normalization*: every non-empty `slugify(x)` satisfies `is_slug`, and a
+/// fixed point of `slugify` is exactly a valid slug. The length cap is *not*
+/// enforced here (a cap is a mint-time concern; a ref pointing at an existing
+/// slug must recognize it whatever its length).
+///
+/// Used by the write-time `ref` shape check to validate the `<slug>` body of a
+/// `<type>:<slug>` reference (`design/auto-migration.md` → Write-time ref-shape
+/// check).
+pub fn is_slug(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+        && !s.starts_with('-')
+        && !s.ends_with('-')
+        && !s.contains("--")
+}
+
 /// Normalize an id-source into a frozen content-slug.
 ///
 /// See the [module docs](self) for the full rule. Pure and total: every input
@@ -211,6 +231,36 @@ mod tests {
         assert_eq!(suffixed("cache-strategy", 3), "cache-strategy-3");
         // `0` is not a valid position; treat it as the bare (defensive, like `1`).
         assert_eq!(suffixed("x", 0), "x");
+    }
+
+    /// The slug *recognition* predicate: the grammar a `<type>:<slug>` ref body
+    /// must match. Non-empty `[a-z0-9-]`, no leading/trailing/doubled `-`.
+    #[test]
+    fn is_slug_recognizes_well_formed_slugs() {
+        // valid
+        assert!(is_slug("use-postgres"));
+        assert!(is_slug("a"));
+        assert!(is_slug("single-node-cache"));
+        assert!(is_slug("adr-2"));
+        // invalid
+        assert!(!is_slug(""), "empty");
+        assert!(!is_slug("-lead"), "leading dash");
+        assert!(!is_slug("trail-"), "trailing dash");
+        assert!(!is_slug("a--b"), "doubled dash");
+        assert!(!is_slug("Caps"), "uppercase");
+        assert!(!is_slug("a:b"), "colon");
+        assert!(!is_slug("a, adr:b"), "comma-form body");
+        assert!(!is_slug("auth#criteria/rate-limit"), "fragment / slash");
+        assert!(!is_slug("with space"), "space");
+    }
+
+    // Every non-empty `slugify` output is a valid slug (the dual property).
+    proptest! {
+        #[test]
+        fn slugify_output_is_a_slug_or_empty(s in ".{0,200}") {
+            let out = slugify(&s);
+            prop_assert!(out.is_empty() || is_slug(&out), "not a slug: {:?}", out);
+        }
     }
 
     #[test]
