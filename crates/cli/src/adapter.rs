@@ -718,10 +718,13 @@ fn write_settings(target: &Path, settings: &serde_json::Value) -> std::io::Resul
 /// clean/unset discriminator keys on its presence, `crate::locate` →
 /// `PROJECT_CONFIG_REL`) with a tracked `.gitkeep` so git keeps the otherwise
 /// empty dir, and ensures `<repo_root>/.jigc/.gitignore` ignores the transient
-/// subdirs (`tasks/`/`index/`/`state/`) so `config/`, its `.gitkeep`, and
-/// `AGENT.md` are committed while the working area is not (mirrors
-/// `task.rs::ensure_jigc_gitignore`). Idempotent: an existing `.gitignore` is
-/// left untouched, and the empty `.gitkeep` is rewritten byte-identically.
+/// subdirs (`tasks/`/`index/`/`state/`/`milestones/`) so `config/`, its `.gitkeep`,
+/// and `AGENT.md` are committed while the working area is not. The entry set is the
+/// **canonical** one `task.rs::ensure_jigc_gitignore` writes — including `milestones/`
+/// — so that the gitignore `setup` commits is already final and a later `finalize`
+/// never has to amend it (its `needs_write` keys on `milestones/` being present).
+/// Idempotent: an existing `.gitignore` is left untouched, and the empty `.gitkeep`
+/// is rewritten byte-identically.
 pub fn init_project_layer(repo_root: &Path) -> std::io::Result<()> {
     let config_dir = repo_root.join(".jigc").join("config");
     std::fs::create_dir_all(&config_dir)?;
@@ -729,7 +732,7 @@ pub fn init_project_layer(repo_root: &Path) -> std::io::Result<()> {
 
     let gitignore = repo_root.join(".jigc").join(".gitignore");
     if !gitignore.exists() {
-        std::fs::write(&gitignore, "tasks/\nindex/\nstate/\n")?;
+        std::fs::write(&gitignore, "tasks/\nindex/\nstate/\nmilestones/\n")?;
     }
     Ok(())
 }

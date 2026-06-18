@@ -11,7 +11,7 @@
 
 use crate::cli::Format;
 use crate::ingest::IngestReport;
-use crate::setup::{SetupSummary, UninstallSummary};
+use crate::setup::{InstallCommit, SetupSummary, UninstallSummary};
 use crate::task::TaskListRow;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
@@ -377,11 +377,18 @@ fn finding_line(finding: &Finding) -> String {
 /// the agent the install is done and where it landed.
 pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
     match format {
-        Format::Json => json(&serde_json::json!({
-            "installed": true,
-            "line_file": summary.line_file,
-            "allowlist_file": summary.allowlist_file,
-        })),
+        Format::Json => {
+            let install_commit = match &summary.install_commit {
+                InstallCommit::Committed(sha) => serde_json::Value::String(sha.clone()),
+                InstallCommit::Nothing | InstallCommit::Skipped => serde_json::Value::Null,
+            };
+            json(&serde_json::json!({
+                "installed": true,
+                "line_file": summary.line_file,
+                "allowlist_file": summary.allowlist_file,
+                "install_commit": install_commit,
+            }))
+        }
         Format::Agent | Format::Human => {
             let mut out = String::from(
                 "jigc setup — adapter installed\n\njigc is now wired into this project; two host files were updated:\n",
@@ -392,6 +399,13 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             out.push_str("  - jigc allowlist → ");
             out.push_str(&summary.allowlist_file);
             out.push_str("   (pre-approves the `jigc` commands the agent runs)\n");
+            // When setup committed its own install (M26), name that commit so the user
+            // knows the scaffolding landed on its own, not in their first feature commit.
+            if let InstallCommit::Committed(sha) = &summary.install_commit {
+                out.push_str("  - install commit → ");
+                out.push_str(sha);
+                out.push_str("   (setup's install files are committed on their own, off your first feature commit)\n");
+            }
             out.push_str(ROUTING_FOOTER);
             out
         }
@@ -1690,6 +1704,7 @@ mod tests {
         let summary = SetupSummary {
             line_file: "CLAUDE.md".to_string(),
             allowlist_file: ".claude/settings.json".to_string(),
+            install_commit: InstallCommit::Skipped,
         };
 
         let agent = setup_success(Format::Agent, &summary);

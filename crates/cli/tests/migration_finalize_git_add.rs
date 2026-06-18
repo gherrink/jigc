@@ -177,14 +177,15 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
         "jigc setup",
     );
 
-    // `setup` writes the `.jigc/config/` layer but never commits it — confirm it is
-    // genuinely uncommitted going in, so the migration commit is what must land it.
+    // `setup` now commits its own install (M26), so the `.jigc/config/` layer is already
+    // tracked at HEAD going into the migration — confirm it, so the tree assertions below
+    // read against the cumulative HEAD tree (the migration commit no longer lands it).
     let tracked_before = git(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
     assert!(
-        !tracked_before
+        tracked_before
             .lines()
             .any(|l| l.starts_with(".jigc/config/")),
-        "precondition: `.jigc/config/` is uncommitted after setup; tree:\n{tracked_before}",
+        "precondition: `setup` commits the `.jigc/config/` layer (M26); tree:\n{tracked_before}",
     );
 
     ok_stdout(

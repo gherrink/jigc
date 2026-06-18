@@ -423,7 +423,8 @@ fn flow26_full_batch_migration_walk() {
     );
 
     // The landed commit holds ONLY the migration set: A changelog/changelog.md, D
-    // CHANGELOG.md, the jigc-tracked config layer + .gitignore — and NOT the unrelated WIP.
+    // CHANGELOG.md — NOT the jigc config layer (setup committed that on its own, M26) and
+    // NOT the unrelated WIP.
     let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
         delta.lines().any(|l| l == "A\tchangelog/changelog.md"),
@@ -433,15 +434,20 @@ fn flow26_full_batch_migration_walk() {
         delta.lines().any(|l| l == "D\tCHANGELOG.md"),
         "the SAME commit retires the foreign original:\n{delta}",
     );
+    // The jigc-tracked config layer + `.gitignore` are committed by `setup` itself (M26),
+    // so they are present at HEAD but carry NO entry in the migration commit's delta.
+    let tree = git(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
     assert!(
-        delta
-            .lines()
-            .any(|l| l.starts_with('A') && l.contains(".jigc/config/")),
-        "the commit lands the jigc-tracked config layer:\n{delta}",
+        tree.lines().any(|l| l.starts_with(".jigc/config/")),
+        "the jigc-tracked config layer is committed (by setup) and present at HEAD:\n{tree}",
     );
     assert!(
-        delta.lines().any(|l| l == "A\t.jigc/.gitignore"),
-        "the commit lands .jigc/.gitignore:\n{delta}",
+        tree.lines().any(|l| l == ".jigc/.gitignore"),
+        "`.jigc/.gitignore` is committed (by setup) and present at HEAD:\n{tree}",
+    );
+    assert!(
+        !delta.lines().any(|l| l.contains(".jigc/")),
+        "the migration commit's delta carries NO `.jigc/` paths (setup committed them):\n{delta}",
     );
     assert!(
         !delta.lines().any(|l| l.ends_with("scratch.txt")),

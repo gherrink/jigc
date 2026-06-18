@@ -243,11 +243,15 @@ fn flow15_deterministic_dogfood_walk_lands_one_code_only_commit_on_a_galey_copy(
         "the clean baseline must leave a clean working tree before setup",
     );
 
-    // --- step 0: `jigc setup` (start hard-fails without a `.jigc/config/` layer), then
-    // commit the setup artifacts AHEAD of the work commit so the work commit is code-only. ---
+    // --- step 0: `jigc setup` (start hard-fails without a `.jigc/config/` layer). Setup now
+    // lands its OWN install commit AHEAD of the work commit (M26), so the install artifacts
+    // are off the finalize work commit without a manual setup commit, and the working tree is
+    // left clean. ---
     let _ = jigc_ok(&copy, home.path(), &pack, &["setup"], None);
-    git(&copy, &["add", "-A"]);
-    git(&copy, &["commit", "-q", "-m", "chore: jigc setup"]);
+    assert!(
+        git(&copy, &["status", "--porcelain"]).is_empty(),
+        "`jigc setup` must commit its own install and leave a clean working tree (M26)",
+    );
     let commits_before_work = git(&copy, &["rev-list", "--count", "HEAD"]);
 
     // --- step 1: `jigc start "<intent>"` mints + composes the flat dev-task spine. ---

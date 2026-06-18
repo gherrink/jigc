@@ -327,6 +327,29 @@ pub struct SetupSummary {
     pub line_file: String,
     /// The repo-root-relative settings file the allowlist was merged into.
     pub allowlist_file: String,
+    /// The outcome of committing setup's own install files as a dedicated commit
+    /// (M26 shakedown — see [`commit_install`]).
+    pub install_commit: InstallCommit,
+}
+
+/// The conventional message for the dedicated commit `jigc setup` makes of its own
+/// install files. M26 shakedown: setup's scaffolding (`.jigc/` config, the adapter
+/// host files) must be its own commit, not swept into the user's first `jigc finalize`.
+const INSTALL_COMMIT_MESSAGE: &str = "chore(jigc): install jigc workspace config";
+
+/// The outcome of committing `jigc setup`'s own install files ([`commit_install`]).
+#[derive(Debug)]
+pub enum InstallCommit {
+    /// A dedicated install commit was made; carries its short sha.
+    Committed(String),
+    /// Nothing to commit — a re-run over an unchanged install (a clean idempotent
+    /// no-op, never an empty commit).
+    Nothing,
+    /// No commit was made: not a git repo, no commit identity, or git declined. The
+    /// install writes still succeeded — the commit is a convenience, never a gate
+    /// (`design/assistant-adapter.md` → setup is the CLI writing install artifacts; it
+    /// degrades gracefully exactly as the writes do).
+    Skipped,
 }
 
 /// Run `jigc setup` from `start`: locate the repo root, load the Claude Code
@@ -501,10 +524,145 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         )
     })?;
 
+    // 7. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
+    //    user's first `jigc finalize` doesn't sweep the scaffolding into their first
+    //    feature commit. Best-effort + idempotent; never gates the install.
+    let install_commit = commit_install(repo_root, &line_file, &allowlist_file);
+
     Ok(SetupSummary {
         line_file,
         allowlist_file,
+        install_commit,
     })
+}
+
+/// The repo-relative install files `jigc setup` itself writes that are meant to be
+/// tracked in git — the committable install footprint, enumerated **explicitly** so the
+/// install commit never sweeps the user's unrelated working-tree changes (a blanket
+/// `git add -A` would). Deliberately excludes: the transient `.jigc/` working area
+/// (`tasks/`/`index/`/`state/`, gitignored by setup's own `.jigc/.gitignore`), the
+/// `.git/hooks/pre-commit` (outside the worktree, in git's control dir — never a tracked
+/// file), and the machine-global `doc-code` probe (beside the binary, not in the repo).
+fn install_tracked_paths(line_file: &str, allowlist_file: &str) -> Vec<String> {
+    vec![
+        line_file.to_string(),      // CLAUDE.md (the bootstrap reference host)
+        allowlist_file.to_string(), // .claude/settings.json (allowlist + SessionStart hook)
+        ".jigc/AGENT.md".to_string(),
+        ".jigc/.gitignore".to_string(),
+        ".jigc/config/.gitkeep".to_string(),
+        ".jigc/config/packs.yaml".to_string(),
+    ]
+}
+
+/// Commit `jigc setup`'s own install files as a dedicated commit, so they don't land in
+/// the user's first `jigc finalize` (M26 shakedown: the first finalize's `git add --all`
+/// swept setup's scaffolding into the first feature commit). Stages **only** the files
+/// setup itself wrote ([`install_tracked_paths`], filtered to those present and not
+/// gitignored) and commits **only those paths** (a pathspec-limited commit), so any
+/// unrelated changes the user already staged stay staged and untouched.
+///
+/// **Idempotent:** a re-run over an unchanged install stages no net change →
+/// [`InstallCommit::Nothing`] (no empty commit). **Graceful:** not-a-git-repo, no commit
+/// identity, or a git that declines → [`InstallCommit::Skipped`] (the install writes
+/// already succeeded; the commit is a convenience, never a gate). Uses `--no-verify`: the
+/// only hook present is the warn-only `pre-commit` setup just installed, and running the
+/// doc↔code backstop against this commit is pointless (it carries install artifacts, not
+/// managed docs) — and the hook must not self-trigger on the very commit that installs
+/// it. (This is setup's install commit, distinct from `finalize`'s never-`--no-verify`
+/// commit of managed work, which the user's hooks *are* policy for.)
+fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> InstallCommit {
+    // Require an existing HEAD. This both covers the not-a-git-repo case (`rev-parse`
+    // fails → Skipped) and, on an unborn HEAD (a brand-new repo with no commits), leaves
+    // the install files for the user's first finalize rather than minting the repo's first
+    // commit — preserving the zero-commit sentinel path (`jigc start` pins the empty-tree
+    // base on an unborn HEAD; `tests/cold_start_zero_commit.rs`) and matching the
+    // "require a repo as today" latitude for the no-HEAD edge.
+    if !git_output(repo_root, ["rev-parse", "--verify", "-q", "HEAD"])
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return InstallCommit::Skipped;
+    }
+
+    // Only the files setup itself wrote, and only those present + not gitignored.
+    let paths: Vec<String> = install_tracked_paths(line_file, allowlist_file)
+        .into_iter()
+        .filter(|p| repo_root.join(p).exists())
+        .filter(|p| !git_path_ignored(repo_root, p))
+        .collect();
+    if paths.is_empty() {
+        return InstallCommit::Skipped;
+    }
+
+    // Stage exactly those paths — never a blanket `git add -A`.
+    let mut add: Vec<&str> = vec!["add", "--"];
+    add.extend(paths.iter().map(String::as_str));
+    match git_output(repo_root, add) {
+        Some(out) if out.status.success() => {}
+        _ => return InstallCommit::Skipped,
+    }
+
+    // Nothing staged among our paths (a re-run over an unchanged install) → clean no-op.
+    // `git diff --cached --quiet -- <paths>` exits 0 (success) when there is no staged
+    // diff for those paths; with no HEAD it diffs against the empty tree, so a first
+    // install still reports changes.
+    let mut diff: Vec<&str> = vec!["diff", "--cached", "--quiet", "--"];
+    diff.extend(paths.iter().map(String::as_str));
+    if git_output(repo_root, diff)
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return InstallCommit::Nothing;
+    }
+
+    // Commit only our paths: a pathspec-limited commit commits exactly those files and
+    // leaves the user's other staged changes uncommitted and untouched.
+    let mut commit: Vec<&str> = vec!["commit", "--no-verify", "-m", INSTALL_COMMIT_MESSAGE, "--"];
+    commit.extend(paths.iter().map(String::as_str));
+    match git_output(repo_root, commit) {
+        Some(out) if out.status.success() => {}
+        _ => return InstallCommit::Skipped,
+    }
+
+    // Resolve the short sha of the commit just made, for the success surface.
+    match git_output(repo_root, ["rev-parse", "--short", "HEAD"]) {
+        Some(out) if out.status.success() => {
+            let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if sha.is_empty() {
+                InstallCommit::Skipped
+            } else {
+                InstallCommit::Committed(sha)
+            }
+        }
+        _ => InstallCommit::Skipped,
+    }
+}
+
+/// Whether `path` (repo-relative) is gitignored in `repo_root` (`git check-ignore -q`):
+/// honors the requirement that the install commit never stage a gitignored path.
+fn git_path_ignored(repo_root: &Path, path: &str) -> bool {
+    git_output(repo_root, ["check-ignore", "-q", "--", path])
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Run `git -C <repo_root> <args>`, returning the captured output if git ran (whatever
+/// its exit), or `None` if git could not be spawned. The install-commit path is
+/// best-effort: a git hiccup degrades to [`InstallCommit::Skipped`], never a setup
+/// failure. (Distinct from `task.rs`'s finalize git helpers, which commit the whole
+/// index via `-F <msg>` and `bail!` on any failure — the wrong shape for a best-effort,
+/// pathspec-limited install commit.)
+fn git_output<I, S>(repo_root: &Path, args: I) -> Option<std::process::Output>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_root)
+        .args(args)
+        .output()
+        .ok()
 }
 
 /// The result of a `jigc uninstall` teardown: the located repo root, so the
@@ -976,6 +1134,104 @@ mod tests {
             status.status.success(),
             "git {args:?} failed: {}",
             String::from_utf8_lossy(&status.stderr),
+        );
+    }
+
+    /// Run `git -C <dir> <args>`, asserting success, returning trimmed stdout — the
+    /// capturing companion to [`git`] used by the install-commit test to inspect git
+    /// state (HEAD subject, the committed file set, the staged set).
+    fn git_str(dir: &Path, args: &[&str]) -> String {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// `jigc setup` commits its own install as a dedicated commit (M26 shakedown): the
+    /// install files land in their OWN commit, the user's unrelated staged work is NOT
+    /// swept in, and a second `setup` is a clean no-op (no new commit).
+    #[test]
+    fn install_commits_only_its_own_files_in_a_dedicated_commit_idempotently() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        git(dir.path(), &["config", "user.email", "t@t"]);
+        git(dir.path(), &["config", "user.name", "t"]);
+        // Override any ambient global signing config so the install commit can land in
+        // CI / on a signing-enabled dev machine.
+        git(dir.path(), &["config", "commit.gpgsign", "false"]);
+        // A first commit so HEAD exists (the shakedown repo had an initial commit).
+        std::fs::write(dir.path().join("README.md"), "hi\n").expect("seed README");
+        git(dir.path(), &["add", "README.md"]);
+        git(dir.path(), &["commit", "-q", "-m", "initial"]);
+
+        // A pre-existing UNRELATED working file the user has already staged — setup must
+        // not sweep it into its install commit.
+        std::fs::write(dir.path().join("user-work.txt"), "wip\n").expect("seed user file");
+        git(dir.path(), &["add", "user-work.txt"]);
+
+        let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
+        let summary = install(dir.path(), &profile).expect("install succeeds");
+
+        // (1) setup committed its install in its OWN commit naming the install files.
+        assert!(
+            matches!(summary.install_commit, InstallCommit::Committed(_)),
+            "setup must report a committed install; got {:?}",
+            summary.install_commit,
+        );
+        assert_eq!(
+            git_str(dir.path(), &["log", "-1", "--format=%s"]),
+            INSTALL_COMMIT_MESSAGE,
+            "the HEAD commit must be the dedicated install commit",
+        );
+        let committed = git_str(dir.path(), &["show", "--name-only", "--format=", "HEAD"]);
+        for f in [
+            ".jigc/AGENT.md",
+            ".jigc/.gitignore",
+            ".jigc/config/.gitkeep",
+            ".jigc/config/packs.yaml",
+            "CLAUDE.md",
+            ".claude/settings.json",
+        ] {
+            assert!(
+                committed.lines().any(|l| l == f),
+                "the install commit must include `{f}`; got:\n{committed}",
+            );
+        }
+
+        // (2) the user's unrelated staged file is NOT swept into the install commit, and
+        //     remains staged (uncommitted) for them.
+        assert!(
+            !committed.lines().any(|l| l == "user-work.txt"),
+            "the user's unrelated file must not be swept into the install commit; got:\n{committed}",
+        );
+        let staged = git_str(dir.path(), &["diff", "--cached", "--name-only"]);
+        assert!(
+            staged.lines().any(|l| l == "user-work.txt"),
+            "the user's unrelated file must stay staged after setup; got:\n{staged}",
+        );
+
+        // (3) a second setup is a clean no-op: no new commit, reported as `Nothing`.
+        let head_before = git_str(dir.path(), &["rev-parse", "HEAD"]);
+        let summary2 = install(dir.path(), &profile).expect("re-install succeeds");
+        assert!(
+            matches!(summary2.install_commit, InstallCommit::Nothing),
+            "a second setup over an unchanged install must report Nothing; got {:?}",
+            summary2.install_commit,
+        );
+        assert_eq!(
+            head_before,
+            git_str(dir.path(), &["rev-parse", "HEAD"]),
+            "a second setup must make no new commit",
         );
     }
 
