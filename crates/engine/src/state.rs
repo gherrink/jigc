@@ -441,6 +441,26 @@ pub fn mint_task(
     Ok(MintedTask { id, dir, base })
 }
 
+/// Enumerate the **active task ids** under a project's `.jigc/` home — the sorted
+/// directory names of `<jigc_root>/tasks/<id>/`. This is the single enumeration
+/// source of truth the active-task resolution (`jigc doc`), the `jigc task list`
+/// roster, and the ambiguous-task error all read, so they never disagree on which
+/// tasks are live. A missing `tasks/` directory yields an empty list (no task minted
+/// yet), never an error.
+pub fn list_active_task_ids(jigc_root: &Path) -> Vec<String> {
+    let tasks = jigc_root.join("tasks");
+    let mut ids: Vec<String> = match std::fs::read_dir(&tasks) {
+        Ok(entries) => entries
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.path().is_dir())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    ids.sort();
+    ids
+}
+
 /// Read the persisted original intent of a task from its working area
 /// (`<task_dir>/intent`). The companion of the [`mint_task`] write — resume reads
 /// it back to re-compose with the same `{{task.intent}}`. A missing file yields

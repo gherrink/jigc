@@ -989,12 +989,13 @@ impl ActiveTask {
     fn resolve(cwd: &Path, task_id: Option<&str>) -> Result<Self> {
         let repo_root = discover_repo_root(cwd)
             .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-        let tasks = repo_root.join(".jigc").join("tasks");
+        let jigc_root = repo_root.join(".jigc");
+        let tasks = jigc_root.join("tasks");
 
         if let Some(id) = task_id {
             let dir = tasks.join(id);
             if !dir.is_dir() {
-                bail!("no task `{id}` — list live tasks with `jigc start`");
+                bail!("no task `{id}` — list live tasks with `jigc task list`");
             }
             return Ok(Self {
                 id: id.to_string(),
@@ -1004,24 +1005,14 @@ impl ActiveTask {
             });
         }
 
-        let mut dirs: Vec<PathBuf> = match std::fs::read_dir(&tasks) {
-            Ok(entries) => entries
-                .filter_map(std::result::Result::ok)
-                .map(|e| e.path())
-                .filter(|p| p.is_dir())
-                .collect(),
-            Err(_) => Vec::new(),
-        };
-        dirs.sort();
-        match dirs.len() {
+        // The single enumeration source of truth (`state::list_active_task_ids`) the
+        // ambiguous error and `jigc task list` share, so they never disagree.
+        let mut ids = state::list_active_task_ids(&jigc_root);
+        match ids.len() {
             0 => bail!("no active task — start one with `jigc start`"),
             1 => {
-                let dir = dirs.pop().expect("one task dir");
-                let id = dir
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .expect("a task dir under .jigc/tasks/ has a utf-8 name")
-                    .to_string();
+                let id = ids.pop().expect("one task id");
+                let dir = tasks.join(&id);
                 Ok(Self {
                     id,
                     dir,
@@ -1029,7 +1020,12 @@ impl ActiveTask {
                     pack: make_pack(),
                 })
             }
-            _ => bail!("more than one active task — name one with `--task <id>`"),
+            // Enumerate the live ids so the user can copy one into `--task <id>`
+            // (M26 shakedown: the error must name what it asks you to pass).
+            _ => bail!(
+                "more than one active task — name one with `--task <id>`: {}",
+                ids.join(", ")
+            ),
         }
     }
 

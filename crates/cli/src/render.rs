@@ -12,6 +12,7 @@
 use crate::cli::Format;
 use crate::ingest::IngestReport;
 use crate::setup::{SetupSummary, UninstallSummary};
+use crate::task::TaskListRow;
 use engine::compose::ComposedWorkflow;
 use engine::finding::{Finding, Severity};
 use engine::introspect::{DefinitionKind, Description};
@@ -500,6 +501,41 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                     }
                 }
             }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
+/// Render the active-task roster `jigc task list` enumerates to the surface `format`
+/// selects (M26 shakedown: the in-tool way to find a live task id). `json` emits the
+/// rows as a structured array (tooling-consumed, no footer); `agent` / `human` emit a
+/// header, one line per task (`<id>  [<workflow>]  <intent>`), and the routing footer.
+/// The empty roster renders a clean "no active tasks" line (exit 0), never an error.
+pub fn task_list(format: Format, rows: &[TaskListRow]) -> String {
+    match format {
+        Format::Json => json(&rows),
+        Format::Agent | Format::Human => {
+            let mut out = if rows.is_empty() {
+                "jigc task list — no active tasks\n".to_string()
+            } else {
+                let mut s = format!("jigc task list — {} active task(s)\n\n", rows.len());
+                for row in rows {
+                    s.push_str("  ");
+                    s.push_str(&row.id);
+                    if let Some(workflow) = &row.workflow {
+                        s.push_str("  [");
+                        s.push_str(workflow);
+                        s.push(']');
+                    }
+                    if !row.intent.is_empty() {
+                        s.push_str("  ");
+                        s.push_str(&row.intent);
+                    }
+                    s.push('\n');
+                }
+                s
+            };
             out.push_str(ROUTING_FOOTER);
             out
         }

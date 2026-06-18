@@ -236,7 +236,7 @@ fn task_selector_routes_the_write_to_the_named_sub_area() {
 
 #[test]
 fn two_active_tasks_with_no_task_selector_reject() {
-    let (repo, home, sub_a, _sub_b) = milestone_with_two_subtasks();
+    let (repo, home, sub_a, sub_b) = milestone_with_two_subtasks();
 
     let out = run_doc_stdin(
         repo.path(),
@@ -257,6 +257,12 @@ fn two_active_tasks_with_no_task_selector_reject() {
     assert!(
         stderr.contains("more than one active task"),
         "the rejection must say `more than one active task`; got:\n{stderr}",
+    );
+    // The error must enumerate the live ids so the user can copy one into `--task`
+    // (M26 shakedown: don't ask for an id the user has no way to discover).
+    assert!(
+        stderr.contains(sub_a) && stderr.contains(sub_b),
+        "the rejection must name both active task ids ({sub_a}, {sub_b}); got:\n{stderr}",
     );
 }
 

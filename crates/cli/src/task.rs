@@ -67,6 +67,8 @@ pub(crate) const EXIT_REVIEW_PENDING: u8 = 4;
 /// (`design/write-commands.md` → Lifecycle).
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum TaskCommand {
+    /// Enumerate the active tasks (id + minting workflow + intent); no id needed.
+    List,
     /// Show the working changeset vs base (code diff + staged managed docs).
     Diff {
         /// The task id (the working-area slug under `.jigc/tasks/`).
@@ -113,6 +115,7 @@ impl TaskCommand {
     /// surfaces on stderr with a non-zero exit.
     pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
         let result = match self {
+            TaskCommand::List => run_list(cwd, format),
             TaskCommand::Diff { id } => run_diff(cwd, &id),
             TaskCommand::Validate { id } => return run_validate(cwd, &id, format),
             TaskCommand::Discard { id } => run_discard(cwd, &id),
@@ -129,6 +132,48 @@ impl TaskCommand {
             }
         }
     }
+}
+
+/// One active task's at-a-glance row for `jigc task list` — its id plus the cheaply
+/// available context recorded in its working area (the minting workflow and the
+/// original intent). Serializes to the `--format json` array element.
+#[derive(Debug, serde::Serialize)]
+pub struct TaskListRow {
+    /// The task id (the working-area slug under `.jigc/tasks/`).
+    pub id: String,
+    /// The minting workflow id (`<task_dir>/workflow`); `None` for a task minted
+    /// before that file existed.
+    pub workflow: Option<String>,
+    /// The original intent the task was minted from (`<task_dir>/intent`); empty when
+    /// none was recorded.
+    pub intent: String,
+}
+
+/// `jigc task list` — enumerate the active tasks so an agent that started one and came
+/// back can find its id (M26 post-completion shakedown: there was no in-tool way to
+/// discover a live task id). Reads the **same** `state::list_active_task_ids`
+/// enumeration the active-task resolution and the ambiguous-task error use — so the
+/// three never disagree — and surfaces each task's minting workflow + intent from its
+/// working area. Always exit 0; the empty roster is a clean message, not an error.
+fn run_list(cwd: &Path, format: Format) -> Result<()> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_root = repo_root.join(".jigc");
+    let mut rows = Vec::new();
+    for id in state::list_active_task_ids(&jigc_root) {
+        let dir = jigc_root.join("tasks").join(&id);
+        let workflow = state::read_workflow_id(&dir)
+            .with_context(|| format!("could not read the workflow of task `{id}`"))?;
+        let intent = state::read_intent(&dir)
+            .with_context(|| format!("could not read the intent of task `{id}`"))?;
+        rows.push(TaskListRow {
+            id,
+            workflow,
+            intent: intent.trim().to_string(),
+        });
+    }
+    println!("{}", render::task_list(format, &rows));
+    Ok(())
 }
 
 /// `jigc task diff <id>` — print the working changeset vs base.
