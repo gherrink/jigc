@@ -226,10 +226,14 @@ fn render_item_at(item: &ItemContent, depth: usize) -> String {
     // `#### change-group` items) has no body prose, so the heading is followed directly
     // by its field group / nested items at a single-blank-line gap. We leave `out`
     // ending at the heading's `\n` (no extra blank line) so `append_field_group`'s
-    // leading `\n\n` yields `### …\n\n<!-- fields -->`. A slot-bearing item keeps the
-    // existing `### …\n\n<prose>` form (the post-heading blank, byte-identical
-    // backward-compat — incl. the empty-single-slot `### …\n\n\n\n<!-- fields -->`).
-    let slotless = item.slot.is_none() && item.slots.is_empty();
+    // leading `\n\n` yields `### …\n\n<!-- fields -->`. An item whose single slot is
+    // **present but empty** (`slot: Some("")` — what a re-parse yields for a
+    // minted-but-unfilled slot) canonicalizes to this same form (M26 fork C4), so it
+    // renders byte-identically to the absent-slot mint and `render(parse(x)) == x`
+    // holds. A slot-bearing item with actual prose keeps the existing
+    // `### …\n\n<prose>` form (the post-heading blank, byte-identical backward-compat).
+    let slot_empty = item.slot.as_deref().is_none_or(|s| s.trim().is_empty());
+    let slotless = slot_empty && item.slots.is_empty();
     if slotless {
         out.truncate(out.trim_end_matches('\n').len());
     } else {
@@ -1133,9 +1137,9 @@ pub fn set_item_slot(
     // runs in, so re-rendering (one canonical item-bytes path) is the fix.
     //
     // The located block spans `[item.start .. next-heading | EOF)`, so it *includes* the
-    // inter-item gap, which for a mint-empty item is the empty-item form's `\n\n\n\n` —
-    // wider than a *filled* item's canonical one-blank-line gap. So we re-attach the
-    // **canonical** separator, not the recorded one: [`render_section`] joins full
+    // inter-item gap, which on non-canonical input may be wider than a *filled* item's
+    // canonical one-blank-line gap. So we re-attach the **canonical** separator, not the
+    // recorded one: [`render_section`] joins full
     // `render_item`s with a single `\n`, and a filled item's render already ends in one
     // `\n`, so a following item / section gets `render_item(item)` + `\n` (one blank
     // line); a trailing item (block runs to EOF) gets the full render, EOF-normalized to
@@ -2196,10 +2200,11 @@ pub fn add_item(
         }
         // If the section already has a last item, re-render **it** canonically next to
         // the new item, so the inter-item spacing is exactly [`render_item`]'s — the one
-        // source of truth for item bytes. A fixed `\n\n` join is **not** byte-stable when
-        // the preceding item is mint-empty: its canonical form is `### A {#a}\n\n\n`, so
-        // the canonical join (`render_section` joins full `render_item`s with `\n`) is
-        // `### A {#a}\n\n\n\n### B …`, where a fixed-blank insert leaves a single blank and
+        // source of truth for item bytes. A fixed `\n\n` join is **not** guaranteed
+        // byte-stable when the preceding item carries non-canonical trailing blank-line
+        // debris (a hand-widened skeleton): the canonical join (`render_section` joins
+        // full `render_item`s with `\n`) is the one source of truth, where a fixed-blank
+        // insert could mis-space and yield
         // `render(parse(out)) != out`. We splice `[last_item_start .. region.end]` with
         // `render_item(prev)` + `\n` + the new item, re-attaching the region's tail
         // separator (the blank line / `##` boundary / EOF newline) the located region
@@ -2220,7 +2225,7 @@ pub fn add_item(
             let tail = &source[last.clone()];
             let separator = &tail[tail.trim_end().len()..];
             // The canonical join `render_section` uses: full `render_item`s joined by a
-            // single `\n` (so an empty prev item's `### A {#a}\n\n\n` form keeps its blanks).
+            // single `\n` (an empty prev item renders its one-blank slotless form).
             // Trim the joined block and re-attach the region's tail separator so the
             // surrounding sections / EOF stay canonically spaced.
             let joined = format!("{}\n{}", render_item(&prev_content), item);
@@ -2501,8 +2506,8 @@ pub fn insert_item_field(
             // item via [`render_item`] with the new field appended, then splice it over
             // the item's located block. Re-rendering (not a bullet-group splice at the
             // slot-prose end) is what makes this **byte-stable** on a mint-empty item:
-            // an empty slot's canonical form (`### …{#id}\n\n\n\n<!-- fields -->`) is the
-            // writer's, and `render_item` is that writer — so `render(parse(out)) == out`
+            // an empty slot's canonical form (`### …{#id}\n\n<!-- fields -->`, the M26
+            // one-blank form) is the writer's, and `render_item` is that writer — so `render(parse(out)) == out`
             // holds, where a slot-prose-end bullet insert would mis-space the blank lines.
             let item = parse::parse_sections(schema, source)
                 .ok()
@@ -2518,9 +2523,9 @@ pub fn insert_item_field(
             let mut content = item_content_from_parsed(&item, source);
             content.fields.push(field.clone());
             // Re-render the item, then re-attach the **canonical** inter-block separator
-            // (not the recorded one): once a field group is added the item is no longer
-            // empty, so its canonical gap to the next item shrinks from the empty-item
-            // form's `\n\n\n\n` to one blank line. [`render_section`] joins full
+            // (not the recorded one): the located region may carry non-canonical trailing
+            // blank-line debris, so we recompute the gap from the canonical form — one
+            // blank line. [`render_section`] joins full
             // `render_item`s (each ending in one `\n`) with a single `\n`, so a following
             // `###`/`##` heading gets `body\n\n`; a trailing item gets `body\n` (EOF).
             let rendered = render_item(&content);
@@ -2655,8 +2660,8 @@ fn insert_block(source: &str, at: usize, block: &str) -> String {
         // Append at end-of-document: one blank line, the block, and **exactly one**
         // trailing newline (the canonical EOF rule). The block is back-trimmed first so
         // a block that already carries its own trailing newline(s) — an empty repeatable
-        // item renders `### …{#id}\n\n\n` — does not leave trailing blank-line debris,
-        // keeping the EOF-append byte-stable (`render∘parse == id`).
+        // item renders to its one-blank slotless form (`### …{#id}\n`) — does not leave
+        // trailing blank-line debris, keeping the EOF-append byte-stable (`render∘parse == id`).
         let head = source.trim_end();
         let block = block.trim_end_matches('\n');
         return format!("{head}\n\n{block}\n");
@@ -4054,8 +4059,8 @@ title: Auth flow
 
     /// Regression (M13 Increment 3): two **empty** `add_item`s with no fill must be
     /// byte-stable. `add_item`'s inter-item join rendered the pair `### A\n\n### B`, but
-    /// [`render_item`]'s empty-item form re-renders the (now non-trailing) empty item A
-    /// as `### A\n\n\n\n### B` — so `render(parse(out)) != out`. Existing tests only ever
+    /// [`render_item`]'s empty-item form then re-rendered the (now non-trailing) empty item A
+    /// as `### A\n\n\n\n### B` (the pre-M26 three-blank form) — so `render(parse(out)) != out`. Existing tests only ever
     /// left the *trailing* item empty, so a non-trailing empty item was never
     /// round-trip-checked.
     #[test]
@@ -6010,6 +6015,117 @@ cites:
             "write → parse → write must be byte-identical"
         );
     }
+
+    /// M26 fork C4: the empty-slot byte-stability fix. An arch-doc **component** carries
+    /// both a `description` slot and an `implemented-by` field — the slot-plus-field-group
+    /// shape. A minted-but-unfilled component (empty `description`, filled `implemented-by`)
+    /// is the canonical **one-blank** form below; re-parsing it yields `description:
+    /// Some("")`, which the writer must canonicalize back to the same one-blank form, or
+    /// `render(parse(x)) != x` (the M22→M26-keyed #1-risk violation — three blank lines on
+    /// reparse before the fix). The assertion is `render(parse(x)) == x` over the WHOLE
+    /// document.
+    #[test]
+    fn arch_doc_empty_description_component_round_trips_byte_stable() {
+        let schema = arch_doc_schema();
+        // Build the minted-but-unfilled component: parse a seed doc, then drop the
+        // `description` prose to `None` — the state a freshly-minted slot+field-group item
+        // holds. The writer renders it in the canonical **one-blank** form; `x` is those
+        // bytes (so `x` is pinned to one-blank regardless of the empty-slot defect).
+        let seed = "\
+---
+cites:
+---
+
+# Storage layer
+
+## Overview
+
+The storage layer owns the on-disk task working areas.
+
+## Components
+
+### Working area  {#working-area}
+
+seed prose
+
+<!-- fields -->
+- implemented-by: src/storage.rs#WorkingArea
+";
+        let mut instance = instance_from_source(&schema, seed).expect("seed arch-doc parses");
+        let component = instance
+            .sections
+            .iter_mut()
+            .find(|s| s.id == "components")
+            .and_then(|s| s.items.iter_mut().find(|i| i.id == "working-area"))
+            .expect("component present");
+        component.slot = None; // the minted-but-unfilled description.
+        let x = render(&schema, &instance);
+
+        // Re-parsing those bytes yields `description: Some("")` (a present-but-empty slot),
+        // the exact intermediate the fix canonicalizes back to the one-blank form.
+        let reparsed = instance_from_source(&schema, &x).expect("minted arch-doc parses");
+        let component = reparsed
+            .sections
+            .iter()
+            .find(|s| s.id == "components")
+            .and_then(|s| s.items.iter().find(|i| i.id == "working-area"))
+            .expect("component present");
+        assert_eq!(
+            component.slot.as_deref(),
+            Some(""),
+            "the unfilled description slot reparses as present-but-empty",
+        );
+        assert_eq!(
+            render(&schema, &reparsed),
+            x,
+            "render(parse(x)) must equal the minted one-blank bytes (M26 C4)",
+        );
+    }
+
+    /// Masking guard for the M26 fix: a **genuinely slotless** item (`slot: None`, no slot
+    /// leaf in its block — a changelog-shaped release carrying only a `date` field) must
+    /// stay byte-identical. The fix moves only items that reparse to `Some("")`; an item
+    /// that was never slot-bearing is untouched.
+    #[test]
+    fn genuinely_slotless_item_stays_byte_identical() {
+        let schema = crate::schema::load_schema(
+            b"\
+type: log
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: date, type: string }
+",
+        )
+        .expect("slotless schema loads");
+        let x = "\
+# Project
+
+## Releases
+
+### 1.0.0  {#1-0-0}
+
+<!-- fields -->
+- date: 2026-06-18
+";
+        let instance = instance_from_source(&schema, x).expect("slotless doc parses");
+        let release = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "releases")
+            .and_then(|s| s.items.iter().find(|i| i.id == "1-0-0"))
+            .expect("release present");
+        assert_eq!(release.slot, None, "the release is genuinely slotless");
+        assert_eq!(
+            render(&schema, &instance),
+            x,
+            "a genuinely-slotless item stays byte-identical",
+        );
+    }
 }
 
 #[cfg(test)]
@@ -6564,9 +6680,9 @@ Session fixation on logout.
 
         // The empty two-level structure: a release with its `date` field and two
         // empty change-group homes (no notes prose yet) — the canonical empty-skeleton
-        // form, each empty nested change-group carrying the empty-single-slot body
-        // (`#### …{#id}` then two blank lines, the shape `add_item` mints + the parser
-        // round-trips).
+        // form, each empty nested change-group carrying the empty-single-slot body in its
+        // M26 one-blank canonical form (`#### …{#id}` then a single blank line, the shape
+        // `add_item` mints + the parser round-trips).
         let empty = "\
 # Changelog
 
@@ -6578,8 +6694,6 @@ Session fixation on logout.
 - date: 2026-06-14
 
 #### Added  {#added}
-
-
 
 #### Fixed  {#fixed}
 ";
@@ -7023,8 +7137,6 @@ OAuth device-code flow.
 ### 1.0.0  {#1-0-0}
 
 #### Added  {#added}
-
-
 
 <!-- fields -->
 - ticket: JIRA-9
