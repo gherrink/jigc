@@ -1755,7 +1755,7 @@ $ jigc migrate CHANGELOG.md --as changelog  # mints OFF-ROUTER task `migrate-cha
   {{source}}                                ← the 127-line foreign content, source seam, read-only
 
 # the LLM authors the WHOLE changelog as ONE declarative payload — the CLI applies every leaf atomically (#1):
-$ jigc doc author changelog --from - <<'EOF'
+$ jigc doc author changelog --from-file - <<'EOF'
 releases:
   - version: "1.4.0"            # NO date: key — the foreign source is dateless, so NONE is stamped (#6)
     changes:
@@ -1831,7 +1831,7 @@ $ jigc migrate docs/adr/0001-use-mysql.md --as adr   # mints OFF-ROUTER task `mi
   Read the source and author the canonical ADR in ONE payload via `jigc doc author`:
   {{source}}                                          ← the foreign ADR content, source seam, read-only
 
-$ jigc doc author adr --from - <<'EOF'
+$ jigc doc author adr --from-file - <<'EOF'
 title: Use MySQL
 sections:
   - id: status
@@ -1851,7 +1851,7 @@ $ jigc task finalize migrate-adr-0001-use-mysql --approve
 
 # ADR-0007 supersedes 0001 — now 0001 is COMMITTED, so the forward-ref resolves against the store:
 $ jigc migrate docs/adr/0007-use-postgres.md --as adr
-$ jigc doc author adr --from - <<'EOF'
+$ jigc doc author adr --from-file - <<'EOF'
 title: Use PostgreSQL
 sections:
   - id: status
@@ -1875,7 +1875,7 @@ A spec and a prd migrate the same one-file-one-task way:
 ```text
 $ jigc migrate docs/specs/auth.md --as spec      # → specs/auth.md ; criteria with NO maps-to-test finalize clean (optional anchor)
 $ jigc migrate docs/PRD.md --as prd              # → prds/<title-slug>.md ; requirements author as a REPEATABLE section (per-requirement items)
-$ jigc doc author prd --from - <<'EOF'
+$ jigc doc author prd --from-file - <<'EOF'
 title: Product Brief
 sections:
   - id: vision
@@ -1903,7 +1903,7 @@ $ jigc task finalize migrate-adr-0007-use-postgres          # 0001 not yet migra
 > BLOCK schema-conformance.ref-resolves — target 'adr:use-mysql' resolves in neither the committed store nor this task's working area
 
 # foreign status outside the enum must be mapped, not passed through:
-$ jigc doc author adr --from - <<'EOF'   # status: Rejected   (∉ {proposed, accepted, superseded})
+$ jigc doc author adr --from-file - <<'EOF'   # status: Rejected   (∉ {proposed, accepted, superseded})
 > BLOCK write.malformed-value — "Rejected" is not a member of enum "status"   ← guidance maps foreign status onto the 3-enum
 
 # human-reject of the fidelity diff leaves the foreign original untouched (the spine's invariant, byte-safe):
@@ -1929,7 +1929,7 @@ The M26 close of the migration arc ([auto-migration.md](auto-migration.md) → G
 # --- Real arm: a foreign ARCHITECTURE.md (arc42/C4/README-section), non-Rust or no code pointers ---
 $ jigc migrate docs/ARCHITECTURE.md --as arch-doc          # mints task migrate-arch-doc-architecture, surfaces the foreign bytes
 # the LLM rewrites the foreign prose through ONE declarative batch (Framing A):
-$ jigc doc author arch-doc --from - --task migrate-arch-doc-architecture <<'EOF'
+$ jigc doc author arch-doc --from-file - --task migrate-arch-doc-architecture <<'EOF'
 > # overview slot ← foreign "Overview"/"Introduction"; components ← each module section
 > # (a component with no foreign prose gets a SYNTHESIZED one-line responsibility — description is required)
 > # implemented-by OMITTED where no concrete path#symbol exists; cites authored ONLY for in-store adrs
@@ -1941,7 +1941,7 @@ $ jigc task finalize migrate-arch-doc-architecture --approve   # promotes archit
 # precondition: a committed adr to cite (jigc ships none) — migrate or create+finalize one first:
 $ jigc start --workflow ... && jigc doc create adr --title "..." && jigc task finalize ... --approve   # → decisions/<slug>.md
 $ jigc migrate fixtures/parser-subsystem.md --as arch-doc
-$ jigc doc author arch-doc --from - --task migrate-arch-doc-parser-subsystem <<'EOF'
+$ jigc doc author arch-doc --from-file - --task migrate-arch-doc-parser-subsystem <<'EOF'
 > # ≥2 components, each implemented-by a REAL, independently-resolving jigc symbol
 > #   e.g. components/lexer → crates/engine/src/parse.rs#scan_blocks
 > #        components/writer → crates/engine/src/write.rs#render_item_at

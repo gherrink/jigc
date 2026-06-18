@@ -45,8 +45,9 @@ It does these things:
 - writes the managed bootstrap file `.jigc/AGENT.md` and adds a bare
   `@.jigc/AGENT.md` import to `CLAUDE.md` (the static floor that tells the agent
   `jigc` is its interface to the project — a plain import line, no marker fence);
-- allowlists `jigc *` in `.claude/settings.json` (so the agent can call the CLI
-  without a permission prompt);
+- allowlists `jigc *` in `.claude/settings.json` and adds a `SessionStart` hook
+  that runs `jigc start` (so each session opens with orientation), so the agent
+  can call the CLI without a permission prompt;
 - extracts the embedded `doc-code` probe beside the installed `jigc` (so the
   doc↔code probe resolves next to the binary — written if no sibling is present
   **or** if an existing sibling's bytes differ from the embedded copy, so a
@@ -55,9 +56,11 @@ It does these things:
   committed store and **warns** on doc↔code drift. It never blocks the commit
   (always exits 0) — a backstop for edits made outside the loop, not a gate.
 
-These edits are idempotent — re-running `jigc setup` leaves the files
-byte-identical, so it is safe to run after every upgrade to re-apply the
-adapter.
+`setup` **commits its own install** as a dedicated `chore(jigc): install` commit
+(only the files above, never your working tree), so the install doesn't land in
+your first feature commit. These edits are idempotent — re-running `jigc setup`
+leaves the files byte-identical (no new commit), so it is safe to run after every
+upgrade to re-apply the adapter.
 
 ## 2. `jigc start "<intent>"` — route, then mint
 
@@ -102,6 +105,16 @@ jigc task finalize <id>
 If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
+
+**What lands in your repo:** finalize promotes each managed doc to its doctype's
+location at the **repo root** — `decisions/` (ADRs), `specs/`, `prds/`,
+`architecture/` (arch-docs), `changelog/` — as plain, human-reviewable Markdown
+alongside your own `src/`. (The names are chosen for readability, not a uniform
+`<type>s/` rule.) Everything else jigc writes lives under `.jigc/` (committed
+config + bootstrap; gitignored caches) — see
+[design/storage.md](design/storage.md) → Repository layout. If you already have a
+same-named dir (say an existing `architecture/`), run `jigc ingest` first — it
+detects and routes existing content rather than overwriting it.
 
 You can preview what finalize will gate on at any time:
 

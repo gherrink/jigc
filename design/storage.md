@@ -74,19 +74,24 @@ A short burst above the limit is tolerated for 2s.
 Committed source of truth and derived/transient state live apart:
 
 ```
-specs/  decisions/  …       # committed .md docs — the only source of truth
-.jigc/                      # one project-state home (committed config + gitignored caches)
+decisions/ specs/ prds/ architecture/ changelog/   # committed .md docs at per-doctype locations — the only source of truth
+.jigc/                      # one project-state home (committed config + bootstrap; gitignored caches)
+  AGENT.md                  #   committed — the managed bootstrap routing sentence (CLI-owned; the host file references it)
   config/                   #   committed — the project cascade layer (see Config layout)
-    manifest.yaml           #     scalar-set knobs + the deltas list
-    steps/<id>.yaml         #     native step files for structural-op / tracked-fork deltas
-    fills/<id>.md           #     native content for slot-fill deltas
+    packs.yaml              #     pack composition (e.g. compose the embedded methodology pack)
+    manifest.yaml           #     scalar-set knobs + the deltas list — created on the first `jigc config` delta
+    steps/<id>.yaml         #     native step files for structural-op / tracked-fork deltas — created lazily
+    fills/<id>.md           #     native content for slot-fill deltas — created lazily
   .gitignore                #   ignores the derived/transient subdirs below
   tasks/<task-id>/          #   gitignored — per-task working area (staging)
   index/                    #   gitignored — edge index (rebuildable cache)
   state/                    #   gitignored — file↔CLI-state hashes (rebuildable)
+  milestones/               #   gitignored — milestone working state
 ```
 
-The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo at `.jigc/config/` (deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, same internal layout); **pack-default** ships with the installed pack (its knob surface in `config/knobs.yaml`). So `.jigc/` is one home: its `config/` subdir is committed, while `tasks/`, `index/`, and `state/` are gitignored (via `.jigc/.gitignore`) and fully disposable.
+**Per-doctype locations are human-chosen, not mechanical.** Each persisted doctype declares its own `location:` (`adr → decisions/`, `spec → specs/`, `prd → prds/`, `arch-doc → architecture/`, `changelog → changelog/`) — deliberately the most readable name for that doctype (`decisions/` over `adrs/`, `architecture/` over `arch-docs/`), **not** a uniform `<type>s/` rule. These land at the **repo root**, alongside the project's own `src/`/`docs/` — committed, human-reviewable plain Markdown. (A pre-existing same-named dir with non-conformant content is detected and routed by `ingest`, not silently overwritten.)
+
+The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo at `.jigc/config/` (deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, same internal layout); **pack-default** ships with the installed pack (its knob surface in `config/knobs.yaml`). So `.jigc/` is one home: its `config/` subdir + the `AGENT.md` bootstrap are committed, while `tasks/`, `index/`, `state/`, and `milestones/` are gitignored (via `.jigc/.gitignore`) and fully disposable.
 
 ### Config layout
 
@@ -95,6 +100,7 @@ A cascade layer's `config/` dir has one fixed shape (settled M4 planning, [overr
 - **`manifest.yaml`** — the layer's deltas: a top-level `scalar:` map (`scalar-set` knobs, inline `key: value`) and a `deltas:` list (one entry per `structural-op` / `slot-fill` / `tracked-fork`, each referencing a native file, never inline prose). Every content-bearing delta records its `base-version` + the target's `base-hash` ([overrides.md](overrides.md) → Delta representation) for the **(M5)** reconciliation.
 - **`steps/<id>.yaml`** — native step files in the **same form the pack's `steps/` ships** (a step body — verbatim instruction prose with `{{…}}` placeholders, optional `---`-fenced front-matter only for a `fan-out` marker; *not* a front-mattered workflow definition). Referenced by `insert`/`replace` structural-ops and `tracked-fork`; the id is the filename basename.
 - **`fills/<id>.md`** — native Markdown content for `slot-fill` deltas (the body that fills a `{{fill:<id>}}` point).
+- **`packs.yaml`** — pack-composition for the project (e.g. `compose-embedded-methodology: true`, composing the embedded methodology pack as `[dev ▸ methodology]`; [multi-pack.md](multi-pack.md)). Written by `jigc setup`; the only config-dir member present before any `jigc config` delta. *(`manifest.yaml`, `steps/`, `fills/` are this fixed shape but materialize lazily — only once a delta is authored.)*
 
 The pack-default layer adds **`config/knobs.yaml`** — the closed, typed knob *declaration* (`{key, type, of?, default}`, [overrides.md](overrides.md) → Scalar knobs); override layers carry only *values* (`scalar:` in their manifest), never re-declare the surface. The loader reads these into the `PackDefaultLayer` / `OverrideLayer` the resolver consumes.
 
