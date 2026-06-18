@@ -994,6 +994,14 @@ fn check_field(
     findings: &mut Vec<Finding>,
 ) {
     match parsed.fields.iter().find(|f| f.key == declared.id) {
+        // An **optional** field materialized present-but-empty (the front-matter key
+        // is emitted, no value — the field analog of an optional slot whose heading is
+        // present with no prose) is the absent-content case the `optional:` flag
+        // governs: treat it as absent, not as an empty value that fails its type.
+        // (M22 inc-3 `optional:` semantics — "headings present, the flag governs
+        // whether absent content blocks"; the provisioned `commit` doc materializes an
+        // empty `scope` key, so a first-task minimal commit must finalize clean.)
+        Some(present) if declared.optional && value_is_empty(&present.value) => {}
         Some(present) => check_field_value(section, declared, present, findings),
         None => {
             if is_author_required(declared) {
@@ -1007,6 +1015,16 @@ fn check_field(
                 ));
             }
         }
+    }
+}
+
+/// Whether a parsed field value carries no content — an empty scalar (after trim) or
+/// an empty list. Used to recognize a present-but-empty **optional** field as the
+/// absent-content case its `optional:` flag exempts.
+fn value_is_empty(value: &crate::field_block::Value) -> bool {
+    match value {
+        crate::field_block::Value::Scalar(s) => s.trim().is_empty(),
+        crate::field_block::Value::List(items) => items.is_empty(),
     }
 }
 

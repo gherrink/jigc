@@ -3658,6 +3658,41 @@ A failed charge retries with exponential backoff, capped at five attempts.
               "stdin": "the slot prose",
               "hint": "Stage the commit summary slot from stdin."
             },
+            "set-commit-type": {
+              "command": "jigc",
+              "args": [
+                {
+                  "kind": "literal",
+                  "literal": "doc"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "set-field"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.commit#type"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--value"
+                },
+                {
+                  "kind": "agent",
+                  "agent": "commit_type",
+                  "hint": "the Conventional-Commits type for what changed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, or revert"
+                },
+                {
+                  "kind": "literal",
+                  "literal": "--task"
+                },
+                {
+                  "kind": "from",
+                  "from": "task.id"
+                }
+              ],
+              "hint": "Set the required Conventional-Commits type."
+            },
             "validate-task": {
               "command": "jigc",
               "args": [
@@ -4897,11 +4932,19 @@ reference — make your consequences explain what changes:
         The relevant code paths are not yet known. Inspect the codebase to confirm
         scope before implementing.
 
-        Implement the change directly in the working tree. When done, stage the
-        commit prose:
+        Implement the change directly in the working tree. When done, set the required
+        Conventional-Commits type — your editorial call on what this change does — then
+        stage the summary prose:
 
+        Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
         Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
         <<author: commit:add-rate-limiter#summary>>
+
+        The `scope` and `body` are optional: add a `scope` to name the area touched, or
+        author a `body` to explain the motivation, only when they earn their place —
+
+        jigc doc set-field commit:{{task.id}}#scope --value <area> --task {{task.id}}
+        jigc doc set-slot commit:{{task.id}}#body --from-file - --task {{task.id}}
 
         If a decision is warranted, create an ADR and author its slots:
 

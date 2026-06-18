@@ -19,6 +19,18 @@ commands:
     stdin: "the slot prose"
     hint: "Stage the commit summary slot from stdin."
 
+  - id: set-commit-type
+    command: jigc
+    args:
+      - "doc"
+      - "set-field"
+      - { from: "task.commit#type" }
+      - "--value"
+      - { agent: commit_type, hint: "the Conventional-Commits type for what changed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, or revert" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "Set the required Conventional-Commits type."
+
   - id: validate-task
     command: jigc
     args: ["task", "validate", { from: "task.id" }]

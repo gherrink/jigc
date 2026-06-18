@@ -259,6 +259,87 @@ fn finalize_makes_one_commit_with_the_rendered_message_and_cleans_up() {
     );
 }
 
+/// The **first-task minimal commit**: a brand-new user following the `single-task`
+/// script authors only the required `type` + `summary`, leaving the *optional*
+/// `scope` field and `body` slot empty. This must finalize CLEAN (exit 0) — the
+/// "first-task finalize wall" regression (M26 shakedown): `scope`/`body` are
+/// optional-by-default (Conventional Commits), so their absence never blocks.
+/// The rendered git message is `type: summary` — NO empty `()` parens, NO stray
+/// blank lines (the M22-proven absent-optional clean render).
+#[test]
+fn finalize_minimal_commit_type_and_summary_only_lands_clean() {
+    let (repo, home) = started_repo("tidy the readme");
+    let task = "tidy-the-readme";
+
+    fs::write(repo.path().join("README.md"), "hello world\n").expect("write code change");
+
+    // Only the two REQUIRED levers: the `type` enum + the `summary` slot. The
+    // optional `scope` field and `body` slot are deliberately left unset.
+    let set_field = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "docs",
+        ],
+        None,
+    );
+    assert!(
+        set_field.status.success(),
+        "set-field type must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&set_field.stderr)
+    );
+    let set_slot = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-slot",
+            &format!("commit:{task}#summary"),
+            "--from-file",
+            "-",
+        ],
+        Some(b"update the readme\n"),
+    );
+    assert!(
+        set_slot.status.success(),
+        "set-slot summary must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&set_slot.stderr)
+    );
+
+    let log_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+
+    let out = run_task(repo.path(), home.path(), &["finalize", task]);
+    assert!(
+        out.status.success(),
+        "a minimal `type` + `summary` commit must finalize CLEAN (no scope/body wall); \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let log_after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(log_after, log_before + 1, "exactly ONE new commit");
+
+    // The rendered message: `type: summary` — no parens, no stray blank lines.
+    let message = git(repo.path(), &["log", "-1", "--format=%B"]);
+    assert_eq!(
+        message.trim_end(),
+        "docs: update the readme",
+        "absent optional scope/body must render `type: summary` with no empty parens \
+         and no stray blanks; got:\n{message}"
+    );
+    assert!(
+        !message.contains('('),
+        "an absent scope must omit the parens entirely; got:\n{message}"
+    );
+}
+
 /// Flow #5 [4 promote] (`design/worked-examples.md` → Superseding decision, setup):
 /// a task creates an ADR via the create-gate, then `finalize` **promotes** it to
 /// `decisions/<slug>.md` and commits it — the persisted managed doc the MVP's

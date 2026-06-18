@@ -1,8 +1,16 @@
-Implement the change directly in the working tree. When done, stage the
-commit prose:
+Implement the change directly in the working tree. When done, set the required
+Conventional-Commits type — your editorial call on what this change does — then
+stage the summary prose:
 
+{{ cli.set-commit-type }}
 {{ cli.set-commit-summary }}
 <<author: {{ task.commit#summary }}>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:{{task.id}}#scope --value <area> --task {{task.id}}
+jigc doc set-slot commit:{{task.id}}#body --from-file - --task {{task.id}}
 
 If a decision is warranted, create an ADR and author its slots:
 

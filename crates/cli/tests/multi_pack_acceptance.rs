@@ -386,11 +386,19 @@ add a thing
 The relevant code paths are not yet known. Inspect the codebase to confirm
 scope before implementing.
 
-Implement the change directly in the working tree. When done, stage the
-commit prose:
+Implement the change directly in the working tree. When done, set the required
+Conventional-Commits type — your editorial call on what this change does — then
+stage the summary prose:
 
+Run: `jigc doc set-field commit:add-a-thing#type --value <COMMIT_TYPE> --task add-a-thing`
 Run: `jigc doc set-slot commit:add-a-thing#summary --from-file - --task add-a-thing`
 <<author: commit:add-a-thing#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:add-a-thing#scope --value <area> --task add-a-thing
+jigc doc set-slot commit:add-a-thing#body --from-file - --task add-a-thing
 
 If a decision is warranted, create an ADR and author its slots:
 

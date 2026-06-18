@@ -33,9 +33,7 @@ use std::process::{Command, Stdio};
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
 advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
 blocking · schema-conformance.field-value-conformant — field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
-blocking · schema-conformance.field-value-conformant — field `scope` in section `header`: \"scope\" must not be empty
 blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
-blocking · schema-conformance.required-slot-present — required slot in section `body` is empty
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

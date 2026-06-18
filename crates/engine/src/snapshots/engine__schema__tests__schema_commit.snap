@@ -30,7 +30,8 @@ expression: json
         },
         {
           "id": "scope",
-          "type": "string"
+          "type": "string",
+          "optional": true
         },
         {
           "id": "implements",
@@ -50,7 +51,8 @@ expression: json
     {
       "id": "body",
       "slot": {
-        "hint": "Why this change — the motivation and any notable context."
+        "hint": "Why this change — the motivation and any notable context.",
+        "optional": true
       }
     },
     {

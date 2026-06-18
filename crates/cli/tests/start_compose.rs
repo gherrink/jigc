@@ -91,11 +91,19 @@ add rate limiter
 The relevant code paths are not yet known. Inspect the codebase to confirm
 scope before implementing.
 
-Implement the change directly in the working tree. When done, stage the
-commit prose:
+Implement the change directly in the working tree. When done, set the required
+Conventional-Commits type — your editorial call on what this change does — then
+stage the summary prose:
 
+Run: `jigc doc set-field commit:add-rate-limiter#type --value <COMMIT_TYPE> --task add-rate-limiter`
 Run: `jigc doc set-slot commit:add-rate-limiter#summary --from-file - --task add-rate-limiter`
 <<author: commit:add-rate-limiter#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:add-rate-limiter#scope --value <area> --task add-rate-limiter
+jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter
 
 If a decision is warranted, create an ADR and author its slots:
 
