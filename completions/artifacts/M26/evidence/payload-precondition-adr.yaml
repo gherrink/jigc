@@ -1,0 +1,19 @@
+# The committed-adr PRECONDITION for the synthetic arm (committed-first ordering). jigc's
+# store ships no managed adr, and arch-doc.allows-create cannot mint one in-task, so the
+# synthetic arm's `cites` target must be a committed adr — provisioned here by migrating a
+# small foreign Nygard-shaped ADR end to end (migrate -> author -> finalize --approve ->
+# decisions/<slug>.md) BEFORE the citing arch-doc migrates. The agent's ONE batch.
+title: "Compose the parser as discrete stages"
+sections:
+  - id: status
+    set:
+      status: accepted
+  - id: context
+    set:
+      context: "<<The compile pipeline needed a deterministic, independently-testable structure rather than one monolithic pass.>>"
+  - id: decision
+    set:
+      decision: "<<We compose the parser/writer pipeline from discrete stages — section parsing then canonical rendering — each a single-responsibility unit.>>"
+  - id: consequences
+    set:
+      consequences: "<<Each stage is testable in isolation and the byte-stable render path can be proven independently of parsing.>>"

@@ -1,0 +1,338 @@
+### SYNTHETIC-over-jigc-Rust ARM — LABELED SYNTHETIC (the C2 mandate)
+scratch repo: /tmp/jigc-m26-synthetic
+Rust anchor targets: src/parser.rs (clone of crates/engine/src/parse.rs #parse_sections)
+                     src/writer.rs (clone of crates/engine/src/write.rs  #render)
+binary under test: /home/maurice/.local/bin/jigc  sha256=191e9bdd18930153ca4f5016cc6bb69bc4c88a1975f7e620854d8c1ba92caac1
+doc-code sibling:  /home/maurice/.local/bin/doc-code  sha256=f56032c2474158609ddaaab19a40a1215267d8b474b41e69f982ec031d969b61
+
+jigc setup — adapter installed
+
+jigc is now wired into this project; two host files were updated:
+  - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
+  - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+>>> PRECONDITION: migrate the cited adr first (committed-first ordering)
+==================================================================
+### FILE: docs/adr/0001-parser-stages.md   (--as adr)   tag=synth-precond-adr
+foreign git-blob: 68e222b44633b9486fe94d7ddaa9bc6009c01a4f
+foreign line count: 20
+
+--- jigc migrate docs/adr/0001-parser-stages.md --as adr (composed view, head) ---
+Migrate the foreign ADR into a managed `adr` at `decisions/`. Below is the foreign
+source the CLI staged for you (read-only context — you author the canonical record
+through the write verbs, you never edit this file or place anything yourself):
+
+# 1. Compose the parser as discrete stages
+
+## Status
+
+Accepted
+
+## Context
+
+The compile pipeline needed a deterministic, independently-testable structure rather
+than one monolithic pass over the source.
+
+## Decision
+
+We will compose the parser/writer pipeline from discrete stages — section parsing
+then canonical rendering — each a single-responsibility unit.
+
+## Consequences
+
+Each stage is testable in isolation and the byte-stable render path can be proven
+independently of parsing.
+
+
+Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI creates the
+record at `decisions/<title-slug>` and places its status field and every prose slot
+over a single staged buffer. Pipe the payload on stdin:
+
+jigc doc author adr --from - --task migrate-adr-docs-adr-0001-parser-stages <<'EOF'
+title: "<the decision, as a short noun phrase>"
+sections:
+  - id: status
+    set:
+      status: "<proposed | accepted | superseded>"
+  - id: context
+    set:
+      context: "<<the forces at play that made the decision necessary>>"
+  - id: decision
+MIGRATION_TASK=migrate-adr-docs-adr-0001-parser-stages
+
+--- jigc doc author adr --from <payload> (ONE batch) ---
+AUTHOR_MINTED=adr:compose-the-parser-as-discrete-stages
+
+--- jigc task finalize migrate-adr-docs-adr-0001-parser-stages   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-adr-docs-adr-0001-parser-stages --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- # 1. Compose the parser as discrete stages
+- 
+- ## Status
+- 
+- Accepted
+- 
+- ## Context
+- 
+- The compile pipeline needed a deterministic, independently-testable structure rather
+- than one monolithic pass over the source.
+- 
+- ## Decision
+- 
+- We will compose the parser/writer pipeline from discrete stages — section parsing
+- then canonical rendering — each a single-responsibility unit.
+- 
+- ## Consequences
+- 
+- Each stage is testable in isolation and the byte-stable render path can be proven
+- independently of parsing.
++++ canonical rewrite → decisions/compose-the-parser-as-discrete-stages.md
++ ---
++ status: accepted
++ ---
++ 
++ # compose-the-parser-as-discrete-stages
++ 
++ ## Context
++ 
++ The compile pipeline needed a deterministic, independently-testable structure rather than one monolithic pass.
++ 
++ ## Decision
++ 
++ We compose the parser/writer pipeline from discrete stages — section parsing then canonical rendering — each a single-responsibility unit.
++ 
++ ## Consequences
++ 
++ Each stage is testable in isolation and the byte-stable render path can be proven independently of parsing.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-adr-docs-adr-0001-parser-stages --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/adr:compose-the-parser-as-discrete-stages.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-adr-docs-adr-0001-parser-stages.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical decisions/compose-the-parser-as-discrete-stages.md ---
+---
+status: accepted
+---
+
+# compose-the-parser-as-discrete-stages
+
+## Context
+
+The compile pipeline needed a deterministic, independently-testable structure rather than one monolithic pass.
+
+## Decision
+
+We compose the parser/writer pipeline from discrete stages — section parsing then canonical rendering — each a single-responsibility unit.
+
+## Consequences
+
+Each stage is testable in isolation and the byte-stable render path can be proven independently of parsing.
+
+canonical line count:        17
+canonical '## ' count:       3
+canonical '### ' count:      0
+canonical implemented-by:    0
+canonical cites:             0
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable decisions/compose-the-parser-as-discrete-stages.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable decisions/compose-the-parser-as-discrete-stages.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+e165f330a4d0518a58f9b8f3cdb1569f64f60767
+docs(adr): adopt docs/adr/0001-parser-stages.md as a managed adr
+Migrate the foreign docs/adr/0001-parser-stages.md into the managed adr document and retire the original.
+
+
+A	.jigc/.gitignore
+A	.jigc/config/.gitkeep
+A	.jigc/config/packs.yaml
+A	decisions/compose-the-parser-as-discrete-stages.md
+D	docs/adr/0001-parser-stages.md
+
+RESULT synth-precond-adr: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=adr:compose-the-parser-as-discrete-stages
+>>> ARCH-DOC: now migrate the citing arch-doc
+==================================================================
+### FILE: docs/parser-subsystem.md   (--as arch-doc)   tag=synth-parser
+foreign git-blob: 34523f8725a2d66a15a8d2fbe954932a9c201815
+foreign line count: 18
+
+--- jigc migrate docs/parser-subsystem.md --as arch-doc (composed view, head) ---
+Migrate the foreign architecture document into a managed `arch-doc` at `architecture/`.
+Below is the foreign source the CLI staged for you (read-only context — you author the
+canonical record through the write verbs, you never edit this file or place anything
+yourself):
+
+# Parser subsystem
+
+> SYNTHETIC fixture — an architecture sketch over jigc's own parser/writer, authored for
+> the M26 measured corpus (arch-doc has no real foreign-corpus standard over jigc's subsystem).
+
+## Overview
+
+Turns source bytes into a structured document and renders them back.
+
+## Components
+
+### Section parser
+
+Parses sections.
+
+### Canonical writer
+
+Renders canonical bytes.
+
+
+Author the WHOLE canonical arch-doc in ONE declarative batch payload — the CLI creates
+the record at `architecture/<title-slug>` and places its `cites` edge, its `overview`
+slot, and every component over a single staged buffer. This is the ONLY authoring call:
+the migration commit doc is auto-provisioned for you, so never `doc author commit`. Pipe
+the payload on stdin:
+
+jigc doc author arch-doc --from - --task migrate-arch-doc-docs-parser-subsystem <<'EOF'
+title: "<the part of the system this document covers, as a short noun phrase>"
+sections:
+  - id: meta
+    set:
+      cites: "[adr:<slug-of-a-cited-decision>]"
+  - id: overview
+    set:
+      overview: "<<what this part of the system is and the boundary it owns>>"
+MIGRATION_TASK=migrate-arch-doc-docs-parser-subsystem
+
+--- jigc doc author arch-doc --from <payload> (ONE batch) ---
+AUTHOR_MINTED=arch-doc:parser-subsystem
+
+--- jigc task finalize migrate-arch-doc-docs-parser-subsystem   (review gate, NO --approve) ---
+migration review required — nothing committed. Re-run `jigc task finalize migrate-arch-doc-docs-parser-subsystem --approve` to write the canonical doc, retire the foreign original, and commit.
+
+The rewrite is the agent's; the CLI guarantees structure, never content-faithfulness — review the fidelity diff below, then approve.
+
+fidelity (heuristic version-scan — fuzzy, advisory; feeds no gate, no structural decision): source releases absent from the rewrite: (none)
+
+--- foreign source (staged seam)
+- # Parser subsystem
+- 
+- > SYNTHETIC fixture — an architecture sketch over jigc's own parser/writer, authored for
+- > the M26 measured corpus (arch-doc has no real foreign-corpus standard over jigc's subsystem).
+- 
+- ## Overview
+- 
+- Turns source bytes into a structured document and renders them back.
+- 
+- ## Components
+- 
+- ### Section parser
+- 
+- Parses sections.
+- 
+- ### Canonical writer
+- 
+- Renders canonical bytes.
++++ canonical rewrite → architecture/parser-subsystem.md
++ ---
++ cites: [adr:compose-the-parser-as-discrete-stages]
++ ---
++ 
++ # parser-subsystem
++ 
++ ## Overview
++ 
++ The parser subsystem turns canonical source bytes into a structured document and back: section parsing builds the in-memory instance, the writer renders it to byte-stable canonical form.
++ 
++ ## Components
++ 
++ ### Section parser  {#section-parser}
++ 
++ Scans a document's source against its schema into the in-memory section/slot tree the rest of the pipeline operates on.
++ 
++ <!-- fields -->
++ - implemented-by: src/parser.rs#parse_sections
++ 
++ ### Canonical writer  {#canonical-writer}
++ 
++ Renders a parsed instance back to canonical bytes, the round-trip-stable serialization the byte-stability invariant rests on.
++ 
++ <!-- fields -->
++ - implemented-by: src/writer.rs#render
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+BLOCK_EXIT=4
+
+--- jigc task finalize migrate-arch-doc-docs-parser-subsystem --approve ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/arch-doc:parser-subsystem.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:migrate-arch-doc-docs-parser-subsystem.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+APPROVE_EXIT=0
+
+--- foreign original present after approve? ---
+GONE (retired)
+
+--- canonical architecture/parser-subsystem.md ---
+---
+cites: [adr:compose-the-parser-as-discrete-stages]
+---
+
+# parser-subsystem
+
+## Overview
+
+The parser subsystem turns canonical source bytes into a structured document and back: section parsing builds the in-memory instance, the writer renders it to byte-stable canonical form.
+
+## Components
+
+### Section parser  {#section-parser}
+
+Scans a document's source against its schema into the in-memory section/slot tree the rest of the pipeline operates on.
+
+<!-- fields -->
+- implemented-by: src/parser.rs#parse_sections
+
+### Canonical writer  {#canonical-writer}
+
+Renders a parsed instance back to canonical bytes, the round-trip-stable serialization the byte-stability invariant rests on.
+
+<!-- fields -->
+- implemented-by: src/writer.rs#render
+
+canonical line count:        25
+canonical '## ' count:       2
+canonical '### ' count:      2
+canonical implemented-by:    2
+canonical cites:             1
+
+--- jigc ingest (round-trip conformance: adopted?) ---
+adoptable architecture/parser-subsystem.md → arch-doc  (adopted — indexed + baselined, no file moved)
+adoptable decisions/compose-the-parser-as-discrete-stages.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- jigc ingest AGAIN (idempotent — file-state hash stable) ---
+adoptable architecture/parser-subsystem.md → arch-doc  (adopted — indexed + baselined, no file moved)
+adoptable decisions/compose-the-parser-as-discrete-stages.md → adr  (adopted — indexed + baselined, no file moved)
+  adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+
+--- HEAD commit subject + name-status (the migration commit) ---
+86d088d652c3013183f30e34eb4f667fb2d9590f
+docs(arch-doc): adopt docs/parser-subsystem.md as a managed arch-doc
+Migrate the foreign docs/parser-subsystem.md into the managed arch-doc document and retire the original.
+
+
+A	architecture/parser-subsystem.md
+D	docs/parser-subsystem.md
+
+RESULT synth-parser: BLOCK_EXIT=4 APPROVE_EXIT=0 MINTED=arch-doc:parser-subsystem

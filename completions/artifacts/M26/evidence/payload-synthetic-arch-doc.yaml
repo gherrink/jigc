@@ -1,0 +1,25 @@
+# SYNTHETIC-over-jigc-Rust arm (LABELED SYNTHETIC) — the C2-mandate batch. The arch-doc is
+# synthesized (no real foreign-corpus standard for an arch-doc over jigc's own subsystem), but
+# its TWO components anchor at REAL, INDEPENDENTLY-RESOLVING jigc Rust symbols: clones of jigc's
+# own parse.rs / write.rs are placed in the scratch repo (a fixture/clone target, never a live
+# jigc dep), so symbol-exists genuinely resolves over Rust (not degraded). It cites the committed
+# precondition adr — a resolving `cites → adr` edge over the committed store (committed-first).
+# ONE batch author call carries both anchors + the cites (Framing A).
+title: "Parser subsystem"
+sections:
+  - id: meta
+    set:
+      cites: "[adr:compose-the-parser-as-discrete-stages]"
+  - id: overview
+    set:
+      overview: "<<The parser subsystem turns canonical source bytes into a structured document and back: section parsing builds the in-memory instance, the writer renders it to byte-stable canonical form.>>"
+  - id: components
+    items:
+      - title: "Section parser"
+        set:
+          description: "<<Scans a document's source against its schema into the in-memory section/slot tree the rest of the pipeline operates on.>>"
+          implemented-by: "src/parser.rs#parse_sections"
+      - title: "Canonical writer"
+        set:
+          description: "<<Renders a parsed instance back to canonical bytes, the round-trip-stable serialization the byte-stability invariant rests on.>>"
+          implemented-by: "src/writer.rs#render"
