@@ -70,6 +70,15 @@ const MIGRATION_COMMIT_TYPE: &str = "docs";
 /// already exists) surfaces as the engine's routed blocking finding, mapped here
 /// to an `anyhow` error carrying that route.
 pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<MintedTask> {
+    // Reject a user intent with no sluggable content up front, before minting:
+    // `slugify` would otherwise fold an empty/whitespace/punctuation-only intent to
+    // nothing, and `mint_task`'s empty-slug fallback would mint the task under the
+    // `commit` type name — a surprising id that a second such call serial-collides.
+    // The fallback stays correct for legitimate internal callers (migration's empty
+    // intent via `mint_migration_in_repo`); only this user-intent boundary is guarded.
+    if engine::slug::slugify(intent).is_empty() {
+        bail!("intent must contain at least one letter or digit (got {intent:?})");
+    }
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let jigc_root = repo_root.join(".jigc");
@@ -2696,6 +2705,42 @@ mod tests {
             msg.contains("add-rate-limiter") && msg.contains("route:"),
             "serial collision must name the task and carry a route; got: {msg}"
         );
+    }
+
+    /// A user intent with no sluggable content (empty, whitespace-only, or
+    /// punctuation-only) is rejected up front with a clear, actionable message and
+    /// mints **nothing** — never silently minted under the `commit` fallback id
+    /// (which would then serial-collide a second such call). The fallback stays
+    /// correct for legitimate internal callers (migration's empty intent); only the
+    /// user's task intent is guarded at the mint boundary.
+    #[test]
+    fn empty_slug_intent_is_rejected_and_mints_nothing() {
+        let repo = TempDir::new("repo");
+        init_repo_with_commit(repo.path());
+        let tasks = repo.path().join(".jigc").join("tasks");
+
+        for bad in ["", "   ", "!!!"] {
+            let err = mint_in_repo(repo.path(), bad, "single-task")
+                .expect_err("no-sluggable-content intent must reject");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("intent must contain at least one letter or digit"),
+                "must carry the actionable message; got: {msg}"
+            );
+            // Mint nothing: no task dir appears (not even the `commit` fallback).
+            let minted_any = std::fs::read_dir(&tasks)
+                .map(|mut d| d.next().is_some())
+                .unwrap_or(false);
+            assert!(
+                !minted_any,
+                "rejected intent {bad:?} must leave .jigc/tasks/ empty"
+            );
+        }
+
+        // A normal intent still mints.
+        let minted = mint_in_repo(repo.path(), "Add rate limiter", "single-task")
+            .expect("real intent mints");
+        assert_eq!(minted.id, "add-rate-limiter");
     }
 
     /// The per-file migration task id-source is a pure, path-aware function of
