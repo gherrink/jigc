@@ -11,7 +11,7 @@
 //!   - **Headline** — a real-but-idiosyncratic foreign spec (committed, off-canonical at
 //!     `docs/specs/`) migrates: `jigc migrate <path> --as spec` mints the per-file
 //!     migration task, the agent authors the canonical record through `doc author spec
-//!     --from -` (the goal/context slots + ≥2 `criteria` items, each a `title` + a
+//!     --from-file -` (the goal/context slots + ≥2 `criteria` items, each a `title` + a
 //!     `statement` slot, with **NO `maps-to-test`**), and `task finalize --approve` lands
 //!     exactly ONE commit that (a) writes `specs/<slug>.md` byte-stable
 //!     (`render(instance_from_source(x)) == x`), (b) carries `A specs/<slug>.md` + `D
@@ -189,7 +189,7 @@ fn migrate(repo: &Path, home: &Path, pack: &Path, rel: &str) -> String {
     )
 }
 
-/// `jigc doc author spec --from -` over `task`, piping the declarative `payload`.
+/// `jigc doc author spec --from-file -` over `task`, piping the declarative `payload`.
 fn author_spec(
     repo: &Path,
     home: &Path,
@@ -201,7 +201,7 @@ fn author_spec(
         repo,
         home,
         pack,
-        &["doc", "author", "spec", "--from", "-", "--task", task],
+        &["doc", "author", "spec", "--from-file", "-", "--task", task],
         Some(payload.as_bytes()),
     )
 }
@@ -422,13 +422,13 @@ fn migrate_spec_finalize_writes_retires_and_adopts() {
     assert_ingest_adopted(repo.path(), home.path(), &pack, "auth-spec");
 }
 
-/// Extract the `doc author spec --from -` heredoc payload skeleton from the composed
+/// Extract the `doc author spec --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
 fn extract_author_skeleton(composed: &str) -> String {
     let mut lines = composed.lines();
     for line in lines.by_ref() {
-        if line.contains("doc author spec --from") && line.contains("<<'EOF'") {
+        if line.contains("doc author spec --from-file") && line.contains("<<'EOF'") {
             break;
         }
     }

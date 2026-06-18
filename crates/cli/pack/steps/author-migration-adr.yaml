@@ -8,7 +8,7 @@ Author the WHOLE canonical ADR in ONE declarative batch payload — the CLI crea
 record at `decisions/<title-slug>` and places its status field and every prose slot
 over a single staged buffer. Pipe the payload on stdin:
 
-jigc doc author adr --from - --task {{task.id}} <<'EOF'
+jigc doc author adr --from-file - --task {{task.id}} <<'EOF'
 title: "<the decision, as a short noun phrase>"
 sections:
   - id: status

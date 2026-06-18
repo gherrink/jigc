@@ -16,7 +16,7 @@
 //!   - **Headline** — a synthesized-and-labeled-synthetic foreign prd (committed,
 //!     off-canonical at `docs/<x>.md`) migrates: `jigc migrate <path> --as prd` mints the
 //!     per-file migration task, the agent authors the canonical record through `doc author
-//!     prd --from -` (the vision/context slots + ≥2 repeatable `requirements` items, each a
+//!     prd --from-file -` (the vision/context slots + ≥2 repeatable `requirements` items, each a
 //!     `title` + a `statement` slot), and `task finalize --approve` lands exactly ONE
 //!     commit that (a) writes `prds/<slug>.md` byte-stable
 //!     (`render(instance_from_source(x)) == x`), (b) carries `A prds/<slug>.md` + `D
@@ -188,7 +188,7 @@ fn migrate(repo: &Path, home: &Path, pack: &Path, rel: &str) -> String {
     )
 }
 
-/// `jigc doc author prd --from -` over `task`, piping the declarative `payload`.
+/// `jigc doc author prd --from-file -` over `task`, piping the declarative `payload`.
 fn author_prd(
     repo: &Path,
     home: &Path,
@@ -200,7 +200,7 @@ fn author_prd(
         repo,
         home,
         pack,
-        &["doc", "author", "prd", "--from", "-", "--task", task],
+        &["doc", "author", "prd", "--from-file", "-", "--task", task],
         Some(payload.as_bytes()),
     )
 }
@@ -419,13 +419,13 @@ fn migrate_prd_finalize_writes_retires_and_adopts() {
     assert_ingest_adopted(repo.path(), home.path(), &pack, "habit-tracker");
 }
 
-/// Extract the `doc author prd --from -` heredoc payload skeleton from the composed
+/// Extract the `doc author prd --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
 fn extract_author_skeleton(composed: &str) -> String {
     let mut lines = composed.lines();
     for line in lines.by_ref() {
-        if line.contains("doc author prd --from") && line.contains("<<'EOF'") {
+        if line.contains("doc author prd --from-file") && line.contains("<<'EOF'") {
             break;
         }
     }

@@ -540,7 +540,7 @@ fn arch_doc_author_accepts_multi_element_cites_bracket_list() {
     let good = jigc_doc(
         repo.path(),
         home.path(),
-        &["author", "arch-doc", "--from", "-"],
+        &["author", "arch-doc", "--from-file", "-"],
         Some(b"title: Queue overview\nsections:\n  - id: meta\n    set:\n      cites: \"[adr:a, adr:b]\"\n"),
     );
     assert_ok(
@@ -563,7 +563,7 @@ fn arch_doc_author_accepts_multi_element_cites_bracket_list() {
     let bad = jigc_doc(
         repo.path(),
         home.path(),
-        &["author", "arch-doc", "--from", "-"],
+        &["author", "arch-doc", "--from-file", "-"],
         Some(b"title: Bad overview\nsections:\n  - id: meta\n    set:\n      cites: \"[adr:a, spec:b]\"\n"),
     );
     assert!(

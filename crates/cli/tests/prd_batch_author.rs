@@ -1,4 +1,4 @@
-//! M25 Increment 5, T4 — multi-requirement prd via `jigc doc author --from` round-trips
+//! M25 Increment 5, T4 — multi-requirement prd via `jigc doc author --from-file-file` round-trips
 //! (Proves P3, the doctype-general batch `items:` path on the new repeatable `prd`
 //! shape; `design/auto-migration.md` → prd; `implementation/roadmap.md` → M25
 //! Increment 5). Drives the **built** `jigc` binary against a throwaway `git init` temp
@@ -6,7 +6,7 @@
 //!
 //!   `jigc setup`
 //!     → `jigc start --workflow project-setup "<idea>"`   (the prd create-gate)
-//!     → `jigc doc author prd --from - --task <id>`        (ONE declarative payload:
+//!     → `jigc doc author prd --from-file - --task <id>`        (ONE declarative payload:
 //!         the `vision`/`context` fixed slots + a `requirements` section carrying
 //!         ≥2 `items`, each a `title` + a `statement: "<<…>>"` slot)
 //!     → fill the auto-provisioned commit doc
@@ -191,10 +191,10 @@ fn multi_requirement_prd_via_doc_author_from_round_trips() {
         run_jigc(
             repo.path(),
             home.path(),
-            &["doc", "author", "prd", "--from", "-", "--task", task],
+            &["doc", "author", "prd", "--from-file", "-", "--task", task],
             Some(PAYLOAD.as_bytes()),
         ),
-        "jigc doc author prd --from -",
+        "jigc doc author prd --from-file -",
     );
     assert_eq!(
         authored, "prd:habit-tracker",

@@ -141,7 +141,7 @@ const FOREIGN: &str = "\
 ";
 
 /// The declarative whole-doc payload that re-authors the canonical changelog in ONE
-/// `doc author --from` batch — no commit doc leaf anywhere.
+/// `doc author --from-file-file` batch — no commit doc leaf anywhere.
 const PAYLOAD: &str = r#"title: Changelog
 sections:
   - id: releases
@@ -210,10 +210,18 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
             repo.path(),
             home.path(),
             &pack,
-            &["doc", "author", "changelog", "--from", "-", "--task", TASK],
+            &[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
             Some(PAYLOAD.as_bytes()),
         ),
-        "jigc doc author changelog --from -",
+        "jigc doc author changelog --from-file -",
     );
 
     let out = run_jigc(

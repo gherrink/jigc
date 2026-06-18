@@ -9,7 +9,7 @@ creates-or-updates the singleton and places every release, change-group and note
 slot over a single staged buffer, so migrating dozens of releases is one call, not
 hundreds. Pipe the payload on stdin:
 
-jigc doc author changelog --from - --task {{task.id}} <<'EOF'
+jigc doc author changelog --from-file - --task {{task.id}} <<'EOF'
 title: Changelog
 sections:
   - id: releases

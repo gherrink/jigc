@@ -14,7 +14,7 @@
 //!     off-canonical at `docs/architecture/`) migrates: `jigc migrate <path> --as arch-doc`
 //!     mints `migrate-arch-doc-<slug>` and composes (no longer errors `no workflow`),
 //!     surfacing the foreign content through the source seam; the agent authors the
-//!     canonical record through `doc author arch-doc --from -` (the `overview` slot + a
+//!     canonical record through `doc author arch-doc --from-file -` (the `overview` slot + a
 //!     `components` item whose `implemented-by` anchors a real `path#symbol` present in the
 //!     repo's Rust); and `task finalize --approve` lands exactly ONE commit that (a) writes
 //!     `architecture/<slug>.md` byte-stable (`render(instance_from_source(x)) == x`) with
@@ -255,7 +255,7 @@ fn migrate(repo: &Path, home: &Path, pack: &Path, rel: &str) -> String {
     )
 }
 
-/// `jigc doc author arch-doc --from -` over `task`, piping the declarative `payload`.
+/// `jigc doc author arch-doc --from-file -` over `task`, piping the declarative `payload`.
 fn author_arch_doc(
     repo: &Path,
     home: &Path,
@@ -267,7 +267,15 @@ fn author_arch_doc(
         repo,
         home,
         pack,
-        &["doc", "author", "arch-doc", "--from", "-", "--task", task],
+        &[
+            "doc",
+            "author",
+            "arch-doc",
+            "--from-file",
+            "-",
+            "--task",
+            task,
+        ],
         Some(payload.as_bytes()),
     )
 }
@@ -622,13 +630,13 @@ fn a_vanished_anchored_symbol_blocks_at_doc_code_symbol_exists() {
     );
 }
 
-/// Extract the `doc author arch-doc --from -` heredoc payload skeleton from the composed
+/// Extract the `doc author arch-doc --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
 fn extract_author_skeleton(composed: &str) -> String {
     let mut lines = composed.lines();
     for line in lines.by_ref() {
-        if line.contains("doc author arch-doc --from") && line.contains("<<'EOF'") {
+        if line.contains("doc author arch-doc --from-file") && line.contains("<<'EOF'") {
             break;
         }
     }

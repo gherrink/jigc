@@ -8,7 +8,7 @@ Author the WHOLE canonical spec in ONE declarative batch payload — the CLI cre
 record at `specs/<title-slug>` and places its goal/context slots and every criterion over
 a single staged buffer. Pipe the payload on stdin:
 
-jigc doc author spec --from - --task {{task.id}} <<'EOF'
+jigc doc author spec --from-file - --task {{task.id}} <<'EOF'
 title: "<the spec's subject, as a short noun phrase>"
 sections:
   - id: goal

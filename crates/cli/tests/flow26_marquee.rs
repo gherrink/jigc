@@ -5,7 +5,7 @@
 //!
 //! Flow 25 proved the migrate spine with **per-leaf** authoring; flow 26 is the M24
 //! done-bar: the whole canonical changelog is authored from **ONE** `jigc doc author
-//! --from` payload (the batch), over a **dateless** foreign source carrying a
+//! --from-file` payload (the batch), over a **dateless** foreign source carrying a
 //! category-**merge** case (two foreign categories → one enum member) and a
 //! **headingless** `feat:`/`fix:` case (the LLM infers the member). It exercises:
 //!   - **HAPPY** — setup → migrate → ONE batch author → review-gate block (no
@@ -276,7 +276,7 @@ fn setup_and_migrate(
     )
 }
 
-/// Author the whole canonical changelog in ONE `doc author --from` batch against the
+/// Author the whole canonical changelog in ONE `doc author --from-file-file` batch against the
 /// migration `task`, asserting it stages the singleton address.
 fn author_via_batch(repo: &Path, home: &Path, pack: &Path, task: &str, payload: &str) {
     let created = ok_stdout(
@@ -284,10 +284,18 @@ fn author_via_batch(repo: &Path, home: &Path, pack: &Path, task: &str, payload: 
             repo,
             home,
             pack,
-            &["doc", "author", "changelog", "--from", "-", "--task", task],
+            &[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "-",
+                "--task",
+                task,
+            ],
             Some(payload.as_bytes()),
         ),
-        "jigc doc author changelog --from -",
+        "jigc doc author changelog --from-file -",
     );
     assert_eq!(
         created, "changelog:changelog",

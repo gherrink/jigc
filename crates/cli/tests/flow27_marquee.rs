@@ -220,7 +220,7 @@ fn migrate(repo: &Path, home: &Path, pack: &Path, rel: &str, doctype: &str) -> S
     )
 }
 
-/// `jigc doc author <doctype> --from -` over `task`, piping the declarative `payload`.
+/// `jigc doc author <doctype> --from-file -` over `task`, piping the declarative `payload`.
 fn author(
     repo: &Path,
     home: &Path,
@@ -233,7 +233,7 @@ fn author(
         repo,
         home,
         pack,
-        &["doc", "author", doctype, "--from", "-", "--task", task],
+        &["doc", "author", doctype, "--from-file", "-", "--task", task],
         Some(payload.as_bytes()),
     )
 }

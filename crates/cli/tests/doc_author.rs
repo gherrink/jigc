@@ -1,4 +1,4 @@
-//! M24 Increment 1, T2 — `jigc doc author <doctype> --from <payload>`: the
+//! M24 Increment 1, T2 — `jigc doc author <doctype> --from-file <payload>`: the
 //! declarative whole-doc batch verb, cold-authored through the real `jigc` binary.
 //!
 //! The headline B1 claim is that the batch path (create + N leaves over ONE
@@ -211,7 +211,7 @@ fn author_via_batch(repo: &Path, home: &Path, pack: &Path) -> String {
             repo,
             home,
             pack,
-            &["doc", "author", "changelog", "--from", "-"],
+            &["doc", "author", "changelog", "--from-file", "-"],
             Some(PAYLOAD.as_bytes()),
         ),
         "jigc doc author changelog",
@@ -423,7 +423,7 @@ fn mid_chain_leaf_failure_stages_nothing() {
         repo.path(),
         home.path(),
         &pack,
-        &["doc", "author", "changelog", "--from", "-"],
+        &["doc", "author", "changelog", "--from-file", "-"],
         Some(MID_CHAIN_BAD_PAYLOAD.as_bytes()),
     );
 
@@ -486,7 +486,7 @@ fn batch_with_non_member_category_stages_nothing() {
         repo.path(),
         home.path(),
         &pack,
-        &["doc", "author", "changelog", "--from", "-"],
+        &["doc", "author", "changelog", "--from-file", "-"],
         Some(BAD_CATEGORY_PAYLOAD.as_bytes()),
     );
 
@@ -552,7 +552,7 @@ fn bare_slot_value_is_rejected_and_stages_nothing() {
         repo.path(),
         home.path(),
         &pack,
-        &["doc", "author", "changelog", "--from", "-"],
+        &["doc", "author", "changelog", "--from-file", "-"],
         Some(BARE_SLOT_PAYLOAD.as_bytes()),
     );
 
@@ -618,7 +618,7 @@ fn author_payload_via_batch(
             repo,
             home,
             pack,
-            &["doc", "author", "changelog", "--from", "-"],
+            &["doc", "author", "changelog", "--from-file", "-"],
             Some(payload.as_bytes()),
         ),
         "jigc doc author changelog",
@@ -801,7 +801,7 @@ fn disallowed_doctype_is_gate_blocked_through_the_batch() {
         repo.path(),
         home.path(),
         &pack,
-        &["doc", "author", "commit", "--from", "-"],
+        &["doc", "author", "commit", "--from-file", "-"],
         Some(b"title: x\n"),
     );
 

@@ -6,7 +6,7 @@
 //! filled: `type`/`scope` as field values (`docs` / the doctype) and `summary`/`body`
 //! as templated slot prose that is a pure deterministic function of (source path +
 //! doctype) — the bounded slot-fill rule (`DECISIONS.md` S2). So the agent authors only
-//! the canonical changelog (one `doc author --from` batch) and never touches the commit
+//! the canonical changelog (one `doc author --from-file-file` batch) and never touches the commit
 //! doc; `jigc task finalize --approve` lands the formulaic `docs(changelog): …` commit.
 //!
 //! Red before the fix: with no commit authoring the migration mint provisioned an
@@ -143,7 +143,7 @@ const FOREIGN: &str = "\
 ";
 
 /// The declarative whole-doc payload that re-authors the canonical changelog in ONE
-/// `doc author --from` batch — no commit doc leaf anywhere.
+/// `doc author --from-file-file` batch — no commit doc leaf anywhere.
 const PAYLOAD: &str = r#"title: Changelog
 sections:
   - id: releases
@@ -196,10 +196,18 @@ fn migration_finalizes_with_autoprovisioned_commit_doc() {
             repo.path(),
             home.path(),
             &pack,
-            &["doc", "author", "changelog", "--from", "-", "--task", TASK],
+            &[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "-",
+                "--task",
+                TASK,
+            ],
             Some(PAYLOAD.as_bytes()),
         ),
-        "jigc doc author changelog --from -",
+        "jigc doc author changelog --from-file -",
     );
 
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])

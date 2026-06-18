@@ -11,7 +11,7 @@ slot, and every component over a single staged buffer. This is the ONLY authorin
 the migration commit doc is auto-provisioned for you, so never `doc author commit`. Pipe
 the payload on stdin:
 
-jigc doc author arch-doc --from - --task {{task.id}} <<'EOF'
+jigc doc author arch-doc --from-file - --task {{task.id}} <<'EOF'
 title: "<the part of the system this document covers, as a short noun phrase>"
 sections:
   - id: meta

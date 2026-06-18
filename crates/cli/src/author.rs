@@ -1,5 +1,5 @@
 //! Declarative whole-doc batch-authoring payload + parser — the `jigc doc author
-//! <doctype> --from <payload>` front of the M24 batch verb (`design/write-commands.md`
+//! <doctype> --from-file <payload>` front of the M24 batch verb (`design/write-commands.md`
 //! → Batch authoring; `design/auto-migration.md` → Hardening #1).
 //!
 //! This module owns **only the parse** (`design/write-commands.md` → Batch authoring,

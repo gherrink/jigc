@@ -8,7 +8,7 @@ Author the WHOLE canonical prd in ONE declarative batch payload — the CLI crea
 record at `prds/<title-slug>` and places its vision/context slots and every requirement
 over a single staged buffer. Pipe the payload on stdin:
 
-jigc doc author prd --from - --task {{task.id}} <<'EOF'
+jigc doc author prd --from-file - --task {{task.id}} <<'EOF'
 title: "<the prd's subject, as a short noun phrase>"
 sections:
   - id: vision

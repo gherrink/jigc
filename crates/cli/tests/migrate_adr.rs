@@ -9,7 +9,7 @@
 //!
 //!   - **Headline** — a real foreign ADR (committed, off-canonical at `docs/adr/`)
 //!     migrates: `jigc migrate <path> --as adr` mints the per-file migration task, the
-//!     agent authors the canonical record through `doc author adr --from -` (the status
+//!     agent authors the canonical record through `doc author adr --from-file -` (the status
 //!     field + the context/decision/consequences slots), and `task finalize --approve`
 //!     lands exactly ONE commit that (a) writes `decisions/<title-slug>.md` byte-stable
 //!     (`render(instance_from_source(x)) == x`), (b) carries `A decisions/<slug>.md` +
@@ -189,7 +189,7 @@ fn migrate(repo: &Path, home: &Path, pack: &Path, rel: &str) -> String {
     )
 }
 
-/// `jigc doc author adr --from -` over `task`, piping the declarative `payload`.
+/// `jigc doc author adr --from-file -` over `task`, piping the declarative `payload`.
 fn author_adr(
     repo: &Path,
     home: &Path,
@@ -201,7 +201,7 @@ fn author_adr(
         repo,
         home,
         pack,
-        &["doc", "author", "adr", "--from", "-", "--task", task],
+        &["doc", "author", "adr", "--from-file", "-", "--task", task],
         Some(payload.as_bytes()),
     )
 }
@@ -618,13 +618,13 @@ fn a_second_migrate_mints_a_distinct_task_and_migrates_independently() {
     );
 }
 
-/// Extract the `doc author adr --from -` heredoc payload skeleton from the composed
+/// Extract the `doc author adr --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
 fn extract_author_skeleton(composed: &str) -> String {
     let mut lines = composed.lines();
     for line in lines.by_ref() {
-        if line.contains("doc author adr --from") && line.contains("<<'EOF'") {
+        if line.contains("doc author adr --from-file") && line.contains("<<'EOF'") {
             break;
         }
     }

@@ -7,7 +7,7 @@
 //!   - the resolved foreign content (the source seam — `{{ source }}` surfaces the
 //!     staged foreign bytes verbatim), and
 //!   - the author-spine command guidance (the declarative `jigc doc author changelog
-//!     --from` batch directive + the category map+merge / infer-from-prefix / dateless
+//!     --from-file` batch directive + the category map+merge / infer-from-prefix / dateless
 //!     clauses + finalize directions),
 //!
 //! and the workflow + step load and pass the compose-time workflow-refs gate (a clean
@@ -155,10 +155,10 @@ fn migrate_composes_the_shipped_workflow_with_seam_and_author_spine() {
     );
 
     // (2) The author spine is the declarative BATCH directive: the whole canonical doc
-    // is authored in ONE payload via `jigc doc author changelog --from` (the inc-1 verb,
+    // is authored in ONE payload via `jigc doc author changelog --from-file` (the inc-1 verb,
     // create + every leaf over one staged buffer), NOT the per-leaf create/add-item walk.
     assert!(
-        stdout.contains("jigc doc author changelog --from"),
+        stdout.contains("jigc doc author changelog --from-file"),
         "the declarative batch directive must be present; stdout:\n{stdout}",
     );
 
@@ -260,7 +260,7 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
     // (2) The adr author spine is the declarative batch directive against the `adr`
     // doctype (NOT the changelog one) — create + every leaf over one staged buffer.
     assert!(
-        stdout.contains("jigc doc author adr --from"),
+        stdout.contains("jigc doc author adr --from-file"),
         "the adr-specific batch directive must be present; stdout:\n{stdout}",
     );
 
@@ -325,13 +325,13 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
     );
 }
 
-/// Extract the `doc author adr --from -` heredoc payload skeleton from the composed
+/// Extract the `doc author adr --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
 fn extract_author_skeleton(composed: &str) -> String {
     let mut lines = composed.lines();
     for line in lines.by_ref() {
-        if line.contains("doc author adr --from") && line.contains("<<'EOF'") {
+        if line.contains("doc author adr --from-file") && line.contains("<<'EOF'") {
             break;
         }
     }

@@ -111,8 +111,8 @@ pub enum DocCommand {
         doctype: String,
         /// The payload source: a path, or `-` for stdin (the whole-doc payload is
         /// large, so it arrives the same way slot prose does — never inline).
-        #[arg(long)]
-        from: String,
+        #[arg(long = "from-file")]
+        from_file: String,
         /// The active task to scope the write to (see `Create::task`).
         #[arg(long)]
         task: Option<String>,
@@ -163,9 +163,9 @@ impl DocCommand {
             } => run_set_slot(cwd, &addr, &from_file, task.as_deref()),
             DocCommand::Author {
                 doctype,
-                from,
+                from_file,
                 task,
-            } => run_author(cwd, &doctype, &from, task.as_deref()),
+            } => run_author(cwd, &doctype, &from_file, task.as_deref()),
         };
         match result {
             Ok(()) => ExitCode::SUCCESS,
@@ -845,7 +845,7 @@ fn run_create(
     Ok(())
 }
 
-/// `jigc doc author <doctype> --from <payload>` — author a **whole** instance from one
+/// `jigc doc author <doctype> --from-file <payload>` — author a **whole** instance from one
 /// declarative payload (`design/write-commands.md` → Batch authoring; `design/
 /// auto-migration.md` → Hardening #1). **Path A** (`DECISIONS.md` 2026-06-16, review
 /// B1): the create runs through the shared [`state::create_gated`] (so the create-gate
@@ -861,11 +861,11 @@ fn run_create(
 fn run_author(
     cwd: &Path,
     doctype: &str,
-    from: &str,
+    from_file: &str,
     task_id: Option<&str>,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let payload = read_handoff(from)?;
+    let payload = read_handoff(from_file)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
     // Parse runs before any persist: a structurally-malformed payload — or a `set`
