@@ -106,6 +106,11 @@ pub enum DocCommand {
     /// — required syntax that tags the value as slot prose, not a fill-me
     /// placeholder to delete; an inline field takes a bare value (wrapping one is
     /// rejected).
+    ///
+    /// Reach for `author` to write a whole instance in one shot (a migration, or any
+    /// many-leaf doc) — it collapses what would be a `create` + N follow-up calls.
+    /// Use `create` then `set-slot`/`set-field`/`add-item` for incremental,
+    /// one-leaf-at-a-time authoring instead.
     Author {
         /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
         doctype: String,

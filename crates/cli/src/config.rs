@@ -53,6 +53,9 @@ pub enum ConfigCommand {
     /// `<file>`'s basename and is written to `.jigc/config/steps/<basename>.yaml`.
     /// Write-time adjudicated: a basename colliding with an existing step id, or an
     /// anchor absent from the current resolution, is rejected non-zero with no write.
+    /// (Unlike `replace-step`/`remove-step`, which take a `workflow:<id>#<step-id>`
+    /// address, insert needs an anchor step *and* a side — which the `#` address can't
+    /// express — hence the `--workflow` + `--after`/`--before` form.)
     InsertStep {
         /// The workflow whose include list the step splices into.
         #[arg(long)]
@@ -97,6 +100,9 @@ pub enum ConfigCommand {
     /// `.jigc/config/fills/<fill-id>.md`. Two write-time checks (both before any
     /// write): the `{{fill:<fill-id>}}` point must exist in the resolved step body,
     /// and the content must contain no nested `{{fill:}}`. A rejection exits non-zero.
+    /// (Distinct from `doc set-slot`: `fill` injects into a *workflow step's*
+    /// extension point — cascade-authoring; `set-slot` fills a managed *document's*
+    /// slot — the write path.)
     Fill {
         /// The `step:<id>#<fill-id>` extension point to fill.
         target: String,
