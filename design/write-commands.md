@@ -44,7 +44,7 @@ Splits by leaf kind, falling straight out of the slot/field distinction:
 - **Fields** (short, adjudicable) → **inline** `--value …`. No escaping pain.
 - **Slots** (multi-line prose) → **stdin** `--from-file -` (or a file path). Never inline — prose through a shell arg is unreadable and escape-fragile.
 
-`add-item` follows the same rule: the id-source field is supplied inline so the slug can mint, the call returns the new item's address, and the item's prose slots are filled by follow-up `set-slot <item-addr>#<leaf>`. One slot per call; bulk fill is the **batch path's** job (`jigc doc author --from`, above), not a back-door all-at-once `add-item`.
+`add-item` follows the same rule: the id-source field is supplied inline so the slug can mint, the call returns the new item's address, and the item's prose slots are filled by follow-up `set-slot <item-addr>#<leaf>`. One slot per call; bulk fill is the **batch path's** job (`jigc doc author --from-file`, above), not a back-door all-at-once `add-item`.
 
 ## Task origination
 
