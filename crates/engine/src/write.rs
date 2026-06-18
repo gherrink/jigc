@@ -232,6 +232,10 @@ fn render_item_at(item: &ItemContent, depth: usize) -> String {
     // renders byte-identically to the absent-slot mint and `render(parse(x)) == x`
     // holds. A slot-bearing item with actual prose keeps the existing
     // `### …\n\n<prose>` form (the post-heading blank, byte-identical backward-compat).
+    // The `trim()` is intentional (not `is_empty()`): a whitespace-only slot canonicalizes
+    // to the same empty form — equivalent to `Some("")` on a parsed instance (the parser
+    // trims slot prose) and the preferable normalization for a programmatically-built one,
+    // consistent with the writer's `trim_end` discipline below.
     let slot_empty = item.slot.as_deref().is_none_or(|s| s.trim().is_empty());
     let slotless = slot_empty && item.slots.is_empty();
     if slotless {
@@ -6124,6 +6128,71 @@ sections:
             render(&schema, &instance),
             x,
             "a genuinely-slotless item stays byte-identical",
+        );
+    }
+
+    /// Boundary guard for the M26 fix: an item whose single slot is **present and filled
+    /// with real prose** must NOT be collapsed to the slotless one-blank form — its prose
+    /// keeps the `### …  {#id}\n\n<prose>\n\n<!-- fields -->` shape. This is the assertion
+    /// the `genuinely_slotless` baseline cannot make (that item was slotless before AND
+    /// after the predicate change, so it passes either way). If the canonicalization
+    /// predicate were ever broadened to `let slotless = item.slots.is_empty();` — dropping
+    /// the `slot_empty` guard so a FILLED slot collapses too — the post-heading blank line
+    /// would vanish and the substring assertion below goes red.
+    #[test]
+    fn filled_slot_item_is_not_collapsed_by_the_empty_slot_fix() {
+        let schema = arch_doc_schema();
+        // An arch-doc component carries a `description` slot plus an `implemented-by`
+        // field — the same slot-plus-field-group shape the empty-slot fix canonicalizes,
+        // here with the slot actually FILLED.
+        let seed = "\
+---
+cites:
+---
+
+# Storage layer
+
+## Overview
+
+The storage layer owns the on-disk task working areas.
+
+## Components
+
+### Working area  {#working-area}
+
+Some real responsibility.
+
+<!-- fields -->
+- implemented-by: src/storage.rs#WorkingArea
+";
+        let instance = instance_from_source(&schema, seed).expect("seed arch-doc parses");
+        let component = instance
+            .sections
+            .iter()
+            .find(|s| s.id == "components")
+            .and_then(|s| s.items.iter().find(|i| i.id == "working-area"))
+            .expect("component present");
+        assert_eq!(
+            component.slot.as_deref(),
+            Some("Some real responsibility."),
+            "the description slot is present and filled with real prose",
+        );
+        let x = render(&schema, &instance);
+        // The prose survives between the heading and the field group, framed by the
+        // canonical post-heading and pre-field blank lines (NOT collapsed flush against
+        // the heading). This substring goes red if a broadened predicate collapses the
+        // filled slot.
+        assert!(
+            x.contains(
+                "### Working area  {#working-area}\n\nSome real responsibility.\n\n<!-- fields -->"
+            ),
+            "the filled slot keeps its blank-line-framed prose, not the slotless form:\n{x}",
+        );
+        let reparsed = instance_from_source(&schema, &x).expect("filled arch-doc parses");
+        assert_eq!(
+            render(&schema, &reparsed),
+            x,
+            "render(parse(x)) must equal the filled bytes — a filled slot is not collapsed",
         );
     }
 }
