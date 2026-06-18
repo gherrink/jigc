@@ -193,15 +193,15 @@ pub enum Command {
     /// doc through the existing write verbs. A foreign file at repo root classifies
     /// `Unmanaged`, which neither `ingest` nor `start` can reach; this explicit verb
     /// addresses it directly (`design/auto-migration.md` → The `jigc migrate` verb).
-    /// Changelog is the only doctype migrated this milestone; the verb is
-    /// doctype-parameterized for the M24 generalization.
+    /// `changelog`, `adr`, `spec`, `prd`, and `arch-doc` all migrate; the verb is
+    /// doctype-parameterized so a new target is a pack workflow, not a code change.
     Migrate {
         /// The repo-relative path of the foreign document to migrate (e.g.
         /// `CHANGELOG.md`).
         path: String,
 
-        /// The target managed doctype the foreign document is rewritten into. Only
-        /// `changelog` is migrated this milestone.
+        /// The target managed doctype the foreign document is rewritten into — one of
+        /// `changelog`, `adr`, `spec`, `prd`, `arch-doc`.
         #[arg(long = "as")]
         r#as: String,
     },

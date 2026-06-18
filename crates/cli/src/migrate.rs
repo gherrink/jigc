@@ -57,8 +57,9 @@ pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> ExitCode {
 }
 
 /// The off-router `migrate-<doctype>` workflow id — the migration workflow the
-/// minted task composes. Only `changelog` is migrated this milestone, but the verb
-/// is doctype-parameterized so the workflow id is derived, not hard-wired.
+/// minted task composes. `changelog`, `adr`, `spec`, `prd`, and `arch-doc` all
+/// migrate; the verb is doctype-parameterized so the workflow id is derived, not
+/// hard-wired.
 fn migration_workflow(doctype: &str) -> String {
     format!("migrate-{doctype}")
 }
