@@ -169,10 +169,10 @@ Two arms, settled at M26 planning ([DECISIONS.md](../DECISIONS.md) → fork C1):
 ### Honest bounds (M26)
 
 - **Write-time code-anchor shape check NOT built (C3).** A malformed `implemented-by` (`garbage`, no `#`) authors clean and dangles at finalize-`doc-code` rather than rejecting at write — the M13-deferred item-leaf adjudication-parity gap stays finalize-only (the M25 ref-shape check was *not* mirrored to code-anchor). Low risk: corpus is controlled, guidance says omit-unless-concrete-symbol. A non-`.rs` anchor silently passes the symbol check (Rust-only probe, above).
-- **slug-as-H1 carries** (the migrated title renders as its kebab slug in the H1 — now keyed, [decisions-pending.md](../implementation/decisions-pending.md) → slug-as-H1).
+- ~~**slug-as-H1 carries**~~ — **FIXED 2026-06-18** (`f06ec5e`, the post-M26 shakedown pass): a migrated/created doc now renders the original title in the H1 while the id stays the slug ([decisions-pending.md](../implementation/decisions-pending.md) → slug-as-H1, RESOLVED).
 - **`adr.cites-code` migration stays out** (recorded unowned, [decisions-pending.md](../implementation/decisions-pending.md)); the real-arm corpus is **synthetic-labeled-honest** the same way prd's was.
 - **In-location squatter bound carries** (inherited): a non-conformant foreign arch-doc already sitting at the canonical `architecture/<slug>.md` fails cleanly via the finalize-promote clobber guard but cannot be authored-over end-to-end (the M24 blank-seed fix is singleton-gated) — the off-canonical-foreign-path bound, identical to adr/spec/prd.
-- **Pre-existing greenfield-cites defect found (not M26's to fix).** The shipped *greenfield* step `author-arch-doc.yaml` instructs one `set-field …#cites` per ADR, but `set_field_validated` **replaces** the value span, so repeated calls keep only the *last* adr (masked — flow-16 cites one). M26's *migration* guidance is correct (one bracketed list); the two now state opposite patterns for the same field. Recorded so the completion audit isn't charged — a separate trivial-lane fix for the greenfield step (switch multi-cite to a bracketed `set-field`).
+- ~~**Pre-existing greenfield-cites defect**~~ — **FIXED 2026-06-18** (`5c209b8`, the post-M26 shakedown pass): the greenfield `author-arch-doc.yaml` step now instructs one bracketed `set-field …#cites --value '[adr:a, adr:b]'` (was: one `set-field` per ADR, which kept only the last since `set_field_validated` replaces). Greenfield and migration guidance now agree.
 
 ## Migration-quality measure (the done-bar)
 
