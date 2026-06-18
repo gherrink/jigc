@@ -26,6 +26,11 @@ sections:
                   notes: "<<- one bullet per change in this category>>"
 EOF
 
+The `<<…>>` around a slot value (`notes`) is REQUIRED literal wrapping — the `<<`/`>>`
+markers tell the CLI this is slot prose, they are NOT a fill-me placeholder to delete.
+Keep them; replace only the text BETWEEN them. (Inline fields — `date`, `link`, the
+item `title` — take a bare value with no markers; wrapping one is rejected.)
+
 Re-author every RELEASE from the foreign file, oldest to newest, as an item under
 `releases`. The item `title` is the version string (its id is minted from it — e.g.
 `1.2.0` mints `120`).

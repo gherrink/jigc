@@ -27,6 +27,11 @@ sections:
       context: "<<why it is needed and the constraints that shape it>>"
 EOF
 
+The `<<…>>` around each prose slot (`vision`, `context`, each requirement `statement`) is
+REQUIRED literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are
+NOT a fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (The
+inline `title`s take a bare value with no markers; wrapping one is rejected.)
+
 Map the foreign PRD's headings onto this fixed shape:
 
   - the foreign Vision / Overview / Summary / Goal heading maps to the `vision` slot;

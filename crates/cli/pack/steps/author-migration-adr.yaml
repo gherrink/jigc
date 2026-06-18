@@ -25,6 +25,12 @@ sections:
       consequences: "<<the tradeoffs and follow-on effects>>"
 EOF
 
+The `<<…>>` around each prose slot (`context`, `decision`, `consequences`) is REQUIRED
+literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
+fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
+fields — `status`, `date`, `supersedes`, the `title` — take a bare value with no markers;
+wrapping one is rejected.)
+
 Map the foreign ADR's headings onto this fixed four-part schema:
 
   - the foreign Status / state line maps to the `status` field (see the enum map below);

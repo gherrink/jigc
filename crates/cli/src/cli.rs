@@ -148,7 +148,9 @@ pub enum Command {
     /// The adapter install. Generates the Claude Code adapter from the embedded
     /// profile: writes the managed `.jigc/AGENT.md` bootstrap and a bare
     /// `@.jigc/AGENT.md` reference into `CLAUDE.md`, initializes the project layer
-    /// (`.jigc/config/`), and allowlists `jigc *` in `.claude/settings.json`
+    /// (`.jigc/config/`), allowlists `jigc *` and installs a `SessionStart` hook
+    /// (running `jigc start`) in `.claude/settings.json`, and installs a warn-only git
+    /// `pre-commit` hook (the doc↔code drift backstop)
     /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
     /// Idempotent; the install the unset-project orientation routes the agent to.
     Setup,
@@ -581,7 +583,7 @@ fn run_validate_store(format: Format) -> ExitCode {
     };
     match validate_store_in_repo(&cwd) {
         Ok(report) => {
-            println!("{}", render::validation(format, &report));
+            println!("{}", render::validation_store(format, &report));
             // The two-class exit: a `pack-probe-integrity.*` meta-finding means the probe
             // could not be trusted (it crashed / timed out / emitted malformed output), so
             // the sweep cannot claim a result — exit non-zero. Otherwise (content-only or

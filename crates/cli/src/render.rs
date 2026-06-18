@@ -269,12 +269,32 @@ fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
 /// `finalize`: validate previews what finalize blocks on). The exit code — which
 /// tracks `report.has_blocking()` — is the dispatcher's concern, not the renderer's.
 pub fn validation(format: Format, report: &ValidationReport) -> String {
+    validation_scoped(format, report, "no findings — the task validates clean")
+}
+
+/// Render a [`ValidationReport`] for the **store-scope** sweep (`jigc validate`):
+/// identical to [`validation`] except the clean line is store-scoped — the sweep is
+/// task-less (it validates the committed store, not a task), so it must not reuse the
+/// task-scoped "the task validates clean" wording (M26 shakedown #10b).
+pub fn validation_store(format: Format, report: &ValidationReport) -> String {
+    validation_scoped(
+        format,
+        report,
+        "no findings — the committed store validates clean",
+    )
+}
+
+/// Shared body for the validation views: emit one line per finding (or `clean_line`
+/// when the report is empty) followed by the routing footer; JSON is the generic
+/// projection with no footer. The only scope-dependent surface is the clean line.
+fn validation_scoped(format: Format, report: &ValidationReport, clean_line: &str) -> String {
     match format {
         Format::Json => json(report),
         Format::Agent | Format::Human => {
             let mut out = String::new();
             if report.findings.is_empty() {
-                out.push_str("no findings — the task validates clean\n");
+                out.push_str(clean_line);
+                out.push('\n');
             } else {
                 for finding in &report.findings {
                     out.push_str(&finding_line(finding));
@@ -391,7 +411,7 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
         }
         Format::Agent | Format::Human => {
             let mut out = String::from(
-                "jigc setup — adapter installed\n\njigc is now wired into this project; two host files were updated:\n",
+                "jigc setup — adapter installed\n\njigc is now wired into this project; setup installed:\n",
             );
             out.push_str("  - bootstrap reference → ");
             out.push_str(&summary.line_file);
@@ -399,6 +419,10 @@ pub fn setup_success(format: Format, summary: &SetupSummary) -> String {
             out.push_str("  - jigc allowlist → ");
             out.push_str(&summary.allowlist_file);
             out.push_str("   (pre-approves the `jigc` commands the agent runs)\n");
+            out.push_str("  - SessionStart hook → ");
+            out.push_str(&summary.allowlist_file);
+            out.push_str("   (runs `jigc start` to orient your assistant each session)\n");
+            out.push_str("  - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)\n");
             // When setup committed its own install (M26), name that commit so the user
             // knows the scaffolding landed on its own, not in their first feature commit.
             if let InstallCommit::Committed(sha) = &summary.install_commit {
@@ -1711,9 +1735,11 @@ mod tests {
         insta::assert_snapshot!(agent, @r"
         jigc setup — adapter installed
 
-        jigc is now wired into this project; two host files were updated:
+        jigc is now wired into this project; setup installed:
           - bootstrap reference → CLAUDE.md   (orients your assistant to `jigc start` each session)
           - jigc allowlist → .claude/settings.json   (pre-approves the `jigc` commands the agent runs)
+          - SessionStart hook → .claude/settings.json   (runs `jigc start` to orient your assistant each session)
+          - pre-commit hook → .git/hooks/pre-commit   (warn-only doc↔code drift backstop)
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
         assert!(agent.ends_with(ROUTING_FOOTER));
@@ -1988,5 +2014,22 @@ mod tests {
         assert!(!json_out.contains(ROUTING_FOOTER));
         let back: ValidationReport = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(back, report);
+    }
+
+    /// The **store-scope** sweep view is task-less: its clean line is store-scoped, not
+    /// the task-scoped "the task validates clean" wording (M26 shakedown #10b). Findings
+    /// render identically to the task view — only the clean line differs.
+    #[test]
+    fn render_validation_store_clean_line_is_store_scoped() {
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+
+        let clean = validation_store(Format::Agent, &ValidationReport::new(Vec::new(), &resolved));
+        insta::assert_snapshot!(clean, @r"
+        no findings — the committed store validates clean
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+
+        // The store view must NOT reuse the task-scoped wording.
+        assert!(!clean.contains("the task validates clean"));
     }
 }

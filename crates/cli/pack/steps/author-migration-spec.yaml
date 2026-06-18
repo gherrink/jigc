@@ -27,6 +27,12 @@ sections:
           statement: "<<the next criterion, testably phrased>>"
 EOF
 
+The `<<…>>` around each prose slot (`goal`, `context`, each criterion `statement`) is
+REQUIRED literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are
+NOT a fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
+fields — `maps-to-test`, the `title`s — take a bare value with no markers; wrapping one is
+rejected.)
+
 Map the foreign spec's headings onto this fixed shape:
 
   - the foreign Goal / Overview / Summary / Objective heading maps to the `goal` slot;

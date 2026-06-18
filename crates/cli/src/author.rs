@@ -138,7 +138,10 @@ enum DeclaredKind {
 fn check_kind(declared: DeclaredKind, raw: &str, addr: &str) -> Result<()> {
     match (declared, is_slot_wrapped(raw)) {
         (DeclaredKind::Slot, false) => {
-            bail!("doc author payload: value for slot `{addr}` must be wrapped in <<…>>")
+            bail!(
+                "doc author payload: value for slot `{addr}` must be wrapped in <<…>> \
+                 (the literal `<<`/`>>` markers are required syntax, not a placeholder to delete) — got: {raw}"
+            )
         }
         (DeclaredKind::Field, true) => {
             bail!("doc author payload: value for field `{addr}` must not be wrapped in <<…>>")
@@ -516,6 +519,13 @@ sections:
         assert!(
             msg.contains("slot") && msg.contains("notes") && msg.contains("<<"),
             "the slot reject names the leaf-kind, the address, and the expected form: {msg}",
+        );
+        // The message must teach that the markers are required syntax (not a
+        // placeholder to delete) and echo the offending value (#7).
+        assert!(
+            msg.contains("required syntax, not a placeholder to delete")
+                && msg.contains("- A bare slot value."),
+            "the slot reject must say the markers are required syntax and echo the value: {msg}",
         );
 
         let wrapped_field = "\

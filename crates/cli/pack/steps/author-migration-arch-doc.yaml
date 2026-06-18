@@ -31,6 +31,12 @@ sections:
           description: "<<this component's responsibility, in prose>>"
 EOF
 
+The `<<…>>` around each prose slot (`overview`, each component `description`) is REQUIRED
+literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
+fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (Inline
+fields — `cites`, `implemented-by`, the `title`s — take a bare value with no markers;
+wrapping one is rejected.)
+
 Map the foreign architecture document's headings onto this fixed three-section schema —
 the section ids stay the fixed single words `meta` / `overview` / `components` (a
 multi-word section id is rejected; component *titles* on `###` headings are free text):

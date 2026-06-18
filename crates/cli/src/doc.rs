@@ -105,7 +105,10 @@ pub enum DocCommand {
     /// → Hardening #1). Applies the equivalent `create` + N `add-item` / `set-slot` /
     /// `set-field` over a **single in-memory buffer**, persisting **once**. The agent
     /// authors the payload (the prose + which-content-goes-where); the CLI places every
-    /// leaf (the boundary intact).
+    /// leaf (the boundary intact). In the payload, a **slot** value MUST be wrapped in
+    /// literal `<<…>>` markers (`summary: "<<the prose>>"`) — the markers are required
+    /// syntax that tags the value as slot prose, NOT a fill-me placeholder to delete;
+    /// an inline **field** takes a bare value (wrapping one is rejected).
     Author {
         /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
         doctype: String,
@@ -1224,7 +1227,11 @@ fn barrier_block(task_id: &str, address: &Address) -> Finding {
 /// `design/write-commands.md` → Instance provisioning).
 fn read_staged(path: &Path, addr: &str) -> Result<String> {
     std::fs::read_to_string(path).with_context(|| {
-        format!("no staged instance for `{addr}` — provision it first (`jigc start` / `jigc doc create`)")
+        format!(
+            "no staged instance for `{addr}` — provision it first (`jigc start` / `jigc doc create`). \
+             Note: `jigc doc create <type> --title \"X\"` derives the id from the title (`X` → slug), \
+             not the task id — address writes at that title-derived id"
+        )
     })
 }
 
