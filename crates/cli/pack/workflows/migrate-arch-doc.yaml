@@ -1,0 +1,10 @@
+---
+when: migrate a foreign architecture document into a managed arch-doc
+description: Migrate a foreign architecture document into a managed `arch-doc` at `architecture/` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant architecture document (an arc42, a C4 model, or a README "Architecture" section under `docs/` or similar) and `jigc migrate <path> --as arch-doc` is rewriting it into a managed `arch-doc`. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: arch-doc, as: arch-doc}]
+---
+{{ include: step:author-migration-arch-doc }}
+{{ include: step:finalize }}
