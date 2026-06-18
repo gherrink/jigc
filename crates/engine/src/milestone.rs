@@ -1801,8 +1801,14 @@ Context without any acceptance criteria.
         // Stage one `created` doc into the `alpha-area` sub-task and one
         // `edited-from-base` doc into the `zebra-area` sub-task — disjoint slugs.
         let alpha_dir = root.path().join("tasks").join("alpha-area");
-        crate::state::provision_doc(&alpha_dir, &schemas["commit"], "alpha-area", &[])
-            .expect("provision created doc");
+        crate::state::provision_doc(
+            &alpha_dir,
+            &schemas["commit"],
+            "alpha-area",
+            "alpha-area",
+            &[],
+        )
+        .expect("provision created doc");
         let zebra_dir = root.path().join("tasks").join("zebra-area");
         let adr_source = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Zebra decision\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n";
         crate::state::copy_in(&zebra_dir, "adr", "zebra-decision", adr_source)

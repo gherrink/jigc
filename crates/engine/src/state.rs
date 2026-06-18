@@ -82,15 +82,17 @@ pub fn instance_path(task_dir: &Path, type_name: &str, slug: &str) -> PathBuf {
 }
 
 /// Build the **empty** in-memory instance for `schema` — the canonical template the
-/// workflow provisions: the H1 title is the task-derived `slug`, and every schema
-/// section is left content-free (no field values, no slot prose, no items). Rendered
-/// through [`crate::write::render`], this yields the full skeleton — front-matter (no
-/// values), the `# <slug>` H1, and every `## Heading` with an empty slot — the bytes
+/// workflow provisions: the H1 title is the caller-supplied `title` (the human
+/// id-source text, **not** the kebab slug — `design/write-commands.md` → the H1
+/// renders the title, the id is `slugify(title)`), and every schema section is left
+/// content-free (no field values, no slot prose, no items). Rendered through
+/// [`crate::write::render`], this yields the full skeleton — front-matter (no
+/// values), the `# <title>` H1, and every `## Heading` with an empty slot — the bytes
 /// the agent then fills slot-by-slot (`design/write-commands.md` → Instance
 /// provisioning: "the agent only fills slots").
-fn empty_instance(schema: &Schema, slug: &str) -> Instance {
+fn empty_instance(schema: &Schema, title: &str) -> Instance {
     Instance {
-        title: slug.to_string(),
+        title: title.to_string(),
         sections: schema
             .sections
             .iter()
@@ -121,10 +123,10 @@ fn empty_instance(schema: &Schema, slug: &str) -> Instance {
 /// body section — inert for the shipped header-only doctypes, but a latent gap.)
 fn seeded_instance(
     schema: &Schema,
-    slug: &str,
+    title: &str,
     on_create: &[crate::field_block::Field],
 ) -> Instance {
-    let mut instance = empty_instance(schema, slug);
+    let mut instance = empty_instance(schema, title);
     if on_create.is_empty() {
         return instance;
     }
@@ -269,6 +271,12 @@ pub fn record_doc_provenance(
 /// Pure working-area filesystem effect — no verbs, no git. The `type` name is read
 /// from the schema; the `slug` is the task-derived id (`commit:<task-id>`).
 ///
+/// The `slug` drives the **filename/address** (`<location>/<slug>.md`); the `title`
+/// drives the **`# H1` display text** — the two are deliberately separate so a
+/// title-slugged doctype's H1 reads as the human title (`# Use MySQL`) while the id
+/// stays the kebab slug (`use-mysql`), `slugify(title) == slug` keeping the address
+/// unambiguous (`design/write-commands.md` → the H1 renders the title).
+///
 /// `on_create` is the additive clock-free **seed seam**: the caller-computed
 /// doc-level `set: on-create` / `default:` header field values, written into the
 /// header section before render ([`seeded_instance`]). An **empty** slice is
@@ -278,10 +286,11 @@ pub fn provision_doc(
     task_dir: &Path,
     schema: &Schema,
     slug: &str,
+    title: &str,
     on_create: &[crate::field_block::Field],
 ) -> std::io::Result<PathBuf> {
     let path = instance_path(task_dir, &schema.ty, slug);
-    let bytes = write::render(schema, &seeded_instance(schema, slug, on_create));
+    let bytes = write::render(schema, &seeded_instance(schema, title, on_create));
     write_atomic(&path, bytes.as_bytes())?;
     // A minted-here instance: record `created` beside the body for the join's clash rule.
     record_provenance(
@@ -684,6 +693,19 @@ pub fn create(
     } else {
         mint_id(id_source, type_name)
     };
+    // The `# H1` display text — the **human** id-source verbatim (`Use MySQL`, not the
+    // `use-mysql` slug), so the committed artifact reads as a title, not a filename
+    // (M26 shakedown fix; `design/write-commands.md` → the H1 renders the title, the id
+    // is `slugify(title)`). The stable id stays the `slug` above — `slugify(title)`
+    // re-derives it, so address/filename are untouched. Two cases keep the H1 == slug:
+    // a `singleton` (whose H1 is its fixed type id, never a free title) and an id-source
+    // that slugs empty (the type-name fallback fired — there is no human title to show,
+    // so the slug stands in, preserving the prior bytes).
+    let title = if schema.singleton || crate::slug::slugify(id_source).is_empty() {
+        slug.clone()
+    } else {
+        id_source.to_string()
+    };
     let address = format!("{type_name}:{slug}");
     let path = instance_path(task_dir, type_name, &slug);
 
@@ -723,7 +745,7 @@ pub fn create(
     // 5. Provision the (optionally on-create-seeded) instance and return its
     //    address + path. The seam is additive: an empty `on_create` slice provisions
     //    the unchanged empty template.
-    let path = provision_doc(task_dir, schema, &slug, on_create)
+    let path = provision_doc(task_dir, schema, &slug, &title, on_create)
         .map_err(|err| io_finding(&address, "provision the instance", &err))?;
     Ok(CreatedDoc { address, path })
 }
@@ -1056,8 +1078,14 @@ mod tests {
         let task_dir = root.path().join("tasks").join("add-rate-limiter");
 
         // Provision: the empty commit template lands at docs/commit:<id>.md.
-        let path =
-            provision_doc(&task_dir, &schema, "add-rate-limiter", &[]).expect("provision succeeds");
+        let path = provision_doc(
+            &task_dir,
+            &schema,
+            "add-rate-limiter",
+            "add-rate-limiter",
+            &[],
+        )
+        .expect("provision succeeds");
         assert_eq!(
             path,
             task_dir.join("docs").join("commit:add-rate-limiter.md"),
@@ -1239,8 +1267,14 @@ sections:
         let task_dir = root.path().join("tasks").join("add-rate-limiter");
 
         // `provision_doc` stages a minted-here `created` instance.
-        let created_path =
-            provision_doc(&task_dir, &schema, "add-rate-limiter", &[]).expect("provision succeeds");
+        let created_path = provision_doc(
+            &task_dir,
+            &schema,
+            "add-rate-limiter",
+            "add-rate-limiter",
+            &[],
+        )
+        .expect("provision succeeds");
         // `copy_in` stages a base-existing `edited-from-base` instance.
         let source = "---\nstatus: accepted\n---\n\n# Rate-limit\n\n## Context\n\nForces.\n";
         let edited_path =
@@ -1323,9 +1357,11 @@ sections:
         assert!(created.path.is_file(), "the instance file appears on disk");
         // The provisioned bytes are the empty commit template (provision_doc's contract).
         let on_disk = std::fs::read_to_string(&created.path).expect("read created");
+        // The H1 is the human id-source ("Add rate limiter"), not the kebab slug —
+        // the id/address/filename stay `add-rate-limiter`.
         let expected = write::render(
             &schemas["commit"],
-            &empty_instance(&schemas["commit"], "add-rate-limiter"),
+            &empty_instance(&schemas["commit"], "Add rate limiter"),
         );
         assert_eq!(on_disk, expected, "created instance is the empty template");
 
@@ -1596,7 +1632,7 @@ sections:
         let minted = std::fs::read_to_string(&first.path).expect("read minted");
         assert_eq!(
             minted,
-            write::render(&adr, &empty_instance(&adr, "rate-limit")),
+            write::render(&adr, &empty_instance(&adr, "Rate limit")),
             "a non-singleton create mints the empty template, never copies the committed body in",
         );
         assert_eq!(
@@ -1620,6 +1656,70 @@ sections:
         assert!(
             collide.route.is_some(),
             "the serial collision carries a route"
+        );
+    }
+
+    /// (M26 shakedown fix) An `id-from: title` create renders the **human title**
+    /// in the `# H1`, while the id/address/filename stay the **slug** — the
+    /// stable-id invariant is untouched, only the H1 display text gains its proper
+    /// casing/spacing. The parser reads the H1 back as the title and
+    /// `slugify(title) == the id` (the filename stem), so the round-trip holds and
+    /// the address is unambiguous. Verified on a multi-word title with punctuation.
+    #[test]
+    fn create_renders_human_title_in_h1_id_stays_slug() {
+        let root = TempRoot::new("h1-human-title");
+        let task_dir = root.path().join("tasks").join("t");
+        let adr_yaml = b"\
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: decision
+    slot: {}
+";
+        let adr = crate::schema::load_schema(adr_yaml).expect("adr fixture loads");
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("adr".to_string(), adr.clone());
+
+        let created = create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Use MySQL: the choice",
+            root.path(),
+            &[],
+        )
+        .expect("create succeeds");
+
+        // id / address / filename are UNCHANGED — they stay the slug.
+        assert_eq!(created.address, "adr:use-mysql-the-choice");
+        assert_eq!(
+            created.path,
+            task_dir.join("docs").join("adr:use-mysql-the-choice.md"),
+        );
+
+        // The H1 renders the human title verbatim, NOT the slug.
+        let body = std::fs::read_to_string(&created.path).expect("read minted");
+        assert!(
+            body.lines().any(|l| l == "# Use MySQL: the choice"),
+            "H1 is the human title, got:\n{body}",
+        );
+        assert!(
+            !body.contains("# use-mysql"),
+            "H1 must not be the kebab slug:\n{body}",
+        );
+
+        // The parser reads the H1 back as the title, and `slugify(title)` is the id
+        // (the filename stem) — so the address is unambiguous and stable.
+        let parsed = write::instance_from_source(&adr, &body).expect("minted parses");
+        assert_eq!(parsed.title, "Use MySQL: the choice");
+        assert_eq!(crate::slug::slugify(&parsed.title), "use-mysql-the-choice");
+
+        // Round-trips byte-stable on the new H1 form.
+        assert_eq!(
+            write::render(&adr, &parsed),
+            body,
+            "the human-title H1 round-trips byte-stable",
         );
     }
 
@@ -1699,7 +1799,8 @@ sections:
         let task_dir = root.path().join("tasks").join("neutral");
         let adr = adr_header_schema();
 
-        let path = provision_doc(&task_dir, &adr, "rate-limit", &[]).expect("provision succeeds");
+        let path = provision_doc(&task_dir, &adr, "rate-limit", "rate-limit", &[])
+            .expect("provision succeeds");
         let staged = std::fs::read_to_string(&path).expect("read staged");
         assert_eq!(
             staged,
