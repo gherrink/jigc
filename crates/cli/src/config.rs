@@ -33,10 +33,8 @@ use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// The `jigc config <verb>` subcommand tree — `set` (a `scalar-set`), the three
-/// `structural-op` verbs `insert-step` / `replace-step` / `remove-step`, the
-/// `slot-fill` verb `fill`, and the `tracked-fork` verb `fork`
-/// (`design/overrides.md` → Authoring deltas).
+/// The `jigc config <verb>` subcommand tree — `set`, the structural-op verbs
+/// `insert-step` / `replace-step` / `remove-step`, the `fill` verb, and `fork`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum ConfigCommand {
     /// Record a `scalar-set` delta — set a closed-surface knob in the project
@@ -50,14 +48,11 @@ pub enum ConfigCommand {
         value: String,
     },
 
-    /// Record an `insert-step` `structural-op` — splice a native step into a
-    /// workflow's include list, anchored `--after` or `--before` an existing step
-    /// (`design/overrides.md` → Authoring deltas). The native step takes its id from
-    /// the source `<file>`'s basename and is written to
-    /// `.jigc/config/steps/<basename>.yaml`; the delta references `step:<basename>`.
+    /// Splice a native step into a workflow's include list, anchored `--after` or
+    /// `--before` an existing step. The native step takes its id from the source
+    /// `<file>`'s basename and is written to `.jigc/config/steps/<basename>.yaml`.
     /// Write-time adjudicated: a basename colliding with an existing step id, or an
-    /// anchor absent from the resolution as of this edit, is rejected non-zero with a
-    /// routed finding and **no** write.
+    /// anchor absent from the current resolution, is rejected non-zero with no write.
     InsertStep {
         /// The workflow whose include list the step splices into.
         #[arg(long)]
@@ -74,14 +69,12 @@ pub enum ConfigCommand {
         file: PathBuf,
     },
 
-    /// Record a `replace-step` `structural-op` — swap which step id appears at a
-    /// position in a workflow's include list, addressed `workflow:<id>#<step-id>`
-    /// (`design/overrides.md` → Authoring deltas; `design/worked-examples.md` → 3a).
-    /// The replacement is the native step the `<file>` registers (id = file
-    /// basename, written to `.jigc/config/steps/<basename>.yaml`); the delta
-    /// references `step:<basename>`. Write-time adjudicated: a basename colliding
-    /// with an existing step id, or a target step-id absent from the resolution as
-    /// of this edit, is rejected non-zero with a routed finding and **no** write.
+    /// Swap which step appears at a position in a workflow's include list, addressed
+    /// `workflow:<id>#<step-id>`. The replacement is the native step the `<file>`
+    /// registers (id = file basename, written to `.jigc/config/steps/<basename>.yaml`).
+    /// Write-time adjudicated: a basename colliding with an existing step id, or a
+    /// target step-id absent from the current resolution, is rejected non-zero with
+    /// no write.
     ReplaceStep {
         /// The `workflow:<id>#<step-id>` entry to replace.
         target: String,
@@ -89,26 +82,21 @@ pub enum ConfigCommand {
         file: PathBuf,
     },
 
-    /// Record a `remove-step` `structural-op` — drop the step id at a position in a
-    /// workflow's include list, addressed `workflow:<id>#<step-id>`
-    /// (`design/overrides.md` → Authoring deltas). No native file (nothing to add).
-    /// Write-time adjudicated: a target step-id absent from the resolution as of
-    /// this edit is rejected non-zero with a routed finding and **no** write.
+    /// Drop the step at a position in a workflow's include list, addressed
+    /// `workflow:<id>#<step-id>`. No native file (nothing to add). Write-time
+    /// adjudicated: a target step-id absent from the current resolution is rejected
+    /// non-zero with no write.
     RemoveStep {
         /// The `workflow:<id>#<step-id>` entry to remove.
         target: String,
     },
 
-    /// Record a `slot-fill` delta — inject content into a `{{fill:<fill-id>}}`
-    /// extension point a step body anticipates, addressed `step:<id>#<fill-id>`
-    /// (`design/overrides.md` → Authoring deltas, the `config fill` row;
-    /// `design/worked-examples.md` → 3c). The content arrives via stdin / `--from-file`
-    /// (prose, never inline) and is written to `.jigc/config/fills/<fill-id>.md` (id =
-    /// fill-id); the delta references `step:<id>#<fill-id>` + `content: fills/<fill-id>.md`.
-    /// Two write-time checks (both *before any write*, so a rejection touches nothing):
-    /// the `{{fill:<fill-id>}}` point must exist in the **resolved** step body, and the
-    /// content must contain no `{{fill:}}` (the no-nested rule — phase 5 does not re-run).
-    /// A rejection exits non-zero with a routed finding.
+    /// Inject content into a `{{fill:<fill-id>}}` extension point a step body
+    /// anticipates, addressed `step:<id>#<fill-id>`. The content arrives via stdin /
+    /// `--from-file` (prose, never inline) and is written to
+    /// `.jigc/config/fills/<fill-id>.md`. Two write-time checks (both before any
+    /// write): the `{{fill:<fill-id>}}` point must exist in the resolved step body,
+    /// and the content must contain no nested `{{fill:}}`. A rejection exits non-zero.
     Fill {
         /// The `step:<id>#<fill-id>` extension point to fill.
         target: String,
@@ -117,17 +105,13 @@ pub enum ConfigCommand {
         from_file: String,
     },
 
-    /// Record a `tracked-fork` delta — copy the resolved unit's body into a native
-    /// file that shadows it, recording the pinned ancestor (`base-version` + the
-    /// **blake3** `base-hash` of the copied bytes), addressed `workflow:<id>#<step-id>`
-    /// (`design/overrides.md` → Authoring deltas, the `config fork` row; `tracked-fork`
-    /// hash basis). The forked unit is the **step** the `#<step-id>` names; its resolved
-    /// body bytes are copied verbatim to `.jigc/config/steps/<step-id>.yaml` (id =
-    /// step-id), so at compose time the fork is just a phase-2 file shadow (no new
-    /// resolution). Write-time adjudicated *before any write* (a rejection touches
-    /// nothing): the target step-id must resolve as of this edit, and a unit already
-    /// forked (its native file present) is a collision — each is rejected non-zero with
-    /// a routed finding. M4 records the basis; only the (M5) reconciliation reads it.
+    /// Copy a resolved step's body into a native file that shadows it, recording the
+    /// pinned ancestor (`base-version` + the blake3 `base-hash` of the copied bytes),
+    /// addressed `workflow:<id>#<step-id>`. The body bytes are copied verbatim to
+    /// `.jigc/config/steps/<step-id>.yaml`, so at compose time the fork is just a file
+    /// shadow. Write-time adjudicated: the target step-id must resolve, and a unit
+    /// already forked is a collision — each is rejected non-zero. The recorded basis is
+    /// what a later upgrade reconciliation reads.
     Fork {
         /// The `workflow:<id>#<step-id>` unit to fork.
         target: String,

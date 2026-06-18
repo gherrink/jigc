@@ -29,9 +29,8 @@ use std::process::ExitCode;
 #[derive(Debug, Parser, PartialEq, Eq)]
 #[command(name = "jigc", version, about)]
 pub struct Cli {
-    /// Output format. Defaults to `agent` — the primary consumer is an agent
-    /// reading piped, non-TTY stdout (`implementation/module-layout.md` →
-    /// Renderers).
+    /// Output format: `agent` (default, terse text for a coding agent) · `json`
+    /// (machine-readable) · `human` (formatted for a terminal).
     #[arg(long, value_enum, default_value_t = Format::Agent, global = true)]
     pub format: Format,
 
@@ -48,24 +47,20 @@ pub enum Format {
     Human,
 }
 
-/// The `jigc` command tree. Only `start` exists in increment 1 (the front door,
-/// `design/write-commands.md` → Task origination); `doc` / `task` land later.
+/// The `jigc` command tree.
 #[derive(Debug, Subcommand, PartialEq, Eq)]
 pub enum Command {
-    /// The front door. Bare `jigc start` orients (read-only); an `<intent>`
-    /// composes the cascade's default workflow; `--task <id>` resumes an
-    /// existing task and re-composes it (`design/write-commands.md` → Task-id
-    /// collision & resume; `DECISIONS.md` 2026-05-31 → Four `jigc start` forms).
+    /// Start or resume work. Bare `jigc start` orients (read-only); an `<intent>`
+    /// mints a task and composes the default workflow; `--task <id>` resumes an
+    /// existing task and re-composes it.
     Start {
         /// Optional task intent. Absent → orient (read-only); present →
         /// compose the default workflow with `{{task.intent}}` = `<intent>`.
         intent: Option<String>,
 
-        /// Compose a named workflow explicitly, bypassing the cascade default
-        /// (`design/write-commands.md` → Task origination, `jigc start
-        /// --workflow <X>`). Mints iff the workflow declares `creates-task:
-        /// true`. Combines with the `<intent>` positional; mutually exclusive
-        /// with `--task`.
+        /// Compose a named workflow explicitly, bypassing the cascade default.
+        /// Mints a task iff the workflow declares `creates-task: true`. Combines
+        /// with the `<intent>` positional; mutually exclusive with `--task`.
         #[arg(long, conflicts_with = "task")]
         workflow: Option<String>,
 
@@ -77,126 +72,85 @@ pub enum Command {
         #[arg(long, conflicts_with = "intent")]
         task: Option<String>,
 
-        /// Show the **resolution tree** instead of composing — the cascade
-        /// provenance (`overrides applied: N`), the resolved include list with
-        /// each step's winning layer, and the `← replaces … at position`
-        /// annotation — WITHOUT minting (the tree is task-independent; `design/
-        /// workflow-dialect.md` → `--explain` output contract; `design/worked-
-        /// examples.md` → 3a). Combines with the `<intent>` positional and
-        /// `--workflow <X>`; mutually exclusive with `--task` (resume re-composes
-        /// a minted task, not a task-independent tree).
+        /// Show the resolution tree instead of composing — the cascade
+        /// provenance, the resolved include list with each step's winning layer,
+        /// and the `replaces … at position` annotations — without minting a task.
+        /// Combines with the `<intent>` positional and `--workflow <X>`; mutually
+        /// exclusive with `--task`.
         #[arg(long, conflicts_with = "task")]
         explain: bool,
     },
 
-    /// Sub-agent re-entry — `jigc workflow <W> --task <id>` composes the
-    /// **explicitly-named** sub-workflow `<W>` for a milestone sub-task, asserting
-    /// `<W>` equals the sub-task's recorded mint workflow (a mismatch is rejected,
-    /// failing loudly on a stale launch template). Distinct from `jigc start --task`
-    /// (top-level resume, which recomposes the task's *own* recorded workflow with
-    /// no `<W>` arg) (`design/write-commands.md` → Sub-agent re-entry).
+    /// Re-enter a milestone sub-task as a fanned sub-agent — compose the named
+    /// sub-workflow `<W>` for sub-task `<id>`. `<W>` must equal the sub-task's
+    /// recorded mint workflow, else the command is rejected. Distinct from
+    /// `jigc start --task`, which recomposes a top-level task's own workflow.
     Workflow {
         /// The sub-workflow to compose — the fan-out step's `run:` workflow. Must
         /// equal the sub-task's recorded mint workflow, else rejected.
         workflow: String,
 
-        /// The milestone sub-task to enter. Required: re-entry always names its
-        /// sub-task (the `--task`-scoped barrier; `design/write-commands.md`).
+        /// The milestone sub-task to enter (required — re-entry always names its
+        /// sub-task).
         #[arg(long)]
         task: String,
     },
 
-    /// The write-path surface — `jigc doc <verb> <addr>` over the active task's
-    /// working area (`design/write-commands.md` → The verbs).
+    /// Write managed docs — `jigc doc <verb> <addr>` over the active task's
+    /// working area.
     Doc {
         #[command(subcommand)]
         verb: DocCommand,
     },
 
-    /// The task lifecycle surface — `jigc task <verb> <id>` (`diff` · `validate` ·
-    /// `discard` · `finalize`) over a named task's working area
-    /// (`design/write-commands.md` → Lifecycle; `design/finalize.md` → the commit
-    /// boundary).
+    /// The task lifecycle surface — `jigc task <verb> <id>` over a named task's
+    /// working area.
     Task {
         #[command(subcommand)]
         verb: TaskCommand,
     },
 
-    /// The cascade-authoring surface — `jigc config <verb>` records deltas into the
-    /// project layer's `.jigc/config/manifest.yaml` (`design/overrides.md` →
-    /// Authoring deltas): `set <key> <value>` (a `scalar-set`, write-time
-    /// `check_value`-adjudicated) + the `structural-op` trio `insert-step` /
-    /// `replace-step` / `remove-step` (a delta + — for insert/replace — a native
-    /// step file, write-time collision/anchor-adjudicated).
+    /// The cascade-authoring surface — `jigc config <verb>` records deltas into
+    /// the project layer (`.jigc/config/`).
     Config {
         #[command(subcommand)]
         verb: ConfigCommand,
     },
 
-    /// The `milestone` work-unit surface — `jigc milestone <verb>` mints a
-    /// milestone (`create "<title>"`), populates its task list (`add-task
-    /// <milestone-id> "<intent>"`), and **executes** it (`execute <milestone-id>`
-    /// composes the `milestone-execution` workflow's fan-out over the id-sorted
-    /// sub-task list), the substrate the by-task-id join consumes
-    /// (`design/write-commands.md` → Minting a milestone + its task list / Executing
-    /// the milestone; `design/storage.md` → The by-task-id join).
+    /// The milestone work-unit surface — `jigc milestone <verb>` mints a
+    /// milestone, builds its sub-task list, and executes, joins, and finalizes it.
     Milestone {
         #[command(subcommand)]
         verb: MilestoneCommand,
     },
 
-    /// The adapter install. Generates the Claude Code adapter from the embedded
-    /// profile: writes the managed `.jigc/AGENT.md` bootstrap and a bare
-    /// `@.jigc/AGENT.md` reference into `CLAUDE.md`, initializes the project layer
-    /// (`.jigc/config/`), allowlists `jigc *` and installs a `SessionStart` hook
-    /// (running `jigc start`) in `.claude/settings.json`, and installs a warn-only git
-    /// `pre-commit` hook (the doc↔code drift backstop)
-    /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
-    /// Idempotent; the install the unset-project orientation routes the agent to.
+    /// Install the Claude Code adapter — writes the `.jigc/AGENT.md` bootstrap and
+    /// a reference into `CLAUDE.md`, initializes the project layer (`.jigc/config/`),
+    /// allowlists `jigc *`, and installs the `SessionStart` and warn-only git
+    /// `pre-commit` hooks. Idempotent.
     Setup,
 
-    /// The repo-local teardown — `jigc uninstall` reverses *this project's* jigc
-    /// install: removes `.jigc/`, unwires the `CLAUDE.md` `@.jigc/AGENT.md` import
-    /// section, and drops the `jigc *` permit from `.claude/settings.json`. It does
-    /// **NOT** remove the machine-global `doc-code` probe sibling (shared across every
-    /// jigc repo — deleting it would break sibling repos' `jigc validate`; design-review
-    /// B2). Idempotent + non-destructive: a second run is a clean no-op, and the human's
-    /// own file content is preserved byte-for-byte (`design/project-setup.md` → Flow 2
-    /// hardening → Teardown / cleanup (G5), bullet (b)).
+    /// Reverse this project's jigc install — removes `.jigc/`, unwires the
+    /// `CLAUDE.md` reference, and drops the `jigc *` permit from
+    /// `.claude/settings.json`. Leaves the machine-global `doc-code` probe (shared
+    /// across repos) in place. Idempotent and non-destructive: a second run is a
+    /// clean no-op, and your own file content is preserved byte-for-byte.
     Uninstall,
 
-    /// The upgrade-reconciliation surface. Runs the `override-default` classifier
-    /// over every recorded delta against the **current** pack, renders the findings
-    /// and routes through the global `--format`, and **blocks** (exits non-zero) on
-    /// any blocking finding. **Report-and-route only** — it mutates nothing; the
-    /// human resolves each route by re-running the `jigc config` verbs
-    /// (`design/overrides.md` → The `jigc upgrade` command).
+    /// Re-check every recorded config delta against the current pack and report
+    /// what needs attention. Report-and-route only — it changes nothing, and exits
+    /// non-zero if any finding blocks.
     Upgrade,
 
-    /// The existing-project ingestion scan. Discovers candidate markdown beyond the
-    /// declared `location:` dirs (repo root, `docs/`, the location dirs), classifies
-    /// each against the persisted schemas, **adopts** every conformant `adoptable`
-    /// candidate **register-only** (records it into the edge index + file-state
-    /// baseline — it never moves or rewrites any candidate file), and renders the
-    /// **triage report** (`file × best-match type × verdict`, in sorted candidate
-    /// order) through the global `--format`; non-conformant / misplaced
-    /// (`needs-reconcile`) rows carry a routed finding (blocking severity + located
-    /// message + route) for a human (`design/project-setup.md` → Flow 2;
-    /// `design/worked-examples.md` → flow 12). The `ingest-existing` workflow orients
-    /// the agent to run it.
+    /// Scan the project for existing markdown docs, adopt every conformant one
+    /// (register-only — never moving or rewriting a file), and print a triage
+    /// report. Misplaced or non-conformant files are flagged for a human; exits 0.
     Ingest,
 
-    /// The auto-migration trigger — `jigc migrate <path> --as <doctype>` rewrites a
-    /// foreign, non-conformant document into conformant managed shape and (a later
-    /// increment) adopts it. It mints an **off-router migration task**, **stages** the
-    /// foreign file's bytes into the task, and composes the off-router
-    /// `migrate-<doctype>` workflow with the foreign content surfaced through the
-    /// CLI-owned **source seam** (`{{source}}`) — the LLM then authors the canonical
-    /// doc through the existing write verbs. A foreign file at repo root classifies
-    /// `Unmanaged`, which neither `ingest` nor `start` can reach; this explicit verb
-    /// addresses it directly (`design/auto-migration.md` → The `jigc migrate` verb).
-    /// `changelog`, `adr`, `spec`, `prd`, and `arch-doc` all migrate; the verb is
-    /// doctype-parameterized so a new target is a pack workflow, not a code change.
+    /// Rewrite a foreign, non-conformant document into managed shape — `jigc
+    /// migrate <path> --as <doctype>`. Mints a migration task and composes the
+    /// `migrate-<doctype>` workflow so the agent re-authors the content through the
+    /// write verbs (`changelog`, `adr`, `spec`, `prd`, and `arch-doc` all migrate).
     Migrate {
         /// The repo-relative path of the foreign document to migrate (e.g.
         /// `CHANGELOG.md`).
@@ -208,39 +162,23 @@ pub enum Command {
         r#as: String,
     },
 
-    /// The store-scope teardown verb — `jigc unmanage <path>` drops a single managed
-    /// doc from jigc's index/state: its `edges.json` forward edges + its
-    /// `file-state.json` baseline hash, **leaving the file bytes on disk** (the inverse
-    /// of `ingest`'s register-only `adopt`). Idempotent — a re-run on an
-    /// already-unmanaged doc is a clean no-op (exit 0, nothing persisted)
-    /// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet
-    /// (a) un-manage a doc).
+    /// Drop a single managed doc from jigc's index and state — `jigc unmanage
+    /// <path>` removes its edges and file-state baseline, leaving the file bytes on
+    /// disk (the inverse of `ingest`'s adopt). Idempotent: a re-run is a clean no-op.
     Unmanage {
-        /// The repo-relative path of the managed doc to un-manage (its `file-state`
-        /// record key, e.g. `decisions/single-node-cache.md`).
+        /// The repo-relative path of the managed doc to un-manage (e.g.
+        /// `decisions/single-node-cache.md`).
         path: String,
     },
 
-    /// The self-description surface — `jigc describe` (no positional) emits a
-    /// **discursive prose** projection of the resolved definitions: every workflow
-    /// (the *unfiltered* set, not the selectable catalog) and doc-type with their
-    /// woven `description:` / `usage:` prose, plus the command-ref `hint`s. Reflects
-    /// the **resolved cascade** (`project > team > pack-default`) — a project
-    /// whole-file definition shadow wins (command-ref `hint`s stay pack-only). The
-    /// output is deliberately **hostile to parsing** — a menu, not an API — so nothing depends
-    /// on it (`design/introspection.md` → Command surface / Non-contractual by
-    /// design). Whole-menu only: a single-item `describe <id>` form is **not** built.
+    /// Print a prose tour of what's available — every workflow and doc-type with
+    /// their descriptions, plus command-ref hints — reflecting the resolved
+    /// cascade. The output is a human menu, not a stable API; don't parse it.
     Describe,
 
-    /// The store-scope doc-code re-validation sweep — `jigc validate` runs the
-    /// task-less, read-only committed-store walk (`engine::validate::validate_store`):
-    /// it enumerates every committed doc's `code-anchor` leaves, drives the `doc-code`
-    /// probe over them, and renders the report through the global `--format`. It catches
-    /// the over-time drift an unrelated `task validate` / `finalize` does not
-    /// (`design/validation.md` → Store-scope re-validation). The realization of VISION's
-    /// named `jigc validate [target]`, scoped to doc-code; the four-target breadth is a
-    /// named-but-unbuilt envelope (no positional). Detect-and-report (the `jigc ingest`
-    /// precedent).
+    /// Re-check every committed doc's code anchors against the codebase and report
+    /// drift — `jigc validate` is the store-wide, read-only sweep (distinct from
+    /// `jigc task validate <id>`, which gates one task). Detect-and-report.
     Validate,
 }
 

@@ -34,7 +34,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 
 /// The `jigc doc <verb>` subcommand tree. Each verb addresses a managed doc in
-/// the active task's working area (`design/write-commands.md` → The verbs).
+/// the active task's working area.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum DocCommand {
     /// Mint a new managed instance (agent-initiated, create-gated). The id-source
@@ -46,9 +46,8 @@ pub enum DocCommand {
         /// form; `--title "…"` is the MVP surface for the title-slugged types).
         #[arg(long)]
         title: String,
-        /// The active task to scope the write to (`design/write-commands.md` →
-        /// The write-time `--task`-scoped barrier). Optional: explicit wins; else
-        /// the single active task; else (zero / more-than-one) the write rejects.
+        /// The active task to scope the write to. Optional: explicit wins; else the
+        /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
         task: Option<String>,
     },
@@ -100,15 +99,13 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Author a **whole** instance from one declarative payload — the doctype-general
-    /// batch verb (`design/write-commands.md` → Batch authoring; `design/auto-migration.md`
-    /// → Hardening #1). Applies the equivalent `create` + N `add-item` / `set-slot` /
-    /// `set-field` over a **single in-memory buffer**, persisting **once**. The agent
-    /// authors the payload (the prose + which-content-goes-where); the CLI places every
-    /// leaf (the boundary intact). In the payload, a **slot** value MUST be wrapped in
-    /// literal `<<…>>` markers (`summary: "<<the prose>>"`) — the markers are required
-    /// syntax that tags the value as slot prose, NOT a fill-me placeholder to delete;
-    /// an inline **field** takes a bare value (wrapping one is rejected).
+    /// Author a whole instance from one declarative payload — the doctype-general
+    /// batch verb. Applies the equivalent `create` plus N `add-item` / `set-slot` /
+    /// `set-field` over a single buffer, persisting once. In the payload, a slot
+    /// value must be wrapped in literal `<<…>>` markers (`summary: "<<the prose>>"`)
+    /// — required syntax that tags the value as slot prose, not a fill-me
+    /// placeholder to delete; an inline field takes a bare value (wrapping one is
+    /// rejected).
     Author {
         /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
         doctype: String,

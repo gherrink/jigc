@@ -54,8 +54,7 @@ const DEFAULT_SUB_TASK_WORKFLOW: &str = "sub-task";
 /// milestone — `jigc milestone execute <id>`).
 const MILESTONE_EXECUTION_WORKFLOW: &str = "milestone-execution";
 
-/// The `jigc milestone <verb>` subcommand tree (`design/write-commands.md` →
-/// Minting a milestone + its task list).
+/// The `jigc milestone <verb>` subcommand tree.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum MilestoneCommand {
     /// Mint a milestone work-unit (id = frozen slug from the title), opening its
@@ -89,42 +88,33 @@ pub enum MilestoneCommand {
         #[arg(long, default_value = DEFAULT_SUB_TASK_WORKFLOW)]
         workflow: String,
     },
-    /// Emit a milestone's sub-task ids in **canonical id-sorted order** — the
-    /// deterministic order the by-task-id join enumerates, surfaced through the
-    /// binary (`design/storage.md` → The by-task-id join).
+    /// Emit a milestone's sub-task ids in canonical id-sorted order — the
+    /// deterministic order the by-task-id join enumerates.
     ListTasks {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
-    /// Compose the `creates-task: false` `milestone-execution` workflow over the
-    /// milestone work-unit, feeding its **id-sorted** sub-task list into
-    /// `{{milestone.tasks}}` so the `fan-out` step resolves it (one `Spawn:` directive
-    /// per sub-task, id-ordered). **Mints nothing** — the milestone and its sub-tasks
-    /// already exist; an unknown milestone routes a blocking finding before any
-    /// compose (`design/write-commands.md` → Executing the milestone).
+    /// Compose the `milestone-execution` workflow over the milestone, feeding its
+    /// id-sorted sub-task list into `{{milestone.tasks}}` so the `fan-out` step
+    /// resolves it (one `Spawn:` directive per sub-task). Mints nothing — the
+    /// milestone and its sub-tasks already exist; an unknown milestone is rejected.
     Execute {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
     /// Merge the milestone's sub-task areas into the parent working overlay by the
-    /// **by-task-id join** — enumerate sub-areas by sorted task id, disjoint-union
-    /// their staged docs (collision-suffixing distinct `created` instances, blocking
-    /// a same-doc clash), and report the merged outcome. **Commits nothing** — wiring
-    /// the suffix-resolved overlay into `finalize` is a later increment
-    /// (`design/storage.md` → The by-task-id join; `design/worked-examples.md` →
-    /// flow 9). A blocking finding (a same-doc clash, an unknown milestone) surfaces
-    /// on stderr with its route and exits non-zero.
+    /// by-task-id join — enumerate sub-areas by sorted task id, disjoint-union their
+    /// staged docs (collision-suffixing distinct created instances), and report the
+    /// merged outcome. Commits nothing. A blocking finding (a same-doc clash, an
+    /// unknown milestone) surfaces on stderr with its route and exits non-zero.
     Join {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
-    /// The milestone commit boundary (`design/finalize.md` → `fan-out` finalize,
-    /// single-commit form): run the by-task-id join, **materialize** its
+    /// The milestone commit boundary — run the by-task-id join, materialize its
     /// suffix-resolved doc bodies into the parent staging area, and commit them as
-    /// **one** logical boundary with a CLI-synthesized message (a structural
-    /// projection of the milestone id + its id-ordered sub-task list). A blocking
-    /// join finding (a same-doc clash, an unknown milestone) routes to stderr and
-    /// **commits nothing** (`design/storage.md` → one logical commit boundary).
+    /// one logical boundary with a CLI-synthesized message. A blocking join finding
+    /// (a same-doc clash, an unknown milestone) routes to stderr and commits nothing.
     Finalize {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,

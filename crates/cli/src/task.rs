@@ -63,8 +63,7 @@ pub(crate) const EXIT_VALIDATION_BLOCKED: u8 = 3;
 /// (`design/measurement.md` → exit-code hygiene).
 pub(crate) const EXIT_REVIEW_PENDING: u8 = 4;
 
-/// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`
-/// (`design/write-commands.md` → Lifecycle).
+/// The `jigc task <verb>` subcommand tree. Each verb names a task by its `<id>`.
 #[derive(Debug, clap::Subcommand, PartialEq, Eq)]
 pub enum TaskCommand {
     /// Enumerate the active tasks (id + minting workflow + intent); no id needed.
@@ -88,16 +87,14 @@ pub enum TaskCommand {
     Finalize {
         /// The task id (the working-area slug under `.jigc/tasks/`).
         id: String,
-        /// Approve a **migration** task's fidelity diff and proceed through the commit
+        /// Approve a migration task's fidelity diff and proceed through the commit
         /// transaction. Without it, a migration `finalize` renders the diff and blocks
-        /// (exit 4, nothing committed). Inert on a non-migration task — the existing
-        /// path runs unchanged (`design/auto-migration.md` → The review gate).
+        /// (exit 4, nothing committed). Inert on a non-migration task.
         #[arg(long)]
         approve: bool,
     },
     /// Bind an already-committed doc to one of the task's declared context roles,
-    /// so `task.<role>` resolves to it on the resume re-compose
-    /// (`design/write-commands.md` → Binding a context role).
+    /// so `task.<role>` resolves to it on the resume re-compose.
     Bind {
         /// The context role to bind — one of the workflow's declared `reads` roles.
         role: String,
