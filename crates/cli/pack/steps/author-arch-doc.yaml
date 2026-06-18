@@ -6,10 +6,12 @@ Create the arch-doc, then author its overview:
 {{ cli.create-arch-doc }}
 <<author: {{ task.arch-doc#overview }}>>
 
-Cite each decision this part of the system rests on — one `cites` edge per ADR,
-so finalize can check the citation still resolves:
+Cite the decisions this part of the system rests on, so finalize can check each
+citation still resolves. `cites` is a list — author **all** of them in ONE
+`set-field` as a bracketed list (a second `set-field` replaces, not appends, so
+repeated single-value calls would keep only the last). One ADR is the list of one:
 
-jigc doc set-field arch-doc:<slug>#cites --value adr:<slug> --task {{task.id}}
+jigc doc set-field arch-doc:<slug>#cites --value '[adr:<slug-a>, adr:<slug-b>]' --task {{task.id}}
 
 Then add one component per architectural piece. For each, mint the item, write
 its responsibility in prose, and anchor it to the code that implements it (a
