@@ -285,6 +285,72 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
     }
 }
 
+/// The landed-commit facts a successful `task finalize` confirms back to the user
+/// (M26 post-completion shakedown): the short commit `hash` + its `subject`, each
+/// persisted doc `promoted` to its canonical repo location, and the `files` count of
+/// the landed commit. Serializes as the `committed` object the JSON envelope carries.
+#[derive(Serialize)]
+pub struct Landed {
+    /// The landed commit's abbreviated hash (`git rev-parse --short HEAD`).
+    pub hash: String,
+    /// The landed commit's subject line (the rendered commit doc's first line).
+    pub subject: String,
+    /// Each promoted persisted doc's canonical repo-relative path (empty when a
+    /// commit-only task promotes nothing).
+    pub promoted: Vec<String>,
+    /// The number of files the landed commit touched.
+    pub files: usize,
+}
+
+/// Render a **landed** `task finalize` to the surface `format` selects, pairing the
+/// preflight findings envelope with a success summary that confirms what landed (M26
+/// post-completion shakedown — a successful finalize was previously near-silent, leaving
+/// a user to run `git log` to tell it worked):
+///
+/// - `agent` / `human` emit the [`validation`] envelope (findings + routing footer)
+///   followed by a delimited success section naming the landed commit (short hash +
+///   subject), each promoted persisted doc, and the file count — the same after-the-result
+///   placement the hook relay uses (review S1), so the footer + the relay's invariants hold;
+/// - `json` emits the **same** report envelope with a `committed` object added (the landed
+///   facts), so a JSON consumer parsing the report keeps its `findings` array and gains
+///   the commit facts as fields — no second object, no shape break.
+pub fn finalize_landed(format: Format, report: &ValidationReport, landed: &Landed) -> String {
+    match format {
+        Format::Json => {
+            let mut value = serde_json::to_value(report).expect("validation report serializes");
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "committed".to_string(),
+                    serde_json::to_value(landed).expect("landed summary serializes"),
+                );
+            }
+            json(&value)
+        }
+        Format::Agent | Format::Human => {
+            let mut out = validation(format, report);
+            out.push_str("\n\n");
+            out.push_str(&landed_summary(landed));
+            out
+        }
+    }
+}
+
+/// The agent-text success section a landed finalize appends after the routing footer:
+/// `finalized <hash> — <subject>`, one `  promoted <path>` line per promoted doc, and a
+/// `  <n> file(s) committed` tally. Ends without a trailing newline — the caller's
+/// `println!` closes the line, symmetric with [`validation`].
+fn landed_summary(landed: &Landed) -> String {
+    let mut out = format!("finalized {} — {}\n", landed.hash, landed.subject);
+    for path in &landed.promoted {
+        out.push_str("  promoted ");
+        out.push_str(path);
+        out.push('\n');
+    }
+    let noun = if landed.files == 1 { "file" } else { "files" };
+    out.push_str(&format!("  {} {noun} committed", landed.files));
+    out
+}
+
 /// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
 /// `route:` line when the finding carries a repair direction (the settled
 /// block-payload envelope — a hard block is a blocking finding carrying a route).

@@ -628,7 +628,23 @@ impl TaskArea {
                 // evidence observed by the sweep is surfaced, never swallowed
                 // (`design/measurement.md` → The capture substrate, item 2). Only a
                 // landed commit emits it: a hook/git rejection took the branch below.
-                print!("{}", render::validation(format, &report));
+                //
+                // M26 shakedown — pair the envelope with a success summary confirming
+                // what landed (the commit + each promoted doc): a successful finalize was
+                // near-silent, leaving a user to run `git log` to tell it worked. The
+                // commit is already truth here, so HEAD names the landed hash; the plan
+                // names what promoted where.
+                let landed = render::Landed {
+                    hash: git_capture(&self.repo_root, &["rev-parse", "--short", "HEAD"])?,
+                    subject: git_capture(&self.repo_root, &["log", "-1", "--pretty=format:%s"])?,
+                    promoted: plan
+                        .promotions
+                        .iter()
+                        .map(|promotion| promotion.destination.clone())
+                        .collect(),
+                    files: git_commit_files(&self.repo_root)?.len(),
+                };
+                print!("{}", render::finalize_landed(format, &report, &landed));
                 if format != Format::Json {
                     println!();
                 }

@@ -932,6 +932,153 @@ fn outcome_space_is_discriminable() {
     }
 }
 
+/// Run `git <args>` in `repo`, returning trimmed stdout (asserting success). Used to
+/// learn the just-landed commit's real short hash + subject so the success-summary
+/// assertions check against ground truth, not a reconstruction.
+fn git_out(repo: &Path, args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("run git");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf-8 git output")
+        .trim()
+        .to_string()
+}
+
+/// Mint + author an ADR-promoting single-task, finalize it, and return
+/// `(finalize stdout, the landed short hash, the landed subject)`. The ADR promotes to
+/// `decisions/single-node-cache.md`, so the caller can assert the success summary names
+/// the landed commit and the promoted persisted doc.
+fn promote_adr_and_finalize(format: Option<&str>) -> (String, String, String) {
+    let repo = TempDir::new("landed-summary");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "start",
+            "--workflow",
+            "single-task",
+            "cache sessions in a single in-memory node",
+        ],
+    );
+    assert_ok(&out, "`jigc start`");
+    let task = "cache-sessions-in-a-single-in-memory-node";
+
+    let create = jigc_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Single-node cache"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr`");
+    let set_slot = |addr: &str, prose: &[u8]| {
+        let out = jigc_doc(
+            repo.path(),
+            home.path(),
+            &["set-slot", addr, "--from-file", "-"],
+            Some(prose),
+        );
+        assert_ok(&out, &format!("set-slot {addr}"));
+    };
+    set_slot(
+        "adr:single-node-cache#context",
+        b"Session lookups must stay sub-millisecond.\n",
+    );
+    set_slot(
+        "adr:single-node-cache#decision",
+        b"A single in-memory node keeps lookups fast.\n",
+    );
+    set_slot(
+        "adr:single-node-cache#consequences",
+        b"A cold node loses its sessions.\n",
+    );
+    fill_commit(repo.path(), home.path(), task);
+
+    let out = finalize(repo.path(), home.path(), task, format);
+    assert_ok(&out, "`jigc task finalize`");
+    assert!(
+        repo.path()
+            .join("decisions")
+            .join("single-node-cache.md")
+            .exists(),
+        "the finalize must promote decisions/single-node-cache.md",
+    );
+    let short = git_out(repo.path(), &["rev-parse", "--short", "HEAD"]);
+    let subject = git_out(repo.path(), &["log", "-1", "--pretty=format:%s"]);
+    (
+        String::from_utf8(out.stdout).expect("utf-8 stdout"),
+        short,
+        subject,
+    )
+}
+
+/// M26 post-completion shakedown — a SUCCESSFUL `task finalize` must confirm what it
+/// did: the landed commit (short hash + subject) and each promoted persisted doc, so a
+/// user need not run `git log` to tell it worked. Both renderer families, over an
+/// ADR-promoting finalize.
+#[test]
+fn finalize_reports_landed_commit_and_promotions() {
+    // ── agent: the summary names the short hash, subject, and promoted ADR path ───
+    let (stdout, short, subject) = promote_adr_and_finalize(None);
+    assert!(
+        stdout.contains(&short),
+        "the success summary must name the short commit hash {short}; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains(&subject),
+        "the success summary must name the commit subject {subject:?}; got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("decisions/single-node-cache.md"),
+        "the success summary must name the promoted ADR path; got:\n{stdout}",
+    );
+
+    // ── json: the committed facts ride the report envelope as a `committed` object ─
+    let (stdout, short, subject) = promote_adr_and_finalize(Some("json"));
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
+        panic!("json finalize stdout must parse as one object ({err}); got:\n{stdout}")
+    });
+    assert!(
+        value["findings"].is_array(),
+        "the json envelope keeps its findings array (no JSON consumer break); got:\n{stdout}",
+    );
+    let committed = &value["committed"];
+    assert_eq!(
+        committed["hash"].as_str(),
+        Some(short.as_str()),
+        "committed.hash is the landed short hash; got:\n{stdout}",
+    );
+    assert_eq!(
+        committed["subject"].as_str(),
+        Some(subject.as_str()),
+        "committed.subject is the landed commit subject; got:\n{stdout}",
+    );
+    let promoted: Vec<&str> = committed["promoted"]
+        .as_array()
+        .unwrap_or_else(|| panic!("committed.promoted is an array; got:\n{stdout}"))
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .collect();
+    assert!(
+        promoted.contains(&"decisions/single-node-cache.md"),
+        "committed.promoted names the promoted ADR path; got:\n{stdout}",
+    );
+    assert!(
+        committed["files"].as_u64().is_some(),
+        "committed.files is a file count; got:\n{stdout}",
+    );
+}
+
 /// The marker a non-blocking `pre-commit` hook writes to **stderr** before exiting 0 —
 /// git redirects a hook's own stdout to stderr, so a warn-only hook (e.g. the M19
 /// doc↔code backstop) speaks on the hook stream `git_commit` captures.
