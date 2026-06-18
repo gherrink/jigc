@@ -1918,3 +1918,54 @@ $ jigc task finalize migrate-adr-0001-use-mysql           # WITHOUT --approve �
 4. **Dateless ADRs don't fabricate history** — the doc-level on-create date-suppression renders no date when the foreign source has none (the M24 item-level fix, now threaded to the doc-level header path adr's `date` uses).
 5. **spec and prd migrate cleanly** — spec criteria without `maps-to-test` finalize clean (optional anchor); **prd requirements author as a repeatable section** (per-requirement items, pack-only — no `decomposes-into` edge).
 6. **The honest bounds hold** — adr accepted-drops (Considered Options / Related ADRs / Deciders / out-of-enum status mapped-or-dropped); a **finalize-promote clobber-guard** blocks any create-provenance doc whose destination already holds a committed managed doc (covering the in-location squatter *and* a title-slug collision across the corpus); migrated titles render as the **slug in the H1** (`# use-mysql`, not `# Use MySQL`) — an accepted pre-existing bound, not data loss; prd's acceptance arm is a **synthesized, labeled** PRD; the review gate falls back to the raw foreign-vs-canonical diff (no per-doctype structural summary). Framing A intact throughout — LLM proposes prose, the CLI strict-parses + places every structural act.
+
+## 28. Migration's last doctype — a foreign architecture doc with code anchors and decision citations (M26)
+
+The M26 close of the migration arc ([auto-migration.md](auto-migration.md) → Generalizing to arch-doc; [DECISIONS.md](../DECISIONS.md) → 2026-06-18 M26 planning) — copying the proven pattern one final time to `arch-doc`, the last and hardest target because its repeatable `components` carry **both a `description` slot and an `implemented-by` code anchor**, and those anchors must resolve against real code. The spine (verb / source seam / review gate / retire / batch / clobber guard) is flows 25–27's and is not restated; flow 28 exercises arch-doc's *shape differences* — the **slot+field-group component** authored byte-stable, **doc↔code on a migrated doc** (the first migration to author a resolving code anchor), and **`cites → adr` across a migrated set**. The migration arm is **two pack yaml files, no engine/CLI/schema change**. M26 migrates a foreign architecture *document*; it does **not** infer one from code (the north-star, out). The corpus is **hybrid**: a real foreign arch-doc + a synthesized-over-jigc-Rust arch-doc. Notation illustrative; each behaviour is red-proven at build.
+
+### The walk — migrate the real arm, then the code-checked synthetic arm
+
+```bash
+# --- Real arm: a foreign ARCHITECTURE.md (arc42/C4/README-section), non-Rust or no code pointers ---
+$ jigc migrate docs/ARCHITECTURE.md --as arch-doc          # mints task migrate-arch-doc-architecture, surfaces the foreign bytes
+# the LLM rewrites the foreign prose through ONE declarative batch (Framing A):
+$ jigc doc author arch-doc --from - --task migrate-arch-doc-architecture <<'EOF'
+> # overview slot ← foreign "Overview"/"Introduction"; components ← each module section
+> # (a component with no foreign prose gets a SYNTHESIZED one-line responsibility — description is required)
+> # implemented-by OMITTED where no concrete path#symbol exists; cites authored ONLY for in-store adrs
+> EOF
+$ jigc task finalize migrate-arch-doc-architecture --approve   # promotes architecture/<slug>.md, retires the foreign file, adopts byte-stable
+                                                               # file-only anchors accepted (non-Rust → symbol-exists degrades to file-exists)
+
+# --- Synthetic arm over jigc's own Rust: the code-checked mandate (C2) ---
+# precondition: a committed adr to cite (jigc ships none) — migrate or create+finalize one first:
+$ jigc start --workflow ... && jigc doc create adr --title "..." && jigc task finalize ... --approve   # → decisions/<slug>.md
+$ jigc migrate fixtures/parser-subsystem.md --as arch-doc
+$ jigc doc author arch-doc --from - --task migrate-arch-doc-parser-subsystem <<'EOF'
+> # ≥2 components, each implemented-by a REAL, independently-resolving jigc symbol
+> #   e.g. components/lexer → crates/engine/src/parse.rs#scan_blocks
+> #        components/writer → crates/engine/src/write.rs#render_item_at
+> # cites: [adr:<a-committed-jigc-adr>]
+> EOF
+
+# the BLOCKING red — doc↔code on a migrated doc, per-item disambiguation:
+# (delete/rename component-A's anchored symbol — a FIXTURE/clone target, never a live jigc dep — leave B's intact)
+$ jigc task finalize migrate-arch-doc-parser-subsystem --approve
+> BLOCK doc-code.symbol-exists — anchor resolves to no symbol
+>       location arch-doc:parser-subsystem#components/lexer/implemented-by   ← A's item address, NOT B's
+
+# the cites red — a dangling decision citation blocks (committed-first ordering):
+$ jigc task finalize migrate-arch-doc-parser-subsystem --approve   # cites an adr not yet committed
+> BLOCK schema-conformance.ref-resolves — target 'adr:some-decision' resolves in neither the committed store nor this task's working area
+
+# fix both (anchor a present symbol, cite a committed adr) → finalize promotes architecture/parser-subsystem.md, one docs(arch-doc): commit
+```
+
+### What it asserts (the M26 acceptance bar)
+
+1. **A foreign arch-doc migrates end-to-end, hybrid corpus** — both a real foreign arch-doc (in-the-wild fidelity, anchors accepted file-only) and a synthesized-over-jigc-Rust arch-doc → a per-title-slug managed doc at `architecture/`, retired + adopted, byte-stable. Measured on round-trip conformance · fidelity-acceptance · content-preservation · agent-call count (the batch keeps it at one authoring call; the commit is auto-provisioned).
+2. **doc↔code on a migrated arch-doc holds — the genuinely-new combination** — the synthetic arm migrates ≥2 components with real, **independently-resolving** `implemented-by` anchors over jigc's Rust; the blocking red fires on a deleted symbol **naming A's specific item address** (`arch-doc:<slug>#components/<a-id>/implemented-by`) while B stays valid, proving each item's anchor resolves against its own authored value. The sibling `doc-code` probe is found beside the installed `jigc` from a non-jigc repo.
+3. **`cites → adr` across the migrated set holds** — authored as a **bracketed list**, each element resolved at finalize against the committed store; a dangling citation **blocks** at `ref-resolves`; the **committed-first ordering contract** (migrate the cited ADRs before the arch-doc) is what makes forward-ref integrity hold; an out-of-store decision reference **drops to prose**, never a dangling ref.
+4. **The slot+field-group component is byte-stable** — a component (`description` slot + `implemented-by` field) round-trips `render(parse(x)) == x` on the **Increment-1 substrate** (the empty-slot canonicalization), including the minted-but-unfilled intermediate the per-leaf batch produces.
+5. **The required `description` is honoured** — a migrated component with a code pointer but no foreign prose gets a **synthesized one-line responsibility** (a required slot cannot drop-to-prose); an unfilled one would block at `required-slot-present`.
+6. **The honest bounds hold** — the real arm's anchors are **file-only** where the target is non-Rust (`symbol-exists` degrades to file-exists, the Rust-only probe — recorded, not data loss); a malformed `implemented-by` dangles at finalize rather than rejecting at write (the write-time code-anchor shape check is **not built**, C3); migrated titles render as the **slug in the H1** (now keyed); the synthetic arm is **labeled synthetic**. Framing A intact throughout — LLM proposes prose, the CLI strict-parses + places every structural act.
