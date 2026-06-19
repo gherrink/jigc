@@ -206,18 +206,24 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
                 return Some(Finding::dangling_file(anchor, file));
             }
             let symbol = symbol?;
-            if !resolve::is_rust_file(&path) {
-                return None;
-            }
+            // The grammar is chosen by extension; an extension with no shipped grammar yet
+            // keeps the M10 silent-skip (the `unsupported-language` advisory is a later
+            // increment).
+            let grammar = resolve::grammar_for(&path)?;
             let src = std::fs::read_to_string(&path).ok()?;
-            if !resolve::symbol_exists_in_rust(&src, symbol) {
+            if !resolve::symbol_exists(&src, symbol, grammar) {
                 // The symbol is absent — the floor of every `#symbol` check, including
                 // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
                 return Some(Finding::dangling_symbol(anchor, file, symbol));
             }
             // The symbol resolves. `criterion-maps-to-test` additionally requires the
-            // is-a-test predicate (a `#[test]` fn); `symbol-exists` is satisfied here.
-            if anchor.check_id == "criterion-maps-to-test"
+            // is-a-test predicate (a `#[test]` fn); `symbol-exists` is satisfied here. The
+            // predicate is **Rust-only** (`#[test]` has no portable cross-language
+            // signature), so on a non-Rust file the resolved symbol passes — the
+            // `unsupported-language` advisory for the unverified test-half is a later
+            // increment, never a wrong `not_a_test` block.
+            if grammar == resolve::Grammar::Rust
+                && anchor.check_id == "criterion-maps-to-test"
                 && !resolve::test_fn_exists_in_rust(&src, symbol)
             {
                 return Some(Finding::not_a_test(anchor, file, symbol));
