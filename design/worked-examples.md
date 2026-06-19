@@ -1969,3 +1969,52 @@ $ jigc task finalize migrate-arch-doc-parser-subsystem --approve   # cites an ad
 4. **The slot+field-group component is byte-stable** — a component (`description` slot + `implemented-by` field) round-trips `render(parse(x)) == x` on the **Increment-1 substrate** (the empty-slot canonicalization), including the minted-but-unfilled intermediate the per-leaf batch produces.
 5. **The required `description` is honoured** — a migrated component with a code pointer but no foreign prose gets a **synthesized one-line responsibility** (a required slot cannot drop-to-prose); an unfilled one would block at `required-slot-present`.
 6. **The honest bounds hold** — the real arm's anchors are **file-only** where the target is non-Rust (`symbol-exists` degrades to file-exists, the Rust-only probe — recorded, not data loss); a malformed `implemented-by` dangles at finalize rather than rejecting at write (the write-time code-anchor shape check is **not built**, C3); migrated titles render as the **slug in the H1** (now keyed); the synthetic arm is **labeled synthetic**. Framing A intact throughout — LLM proposes prose, the CLI strict-parses + places every structural act.
+
+## 29. doc↔code on a polyglot repo — a TypeScript and a Python citation validated against the code (M27)
+
+The M27 acceptance: **the `doc-code` differentiator turns on for a non-Rust target.** M10/M13 proved doc↔code over Rust by pointing the anchors at jigc's own codebase (sidestepping the Rust-only grammar); M27 generalizes the probe Rust→six languages ([validation.md](validation.md) → Multi-language resolution; [DECISIONS.md](../DECISIONS.md) → 2026-06-19 fork F7), so a citation into a **TypeScript** or a **Python** file genuinely resolves against reality instead of silently passing. This flow mirrors flow 16 — an `arch-doc` with **two** components, each carrying an independently-resolving `implemented-by` anchor, the per-item-disambiguation A-deleted/B-valid proof — but on a **polyglot** repo: component A's anchor at a real **TypeScript** symbol, component B's at a real **Python** symbol. The grammar generalization is **probe-internal** — no engine, CLI, or pack-schema change; the `code-anchor` field type and the workflow are language-blind. The design of record is [validation.md](validation.md#multi-language-resolution-m27); the dispatch table, the per-language node-kind allowlist, and the truth tables live there and are not restated. Notation illustrative; the flow below is the shape the acceptance test (`crates/cli/tests/flow29_acceptance.rs`) drives end-to-end through the built binary against the real `doc-code` subprocess, resolved as a **sibling of `jigc`** (no `JIGC_DOC_CODE_PROBE` override — the production path a real install hits; the measured-on-the-installed-binary proof is M27 Increment 4).
+
+### The walk — author two components over a polyglot tree, block on each vanished symbol, fix → one commit
+
+```text
+# a polyglot repo: src/api.ts carries a real TS symbol, services/limiter.py a real Python symbol.
+$ jigc start --workflow architecture-documentation "document the gateway"
+$ jigc doc create arch-doc --title "Gateway" --task <id>             # mints arch-doc:gateway
+$ jigc doc set-slot  "arch-doc:gateway#overview" --from-file - --task <id>
+$ jigc doc set-field "arch-doc:gateway#cites" --value "adr:use-a-cache" --task <id>   # a committed adr
+
+# component A → a TypeScript symbol; component B → a Python symbol (two languages, two files):
+$ jigc doc add-item  "arch-doc:gateway#components" --title "Edge router"  --task <id>   # → #components/edge-router
+$ jigc doc set-field "arch-doc:gateway#components/edge-router/implemented-by" \
+        --value "src/api.ts#RateRouter" --task <id>
+$ jigc doc add-item  "arch-doc:gateway#components" --title "Token limiter" --task <id>  # → #components/token-limiter
+$ jigc doc set-field "arch-doc:gateway#components/token-limiter/implemented-by" \
+        --value "services/limiter.py#TokenLimiter" --task <id>
+
+# delete component A's TypeScript symbol (RateRouter) while B's Python symbol (TokenLimiter) stays valid:
+$ jigc --format json task finalize <id>
+  ✗ doc-code · symbol-exists · blocking
+    location.address: arch-doc:gateway#components/edge-router/implemented-by     ← A's item address, NOT B's
+    message:          `src/api.ts#RateRouter` resolves to no symbol in the working tree
+  finalize blocked — HEAD unchanged, nothing promoted.
+
+# symmetrically: restore A, delete component B's Python symbol (TokenLimiter) while A's TS symbol stays valid:
+$ jigc --format json task finalize <id>
+  ✗ doc-code · symbol-exists · blocking
+    location.address: arch-doc:gateway#components/token-limiter/implemented-by    ← B's item address, NOT A's
+    message:          `services/limiter.py#TokenLimiter` resolves to no symbol in the working tree
+
+# restore both → finalize PASSES: one docs(arch-doc): commit; arch-doc:gateway promotes to architecture/gateway.md.
+$ jigc task finalize <id>
+$ git log --oneline -1
+  docs(arch-doc): document the gateway        ← exactly one commit; both polyglot anchors resolved
+```
+
+The `symbol-exists` block naming **A's** address (a TypeScript symbol) while B's Python anchor stays silent — and the symmetric block naming **B's** address while A's TypeScript anchor stays silent — is the per-item disambiguation proof carried **across two languages**: each item's anchor resolves against its own authored value through its own grammar, never a clobbered shared one. The passing walk lands the commit only because the probe genuinely ran the TS grammar over `src/api.ts` and the Python grammar over `services/limiter.py` and both symbols resolved — the masking guard is the pass↔block contrast over the same fixture (a silently-skipped enumeration would land the commit in every arm).
+
+### What it asserts (the M27 acceptance bar)
+
+1. **A TypeScript citation validates against reality.** Deleting component A's TypeScript symbol (the file stays, the symbol is renamed away) **blocks** `finalize` on `doc-code.symbol-exists`, the rendered report's `location.address` is **A's** item address (`arch-doc:gateway#components/edge-router/implemented-by`) and **never** B's, HEAD is unchanged, nothing is promoted. The TS grammar resolved a present symbol and surfaced an absent one — the M17-friction "non-Rust symbol silently passes" is closed for TypeScript.
+2. **A Python citation validates against reality, symmetrically.** Deleting component B's Python symbol while A's TypeScript symbol stays valid blocks `finalize` on `doc-code.symbol-exists` naming **B's** item address (`#components/token-limiter/implemented-by`) and **never** A's. Per-item disambiguation holds **across two grammars** — the single lever that proves the probe dispatched each anchor to its own language.
+3. **Both anchors present → exactly one commit.** With the TypeScript and Python symbols both present, `finalize` validates clean, lands **exactly one** `docs(arch-doc):` commit, promotes the doc to `architecture/gateway.md`, and cleans the working area. Zero `doc-code` findings on the passing arm is the masking failure the pass↔block contrast guards against — the block arms (one per language) prove the enumeration reached each anchor-bearing component independently, so the clean pass is "the probe ran and both symbols resolved," not "the probe never ran."
+4. **The sibling probe resolves with the larger grammar set.** The `doc-code` subprocess is found beside the running `jigc` (`<bin-dir>/doc-code`, **no** `JIGC_DOC_CODE_PROBE` override) — the production path a real install hits — and runs with the six-grammar set the M27 generalization links in. (The measured-on-the-`cargo install`-installed-binary proof + the size budget are M27 Increment 4.)
