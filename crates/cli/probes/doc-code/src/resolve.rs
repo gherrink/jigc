@@ -2,7 +2,8 @@
 //!
 //! The grammar is chosen by file extension ([`grammar_for`]): `.rs`→Rust;
 //! `.ts`/`.mts`/`.cts`→TypeScript; `.tsx`→**TSX** (a *distinct* grammar — the plain
-//! TypeScript grammar parses JSX with errors). An extension with no shipped grammar
+//! TypeScript grammar parses JSX with errors); `.js`/`.jsx`/`.mjs`/`.cjs`→JavaScript
+//! (one grammar; JSX parses natively). An extension with no shipped grammar
 //! resolves to `None` and the caller keeps the M10 silent-skip (the
 //! `unsupported-language` advisory is a later increment). A bare `<path>` (no `#`) is a
 //! pure file-existence check and never reaches here. For a `<path>#<symbol>` anchor the
@@ -37,6 +38,11 @@ pub enum Grammar {
     /// underlying tree-sitter language — TSX is a distinct grammar that parses JSX.
     TypeScript,
     Tsx,
+    /// JavaScript (incl. JSX). Reuses the TypeScript allowlist verbatim — the citable
+    /// node-kinds and value-position semantics are identical, and the TS-only kinds
+    /// (`abstract_class_declaration`, `interface_declaration`, …) never appear in a JS AST.
+    /// JSX parses natively under this one grammar (no separate TSX-style split).
+    JavaScript,
 }
 
 impl Grammar {
@@ -46,6 +52,7 @@ impl Grammar {
             Grammar::Rust => tree_sitter_rust::LANGUAGE.into(),
             Grammar::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             Grammar::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
+            Grammar::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
         }
     }
 }
@@ -136,7 +143,8 @@ fn with_root(src: &str, grammar: Grammar, f: impl FnOnce(Node) -> bool) -> bool 
 
 /// The grammar to resolve a file's symbols against, chosen by extension. `.rs`→Rust;
 /// `.ts`/`.mts`/`.cts`→TypeScript; `.tsx`→**TSX** (a distinct grammar — the plain
-/// TypeScript grammar parses JSX with errors). An extension with no shipped grammar yields
+/// TypeScript grammar parses JSX with errors); `.js`/`.jsx`/`.mjs`/`.cjs`→JavaScript (one
+/// grammar — JSX parses natively, no TSX-style split). An extension with no shipped grammar yields
 /// `None` and the caller keeps the M10 silent-skip (the `unsupported-language` advisory is
 /// a later increment).
 pub fn grammar_for(path: &Path) -> Option<Grammar> {
@@ -144,6 +152,7 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "rs" => Some(Grammar::Rust),
         "ts" | "mts" | "cts" => Some(Grammar::TypeScript),
         "tsx" => Some(Grammar::Tsx),
+        "js" | "jsx" | "mjs" | "cjs" => Some(Grammar::JavaScript),
         _ => None,
     }
 }
@@ -160,7 +169,9 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
 fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
     let citable = match grammar {
         Grammar::Rust => true,
-        Grammar::TypeScript | Grammar::Tsx => is_ts_citable(node),
+        // JavaScript reuses the TS allowlist verbatim — identical node-kinds and
+        // value-position semantics; the TS-only kinds never appear in a JS AST.
+        Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => is_ts_citable(node),
     };
     if !citable {
         return Vec::new();
@@ -171,8 +182,11 @@ fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Whether `node` is a citable TypeScript / TSX declaration (the node-kind allowlist —
-/// [validation.md] → Multi-language resolution). Declaration kinds resolve at any nesting,
+/// Whether `node` is a citable TypeScript / TSX / JavaScript declaration (the node-kind
+/// allowlist — [validation.md] → Multi-language resolution). JavaScript reuses this verbatim:
+/// its citable kinds and value-position semantics are identical, and the TS-only kinds
+/// (`abstract_class_declaration`, `interface_declaration`, `type_alias_declaration`,
+/// `enum_declaration`) never appear in a JS AST. Declaration kinds resolve at any nesting,
 /// visibility/export ignored. The two **value-position** kinds are constrained to a
 /// declaration position, else the over-match the allowlist exists to close re-opens:
 /// `method_definition` only as a class-body member (not an object-literal method);
@@ -414,6 +428,114 @@ export function Button() {
         ] {
             let _ = symbol_exists(src, "x", Grammar::TypeScript);
             let _ = symbol_exists(src, "x", Grammar::Tsx);
+        }
+    }
+
+    // A real JavaScript module exercising the JS allowlist (the TS allowlist minus the
+    // TS-only kinds, which never appear in a JS AST) and the value-position constraints:
+    // a class with a body method, a free function with a function-local `let`, an
+    // object-literal method, a module-level + exported `const`, and an imported-but-never-
+    // defined name reaching the AST only as an import + call.
+    const JS: &str = "\
+export class Shape {
+    area() {
+        return 0;
+    }
+}
+
+function freeFn() {
+    let localVar = 1;
+    return localVar;
+}
+
+const obj = {
+    objMethod() {
+        return 1;
+    },
+};
+
+export const exported = 2;
+const topVar = 3;
+
+import { calledButUndefined } from \"./x\";
+calledButUndefined();
+";
+
+    #[test]
+    fn js_dispatches_by_extension() {
+        // The dispatch: every JS extension maps to the JavaScript grammar; a non-JS
+        // extension is unaffected.
+        for ext in ["js", "jsx", "mjs", "cjs"] {
+            let path = std::path::PathBuf::from(format!("src/app.{ext}"));
+            assert_eq!(grammar_for(&path), Some(Grammar::JavaScript), "ext .{ext}");
+        }
+    }
+
+    #[test]
+    fn js_resolves_real_symbols_and_blocks_vanished() {
+        // A real function/class resolves; a vanished one does not (block-on-rename).
+        assert!(symbol_exists(JS, "freeFn", Grammar::JavaScript));
+        assert!(symbol_exists(JS, "Shape", Grammar::JavaScript));
+        assert!(!symbol_exists(JS, "freeFnRenamed", Grammar::JavaScript));
+    }
+
+    #[test]
+    fn js_class_method_resolves_but_object_method_does_not() {
+        // `method_definition` is class-body-member-only: the class method resolves, the
+        // object-literal method (same node kind, parent `object`) does not.
+        assert!(symbol_exists(JS, "area", Grammar::JavaScript));
+        assert!(!symbol_exists(JS, "objMethod", Grammar::JavaScript));
+    }
+
+    #[test]
+    fn js_top_level_const_resolves_but_function_local_let_does_not() {
+        // `variable_declarator` is module/export/top-level-only: a module-level + exported
+        // `const` resolve, a function-local `let` (inside a `statement_block`) does not.
+        assert!(symbol_exists(JS, "exported", Grammar::JavaScript));
+        assert!(symbol_exists(JS, "topVar", Grammar::JavaScript));
+        assert!(!symbol_exists(JS, "localVar", Grammar::JavaScript));
+    }
+
+    #[test]
+    fn js_imported_but_undefined_does_not_resolve() {
+        // A called-but-never-defined name reaches the AST only as an `import_specifier`
+        // (and a call `identifier`) — neither is in the allowlist.
+        assert!(!symbol_exists(
+            JS,
+            "calledButUndefined",
+            Grammar::JavaScript
+        ));
+    }
+
+    #[test]
+    fn js_jsx_parses_and_resolves_without_error_wipeout() {
+        // JSX parses natively under the single JavaScript grammar (no separate TSX-style
+        // split): the `.jsx`-shaped component declaration must resolve, not be wiped out by
+        // an error tree.
+        let src = "\
+export function Button() {
+    return <div className=\"btn\">click</div>;
+}
+";
+        assert!(symbol_exists(src, "Button", Grammar::JavaScript));
+        assert!(!symbol_exists(src, "Missing", Grammar::JavaScript));
+    }
+
+    #[test]
+    fn js_hostile_input_does_not_panic() {
+        // The panic-free property carries to JS: garbage / truncated / BOM / non-ASCII
+        // source resolves to false, never crashes.
+        let bom = "\u{feff}export function f() {}";
+        for src in [
+            "",
+            "function",
+            "}{)(",
+            "export class",
+            "const x = {",
+            bom,
+            "function ☃() { let π = 1; }",
+        ] {
+            let _ = symbol_exists(src, "x", Grammar::JavaScript);
         }
     }
 }
