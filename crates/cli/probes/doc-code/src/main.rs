@@ -264,14 +264,19 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             // The symbol resolves. `criterion-maps-to-test` additionally requires the
             // is-a-test predicate (a `#[test]` fn); `symbol-exists` is satisfied here. The
             // predicate is **Rust-only** (`#[test]` has no portable cross-language
-            // signature), so on a non-Rust file the resolved symbol passes — the
-            // `unsupported-language` advisory for the unverified test-half is a later
-            // increment, never a wrong `not_a_test` block.
-            if grammar == resolve::Grammar::Rust
-                && anchor.check_id == "criterion-maps-to-test"
-                && !resolve::test_fn_exists_in_rust(&src, symbol)
-            {
-                return Some(Finding::not_a_test(anchor, file, symbol));
+            // signature). On a Rust file the predicate runs; on a **non-Rust** file the
+            // is-a-test half is unverifiable, so a resolved `criterion-maps-to-test` symbol
+            // emits one `unsupported-language` advisory (the symbol passed, the test-half
+            // could not be checked — fork F4 truth table), never a wrong `not_a_test` block.
+            // `symbol-exists` is unaffected — its predicate is symbol existence, already met.
+            if anchor.check_id == "criterion-maps-to-test" {
+                if grammar == resolve::Grammar::Rust {
+                    if !resolve::test_fn_exists_in_rust(&src, symbol) {
+                        return Some(Finding::not_a_test(anchor, file, symbol));
+                    }
+                } else {
+                    return Some(Finding::unsupported_language(anchor, file));
+                }
             }
             None
         })
@@ -325,20 +330,35 @@ mod tests {
     }
 
     fn anchor(value: &str) -> TargetAnchor {
+        anchor_with_check(value, "symbol-exists")
+    }
+
+    fn anchor_with_check(value: &str, check_id: &str) -> TargetAnchor {
         TargetAnchor {
             address: "specs/s.md#criteria/c".to_string(),
             anchor_value: value.to_string(),
-            check_id: "symbol-exists".to_string(),
+            check_id: check_id.to_string(),
         }
     }
 
     /// Write `file` (relative) with `contents` under a fresh root and run `check_anchors`
     /// over a one-anchor snapshot citing `<file>#<symbol>`.
     fn check_one(file: &str, contents: &str, symbol: &str) -> Vec<Finding> {
+        check_one_with_check(file, contents, symbol, "symbol-exists")
+    }
+
+    /// Like [`check_one`] but with an explicit `check_id` (so a `criterion-maps-to-test`
+    /// anchor can be driven, not just the default `symbol-exists`).
+    fn check_one_with_check(
+        file: &str,
+        contents: &str,
+        symbol: &str,
+        check_id: &str,
+    ) -> Vec<Finding> {
         let root = temp_root();
         std::fs::write(root.join(file), contents).unwrap();
         let snapshot = EffectiveStateSnapshot {
-            anchors: vec![anchor(&format!("{file}#{symbol}"))],
+            anchors: vec![anchor_with_check(&format!("{file}#{symbol}"), check_id)],
             working_tree_root: root,
         };
         check_anchors(&snapshot)
@@ -449,5 +469,84 @@ deploy() {
             working_tree_root: root,
         };
         assert_eq!(check_anchors(&snapshot).len(), 1);
+    }
+
+    // The non-Rust `criterion-maps-to-test` truth table ([validation.md] → Multi-language
+    // resolution): the symbol-existence floor blocks a vanished symbol (nothing to advise
+    // about); a present symbol — whose is-a-test half is unverifiable cross-language — takes
+    // the `unsupported-language` advisory. Exactly one finding either way, never both.
+
+    // A present TypeScript test function, named like a Vitest/Jest test.
+    const TS_TEST: &str = "\
+import { test, expect } from \"vitest\";
+
+test(\"limits to 100/min\", () => {
+    expect(true).toBe(true);
+});
+
+export function rateLimitTest(): void {}
+";
+
+    // A present Python test function, named like a pytest test.
+    const PY_TEST: &str = "\
+def test_rate_limit():
+    assert True
+";
+
+    #[test]
+    fn non_rust_maps_to_test_present_symbol_advises_never_blocks() {
+        // symbol PRESENT under a non-Rust grammar: exactly one `unsupported-language` advisory
+        // (the is-a-test half is Rust-only — unverified), NO `criterion-maps-to-test` block.
+        for (file, src, symbol) in [
+            ("limit.test.ts", TS_TEST, "rateLimitTest"),
+            ("test_limit.py", PY_TEST, "test_rate_limit"),
+        ] {
+            let findings = check_one_with_check(file, src, symbol, "criterion-maps-to-test");
+            assert_eq!(findings.len(), 1, "{file}: exactly one finding");
+            assert_eq!(findings[0].severity, Severity::Advisory, "{file}: advisory");
+            assert_eq!(findings[0].check, "unsupported-language", "{file}");
+            assert_eq!(findings[0].code, "doc-code.unsupported-language", "{file}");
+        }
+    }
+
+    #[test]
+    fn non_rust_maps_to_test_absent_symbol_blocks_never_advises() {
+        // symbol ABSENT under a non-Rust grammar: exactly one blocking `criterion-maps-to-test`
+        // (the symbol-existence floor — nothing to advise about a vanished symbol), NO advisory.
+        for (file, src) in [("limit.test.ts", TS_TEST), ("test_limit.py", PY_TEST)] {
+            let findings = check_one_with_check(file, src, "vanished", "criterion-maps-to-test");
+            assert_eq!(findings.len(), 1, "{file}: exactly one finding");
+            assert_eq!(findings[0].severity, Severity::Blocking, "{file}: blocking");
+            assert_eq!(findings[0].check, "criterion-maps-to-test", "{file}");
+            assert_eq!(
+                findings[0].code, "doc-code.criterion-maps-to-test",
+                "{file}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_rust_symbol_exists_present_symbol_emits_no_finding() {
+        // The test-half advisory is `maps-to-test`-only: a present non-Rust `symbol-exists`
+        // anchor passes silently (no `unsupported-language` advisory rides a plain symbol-exists).
+        assert!(
+            check_one_with_check("limit.test.ts", TS_TEST, "rateLimitTest", "symbol-exists")
+                .is_empty()
+        );
+        assert!(
+            check_one_with_check("test_limit.py", PY_TEST, "test_rate_limit", "symbol-exists")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn rust_not_a_test_block_still_fires() {
+        // The Rust is-a-test predicate is unchanged: a resolved Rust symbol that is not a
+        // `#[test]` fn still emits one blocking `criterion-maps-to-test`, never the advisory.
+        let src = "fn helper() {}\n";
+        let findings = check_one_with_check("lib.rs", src, "helper", "criterion-maps-to-test");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(findings[0].check, "criterion-maps-to-test");
     }
 }
