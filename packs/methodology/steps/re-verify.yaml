@@ -1,7 +1,8 @@
-Re-verify — the full gate green (`fmt` · `clippy -D warnings` · `test` · `build`)
-AND re-run the affected audit slice to confirm each closed finding is actually
-closed. Loop to clean: fixes regress and audits miss, so repeat the audit-relevant
-checks until both the slice and the gate are green.
+Re-verify — the project's full gate green (its own format, lint, test, and build
+gate, whatever toolchain it uses; do not assume a particular one) AND re-run the
+affected audit slice to confirm each closed finding is actually closed. Loop to
+clean: fixes regress and audits miss, so repeat the audit-relevant checks until
+both the slice and the gate are green.
 
 The milestone is done when every confirmed finding is closed (or consciously
 tracked), the gate is green, and the deliverable holds under the re-run end-to-end
