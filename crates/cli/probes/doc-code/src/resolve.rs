@@ -47,6 +47,11 @@ pub enum Grammar {
     /// (nested defs are idiomatic and citable; methods are defs in a class body); an
     /// `import` carries a `name` field and is excluded (the field-walk over-match).
     Python,
+    /// PHP. Citable kinds are `function_definition`, `class_declaration` (incl. an abstract
+    /// class — the same kind with an `abstract_modifier` child), `method_declaration`,
+    /// `interface_declaration`, `trait_declaration`, `enum_declaration`; a `simple_parameter`
+    /// carries a `name` field and is excluded (the field-walk over-match).
+    Php,
 }
 
 impl Grammar {
@@ -58,6 +63,7 @@ impl Grammar {
             Grammar::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
             Grammar::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
             Grammar::Python => tree_sitter_python::LANGUAGE.into(),
+            Grammar::Php => tree_sitter_php::LANGUAGE_PHP.into(),
         }
     }
 }
@@ -159,6 +165,7 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "tsx" => Some(Grammar::Tsx),
         "js" | "jsx" | "mjs" | "cjs" => Some(Grammar::JavaScript),
         "py" | "pyi" => Some(Grammar::Python),
+        "php" | "phtml" => Some(Grammar::Php),
         _ => None,
     }
 }
@@ -174,6 +181,9 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
 ///   a declaration position.
 /// - **Python** uses its own node-kind allowlist ([`is_py_citable`]) — `function_definition` /
 ///   `class_definition` at any nesting; an `import` carries a `name` and is excluded.
+/// - **PHP** uses its own node-kind allowlist ([`is_php_citable`]) — the six declaration kinds
+///   (function/class/method/interface/trait/enum) at any nesting; a `simple_parameter` carries
+///   a `name` and is excluded.
 fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
     let citable = match grammar {
         Grammar::Rust => true,
@@ -181,6 +191,7 @@ fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
         // value-position semantics; the TS-only kinds never appear in a JS AST.
         Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => is_ts_citable(node),
         Grammar::Python => is_py_citable(node),
+        Grammar::Php => is_php_citable(node),
     };
     if !citable {
         return Vec::new();
@@ -231,6 +242,26 @@ fn is_ts_citable(node: &Node) -> bool {
 /// kind and is excluded, closing the field-walk over-match.
 fn is_py_citable(node: &Node) -> bool {
     matches!(node.kind(), "function_definition" | "class_definition")
+}
+
+/// Whether `node` is a citable PHP declaration (the node-kind allowlist — [validation.md] →
+/// Multi-language resolution). The six declaration kinds resolve at any nesting,
+/// visibility/abstract-modifier ignored: a `function_definition`, a `class_declaration` (an
+/// abstract class is the *same* kind with an `abstract_modifier` child), a
+/// `method_declaration`, and — the review's false-block fix — an `interface_declaration`,
+/// `trait_declaration`, and `enum_declaration`. A `simple_parameter` reaches the AST with a
+/// `name` field but is not a declaration kind and is excluded, closing the field-walk
+/// over-match.
+fn is_php_citable(node: &Node) -> bool {
+    matches!(
+        node.kind(),
+        "function_definition"
+            | "class_declaration"
+            | "method_declaration"
+            | "interface_declaration"
+            | "trait_declaration"
+            | "enum_declaration"
+    )
 }
 
 #[cfg(test)]
@@ -629,6 +660,90 @@ class Shape:
             "def a():\n\tx = 1\n        y = 2\n",
         ] {
             let _ = symbol_exists(src, "x", Grammar::Python);
+        }
+    }
+
+    // A real PHP file exercising the allowlist (`function_definition`, `class_declaration`
+    // incl. an abstract class, `method_declaration`, `interface_declaration`,
+    // `trait_declaration`, `enum_declaration`) and the over-match exclusion: a function with
+    // a parameter (a `simple_parameter` carrying a `name`, which must NOT resolve).
+    const PHP: &str = "\
+<?php
+
+function free_fn($passed_param) {
+    return $passed_param;
+}
+
+abstract class Shape {
+    public function area(): int {
+        return 0;
+    }
+}
+
+interface Drawable {}
+
+trait Loggable {}
+
+enum Suit {
+    case Hearts;
+}
+";
+
+    #[test]
+    fn php_dispatches_by_extension() {
+        // The dispatch: every PHP extension maps to the PHP grammar.
+        for ext in ["php", "phtml"] {
+            let path = std::path::PathBuf::from(format!("src/app.{ext}"));
+            assert_eq!(grammar_for(&path), Some(Grammar::Php), "ext .{ext}");
+        }
+    }
+
+    #[test]
+    fn php_resolves_function_class_method_and_blocks_vanished() {
+        // A function/class/method resolves; a vanished one does not (block-on-rename).
+        assert!(symbol_exists(PHP, "free_fn", Grammar::Php));
+        assert!(symbol_exists(PHP, "Shape", Grammar::Php));
+        assert!(symbol_exists(PHP, "area", Grammar::Php));
+        assert!(!symbol_exists(PHP, "free_fn_renamed", Grammar::Php));
+    }
+
+    #[test]
+    fn php_resolves_interface_trait_enum() {
+        // The review's false-block fix: interface/trait/enum declarations ARE citable.
+        assert!(symbol_exists(PHP, "Drawable", Grammar::Php));
+        assert!(symbol_exists(PHP, "Loggable", Grammar::Php));
+        assert!(symbol_exists(PHP, "Suit", Grammar::Php));
+    }
+
+    #[test]
+    fn php_resolves_abstract_class() {
+        // An abstract class is the SAME `class_declaration` kind (an `abstract_modifier`
+        // child) — no separate kind needed; it must resolve.
+        assert!(symbol_exists(PHP, "Shape", Grammar::Php));
+    }
+
+    #[test]
+    fn php_parameter_does_not_resolve() {
+        // A non-declaration `name`-carrying node (a `simple_parameter`) is not in the
+        // allowlist, so the field-walk over-match is closed.
+        assert!(!symbol_exists(PHP, "passed_param", Grammar::Php));
+    }
+
+    #[test]
+    fn php_hostile_input_does_not_panic() {
+        // The panic-free property carries to PHP: garbage / truncated / BOM / non-ASCII /
+        // missing `<?php` source resolves to false, never crashes.
+        let bom = "\u{feff}<?php function f() {}";
+        for src in [
+            "",
+            "<?php function",
+            "}{)(",
+            "<?php class Shape",
+            "function free_fn() {}",
+            bom,
+            "<?php function ☃() { $π = 1; }",
+        ] {
+            let _ = symbol_exists(src, "x", Grammar::Php);
         }
     }
 }
