@@ -16,13 +16,13 @@ ACTUALLY-PINNED `cargo install`-built binary** (NOT `cargo test`) over a polyglo
 
 | | |
 |---|---|
-| `jigc` sha256 | `be7244296adb1fbc4f991c437dde9b99fd538ecaf83c7b6afea981ed2eecc6ca` |
-| `doc-code` probe sha256 | `cebfaaaccbfaf5e4ef7a2d7d13a27d3c7fcfdb7f0900976e5c079ec246eebdc7` |
-| HEAD commit | `a261708` (Inc-4 T3, the last prose-qualification commit; clean tree) |
+| `jigc` sha256 | `9dfe0c0df6387b87d15af38ced568e82cf0ae636779fc5255bcc312f721e41e3` |
+| `doc-code` probe sha256 | `746357a0cc5e6f996fb86f387198efa0339669d7c2affd5e66fce1bef9be2acf` |
+| HEAD commit | re-pinned after the milestone-completion audit — code at `8296333` (the M27 allowlist-precision fixes: fish/csh shebang no longer folds to bash; a top-level for-loop induction `let` no longer resolves). **The four measured facts below are unchanged** — those fixes touch only the fish/csh-shebang and for-loop-induction-var edges, not the TS/Python class-symbol flows measured here. (Originally measured at `a261708`, `jigc` `be72442…` / `doc-code` `cebfaaa…`, before the audit fixes.) |
 | Built | `cargo install --path crates/cli --force` (release; `build.rs` builds the **six-grammar** `doc-code` probe — Rust + TypeScript/TSX + JavaScript/JSX + Python + PHP + bash, six tree-sitter crates / seven language variants — and embeds it via `OUT_DIR/doc-code`); `rustc 1.95.0` |
-| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` relocated `jigc` to `~/.cargo/bin/jigc`; it was copied to `~/.local/bin/jigc`; a `jigc setup` run from **each** bin dir extracted that dir's `doc-code` sibling from the embedded copy. **All four sha256 identical** — `jigc` identical across both dirs (`be72442…`), `doc-code` identical across both dirs (`cebfaaa…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
-| Fresh-build cross-check | The relocated `jigc` is **byte-identical** to the freshly-`cargo install`-built `target/release/jigc` (same `be72442…`); the extracted `doc-code` siblings are byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` (`cebfaaa…`) — i.e. the pinned binaries match a fresh `cargo install` at this HEAD. |
-| Size | release `jigc` **13.4 MB** (13 355 496 B), `doc-code` **7.9 MB** (8 181 016 B). The release pair is small; the size guard's **90 MB** ceiling ([`crates/cli/tests/cargo_install_probe.rs`](../../../crates/cli/tests/cargo_install_probe.rs), tightened from 150 MB at Inc-4 T2) protects the **debug** `CARGO_BIN_EXE_jigc` (~71 MB with the embedded multi-grammar debug probe + debuginfo) so future grammar bloat or a re-swept `target/` embed trips it. |
+| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` relocated `jigc` to `~/.cargo/bin/jigc`; it was copied to `~/.local/bin/jigc`; a `jigc setup` run from **each** bin dir extracted that dir's `doc-code` sibling from the embedded copy. **All four sha256 identical** — `jigc` identical across both dirs (`9dfe0c0…`), `doc-code` identical across both dirs (`746357a…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
+| Fresh-build cross-check | The relocated `jigc` is **byte-identical** to the freshly-`cargo install`-built `target/release/jigc` (same `9dfe0c0…`); the extracted `doc-code` siblings are byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` (`746357a…`) — i.e. the pinned binaries match a fresh `cargo install` at this HEAD. |
+| Size | release `jigc` **12.7 MB** (13 355 656 B), `doc-code` **7.8 MB** (8 181 136 B). The release pair is small; the size guard's **90 MB** ceiling ([`crates/cli/tests/cargo_install_probe.rs`](../../../crates/cli/tests/cargo_install_probe.rs), tightened from 150 MB at Inc-4 T2) protects the **debug** `CARGO_BIN_EXE_jigc` (~71 MB with the embedded multi-grammar debug probe + debuginfo) so future grammar bloat or a re-swept `target/` embed trips it. |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (**no** `JIGC_PACK_DIR`) and the `doc-code` probe resolved **as the sibling beside the installed binary** (**no** `JIGC_DOC_CODE_PROBE` — the driver `unset`s both) — the production probe-resolution path (the M20 embed/sibling), exercised live with the M27 grammar set. |
 | Driver | [`evidence/drive.sh`](evidence/drive.sh) — one detached polyglot scratch repo + isolated `$HOME` per arm; logs in [`evidence/`](evidence/). |
 
@@ -59,8 +59,8 @@ not a file-absent one. Full logs per arm in [`evidence/`](evidence/).
 
 ## The four measured facts — each observed on the installed binary
 
-All four observed by running `~/.local/bin/jigc` (sha256 `be72442…`) from `PATH`, **no
-`JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE`**, resolving the `doc-code` sibling (`cebfaaa…`) beside it.
+All four observed by running `~/.local/bin/jigc` (sha256 `9dfe0c0…`) from `PATH`, **no
+`JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE`**, resolving the `doc-code` sibling (`746357a…`) beside it.
 
 ### Fact 1 — a TypeScript citation blocks on a vanished symbol ([`evidence/block-ts.log`](evidence/block-ts.log))
 
@@ -153,8 +153,8 @@ the **13.4 MB release `jigc` / 7.9 MB `doc-code`** size budget.
 ## Verdict — done-bar met
 
 The `doc-code` differentiator turns on for a **non-Rust** target, **measured on the actually-pinned,
-`cargo install`-built binary** (`jigc` `be72442…`, `doc-code` `cebfaaa…`, both identical across
-`~/.local/bin` + `~/.cargo/bin` and matching a fresh build at HEAD `a261708`), resolving the probe
+`cargo install`-built binary** (`jigc` `9dfe0c0…`, `doc-code` `746357a…`, both identical across
+`~/.local/bin` + `~/.cargo/bin` and matching a fresh build at HEAD, post-audit re-pin), resolving the probe
 through the **production sibling path** with **no env overrides**. A TypeScript citation
 (`src/api.ts#RateRouter`) and a Python citation (`services/limiter.py#TokenLimiter`) **genuinely
 validate against reality**: each **blocks** finalize (exit 3, HEAD unchanged, nothing promoted) on its

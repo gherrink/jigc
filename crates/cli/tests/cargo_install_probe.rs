@@ -37,9 +37,10 @@ use std::process::{Command, Stdio};
 /// A release-realistic ceiling on the installed `jigc` binary, tightened at M27 so
 /// future grammar bloat trips it. The test artifact is the unoptimized **debug**
 /// `CARGO_BIN_EXE_jigc` with full debuginfo, ~71.3MB at M27 (it now embeds the
-/// ~24.5MB debug five-grammar `doc-code` probe), so 90MB (≈1.26× current) leaves
-/// only modest headroom: a sixth tree-sitter grammar or a re-swept probe `target/`
-/// embed (~400MB) blows it, while a clean debug build stays comfortably under.
+/// ~24.5MB debug six-grammar `doc-code` probe — Rust + TS/JS/Python/PHP/bash), so
+/// 90MB (≈1.26× current) leaves only modest headroom: a seventh tree-sitter grammar
+/// or a re-swept probe `target/` embed (~400MB) blows it, while a clean debug build
+/// stays comfortably under.
 const SIZE_CEILING_BYTES: u64 = 90 * 1024 * 1024;
 
 /// A throwaway directory that removes itself on drop.
