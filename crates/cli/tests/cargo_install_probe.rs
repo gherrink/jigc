@@ -34,11 +34,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-/// A generous ceiling on the installed `jigc` binary: large enough for an
-/// unoptimized **debug** build with full debuginfo (the test artifact is
-/// `CARGO_BIN_EXE_jigc`, ~60–70MB), yet far below the ~400MB the regressed
-/// `include_dir!` embed produced. A re-swept probe `target/` tree would blow this.
-const SIZE_CEILING_BYTES: u64 = 150 * 1024 * 1024;
+/// A release-realistic ceiling on the installed `jigc` binary, tightened at M27 so
+/// future grammar bloat trips it. The test artifact is the unoptimized **debug**
+/// `CARGO_BIN_EXE_jigc` with full debuginfo, ~71.3MB at M27 (it now embeds the
+/// ~24.5MB debug five-grammar `doc-code` probe), so 90MB (≈1.26× current) leaves
+/// only modest headroom: a sixth tree-sitter grammar or a re-swept probe `target/`
+/// embed (~400MB) blows it, while a clean debug build stays comfortably under.
+const SIZE_CEILING_BYTES: u64 = 90 * 1024 * 1024;
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
