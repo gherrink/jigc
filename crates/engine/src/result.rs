@@ -960,6 +960,47 @@ mod tests {
         );
     }
 
+    /// M27 inc-3 (T3): the un-keyed `doc-code.unsupported-language` advisory — emitted
+    /// when a `#symbol` anchor lands on a present file whose extension/shebang maps to
+    /// no shipped grammar — is **not** a `CHECK_INVENTORY` row, so it is exempt from the
+    /// post-pass and keeps its emitted `Advisory` severity through
+    /// `ValidationReport::new`; an advisory-only report does not flip the gate
+    /// (`has_blocking()` is false). This is the `file-state.baseline-adopt` precedent
+    /// applied to the new informational code (`validation.md` → MVP check inventory —
+    /// informational outcomes keep their emitted severity; DECISIONS 2026-06-19 fork F2).
+    #[test]
+    fn unsupported_language_advisory_flows_through_keeping_its_emitted_severity() {
+        use crate::finding::Location;
+
+        // The advisory is NOT a keyed inventory row — the inventory stays the keyed
+        // surface, so the 27-count guard is untouched (no `knobs.yaml`/golden change).
+        assert!(
+            !is_inventory_check("doc-code", "unsupported-language"),
+            "the un-keyed unsupported-language advisory is not a CHECK_INVENTORY row",
+        );
+
+        // Over a no-delta cascade, the exempt advisory keeps its emitted severity.
+        let resolved = no_delta_resolved();
+        let advisory = Finding::graded(
+            Severity::Advisory,
+            "doc-code.unsupported-language",
+            "no shipped grammar maps to this file",
+            Some(Location::addressed("styles/site.css", 1, 1)),
+            None,
+        );
+        let report = ValidationReport::new(vec![advisory.clone()], &resolved);
+
+        assert_eq!(
+            report.findings,
+            vec![advisory],
+            "the exempt advisory flows through byte-identical, keeping its Advisory severity",
+        );
+        assert!(
+            !report.has_blocking(),
+            "an advisory-only report does not flip the gate",
+        );
+    }
+
     /// Done-criterion (c): the #5 `owner-artifact.present` gate IS a
     /// task-validate/finalize check, so it is a `CHECK_INVENTORY` row — the
     /// divergence from the M15 `checkpoint-marker-not-shadowed` sibling, which is a
