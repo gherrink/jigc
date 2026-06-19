@@ -41,9 +41,10 @@
 //! The grammar is chosen by extension first ([`resolve::grammar_for`]) and the extension
 //! **always wins**; for a file whose extension maps to no grammar, a `#!…sh` shebang on the
 //! first line dispatches to bash ([`resolve::grammar_for_shebang`]) — the dominant
-//! extensionless-script case, a pure file-bytes read (determinism intact). An un-grammared
-//! file with no `sh` shebang keeps the M10 silent-skip (the `unsupported-language` advisory
-//! is a later increment).
+//! extensionless-script case, a pure file-bytes read (determinism intact). A present file
+//! carrying a `#symbol` whose extension+shebang map to no shipped grammar emits a non-blocking
+//! `doc-code.unsupported-language` advisory ([`Finding::unsupported_language`]) — the
+//! uncheckable citation surfaced as uncheckable, replacing M10's silent skip (fork F2).
 
 mod resolve;
 
@@ -117,11 +118,14 @@ struct Finding {
     route: Option<String>,
 }
 
-/// The finding severity — kebab-case, matching `engine::finding::Severity`.
-#[derive(Debug, Clone, Copy, Serialize)]
+/// The finding severity — kebab-case, matching `engine::finding::Severity`. The engine
+/// already accepts `advisory` (no engine change); `unsupported-language` is the probe's
+/// first advisory emitter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 enum Severity {
     Blocking,
+    Advisory,
 }
 
 /// Where a finding points — matching `engine::finding::Location` (an `address` plus a
@@ -174,6 +178,30 @@ impl Finding {
         )
     }
 
+    /// One **advisory** `doc-code.unsupported-language` finding for a `#symbol` anchor on a
+    /// present file whose extension/shebang maps to no shipped grammar — the citation is
+    /// uncheckable, surfaced *as uncheckable* rather than hidden green (fork F2). A distinct
+    /// check-id (isolated from `symbol-exists` tuning), un-keyed/informational (no inventory
+    /// row, no `knobs.yaml` key — the `file-state.baseline-adopt` precedent).
+    fn unsupported_language(anchor: &TargetAnchor, file: &str) -> Self {
+        Self {
+            severity: Severity::Advisory,
+            probe: "doc-code".to_string(),
+            check: "unsupported-language".to_string(),
+            code: "doc-code.unsupported-language".to_string(),
+            message: format!(
+                "anchor `{}` not validated — no grammar for `{file}` (uncheckable citation)",
+                anchor.anchor_value,
+            ),
+            location: Some(Location {
+                address: anchor.address.clone(),
+                line: 1,
+                col: 1,
+            }),
+            route: None,
+        }
+    }
+
     /// The common blocking-finding shape: `doc-code.<check_id>` keyed on the target.
     fn dangling(anchor: &TargetAnchor, message: String) -> Self {
         Self {
@@ -219,11 +247,15 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             // The grammar is chosen by extension first (it always wins); for a file whose
             // extension maps to no grammar, a `#!…sh` shebang dispatches to bash — the
             // dominant extensionless-script case, a pure file-bytes read (no wall-clock /
-            // network / build — determinism intact). An un-grammared file with no `sh`
-            // shebang keeps the M10 silent-skip (the `unsupported-language` advisory is a
-            // later increment).
-            let grammar =
-                resolve::grammar_for(&path).or_else(|| resolve::grammar_for_shebang(&src))?;
+            // network / build — determinism intact). A present file whose extension+shebang
+            // map to no grammar carries an uncheckable `#symbol` citation: it emits a
+            // non-blocking `unsupported-language` advisory (replacing M10's silent skip),
+            // surfacing the gap rather than hiding it green (fork F2).
+            let Some(grammar) =
+                resolve::grammar_for(&path).or_else(|| resolve::grammar_for_shebang(&src))
+            else {
+                return Some(Finding::unsupported_language(anchor, file));
+            };
             if !resolve::symbol_exists(&src, symbol, grammar) {
                 // The symbol is absent — the floor of every `#symbol` check, including
                 // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
@@ -352,14 +384,59 @@ deploy() {
     }
 
     #[test]
-    fn un_grammared_file_without_sh_shebang_silent_skips() {
-        // An un-grammared extension with no `sh` shebang keeps the M10 silent-skip: the file
-        // exists, the grammar dispatch yields nothing, so the `#symbol` is not checked — no
-        // finding (the behavior Inc 3 supersedes with the `unsupported-language` advisory).
-        let src = "#!/usr/bin/perl\nsub thing { }\n";
-        assert!(check_one("script.pl", src, "anything").is_empty());
-        // A plain text file with no shebang at all, likewise.
-        assert!(check_one("notes.txt", "thing lives here\n", "thing").is_empty());
+    fn un_grammared_file_with_symbol_emits_unsupported_language_advisory() {
+        // A present file whose extension+shebang map to no grammar, carrying a `#symbol`,
+        // emits exactly one `unsupported-language` advisory — not a silent pass, not a
+        // blocking `symbol-exists` (the M10 silent-skip Inc 3 supersedes, fork F2).
+        let css = check_one("styles.css", ".btn { color: red; }\n", "btn");
+        assert_eq!(css.len(), 1);
+        assert_eq!(css[0].severity, Severity::Advisory);
+        assert_eq!(css[0].check, "unsupported-language");
+        assert_eq!(css[0].code, "doc-code.unsupported-language");
+
+        // docker-compose (a `.yaml`) — same outcome (parked, takes the advisory).
+        let compose = check_one(
+            "compose.yaml",
+            "services:\n  web:\n    image: nginx\n",
+            "web",
+        );
+        assert_eq!(compose.len(), 1);
+        assert_eq!(compose[0].severity, Severity::Advisory);
+        assert_eq!(compose[0].check, "unsupported-language");
+
+        // A `#!/usr/bin/perl` shebang maps to no grammar (the sniff is `sh`-only), so it too
+        // takes the advisory rather than the old silent-skip.
+        let perl = check_one("script.pl", "#!/usr/bin/perl\nsub thing { }\n", "thing");
+        assert_eq!(perl.len(), 1);
+        assert_eq!(perl[0].severity, Severity::Advisory);
+        assert_eq!(perl[0].check, "unsupported-language");
+    }
+
+    #[test]
+    fn bare_path_on_un_grammared_file_emits_no_finding() {
+        // A bare path (no `#symbol`) on the same un-grammared file is the file-existence
+        // check only — the present file passes, no advisory (the advisory rides a `#symbol`).
+        let root = temp_root();
+        std::fs::write(root.join("styles.css"), ".btn { color: red; }\n").unwrap();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor("styles.css")],
+            working_tree_root: root,
+        };
+        assert!(check_anchors(&snapshot).is_empty());
+    }
+
+    #[test]
+    fn missing_un_grammared_file_still_blocks() {
+        // The file-existence floor wins: a `#symbol` anchor on an absent un-grammared file
+        // emits one blocking finding before any grammar/advisory dispatch.
+        let root = temp_root();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor("ghost.css#btn")],
+            working_tree_root: root,
+        };
+        let findings = check_anchors(&snapshot);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].severity, Severity::Blocking);
     }
 
     #[test]
