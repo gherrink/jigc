@@ -112,7 +112,7 @@ route for the next action. Fix and re-run.
 (arch-docs), `docs/changelog/` — as plain, human-reviewable Markdown alongside
 your own `src/`. (The names are chosen for readability, not a uniform `<type>s/`
 rule.) Prefer a different parent, or the old flat repo-root layout? Set
-`jigc config set docs-root <path>` (`""` or `.` for flat). Everything else jigc
+`jigc config set docs-root <path>` (`.` for the old flat layout). Everything else jigc
 writes lives under `.jigc/` (committed config + bootstrap; gitignored caches) —
 see [design/storage.md](design/storage.md) → Repository layout / Config layout. If
 you already have a same-named dir (say an existing `docs/architecture/`), run
