@@ -1087,18 +1087,34 @@ impl ActiveTask {
             .is_some())
     }
 
-    /// Load the schema for `type_name` from the embedded pack.
+    /// Resolve the project cascade for this task — the `docs-root` (and severity)
+    /// surface the schema-load applies. A missing project layer resolves to the
+    /// pack-default base (the no-override case).
+    fn resolved(&self) -> Result<engine::cascade::Resolved> {
+        crate::start::resolve_severity_cascade(
+            self.pack.as_ref(),
+            &self.repo_root.join(".jigc/config"),
+        )
+    }
+
+    /// Load the schema for `type_name` from the embedded pack, nesting its `location:`
+    /// under the resolved `docs-root` (a schema-load surface — the copy-in resolves
+    /// `canonical_path` against this `location:`, so it must match the finalize-promote
+    /// write path or warm copy-in reads the wrong dir).
     fn schema(&self, type_name: &str) -> Result<Schema> {
         let bytes = self
             .pack
             .read(PackResourceKind::Schemas, &ResourceId::from(type_name))
             .with_context(|| format!("unknown doctype `{type_name}`"))?;
-        crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
-            .with_context(|| format!("the `{type_name}` schema is malformed"))
+        let mut schema = crate::pack::load_pack_schema(self.pack.as_ref(), &bytes)
+            .with_context(|| format!("the `{type_name}` schema is malformed"))?;
+        crate::start::apply_docs_root(&self.resolved()?, std::iter::once(&mut schema));
+        Ok(schema)
     }
 
     /// Load every shipped schema, keyed by doctype — the set `create_gated`
-    /// adjudicates the unknown-doctype check against.
+    /// adjudicates the unknown-doctype check against. Nests each `location:` under the
+    /// resolved `docs-root` (a schema-load surface, kept consistent with `schema`).
     fn schemas(&self) -> Result<BTreeMap<String, Schema>> {
         let mut out = BTreeMap::new();
         for id in self.pack.list(PackResourceKind::Schemas) {
@@ -1110,6 +1126,7 @@ impl ActiveTask {
                 .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
             out.insert(schema.ty.clone(), schema);
         }
+        crate::start::apply_docs_root(&self.resolved()?, out.values_mut());
         Ok(out)
     }
 

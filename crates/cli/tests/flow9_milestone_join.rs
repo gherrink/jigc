@@ -147,8 +147,8 @@ The cache strategy is recorded as an ADR.
 /// Commit `SEED_SPEC` at `specs/<slug>.md` so `add-from-spec` reads genuinely
 /// committed state.
 fn commit_spec(repo: &Path, slug: &str) {
-    let specs = repo.join("specs");
-    fs::create_dir_all(&specs).expect("mk specs/");
+    let specs = repo.join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs/");
     fs::write(specs.join(format!("{slug}.md")), SEED_SPEC).expect("write spec");
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "add spec"]);
@@ -407,11 +407,11 @@ fn flow9_join_commits_byte_identically_across_divergent_feed_orders() {
     // ---- Supporting: suffix-by-task-id + self-ref rewrite, off the committed tree. ----
     // Read the promoted docs from the id-order repo (the tree is identical across all
     // three, so reading any one is reading the shared committed bytes).
-    let decisions = repo_id.path().join("decisions");
+    let decisions = repo_id.path().join("docs").join("decisions");
     for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
         assert!(
             decisions.join(format!("{slug}.md")).is_file(),
-            "the promoted `{slug}` doc must land at decisions/{slug}.md",
+            "the promoted `{slug}` doc must land at docs/decisions/{slug}.md",
         );
     }
     // The lower task id (`add-a-cache-strategy-adr`, the "eager" body) kept the BARE
@@ -441,11 +441,11 @@ fn flow9_join_commits_byte_identically_across_divergent_feed_orders() {
     );
 
     // The promoted docs are genuinely committed (tracked in HEAD's tree).
-    let tracked = git(repo_id.path(), &["ls-files", "decisions/"]);
+    let tracked = git(repo_id.path(), &["ls-files", "docs/decisions/"]);
     for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
         assert!(
-            tracked.contains(&format!("decisions/{slug}.md")),
-            "decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
+            tracked.contains(&format!("docs/decisions/{slug}.md")),
+            "docs/decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
         );
     }
 }
@@ -520,7 +520,7 @@ fn flow9_cross_area_ref_blocks_with_naive_union_control() {
         "a cross-area block must commit nothing",
     );
     assert!(
-        !repo.path().join("decisions").exists(),
+        !repo.path().join("docs").join("decisions").exists(),
         "a cross-area block must promote nothing",
     );
 
@@ -566,10 +566,10 @@ fn flow9_cross_area_ref_blocks_with_naive_union_control() {
     );
     // The control genuinely committed both docs — proof the ref is not intrinsically
     // dangling; only the cross-area scoping rejects it.
-    let ctrl_tracked = git(ctrl.path(), &["ls-files", "decisions/"]);
+    let ctrl_tracked = git(ctrl.path(), &["ls-files", "docs/decisions/"]);
     assert!(
-        ctrl_tracked.contains("decisions/cache-strategy.md")
-            && ctrl_tracked.contains("decisions/lru-eviction.md"),
+        ctrl_tracked.contains("docs/decisions/cache-strategy.md")
+            && ctrl_tracked.contains("docs/decisions/lru-eviction.md"),
         "CONTROL: the naive-union fixture commits both docs clean; got:\n{ctrl_tracked}",
     );
 }
@@ -629,7 +629,7 @@ fn flow9_same_doc_clash_blocks_and_commits_nothing() {
         "a same-doc clash must commit nothing",
     );
     assert!(
-        !repo.path().join("decisions").exists(),
+        !repo.path().join("docs").join("decisions").exists(),
         "a same-doc clash must promote nothing",
     );
 }

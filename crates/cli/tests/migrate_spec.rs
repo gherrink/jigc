@@ -13,12 +13,12 @@
 //!     migration task, the agent authors the canonical record through `doc author spec
 //!     --from-file -` (the goal/context slots + ≥2 `criteria` items, each a `title` + a
 //!     `statement` slot, with **NO `maps-to-test`**), and `task finalize --approve` lands
-//!     exactly ONE commit that (a) writes `specs/<slug>.md` byte-stable
-//!     (`render(instance_from_source(x)) == x`), (b) carries `A specs/<slug>.md` + `D
+//!     exactly ONE commit that (a) writes `docs/specs/<slug>.md` byte-stable
+//!     (`render(instance_from_source(x)) == x`), (b) carries `A docs/specs/<slug>.md` + `D
 //!     <foreign>` (the foreign original retired/gone), and (c) a follow-up `jigc ingest`
 //!     reports the managed spec **adopted**. A spec with no test anchors finalizes clean —
 //!     `maps-to-test` is optional. The review gate blocks the bare finalize first (nothing
-//!     committed). The headline runs into an **empty `specs/`** — the cold-spike arm.
+//!     committed). The headline runs into an **empty `docs/specs/`** — the cold-spike arm.
 //!   - **Guidance skeleton** — the shipped `migrate-spec` guidance's emitted `doc author`
 //!     payload skeleton parses as a valid spec author payload (the agent-facing artifact is
 //!     the contract; a skeleton the parser rejects would silently break every per-guidance
@@ -167,13 +167,14 @@ fn migration_task(rel: &str) -> String {
     format!("migrate-spec-{}", engine::slug::slugify(&folded))
 }
 
-/// Write a foreign spec at `docs/specs/<stem>.md` and **commit it**, so the retire
-/// surfaces a tracked deletion in the finalize commit (the realistic flow — a
-/// pre-existing committed spec).
+/// Write a foreign spec at the off-canonical `specs/<stem>.md` and **commit it**, so
+/// the retire surfaces a tracked deletion in the finalize commit (the realistic flow —
+/// a pre-existing committed spec). The canonical home is now `docs/specs/` (the
+/// `docs-root` nesting), so flat `specs/` is the off-canonical foreign location.
 fn commit_foreign_spec(repo: &Path, stem: &str, body: &str) -> String {
-    let rel = format!("docs/specs/{stem}.md");
+    let rel = format!("specs/{stem}.md");
     let path = repo.join(&rel);
-    fs::create_dir_all(path.parent().unwrap()).expect("create docs/specs/");
+    fs::create_dir_all(path.parent().unwrap()).expect("create specs/");
     fs::write(&path, body).expect("write foreign spec");
     git(repo, &["add", &rel]);
     git(repo, &["commit", "-q", "-m", "track foreign spec"]);
@@ -206,10 +207,10 @@ fn author_spec(
     )
 }
 
-/// Assert the canonical `specs/<slug>.md` on disk round-trips byte-stable through the
+/// Assert the canonical `docs/specs/<slug>.md` on disk round-trips byte-stable through the
 /// shipped spec schema: `render(&schema, &instance_from_source(&schema, x)) == x`.
 fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String {
-    let on_disk = fs::read_to_string(repo.join("specs").join(format!("{slug}.md")))
+    let on_disk = fs::read_to_string(repo.join("docs").join("specs").join(format!("{slug}.md")))
         .expect("the canonical spec is on disk");
     let schema = shipped_spec_schema(pack);
     let parsed = engine::write::instance_from_source(&schema, &on_disk)
@@ -222,11 +223,11 @@ fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String 
     on_disk
 }
 
-/// Assert a follow-up `jigc ingest` reports `specs/<slug>.md` adopted — never
+/// Assert a follow-up `jigc ingest` reports `docs/specs/<slug>.md` adopted — never
 /// `unmanaged` / `needs-reconcile`.
 fn assert_ingest_adopted(repo: &Path, home: &Path, pack: &Path, slug: &str) {
     let ingest = ok_stdout(run_jigc(repo, home, pack, &["ingest"], None), "jigc ingest");
-    let needle = format!("specs/{slug}.md");
+    let needle = format!("docs/specs/{slug}.md");
     let row = ingest
         .lines()
         .find(|l| l.contains(&needle))
@@ -263,7 +264,7 @@ The product has no authentication today; it is required before the public launch
 /// The canonical rewrite payload — the goal/context fixed slots + a `criteria` section
 /// carrying TWO `items`, each a `title` + a `statement` slot, with **NO `maps-to-test`**
 /// (a migrated spec with no test anchors must finalize clean). The title slugs to
-/// `auth-spec`, the canonical path `specs/auth-spec.md`.
+/// `auth-spec`, the canonical path `docs/specs/auth-spec.md`.
 const PAYLOAD_SPEC: &str = r#"title: "Auth spec"
 sections:
   - id: goal
@@ -289,12 +290,12 @@ fn migrate_spec_finalize_writes_retires_and_adopts() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    // A committed foreign spec at the off-canonical `docs/specs/` path; `specs/` is empty
+    // A committed foreign spec at the off-canonical `docs/specs/` path; `docs/specs/` is empty
     // (the cold spike — migrate into a never-before-populated doctype location).
     let rel = commit_foreign_spec(repo.path(), "auth-spec", FOREIGN_SPEC);
     assert!(
-        !repo.path().join("specs").exists(),
-        "the cold spike starts with no `specs/` directory"
+        !repo.path().join("docs").join("specs").exists(),
+        "the cold spike starts with no `docs/specs/` directory"
     );
 
     ok_stdout(
@@ -414,7 +415,7 @@ fn migrate_spec_finalize_writes_retires_and_adopts() {
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tspecs/auth-spec.md"),
+        name_status.contains("A\tdocs/specs/auth-spec.md"),
         "the SAME commit carries the added managed spec:\n{name_status}"
     );
 

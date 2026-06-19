@@ -243,8 +243,8 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
     let tree = git(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
     let tree_paths: Vec<&str> = tree.lines().collect();
     assert!(
-        tree_paths.contains(&"changelog/changelog.md"),
-        "the migration commit promotes `changelog/changelog.md`; tree:\n{tree}",
+        tree_paths.contains(&"docs/changelog/changelog.md"),
+        "the migration commit promotes `docs/changelog/changelog.md`; tree:\n{tree}",
     );
     assert!(
         tree_paths.iter().any(|p| p.starts_with(".jigc/config/")),

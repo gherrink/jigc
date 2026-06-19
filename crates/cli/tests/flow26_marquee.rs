@@ -20,7 +20,7 @@
 //!     slug-cased `…/category` address), before anything is staged or committed;
 //!   - **RED — `remove-item` (#1)** — a mis-authored NESTED change-group is retracted
 //!     byte-stable, the sibling group + parent release surviving;
-//!   - **RED — the in-location squatter (#8)** — `jigc migrate changelog/changelog.md`
+//!   - **RED — the in-location squatter (#8)** — `jigc migrate docs/changelog/changelog.md`
 //!     (source path == canonical destination) seeds the working area BLANK then authors
 //!     end-to-end through the batch, finalize rewriting in place (Modified, NOT retired);
 //!   - **RED — the structural release-delta summary (#5)** — a batch that drops a source
@@ -365,7 +365,7 @@ fn flow26_full_batch_migration_walk() {
         "the fidelity diff surfaces the foreign source bytes; got:\n{diff}"
     );
     assert!(
-        diff.contains("changelog/changelog.md"),
+        diff.contains("docs/changelog/changelog.md"),
         "the fidelity diff names the canonical rewrite destination; got:\n{diff}"
     );
     assert!(
@@ -403,8 +403,13 @@ fn flow26_full_batch_migration_walk() {
 
     // The committed canonical doc is byte-stable and matches the staged bytes (the batch
     // body landed verbatim) — and still carries no date line.
-    let committed = fs::read_to_string(repo.path().join("changelog").join("changelog.md"))
-        .expect("the canonical changelog is on disk after finalize");
+    let committed = fs::read_to_string(
+        repo.path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md"),
+    )
+    .expect("the canonical changelog is on disk after finalize");
     assert_eq!(
         committed, staged,
         "the committed canonical doc equals the batch-authored staged bytes",
@@ -430,12 +435,12 @@ fn flow26_full_batch_migration_walk() {
         "the auto-provisioned commit carries a non-empty body",
     );
 
-    // The landed commit holds ONLY the migration set: A changelog/changelog.md, D
+    // The landed commit holds ONLY the migration set: A docs/changelog/changelog.md, D
     // CHANGELOG.md — NOT the jigc config layer (setup committed that on its own, M26) and
     // NOT the unrelated WIP.
     let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        delta.lines().any(|l| l == "A\tchangelog/changelog.md"),
+        delta.lines().any(|l| l == "A\tdocs/changelog/changelog.md"),
         "the commit promotes the canonical doc:\n{delta}",
     );
     assert!(
@@ -475,7 +480,7 @@ fn flow26_full_batch_migration_walk() {
     );
     let row = ingest
         .lines()
-        .find(|l| l.contains("changelog/changelog.md"))
+        .find(|l| l.contains("docs/changelog/changelog.md"))
         .unwrap_or_else(|| panic!("ingest reports the managed changelog:\n{ingest}"));
     assert!(
         row.contains("adopted") && !row.contains("needs-reconcile") && !row.contains("unmanaged"),
@@ -599,7 +604,12 @@ fn flow26_red_write_time_enum_block_at_add_item() {
         "the enum block leaves HEAD unchanged"
     );
     assert!(
-        !repo.path().join("changelog").join("changelog.md").exists(),
+        !repo
+            .path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md")
+            .exists(),
         "the enum block adopts nothing (no canonical doc on disk)"
     );
 }
@@ -649,7 +659,7 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
     assert_byte_stable(&pack, &staged);
 }
 
-/// RED — the in-location squatter (#8). `jigc migrate changelog/changelog.md` (source ==
+/// RED — the in-location squatter (#8). `jigc migrate docs/changelog/changelog.md` (source ==
 /// canonical destination) seeds the working area BLANK (never the foreign squatter body),
 /// authors end-to-end through the batch, and finalize rewrites the canonical doc IN PLACE
 /// (Modified, NOT retired), byte-stable.
@@ -662,15 +672,15 @@ fn flow26_red_in_location_squatter_seeds_blank_and_authors_via_batch() {
 
     // A NON-conformant changelog squatting AT the canonical managed path. The per-file
     // migration id folds the (extension-stripped, separator-folded) source path into the
-    // slug, so this `changelog/changelog.md` source mints a distinct task id from the
+    // slug, so this `docs/changelog/changelog.md` source mints a distinct task id from the
     // root-`CHANGELOG.md` tests above.
-    const SQUATTER_TASK: &str = "migrate-changelog-changelog-changelog";
+    const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog";
     const SQUATTER: &str = "# Whatever\n\nnon-conformant prior content at the canonical path\n";
     setup_and_migrate(
         repo.path(),
         home.path(),
         &pack,
-        "changelog/changelog.md",
+        "docs/changelog/changelog.md",
         SQUATTER,
     );
 
@@ -725,17 +735,22 @@ sections:
     // just-written doc) — the source-path == promote-destination guard.
     let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        delta.lines().any(|l| l == "M\tchangelog/changelog.md"),
+        delta.lines().any(|l| l == "M\tdocs/changelog/changelog.md"),
         "the in-location squatter is rewritten in place (Modified):\n{delta}",
     );
     assert!(
-        !delta.lines().any(|l| l == "D\tchangelog/changelog.md"),
+        !delta.lines().any(|l| l == "D\tdocs/changelog/changelog.md"),
         "the in-location squatter retire is SKIPPED — no deletion of the just-written doc:\n{delta}",
     );
 
     // The committed doc is the authored doc (byte-stable, no Frankenstein).
-    let committed = fs::read_to_string(repo.path().join("changelog").join("changelog.md"))
-        .expect("the canonical changelog is on disk after finalize");
+    let committed = fs::read_to_string(
+        repo.path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md"),
+    )
+    .expect("the canonical changelog is on disk after finalize");
     assert_eq!(
         committed, staged,
         "the committed doc equals the authored doc"

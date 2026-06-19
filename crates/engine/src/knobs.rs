@@ -259,6 +259,9 @@ mod tests {
         // this list, no more, no less.
         let expected: Vec<(&str, &str)> = vec![
             ("default-workflow", "router"),
+            // docs-root — the managed-doc parent dir (default `docs/`); string,
+            // tunable, no floor.
+            ("docs-root", "docs/"),
             // finalize.fan-out.squash — the milestone commit-shaping knob (M8),
             // bool, default true (the M7 single-aggregate form).
             ("finalize.fan-out.squash", "true"),

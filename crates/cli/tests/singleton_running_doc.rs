@@ -246,13 +246,13 @@ fn start_keep_runlog(repo: &Path, home: &Path, intent: &str, task_id: &str) {
 /// The committed `runlog/runlog.md` bytes at HEAD (the promoted singleton).
 fn committed_runlog(repo: &Path) -> String {
     let out = Command::new("git")
-        .args(["show", "HEAD:runlog/runlog.md"])
+        .args(["show", "HEAD:docs/runlog/runlog.md"])
         .current_dir(repo)
         .output()
         .expect("git show runlog");
     assert!(
         out.status.success(),
-        "the singleton must be committed at runlog/runlog.md; stderr:\n{}",
+        "the singleton must be committed at docs/runlog/runlog.md; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
     );
     String::from_utf8(out.stdout).expect("utf-8 committed runlog")
@@ -521,7 +521,7 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
     // starts so the warm task's base == this drifted HEAD (no `finalize.base-mismatch`,
     // which would pre-empt the reconcile gate). This rides the existing reconcile
     // machinery — no reconcile code is added by this task.
-    let committed_path = repo.path().join("runlog").join("runlog.md");
+    let committed_path = repo.path().join("docs").join("runlog").join("runlog.md");
     let on_disk = fs::read_to_string(&committed_path).expect("read committed runlog on disk");
     fs::write(
         &committed_path,
@@ -531,7 +531,7 @@ fn warm_edit_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
         ),
     )
     .expect("apply OOB drift");
-    git(repo.path(), &["add", "runlog/runlog.md"]);
+    git(repo.path(), &["add", "docs/runlog/runlog.md"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "oob: hand-edit the runlog"],

@@ -12,7 +12,7 @@
 //! (`design/reconciliation.md` → The state machine: absorb / conformance-block /
 //! conflict-block / rename) is wired into the real loop: `task validate` (and
 //! therefore `finalize`, which gates on exactly what validate reports) sweeps the
-//! committed store (`decisions/*.md`) and routes drift — a conformant OOB edit
+//! committed store (`docs/decisions/*.md`) and routes drift — a conformant OOB edit
 //! **absorbs** (advisory, non-blocking), a nonconformant one **conformance-blocks**.
 
 use std::fs;
@@ -421,10 +421,10 @@ fn commit_prior_adr(repo: &Path, home: &Path, decision: &str) {
     assert!(
         git(
             repo,
-            &["cat-file", "-e", "HEAD:decisions/single-node-cache.md"]
+            &["cat-file", "-e", "HEAD:docs/decisions/single-node-cache.md"]
         )
         .is_empty(),
-        "prior ADR must be committed at decisions/single-node-cache.md"
+        "prior ADR must be committed at docs/decisions/single-node-cache.md"
     );
 }
 
@@ -506,7 +506,7 @@ fn scenario_4_superseding_decision_resolves_slice_and_passes_edge_walk() {
             &[
                 "cat-file",
                 "-e",
-                "HEAD:decisions/shared-redis-session-cache.md"
+                "HEAD:docs/decisions/shared-redis-session-cache.md"
             ]
         )
         .is_empty(),
@@ -583,6 +583,7 @@ fn scenario_4_dangling_supersedes_blocks_finalize() {
     assert!(
         !repo
             .path()
+            .join("docs")
             .join("decisions")
             .join("shared-redis-session-cache.md")
             .exists(),
@@ -707,7 +708,7 @@ fn scenario_5c_discard_cleans_the_working_area() {
 //
 // The committed-store OOB reconciliation classifier is wired through the real loop:
 // `task validate` (and `finalize`, which gates on what validate reports) sweeps the
-// committed store (`decisions/*.md`) and routes drift. `design/reconciliation.md` →
+// committed store (`docs/decisions/*.md`) and routes drift. `design/reconciliation.md` →
 // Detection timing names `jigc task validate` as the full sweep; the classifier is
 // `engine::file_state::reconcile_committed`. A conformant OOB edit **absorbs**
 // (advisory `reconciliation.absorb`, non-blocking); a nonconformant one
@@ -722,7 +723,11 @@ fn scenario_6_conformant_oob_edit_to_committed_adr_absorbs() {
 
     // Commit a prior ADR (task 1).
     commit_prior_adr(repo.path(), home.path(), "keep it on one node.");
-    let adr_path = repo.path().join("decisions").join("single-node-cache.md");
+    let adr_path = repo
+        .path()
+        .join("docs")
+        .join("decisions")
+        .join("single-node-cache.md");
     assert!(adr_path.is_file(), "the committed ADR exists on disk");
 
     // Hand-edit the committed managed doc OUTSIDE jigc (an out-of-band edit that
@@ -770,7 +775,11 @@ fn scenario_6_nonconformant_oob_edit_to_committed_adr_blocks_finalize() {
     init_repo(repo.path());
 
     commit_prior_adr(repo.path(), home.path(), "keep it on one node.");
-    let adr_path = repo.path().join("decisions").join("single-node-cache.md");
+    let adr_path = repo
+        .path()
+        .join("docs")
+        .join("decisions")
+        .join("single-node-cache.md");
     let before = fs::read_to_string(&adr_path).expect("read committed ADR");
     // Rename a required section heading — a structural nonconformance the parser
     // rejects (the conformance-block case).

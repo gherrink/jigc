@@ -321,8 +321,13 @@ fn migration_dateless_release_omits_date_and_finalizes_clean() {
     );
 
     // The COMMITTED canonical changelog carries no `date:` line for the release.
-    let committed = fs::read_to_string(repo.path().join("changelog").join("changelog.md"))
-        .expect("the canonical changelog is on disk after finalize");
+    let committed = fs::read_to_string(
+        repo.path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md"),
+    )
+    .expect("the canonical changelog is on disk after finalize");
     assert!(
         !committed.contains("- date:") && !committed.contains("\ndate:"),
         "the committed dateless migration release carries no `date:` line:\n{committed}",

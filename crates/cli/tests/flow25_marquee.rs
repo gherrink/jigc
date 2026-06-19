@@ -11,7 +11,7 @@
 //!      historical date / set-slot), then `finalize` WITHOUT `--approve` blocks (exit
 //!      `EXIT_REVIEW_PENDING` = 4, renders the fidelity diff, no commit, foreign
 //!      byte-intact, nothing adopted), then `finalize --approve` writes
-//!      `changelog/changelog.md` byte-stable, retires the foreign original (gone), lands
+//!      `docs/changelog/changelog.md` byte-stable, retires the foreign original (gone), lands
 //!      exactly ONE commit carrying the added doc + the deletion, and a follow-up
 //!      `jigc ingest` reports it adopted;
 //!   2. **RED 1** — a `Performance` change-group is rejected **at the `add-item` write
@@ -391,7 +391,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
         "the fidelity diff surfaces the foreign source bytes; got:\n{diff}"
     );
     assert!(
-        diff.contains("changelog/changelog.md"),
+        diff.contains("docs/changelog/changelog.md"),
         "the fidelity diff names the canonical rewrite destination; got:\n{diff}"
     );
     assert!(
@@ -410,7 +410,12 @@ fn flow25_migrate_review_approve_adopt_walk() {
         "a blocked review leaves the foreign original byte-intact"
     );
     assert!(
-        !repo.path().join("changelog").join("changelog.md").exists(),
+        !repo
+            .path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md")
+            .exists(),
         "a blocked review adopts nothing (no canonical doc on disk)"
     );
 
@@ -440,7 +445,11 @@ fn flow25_migrate_review_approve_adopt_walk() {
     );
 
     // The canonical managed doc is on disk + committed + round-trips BYTE-STABLE.
-    let canonical = repo.path().join("changelog").join("changelog.md");
+    let canonical = repo
+        .path()
+        .join("docs")
+        .join("changelog")
+        .join("changelog.md");
     let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
     let schema = shipped_changelog_schema(&pack);
     let parsed = engine::write::instance_from_source(&schema, &committed)
@@ -458,7 +467,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
     assert!(
         git(
             repo.path(),
-            &["cat-file", "-t", "HEAD:changelog/changelog.md"]
+            &["cat-file", "-t", "HEAD:docs/changelog/changelog.md"]
         )
         .contains("blob"),
         "the canonical changelog is committed in HEAD"
@@ -475,7 +484,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tchangelog/changelog.md"),
+        name_status.contains("A\tdocs/changelog/changelog.md"),
         "the SAME commit carries the added managed doc:\n{name_status}"
     );
 
@@ -486,7 +495,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
     );
     let row = ingest
         .lines()
-        .find(|l| l.contains("changelog/changelog.md"))
+        .find(|l| l.contains("docs/changelog/changelog.md"))
         .unwrap_or_else(|| panic!("ingest reports the managed changelog:\n{ingest}"));
     assert!(
         row.contains("adoptable") && row.contains("adopted"),
@@ -601,7 +610,12 @@ fn flow25_red1_performance_group_blocks_at_enum_conformance() {
         "the enum block retires nothing (foreign original on disk)"
     );
     assert!(
-        !repo.path().join("changelog").join("changelog.md").exists(),
+        !repo
+            .path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md")
+            .exists(),
         "the enum block adopts nothing (no canonical doc on disk)"
     );
 }

@@ -122,7 +122,7 @@ fn expect_ok(out: &std::process::Output, what: &str) {
 }
 
 /// A canonical committed ADR (the `write::render` form of an ADR), so a first-touch
-/// copy-in is byte-stable. Committed at `decisions/<slug>.md`.
+/// copy-in is byte-stable. Committed at `docs/decisions/<slug>.md`.
 fn committed_adr(title: &str) -> String {
     format!(
         "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n"
@@ -130,16 +130,18 @@ fn committed_adr(title: &str) -> String {
 }
 
 /// Initialize a git repo with one commit + the `.jigc/config/` project layer + a
-/// committed ADR at `decisions/eviction-policy.md` (the base doc copy-on-first-touch
+/// committed ADR at `docs/decisions/eviction-policy.md` (the base doc copy-on-first-touch
 /// pulls in).
 fn init_repo(root: &Path) {
     git(root, &["init", "-q"]);
     git(root, &["config", "user.email", "test@example.com"]);
     git(root, &["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
-    fs::create_dir_all(root.join("decisions")).expect("create decisions/");
+    fs::create_dir_all(root.join("docs").join("decisions")).expect("create docs/decisions/");
     fs::write(
-        root.join("decisions").join("eviction-policy.md"),
+        root.join("docs")
+            .join("decisions")
+            .join("eviction-policy.md"),
         committed_adr("Eviction policy"),
     )
     .expect("write committed adr");

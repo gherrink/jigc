@@ -3,7 +3,7 @@
 //!
 //! On a **migration task** ([auto-migration.md](../../../design/auto-migration.md) →
 //! Retire-the-foreign-original / Adopt), `jigc task finalize <id> --approve` executes
-//! the transaction all-or-nothing: write `changelog/changelog.md` (byte-stable),
+//! the transaction all-or-nothing: write `docs/changelog/changelog.md` (byte-stable),
 //! **retire the foreign original** (here a committed root `CHANGELOG.md`, so the
 //! deletion stages into the same commit), `git` commit, and adopt. The proof:
 //!   - the canonical doc lands byte-stable (`render(parse(x)) == x`) + is committed;
@@ -346,7 +346,11 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
 
     // The canonical managed doc is committed + on disk, and round-trips BYTE-STABLE
     // (`render(parse(x)) == x`) — the contract the adopt path leans on.
-    let canonical = repo.path().join("changelog").join("changelog.md");
+    let canonical = repo
+        .path()
+        .join("docs")
+        .join("changelog")
+        .join("changelog.md");
     let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
     let schema = shipped_changelog_schema(&pack);
     let parsed = engine::write::instance_from_source(&schema, &committed)
@@ -359,7 +363,7 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
     assert!(
         git(
             repo.path(),
-            &["cat-file", "-t", "HEAD:changelog/changelog.md"]
+            &["cat-file", "-t", "HEAD:docs/changelog/changelog.md"]
         )
         .contains("blob"),
         "the canonical changelog is committed in HEAD"
@@ -377,7 +381,7 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tchangelog/changelog.md"),
+        name_status.contains("A\tdocs/changelog/changelog.md"),
         "the SAME commit carries the added managed doc:\n{name_status}"
     );
 
@@ -389,7 +393,7 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
     );
     let row = ingest
         .lines()
-        .find(|l| l.contains("changelog/changelog.md"))
+        .find(|l| l.contains("docs/changelog/changelog.md"))
         .unwrap_or_else(|| panic!("ingest must report the managed changelog:\n{ingest}"));
     assert!(
         row.contains("adoptable") && row.contains("adopted"),

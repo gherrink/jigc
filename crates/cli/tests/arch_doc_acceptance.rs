@@ -1,5 +1,5 @@
 //! M13 Increment 4 acceptance (T4) — the `arch-doc` cites→adr edge pass+block and
-//! promotion to the fourth `location:` (`architecture/`), end-to-end through the
+//! promotion to the fourth `location:` (`docs/architecture/`), end-to-end through the
 //! built `jigc` binary against the real test-built `doc-code` probe.
 //!
 //! `design/architecture-documentation.md` → The acceptance flow (flow 16);
@@ -13,7 +13,7 @@
 //!
 //! - **PASS** — `cites` names a **committed** adr → `finalize` validates clean,
 //!   lands exactly one `docs(arch-doc):` commit, and **promotes** the doc to
-//!   `architecture/<slug>.md` (the fourth `location:`, via the generic
+//!   `docs/architecture/<slug>.md` (the fourth `location:`, via the generic
 //!   `plan_promotions` loop — zero new finalize code).
 //! - **BLOCK** — `cites` names a **dangling** adr → `finalize` blocks on
 //!   `schema-conformance.ref-resolves` naming the dangling target + the routing
@@ -230,7 +230,7 @@ fn fill_commit(repo: &Path, home: &Path, task: &str) {
 }
 
 /// Setup — create + finalize `adr:use-a-cache`, the committed decision the arch-doc's
-/// PASS half cites. Asserts the ADR lands at its canonical `decisions/` path.
+/// PASS half cites. Asserts the ADR lands at its canonical `docs/decisions/` path.
 fn commit_cited_adr(repo: &Path, home: &Path) {
     let task = "decide-the-caching-strategy";
     let out = jigc(
@@ -280,10 +280,10 @@ fn commit_cited_adr(repo: &Path, home: &Path) {
 
     let out = jigc(repo, home, &["task", "finalize", task]);
     assert_ok(&out, "`jigc task finalize` (adr setup)");
-    let committed = jigc_show(repo, "HEAD:decisions/use-a-cache.md");
+    let committed = jigc_show(repo, "HEAD:docs/decisions/use-a-cache.md");
     assert!(
         committed.status.success(),
-        "the cited ADR must commit at decisions/use-a-cache.md; stderr:\n{}",
+        "the cited ADR must commit at docs/decisions/use-a-cache.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
 }
@@ -379,7 +379,7 @@ fn author_arch_doc(repo: &Path, home: &Path, cites_target: &str) -> &'static str
 }
 
 /// PASS — `cites` names a committed adr → finalize validates clean, lands exactly one
-/// `docs(arch-doc):` commit, and promotes the doc to `architecture/<slug>.md`.
+/// `docs(arch-doc):` commit, and promotes the doc to `docs/architecture/<slug>.md`.
 #[test]
 fn arch_doc_finalize_passes_promotes_to_architecture_when_cites_resolves() {
     let repo = TempDir::new("pass-repo");
@@ -417,11 +417,11 @@ fn arch_doc_finalize_passes_promotes_to_architecture_when_cites_resolves() {
         "the commit subject is `docs(arch-doc):`; got:\n{subject}",
     );
 
-    // The arch-doc promoted to the fourth `location:` — architecture/<slug>.md.
-    let committed = jigc_show(repo.path(), "HEAD:architecture/cache-layer.md");
+    // The arch-doc promoted to the fourth `location:` — docs/architecture/<slug>.md.
+    let committed = jigc_show(repo.path(), "HEAD:docs/architecture/cache-layer.md");
     assert!(
         committed.status.success(),
-        "the arch-doc must promote + commit at architecture/cache-layer.md; stderr:\n{}",
+        "the arch-doc must promote + commit at docs/architecture/cache-layer.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
     let body = String::from_utf8(committed.stdout).expect("utf-8");
@@ -489,7 +489,7 @@ fn arch_doc_finalize_blocks_on_ref_resolves_when_cites_dangles() {
         "the block surfaces the routing options; got:\n{rendered}",
     );
 
-    // No commit landed; nothing promoted to architecture/.
+    // No commit landed; nothing promoted to docs/architecture/.
     let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();

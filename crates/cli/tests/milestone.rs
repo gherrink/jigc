@@ -303,12 +303,12 @@ Context without any acceptance criteria.
 ## Criteria
 ";
 
-/// Write `body` to the canonical committed spec path (`specs/<slug>.md`) under
+/// Write `body` to the canonical committed spec path (`docs/specs/<slug>.md`) under
 /// `repo` and `git add`/`commit` it, so the spec is genuinely committed state
 /// (the done-criterion commits the spec before seeding from it).
 fn commit_spec(repo: &Path, slug: &str, body: &str) {
-    let specs = repo.join("specs");
-    fs::create_dir_all(&specs).expect("mk specs/");
+    let specs = repo.join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs/");
     fs::write(specs.join(format!("{slug}.md")), body).expect("write spec");
     let git = |args: &[&str]| {
         let out = Command::new("git")
@@ -824,12 +824,12 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
         "the synthesized body must list sub-tasks id-sorted; got:\n{message}",
     );
 
-    // The promoted suffix-resolved docs landed at their canonical `decisions/` paths.
-    let decisions = repo.path().join("decisions");
+    // The promoted suffix-resolved docs landed at their canonical `docs/decisions/` paths.
+    let decisions = repo.path().join("docs").join("decisions");
     for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
         assert!(
             decisions.join(format!("{slug}.md")).is_file(),
-            "the promoted `{slug}` doc must land at decisions/{slug}.md",
+            "the promoted `{slug}` doc must land at docs/decisions/{slug}.md",
         );
     }
     // The suffixed instance's self-ref was rewritten in lockstep to its `-2` slug.
@@ -841,15 +841,15 @@ fn milestone_finalize_commits_the_materialized_join_in_one_commit() {
     );
     // The promoted docs are genuinely committed (in HEAD's tree), not just on disk.
     let tracked = Command::new("git")
-        .args(["ls-files", "decisions/"])
+        .args(["ls-files", "docs/decisions/"])
         .current_dir(repo.path())
         .output()
         .expect("git ls-files");
     let tracked = String::from_utf8(tracked.stdout).unwrap();
     for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
         assert!(
-            tracked.contains(&format!("decisions/{slug}.md")),
-            "decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
+            tracked.contains(&format!("docs/decisions/{slug}.md")),
+            "docs/decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
         );
     }
 
@@ -962,8 +962,8 @@ fn milestone_finalize_squash_false_lands_n_plus_one_commits_in_id_order() {
     // The parent aggregate landed the merged tree: both promoted ADRs are committed.
     let tracked = head_tree_paths(repo.path());
     assert!(
-        tracked.contains(&"decisions/low-policy.md".to_owned())
-            && tracked.contains(&"decisions/zed-policy.md".to_owned()),
+        tracked.contains(&"docs/decisions/low-policy.md".to_owned())
+            && tracked.contains(&"docs/decisions/zed-policy.md".to_owned()),
         "the parent aggregate must commit the merged persisted docs; got:\n{tracked:?}",
     );
 
@@ -1019,7 +1019,7 @@ fn milestone_finalize_squash_false_sequence_is_byte_identical_across_feed_orders
 }
 
 /// Install a `pre-commit` hook in `repo` that rejects any commit which stages a path
-/// under `decisions/` (the promoted ADRs the parent aggregate stages via `git add
+/// under `docs/decisions/` (the promoted ADRs the parent aggregate stages via `git add
 /// --all`). The `squash: false` per-sub-task commits run `git commit --allow-empty`
 /// staging nothing, so they pass; only the parent aggregate trips the hook — a clean,
 /// controllable failure point AFTER the N sub-task commits have landed.
@@ -1027,7 +1027,7 @@ fn install_aggregate_rejecting_hook(repo: &Path) {
     let hook = repo.join(".git").join("hooks").join("pre-commit");
     fs::write(
         &hook,
-        "#!/bin/sh\nif git diff --cached --name-only | grep -q '^decisions/'; then\n  echo 'aggregate rejected by test hook' >&2\n  exit 1\nfi\nexit 0\n",
+        "#!/bin/sh\nif git diff --cached --name-only | grep -q '^docs/decisions/'; then\n  echo 'aggregate rejected by test hook' >&2\n  exit 1\nfi\nexit 0\n",
     )
     .expect("write pre-commit hook");
     #[cfg(unix)]
@@ -1091,8 +1091,8 @@ fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head
         "on aggregate failure the working tree must match the pre-finalize state (as-if-finalize-was-never-called)",
     );
     assert!(
-        !repo.path().join("decisions").exists(),
-        "on aggregate failure no promoted ADR may be left in `decisions/`",
+        !repo.path().join("docs").join("decisions").exists(),
+        "on aggregate failure no promoted ADR may be left in `docs/decisions/`",
     );
 }
 
@@ -1380,9 +1380,9 @@ fn milestone_finalize_same_doc_clash_blocks_and_commits_nothing() {
         before, after,
         "a clash must commit nothing and leave HEAD + the working tree unchanged",
     );
-    // No decisions/ doc was promoted.
+    // No docs/decisions/ doc was promoted.
     assert!(
-        !repo.path().join("decisions").exists(),
+        !repo.path().join("docs").join("decisions").exists(),
         "a blocked finalize must promote nothing",
     );
 }

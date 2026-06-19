@@ -10,8 +10,8 @@
 //! a committed store whose anchors all resolve, asserting the **headline clean path**
 //! (`design/validation.md` → Store-scope re-validation → The command):
 //!
-//! - a committed `adr` (`decisions/`) citing an existing symbol + a committed `spec`
-//!   (`specs/`) whose criterion maps to an existing `#[test]` fn → `jigc validate`
+//! - a committed `adr` (`docs/decisions/`) citing an existing symbol + a committed `spec`
+//!   (`docs/specs/`) whose criterion maps to an existing `#[test]` fn → `jigc validate`
 //!   **exits 0** with the clean report rendered and **no `doc-code` content finding** in
 //!   stdout.
 //!
@@ -183,15 +183,15 @@ fn seed_clean_store(repo: &Path) {
     )
     .expect("write limiter.rs");
 
-    fs::create_dir_all(repo.join("decisions")).expect("mk decisions");
+    fs::create_dir_all(repo.join("docs/decisions")).expect("mk decisions");
     fs::write(
-        repo.join("decisions/cache.md"),
+        repo.join("docs/decisions/cache.md"),
         adr("crates/engine/src/cache.rs", "evict_lru"),
     )
     .expect("write adr");
-    fs::create_dir_all(repo.join("specs")).expect("mk specs");
+    fs::create_dir_all(repo.join("docs/specs")).expect("mk specs");
     fs::write(
-        repo.join("specs/rate-limiting.md"),
+        repo.join("docs/specs/rate-limiting.md"),
         spec("crates/engine/src/limiter.rs", "covers_burst"),
     )
     .expect("write spec");

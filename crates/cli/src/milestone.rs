@@ -226,7 +226,7 @@ fn run_add_from_spec(
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = repo_root.join(".jigc");
-    let schemas = shipped_schemas()?;
+    let schemas = shipped_schemas(&repo_root)?;
 
     let added = add_from_spec(
         &jigc_root,
@@ -247,9 +247,12 @@ fn run_add_from_spec(
 }
 
 /// Load every shipped schema keyed by doctype — the set [`add_from_spec`] resolves
-/// the spec address's type against (the engine stays domain-empty; the CLI feeds the
-/// pack in, the same idiom `TaskArea::schemas` uses).
-fn shipped_schemas() -> Result<BTreeMap<String, Schema>> {
+/// the spec address's type against and [`run_join`]'s committed-index rebuild walks
+/// (the engine stays domain-empty; the CLI feeds the pack in, the same idiom
+/// `TaskArea::schemas` uses). Nests each `location:` under the resolved `docs-root`
+/// (a schema-load surface — the committed-store reads must match the finalize-promote
+/// write path).
+fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
     let pack = make_pack();
     let mut out = BTreeMap::new();
     for id in pack.list(PackResourceKind::Schemas) {
@@ -260,6 +263,9 @@ fn shipped_schemas() -> Result<BTreeMap<String, Schema>> {
             .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
         out.insert(schema.ty.clone(), schema);
     }
+    let resolved =
+        crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
+    crate::start::apply_docs_root(&resolved, out.values_mut());
     Ok(out)
 }
 
@@ -386,7 +392,7 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = repo_root.join(".jigc");
-    let schemas = shipped_schemas()?;
+    let schemas = shipped_schemas(&repo_root)?;
 
     // The committed edge index is keyed to the milestone's shared base — the commit
     // every sub-task inherited — so the cross-area ref walk resolves against the store
@@ -436,7 +442,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = repo_root.join(".jigc");
-    let schemas = shipped_schemas()?;
+    let schemas = shipped_schemas(&repo_root)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {

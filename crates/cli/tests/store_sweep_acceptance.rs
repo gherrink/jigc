@@ -12,12 +12,12 @@
 //! `[`cli::invoke::DOC_CODE_BUDGET`]`)` — a genuine subprocess over a snapshot the engine
 //! materialized, exactly as production `jigc validate` will.
 //!
-//! It seeds a committed store — a `decisions/`-located `adr` carrying a `cites-code`
-//! anchor (`symbol-exists`), a `specs/`-located `spec` carrying a criterion
-//! `maps-to-test` anchor (`criterion-maps-to-test`), and an `architecture/`-located
+//! It seeds a committed store — a `docs/decisions/`-located `adr` carrying a `cites-code`
+//! anchor (`symbol-exists`), a `docs/specs/`-located `spec` carrying a criterion
+//! `maps-to-test` anchor (`criterion-maps-to-test`), and an `docs/architecture/`-located
 //! `arch-doc` carrying a `components/<id>/implemented-by` anchor (`symbol-exists`) — over
 //! a working tree of real `.rs` files. The `arch-doc` exercises the **shipped**
-//! `arch-doc.yaml` schema (its `architecture/` location + schema-load interaction is the
+//! `arch-doc.yaml` schema (its `docs/architecture/` location + schema-load interaction is the
 //! one production code-anchor input not otherwise driven through the real sweep), and
 //! asserts (`validation.md` → Store-scope re-validation; Blocking semantics):
 //!
@@ -156,10 +156,10 @@ fn invoker() -> fn(&ProbeRequest) -> std::io::Result<ProbeRun> {
 
 /// The three code-anchor doctypes the store sweep walks, loaded from the **shipped** pack
 /// schemas with the dev pack's `code-anchor` field-type declaration:
-/// - `adr` (`decisions/`) — a header `cites-code` (`symbol-exists`);
-/// - `spec` (`specs/`) — a repeatable `criteria` block with `maps-to-test`
+/// - `adr` (`docs/decisions/`) — a header `cites-code` (`symbol-exists`);
+/// - `spec` (`docs/specs/`) — a repeatable `criteria` block with `maps-to-test`
 ///   (`criterion-maps-to-test`);
-/// - `arch-doc` (`architecture/`) — a repeatable `components` block with a bare
+/// - `arch-doc` (`docs/architecture/`) — a repeatable `components` block with a bare
 ///   `implemented-by` code-anchor inheriting the type's `symbol-exists` check.
 fn schemas() -> BTreeMap<String, Schema> {
     const ADR_YAML: &[u8] = include_bytes!("../pack/schemas/adr.yaml");
@@ -539,12 +539,12 @@ fn real_doc_code_probe_over_committed_store() {
 /// binary (`CARGO_BIN_EXE_jigc`) over a real `git init` repo (the
 /// `file_state_soundness.rs` harness shape):
 ///
-/// - a freeform `decisions/notes.md` (no recorded hash → the `UNKNOWN` arm) is routed as
+/// - a freeform `docs/decisions/notes.md` (no recorded hash → the `UNKNOWN` arm) is routed as
 ///   an **advisory** `reconciliation.conformance-block` (the sweep does **not** block —
 ///   exit 0) and **not** baseline-adopted, so a second `task validate` **re-fires** the
 ///   same advisory (the routed-but-not-recorded recurrence,
 ///   `design/project-setup.md` → Flow 2 hardening, consequence note `:115`);
-/// - a conformant jigc-minted `decisions/<slug>.md` baselines **without** a false
+/// - a conformant jigc-minted `docs/decisions/<slug>.md` baselines **without** a false
 ///   conformance-block advisory (the M20 clean-store guarantee holds).
 mod g4_baseline_adopt_gate {
     use std::fs;
@@ -727,10 +727,10 @@ mod g4_baseline_adopt_gate {
             .count()
     }
 
-    /// A freeform `notes.md` squatting in `decisions/` (the foreign-file hazard) is
+    /// A freeform `notes.md` squatting in `docs/decisions/` (the foreign-file hazard) is
     /// **routed advisory** and **not** baseline-adopted on a first `task validate`
     /// sweep (exit not blocked), and the advisory **re-fires** on a second sweep — while
-    /// a conformant jigc-minted ADR in `decisions/` produces **no** false advisory.
+    /// a conformant jigc-minted ADR in `docs/decisions/` produces **no** false advisory.
     #[test]
     fn freeform_notes_in_decisions_routes_advisory_and_recurs() {
         let repo = Repo::new("notes");
@@ -739,8 +739,8 @@ mod g4_baseline_adopt_gate {
 
         // A foreign, non-conformant `.md` dropped into the `adr` location dir, committed
         // in git outside the CLI (the human-in-git channel).
-        const NOTES: &str = "decisions/notes.md";
-        fs::create_dir_all(repo.path().join("decisions")).expect("mk decisions/");
+        const NOTES: &str = "docs/decisions/notes.md";
+        fs::create_dir_all(repo.path().join("docs").join("decisions")).expect("mk docs/decisions/");
         fs::write(
             repo.path().join(NOTES),
             "# scratch notes\n\nrandom thoughts, not an ADR\n",
@@ -868,10 +868,10 @@ mod g4_baseline_adopt_gate {
             b"replicate the cache\n",
         );
         set_slot(&format!("commit:{task_c_slug}#body"), b"A cache change.\n");
-        // Finalize promotes the ADR to decisions/ as a conformant jigc-minted doc.
+        // Finalize promotes the ADR to docs/decisions/ as a conformant jigc-minted doc.
         let out = jigc(repo.path(), home.path(), &["task", "finalize", task_c_slug]);
         assert_ok(&out, "`jigc task finalize` (task C)");
-        const MINTED: &str = "decisions/cache-topology.md";
+        const MINTED: &str = "docs/decisions/cache-topology.md";
         assert!(
             repo.path().join(MINTED).exists(),
             "task C must promote {MINTED}",
@@ -907,7 +907,7 @@ mod g4_baseline_adopt_gate {
         let home = Repo::new("home-mid-task");
         init_repo(repo.path());
 
-        const NOTES: &str = "decisions/notes.md";
+        const NOTES: &str = "docs/decisions/notes.md";
         let record_path = repo
             .path()
             .join(".jigc")
@@ -919,7 +919,7 @@ mod g4_baseline_adopt_gate {
         // aggregate commit — the door `advance_file_state` re-hashes through.
         let task_a = "first-pass";
         stage_commit_only(repo.path(), home.path(), task_a, task_a);
-        fs::create_dir_all(repo.path().join("decisions")).expect("mk decisions/");
+        fs::create_dir_all(repo.path().join("docs").join("decisions")).expect("mk docs/decisions/");
         fs::write(
             repo.path().join(NOTES),
             "# scratch notes\n\nrandom thoughts, not an ADR\n",

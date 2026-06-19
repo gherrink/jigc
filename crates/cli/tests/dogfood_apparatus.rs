@@ -234,7 +234,10 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
 
     // The OOB pair on ONE path in ONE window — two corroborating channels:
     // (a) a hook-observed Write on a managed path,
-    run_hook(&log, &file_event("Write", "decisions/0001-pick-storage.md"));
+    run_hook(
+        &log,
+        &file_event("Write", "docs/decisions/0001-pick-storage.md"),
+    );
     // (b) the absorb finding on the SAME path, riding the landed finalize's
     //     emitted envelope (the inc-1 success emission). The landed finalize also
     //     closes window 1.
@@ -246,8 +249,8 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
             &envelope(
                 "advisory",
                 "reconciliation.absorb",
-                "external edit absorbed: `decisions/0001-pick-storage.md`",
-                "decisions/0001-pick-storage.md",
+                "external edit absorbed: `docs/decisions/0001-pick-storage.md`",
+                "docs/decisions/0001-pick-storage.md",
             ),
         ),
     );
@@ -299,7 +302,7 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
     }
 
     // -- The REAL tally over the produced log ------------------------------------
-    let tally = run_tally(&log, &["decisions/"]);
+    let tally = run_tally(&log, &["docs/decisions/"]);
     let totals = &tally["totals"];
 
     // 3 set-field calls to one address in one window → 1 logical mutation; the
@@ -338,7 +341,7 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
 
     let oob = tally["detail"]["oob-edits"].as_array().expect("oob detail");
     assert_eq!(oob.len(), 1);
-    assert_eq!(oob[0]["path"], "decisions/0001-pick-storage.md");
+    assert_eq!(oob[0]["path"], "docs/decisions/0001-pick-storage.md");
     assert_eq!(oob[0]["window"], 1);
     assert_eq!(
         oob[0]["channels"],
@@ -377,8 +380,8 @@ fn hook_log_and_tally_derive_the_mechanized_facts() {
 
     // Determinism: same log in → byte-identical tally out.
     assert_eq!(
-        run_tally_raw(&log, &["decisions/"]),
-        run_tally_raw(&log, &["decisions/"]),
+        run_tally_raw(&log, &["docs/decisions/"]),
+        run_tally_raw(&log, &["docs/decisions/"]),
         "the tally is deterministic over the same log"
     );
 }
@@ -398,7 +401,7 @@ fn absolute_path_write_corroborates_with_absorb_not_sums() {
     fs::create_dir_all(repo.join("decisions")).expect("twin repo dir");
 
     // (a) The hook-observed Write — ABSOLUTE path under the repo root.
-    let abs_path = repo.join("decisions/0002-pick-storage.md");
+    let abs_path = repo.join("docs/decisions/0002-pick-storage.md");
     run_hook_in_repo(
         &log,
         &file_event("Write", abs_path.to_str().expect("utf-8 path")),
@@ -415,14 +418,14 @@ fn absolute_path_write_corroborates_with_absorb_not_sums() {
             &envelope(
                 "advisory",
                 "reconciliation.absorb",
-                "external edit absorbed: `decisions/0002-pick-storage.md`",
-                "decisions/0002-pick-storage.md",
+                "external edit absorbed: `docs/decisions/0002-pick-storage.md`",
+                "docs/decisions/0002-pick-storage.md",
             ),
         ),
         &repo,
     );
 
-    let tally = run_tally(&log, &["decisions/"]);
+    let tally = run_tally(&log, &["docs/decisions/"]);
 
     // ONE OOB event post-dedup — not zero (the write-edit channel fired for the
     // absolute path) and not two (the channels did not sum).
@@ -430,7 +433,7 @@ fn absolute_path_write_corroborates_with_absorb_not_sums() {
     let oob = tally["detail"]["oob-edits"].as_array().expect("oob detail");
     assert_eq!(oob.len(), 1, "one entry, not one per channel: {tally:#}");
     assert_eq!(
-        oob[0]["path"], "decisions/0002-pick-storage.md",
+        oob[0]["path"], "docs/decisions/0002-pick-storage.md",
         "the dedup key is the repo-relative path"
     );
     assert_eq!(
@@ -441,7 +444,7 @@ fn absolute_path_write_corroborates_with_absorb_not_sums() {
 
     // A path OUTSIDE the repo root stays verbatim and unmanaged — never counted.
     run_hook_in_repo(&log, &file_event("Write", "/etc/elsewhere/notes.md"), &repo);
-    let tally = run_tally(&log, &["decisions/"]);
+    let tally = run_tally(&log, &["docs/decisions/"]);
     assert_eq!(
         tally["totals"]["oob-edits"], 1,
         "an out-of-repo absolute path is not a managed-doc edit: {tally:#}"
@@ -532,9 +535,9 @@ fn tally_refuses_a_log_whose_jigc_exits_are_null() {
     );
 
     // A telemetry-only file_op alongside — null exit is fine for non-jigc events.
-    run_hook(&log, &file_event("Write", "decisions/0001-x.md"));
+    run_hook(&log, &file_event("Write", "docs/decisions/0001-x.md"));
 
-    let out = run_tally_unchecked(&log, &["decisions/"]);
+    let out = run_tally_unchecked(&log, &["docs/decisions/"]);
     assert!(
         !out.status.success(),
         "the tally must refuse a log whose jigc exits are null, not emit zeros:\n{}",
@@ -794,7 +797,7 @@ fn hook_extracts_path_qualified_and_every_compound_invocation() {
     // compound's set-field hit the SAME address in window 1 — ONE logical
     // mutation; the path-qualified validate exit 3 keys validate-blocks; the
     // compound's landed finalize closes the window.
-    let tally = run_tally(&log, &["decisions/"]);
+    let tally = run_tally(&log, &["docs/decisions/"]);
     assert_eq!(tally["totals"]["jigc-invocations"], 4, "tally: {tally:#}");
     assert_eq!(tally["totals"]["adapter-writes"], 1, "tally: {tally:#}");
     assert_eq!(

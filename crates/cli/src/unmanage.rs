@@ -47,7 +47,9 @@ pub struct UnmanageReport {
 pub(crate) fn run(cwd: &Path, rel_path: &str) -> Result<UnmanageReport> {
     let repo_root = require_project_layer(cwd)?;
     let pack = make_pack();
-    let schemas = load_schemas(pack.as_ref())?;
+    let resolved =
+        crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
+    let schemas = load_schemas(pack.as_ref(), &resolved)?;
 
     let jigc_root = repo_root.join(".jigc");
     let head = git_head(&repo_root)?;

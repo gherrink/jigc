@@ -226,8 +226,8 @@ fn streams(out: &std::process::Output) -> String {
 /// The canonical destination directory for a migrated doctype.
 fn canonical_dir(doctype: &str) -> &'static str {
     match doctype {
-        "adr" => "decisions",
-        "arch-doc" => "architecture",
+        "adr" => "docs/decisions",
+        "arch-doc" => "docs/architecture",
         other => panic!("flow 28 migrates only adr/arch-doc, not {other:?}"),
     }
 }
@@ -361,7 +361,7 @@ fn assert_ingest_adopted(repo: &Path, home: &Path, pack: &Path, doctype: &str, s
     );
 }
 
-/// Provision a **committed** managed `adr` at `decisions/<slug>.md` by migrating a foreign
+/// Provision a **committed** managed `adr` at `docs/decisions/<slug>.md` by migrating a foreign
 /// dated ADR end to end — the flow-16 cited-target precondition the synthetic arm leans on
 /// (jigc's store ships no managed adr; `arch-doc.allows-create` cannot mint one in-task).
 /// Returns the committed adr's per-title slug.
@@ -562,6 +562,7 @@ fn flow28_synthetic_rust_arm_two_anchors_and_cites_over_committed_adr() {
     let adr_slug = provision_committed_adr(repo.path(), home.path(), &pack);
     assert!(
         repo.path()
+            .join("docs")
             .join("decisions")
             .join(format!("{adr_slug}.md"))
             .exists(),
@@ -707,6 +708,7 @@ sections:
     assert!(
         !repo
             .path()
+            .join("docs")
             .join("architecture")
             .join("parser-subsystem.md")
             .exists(),
@@ -793,6 +795,7 @@ sections:
     assert!(
         !repo
             .path()
+            .join("docs")
             .join("architecture")
             .join("parser-subsystem.md")
             .exists(),

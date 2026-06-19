@@ -4,7 +4,7 @@
 //!
 //! Drives the real `jigc` binary against a throwaway git repo: `setup` → seed a
 //! conformant `adr` carrying a `supersedes` edge → `ingest` (which adopts it: index +
-//! baseline gain it) → `jigc unmanage decisions/<slug>.md`, then asserts:
+//! baseline gain it) → `jigc unmanage docs/decisions/<slug>.md`, then asserts:
 //!
 //!   (a) the verb exits 0,
 //!   (b) the path is gone from `.jigc/state/file-state.json`,
@@ -122,9 +122,9 @@ fn unmanage_drops_one_doc_from_index_and_state_leaving_bytes_and_is_idempotent()
     );
 
     // ── seed a conformant adr and adopt it via ingest ────────────────────────────
-    let rel = "decisions/rate-limit.md";
+    let rel = "docs/decisions/rate-limit.md";
     let doc_path = repo.path().join(rel);
-    fs::create_dir_all(doc_path.parent().unwrap()).expect("mk decisions/");
+    fs::create_dir_all(doc_path.parent().unwrap()).expect("mk docs/decisions/");
     fs::write(&doc_path, CONFORMANT_ADR).expect("write adr");
 
     let out = jigc(repo.path(), home.path(), &["ingest"]);

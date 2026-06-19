@@ -240,7 +240,7 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
     ok_stdout(setup, "jigc setup");
 
     // No project shadow: the SHIPPED `migrate-adr` workflow + its `author-migration-adr`
-    // step must compose on their own. Cold spike — no `decisions/` exists yet.
+    // step must compose on their own. Cold spike — no `docs/decisions/` exists yet.
     fs::write(repo.path().join("decision.md"), FOREIGN_ADR).expect("write foreign ADR");
 
     let out = run_jigc(

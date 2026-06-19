@@ -410,6 +410,11 @@ impl TaskArea {
                 .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
             out.insert(schema.ty.clone(), schema);
         }
+        // Surface C — the finalize-promote write path: nest every persisted doctype's
+        // `location:` under the resolved `docs-root` so the conformance sweep + promotion
+        // destination agree with the read surfaces.
+        let resolved = self.severity_cascade()?;
+        crate::start::apply_docs_root(&resolved, out.values_mut());
         Ok(out)
     }
 

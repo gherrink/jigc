@@ -18,11 +18,11 @@
 //!     per-file migration task, the agent authors the canonical record through `doc author
 //!     prd --from-file -` (the vision/context slots + ≥2 repeatable `requirements` items, each a
 //!     `title` + a `statement` slot), and `task finalize --approve` lands exactly ONE
-//!     commit that (a) writes `prds/<slug>.md` byte-stable
-//!     (`render(instance_from_source(x)) == x`), (b) carries `A prds/<slug>.md` + `D
+//!     commit that (a) writes `docs/prds/<slug>.md` byte-stable
+//!     (`render(instance_from_source(x)) == x`), (b) carries `A docs/prds/<slug>.md` + `D
 //!     <foreign>` (the foreign original retired/gone), and (c) a follow-up `jigc ingest`
 //!     reports the managed prd **adopted**. The review gate blocks the bare finalize first
-//!     (nothing committed). The headline runs into an **empty `prds/`** — the cold-spike
+//!     (nothing committed). The headline runs into an **empty `docs/prds/`** — the cold-spike
 //!     arm.
 //!   - **Guidance skeleton** — the shipped `migrate-prd` guidance's emitted `doc author`
 //!     payload skeleton parses as a valid prd author payload (the agent-facing artifact is
@@ -205,10 +205,10 @@ fn author_prd(
     )
 }
 
-/// Assert the canonical `prds/<slug>.md` on disk round-trips byte-stable through the
+/// Assert the canonical `docs/prds/<slug>.md` on disk round-trips byte-stable through the
 /// shipped prd schema: `render(&schema, &instance_from_source(&schema, x)) == x`.
 fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String {
-    let on_disk = fs::read_to_string(repo.join("prds").join(format!("{slug}.md")))
+    let on_disk = fs::read_to_string(repo.join("docs").join("prds").join(format!("{slug}.md")))
         .expect("the canonical prd is on disk");
     let schema = shipped_prd_schema(pack);
     let parsed = engine::write::instance_from_source(&schema, &on_disk)
@@ -221,11 +221,11 @@ fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String 
     on_disk
 }
 
-/// Assert a follow-up `jigc ingest` reports `prds/<slug>.md` adopted — never `unmanaged` /
+/// Assert a follow-up `jigc ingest` reports `docs/prds/<slug>.md` adopted — never `unmanaged` /
 /// `needs-reconcile`.
 fn assert_ingest_adopted(repo: &Path, home: &Path, pack: &Path, slug: &str) {
     let ingest = ok_stdout(run_jigc(repo, home, pack, &["ingest"], None), "jigc ingest");
-    let needle = format!("prds/{slug}.md");
+    let needle = format!("docs/prds/{slug}.md");
     let row = ingest
         .lines()
         .find(|l| l.contains(&needle))
@@ -265,7 +265,7 @@ Existing planners are too heavyweight; solo users abandon them within a week.
 /// The canonical rewrite payload — the vision/context fixed slots + a `requirements`
 /// section carrying TWO `items`, each a `title` + a `statement` slot (the post-inc-5
 /// repeatable shape). The title slugs to `habit-tracker`, the canonical path
-/// `prds/habit-tracker.md`.
+/// `docs/prds/habit-tracker.md`.
 const PAYLOAD_PRD: &str = r#"title: "Habit tracker"
 sections:
   - id: vision
@@ -291,12 +291,12 @@ fn migrate_prd_finalize_writes_retires_and_adopts() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    // A committed foreign prd at the off-canonical `docs/` path; `prds/` is empty (the cold
+    // A committed foreign prd at the off-canonical `docs/` path; `docs/prds/` is empty (the cold
     // spike — migrate into a never-before-populated doctype location).
     let rel = commit_foreign_prd(repo.path(), "habit-tracker-prd", FOREIGN_PRD);
     assert!(
-        !repo.path().join("prds").exists(),
-        "the cold spike starts with no `prds/` directory"
+        !repo.path().join("docs").join("prds").exists(),
+        "the cold spike starts with no `docs/prds/` directory"
     );
 
     ok_stdout(
@@ -411,7 +411,7 @@ fn migrate_prd_finalize_writes_retires_and_adopts() {
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tprds/habit-tracker.md"),
+        name_status.contains("A\tdocs/prds/habit-tracker.md"),
         "the SAME commit carries the added managed prd:\n{name_status}"
     );
 

@@ -13,11 +13,11 @@
 //!
 //!   - **HAPPY** — a 2-ADR supersession corpus (`use-mysql` first, the supersession
 //!     TARGET; then `use-postgres` which `supersedes: [adr:use-mysql]`), each a distinct
-//!     per-file task id `migrate-adr-<slug(path)>`, per-title-slug doc at `decisions/`,
+//!     per-file task id `migrate-adr-<slug(path)>`, per-title-slug doc at `docs/decisions/`,
 //!     retired + adopted, byte-stable; `adr:use-mysql` resolves in the committed store at
 //!     the second finalize (edge integrity across the migrated set). The target ADR is
-//!     **dateless** → renders NO date line (red 3, folded). Then a spec → `specs/`
-//!     finalizing clean with criteria carrying NO `maps-to-test`, and a prd → `prds/`
+//!     **dateless** → renders NO date line (red 3, folded). Then a spec → `docs/specs/`
+//!     finalizing clean with criteria carrying NO `maps-to-test`, and a prd → `docs/prds/`
 //!     with ≥2 repeatable requirement items.
 //!   - **RED 1 — write-time ref-shape reject** — a bare slug / wrong-type / unbracketed
 //!     comma `supersedes` value blocks at the write verb (`write.malformed-value`), not
@@ -165,9 +165,9 @@ fn streams(out: &std::process::Output) -> String {
 /// The canonical destination directory for a migrated doctype.
 fn canonical_dir(doctype: &str) -> &'static str {
     match doctype {
-        "adr" => "decisions",
-        "spec" => "specs",
-        "prd" => "prds",
+        "adr" => "docs/decisions",
+        "spec" => "docs/specs",
+        "prd" => "docs/prds",
         other => panic!("flow 27 migrates only adr/spec/prd, not {other:?}"),
     }
 }
@@ -469,7 +469,7 @@ fn flow27_corpus_spec_and_prd_migrate_one_file_at_a_time() {
     assert_ingest_adopted(repo.path(), home.path(), &pack, "adr", "use-mysql");
     assert_ingest_adopted(repo.path(), home.path(), &pack, "adr", "use-postgres");
 
-    // ── A spec → specs/, criteria with NO maps-to-test, finalizing clean ─────────────
+    // ── A spec → docs/specs/, criteria with NO maps-to-test, finalizing clean ─────────────
     const FOREIGN_SPEC: &str = "\
 # Authentication Spec
 
@@ -546,7 +546,7 @@ sections:
         "exactly the two migrated criteria re-parse:\n{spec_body}",
     );
 
-    // ── A prd → prds/, requirements as a repeatable section (≥2 items) ───────────────
+    // ── A prd → docs/prds/, requirements as a repeatable section (≥2 items) ───────────────
     const FOREIGN_PRD: &str = "\
 # Habit Tracker PRD
 
@@ -752,6 +752,7 @@ fn flow27_red_ordering_contract_dangle_blocks() {
     assert!(
         !repo
             .path()
+            .join("docs")
             .join("decisions")
             .join("use-postgres.md")
             .exists(),
@@ -760,7 +761,7 @@ fn flow27_red_ordering_contract_dangle_blocks() {
 }
 
 /// RED 4a — the finalize-promote clobber guard, title-slug collision across the corpus.
-/// With `decisions/use-mysql.md` committed, a SECOND foreign ADR at a distinct path whose
+/// With `docs/decisions/use-mysql.md` committed, a SECOND foreign ADR at a distinct path whose
 /// authored title slugs to the SAME `use-mysql` blocks at `finalize.promote-clobber`: no
 /// clobber, nothing committed, the committed ADR byte-intact, the 2nd foreign not retired.
 #[test]
@@ -774,7 +775,7 @@ fn flow27_red_clobber_guard_title_slug_collision() {
         "jigc setup",
     );
 
-    // First migration lands a committed managed ADR at decisions/use-mysql.md.
+    // First migration lands a committed managed ADR at docs/decisions/use-mysql.md.
     let first_rel = "docs/adr/0001-use-mysql.md";
     commit_foreign(repo.path(), first_rel, FOREIGN_USE_MYSQL);
     migrate(repo.path(), home.path(), &pack, first_rel, "adr");
@@ -796,8 +797,13 @@ fn flow27_red_clobber_guard_title_slug_collision() {
             .success(),
         "the first migration lands",
     );
-    let committed_before =
-        fs::read(repo.path().join("decisions").join("use-mysql.md")).expect("committed adr");
+    let committed_before = fs::read(
+        repo.path()
+            .join("docs")
+            .join("decisions")
+            .join("use-mysql.md"),
+    )
+    .expect("committed adr");
 
     // A SECOND foreign ADR at a distinct path, authored with the SAME title (slugs to the
     // already-occupied use-mysql).
@@ -835,7 +841,7 @@ fn flow27_red_clobber_guard_title_slug_collision() {
     let rendered = streams(&out);
     assert!(
         rendered.contains("finalize.promote-clobber")
-            && rendered.contains("decisions/use-mysql.md"),
+            && rendered.contains("docs/decisions/use-mysql.md"),
         "the block is the clobber guard naming the destination it refused to overwrite:\n{rendered}",
     );
     assert_eq!(
@@ -846,7 +852,13 @@ fn flow27_red_clobber_guard_title_slug_collision() {
         "the clobber block commits nothing past the foreign-tracking commit",
     );
     assert_eq!(
-        fs::read(repo.path().join("decisions").join("use-mysql.md")).expect("committed adr"),
+        fs::read(
+            repo.path()
+                .join("docs")
+                .join("decisions")
+                .join("use-mysql.md")
+        )
+        .expect("committed adr"),
         committed_before,
         "the already-committed ADR is byte-intact after the refused clobber",
     );
@@ -857,7 +869,7 @@ fn flow27_red_clobber_guard_title_slug_collision() {
 }
 
 /// RED 4b — the finalize-promote clobber guard, in-location squatter. `jigc migrate
-/// decisions/<slug>.md --as adr` where the canonical path itself holds a committed managed
+/// docs/decisions/<slug>.md --as adr` where the canonical path itself holds a committed managed
 /// doc blocks at `finalize.promote-clobber`, the squatter byte-intact, nothing committed.
 #[test]
 fn flow27_red_clobber_guard_in_location_squatter() {
@@ -870,7 +882,7 @@ fn flow27_red_clobber_guard_in_location_squatter() {
         "jigc setup",
     );
 
-    // Land a committed managed ADR at the canonical decisions/use-mysql.md.
+    // Land a committed managed ADR at the canonical docs/decisions/use-mysql.md.
     let first_rel = "docs/adr/0001-use-mysql.md";
     commit_foreign(repo.path(), first_rel, FOREIGN_USE_MYSQL);
     migrate(repo.path(), home.path(), &pack, first_rel, "adr");
@@ -893,7 +905,7 @@ fn flow27_red_clobber_guard_in_location_squatter() {
         "the first migration lands",
     );
 
-    let squatter_rel = "decisions/use-mysql.md";
+    let squatter_rel = "docs/decisions/use-mysql.md";
     let squatter_before = fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk");
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
@@ -1059,7 +1071,12 @@ fn flow27_red_bare_finalize_without_approve_blocks() {
         "the review-gate block leaves the foreign original byte-intact",
     );
     assert!(
-        !repo.path().join("decisions").join("use-mysql.md").exists(),
+        !repo
+            .path()
+            .join("docs")
+            .join("decisions")
+            .join("use-mysql.md")
+            .exists(),
         "the review-gate block promotes nothing",
     );
 }

@@ -95,8 +95,8 @@ next action, read-only.
 
 When the work is done, finalize. This is the single transactional boundary
 (`design/finalize.md`): it validates, renders the commit-doc into the git commit
-message, promotes any created ADR into `decisions/`, and `git`-commits the code
-changes plus promoted docs as one commit.
+message, promotes any created ADR into `docs/decisions/`, and `git`-commits the
+code changes plus promoted docs as one commit.
 
 ```sh
 jigc task finalize <id>
@@ -106,15 +106,18 @@ If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
 
-**What lands in your repo:** finalize promotes each managed doc to its doctype's
-location at the **repo root** — `decisions/` (ADRs), `specs/`, `prds/`,
-`architecture/` (arch-docs), `changelog/` — as plain, human-reviewable Markdown
-alongside your own `src/`. (The names are chosen for readability, not a uniform
-`<type>s/` rule.) Everything else jigc writes lives under `.jigc/` (committed
-config + bootstrap; gitignored caches) — see
-[design/storage.md](design/storage.md) → Repository layout. If you already have a
-same-named dir (say an existing `architecture/`), run `jigc ingest` first — it
-detects and routes existing content rather than overwriting it.
+**What lands in your repo:** finalize promotes each managed doc under the
+**`docs-root`** parent (default `docs/`) at its doctype's location —
+`docs/decisions/` (ADRs), `docs/specs/`, `docs/prds/`, `docs/architecture/`
+(arch-docs), `docs/changelog/` — as plain, human-reviewable Markdown alongside
+your own `src/`. (The names are chosen for readability, not a uniform `<type>s/`
+rule.) Prefer a different parent, or the old flat repo-root layout? Set
+`jigc config set docs-root <path>` (`""` or `.` for flat). Everything else jigc
+writes lives under `.jigc/` (committed config + bootstrap; gitignored caches) —
+see [design/storage.md](design/storage.md) → Repository layout / Config layout. If
+you already have a same-named dir (say an existing `docs/architecture/`), run
+`jigc ingest` first — it detects and routes existing content rather than
+overwriting it.
 
 You can preview what finalize will gate on at any time:
 

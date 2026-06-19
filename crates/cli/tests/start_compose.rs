@@ -1129,11 +1129,14 @@ fn form_d_implement_from_spec_mints_and_composes_the_locate_from_spec_step() {
     let home = TempDir::new("home");
 
     // A committed spec instance so `{{store.specs}}` renders a non-empty Content
-    // list (`committed_store` enumerates `specs/<slug>.md` by filename). The file
+    // list (`committed_store` enumerates `docs/specs/<slug>.md` by filename). The file
     // content is irrelevant to enumeration; only the slug is read.
-    fs::create_dir_all(repo.path().join("specs")).expect("create specs dir");
+    fs::create_dir_all(repo.path().join("docs").join("specs")).expect("create specs dir");
     fs::write(
-        repo.path().join("specs").join("gateway-rate-limiting.md"),
+        repo.path()
+            .join("docs")
+            .join("specs")
+            .join("gateway-rate-limiting.md"),
         "# Gateway rate limiting\n",
     )
     .expect("write committed spec");

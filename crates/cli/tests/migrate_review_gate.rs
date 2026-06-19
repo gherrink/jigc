@@ -337,7 +337,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         "the fidelity diff must surface the foreign source bytes; got:\n{rendered}"
     );
     assert!(
-        rendered.contains("changelog/changelog.md"),
+        rendered.contains("docs/changelog/changelog.md"),
         "the fidelity diff must surface the canonical rewrite (its destination); got:\n{rendered}"
     );
     assert!(
@@ -345,7 +345,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         "the block must tell the human how to approve; got:\n{rendered}"
     );
 
-    // Nothing committed: HEAD unchanged, no new commit, no `changelog/changelog.md` in HEAD.
+    // Nothing committed: HEAD unchanged, no new commit, no `docs/changelog/changelog.md` in HEAD.
     assert_eq!(
         head_before,
         git(repo.path(), &["rev-parse", "HEAD"]),
@@ -357,7 +357,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         "a blocked review must create no commit"
     );
     let show = Command::new("git")
-        .args(["show", "HEAD:changelog/changelog.md"])
+        .args(["show", "HEAD:docs/changelog/changelog.md"])
         .current_dir(repo.path())
         .output()
         .expect("run git show");
@@ -382,7 +382,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         .join("file-state.json");
     if let Ok(json) = fs::read_to_string(&record) {
         assert!(
-            !json.contains("changelog/changelog.md"),
+            !json.contains("docs/changelog/changelog.md"),
             "a blocked review must not adopt (no file-state baseline for the canonical doc); \
              got:\n{json}"
         );

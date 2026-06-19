@@ -5,7 +5,7 @@
 //! Drives the built `jigc` binary against a throwaway temp git repo. A task is
 //! minted over the `implement-from-spec` workflow (which declares
 //! `reads: [{role: spec, type: spec}]`), a committed `spec` fixture lives at
-//! `specs/<slug>.md`, and `jigc task bind` is exercised across every rejection of
+//! `docs/specs/<slug>.md`, and `jigc task bind` is exercised across every rejection of
 //! the five-step enforcement plus the success + re-bind (last-write-wins) path.
 //! The observable proof is the persisted `.jigc/tasks/<id>/roles.json` mapping
 //! `spec -> spec:<slug>`.
@@ -73,12 +73,12 @@ fn init_repo(root: &Path) {
     fs::create_dir_all(root.join(".jigc").join("config")).expect("create project layer");
 }
 
-/// Commit a `spec` fixture at its canonical path `specs/<slug>.md` so the bind's
+/// Commit a `spec` fixture at its canonical path `docs/specs/<slug>.md` so the bind's
 /// committed-store resolve (step 3) finds it. The body is a minimal conforming
 /// spec — bind's resolve only needs the canonical file to exist.
 fn commit_spec(root: &Path, slug: &str) {
-    let specs = root.join("specs");
-    fs::create_dir_all(&specs).expect("create specs/");
+    let specs = root.join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("create docs/specs/");
     fs::write(
         specs.join(format!("{slug}.md")),
         "# Cache the session store\n\n## Goal\n\nMove sessions to redis.\n",
@@ -88,12 +88,12 @@ fn commit_spec(root: &Path, slug: &str) {
     git(root, &["commit", "-q", "-m", "add spec"]);
 }
 
-/// Commit an `adr` fixture at its canonical path `decisions/<slug>.md`. Used to
+/// Commit an `adr` fixture at its canonical path `docs/decisions/<slug>.md`. Used to
 /// give the doctype-mismatch step (4) a target that resolves in the committed
 /// store (step 3) yet has the wrong doctype for the `spec` role.
 fn commit_adr(root: &Path, slug: &str) {
-    let decisions = root.join("decisions");
-    fs::create_dir_all(&decisions).expect("create decisions/");
+    let decisions = root.join("docs").join("decisions");
+    fs::create_dir_all(&decisions).expect("create docs/decisions/");
     fs::write(
         decisions.join(format!("{slug}.md")),
         "# Some decision\n\n## Decision\n\nWe decided.\n",

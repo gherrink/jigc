@@ -11,7 +11,7 @@
 //! `implements` edge at finalize:
 //!
 //! - **Task 1 (`plan`)** creates + authors + finalizes `spec:gateway-rate-limiting`
-//!   — asserts `specs/gateway-rate-limiting.md` is committed at its canonical path.
+//!   — asserts `docs/specs/gateway-rate-limiting.md` is committed at its canonical path.
 //!   One `criteria` item is then seeded via the **editable channel** (append +
 //!   git-commit), because there is no `add-item` verb yet (`plan` ships a
 //!   criteria-less-but-valid spec); this mirrors how `superseding_decision` seeds its
@@ -167,7 +167,7 @@ fn set_field(repo: &Path, home: &Path, addr: &str, value: &str) {
 
 /// Setup — task 1 (`plan`) creates + authors + finalizes the spec, then seeds one
 /// `criteria` item via the editable channel (append + git-commit). After this the
-/// committed `specs/<slug>.md` carries one dereferenceable criterion.
+/// committed `docs/specs/<slug>.md` carries one dereferenceable criterion.
 fn commit_spec_with_criterion(repo: &Path, home: &Path) {
     let out = jigc(
         repo,
@@ -223,13 +223,13 @@ fn commit_spec_with_criterion(repo: &Path, home: &Path) {
 
     // The spec is committed at its canonical path (the persisted differentiator).
     let committed = Command::new("git")
-        .args(["show", &format!("HEAD:specs/{SPEC_SLUG}.md")])
+        .args(["show", &format!("HEAD:docs/specs/{SPEC_SLUG}.md")])
         .current_dir(repo)
         .output()
         .expect("git show");
     assert!(
         committed.status.success(),
-        "task 1 must commit specs/{SPEC_SLUG}.md; stderr:\n{}",
+        "task 1 must commit docs/specs/{SPEC_SLUG}.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
 
@@ -237,13 +237,16 @@ fn commit_spec_with_criterion(repo: &Path, home: &Path) {
     // `add-item` verb yet, so the e2e hand-writes a `### <title>  {#id}` + statement
     // block and git-commits it, exactly as `superseding_decision` seeds its committed
     // ADR. This gives the slice assertion ≥1 criterion to dereference on resume.
-    let spec_path = repo.join("specs").join(format!("{SPEC_SLUG}.md"));
+    let spec_path = repo
+        .join("docs")
+        .join("specs")
+        .join(format!("{SPEC_SLUG}.md"));
     let mut body = fs::read_to_string(&spec_path).expect("read committed spec");
     body.push_str(&format!(
         "\n### Rejects the 101st request  {{#rejects-burst}}\n\n{CRITERION_STATEMENT}\n"
     ));
     fs::write(&spec_path, &body).expect("seed criterion");
-    git(repo, &["add", &format!("specs/{SPEC_SLUG}.md")]);
+    git(repo, &["add", &format!("docs/specs/{SPEC_SLUG}.md")]);
     git(repo, &["commit", "-q", "-m", "seed acceptance criterion"]);
 }
 

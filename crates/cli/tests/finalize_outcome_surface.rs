@@ -208,8 +208,11 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
     let out = finalize(repo, home, task, None);
     assert_ok(&out, "`jigc task finalize` (task A)");
     assert!(
-        repo.join("decisions").join("single-node-cache.md").exists(),
-        "task A must promote decisions/single-node-cache.md",
+        repo.join("docs")
+            .join("decisions")
+            .join("single-node-cache.md")
+            .exists(),
+        "task A must promote docs/decisions/single-node-cache.md",
     );
 }
 
@@ -217,7 +220,10 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
 /// `fs::write` — the human-in-git channel): prose-only, so the reconcile classifier
 /// re-parses clean and routes to absorb, never to a conformance block.
 fn oob_edit_committed_adr(repo: &Path) {
-    let path = repo.join("decisions").join("single-node-cache.md");
+    let path = repo
+        .join("docs")
+        .join("decisions")
+        .join("single-node-cache.md");
     let body = fs::read_to_string(&path).expect("read the committed ADR");
     let edited = body.replacen(
         "A cold node loses its sessions.",
@@ -954,7 +960,7 @@ fn git_out(repo: &Path, args: &[&str]) -> String {
 
 /// Mint + author an ADR-promoting single-task, finalize it, and return
 /// `(finalize stdout, the landed short hash, the landed subject)`. The ADR promotes to
-/// `decisions/single-node-cache.md`, so the caller can assert the success summary names
+/// `docs/decisions/single-node-cache.md`, so the caller can assert the success summary names
 /// the landed commit and the promoted persisted doc.
 fn promote_adr_and_finalize(format: Option<&str>) -> (String, String, String) {
     let repo = TempDir::new("landed-summary");
@@ -1008,10 +1014,11 @@ fn promote_adr_and_finalize(format: Option<&str>) -> (String, String, String) {
     assert_ok(&out, "`jigc task finalize`");
     assert!(
         repo.path()
+            .join("docs")
             .join("decisions")
             .join("single-node-cache.md")
             .exists(),
-        "the finalize must promote decisions/single-node-cache.md",
+        "the finalize must promote docs/decisions/single-node-cache.md",
     );
     let short = git_out(repo.path(), &["rev-parse", "--short", "HEAD"]);
     let subject = git_out(repo.path(), &["log", "-1", "--pretty=format:%s"]);
@@ -1039,7 +1046,7 @@ fn finalize_reports_landed_commit_and_promotions() {
         "the success summary must name the commit subject {subject:?}; got:\n{stdout}",
     );
     assert!(
-        stdout.contains("decisions/single-node-cache.md"),
+        stdout.contains("docs/decisions/single-node-cache.md"),
         "the success summary must name the promoted ADR path; got:\n{stdout}",
     );
 
@@ -1070,7 +1077,7 @@ fn finalize_reports_landed_commit_and_promotions() {
         .filter_map(serde_json::Value::as_str)
         .collect();
     assert!(
-        promoted.contains(&"decisions/single-node-cache.md"),
+        promoted.contains(&"docs/decisions/single-node-cache.md"),
         "committed.promoted names the promoted ADR path; got:\n{stdout}",
     );
     assert!(

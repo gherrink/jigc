@@ -342,7 +342,7 @@ fn finalize_minimal_commit_type_and_summary_only_lands_clean() {
 
 /// Flow #5 [4 promote] (`design/worked-examples.md` → Superseding decision, setup):
 /// a task creates an ADR via the create-gate, then `finalize` **promotes** it to
-/// `decisions/<slug>.md` and commits it — the persisted managed doc the MVP's
+/// `docs/decisions/<slug>.md` and commits it — the persisted managed doc the MVP's
 /// differentiators ride on. Asserts the committed canonical bytes equal the staged
 /// ADR (the byte-stable copy) and that finalize advanced the `file-state` hash for
 /// the promoted path (`design/finalize.md` → 4. Promote / 7. Post-commit).
@@ -419,13 +419,13 @@ fn finalize_promotes_a_created_adr_to_decisions() {
 
     // The ADR is committed at its canonical path with the byte-stable promoted bytes.
     let committed = Command::new("git")
-        .args(["show", "HEAD:decisions/single-node-cache.md"])
+        .args(["show", "HEAD:docs/decisions/single-node-cache.md"])
         .current_dir(repo.path())
         .output()
         .expect("run git show");
     assert!(
         committed.status.success(),
-        "`git show HEAD:decisions/single-node-cache.md` must succeed; stderr:\n{}",
+        "`git show HEAD:docs/decisions/single-node-cache.md` must succeed; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr)
     );
     assert_eq!(
@@ -441,7 +441,7 @@ fn finalize_promotes_a_created_adr_to_decisions() {
         .join("file-state.json");
     let record_json = fs::read_to_string(&record).expect("read the file-state record");
     assert!(
-        record_json.contains("decisions/single-node-cache.md"),
+        record_json.contains("docs/decisions/single-node-cache.md"),
         "finalize must record the promoted ADR's file-state hash; got:\n{record_json}"
     );
 
@@ -561,7 +561,7 @@ fn finalize_blocks_on_a_dangling_supersedes_ref() {
         "a dangling-ref block must create no commit"
     );
 
-    // The ADR was NOT promoted to decisions/ (the transaction aborted before commit).
+    // The ADR was NOT promoted to docs/decisions/ (the transaction aborted before commit).
     assert!(
         !repo
             .path()

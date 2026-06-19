@@ -61,7 +61,7 @@ A short burst above the limit is tolerated for 2s.
 
 ### Identity, order, fields, slots, items
 
-- **Identity is the path** — `specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file. A **title rename** (H1) changes the title field; the id stays frozen (see next bullet). A **path rename** (`git mv`) is an **identity change** — the path *is* the identity — so it's detected and routed as a rename ([reconciliation.md](reconciliation.md) → Rename detection); CLI-orchestrated post-MVP via `jigc doc rename`, with MVP routing the human to revert in git.
+- **Identity is the path** — `docs/specs/auth-flow.md` → type `spec`, id `auth-flow`. No redundant id in the file. A **title rename** (H1) changes the title field; the id stays frozen (see next bullet). A **path rename** (`git mv`) is an **identity change** — the path *is* the identity — so it's detected and routed as a rename ([reconciliation.md](reconciliation.md) → Rename detection); CLI-orchestrated post-MVP via `jigc doc rename`, with MVP routing the human to revert in git.
 - **id-source = the title field, rendered as the heading** — the schema declares a `string` field as the item's id-source (`id-from: title`, see [document-type-schema.md](document-type-schema.md)); that field is rendered on disk as the item's `###` heading text (not as a trailing `- key: value` field), with the minted `{#id}` anchor carrying the frozen id slugged from the field's value at creation. A doc's title is its H1 (filename = frozen id); an item's title is its `###` heading (`{#id}` = frozen id). The title is mutable (editing the heading edits the field's value); the id is frozen, so `spec:auth-flow#criteria/rate-limit` survives a retitle.
 - **Order = physical order.** Reordering is moving a block — a clean diff move, never a renumber.
 - **One field grammar** (`key: value`), two structural frames — header block → a flat front-matter block between `---`; a section/item block → a trailing **bullet list** (`- key: value`) preceded by an `<!-- fields -->` sentinel on its own line (the field-group boundary marker — see [implementation/parsing.md](../implementation/parsing.md) → Field-group delineation). The sentinel makes the field group unambiguous *by marker*, not by content-matching the bullet keys against the schema — so slot prose that legitimately ends with `- status: TBD` stays prose. `code-anchor` values carry presentational backticks (stripped on read, re-added on write) so the diff stays readable without polluting the stored value.
@@ -74,7 +74,7 @@ A short burst above the limit is tolerated for 2s.
 Committed source of truth and derived/transient state live apart:
 
 ```
-decisions/ specs/ prds/ architecture/ changelog/   # committed .md docs at per-doctype locations — the only source of truth
+docs/decisions/ docs/specs/ docs/prds/ docs/architecture/ docs/changelog/   # committed .md docs at per-doctype locations under docs-root — the only source of truth
 .jigc/                      # one project-state home (committed config + bootstrap; gitignored caches)
   AGENT.md                  #   committed — the managed bootstrap routing sentence (CLI-owned; the host file references it)
   config/                   #   committed — the project cascade layer (see Config layout)
@@ -89,7 +89,7 @@ decisions/ specs/ prds/ architecture/ changelog/   # committed .md docs at per-d
   milestones/               #   gitignored — milestone working state
 ```
 
-**Per-doctype locations are human-chosen, not mechanical.** Each persisted doctype declares its own `location:` (`adr → decisions/`, `spec → specs/`, `prd → prds/`, `arch-doc → architecture/`, `changelog → changelog/`) — deliberately the most readable name for that doctype (`decisions/` over `adrs/`, `architecture/` over `arch-docs/`), **not** a uniform `<type>s/` rule. These land at the **repo root**, alongside the project's own `src/`/`docs/` — committed, human-reviewable plain Markdown. (A pre-existing same-named dir with non-conformant content is detected and routed by `ingest`, not silently overwritten.)
+**Per-doctype locations are human-chosen, not mechanical.** Each persisted doctype declares its own `location:` (`adr → decisions/`, `spec → specs/`, `prd → prds/`, `arch-doc → architecture/`, `changelog → changelog/`) — deliberately the most readable name for that doctype (`decisions/` over `adrs/`, `architecture/` over `arch-docs/`), **not** a uniform `<type>s/` rule. These nest under the **`docs-root`** parent (default `docs/` → `docs/decisions/`, `docs/specs/`, …; see [Config layout](#config-layout)) — one tidy home rather than five dirs polluting the repo root — committed, human-reviewable plain Markdown alongside the project's own `src/`. (A pre-existing same-named dir with non-conformant content is detected and routed by `ingest`, not silently overwritten.)
 
 The three cascade layers ([overrides.md](overrides.md)) live in three homes: the **project** layer is **committed** in-repo at `.jigc/config/` (deltas + knobs, diff-reviewed); the **team** layer is **external** (`~/.config/jigc/`, same internal layout); **pack-default** ships with the installed pack (its knob surface in `config/knobs.yaml`). So `.jigc/` is one home: its `config/` subdir + the `AGENT.md` bootstrap are committed, while `tasks/`, `index/`, `state/`, and `milestones/` are gitignored (via `.jigc/.gitignore`) and fully disposable.
 
@@ -103,6 +103,8 @@ A cascade layer's `config/` dir has one fixed shape (settled M4 planning, [overr
 - **`packs.yaml`** — pack-composition for the project (e.g. `compose-embedded-methodology: true`, composing the embedded methodology pack as `[dev ▸ methodology]`; [multi-pack.md](multi-pack.md)). Written by `jigc setup`; the only config-dir member present before any `jigc config` delta. *(`manifest.yaml`, `steps/`, `fills/` are this fixed shape but materialize lazily — only once a delta is authored.)*
 
 The pack-default layer adds **`config/knobs.yaml`** — the closed, typed knob *declaration* (`{key, type, of?, default}`, [overrides.md](overrides.md) → Scalar knobs); override layers carry only *values* (`scalar:` in their manifest), never re-declare the surface. The loader reads these into the `PackDefaultLayer` / `OverrideLayer` the resolver consumes.
+
+**`docs-root`** — the managed-doc parent dir (`string`, default `docs/`), one of the dev pack's knobs. The resolved `docs-root` is prepended to every persisted doctype's `location:` at schema load (`docs/decisions/`, `docs/specs/`, …), so the doctype id, addressing (`adr:foo`), and stable-id invariants are unchanged — only the on-disk path gains the prefix. Per-project overridable (`jigc config set docs-root <path>`); `""` (or `.`) restores the flat repo-root layout. It is an **opt-in** knob: it nests only where the resolved cascade carries the key — a pack whose knob surface omits `docs-root` (e.g. the methodology pack) stays flat. Applied uniformly at **every** schema-load surface (compose/describe, finalize-promote, doc copy-in, ingest/unmanage, milestone join) so the read and write paths always resolve the same parent.
 
 ### The per-task working area (staging)
 

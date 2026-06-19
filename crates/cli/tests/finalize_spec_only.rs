@@ -15,7 +15,7 @@
 //!     → `jigc task finalize <id>`
 //!
 //! and asserts: (a) finalize exits 0, (b) exactly one new commit on HEAD,
-//! (c) `specs/<slug>.md` is committed at its canonical path (promotion),
+//! (c) `docs/specs/<slug>.md` is committed at its canonical path (promotion),
 //! (d) the rendered commit message carries `docs`, (e) the empty-commit guard
 //! does NOT reject the code-less task.
 //!
@@ -219,18 +219,18 @@ fn spec_only_code_less_task_finalizes_into_one_docs_commit() {
 
     // (c) the spec is committed at its canonical path (promotion).
     let committed = Command::new("git")
-        .args(["show", "HEAD:specs/auth-spec.md"])
+        .args(["show", "HEAD:docs/specs/auth-spec.md"])
         .current_dir(repo.path())
         .output()
         .expect("git show");
     assert!(
         committed.status.success(),
-        "finalize must promote + commit specs/auth-spec.md; stderr:\n{}",
+        "finalize must promote + commit docs/specs/auth-spec.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
     let files = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
     assert!(
-        files.lines().any(|l| l == "specs/auth-spec.md"),
+        files.lines().any(|l| l == "docs/specs/auth-spec.md"),
         "the promoted spec must be in the commit; files:\n{files}",
     );
 

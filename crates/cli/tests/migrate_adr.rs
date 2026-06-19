@@ -2,7 +2,7 @@
 //! Proves). Drives the **built** `jigc` binary against throwaway `git init` temp repos
 //! over the **shipped** dev pack (`JIGC_PACK_DIR` = the embedded `pack/` tree),
 //! exercising — not assuming — the doctype-general migrate → author → review-gate →
-//! retire → adopt spine on the new NON-SINGLETON `decisions/` doctype
+//! retire → adopt spine on the new NON-SINGLETON `docs/decisions/` doctype
 //! ([auto-migration.md](../../../design/auto-migration.md) → Migration model +
 //! Per-doctype workflows + Acceptance; [roadmap.md](../../../implementation/roadmap.md)
 //! → M25 Increment 1 Proves):
@@ -11,12 +11,12 @@
 //!     migrates: `jigc migrate <path> --as adr` mints the per-file migration task, the
 //!     agent authors the canonical record through `doc author adr --from-file -` (the status
 //!     field + the context/decision/consequences slots), and `task finalize --approve`
-//!     lands exactly ONE commit that (a) writes `decisions/<title-slug>.md` byte-stable
-//!     (`render(instance_from_source(x)) == x`), (b) carries `A decisions/<slug>.md` +
+//!     lands exactly ONE commit that (a) writes `docs/decisions/<title-slug>.md` byte-stable
+//!     (`render(instance_from_source(x)) == x`), (b) carries `A docs/decisions/<slug>.md` +
 //!     `D <foreign>` (the foreign original retired/gone), and (c) a follow-up `jigc
 //!     ingest` reports the managed adr **adopted** (not unmanaged / needs-reconcile). The
 //!     review gate blocks the bare finalize first (nothing committed). The headline runs
-//!     into an **empty `decisions/`** — the cold-spike arm.
+//!     into an **empty `docs/decisions/`** — the cold-spike arm.
 //!   - **RED** — an un-mapped raw foreign status (`rejected`, outside the 3-enum) **blocks
 //!     at the write-time enum check** (`write.malformed-value`) and stages nothing.
 //!   - **2nd migrate + mapped status** — a second `jigc migrate <other>.md --as adr` mints
@@ -206,11 +206,15 @@ fn author_adr(
     )
 }
 
-/// Assert the canonical `decisions/<slug>.md` on disk round-trips byte-stable through the
+/// Assert the canonical `docs/decisions/<slug>.md` on disk round-trips byte-stable through the
 /// shipped adr schema: `render(&schema, &instance_from_source(&schema, x)) == x`.
 fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String {
-    let on_disk = fs::read_to_string(repo.join("decisions").join(format!("{slug}.md")))
-        .expect("the canonical adr is on disk");
+    let on_disk = fs::read_to_string(
+        repo.join("docs")
+            .join("decisions")
+            .join(format!("{slug}.md")),
+    )
+    .expect("the canonical adr is on disk");
     let schema = shipped_adr_schema(pack);
     let parsed = engine::write::instance_from_source(&schema, &on_disk)
         .expect("the committed adr re-parses");
@@ -222,11 +226,11 @@ fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String 
     on_disk
 }
 
-/// Assert a follow-up `jigc ingest` reports `decisions/<slug>.md` adopted — never
+/// Assert a follow-up `jigc ingest` reports `docs/decisions/<slug>.md` adopted — never
 /// `unmanaged` / `needs-reconcile`.
 fn assert_ingest_adopted(repo: &Path, home: &Path, pack: &Path, slug: &str) {
     let ingest = ok_stdout(run_jigc(repo, home, pack, &["ingest"], None), "jigc ingest");
-    let needle = format!("decisions/{slug}.md");
+    let needle = format!("docs/decisions/{slug}.md");
     let row = ingest
         .lines()
         .find(|l| l.contains(&needle))
@@ -289,12 +293,12 @@ fn migrate_adr_finalize_writes_retires_and_adopts() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    // A committed foreign ADR at the off-canonical `docs/adr/` path; `decisions/` is
+    // A committed foreign ADR at the off-canonical `docs/adr/` path; `docs/decisions/` is
     // empty (the cold spike — migrate into a never-before-populated doctype location).
     let rel = commit_foreign_adr(repo.path(), "0001-use-postgresql", FOREIGN_POSTGRES);
     assert!(
-        !repo.path().join("decisions").exists(),
-        "the cold spike starts with no `decisions/` directory"
+        !repo.path().join("docs").join("decisions").exists(),
+        "the cold spike starts with no `docs/decisions/` directory"
     );
 
     ok_stdout(
@@ -395,7 +399,7 @@ fn migrate_adr_finalize_writes_retires_and_adopts() {
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tdecisions/use-postgresql.md"),
+        name_status.contains("A\tdocs/decisions/use-postgresql.md"),
         "the SAME commit carries the added managed adr:\n{name_status}"
     );
 
@@ -603,17 +607,20 @@ fn a_second_migrate_mints_a_distinct_task_and_migrates_independently() {
         assert!(
             git(
                 repo.path(),
-                &["cat-file", "-t", &format!("HEAD:decisions/{slug}.md")]
+                &["cat-file", "-t", &format!("HEAD:docs/decisions/{slug}.md")]
             )
             .contains("blob"),
-            "decisions/{slug}.md is committed",
+            "docs/decisions/{slug}.md is committed",
         );
         assert_ingest_adopted(repo.path(), home.path(), &pack, slug);
     }
     // The mapped status landed.
     assert!(
-        git(repo.path(), &["show", "HEAD:decisions/use-a-monolith.md"])
-            .contains("status: superseded"),
+        git(
+            repo.path(),
+            &["show", "HEAD:docs/decisions/use-a-monolith.md"]
+        )
+        .contains("status: superseded"),
         "the mapped (Deprecated -> superseded) status is committed",
     );
 }
@@ -933,7 +940,7 @@ fn a_non_migration_doc_create_adr_still_stamps_today() {
 /// The **per-file** migration task id for an arbitrary repo-relative source `rel` — the
 /// production derivation ([`crate::start::mint_migration_in_repo`]): strip `.md`, fold path
 /// separators to `-`, slugify. The hard-coded [`migration_task`] above is the `docs/adr/`
-/// specialization; the squatter arm migrates a source under `decisions/`, so it needs the
+/// specialization; the squatter arm migrates a source under `docs/decisions/`, so it needs the
 /// general form.
 fn migration_task_for(rel: &str) -> String {
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
@@ -956,7 +963,7 @@ fn finalize_approve(repo: &Path, home: &Path, pack: &Path, task: &str) -> std::p
     )
 }
 
-/// (a) **Title-slug collision across the doctype dir** — with `decisions/use-postgresql.md`
+/// (a) **Title-slug collision across the doctype dir** — with `docs/decisions/use-postgresql.md`
 /// already committed (a first migration), a SECOND foreign ADR at a distinct off-canonical
 /// path whose authored title slugs to the SAME `use-postgresql` must **block at
 /// finalize-promote** (`finalize.promote-clobber`): no clobber, nothing committed, the
@@ -973,7 +980,7 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
         "jigc setup",
     );
 
-    // First migration lands a committed managed ADR at `decisions/use-postgresql.md`.
+    // First migration lands a committed managed ADR at `docs/decisions/use-postgresql.md`.
     migrate_one(
         repo.path(),
         home.path(),
@@ -983,8 +990,13 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
         PAYLOAD_POSTGRES,
         "use-postgresql",
     );
-    let committed_before =
-        fs::read(repo.path().join("decisions").join("use-postgresql.md")).expect("committed adr");
+    let committed_before = fs::read(
+        repo.path()
+            .join("docs")
+            .join("decisions")
+            .join("use-postgresql.md"),
+    )
+    .expect("committed adr");
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
@@ -1022,7 +1034,7 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
     );
     assert!(
         streams.contains("finalize.promote-clobber")
-            && streams.contains("decisions/use-postgresql.md"),
+            && streams.contains("docs/decisions/use-postgresql.md"),
         "the block is the clobber guard naming the destination it refused to overwrite:\n{streams}",
     );
 
@@ -1041,7 +1053,13 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
     );
     // The committed ADR is byte-intact — never clobbered.
     assert_eq!(
-        fs::read(repo.path().join("decisions").join("use-postgresql.md")).expect("committed adr"),
+        fs::read(
+            repo.path()
+                .join("docs")
+                .join("decisions")
+                .join("use-postgresql.md")
+        )
+        .expect("committed adr"),
         committed_before,
         "the already-committed ADR is byte-intact after the refused clobber",
     );
@@ -1052,7 +1070,7 @@ fn a_title_slug_collision_blocks_at_finalize_promote() {
     );
 }
 
-/// (b) **In-location squatter** — `jigc migrate decisions/<slug>.md --as adr` where the
+/// (b) **In-location squatter** — `jigc migrate docs/decisions/<slug>.md --as adr` where the
 /// canonical path itself holds a committed managed doc must **block at finalize-promote**,
 /// the squatter intact. The retire-skip (source == destination, [`plan_retirements`]) and
 /// the promote-block compose to **no data loss**. Bounded: this proves only the BLOCK —
@@ -1069,7 +1087,7 @@ fn an_in_location_squatter_blocks_at_finalize_promote() {
         "jigc setup",
     );
 
-    // Land a committed managed ADR at the canonical `decisions/use-postgresql.md` — the
+    // Land a committed managed ADR at the canonical `docs/decisions/use-postgresql.md` — the
     // squatter the in-location migration would overwrite.
     migrate_one(
         repo.path(),
@@ -1080,7 +1098,7 @@ fn an_in_location_squatter_blocks_at_finalize_promote() {
         PAYLOAD_POSTGRES,
         "use-postgresql",
     );
-    let squatter_rel = "decisions/use-postgresql.md";
+    let squatter_rel = "docs/decisions/use-postgresql.md";
     let squatter_before = fs::read(repo.path().join(squatter_rel)).expect("the squatter on disk");
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
@@ -1114,7 +1132,7 @@ fn an_in_location_squatter_blocks_at_finalize_promote() {
     );
     assert!(
         streams.contains("finalize.promote-clobber")
-            && streams.contains("decisions/use-postgresql.md"),
+            && streams.contains("docs/decisions/use-postgresql.md"),
         "the block is the clobber guard naming the canonical destination:\n{streams}",
     );
     // No data loss: the squatter is byte-intact and nothing was committed (retire-skip +
@@ -1134,7 +1152,7 @@ fn an_in_location_squatter_blocks_at_finalize_promote() {
 }
 
 /// (c) **Regression** — a normal first-time `jigc migrate <foreign>.md --as adr` into a
-/// non-colliding, empty `decisions/` is **unaffected** by the guard: it promotes, retires
+/// non-colliding, empty `docs/decisions/` is **unaffected** by the guard: it promotes, retires
 /// the foreign original, commits, and a follow-up `jigc ingest` reports it **adopted**. The
 /// guard's negative case, proven adjacent to the blocks so the acceptance is self-contained.
 #[test]
@@ -1144,8 +1162,8 @@ fn a_first_time_migration_into_empty_decisions_is_unaffected() {
     let pack = dev_pack();
     init_repo(repo.path());
     assert!(
-        !repo.path().join("decisions").exists(),
-        "the regression starts with no `decisions/` directory (no possible collision)",
+        !repo.path().join("docs").join("decisions").exists(),
+        "the regression starts with no `docs/decisions/` directory (no possible collision)",
     );
     ok_stdout(
         run_jigc(repo.path(), home.path(), &pack, &["setup"], None),

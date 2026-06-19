@@ -17,8 +17,8 @@
 //!     canonical record through `doc author arch-doc --from-file -` (the `overview` slot + a
 //!     `components` item whose `implemented-by` anchors a real `path#symbol` present in the
 //!     repo's Rust); and `task finalize --approve` lands exactly ONE commit that (a) writes
-//!     `architecture/<slug>.md` byte-stable (`render(instance_from_source(x)) == x`) with
-//!     one resolving `implemented-by`, (b) carries `A architecture/<slug>.md` + `D
+//!     `docs/architecture/<slug>.md` byte-stable (`render(instance_from_source(x)) == x`) with
+//!     one resolving `implemented-by`, (b) carries `A docs/architecture/<slug>.md` + `D
 //!     <foreign>` (the foreign original retired/gone) in the SAME commit. The review gate
 //!     blocks the bare finalize first (nothing committed).
 //!   - **Reds fire** — a dangling `cites [adr:<absent>]` blocks at
@@ -231,9 +231,11 @@ fn migration_task(rel: &str) -> String {
 /// retire surfaces a tracked deletion in the finalize commit (the realistic flow — a
 /// pre-existing committed architecture document). Returns the repo-relative path.
 fn commit_foreign_arch_doc(repo: &Path, stem: &str, body: &str) -> String {
-    let rel = format!("docs/architecture/{stem}.md");
+    // The canonical home is now `docs/architecture/` (the `docs-root` nesting), so flat
+    // `architecture/` is the off-canonical foreign location.
+    let rel = format!("architecture/{stem}.md");
     let path = repo.join(&rel);
-    fs::create_dir_all(path.parent().unwrap()).expect("create docs/architecture/");
+    fs::create_dir_all(path.parent().unwrap()).expect("create architecture/");
     fs::write(&path, body).expect("write foreign arch-doc");
     git(repo, &["add", &rel]);
     git(repo, &["commit", "-q", "-m", "track foreign arch-doc"]);
@@ -310,11 +312,15 @@ fn finalize_approve_json(
     )
 }
 
-/// Assert the canonical `architecture/<slug>.md` on disk round-trips byte-stable through
+/// Assert the canonical `docs/architecture/<slug>.md` on disk round-trips byte-stable through
 /// the shipped arch-doc schema: `render(&schema, &instance_from_source(&schema, x)) == x`.
 fn assert_committed_byte_stable(repo: &Path, pack: &Path, slug: &str) -> String {
-    let on_disk = fs::read_to_string(repo.join("architecture").join(format!("{slug}.md")))
-        .expect("the canonical arch-doc is on disk");
+    let on_disk = fs::read_to_string(
+        repo.join("docs")
+            .join("architecture")
+            .join(format!("{slug}.md")),
+    )
+    .expect("the canonical arch-doc is on disk");
     let schema = shipped_arch_doc_schema(pack);
     let parsed = engine::write::instance_from_source(&schema, &on_disk)
         .expect("the committed arch-doc re-parses");
@@ -345,7 +351,7 @@ src/edge_index.rs by rebuild_committed.
 /// The canonical rewrite payload — the `overview` slot + a `components` item carrying a
 /// filled `description` slot AND an `implemented-by` anchor at the present Rust symbol
 /// (NO `cites` — the smoke proves a clean resolving anchor, the C2 cites-over-committed-adr
-/// mandate is Increment 3). The title slugs to `index-layer` → `architecture/index-layer.md`.
+/// mandate is Increment 3). The title slugs to `index-layer` → `docs/architecture/index-layer.md`.
 const PAYLOAD_ARCH_DOC: &str = r#"title: "Index layer"
 sections:
   - id: overview
@@ -367,11 +373,11 @@ fn migrate_arch_doc_smoke_finalize_writes_retires_and_adopts() {
     init_repo(repo.path());
 
     // A committed foreign arch-doc at the off-canonical `docs/architecture/` path;
-    // `architecture/` is empty (the cold spike — migrate into a never-populated location).
+    // `docs/architecture/` is empty (the cold spike — migrate into a never-populated location).
     let rel = commit_foreign_arch_doc(repo.path(), "index-layer", FOREIGN_ARCH_DOC);
     assert!(
-        !repo.path().join("architecture").exists(),
-        "the cold spike starts with no `architecture/` directory"
+        !repo.path().join("docs").join("architecture").exists(),
+        "the cold spike starts with no `docs/architecture/` directory"
     );
 
     ok_stdout(
@@ -469,7 +475,7 @@ fn migrate_arch_doc_smoke_finalize_writes_retires_and_adopts() {
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tarchitecture/index-layer.md"),
+        name_status.contains("A\tdocs/architecture/index-layer.md"),
         "the SAME commit carries the added managed arch-doc:\n{name_status}"
     );
 }

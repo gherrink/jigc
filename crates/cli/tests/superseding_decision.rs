@@ -8,18 +8,18 @@
 //! the forward-ref integrity walk at finalize:
 //!
 //! - **Setup (task 1)** creates + finalizes `adr:single-node-cache`, the ADR that gets
-//!   superseded — asserts `decisions/single-node-cache.md` is committed at its canonical
+//!   superseded — asserts `docs/decisions/single-node-cache.md` is committed at its canonical
 //!   path.
 //! - **Supersede + re-compose (task 2)** creates `adr:shared-redis-session-cache`, sets
 //!   `supersedes: adr:single-node-cache`, and re-composes (`jigc start --task <id>`): the
 //!   `superseded-context` step's `{{@task.decision.supersedes#decision}}` resolves to the
-//!   **prior decision prose** — re-read from the committed `decisions/single-node-cache.md`
+//!   **prior decision prose** — re-read from the committed `docs/decisions/single-node-cache.md`
 //!   and sliced losslessly — emitted as a multi-line `> ` blockquote (NOT the bare address
 //!   handle). This is the round-trip on a committed, human-editable file (inc-2 byte-stable
 //!   splice) + the context-slice over the persisted ADR (`worked-examples.md` → Task 2).
 //! - **Finalize — the edge walk** passes: the overlaid edge index finds the supersedes
 //!   target in the committed store (the two reachable surfaces), so finalize lands exactly
-//!   one commit that promotes the new ADR to `decisions/`.
+//!   one commit that promotes the new ADR to `docs/decisions/`.
 //! - **The dangling variant** points `supersedes` at a target in neither surface; the
 //!   `schema-conformance.ref-resolves` walk blocks finalize non-zero, naming the dangling
 //!   target + the three routing options (fix / create-in-task / drop), and creates NO
@@ -197,7 +197,7 @@ fn inject_supersedes(repo: &Path, task: &str, slug: &str, target: &str) {
 }
 
 /// The committed prose of the prior ADR's `#decision` slice — the bytes the
-/// `superseded-context` step must re-read from `decisions/single-node-cache.md`,
+/// `superseded-context` step must re-read from `docs/decisions/single-node-cache.md`,
 /// trimmed of its trailing newline (the slice is the section's prose).
 const PRIOR_DECISION: &str =
     "A single in-memory node keeps session lookups sub-millisecond and avoids a network hop.";
@@ -245,13 +245,13 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
 
     // The prior ADR is committed at its canonical path (the persisted differentiator).
     let committed = Command::new("git")
-        .args(["show", "HEAD:decisions/single-node-cache.md"])
+        .args(["show", "HEAD:docs/decisions/single-node-cache.md"])
         .current_dir(repo)
         .output()
         .expect("git show");
     assert!(
         committed.status.success(),
-        "task 1 must commit decisions/single-node-cache.md; stderr:\n{}",
+        "task 1 must commit docs/decisions/single-node-cache.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
 }
@@ -344,13 +344,13 @@ fn superseding_decision_slices_the_prior_committed_adr_and_passes_the_edge_walk(
 
     // The superseding ADR is committed at its canonical path.
     let committed = Command::new("git")
-        .args(["show", "HEAD:decisions/shared-redis-session-cache.md"])
+        .args(["show", "HEAD:docs/decisions/shared-redis-session-cache.md"])
         .current_dir(repo.path())
         .output()
         .expect("git show");
     assert!(
         committed.status.success(),
-        "task 2 must promote + commit decisions/shared-redis-session-cache.md; stderr:\n{}",
+        "task 2 must promote + commit docs/decisions/shared-redis-session-cache.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
     // The committed superseding ADR still carries its forward supersedes edge (the

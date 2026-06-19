@@ -5,8 +5,8 @@
 //!
 //! The mandated M9 existing-project acceptance path. A four-candidate repo:
 //!
-//!   decisions/rate-limit.md   — a CONFORMANT adr at its `decisions/` location → adoptable
-//!   decisions/auth-choice.md  — a NON-CONFORMANT near-miss in `decisions/`     → needs-reconcile
+//!   docs/decisions/rate-limit.md   — a CONFORMANT adr at its `docs/decisions/` location → adoptable
+//!   docs/decisions/auth-choice.md  — a NON-CONFORMANT near-miss in `docs/decisions/`     → needs-reconcile
 //!   docs/old-adr.md           — a CONFORMANT adr at the WRONG location (`docs/`) → needs-reconcile
 //!   docs/notes.md             — freeform, outside every location dir            → unmanaged
 //!
@@ -169,7 +169,7 @@ A token bucket per client keeps the gateway fair under burst.
 A misbehaving client is throttled, not the whole gateway.
 ";
 
-/// A near-miss freeform doc dropped into `decisions/`: no front-matter and none of
+/// A near-miss freeform doc dropped into `docs/decisions/`: no front-matter and none of
 /// the required ADR sections, so it fails parse/conformance against `adr`.
 const NON_CONFORMANT_NEAR_MISS: &str = "\
 # Auth choice
@@ -195,10 +195,10 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
     assert_ok(&out, "`jigc setup`");
 
     // ── seed the four flow-12 candidates ─────────────────────────────────────────
-    write(repo.path(), "decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
+    write(repo.path(), "docs/decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
     write(
         repo.path(),
-        "decisions/auth-choice.md",
+        "docs/decisions/auth-choice.md",
         NON_CONFORMANT_NEAR_MISS,
     ); // needs-reconcile (near-miss, under a location dir)
     write(repo.path(), "docs/old-adr.md", CONFORMANT_ADR); // needs-reconcile (wrong location)
@@ -207,8 +207,8 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
     // Snapshot every candidate's bytes — the whole arc is detect-and-route, never
     // a rewrite or a move.
     let candidates = [
-        "decisions/rate-limit.md",
-        "decisions/auth-choice.md",
+        "docs/decisions/rate-limit.md",
+        "docs/decisions/auth-choice.md",
         "docs/old-adr.md",
         "docs/notes.md",
     ];
@@ -277,12 +277,12 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
         }
     };
     assert_eq!(
-        verdict_for("decisions/rate-limit.md"),
+        verdict_for("docs/decisions/rate-limit.md"),
         "adopted",
         "{report}"
     );
     assert_eq!(
-        verdict_for("decisions/auth-choice.md"),
+        verdict_for("docs/decisions/auth-choice.md"),
         "needs-reconcile",
         "{report}"
     );
@@ -315,13 +315,13 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
     let baseline = fs::read_to_string(repo.path().join(".jigc/state/file-state.json"))
         .expect("the file-state record is persisted after an adopt");
     assert!(
-        baseline.contains("\"decisions/rate-limit.md\""),
+        baseline.contains("\"docs/decisions/rate-limit.md\""),
         "the adopted adr's rel-path must gain a file-state baseline:\n{baseline}",
     );
 
     // ── (b)+(c)+(d) the routed + unmanaged docs are NOT adopted (hole closed) ─────
     for rel in [
-        "decisions/auth-choice.md",
+        "docs/decisions/auth-choice.md",
         "docs/old-adr.md",
         "docs/notes.md",
     ] {
@@ -341,7 +341,7 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
     // (d) the non-conformant near-miss under a location dir routes, never adopts —
     // nothing adopted without a schema check at its correct location.
     assert!(
-        report.contains("needs-reconcile decisions/auth-choice.md"),
+        report.contains("needs-reconcile docs/decisions/auth-choice.md"),
         "the non-conformant near-miss routes, never adopts:\n{report}",
     );
 
@@ -353,15 +353,15 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
             "ingest must not rewrite `{rel}` (detect-and-route only)"
         );
     }
-    // No file relocated/duplicated: `decisions/` still holds exactly its two seeds.
-    let decisions: Vec<_> = fs::read_dir(repo.path().join("decisions"))
-        .expect("read decisions/")
+    // No file relocated/duplicated: `docs/decisions/` still holds exactly its two seeds.
+    let decisions: Vec<_> = fs::read_dir(repo.path().join("docs").join("decisions"))
+        .expect("read docs/decisions/")
         .flatten()
         .map(|e| e.file_name())
         .collect();
     assert_eq!(
         decisions.len(),
         2,
-        "adopt moves/creates no file in decisions/: {decisions:?}",
+        "adopt moves/creates no file in docs/decisions/: {decisions:?}",
     );
 }

@@ -9,16 +9,18 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 | Doctype | Purpose (one line) | Persistence / sink | Driver | Status |
 |---|---|---|---|---|
 | `commit` | the change description for one task | transient → git commit message | M1 | ✅ shipped |
-| `adr` | one architecture decision | persisted → `decisions/` | M1 | ✅ shipped |
-| `spec` | the "what" a task implements | persisted → `specs/` | M3 | planned |
-| `prd` | product requirements above specs | persisted → `prds/` | M9 | planned |
-| `arch-doc` | living architecture documentation | persisted → `architecture/` | M13 | ✅ shipped |
+| `adr` | one architecture decision | persisted → `docs/decisions/` | M1 | ✅ shipped |
+| `spec` | the "what" a task implements | persisted → `docs/specs/` | M3 | planned |
+| `prd` | product requirements above specs | persisted → `docs/prds/` | M9 | planned |
+| `arch-doc` | living architecture documentation | persisted → `docs/architecture/` | M13 | ✅ shipped |
 | `roadmap` | the milestone spine + per-milestone decomposition | persisted (running singleton) | M16 | ✅ shipped |
 | `deferral-ledger` | the forward look — keyed deferred decisions | persisted (running singleton) | M16 | ✅ shipped |
 | `decisions-log` | the running log of what was decided + why | persisted (running singleton) | M16 | ✅ shipped |
 | `completion-record` | one milestone's audit → findings → verdict | persisted → `completions/` | M16 | ✅ shipped |
 | `dogfood-record` | one measured jigc run's case, fact counts, seeded checks, verdict, judgment | persisted → `dogfood/` | M17 | ✅ shipped |
-| `changelog` | the running record of user-facing changes per version | persisted (running singleton), `changelog/` | doctype-expansion | planned |
+| `changelog` | the running record of user-facing changes per version | persisted (running singleton), `docs/changelog/` | doctype-expansion | planned |
+
+The dev-pack persisted locations above carry the **`docs-root`** prefix (default `docs/`; [storage.md](../design/storage.md) → Config layout) — the doctype `location:` is declared bare (`decisions/`, `specs/`, …) and the resolved `docs-root` is prepended at schema load. The **methodology** doctypes (`completion-record → completions/`, `dogfood-record → dogfood/`, and the running singletons) stay flat run standalone: their pack's knob surface omits `docs-root`, and it is an opt-in knob (it nests only where the resolved cascade carries the key). Composed `[dev ▸ methodology]`, the dev pack's `docs-root` applies to all.
 
 `changelog` is the first member of the **doctype-expansion** track (G2, post-M21 — [decisions-pending.md](decisions-pending.md); design [changelog.md](../design/changelog.md)). Like the methodology + `dogfood-record` doctypes it sits **below VISION's named starting set** (a real-project doc graduating to managed, earned from a driver) — no new VISION document-model claim. It is a **dev-pack** doctype, singleton, edge-free, and is the consuming target that earns the four engine lifts (multi-level repetition, multi-word section-id, optional slot/field, doc-level `set: on-create`). The candidate **set** beyond it is mapped below.
 

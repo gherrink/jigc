@@ -77,7 +77,9 @@ pub struct IngestReport {
 pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     let repo_root = require_project_layer(cwd)?;
     let pack = make_pack();
-    let schemas = load_schemas(pack.as_ref())?;
+    let resolved =
+        crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
+    let schemas = load_schemas(pack.as_ref(), &resolved)?;
 
     // The adopt substrate: the committed edge index keyed to the current HEAD and the
     // file-state record. Adopt advances these in memory (`adopt` persists nothing
@@ -273,7 +275,10 @@ fn read_candidate_bytes(repo_root: &Path, rel_path: &str) -> Result<Vec<u8>> {
 /// classifier runs each candidate against (the engine stays domain-empty; the CLI
 /// feeds the cascade in). Returned in pack-list order (the engine's discovery dedups
 /// + sorts independently).
-pub(crate) fn load_schemas(pack: &dyn engine::packsource::PackSource) -> Result<Vec<Schema>> {
+pub(crate) fn load_schemas(
+    pack: &dyn engine::packsource::PackSource,
+    resolved: &engine::cascade::Resolved,
+) -> Result<Vec<Schema>> {
     let mut out = Vec::new();
     for id in pack.list(PackResourceKind::Schemas) {
         let bytes = pack
@@ -283,6 +288,10 @@ pub(crate) fn load_schemas(pack: &dyn engine::packsource::PackSource) -> Result<
             .with_context(|| format!("the `{}` schema parses", id.as_str()))?;
         out.push(schema);
     }
+    // Surface B: nest every persisted doctype's `location:` under the resolved
+    // `docs-root` so `jigc ingest` / `jigc unmanage` discover + classify managed docs at
+    // the same parent the write surfaces promote them to.
+    crate::start::apply_docs_root(resolved, out.iter_mut());
     Ok(out)
 }
 

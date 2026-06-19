@@ -8,7 +8,7 @@
 //!     and composes the shipped `migrate-changelog` workflow with the **foreign content
 //!     present** in the emitted view (the source seam — `{{ source }}` — resolves);
 //!   - driving the author spine (`doc create` / `add-item` / `set-field` / `set-slot`)
-//!     against the minted task produces a staged `changelog/changelog.md` that
+//!     against the minted task produces a staged `docs/changelog/changelog.md` that
 //!     **round-trips byte-stable**: `render(&schema, &instance_from_source(&schema,
 //!     staged)) == staged` (the idiom reused from `changelog_cold_create.rs`);
 //!   - the release `date` is authored from the foreign file's **historical** date,

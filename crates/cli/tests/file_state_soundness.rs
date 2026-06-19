@@ -33,7 +33,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 /// The committed ADR the OOB edit hits, at its canonical path / record key.
-const ADR_PATH: &str = "decisions/single-node-cache.md";
+const ADR_PATH: &str = "docs/decisions/single-node-cache.md";
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -328,8 +328,9 @@ fn absorbed_oob_edit_fires_absorb_exactly_once_across_tasks() {
         "the landed finalize persists the absorbed baseline; got:\n{record}",
     );
     assert!(
-        hashes.keys().all(|k| !k.starts_with("docs/")),
-        "the persisted record carries no `docs/`-prefixed staged keys; got:\n{record}",
+        hashes.keys().all(|k| !k.contains(':')),
+        "the persisted record carries no `:`-bearing staged working-area keys \
+         (`docs/<type>:<slug>.md`); got:\n{record}",
     );
 
     // ── task B: validate + landed finalize emit zero absorb for that path ────────
@@ -619,6 +620,18 @@ fn docs_located_pack(dir: &Path) -> PathBuf {
     let moved = body.replacen("location: decisions/", "location: docs/", 1);
     assert_ne!(body, moved, "adr.yaml must declare `location: decisions/`");
     fs::write(&schema, moved).expect("write the docs/-located adr.yaml");
+    // Pin this pack to the FLAT layout (`docs-root: ""`) so the `location: docs/` home
+    // stays `docs/` — the collision this test exercises is the staged `docs/<type>:` key
+    // prefix vs a committed `docs/<slug>.md` baseline, not the `docs-root` nesting. Were
+    // the default `docs/` root left active, the home would nest to `docs/docs/`.
+    let knobs = dir.join("config").join("knobs.yaml");
+    let kbody = fs::read_to_string(&knobs).expect("read the copied knobs.yaml");
+    let flat = kbody.replacen("default: docs/", "default: \"\"", 1);
+    assert_ne!(
+        kbody, flat,
+        "knobs.yaml must declare the `docs-root` default `docs/`"
+    );
+    fs::write(&knobs, flat).expect("write the flat-docs-root knobs.yaml");
     dir.to_path_buf()
 }
 

@@ -234,7 +234,7 @@ const CITES_CODE: &str = "src/limiter.rs#refill";
 /// Author + commit a `spec` via the `plan` workflow, then seed its `criteria` block with a
 /// criterion carrying `maps-to-test: <anchor>` through the **editable channel** —
 /// committed on the base branch BEFORE the work task is minted (the pin-to-base
-/// constraint). After this, `specs/<slug>.md` is committed with one criterion whose
+/// constraint). After this, `docs/specs/<slug>.md` is committed with one criterion whose
 /// `maps-to-test` leaf is the repeatable-block-leaf `code-anchor`.
 fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, anchor: &str) {
     let out = jigc(
@@ -291,13 +291,13 @@ fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, anchor: &str) {
 
     // The spec is committed at its canonical path (the persisted differentiator).
     let committed = Command::new("git")
-        .args(["show", &format!("HEAD:specs/{SPEC_SLUG}.md")])
+        .args(["show", &format!("HEAD:docs/specs/{SPEC_SLUG}.md")])
         .current_dir(repo)
         .output()
         .expect("git show");
     assert!(
         committed.status.success(),
-        "the plan task must commit specs/{SPEC_SLUG}.md; stderr:\n{}",
+        "the plan task must commit docs/specs/{SPEC_SLUG}.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
 
@@ -305,13 +305,16 @@ fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, anchor: &str) {
     // git-commit it on the base branch BEFORE the work task mints. The criterion block
     // shape mirrors the parser's fixture: `### <title>  {#id}` + statement, a
     // `<!-- fields -->` marker, then `- maps-to-test: <path>#<test>`.
-    let spec_path = repo.join("specs").join(format!("{SPEC_SLUG}.md"));
+    let spec_path = repo
+        .join("docs")
+        .join("specs")
+        .join(format!("{SPEC_SLUG}.md"));
     let mut body = fs::read_to_string(&spec_path).expect("read committed spec");
     body.push_str(&format!(
         "\n### Burst limit  {{#{CRITERION_ID}}}\n\nRequests beyond 100/min are rejected.\n\n<!-- fields -->\n- maps-to-test: {anchor}\n"
     ));
     fs::write(&spec_path, &body).expect("seed criterion with maps-to-test anchor");
-    git(repo, &["add", &format!("specs/{SPEC_SLUG}.md")]);
+    git(repo, &["add", &format!("docs/specs/{SPEC_SLUG}.md")]);
     git(
         repo,
         &[
@@ -527,13 +530,13 @@ fn flow13_passing_walk_resolves_both_anchors_and_lands_one_commit() {
     );
     // The created adr was promoted to its canonical store path as part of the one commit.
     let promoted = Command::new("git")
-        .args(["show", &format!("HEAD:decisions/{slug}.md")])
+        .args(["show", &format!("HEAD:docs/decisions/{slug}.md")])
         .current_dir(repo.path())
         .output()
         .expect("git show");
     assert!(
         promoted.status.success(),
-        "the created adr must be promoted to decisions/{slug}.md in the landed commit",
+        "the created adr must be promoted to docs/decisions/{slug}.md in the landed commit",
     );
 }
 
@@ -610,13 +613,13 @@ fn flow13_passing_walk_resolves_via_production_default_probe_path() {
     );
     // The created adr was promoted as part of the one commit.
     let promoted = Command::new("git")
-        .args(["show", &format!("HEAD:decisions/{slug}.md")])
+        .args(["show", &format!("HEAD:docs/decisions/{slug}.md")])
         .current_dir(repo.path())
         .output()
         .expect("git show");
     assert!(
         promoted.status.success(),
-        "the created adr must be promoted to decisions/{slug}.md in the landed commit",
+        "the created adr must be promoted to docs/decisions/{slug}.md in the landed commit",
     );
 }
 

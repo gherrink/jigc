@@ -27,11 +27,11 @@
 //!   4. the conformance gate fires on a real empty NESTED leaf (red 1), and the
 //!      absent OPTIONAL `link` finalizes clean while a required slot still blocks (red 2);
 //!   5. the `single-task` fold-in appends an unreleased entry through the create-gate;
-//!   6. the honest Flow-A-only bound — a foreign `changelog/CHANGELOG.md` routes
+//!   6. the honest Flow-A-only bound — a foreign `docs/changelog/CHANGELOG.md` routes
 //!      `needs-reconcile` (auto-migration G1 is the separate later milestone).
 //!
 //! Byte-stability is asserted over the WHOLE committed document against the staged
-//! promote source (`git show HEAD:changelog/changelog.md == <task working area copy>`),
+//! promote source (`git show HEAD:docs/changelog/changelog.md == <task working area copy>`),
 //! never scoped to a filled subtree (the M13 cold-start discipline).
 
 use std::fs;
@@ -397,7 +397,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         "run 1 finalize must land exactly ONE commit",
     );
 
-    let committed1 = git_show(repo, "HEAD:changelog/changelog.md");
+    let committed1 = git_show(repo, "HEAD:docs/changelog/changelog.md");
     assert_eq!(
         committed1, staged1,
         "run 1: committed bytes == staged promote source (whole-doc byte-stable)",
@@ -562,7 +562,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         "run 2 finalize must land exactly ONE commit",
     );
 
-    let committed2 = git_show(repo, "HEAD:changelog/changelog.md");
+    let committed2 = git_show(repo, "HEAD:docs/changelog/changelog.md");
     assert_eq!(
         committed2, staged2,
         "run 2: re-promoted bytes == staged promote source (whole-doc byte-stable)",
@@ -674,7 +674,7 @@ fn flow24_single_task_fold_in_appends_an_unreleased_entry_and_promotes() {
         "finalize lands exactly ONE commit"
     );
 
-    let committed = git_show(repo, "HEAD:changelog/changelog.md");
+    let committed = git_show(repo, "HEAD:docs/changelog/changelog.md");
     assert_eq!(
         committed, staged,
         "the fold-in-authored changelog promotes byte-stable",
@@ -689,7 +689,7 @@ fn flow24_single_task_fold_in_appends_an_unreleased_entry_and_promotes() {
     );
 }
 
-/// Bar 6 — the honest Flow-A-only bound: a foreign, non-conformant `changelog/CHANGELOG.md`
+/// Bar 6 — the honest Flow-A-only bound: a foreign, non-conformant `docs/changelog/CHANGELOG.md`
 /// at the managed location still routes `needs-reconcile` (auto-migration G1 is the
 /// separate later milestone — `changelog.md` → honest bounds). The doctype helps a
 /// project authoring its changelog through jigc from the start, NOT an imported foreign one.
@@ -705,9 +705,9 @@ fn flow24_foreign_changelog_routes_needs_reconcile() {
 
     // A real foreign Keep-a-Changelog file at the managed location — the strict canonical
     // parser rejects it (its release headings are not the managed section ids).
-    fs::create_dir_all(repo.join("changelog")).expect("create changelog dir");
+    fs::create_dir_all(repo.join("docs").join("changelog")).expect("create changelog dir");
     fs::write(
-        repo.join("changelog").join("CHANGELOG.md"),
+        repo.join("docs").join("changelog").join("CHANGELOG.md"),
         "# Changelog\n\nAll notable changes.\n\n## [1.0.0] - 2020-01-01\n- did stuff\n",
     )
     .expect("write foreign changelog");
@@ -718,7 +718,7 @@ fn flow24_foreign_changelog_routes_needs_reconcile() {
             .output()
             .expect("git");
     };
-    git(&["add", "changelog/CHANGELOG.md"]);
+    git(&["add", "docs/changelog/CHANGELOG.md"]);
     git(&["commit", "-q", "-m", "foreign changelog"]);
 
     let ingest = run_jigc(repo, home, pack, &["ingest"], None);
@@ -728,7 +728,7 @@ fn flow24_foreign_changelog_routes_needs_reconcile() {
         String::from_utf8_lossy(&ingest.stderr),
     );
     assert!(
-        report.contains("needs-reconcile changelog/CHANGELOG.md"),
+        report.contains("needs-reconcile docs/changelog/CHANGELOG.md"),
         "a foreign changelog at the managed location routes needs-reconcile; report:\n{report}",
     );
 }

@@ -1573,9 +1573,11 @@ fn committed_store(
         let Some(location) = schema.location.as_deref() else {
             continue; // a transient (location-less) type has no committed instances.
         };
-        // The location's path-facing collection name — the trimmed final path
-        // component (`specs/` → `specs`), the key authors write as `store.<name>`.
-        let key = location.trim_matches('/');
+        // The location's path-facing collection name — the trimmed **final** path
+        // component (`specs/` → `specs`, `docs/specs/` → `specs`), the key authors write
+        // as `store.<name>`. Keying by the final segment keeps `{{store.<name>}}` stable
+        // under a `docs-root` prefix (`DECISIONS.md` 2026-06-18).
+        let key = location.trim_matches('/').rsplit('/').next().unwrap_or("");
         if key.is_empty() {
             continue;
         }
@@ -2400,6 +2402,40 @@ pub(crate) fn load_catalog(pack: &dyn PackSource) -> Result<CommandCatalog> {
 /// can't carry a fault) these reads return `Result`, so the fault rides the error
 /// directly — the `CascadeStepSource` located-error precedent without the interior
 /// sink.
+/// Prefix every persisted (location-bearing) schema's `location:` with the resolved
+/// `docs-root` (default `docs/`) — the **single** hygiene point for the managed-doc
+/// parent dir (`design/storage.md` → Config layout; `DECISIONS.md` 2026-06-18). Applied
+/// at every schema-load surface (`CascadeDefs::all_schemas`, `ingest::load_schemas`,
+/// `TaskCtx::schemas`) so the read and write paths resolve the *same* parent.
+///
+/// An empty value (`""`) or `.` restores the flat repo-root layout (locations
+/// untouched). The location keeps its **trailing slash** (`decisions/` →
+/// `docs/decisions/`) — `file_state` concatenates `{location}{slug}.md` directly, so the
+/// slash must survive. Transient (location-less) schemas are untouched. The empty-value +
+/// slash hygiene lives here only.
+///
+/// `docs-root` is an **opt-in cascade knob**: it nests only where the resolved cascade
+/// actually carries the key. The dev pack declares it (default `docs/`), so any dev-pack
+/// project nests. A pack whose closed knob surface omits `docs-root` (e.g. the
+/// methodology pack, whose owner-artifact home is the flat engine const
+/// `completions/artifacts/`) resolves `None` here and stays flat — `unwrap_or("")` keeps
+/// docs-root from silently nesting a pack that never opted in.
+pub(crate) fn apply_docs_root<'a>(
+    resolved: &cascade::Resolved,
+    schemas: impl IntoIterator<Item = &'a mut Schema>,
+) {
+    let raw = resolved.scalar("docs-root").unwrap_or("");
+    let root = raw.trim_matches('/');
+    if root.is_empty() || root == "." {
+        return; // flat repo-root layout — no prefix.
+    }
+    for schema in schemas {
+        if let Some(location) = schema.location.as_deref() {
+            schema.location = Some(format!("{root}/{location}"));
+        }
+    }
+}
+
 pub(crate) struct CascadeDefs<'a> {
     resolved: &'a cascade::Resolved,
     /// The project layer's committed config dir — where `workflows/<id>.yaml` and
@@ -2473,6 +2509,10 @@ impl<'a> CascadeDefs<'a> {
                 .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
             out.insert(schema.ty.clone(), schema);
         }
+        // Surface A: nest every persisted doctype's `location:` under the resolved
+        // `docs-root` before returning — covers `describe`, `start`/compose, and the
+        // `committed_store` sweep (all read schemas through here).
+        apply_docs_root(self.resolved, out.values_mut());
         Ok(out)
     }
 }
@@ -3580,6 +3620,8 @@ mod tests {
     #[test]
     fn committed_store_enumerates_by_location_stem() {
         let repo = TempDir::new("committed-store");
+        // The no-shadow cascade carries no `docs-root` scalar, so locations stay flat
+        // (`apply_docs_root` is opt-in); the store key is the final path segment (`specs`).
         let specs = repo.path().join("specs");
         fs::create_dir_all(&specs).expect("mk specs/");
         fs::write(specs.join("gateway-rate-limiting.md"), "# Gateway\n").expect("w");
@@ -5322,6 +5364,9 @@ mod tests {
             .all_schemas(&pack)
             .expect("schemas load");
 
+        // The cascade carries no seeded `docs-root` scalar here (a bare PackDefaultLayer),
+        // so `apply_docs_root` is a no-op (opt-in: it nests only where the cascade carries
+        // the key) and each `location:` stays flat.
         assert_eq!(
             schemas.get("note").and_then(|s| s.location.as_deref()),
             Some("project-notes/"),

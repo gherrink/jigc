@@ -347,13 +347,16 @@ fn commit_spec_with_maps_to_test(repo: &Path, home: &Path, probe: &Path, anchor:
     // EDITABLE CHANNEL: append a criterion carrying a `maps-to-test` code-anchor, then
     // git-commit it on the base branch BEFORE the work task mints (the pin-to-base
     // constraint — committing after mint would advance HEAD and block the resume).
-    let spec_path = repo.join("specs").join(format!("{SPEC_SLUG}.md"));
+    let spec_path = repo
+        .join("docs")
+        .join("specs")
+        .join(format!("{SPEC_SLUG}.md"));
     let mut body = fs::read_to_string(&spec_path).expect("read committed spec");
     body.push_str(&format!(
         "\n### Burst limit  {{#{CRITERION_ID}}}\n\nRequests beyond 100/min are rejected.\n\n<!-- fields -->\n- maps-to-test: {anchor}\n"
     ));
     fs::write(&spec_path, &body).expect("seed criterion with maps-to-test anchor");
-    git(repo, &["add", &format!("specs/{SPEC_SLUG}.md")]);
+    git(repo, &["add", &format!("docs/specs/{SPEC_SLUG}.md")]);
     git(
         repo,
         &[

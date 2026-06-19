@@ -418,9 +418,11 @@ fn init_repo_with_base_adr(root: &Path) {
     git(&["config", "user.email", "test@example.com"]);
     git(&["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
-    fs::create_dir_all(root.join("decisions")).expect("create decisions/");
+    fs::create_dir_all(root.join("docs").join("decisions")).expect("create docs/decisions/");
     fs::write(
-        root.join("decisions").join("eviction-policy.md"),
+        root.join("docs")
+            .join("decisions")
+            .join("eviction-policy.md"),
         committed_adr("Eviction policy"),
     )
     .expect("write committed adr");
@@ -651,8 +653,8 @@ The cache strategy is recorded as an ADR.
 /// committed state, then re-establish the `.jigc/config/` project layer the commit
 /// does not track.
 fn commit_spec(repo: &Path, slug: &str) {
-    let specs = repo.join("specs");
-    fs::create_dir_all(&specs).expect("mk specs/");
+    let specs = repo.join("docs").join("specs");
+    fs::create_dir_all(&specs).expect("mk docs/specs/");
     fs::write(specs.join(format!("{slug}.md")), SEED_SPEC).expect("write spec");
     git(repo, &["add", "."]);
     git(repo, &["commit", "-q", "-m", "add spec"]);
@@ -923,11 +925,11 @@ fn flow10_finalize_is_byte_identical_across_divergent_feed_orders() {
     // ---- Supporting: suffix-by-task-id, read off the committed tree. ----
     // The tree is identical across all three repos, so reading any one reads the shared
     // committed bytes.
-    let decisions = repo_id.path().join("decisions");
+    let decisions = repo_id.path().join("docs").join("decisions");
     for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
         assert!(
             decisions.join(format!("{slug}.md")).is_file(),
-            "the promoted `{slug}` doc must land at decisions/{slug}.md",
+            "the promoted `{slug}` doc must land at docs/decisions/{slug}.md",
         );
     }
     // The lower task id (`add-a-cache-strategy-adr`, the "eager" body) kept the BARE
@@ -947,11 +949,11 @@ fn flow10_finalize_is_byte_identical_across_divergent_feed_orders() {
     );
 
     // The promoted docs are genuinely committed (tracked in HEAD's tree).
-    let tracked = git(repo_id.path(), &["ls-files", "decisions/"]);
+    let tracked = git(repo_id.path(), &["ls-files", "docs/decisions/"]);
     for slug in ["cache-strategy", "cache-strategy-2", "eviction-policy"] {
         assert!(
-            tracked.contains(&format!("decisions/{slug}.md")),
-            "decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
+            tracked.contains(&format!("docs/decisions/{slug}.md")),
+            "docs/decisions/{slug}.md must be committed (tracked); got:\n{tracked}",
         );
     }
 }

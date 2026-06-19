@@ -28,7 +28,7 @@
 //!   inc-4) lands its symbol-exists-BLOCK-on-a-repeatable-item proof HERE.
 //! - **PASS** — restore A's symbol and cite a **committed** adr → `finalize` validates
 //!   clean, lands exactly **one** `docs(arch-doc):` commit, **promotes** the doc to
-//!   `architecture/<slug>.md`, and the working area is cleaned.
+//!   `docs/architecture/<slug>.md`, and the working area is cleaned.
 //!
 //! The two-component A-deleted-B-valid shape is what forces genuine disambiguation: were
 //! the item-leaf setters clobbering one shared value, B's deletion-free anchor could not
@@ -362,7 +362,7 @@ const B_ANCHOR_ADDR: &str = "arch-doc:index-layer#components/target-surface/impl
 /// item address (and NOT B's — per-item disambiguation) **and** on
 /// `schema-conformance.ref-resolves` for the dangling cites; HEAD unchanged, nothing
 /// promoted. Then fix both → `finalize` PASSES, lands exactly one `docs(arch-doc):`
-/// commit, the doc promotes to `architecture/<slug>.md`, the working area is cleaned.
+/// commit, the doc promotes to `docs/architecture/<slug>.md`, the working area is cleaned.
 #[test]
 fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
     let repo = TempDir::new("repo");
@@ -482,11 +482,11 @@ fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
         "the commit subject is `docs(arch-doc):`; got:\n{subject}",
     );
 
-    // The arch-doc promoted to the fourth `location:` — architecture/<slug>.md.
-    let committed = git_show(repo.path(), "HEAD:architecture/index-layer.md");
+    // The arch-doc promoted to the fourth `location:` — docs/architecture/<slug>.md.
+    let committed = git_show(repo.path(), "HEAD:docs/architecture/index-layer.md");
     assert!(
         committed.status.success(),
-        "the arch-doc must promote + commit at architecture/index-layer.md; stderr:\n{}",
+        "the arch-doc must promote + commit at docs/architecture/index-layer.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
     let body = String::from_utf8(committed.stdout).expect("utf-8");
@@ -508,7 +508,7 @@ fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
 }
 
 /// Setup — create + finalize `adr:use-a-cache`, the committed decision the PASS half
-/// cites. Asserts the ADR lands at its canonical `decisions/` path.
+/// cites. Asserts the ADR lands at its canonical `docs/decisions/` path.
 fn commit_cited_adr(repo: &Path, home: &Path) {
     let task = "decide-the-index-strategy";
     let out = jigc(
@@ -558,10 +558,10 @@ fn commit_cited_adr(repo: &Path, home: &Path) {
 
     let out = jigc(repo, home, &["task", "finalize", task]);
     assert_ok(&out, "`jigc task finalize` (adr setup)");
-    let committed = git_show(repo, "HEAD:decisions/use-a-cache.md");
+    let committed = git_show(repo, "HEAD:docs/decisions/use-a-cache.md");
     assert!(
         committed.status.success(),
-        "the cited ADR must commit at decisions/use-a-cache.md; stderr:\n{}",
+        "the cited ADR must commit at docs/decisions/use-a-cache.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
 }

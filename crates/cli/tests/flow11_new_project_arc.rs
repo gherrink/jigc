@@ -1,6 +1,6 @@
 //! Headline acceptance (M9 Increment 1, T5 / worked-examples.md flow 11) — the
 //! new-project arc end-to-end: a fresh repo develops its idea into its first
-//! managed `prd`, and a **code-less** finalize promotes it into `prds/` as one
+//! managed `prd`, and a **code-less** finalize promotes it into `docs/prds/` as one
 //! `docs(prd)` commit.
 //!
 //! Proves the full create-gate → code-less-finalize → promote substrate for the
@@ -20,7 +20,7 @@
 //!     → `jigc task finalize <id>`
 //!
 //! and asserts: (a) finalize exits 0, (b) exactly one new commit on HEAD,
-//! (c) `prds/<slug>.md` is committed at its canonical path (promotion),
+//! (c) `docs/prds/<slug>.md` is committed at its canonical path (promotion),
 //! (d) the rendered commit subject carries `docs`, (e) `.jigc/tasks/<id>/` is
 //! removed (the transaction completed through post-commit).
 //!
@@ -284,18 +284,18 @@ fn new_project_arc_finalizes_into_one_docs_prd_commit() {
 
     // (c) the prd is committed at its canonical path (promotion).
     let committed = Command::new("git")
-        .args(["show", "HEAD:prds/habit-tracker.md"])
+        .args(["show", "HEAD:docs/prds/habit-tracker.md"])
         .current_dir(repo.path())
         .output()
         .expect("git show");
     assert!(
         committed.status.success(),
-        "finalize must promote + commit prds/habit-tracker.md; stderr:\n{}",
+        "finalize must promote + commit docs/prds/habit-tracker.md; stderr:\n{}",
         String::from_utf8_lossy(&committed.stderr),
     );
     let files = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
     assert!(
-        files.lines().any(|l| l == "prds/habit-tracker.md"),
+        files.lines().any(|l| l == "docs/prds/habit-tracker.md"),
         "the promoted prd must be in the commit; files:\n{files}",
     );
 

@@ -1035,6 +1035,16 @@ mod tests {
           of: [router, single-task, quick-fix, plan, implement-from-spec]
           default: router
 
+        # --- docs-root — the managed-doc parent dir (storage.md → Config layout) ---
+        # Nests every persisted doctype's on-disk `location:` under one parent:
+        # `docs/decisions/`, `docs/specs/`, … The doctype id, addressing (`adr:foo`),
+        # and stable-id invariants are unchanged — only the on-disk path gains this
+        # prefix. Per-project overridable like any knob; set `""` (or `.`) for the old
+        # flat repo-root layout. A tunable knob (no floor).
+        docs-root:
+          type: string
+          default: docs/
+
         # --- finalize.fan-out.* — the milestone commit-shaping knob (M8) ---
         # squash: how a fan-out (milestone) finalize shapes the commit. `true`
         # (default) = ONE aggregate commit with the CLI-synthesized structural

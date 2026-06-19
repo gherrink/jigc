@@ -4,7 +4,7 @@
 //! sub-area (`copy_in` → `edited-from-base`), then splices").
 //!
 //! Drives the built `jigc` binary against a throwaway temp git repo holding a
-//! milestone sub-task area plus a committed ADR at `decisions/<slug>.md`. The
+//! milestone sub-task area plus a committed ADR at `docs/decisions/<slug>.md`. The
 //! committed ADR is **absent** from the sub-area, so the first `set-slot
 //! --task <sub>` against it must copy the committed body in, splice, and record
 //! `edited-from-base` provenance the M7 join consumes. The cases:
@@ -104,15 +104,17 @@ fn run_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std
 const COMMITTED_ADR: &str = "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# Single-node cache\n\n## Context\n\nForces.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n";
 
 /// Initialize a git repo with one commit + the `.jigc/config/` project layer +
-/// a committed ADR at `decisions/single-node-cache.md`.
+/// a committed ADR at `docs/decisions/single-node-cache.md`.
 fn init_repo(root: &Path) {
     git(root, &["init", "-q"]);
     git(root, &["config", "user.email", "test@example.com"]);
     git(root, &["config", "user.name", "Test"]);
     fs::write(root.join("README.md"), "hello\n").expect("write file");
-    fs::create_dir_all(root.join("decisions")).expect("create decisions/");
+    fs::create_dir_all(root.join("docs").join("decisions")).expect("create docs/decisions/");
     fs::write(
-        root.join("decisions").join("single-node-cache.md"),
+        root.join("docs")
+            .join("decisions")
+            .join("single-node-cache.md"),
         COMMITTED_ADR,
     )
     .expect("write committed adr");
@@ -224,7 +226,7 @@ fn first_touch_of_a_base_committed_adr_copies_in_and_records_edited_from_base() 
     );
 
     // The committed body was copied in: the OTHER committed slices survive
-    // (proving the body came from `decisions/single-node-cache.md`, not a fresh
+    // (proving the body came from `docs/decisions/single-node-cache.md`, not a fresh
     // empty template), and the edited slice carries the new prose.
     let body = fs::read_to_string(&adr_staged).expect("read staged ADR after copy-in");
     assert!(
@@ -248,8 +250,13 @@ fn first_touch_of_a_base_committed_adr_copies_in_and_records_edited_from_base() 
     );
 
     // The committed source is untouched (copy-in writes only the working copy).
-    let committed = fs::read_to_string(repo.path().join("decisions").join("single-node-cache.md"))
-        .expect("read committed ADR");
+    let committed = fs::read_to_string(
+        repo.path()
+            .join("docs")
+            .join("decisions")
+            .join("single-node-cache.md"),
+    )
+    .expect("read committed ADR");
     assert_eq!(
         committed, COMMITTED_ADR,
         "the committed source file must be untouched by the copy-in",

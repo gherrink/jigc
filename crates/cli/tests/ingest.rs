@@ -6,8 +6,8 @@
 //! Drives the real `jigc` binary against a throwaway git repo seeded with the four
 //! flow-12 candidates (after `jigc setup`):
 //!
-//!   decisions/rate-limit.md   — a CONFORMANT adr at its `decisions/` location → adoptable
-//!   decisions/auth-choice.md  — a NON-CONFORMANT near-miss in `decisions/`     → needs-reconcile
+//!   docs/decisions/rate-limit.md   — a CONFORMANT adr at its `docs/decisions/` location → adoptable
+//!   docs/decisions/auth-choice.md  — a NON-CONFORMANT near-miss in `docs/decisions/`     → needs-reconcile
 //!   docs/old-adr.md           — a CONFORMANT adr at the WRONG location (`docs/`) → needs-reconcile
 //!   docs/notes.md             — freeform, outside every location dir            → unmanaged
 //!
@@ -129,7 +129,7 @@ A token bucket per client keeps the gateway fair under burst.
 A misbehaving client is throttled, not the whole gateway.
 ";
 
-/// A near-miss freeform doc dropped into `decisions/`: no front-matter and none of
+/// A near-miss freeform doc dropped into `docs/decisions/`: no front-matter and none of
 /// the required ADR sections, so it fails parse/conformance against `adr`.
 const NON_CONFORMANT_NEAR_MISS: &str = "\
 # Auth choice
@@ -152,10 +152,10 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
     );
 
     // ── seed the four flow-12 candidates ─────────────────────────────────────────
-    write(repo.path(), "decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
+    write(repo.path(), "docs/decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
     write(
         repo.path(),
-        "decisions/auth-choice.md",
+        "docs/decisions/auth-choice.md",
         NON_CONFORMANT_NEAR_MISS,
     ); // needs-reconcile (near-miss)
     write(repo.path(), "docs/old-adr.md", CONFORMANT_ADR); // needs-reconcile (wrong location)
@@ -163,8 +163,8 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
 
     // Snapshot the candidate bytes — adopt is register-only: no candidate file is rewritten.
     let before: Vec<(String, Vec<u8>)> = [
-        "decisions/rate-limit.md",
-        "decisions/auth-choice.md",
+        "docs/decisions/rate-limit.md",
+        "docs/decisions/auth-choice.md",
         "docs/old-adr.md",
         "docs/notes.md",
     ]
@@ -207,12 +207,12 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
         }
     };
     assert_eq!(
-        verdict_for("decisions/rate-limit.md"),
+        verdict_for("docs/decisions/rate-limit.md"),
         "adoptable",
         "report:\n{report}"
     );
     assert_eq!(
-        verdict_for("decisions/auth-choice.md"),
+        verdict_for("docs/decisions/auth-choice.md"),
         "needs-reconcile",
         "report:\n{report}"
     );
@@ -234,11 +234,11 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
             .unwrap_or_else(|| panic!("`{rel}` in report:\n{report}"))
     };
     assert!(
-        pos("decisions/auth-choice.md") < pos("decisions/rate-limit.md"),
+        pos("docs/decisions/auth-choice.md") < pos("docs/decisions/rate-limit.md"),
         "rows must be in sorted candidate order:\n{report}"
     );
     assert!(
-        pos("decisions/rate-limit.md") < pos("docs/notes.md"),
+        pos("docs/decisions/rate-limit.md") < pos("docs/notes.md"),
         "rows must be in sorted candidate order:\n{report}"
     );
     assert!(
@@ -317,10 +317,10 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
     );
 
     // ── seed the four flow-12 candidates ─────────────────────────────────────────
-    write(repo.path(), "decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
+    write(repo.path(), "docs/decisions/rate-limit.md", CONFORMANT_ADR); // adoptable
     write(
         repo.path(),
-        "decisions/auth-choice.md",
+        "docs/decisions/auth-choice.md",
         NON_CONFORMANT_NEAR_MISS,
     ); // needs-reconcile (near-miss, under a location dir)
     write(repo.path(), "docs/old-adr.md", CONFORMANT_ADR); // needs-reconcile (wrong location)
@@ -328,8 +328,8 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
 
     // Snapshot every candidate's bytes — adopt is register-only: nothing rewritten.
     let candidates = [
-        "decisions/rate-limit.md",
-        "decisions/auth-choice.md",
+        "docs/decisions/rate-limit.md",
+        "docs/decisions/auth-choice.md",
         "docs/old-adr.md",
         "docs/notes.md",
     ];
@@ -362,12 +362,12 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
             .unwrap_or_else(|| panic!("`{rel}` row must appear in the report:\n{report}"))
     };
     assert!(
-        row("decisions/rate-limit.md").contains("adopted"),
+        row("docs/decisions/rate-limit.md").contains("adopted"),
         "the conformant-at-location row renders the adopt-confirmation marker:\n{report}",
     );
     assert!(
-        !report.contains("decisions/auth-choice.md")
-            || !row("decisions/auth-choice.md").contains("adopted"),
+        !report.contains("docs/decisions/auth-choice.md")
+            || !row("docs/decisions/auth-choice.md").contains("adopted"),
         "the near-miss row must NOT render an adopt-confirmation:\n{report}",
     );
     assert!(
@@ -392,14 +392,14 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
     let baseline = fs::read_to_string(repo.path().join(".jigc/state/file-state.json"))
         .expect("the file-state record is persisted after an adopt");
     assert!(
-        baseline.contains("\"decisions/rate-limit.md\""),
+        baseline.contains("\"docs/decisions/rate-limit.md\""),
         "the adopted adr's rel-path must gain a file-state baseline:\n{baseline}",
     );
 
     // ── (b) the two needs-reconcile docs + the unmanaged doc are NOT adopted ──────
     // Absent from both the index (no forward edge) and the baseline (no hash).
     for rel in [
-        "decisions/auth-choice.md",
+        "docs/decisions/auth-choice.md",
         "docs/old-adr.md",
         "docs/notes.md",
     ] {
@@ -429,23 +429,23 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
         );
     }
     // No file was relocated/duplicated: each candidate's directory holds the same set.
-    let decisions: Vec<_> = fs::read_dir(repo.path().join("decisions"))
-        .expect("read decisions/")
+    let decisions: Vec<_> = fs::read_dir(repo.path().join("docs").join("decisions"))
+        .expect("read docs/decisions/")
         .flatten()
         .map(|e| e.file_name())
         .collect();
     assert_eq!(
         decisions.len(),
         2,
-        "adopt moves/creates no file in decisions/: {decisions:?}",
+        "adopt moves/creates no file in docs/decisions/: {decisions:?}",
     );
 
     // ── (d) nothing adopted without a schema check: the non-conformant near-miss ──
-    // under a location dir (`decisions/auth-choice.md`) is never adopted (the hole
+    // under a location dir (`docs/decisions/auth-choice.md`) is never adopted (the hole
     // closed end-to-end) — already asserted absent from index + baseline above, and
     // it carries the routed finding rather than an adopt-confirmation.
     assert!(
-        report.contains("needs-reconcile decisions/auth-choice.md"),
+        report.contains("needs-reconcile docs/decisions/auth-choice.md"),
         "the non-conformant near-miss routes, never adopts:\n{report}",
     );
 }

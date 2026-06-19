@@ -155,9 +155,9 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 const TASK: &str = "migrate-changelog-changelog";
 
 /// The per-file migration task id for a source AT the canonical managed path
-/// (`changelog/changelog.md`) — the path is folded into the slug, so this in-location
+/// (`docs/changelog/changelog.md`) — the path is folded into the slug, so this in-location
 /// squatter mints a distinct id from the root-`CHANGELOG.md` `TASK` above.
-const SQUATTER_TASK: &str = "migrate-changelog-changelog-changelog";
+const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog";
 
 /// A single-release foreign changelog body (the migration input) — the raw Keep-a-Changelog
 /// shape, NON-conformant to the managed `changelog` schema (no `{#…}` anchors, no
@@ -344,8 +344,8 @@ fn recorded_source_path(repo: &Path, task: &str) -> String {
 /// regardless of the spelling the caller passed — so the finalize retire's in-location
 /// squatter guard (which compares the recorded path against the canonical promote
 /// destination) holds. A `./`-prefixed and an absolute spelling of the in-location
-/// squatter at `changelog/changelog.md` must both be recorded as the canonical
-/// `changelog/changelog.md`; pre-fix the verbatim spelling was recorded and slipped the
+/// squatter at `docs/changelog/changelog.md` must both be recorded as the canonical
+/// `docs/changelog/changelog.md`; pre-fix the verbatim spelling was recorded and slipped the
 /// guard, so the retire wiped the just-promoted canonical doc. Asserted at the
 /// recorded-state level (the mint-side normalization the guard consumes); the guard's
 /// skip-on-match itself is covered by the engine planner unit tests.
@@ -358,9 +358,15 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
         let repo = TempDir::new("squatter-dotslash");
         let home = TempDir::new("home");
         init_repo(repo.path());
-        fs::create_dir_all(repo.path().join("changelog")).expect("mk changelog dir");
-        fs::write(repo.path().join("changelog").join("changelog.md"), FOREIGN)
-            .expect("write squatter");
+        fs::create_dir_all(repo.path().join("docs").join("changelog")).expect("mk changelog dir");
+        fs::write(
+            repo.path()
+                .join("docs")
+                .join("changelog")
+                .join("changelog.md"),
+            FOREIGN,
+        )
+        .expect("write squatter");
         ok(
             run_jigc(repo.path(), home.path(), &pack, &["setup"]),
             "setup",
@@ -370,13 +376,18 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
                 repo.path(),
                 home.path(),
                 &pack,
-                &["migrate", "./changelog/changelog.md", "--as", "changelog"],
+                &[
+                    "migrate",
+                    "./docs/changelog/changelog.md",
+                    "--as",
+                    "changelog",
+                ],
             ),
-            "migrate ./changelog/changelog.md",
+            "migrate ./docs/changelog/changelog.md",
         );
         assert_eq!(
             recorded_source_path(repo.path(), SQUATTER_TASK),
-            "changelog/changelog.md",
+            "docs/changelog/changelog.md",
             "a `./`-prefixed spelling must be normalized to the canonical repo-relative path",
         );
     }
@@ -388,15 +399,22 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
         let repo = TempDir::new("squatter-absolute");
         let home = TempDir::new("home");
         init_repo(repo.path());
-        fs::create_dir_all(repo.path().join("changelog")).expect("mk changelog dir");
-        fs::write(repo.path().join("changelog").join("changelog.md"), FOREIGN)
-            .expect("write squatter");
+        fs::create_dir_all(repo.path().join("docs").join("changelog")).expect("mk changelog dir");
+        fs::write(
+            repo.path()
+                .join("docs")
+                .join("changelog")
+                .join("changelog.md"),
+            FOREIGN,
+        )
+        .expect("write squatter");
         ok(
             run_jigc(repo.path(), home.path(), &pack, &["setup"]),
             "setup",
         );
         let abs = fs::canonicalize(repo.path())
             .expect("canonicalize repo")
+            .join("docs")
             .join("changelog")
             .join("changelog.md");
         ok(
@@ -410,7 +428,7 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
         );
         assert_eq!(
             recorded_source_path(repo.path(), SQUATTER_TASK),
-            "changelog/changelog.md",
+            "docs/changelog/changelog.md",
             "an absolute spelling must be normalized to the canonical repo-relative path",
         );
     }
@@ -425,7 +443,7 @@ fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
 /// M24 inc-5 — the in-location squatter, end-to-end (the M23 e2e FAIL now passes;
 /// [auto-migration.md](../../../design/auto-migration.md) → Path-collision guard /
 /// Hardening #8, worked-examples flow 26 #8). A NON-conformant changelog committed
-/// already AT the canonical managed path (`changelog/changelog.md`) migrates end-to-end:
+/// already AT the canonical managed path (`docs/changelog/changelog.md`) migrates end-to-end:
 ///   - `doc create` over the occupied canonical path seeds the working area **BLANK** —
 ///     the empty template, NOT the foreign squatter body. This targets the precise M23
 ///     failure point: the idempotent-create copy-in (the M16 clobber-fix) read the
@@ -443,10 +461,16 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
     init_repo(repo.path());
 
     // A committed NON-conformant changelog squatter AT the canonical managed path.
-    fs::create_dir_all(repo.path().join("changelog")).expect("mk changelog dir");
-    fs::write(repo.path().join("changelog").join("changelog.md"), FOREIGN)
-        .expect("write in-location squatter");
-    git(repo.path(), &["add", "changelog/changelog.md"]);
+    fs::create_dir_all(repo.path().join("docs").join("changelog")).expect("mk changelog dir");
+    fs::write(
+        repo.path()
+            .join("docs")
+            .join("changelog")
+            .join("changelog.md"),
+        FOREIGN,
+    )
+    .expect("write in-location squatter");
+    git(repo.path(), &["add", "docs/changelog/changelog.md"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "track in-location squatter"],
@@ -461,9 +485,14 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
             repo.path(),
             home.path(),
             &pack,
-            &["migrate", "changelog/changelog.md", "--as", "changelog"],
+            &[
+                "migrate",
+                "docs/changelog/changelog.md",
+                "--as",
+                "changelog",
+            ],
         ),
-        "migrate changelog/changelog.md",
+        "migrate docs/changelog/changelog.md",
     );
 
     // `doc create` over the occupied canonical path seeds BLANK — the empty template, NOT
@@ -597,7 +626,11 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
 
     // The canonical doc holds the AUTHORED doc (no Frankenstein) and round-trips
     // byte-stable.
-    let canonical = repo.path().join("changelog").join("changelog.md");
+    let canonical = repo
+        .path()
+        .join("docs")
+        .join("changelog")
+        .join("changelog.md");
     let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
     assert_eq!(
         committed, authored,
@@ -615,11 +648,11 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
     // The retire is SKIPPED — the file is rewritten in place (Modified), never deleted.
     let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        name_status.contains("M\tchangelog/changelog.md"),
+        name_status.contains("M\tdocs/changelog/changelog.md"),
         "the squatter is rewritten in place (Modified), not retired:\n{name_status}",
     );
     assert!(
-        !name_status.contains("D\tchangelog/changelog.md"),
+        !name_status.contains("D\tdocs/changelog/changelog.md"),
         "the in-location squatter retire must be SKIPPED — no deletion of the just-written doc:\n{name_status}",
     );
 }

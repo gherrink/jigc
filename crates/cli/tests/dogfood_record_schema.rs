@@ -26,7 +26,7 @@
 //!
 //!   (e) **Unshared location.** A repo holding a committed `completion-record` AND
 //!       a committed `dogfood-record` validates clean — the two schemas declare
-//!       DISJOINT location dirs (`completions/` vs `dogfood/`), so the reconcile
+//!       DISJOINT location dirs (`docs/completions/` vs `dogfood/`), so the reconcile
 //!       sweep (which parses every file in a location dir against EVERY schema
 //!       declaring that dir) never cross-blocks them (the design-binding engine
 //!       fact in measurement.md).
@@ -318,7 +318,7 @@ fn author_record(repo: &Path, home: &Path, addr: &str, skip: &[&str]) {
     }
     if !skip.contains(&"owner-artifact") {
         // The engine-native owned artifact home is `completions/artifacts/<run>/`
-        // (an engine-wide constant, independent of the doctype's own location dir).
+        // (a flat engine-wide constant, independent of the doctype's own location dir).
         let artifact = "completions/artifacts/pilot-run/capture.md";
         fs::create_dir_all(repo.join("completions/artifacts/pilot-run")).expect("mk owned home");
         fs::write(
@@ -616,7 +616,7 @@ fn a_committed_completion_record_and_dogfood_record_coexist_validating_clean() {
     seed_host_pack(pack.path());
     list_host_pack(repo.path(), pack.path());
 
-    // Task 1: author + finalize a completion-record (promoted to completions/).
+    // Task 1: author + finalize a completion-record (promoted to docs/completions/).
     let task1 = "record-a-milestone-completion";
     let addr1 = start_and_create(
         repo.path(),
@@ -648,7 +648,7 @@ fn a_committed_completion_record_and_dogfood_record_coexist_validating_clean() {
     assert_ok(&fin1, "the completion-record finalize");
 
     // Task 2: author + finalize a dogfood-record (promoted to dogfood/) — its
-    // preflight sweep already parses the committed completions/ dir.
+    // preflight sweep already parses the committed docs/completions/ dir.
     let task2 = "record-a-measured-dogfood-run";
     let addr2 = start_and_create(
         repo.path(),
@@ -667,7 +667,7 @@ fn a_committed_completion_record_and_dogfood_record_coexist_validating_clean() {
     );
     assert!(
         repo.path().join("completions").join("m16.md").is_file(),
-        "the committed completion-record sits in completions/",
+        "the committed completion-record sits in docs/completions/",
     );
     assert!(
         repo.path().join("dogfood").join("pilot-run.md").is_file(),

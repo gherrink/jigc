@@ -266,8 +266,11 @@ fn commit_baselined_adr(repo: &Path, home: &Path) {
 
     // The ADR is committed at its canonical path AND baselined in the file-state record.
     assert!(
-        repo.join("decisions").join("single-node-cache.md").exists(),
-        "finalize must commit decisions/single-node-cache.md",
+        repo.join("docs")
+            .join("decisions")
+            .join("single-node-cache.md")
+            .exists(),
+        "finalize must commit docs/decisions/single-node-cache.md",
     );
     assert!(
         repo.join(".jigc")
@@ -315,7 +318,11 @@ fn validate_surfaces_both_content_families_report_only_and_mutation_free() {
 
     // (b) The out-of-band edit: rewrite the committed ADR so its on-disk hash diverges
     //     from the recorded baseline (an OOB edit no `task validate`/`finalize` would see).
-    let committed = repo.path().join("decisions").join("single-node-cache.md");
+    let committed = repo
+        .path()
+        .join("docs")
+        .join("decisions")
+        .join("single-node-cache.md");
     let mut body = fs::read_to_string(&committed).expect("read the committed ADR");
     body.push_str("\nAn out-of-band human edit appended after baseline.\n");
     fs::write(&committed, &body).expect("apply the out-of-band edit");
@@ -344,7 +351,7 @@ fn validate_surfaces_both_content_families_report_only_and_mutation_free() {
     );
     assert!(
         stdout.contains("file-state.hash-matches")
-            && stdout.contains("decisions/single-node-cache.md"),
+            && stdout.contains("docs/decisions/single-node-cache.md"),
         "the out-of-band committed-doc edit must surface a file-state.hash-matches drift \
          naming the drifted path; stdout:\n{stdout}",
     );
@@ -467,7 +474,7 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
 
     // A committed `adr` at the PROJECT-SHADOWED location `adrs/cache.md` — not baselined,
     // so the read-only twin classifies it un-baselined once it enumerates `adrs/`.
-    let adrs = repo.path().join("adrs");
+    let adrs = repo.path().join("docs").join("adrs");
     fs::create_dir_all(&adrs).expect("create adrs dir");
     fs::write(
         adrs.join("cache.md"),
@@ -498,7 +505,7 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
         "a content-only sweep (an un-baselined doc) must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(
-        stdout.contains("file-state.un-baselined") && stdout.contains("adrs/cache.md"),
+        stdout.contains("file-state.un-baselined") && stdout.contains("docs/adrs/cache.md"),
         "the store sweep must resolve the `adr` schema through the cascade and walk the \
          project-shadowed `adrs/` location, surfacing the un-baselined doc there; a pack-only \
          sweep walks `decisions/` and misses it; stdout:\n{stdout}",

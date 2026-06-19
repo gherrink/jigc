@@ -10,9 +10,9 @@
 //!         the `vision`/`context` fixed slots + a `requirements` section carrying
 //!         ≥2 `items`, each a `title` + a `statement: "<<…>>"` slot)
 //!     → fill the auto-provisioned commit doc
-//!     → `jigc task finalize <id>`                         (promote into `prds/`)
+//!     → `jigc task finalize <id>`                         (promote into `docs/prds/`)
 //!
-//! and asserts the promoted `prds/<slug>.md`:
+//! and asserts the promoted `docs/prds/<slug>.md`:
 //!   (a) round-trips **byte-stable** — `render(instance_from_source(on_disk)) == on_disk`
 //!       through the shipped prd schema, the byte-stability the deliverable names; and
 //!   (b) each requirement's `statement` re-reads **verbatim** — by re-parsing the
@@ -236,15 +236,20 @@ fn multi_requirement_prd_via_doc_author_from_round_trips() {
         b"Develop the new-project idea into its first managed prd.\n",
     );
 
-    // Finalize — promote the batch-authored prd into `prds/`.
+    // Finalize — promote the batch-authored prd into `docs/prds/`.
     ok_stdout(
         run_jigc(repo.path(), home.path(), &["task", "finalize", task], None),
         "jigc task finalize",
     );
 
     // The promoted prd is committed at its canonical path.
-    let on_disk = fs::read_to_string(repo.path().join("prds").join("habit-tracker.md"))
-        .expect("the batch-authored prd is promoted to prds/habit-tracker.md");
+    let on_disk = fs::read_to_string(
+        repo.path()
+            .join("docs")
+            .join("prds")
+            .join("habit-tracker.md"),
+    )
+    .expect("the batch-authored prd is promoted to docs/prds/habit-tracker.md");
 
     // (a) The promoted prd round-trips byte-stable: render(instance_from_source(x)) == x.
     let schema = prd_schema();

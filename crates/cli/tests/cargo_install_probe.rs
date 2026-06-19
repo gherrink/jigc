@@ -206,9 +206,9 @@ fn seed_store(repo: &Path, cited_symbol: &str) {
     fs::create_dir_all(cache.parent().unwrap()).expect("mk code dir");
     fs::write(&cache, "pub fn evict_lru() {}\nfn helper() {}\n").expect("write cache.rs");
 
-    fs::create_dir_all(repo.join("decisions")).expect("mk decisions");
+    fs::create_dir_all(repo.join("docs/decisions")).expect("mk decisions");
     fs::write(
-        repo.join("decisions/cache.md"),
+        repo.join("docs/decisions/cache.md"),
         adr("crates/engine/src/cache.rs", cited_symbol),
     )
     .expect("write adr");
