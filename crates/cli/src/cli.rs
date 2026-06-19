@@ -1387,6 +1387,38 @@ mod cli_parse {
     }
 
     #[test]
+    fn task_finalize_parses_the_id_with_flags_defaulting_false() {
+        let cli = Cli::try_parse_from(["jigc", "task", "finalize", "move-cache"])
+            .expect("`jigc task finalize <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Task {
+                verb: TaskCommand::Finalize {
+                    id: "move-cache".to_string(),
+                    approve: false,
+                    dry_run: false,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn task_finalize_parses_the_dry_run_flag() {
+        let cli = Cli::try_parse_from(["jigc", "task", "finalize", "move-cache", "--dry-run"])
+            .expect("`jigc task finalize <id> --dry-run` parses");
+        assert_eq!(
+            cli.command,
+            Command::Task {
+                verb: TaskCommand::Finalize {
+                    id: "move-cache".to_string(),
+                    approve: false,
+                    dry_run: true,
+                },
+            }
+        );
+    }
+
+    #[test]
     fn milestone_add_from_spec_parses_the_id_and_spec_address() {
         let cli = Cli::try_parse_from([
             "jigc",

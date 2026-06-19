@@ -106,6 +106,12 @@ If validation blocks (a dangling forward reference, a missing required slot, a
 malformed value), finalize makes no commit and surfaces the findings with a
 route for the next action. Fix and re-run.
 
+A landed finalize prints a **pre-commit manifest** — the file-set the commit
+carried, with any untracked file the sweep sucked in flagged distinctly (so a
+stray `scratch.txt` stands out). To see that set *before* committing, run
+`jigc task finalize <id> --dry-run`: it prints the manifest and stops, changing
+nothing.
+
 **What lands in your repo:** finalize promotes each managed doc under the
 **`docs-root`** parent (default `docs/`) at its doctype's location —
 `docs/decisions/` (ADRs), `docs/specs/`, `docs/prds/`, `docs/architecture/`

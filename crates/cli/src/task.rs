@@ -92,6 +92,11 @@ pub enum TaskCommand {
         /// (exit 4, nothing committed). Inert on a non-migration task.
         #[arg(long)]
         approve: bool,
+        /// Print the pre-commit manifest (the file-set the commit would carry, untracked
+        /// sweeps flagged) and stop — commit nothing, no destructive side effect (B1
+        /// dirty-tree sweep). A dry-run never requires `--approve`.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Bind an already-committed doc to one of the task's declared context roles,
     /// so `task.<role>` resolves to it on the resume re-compose.
@@ -116,8 +121,12 @@ impl TaskCommand {
             TaskCommand::Diff { id } => run_diff(cwd, &id),
             TaskCommand::Validate { id } => return run_validate(cwd, &id, format),
             TaskCommand::Discard { id } => run_discard(cwd, &id),
-            TaskCommand::Finalize { id, approve } => {
-                return run_finalize(cwd, &id, format, approve);
+            TaskCommand::Finalize {
+                id,
+                approve,
+                dry_run,
+            } => {
+                return run_finalize(cwd, &id, format, approve, dry_run);
             }
             TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id),
         };
@@ -289,7 +298,7 @@ const COMMIT_TYPE: &str = "commit";
 /// aborts non-zero with git's stderr surfaced and no working-area change. On a successful
 /// commit, run post-commit (advance the file-state hashes, remove the working area) —
 /// best-effort: a failure there is logged, not raised (the commit is already truth).
-fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool) -> ExitCode {
+fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool, dry_run: bool) -> ExitCode {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
@@ -297,7 +306,7 @@ fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool) -> ExitCode
             return ExitCode::FAILURE;
         }
     };
-    match task.finalize(id, format, approve) {
+    match task.finalize(id, format, approve, dry_run) {
         Ok(code) => code,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
@@ -551,7 +560,7 @@ impl TaskArea {
     /// on a hook/git rejection (git's stderr surfaced, no envelope — not a validation
     /// outcome). An orchestration error (git unavailable, malformed pin) bubbles as
     /// `Err`.
-    fn finalize(&self, id: &str, format: Format, approve: bool) -> Result<ExitCode> {
+    fn finalize(&self, id: &str, format: Format, approve: bool, dry_run: bool) -> Result<ExitCode> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
@@ -631,6 +640,21 @@ impl TaskArea {
         // A migration task is identified once by the staged source seam (T2): it gates
         // both the review block below and the narrowed `git add` in the transaction.
         let is_migration = source_seam.exists();
+
+        // B1 dirty-tree sweep — `--dry-run` surfaces the commit file-set and stops, with no
+        // commit and no destructive side effect. It is placed BEFORE the migration review
+        // gate: a dry-run commits nothing, so `--approve` must never be required. The plan
+        // above is computed read-only (`plan_finalize` only reads), so deriving the
+        // prediction from it is side-effect-free.
+        if dry_run {
+            let entries = self.predict_manifest(&plan, is_migration)?;
+            print!("{}", render::finalize_manifest(format, &entries));
+            if format != Format::Json {
+                println!();
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+
         if is_migration && !approve {
             let foreign = std::fs::read_to_string(&source_seam).with_context(|| {
                 format!("could not read the staged source seam at {source_seam:?}")
@@ -681,6 +705,19 @@ impl TaskArea {
                 // near-silent, leaving a user to run `git log` to tell it worked. The
                 // commit is already truth here, so HEAD names the landed hash; the plan
                 // names what promoted where.
+                // B1 dirty-tree sweep — derive the pre-commit manifest from the LANDED
+                // commit's own delta (`git show --name-status HEAD`), so an untracked file
+                // `git add --all` swept in is surfaced (flagged distinctly), never silently
+                // bundled. The committed bytes are the contract, not a reconstruction.
+                let promoted_dests: std::collections::HashSet<String> = plan
+                    .promotions
+                    .iter()
+                    .map(|promotion| promotion.destination.clone())
+                    .collect();
+                let manifest = classify_landed_manifest(
+                    git_commit_name_status(&self.repo_root)?,
+                    &promoted_dests,
+                );
                 let landed = render::Landed {
                     hash: git_capture(&self.repo_root, &["rev-parse", "--short", "HEAD"])?,
                     subject: git_capture(&self.repo_root, &["log", "-1", "--pretty=format:%s"])?,
@@ -689,7 +726,8 @@ impl TaskArea {
                         .iter()
                         .map(|promotion| promotion.destination.clone())
                         .collect(),
-                    files: git_commit_files(&self.repo_root)?.len(),
+                    files: manifest.len(),
+                    manifest,
                 };
                 print!("{}", render::finalize_landed(format, &report, &landed));
                 if format != Format::Json {
@@ -705,6 +743,99 @@ impl TaskArea {
                 Ok(ExitCode::FAILURE)
             }
         }
+    }
+
+    /// Predict the pre-commit manifest for `--dry-run` — a side-effect-free forecast of
+    /// the file-set the commit would carry (B1 dirty-tree sweep), built from repo state
+    /// alone (no stage, no commit). Mirrors the two stage paths:
+    ///
+    /// - **Non-migration** (`git add --all`): start from the working tree (`git status
+    ///   --porcelain --untracked-files=all`), mapping `??`→untracked / modified / deleted;
+    ///   then ADD each promotion `destination` as `promoted` (the staged docs live in the
+    ///   gitignored working area, absent from `git status`) and each tracked retirement as
+    ///   `deleted`. A promotion wins the dedup over any same-path working-tree entry.
+    /// - **Migration** (`stage_migration`'s narrowed pathspec): exactly its set — promotions
+    ///   (`promoted`), tracked retirements (`deleted`), and the jigc-tracked config layer
+    ///   `.jigc/config` / `.jigc/.gitignore` (`modified`). No user WIP.
+    ///
+    /// Accepted prediction bound: on a first-ever finalize, the transaction's
+    /// `ensure_jigc_gitignore` may create `.jigc/.gitignore` that `git add --all` would
+    /// then sweep but this prediction won't show (it doesn't exist yet) — setup typically
+    /// already writes it, so the gap is rare.
+    fn predict_manifest(
+        &self,
+        plan: &engine::finalize::FinalizePlan,
+        is_migration: bool,
+    ) -> Result<Vec<render::ManifestEntry>> {
+        use render::{ManifestEntry, ManifestKind};
+
+        let promoted: Vec<String> = plan
+            .promotions
+            .iter()
+            .map(|promotion| promotion.destination.clone())
+            .collect();
+
+        if is_migration {
+            let mut entries: Vec<ManifestEntry> = promoted
+                .iter()
+                .map(|path| ManifestEntry {
+                    path: path.clone(),
+                    kind: ManifestKind::Promoted,
+                })
+                .collect();
+            for retirement in &plan.retirements {
+                if let Some(spec) = retirement.to_str()
+                    && path_at_head(&self.repo_root, spec)
+                {
+                    entries.push(ManifestEntry {
+                        path: spec.to_owned(),
+                        kind: ManifestKind::Deleted,
+                    });
+                }
+            }
+            // The jigc-tracked config layer the narrowed `git add` also stages (B2) — the
+            // first migration commit lands it. Tracked config being (re)staged → modified.
+            for spec in existing_pathspecs(&self.repo_root, &[".jigc/config", ".jigc/.gitignore"]) {
+                entries.push(ManifestEntry {
+                    path: spec,
+                    kind: ManifestKind::Modified,
+                });
+            }
+            return Ok(entries);
+        }
+
+        let promoted_set: std::collections::HashSet<&str> =
+            promoted.iter().map(String::as_str).collect();
+        let mut entries: Vec<ManifestEntry> = Vec::new();
+        for (code, path) in git_status_entries(&self.repo_root)? {
+            // A promotion lands at its canonical path and wins the dedup; it is added below.
+            if promoted_set.contains(path.as_str()) {
+                continue;
+            }
+            entries.push(ManifestEntry {
+                path,
+                kind: status_code_to_kind(&code),
+            });
+        }
+        for path in &promoted {
+            entries.push(ManifestEntry {
+                path: path.clone(),
+                kind: ManifestKind::Promoted,
+            });
+        }
+        // Empty on a non-migration task (only a migration populates retirements), but kept
+        // for symmetry with the stage path.
+        for retirement in &plan.retirements {
+            if let Some(spec) = retirement.to_str()
+                && path_at_head(&self.repo_root, spec)
+            {
+                entries.push(ManifestEntry {
+                    path: spec.to_owned(),
+                    kind: ManifestKind::Deleted,
+                });
+            }
+        }
+        Ok(entries)
     }
 
     /// Steps 2–5 of the bind enforcement (`design/write-commands.md` → Binding a
@@ -1348,6 +1479,62 @@ fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
     Ok(paths)
 }
 
+/// The status-preserving sibling of [`git_dirty_paths`] (B1 dirty-tree sweep): each dirty
+/// working-tree path paired with its two-column porcelain status code (`git status
+/// --porcelain --untracked-files=all`). Used by the `--dry-run` manifest prediction to map
+/// each path to a [`render::ManifestKind`] without staging anything. A rename `R old -> new`
+/// splits to `old` (deleted) + `new` (untracked) — the shape `git add --all` would carry
+/// into the commit under `--no-renames`.
+fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
+    let out = Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=all"])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git status --porcelain` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let text = String::from_utf8(out.stdout).context("`git status` produced non-UTF-8 output")?;
+    let mut entries = Vec::new();
+    for line in text.lines() {
+        // Porcelain v1: two status columns + a space, then the path.
+        let Some(code) = line.get(..2) else { continue };
+        let Some(path) = line.get(3..) else { continue };
+        match path.split_once(" -> ") {
+            Some((old, new)) => {
+                entries.push(("D ".to_string(), old.to_string()));
+                entries.push(("A ".to_string(), new.to_string()));
+            }
+            None => entries.push((code.to_string(), path.to_string())),
+        }
+    }
+    Ok(entries)
+}
+
+/// Map a porcelain status code to the manifest kind `git add --all` would land it as: `??`
+/// is an untracked sweep; otherwise read the worktree (then index) column — `D`→deleted,
+/// `A`→untracked (a new/added file reads as a fresh add in the commit), everything else
+/// (`M`/`T`/…)→modified.
+fn status_code_to_kind(code: &str) -> render::ManifestKind {
+    if code == "??" {
+        return render::ManifestKind::Untracked;
+    }
+    let c = code
+        .chars()
+        .nth(1)
+        .filter(|c| *c != ' ')
+        .or_else(|| code.chars().next())
+        .unwrap_or('M');
+    match c {
+        'D' => render::ManifestKind::Deleted,
+        'A' => render::ManifestKind::Untracked,
+        _ => render::ManifestKind::Modified,
+    }
+}
+
 /// List untracked, non-ignored files via `git ls-files --others --exclude-standard`.
 /// `git diff <base>` never reports these, but the finalize stage (`git add --all`)
 /// commits them — so the empty-commit guard counts them as a diff signal.
@@ -1546,6 +1733,55 @@ fn git_commit_files(repo_root: &Path) -> Result<Vec<String>> {
         .filter(|l| !l.is_empty())
         .map(str::to_owned)
         .collect())
+}
+
+/// The just-landed `HEAD` commit's name-status delta (`git show --name-status --no-renames
+/// HEAD`) as `(status-char, path)` pairs — `A`/`M`/`D` (renames split to `A`+`D` under
+/// `--no-renames`). Feeds the landed pre-commit manifest (B1 dirty-tree sweep).
+fn git_commit_name_status(repo_root: &Path) -> Result<Vec<(char, String)>> {
+    let out = git_capture(
+        repo_root,
+        &["show", "--name-status", "--format=", "--no-renames", "HEAD"],
+    )?;
+    let mut entries = Vec::new();
+    for line in out.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Tab-separated: `<status>\t<path>`.
+        let Some((status, path)) = line.split_once('\t') else {
+            continue;
+        };
+        let code = status.trim().chars().next().unwrap_or('M');
+        entries.push((code, path.trim().to_owned()));
+    }
+    Ok(entries)
+}
+
+/// Classify the landed commit's name-status delta into the pre-commit manifest (B1
+/// dirty-tree sweep): a path in `promoted` is a `Promoted` managed doc; otherwise the
+/// status char maps `A`→untracked (a swept stray / new file — the signal a tester needs),
+/// `M`→modified, `D`→deleted, any other (`C`/`T`/…)→modified.
+fn classify_landed_manifest(
+    name_status: Vec<(char, String)>,
+    promoted: &std::collections::HashSet<String>,
+) -> Vec<render::ManifestEntry> {
+    name_status
+        .into_iter()
+        .map(|(code, path)| {
+            let kind = if promoted.contains(&path) {
+                render::ManifestKind::Promoted
+            } else {
+                match code {
+                    'A' => render::ManifestKind::Untracked,
+                    'D' => render::ManifestKind::Deleted,
+                    _ => render::ManifestKind::Modified,
+                }
+            };
+            render::ManifestEntry { path, kind }
+        })
+        .collect()
 }
 
 /// Whether `path` (repo-relative) exists at `HEAD` (`git cat-file -e HEAD:<path>`).

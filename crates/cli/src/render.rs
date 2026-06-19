@@ -319,8 +319,68 @@ pub struct Landed {
     /// Each promoted persisted doc's canonical repo-relative path (empty when a
     /// commit-only task promotes nothing).
     pub promoted: Vec<String>,
-    /// The number of files the landed commit touched.
+    /// The number of files the landed commit touched (`= manifest.len()`).
     pub files: usize,
+    /// The pre-commit manifest — every path in the commit set tagged by how it entered
+    /// (B1 dirty-tree sweep): a swept untracked file is flagged distinctly so a tester
+    /// notices a stray `scratch.txt`.
+    pub manifest: Vec<ManifestEntry>,
+}
+
+/// How a path entered the finalize commit set in the pre-commit manifest (B1 dirty-tree
+/// sweep): a managed doc `Promoted` to its canonical location, a tracked `Modified` file,
+/// a tracked `Deleted` file, or an `Untracked` file `git add --all` swept in (the stray-file
+/// signal a tester needs).
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub enum ManifestKind {
+    Promoted,
+    Modified,
+    Deleted,
+    Untracked,
+}
+
+/// One entry in the finalize pre-commit manifest: a repo-relative `path` and the `kind`
+/// of change that placed it in the commit set.
+#[derive(Serialize, Clone, PartialEq, Eq, Debug)]
+pub struct ManifestEntry {
+    /// The repo-relative path.
+    pub path: String,
+    /// How the path entered the commit set.
+    pub kind: ManifestKind,
+}
+
+/// One agent-text manifest line: `  promoted <path>` / `  modified <path>` / `  deleted
+/// <path>`, and an untracked sweep flagged distinctly as `  swept (was untracked) <path>`
+/// so a stray file stands out. No trailing newline — the caller joins / closes it.
+fn manifest_line(entry: &ManifestEntry) -> String {
+    match entry.kind {
+        ManifestKind::Promoted => format!("  promoted {}", entry.path),
+        ManifestKind::Modified => format!("  modified {}", entry.path),
+        ManifestKind::Deleted => format!("  deleted {}", entry.path),
+        ManifestKind::Untracked => format!("  swept (was untracked) {}", entry.path),
+    }
+}
+
+/// Render the `task finalize --dry-run` pre-commit manifest to the surface `format`
+/// selects (B1 dirty-tree sweep — surface the commit file-set, commit nothing): `json`
+/// emits `{ "dry_run": true, "manifest": [{path,kind}…] }` (tooling-consumed, no footer);
+/// `agent` / `human` emit a titled block, one [`manifest_line`] per entry (untracked
+/// flagged), with **no trailing newline** — the caller's `println!` closes it, symmetric
+/// with [`landed_summary`].
+pub fn finalize_manifest(format: Format, entries: &[ManifestEntry]) -> String {
+    match format {
+        Format::Json => json(&serde_json::json!({
+            "dry_run": true,
+            "manifest": entries,
+        })),
+        Format::Agent | Format::Human => {
+            let mut lines =
+                vec!["finalize --dry-run — pre-commit manifest (nothing committed)".to_string()];
+            lines.extend(entries.iter().map(manifest_line));
+            lines.join("\n")
+        }
+    }
 }
 
 /// Render a **landed** `task finalize` to the surface `format` selects, pairing the
@@ -357,14 +417,15 @@ pub fn finalize_landed(format: Format, report: &ValidationReport, landed: &Lande
 }
 
 /// The agent-text success section a landed finalize appends after the routing footer:
-/// `finalized <hash> — <subject>`, one `  promoted <path>` line per promoted doc, and a
-/// `  <n> file(s) committed` tally. Ends without a trailing newline — the caller's
-/// `println!` closes the line, symmetric with [`validation`].
+/// `finalized <hash> — <subject>`, the pre-commit [`manifest_line`] for each path in the
+/// commit set (promoted / modified / deleted, and an untracked sweep flagged distinctly so
+/// a stray `scratch.txt` stands out — B1 dirty-tree sweep), and a `  <n> file(s) committed`
+/// tally. Ends without a trailing newline — the caller's `println!` closes the line,
+/// symmetric with [`validation`].
 fn landed_summary(landed: &Landed) -> String {
     let mut out = format!("finalized {} — {}\n", landed.hash, landed.subject);
-    for path in &landed.promoted {
-        out.push_str("  promoted ");
-        out.push_str(path);
+    for entry in &landed.manifest {
+        out.push_str(&manifest_line(entry));
         out.push('\n');
     }
     let noun = if landed.files == 1 { "file" } else { "files" };
@@ -2031,5 +2092,83 @@ mod tests {
 
         // The store view must NOT reuse the task-scoped wording.
         assert!(!clean.contains("the task validates clean"));
+    }
+
+    /// The dry-run manifest renders a titled block listing each entry by kind — an
+    /// untracked sweep flagged distinctly — with no trailing newline; JSON carries
+    /// `dry_run: true` and a `manifest[]` of `{path,kind}` (kebab-case kinds).
+    #[test]
+    fn render_finalize_manifest_flags_untracked_and_json_carries_dry_run() {
+        let entries = vec![
+            ManifestEntry {
+                path: "docs/decisions/x.md".to_string(),
+                kind: ManifestKind::Promoted,
+            },
+            ManifestEntry {
+                path: "scratch.txt".to_string(),
+                kind: ManifestKind::Untracked,
+            },
+        ];
+
+        let agent = finalize_manifest(Format::Agent, &entries);
+        insta::assert_snapshot!(agent, @r"
+        finalize --dry-run — pre-commit manifest (nothing committed)
+          promoted docs/decisions/x.md
+          swept (was untracked) scratch.txt");
+        assert!(
+            !agent.ends_with('\n'),
+            "no trailing newline — the caller closes it"
+        );
+        assert_eq!(finalize_manifest(Format::Human, &entries), agent);
+
+        let json_out = finalize_manifest(Format::Json, &entries);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["dry_run"], serde_json::Value::Bool(true));
+        let manifest = value["manifest"].as_array().expect("manifest array");
+        assert_eq!(manifest[0]["path"], "docs/decisions/x.md");
+        assert_eq!(manifest[0]["kind"], "promoted");
+        assert_eq!(manifest[1]["path"], "scratch.txt");
+        assert_eq!(manifest[1]["kind"], "untracked");
+    }
+
+    /// A landed finalize's JSON `committed` object carries the `manifest[]` alongside the
+    /// existing `files` count; the agent-text summary lists each manifest entry by kind.
+    #[test]
+    fn render_finalize_landed_carries_the_manifest() {
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+        let report = ValidationReport::new(Vec::new(), &resolved);
+        let landed = Landed {
+            hash: "abc1234".to_string(),
+            subject: "feat: surface the manifest".to_string(),
+            promoted: vec!["docs/decisions/x.md".to_string()],
+            files: 2,
+            manifest: vec![
+                ManifestEntry {
+                    path: "docs/decisions/x.md".to_string(),
+                    kind: ManifestKind::Promoted,
+                },
+                ManifestEntry {
+                    path: "scratch.txt".to_string(),
+                    kind: ManifestKind::Untracked,
+                },
+            ],
+        };
+
+        let agent = finalize_landed(Format::Agent, &report, &landed);
+        assert!(agent.contains("promoted docs/decisions/x.md"));
+        assert!(
+            agent.contains("swept (was untracked) scratch.txt"),
+            "the swept stray is flagged distinctly; agent:\n{agent}",
+        );
+        assert!(agent.contains("2 files committed"));
+
+        let json_out = finalize_landed(Format::Json, &report, &landed);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        let committed = &value["committed"];
+        assert_eq!(committed["files"], 2);
+        let manifest = committed["manifest"].as_array().expect("manifest array");
+        assert_eq!(manifest.len(), 2);
+        assert_eq!(manifest[1]["path"], "scratch.txt");
+        assert_eq!(manifest[1]["kind"], "untracked");
     }
 }

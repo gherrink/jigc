@@ -100,6 +100,8 @@ The rule is simple by design:
 
 The cost is honesty: if you started a task on a checkout, the tree-diff from base **is** the task. The benefit is the absence of a hidden allow/deny list the agent would have to reason about.
 
+**Surfaced, not prevented (B1, [DECISIONS.md](../DECISIONS.md) 2026-06-19).** Because the sweep is unconditional, a landed `finalize` now emits a **pre-commit manifest** — every path in the commit set tagged by how it entered (promoted / modified / deleted, and an **untracked sweep flagged distinctly**) so a stray `scratch.txt` stands out. `jigc task finalize <id> --dry-run` prints that manifest and stops — committing nothing, no destructive side effect (and needing no `--approve` on a migration task). This *surfaces* the set; it does not refuse anything (a declared task change-manifest — Option A — stays deferred).
+
 ## Rollback discipline
 
 Per-phase failure inventory:

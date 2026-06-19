@@ -277,8 +277,15 @@ fn docs_root_empty_value_is_accepted_and_yields_the_flat_layout() {
     assert_ok(&jigc(repo.path(), home.path(), &["setup"]), "`jigc setup`");
 
     // RED before the normalize: this exited non-zero (`"docs-root" must not be empty`).
-    let out = jigc(repo.path(), home.path(), &["config", "set", "docs-root", ""]);
-    assert_ok(&out, "`jigc config set docs-root \"\"` (empty → the flat sentinel)");
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["config", "set", "docs-root", ""],
+    );
+    assert_ok(
+        &out,
+        "`jigc config set docs-root \"\"` (empty → the flat sentinel)",
+    );
 
     // End-to-end: with docs-root flat, a finalized ADR lands at the root `decisions/`,
     // not under the `docs/` prefix — proving the empty value resolved to flat.
