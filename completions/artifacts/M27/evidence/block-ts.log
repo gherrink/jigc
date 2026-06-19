@@ -1,0 +1,28 @@
+==================================================================
+### ARM: block-ts
+repo: /tmp/jigc-m27-flow29-7rUF1z   HEAD-before: 3
+src/api.ts head:        export class RouterRenamed {
+services/limiter.py head: class TokenLimiter:
+
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `src/api.ts#RateRouter` resolves to no symbol (`RateRouter` is absent from `src/api.ts`)",
+      "location": {
+        "address": "arch-doc:gateway#components/edge-router/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 3   (delta 0)
+PROMOTED: docs/architecture/gateway.md ABSENT (nothing promoted)

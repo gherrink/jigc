@@ -1,0 +1,28 @@
+==================================================================
+### ARM: block-py
+repo: /tmp/jigc-m27-flow29-j4zIGt   HEAD-before: 3
+src/api.ts head:        export class RateRouter {
+services/limiter.py head: class LimiterRenamed:
+
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `services/limiter.py#TokenLimiter` resolves to no symbol (`TokenLimiter` is absent from `services/limiter.py`)",
+      "location": {
+        "address": "arch-doc:gateway#components/token-limiter/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 3   (delta 0)
+PROMOTED: docs/architecture/gateway.md ABSENT (nothing promoted)
