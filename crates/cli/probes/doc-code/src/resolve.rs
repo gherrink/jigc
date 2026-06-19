@@ -52,6 +52,12 @@ pub enum Grammar {
     /// `interface_declaration`, `trait_declaration`, `enum_declaration`; a `simple_parameter`
     /// carries a `name` field and is excluded (the field-walk over-match).
     Php,
+    /// bash. Citable kind is `function_definition` **only** — both declaration forms
+    /// (`function f { }` and `f() { }`) parse to it; a called-but-never-defined function
+    /// reaches the AST as a `command` node carrying a `name` and is excluded (functions-only,
+    /// the field-walk over-match). Non-function bash symbols (variables, aliases) stay
+    /// unverified. bash is the only grammar a `#!…sh` shebang dispatches to.
+    Bash,
 }
 
 impl Grammar {
@@ -64,6 +70,7 @@ impl Grammar {
             Grammar::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
             Grammar::Python => tree_sitter_python::LANGUAGE.into(),
             Grammar::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+            Grammar::Bash => tree_sitter_bash::LANGUAGE.into(),
         }
     }
 }
@@ -166,8 +173,31 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "js" | "jsx" | "mjs" | "cjs" => Some(Grammar::JavaScript),
         "py" | "pyi" => Some(Grammar::Python),
         "php" | "phtml" => Some(Grammar::Php),
+        "sh" | "bash" => Some(Grammar::Bash),
         _ => None,
     }
+}
+
+/// The grammar to resolve a file's symbols against when its **extension** maps to no grammar,
+/// chosen by **shebang sniff** of the source's first line. A `#!…sh` interpreter line
+/// (`#!/bin/bash`, `#!/usr/bin/env bash`, `#!/bin/sh`, …) maps to bash — the dominant
+/// extensionless-script case; bash is the only grammar a shebang resolves to. Any other (or
+/// no) shebang yields `None`. This reads only the file's own bytes (the first line) — no
+/// wall-clock, network, or build — so the static-parse determinism contract is intact.
+///
+/// Precedence is the caller's: [`grammar_for`] (extension) is tried first and **always
+/// wins**; this sniff fires only for a file whose extension maps to nothing (a `.py` file
+/// carrying a bash shebang stays Python).
+pub fn grammar_for_shebang(src: &str) -> Option<Grammar> {
+    let first_line = src.lines().next()?;
+    let interpreter = first_line.strip_prefix("#!")?;
+    // A `#!…sh` interpreter line — `sh`, `bash`, `/bin/sh`, `/usr/bin/env bash`, …. Match the
+    // final path component / argument ending in `sh` so `dash`/`zsh`/`bash`/`sh` all map to
+    // bash (the only shebang-dispatched grammar); the trailing token guards against a stray
+    // `sh` inside a directory name.
+    let token = interpreter.split_whitespace().last()?;
+    let command = token.rsplit('/').next()?;
+    command.ends_with("sh").then_some(Grammar::Bash)
 }
 
 /// The names a node declares as a citable symbol under `grammar` (usually one; none if the
@@ -192,6 +222,7 @@ fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
         Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => is_ts_citable(node),
         Grammar::Python => is_py_citable(node),
         Grammar::Php => is_php_citable(node),
+        Grammar::Bash => is_bash_citable(node),
     };
     if !citable {
         return Vec::new();
@@ -262,6 +293,16 @@ fn is_php_citable(node: &Node) -> bool {
             | "trait_declaration"
             | "enum_declaration"
     )
+}
+
+/// Whether `node` is a citable bash declaration (the node-kind allowlist — [validation.md] →
+/// Multi-language resolution). bash is **functions-only**: `function_definition` is the sole
+/// citable kind, and both declaration forms (`function f { }` and `f() { }`) parse to it. A
+/// called-but-never-defined function reaches the AST as a `command` node carrying a `name`
+/// field; it is not a declaration kind and is excluded, closing the field-walk over-match.
+/// Non-function bash symbols (variables, aliases) are intentionally unverified.
+fn is_bash_citable(node: &Node) -> bool {
+    node.kind() == "function_definition"
 }
 
 #[cfg(test)]
@@ -744,6 +785,68 @@ enum Suit {
             "<?php function ☃() { $π = 1; }",
         ] {
             let _ = symbol_exists(src, "x", Grammar::Php);
+        }
+    }
+
+    // A real bash script exercising the allowlist (`function_definition` only) in both
+    // declaration forms (`function f { }` and `f() { }`) and the over-match exclusion: a
+    // called-but-never-defined function reaches the AST only as a `command` node carrying a
+    // `name` — it must NOT resolve (functions-only).
+    const BASH: &str = "\
+#!/usr/bin/env bash
+
+function with_keyword {
+    echo keyword
+}
+
+posix_form() {
+    echo posix
+}
+
+called_but_undefined
+";
+
+    #[test]
+    fn bash_dispatches_by_extension() {
+        // The dispatch: every bash extension maps to the bash grammar.
+        for ext in ["sh", "bash"] {
+            let path = std::path::PathBuf::from(format!("scripts/run.{ext}"));
+            assert_eq!(grammar_for(&path), Some(Grammar::Bash), "ext .{ext}");
+        }
+    }
+
+    #[test]
+    fn bash_resolves_both_function_forms_and_blocks_vanished() {
+        // Both declaration forms parse to `function_definition` and resolve; a vanished one
+        // does not (block-on-rename).
+        assert!(symbol_exists(BASH, "with_keyword", Grammar::Bash));
+        assert!(symbol_exists(BASH, "posix_form", Grammar::Bash));
+        assert!(!symbol_exists(BASH, "posix_form_renamed", Grammar::Bash));
+    }
+
+    #[test]
+    fn bash_called_but_undefined_does_not_resolve() {
+        // A called-but-never-defined function reaches the AST only as a `command` node
+        // carrying a `name` — not in the allowlist (functions-only), so the field-walk
+        // over-match is closed.
+        assert!(!symbol_exists(BASH, "called_but_undefined", Grammar::Bash));
+    }
+
+    #[test]
+    fn bash_hostile_input_does_not_panic() {
+        // The panic-free property carries to bash: garbage / truncated / BOM / non-ASCII
+        // source resolves to false, never crashes.
+        let bom = "\u{feff}#!/bin/bash\nfunction f { :; }";
+        for src in [
+            "",
+            "function",
+            "}{)(",
+            "function f {",
+            "f() {",
+            bom,
+            "function ☃ { local π=1; }",
+        ] {
+            let _ = symbol_exists(src, "x", Grammar::Bash);
         }
     }
 }

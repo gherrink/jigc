@@ -35,6 +35,15 @@
 //! `doc-code.criterion-maps-to-test` finding; a `symbol-exists` anchor is unaffected by
 //! the predicate. Resolution is static parse only — no `cargo`/build/network/wall-clock —
 //! so the response is a pure function of (code + anchors) and identical across runs.
+//!
+//! ## M27 scope — multi-language dispatch + shebang sniff
+//!
+//! The grammar is chosen by extension first ([`resolve::grammar_for`]) and the extension
+//! **always wins**; for a file whose extension maps to no grammar, a `#!…sh` shebang on the
+//! first line dispatches to bash ([`resolve::grammar_for_shebang`]) — the dominant
+//! extensionless-script case, a pure file-bytes read (determinism intact). An un-grammared
+//! file with no `sh` shebang keeps the M10 silent-skip (the `unsupported-language` advisory
+//! is a later increment).
 
 mod resolve;
 
@@ -206,11 +215,15 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
                 return Some(Finding::dangling_file(anchor, file));
             }
             let symbol = symbol?;
-            // The grammar is chosen by extension; an extension with no shipped grammar yet
-            // keeps the M10 silent-skip (the `unsupported-language` advisory is a later
-            // increment).
-            let grammar = resolve::grammar_for(&path)?;
             let src = std::fs::read_to_string(&path).ok()?;
+            // The grammar is chosen by extension first (it always wins); for a file whose
+            // extension maps to no grammar, a `#!…sh` shebang dispatches to bash — the
+            // dominant extensionless-script case, a pure file-bytes read (no wall-clock /
+            // network / build — determinism intact). An un-grammared file with no `sh`
+            // shebang keeps the M10 silent-skip (the `unsupported-language` advisory is a
+            // later increment).
+            let grammar =
+                resolve::grammar_for(&path).or_else(|| resolve::grammar_for_shebang(&src))?;
             if !resolve::symbol_exists(&src, symbol, grammar) {
                 // The symbol is absent — the floor of every `#symbol` check, including
                 // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
@@ -261,5 +274,103 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(_) => ExitCode::FAILURE,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    /// A throwaway working-tree dir under the OS temp dir, unique per call.
+    fn temp_root() -> PathBuf {
+        static COUNTER: AtomicU32 = AtomicU32::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("doc-code-shebang-test-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn anchor(value: &str) -> TargetAnchor {
+        TargetAnchor {
+            address: "specs/s.md#criteria/c".to_string(),
+            anchor_value: value.to_string(),
+            check_id: "symbol-exists".to_string(),
+        }
+    }
+
+    /// Write `file` (relative) with `contents` under a fresh root and run `check_anchors`
+    /// over a one-anchor snapshot citing `<file>#<symbol>`.
+    fn check_one(file: &str, contents: &str, symbol: &str) -> Vec<Finding> {
+        let root = temp_root();
+        std::fs::write(root.join(file), contents).unwrap();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor(&format!("{file}#{symbol}"))],
+            working_tree_root: root,
+        };
+        check_anchors(&snapshot)
+    }
+
+    // An extensionless bash script (the dominant real-world case) carrying a shebang.
+    const EXTENSIONLESS_BASH: &str = "\
+#!/bin/bash
+
+deploy() {
+    echo deploying
+}
+";
+
+    #[test]
+    fn extensionless_shebang_script_dispatches_to_bash_and_resolves() {
+        // An extensionless `#!/bin/bash` script dispatches to bash via the shebang sniff and
+        // its `function_definition` resolves — no finding.
+        assert!(check_one("deploy", EXTENSIONLESS_BASH, "deploy").is_empty());
+    }
+
+    #[test]
+    fn extensionless_env_shebang_script_dispatches_to_bash() {
+        // The `#!/usr/bin/env bash` form also sniffs to bash.
+        let src = "#!/usr/bin/env bash\nrun() { :; }\n";
+        assert!(check_one("run-it", src, "run").is_empty());
+    }
+
+    #[test]
+    fn extensionless_shebang_script_blocks_vanished_symbol() {
+        // A vanished symbol in a shebang-dispatched bash script still blocks (one finding).
+        assert_eq!(check_one("deploy", EXTENSIONLESS_BASH, "vanished").len(), 1);
+    }
+
+    #[test]
+    fn py_file_with_bash_shebang_stays_python() {
+        // Extension always wins: a `.py` file carrying a `#!/bin/bash` shebang is parsed as
+        // Python, so a Python `def` resolves (a bash-only construct would not).
+        let src = "#!/bin/bash\ndef handler():\n    return 1\n";
+        assert!(check_one("app.py", src, "handler").is_empty());
+        // And a name absent from the Python AST still blocks — proving Python (not bash) ran.
+        assert_eq!(check_one("app.py", src, "vanished").len(), 1);
+    }
+
+    #[test]
+    fn un_grammared_file_without_sh_shebang_silent_skips() {
+        // An un-grammared extension with no `sh` shebang keeps the M10 silent-skip: the file
+        // exists, the grammar dispatch yields nothing, so the `#symbol` is not checked — no
+        // finding (the behavior Inc 3 supersedes with the `unsupported-language` advisory).
+        let src = "#!/usr/bin/perl\nsub thing { }\n";
+        assert!(check_one("script.pl", src, "anything").is_empty());
+        // A plain text file with no shebang at all, likewise.
+        assert!(check_one("notes.txt", "thing lives here\n", "thing").is_empty());
+    }
+
+    #[test]
+    fn missing_file_still_blocks_regardless_of_shebang() {
+        // The file-existence floor is unchanged: a `#symbol` anchor on an absent file blocks
+        // before any grammar/shebang dispatch.
+        let root = temp_root();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor("ghost#deploy")],
+            working_tree_root: root,
+        };
+        assert_eq!(check_anchors(&snapshot).len(), 1);
     }
 }
