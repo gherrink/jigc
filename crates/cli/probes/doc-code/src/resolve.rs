@@ -43,6 +43,10 @@ pub enum Grammar {
     /// (`abstract_class_declaration`, `interface_declaration`, …) never appear in a JS AST.
     /// JSX parses natively under this one grammar (no separate TSX-style split).
     JavaScript,
+    /// Python. Citable kinds are `function_definition` / `class_definition` at any nesting
+    /// (nested defs are idiomatic and citable; methods are defs in a class body); an
+    /// `import` carries a `name` field and is excluded (the field-walk over-match).
+    Python,
 }
 
 impl Grammar {
@@ -53,6 +57,7 @@ impl Grammar {
             Grammar::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             Grammar::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
             Grammar::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Grammar::Python => tree_sitter_python::LANGUAGE.into(),
         }
     }
 }
@@ -153,6 +158,7 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "ts" | "mts" | "cts" => Some(Grammar::TypeScript),
         "tsx" => Some(Grammar::Tsx),
         "js" | "jsx" | "mjs" | "cjs" => Some(Grammar::JavaScript),
+        "py" | "pyi" => Some(Grammar::Python),
         _ => None,
     }
 }
@@ -162,16 +168,19 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
 ///
 /// - **Rust** is field-driven — only declarations carry a `name` field, so any node
 ///   exposing one is a citable item (robust across Rust item kinds without enumeration).
-/// - **TypeScript / TSX** uses a node-kind allowlist ([`is_ts_citable`]) — the field walk
-///   over-matches in TS (imports, calls, value-position declarators carry a `name`), so
-///   only declaration kinds resolve, with two value-position kinds constrained to a
-///   declaration position.
+/// - **TypeScript / TSX / JavaScript** uses a node-kind allowlist ([`is_ts_citable`]) — the
+///   field walk over-matches in TS (imports, calls, value-position declarators carry a
+///   `name`), so only declaration kinds resolve, with two value-position kinds constrained to
+///   a declaration position.
+/// - **Python** uses its own node-kind allowlist ([`is_py_citable`]) — `function_definition` /
+///   `class_definition` at any nesting; an `import` carries a `name` and is excluded.
 fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
     let citable = match grammar {
         Grammar::Rust => true,
         // JavaScript reuses the TS allowlist verbatim — identical node-kinds and
         // value-position semantics; the TS-only kinds never appear in a JS AST.
         Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => is_ts_citable(node),
+        Grammar::Python => is_py_citable(node),
     };
     if !citable {
         return Vec::new();
@@ -212,6 +221,16 @@ fn is_ts_citable(node: &Node) -> bool {
             .is_none_or(|scope| scope.kind() != "statement_block"),
         _ => false,
     }
+}
+
+/// Whether `node` is a citable Python declaration (the node-kind allowlist — [validation.md]
+/// → Multi-language resolution). `function_definition` / `class_definition` resolve at any
+/// nesting — a top-level def/class, a nested `def` (idiomatic and citable in Python), or a
+/// method (a `def` in a class body). An `import` reaches the AST as an
+/// `import_statement`/`import_from_statement` carrying a `name` field; it is not a declaration
+/// kind and is excluded, closing the field-walk over-match.
+fn is_py_citable(node: &Node) -> bool {
+    matches!(node.kind(), "function_definition" | "class_definition")
 }
 
 #[cfg(test)]
@@ -536,6 +555,80 @@ export function Button() {
             "function ☃() { let π = 1; }",
         ] {
             let _ = symbol_exists(src, "x", Grammar::JavaScript);
+        }
+    }
+
+    // A real Python module exercising the allowlist (`function_definition`,
+    // `class_definition`) and the over-match exclusion: a top-level function and class, a
+    // nested `def` inside another def's `block`, a method inside a class body, and an
+    // imported name that reaches the AST only as an `import_statement` `name`.
+    const PY: &str = "\
+import os
+from collections import named_import
+
+def free_fn():
+    def nested_fn():
+        return 1
+    return nested_fn()
+
+class Shape:
+    def area(self):
+        return 0
+";
+
+    #[test]
+    fn py_dispatches_by_extension() {
+        // The dispatch: every Python extension maps to the Python grammar.
+        for ext in ["py", "pyi"] {
+            let path = std::path::PathBuf::from(format!("src/app.{ext}"));
+            assert_eq!(grammar_for(&path), Some(Grammar::Python), "ext .{ext}");
+        }
+    }
+
+    #[test]
+    fn py_resolves_top_level_and_blocks_vanished() {
+        // A top-level def/class resolves; a vanished one does not (block-on-rename).
+        assert!(symbol_exists(PY, "free_fn", Grammar::Python));
+        assert!(symbol_exists(PY, "Shape", Grammar::Python));
+        assert!(!symbol_exists(PY, "free_fn_renamed", Grammar::Python));
+    }
+
+    #[test]
+    fn py_resolves_nested_def() {
+        // A nested `def` (def inside a def's `block`) is idiomatic and citable in Python.
+        assert!(symbol_exists(PY, "nested_fn", Grammar::Python));
+    }
+
+    #[test]
+    fn py_resolves_method() {
+        // A method (`def` inside a `class_definition` body) resolves at any nesting.
+        assert!(symbol_exists(PY, "area", Grammar::Python));
+    }
+
+    #[test]
+    fn py_imported_name_does_not_resolve() {
+        // An imported name reaches the AST only via an `import_statement`/`import_from_statement`
+        // carrying a `name` field — not in the allowlist, so the field-walk over-match is closed.
+        assert!(!symbol_exists(PY, "os", Grammar::Python));
+        assert!(!symbol_exists(PY, "named_import", Grammar::Python));
+    }
+
+    #[test]
+    fn py_hostile_input_does_not_panic() {
+        // The panic-free property carries to Python: garbage / truncated / BOM / non-ASCII /
+        // mixed-indent source resolves to false, never crashes.
+        let bom = "\u{feff}def f():\n    pass\n";
+        for src in [
+            "",
+            "def",
+            "}{)(",
+            "class Shape",
+            "def f(:\n  return",
+            bom,
+            "def ☃():\n    π = 1\n",
+            "def a():\n\tx = 1\n        y = 2\n",
+        ] {
+            let _ = symbol_exists(src, "x", Grammar::Python);
         }
     }
 }
