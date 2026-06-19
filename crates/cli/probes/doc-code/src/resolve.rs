@@ -56,7 +56,7 @@ pub enum Grammar {
     /// (`function f { }` and `f() { }`) parse to it; a called-but-never-defined function
     /// reaches the AST as a `command` node carrying a `name` and is excluded (functions-only,
     /// the field-walk over-match). Non-function bash symbols (variables, aliases) stay
-    /// unverified. bash is the only grammar a `#!…sh` shebang dispatches to.
+    /// unverified. bash is the only grammar a POSIX sh-family shebang dispatches to.
     Bash,
 }
 
@@ -179,11 +179,15 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
 }
 
 /// The grammar to resolve a file's symbols against when its **extension** maps to no grammar,
-/// chosen by **shebang sniff** of the source's first line. A `#!…sh` interpreter line
-/// (`#!/bin/bash`, `#!/usr/bin/env bash`, `#!/bin/sh`, …) maps to bash — the dominant
-/// extensionless-script case; bash is the only grammar a shebang resolves to. Any other (or
-/// no) shebang yields `None`. This reads only the file's own bytes (the first line) — no
-/// wall-clock, network, or build — so the static-parse determinism contract is intact.
+/// chosen by **shebang sniff** of the source's first line. A shebang naming an interpreter in
+/// the **POSIX sh-compatible shell family** (`sh` / `bash` / `dash` / `zsh` / `ash` / `ksh`)
+/// maps to bash — the dominant extensionless-script case; bash is the only grammar a shebang
+/// resolves to. Non-POSIX shells (`fish`, `csh`/`tcsh`) are *not* in that family and yield
+/// `None` (they fall through to "no grammar", the same as any unsupported file) — they merely
+/// happen to end in `sh`, and parsing a fish/csh function under the bash grammar would
+/// mis-resolve. Any other (or no) shebang yields `None`. This reads only the file's own bytes
+/// (the first line) — no wall-clock, network, or build — so the static-parse determinism
+/// contract is intact.
 ///
 /// Precedence is the caller's: [`grammar_for`] (extension) is tried first and **always
 /// wins**; this sniff fires only for a file whose extension maps to nothing (a `.py` file
@@ -191,13 +195,13 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
 pub fn grammar_for_shebang(src: &str) -> Option<Grammar> {
     let first_line = src.lines().next()?;
     let interpreter = first_line.strip_prefix("#!")?;
-    // A `#!…sh` interpreter line — `sh`, `bash`, `/bin/sh`, `/usr/bin/env bash`, …. Match the
-    // final path component / argument ending in `sh` so `dash`/`zsh`/`bash`/`sh` all map to
-    // bash (the only shebang-dispatched grammar); the trailing token guards against a stray
-    // `sh` inside a directory name.
+    // Extract the interpreter basename — the final path component of the last token, so both
+    // `#!/bin/bash` and `#!/usr/bin/env bash` reduce to `bash`.
     let token = interpreter.split_whitespace().last()?;
     let command = token.rsplit('/').next()?;
-    command.ends_with("sh").then_some(Grammar::Bash)
+    // Fold only the POSIX sh-compatible family to bash; `fish`/`csh`/`tcsh` (which also end in
+    // `sh`) deliberately fall through to `None`.
+    matches!(command, "sh" | "bash" | "dash" | "zsh" | "ash" | "ksh").then_some(Grammar::Bash)
 }
 
 /// The names a node declares as a citable symbol under `grammar` (usually one; none if the
@@ -252,15 +256,17 @@ fn is_ts_citable(node: &Node) -> bool {
         | "enum_declaration" => true,
         // A class member — not an object-literal method (whose parent is `object`).
         "method_definition" => node.parent().is_some_and(|p| p.kind() == "class_body"),
-        // A module/export/top-level binding — not a function-local `let`/`const` (whose
-        // declaration sits inside a `statement_block`). The declarator's parent is the
-        // `lexical_declaration`/`variable_declaration`; that declaration's parent is the
-        // scope — `statement_block` is a function body, anything else (`program`,
-        // `export_statement`, …) is module/top-level.
+        // A module/export/top-level binding only — not a function-local `let`/`const` (inside
+        // a `statement_block`) and not a loop-local induction variable (inside a
+        // `for_statement` / `for_in_statement`). The declarator's parent is the
+        // `lexical_declaration`/`variable_declaration`; positively require that declaration to
+        // sit directly at program top-level or under an `export_statement` (the robust reading
+        // of "module/export/top-level only" — it closes function bodies *and* loop headers
+        // without enumerating every negative scope).
         "variable_declarator" => node
             .parent()
             .and_then(|decl| decl.parent())
-            .is_none_or(|scope| scope.kind() != "statement_block"),
+            .is_some_and(|scope| matches!(scope.kind(), "program" | "export_statement")),
         _ => false,
     }
 }
@@ -476,6 +482,50 @@ enum Color {
         // `variable_declarator` is module/export/top-level-only: a function-local `let`
         // (declaration inside a `statement_block`) is not a citable symbol.
         assert!(!symbol_exists(TS, "localVar", Grammar::TypeScript));
+    }
+
+    #[test]
+    fn ts_for_loop_induction_variable_does_not_resolve() {
+        // `variable_declarator` is module/export/top-level-only: a for-loop induction
+        // variable is a loop-local binding (its `lexical_declaration` sits in a
+        // `for_statement`, not at program top-level / under an `export_statement`), so it
+        // must NOT resolve — while a genuine top-level `const` still does.
+        assert!(!symbol_exists(
+            "for (let i = 0; i < 10; i++) {}",
+            "i",
+            Grammar::TypeScript
+        ));
+        assert!(!symbol_exists(
+            "for (const x of xs) {}",
+            "x",
+            Grammar::TypeScript
+        ));
+        assert!(symbol_exists(
+            "const realExport = 1;",
+            "realExport",
+            Grammar::TypeScript
+        ));
+    }
+
+    #[test]
+    fn js_for_loop_induction_variable_does_not_resolve() {
+        // The same tightening on the JS allowlist (mirrored verbatim): a for-loop / for-of
+        // induction variable is loop-local, not a top-level/module declaration.
+        assert!(!symbol_exists(
+            "for (let i = 0; i < 10; i++) {}",
+            "i",
+            Grammar::JavaScript
+        ));
+        assert!(!symbol_exists(
+            "for (const x of xs) {}",
+            "x",
+            Grammar::JavaScript
+        ));
+        assert!(symbol_exists(
+            "const realExport = 1;",
+            "realExport",
+            Grammar::JavaScript
+        ));
     }
 
     #[test]
@@ -822,6 +872,54 @@ called_but_undefined
         assert!(symbol_exists(BASH, "with_keyword", Grammar::Bash));
         assert!(symbol_exists(BASH, "posix_form", Grammar::Bash));
         assert!(!symbol_exists(BASH, "posix_form_renamed", Grammar::Bash));
+    }
+
+    #[test]
+    fn shebang_folds_posix_sh_family_to_bash() {
+        // The POSIX sh-compatible shell family (sh / bash / dash / zsh / ash / ksh) folds to
+        // the bash grammar via the shebang sniff — both `#!/bin/X` and `#!/usr/bin/env X`.
+        for shebang in [
+            "#!/bin/bash",
+            "#!/usr/bin/env bash",
+            "#!/bin/sh",
+            "#!/bin/zsh",
+            "#!/usr/bin/env dash",
+            "#!/bin/ash",
+            "#!/bin/ksh",
+        ] {
+            let src = format!("{shebang}\nf() {{ echo hi; }}\n");
+            assert_eq!(
+                grammar_for_shebang(&src),
+                Some(Grammar::Bash),
+                "expected `{shebang}` to fold to bash"
+            );
+            // And a function in the folded script resolves.
+            assert!(
+                symbol_exists(&src, "f", grammar_for_shebang(&src).unwrap()),
+                "expected `f` to resolve under `{shebang}`"
+            );
+        }
+    }
+
+    #[test]
+    fn shebang_does_not_fold_non_posix_shells_to_bash() {
+        // fish and csh/tcsh are NOT in the POSIX sh-compatible family — they end with `sh`
+        // but must NOT fold to bash; they fall through to "no grammar" (None), the same as
+        // any unsupported file. An extensionless fish/csh script then silently skips rather
+        // than mis-parsing a fish/csh function under the bash grammar.
+        for shebang in [
+            "#!/usr/bin/env fish",
+            "#!/bin/csh",
+            "#!/bin/tcsh",
+            "#!/usr/bin/env tcsh",
+        ] {
+            let src = format!("{shebang}\nfunction f\n    echo hi\nend\n");
+            assert_eq!(
+                grammar_for_shebang(&src),
+                None,
+                "expected `{shebang}` to NOT fold to bash"
+            );
+        }
     }
 
     #[test]
