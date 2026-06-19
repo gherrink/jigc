@@ -553,6 +553,38 @@ export function Button() {
         assert!(!symbol_exists(src, "Missing", Grammar::Tsx));
     }
 
+    // The accepted LOW edge ([validation.md] → Multi-language resolution: "a `.ts` file
+    // that *contains JSX* … parses with errors under the plain TypeScript grammar and may
+    // not resolve all symbols; not worth a heuristic"). `.tsx` is the supported JSX path
+    // (its own grammar — `tsx_jsx_parses_and_resolves_without_error_wipeout` covers it);
+    // this CHARACTERIZES the degradation when JSX lands in a plain `.ts` source, so a future
+    // grammar bump that changes it is NOTICED. It does NOT assert a "correct" outcome — it
+    // pins the CURRENT one.
+    //
+    // Source: an arrow returning JSX (`<Foo>{x}</Foo>` — which the non-tsx grammar
+    // mis-tokenizes as a `<Foo>` type assertion) followed by a trailing `export const`.
+    const JSX_IN_TS: &str = "\
+const cast = (x) => <Foo>{x}</Foo>;
+export const tail: number = 5;
+";
+
+    #[test]
+    fn jsx_in_plain_ts_under_resolves_a_trailing_declaration() {
+        // CURRENT behavior pinned: under the plain TypeScript grammar the JSX corrupts the
+        // parse so the *trailing* `export const tail` is LOST (does not resolve) — the
+        // accepted `.ts`-with-JSX degradation. Under the TSX grammar (the supported JSX
+        // path) the same declaration DOES resolve. If a tree-sitter bump makes plain-TS
+        // resolve `tail`, this test flips and the characterization is revisited.
+        assert!(
+            !symbol_exists(JSX_IN_TS, "tail", Grammar::TypeScript),
+            "characterization: plain TS under-resolves a declaration trailing JSX",
+        );
+        assert!(
+            symbol_exists(JSX_IN_TS, "tail", Grammar::Tsx),
+            "the TSX grammar (the supported JSX path) resolves it",
+        );
+    }
+
     #[test]
     fn ts_hostile_input_does_not_panic() {
         // The panic-free property carries to TS/TSX: garbage / truncated / BOM / non-ASCII
