@@ -173,6 +173,18 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
         );
     }
 
+    // `docs-root` treats an empty value as "no prefix" (the flat repo-root layout),
+    // but the opaque-scalar floor (`check_value`) rejects an empty string — that floor
+    // exists to keep a *document* from rendering an empty `- key:` bullet, which a knob
+    // never does. Canonicalize an empty `docs-root` to its flat sentinel `.` so
+    // `jigc config set docs-root ""` does the intuitive thing instead of erroring (the
+    // read-side helper already maps both `""` and `.` to flat).
+    let value = if key == "docs-root" && value.is_empty() {
+        "."
+    } else {
+        value
+    };
+
     // Step 1 — the key must be a declared knob (the closed surface).
     let pack = make_pack();
     let knobs_bytes = pack

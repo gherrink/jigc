@@ -1039,8 +1039,8 @@ mod tests {
         # Nests every persisted doctype's on-disk `location:` under one parent:
         # `docs/decisions/`, `docs/specs/`, … The doctype id, addressing (`adr:foo`),
         # and stable-id invariants are unchanged — only the on-disk path gains this
-        # prefix. Per-project overridable like any knob; set `""` (or `.`) for the old
-        # flat repo-root layout. A tunable knob (no floor).
+        # prefix. Per-project overridable like any knob; set `.` (or `""`, canonicalized
+        # to `.`) for the old flat repo-root layout. A tunable knob (no floor).
         docs-root:
           type: string
           default: docs/

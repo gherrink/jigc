@@ -264,3 +264,61 @@ fn docs_root_nests_promoted_adr_under_docs_and_the_three_surfaces_agree() {
          on the docs-root parent); row:\n{row}\nfull report:\n{report}",
     );
 }
+
+/// `jigc config set docs-root ""` — an EMPTY value is the intuitive "no prefix / flat"
+/// request, but the opaque-scalar floor (`check_value`) rejects empty strings. The
+/// config-set path canonicalizes an empty `docs-root` to its flat sentinel `.`, so the
+/// command succeeds and a subsequent finalize lands the doc at the flat repo root.
+#[test]
+fn docs_root_empty_value_is_accepted_and_yields_the_flat_layout() {
+    let repo = TempDir::new("flat");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    assert_ok(&jigc(repo.path(), home.path(), &["setup"]), "`jigc setup`");
+
+    // RED before the normalize: this exited non-zero (`"docs-root" must not be empty`).
+    let out = jigc(repo.path(), home.path(), &["config", "set", "docs-root", ""]);
+    assert_ok(&out, "`jigc config set docs-root \"\"` (empty → the flat sentinel)");
+
+    // End-to-end: with docs-root flat, a finalized ADR lands at the root `decisions/`,
+    // not under the `docs/` prefix — proving the empty value resolved to flat.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "go flat"],
+        ),
+        "`jigc start`",
+    );
+    let task = "go-flat";
+    let create = jigc_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Flat decision"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create adr`");
+    let slug = "flat-decision";
+    fill_adr_slots(repo.path(), home.path(), slug);
+    fill_commit(repo.path(), home.path(), task);
+    assert_ok(
+        &jigc(repo.path(), home.path(), &["task", "finalize", task]),
+        "`jigc task finalize`",
+    );
+
+    assert!(
+        repo.path()
+            .join("decisions")
+            .join(format!("{slug}.md"))
+            .exists(),
+        "with an empty (flat) docs-root, the ADR must land at the root decisions/{slug}.md",
+    );
+    assert!(
+        !repo
+            .path()
+            .join("docs/decisions")
+            .join(format!("{slug}.md"))
+            .exists(),
+        "the docs/ prefix must be absent when docs-root is flat",
+    );
+}
