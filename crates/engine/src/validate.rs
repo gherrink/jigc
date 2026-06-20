@@ -157,6 +157,15 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// area) is a blocking finding (`validation.md` → Forward-ref resolution). So `finalize`
 /// — which gates on exactly what `validate` reports — blocks on a dangling `supersedes`
 /// and passes on a resolvable one (`worked-examples.md` → Superseding decision).
+///
+/// `code_tree_root` is the root the `doc-code` probe resolves cited **code** anchors
+/// against — split from `repo_root` (M30 Inc 3, G4): the CLI's shared `validate` entry
+/// passes the **materialized git index** (a temp checkout of the staged set) for both
+/// `task validate` and `finalize`, so a cited symbol present on disk but **absent from
+/// the index** blocks ("validated reality == committed reality"). Every other surface
+/// (the committed-store reads, the edge index, the #5 owner-artifact gate) stays on
+/// `repo_root`; only the doc-code snapshot's `working_tree_root` rides `code_tree_root`.
+/// Engine unit tests pass `repo_root` for it (no index to materialize against).
 // Every parameter is a distinct determinism-boundary input the CLI threads in (the
 // engine produces none of them): the working area, the resolved schemas/cascade, the
 // committed-store + `.jigc/` roots, the git HEAD stamp, and the shell-free probe seam.
@@ -168,6 +177,7 @@ pub fn validate_task(
     schemas: &BTreeMap<String, Schema>,
     record: &mut FileStateRecord,
     repo_root: &Path,
+    code_tree_root: &Path,
     jigc_root: &Path,
     head: &str,
     resolved: &crate::cascade::Resolved,
@@ -231,7 +241,13 @@ pub fn validate_task(
     // pairs, so the whole block is skipped — the invoker is never called and no snapshot
     // is written, leaving the no-anchor path byte-identical to the pre-wiring sweep (the
     // omitting-context guard, hardening #5).
-    findings.extend(schedule_doc_code(dir, repo_root, schemas, invoke_doc_code)?);
+    findings.extend(schedule_doc_code(
+        dir,
+        repo_root,
+        code_tree_root,
+        schemas,
+        invoke_doc_code,
+    )?);
 
     // Severity assignment is the engine-owned post-pass at report construction
     // (`validation.md` → Severity assignment — the M6 post-pass): `resolved` is the
@@ -442,10 +458,13 @@ fn store_scratch_path() -> std::path::PathBuf {
 /// **invoke** step to the CLI-supplied `invoke` closure (the engine never shells out).
 ///
 /// One probe invocation covers the whole surface: the snapshot itemizes every anchor,
-/// and the probe adjudicates each against `working_tree_root` (`repo_root` — the
-/// working-tree code the about-to-be-committed bytes live in). The wire request names a
-/// representative `target` (the first anchor's address) so the envelope is well-formed;
-/// the probe reads the full anchor set from the snapshot, not the request's `target`.
+/// and the probe adjudicates each against `working_tree_root` (`code_tree_root` — the
+/// root the about-to-be-committed code lives in: the materialized git index at finalize
+/// scope, the working tree at task-`validate` scope). `repo_root` (the committed-store
+/// root) still drives the **enumeration** of the doc-side target surface; only the
+/// code-side resolution rides `code_tree_root`. The wire request names a representative
+/// `target` (the first anchor's address) so the envelope is well-formed; the probe reads
+/// the full anchor set from the snapshot, not the request's `target`.
 ///
 /// **Inert when the surface is empty** — a task carrying no `code-anchor` leaf yields no
 /// pairs, so the invoker is never called and no snapshot is written: the returned findings
@@ -455,6 +474,7 @@ fn store_scratch_path() -> std::path::PathBuf {
 fn schedule_doc_code(
     dir: &Path,
     repo_root: &Path,
+    code_tree_root: &Path,
     schemas: &BTreeMap<String, Schema>,
     invoke: &ProbeInvoker<'_>,
 ) -> std::io::Result<Vec<Finding>> {
@@ -470,7 +490,7 @@ fn schedule_doc_code(
     // from the snapshot). `anchors` is non-empty here, so the first is always present.
     let target = anchors[0].address.clone();
 
-    let snapshot = EffectiveStateSnapshot::new(anchors, repo_root.to_path_buf());
+    let snapshot = EffectiveStateSnapshot::new(anchors, code_tree_root.to_path_buf());
     let snapshot_path = dir.join(SNAPSHOT_FILE);
     std::fs::write(&snapshot_path, serde_json::to_vec(&snapshot)?)?;
 
@@ -2372,6 +2392,7 @@ kind: memo
             &mut record,
             area.dir(),
             area.dir(),
+            area.dir(),
             "HEAD",
             &no_delta_resolved(),
             &unused_invoker(),
@@ -2404,6 +2425,7 @@ kind: memo
             clean.dir(),
             &schemas(),
             &mut clean_record,
+            clean.dir(),
             clean.dir(),
             clean.dir(),
             "HEAD",
@@ -2622,6 +2644,7 @@ A failed node's sessions are re-routed on next request.
             &schemas(),
             &mut record,
             repo.path(),
+            repo.path(),
             &jigc,
             "HEAD",
             &no_delta_resolved(),
@@ -2675,6 +2698,7 @@ A failed node's sessions are re-routed on next request.
             &schemas(),
             &mut record,
             repo.path(),
+            repo.path(),
             &jigc,
             "HEAD",
             &no_delta_resolved(),
@@ -2724,6 +2748,7 @@ A failed node's sessions are re-routed on next request.
             &schemas(),
             &mut record,
             repo.path(),
+            repo.path(),
             &jigc,
             "HEAD",
             &no_delta_resolved(),
@@ -2770,6 +2795,7 @@ A failed node's sessions are re-routed on next request.
             &task_dir,
             &schemas(),
             &mut record,
+            repo.path(),
             repo.path(),
             &jigc,
             "HEAD",
@@ -3117,6 +3143,7 @@ The audit landed green.
             &schemas(),
             &mut record,
             repo.path(),
+            repo.path(),
             &repo.path().join(".jigc"),
             "HEAD",
             &no_delta_resolved(),
@@ -3172,6 +3199,7 @@ The audit landed green.
             &task_dir,
             &schemas(),
             &mut record,
+            repo.path(),
             repo.path(),
             &repo.path().join(".jigc"),
             "HEAD",

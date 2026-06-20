@@ -681,6 +681,9 @@ sections:
     // Delete component A's (Lexer) symbol; component B (Writer) stays intact.
     fs::write(repo.path().join(LEXER_FILE), lexer_symbol_deleted())
         .expect("delete component A's anchored symbol");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees A's symbol gone.
+    git(repo.path(), &["add", LEXER_FILE]);
 
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
     let out = finalize_approve_json(repo.path(), home.path(), &pack, &task);

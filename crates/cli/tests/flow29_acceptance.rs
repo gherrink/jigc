@@ -418,6 +418,9 @@ fn flow29_finalize_blocks_naming_only_the_typescript_component() {
     // Delete component A's TypeScript symbol (rename it away); B's Python file is untouched.
     fs::write(repo.path().join(COMPONENT_A_FILE), component_a_deleted())
         .expect("delete component A's TS symbol");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees A's symbol gone.
+    git(repo.path(), &["add", COMPONENT_A_FILE]);
 
     let before = head_count(repo.path());
     let (out, rendered) = finalize_json(repo.path(), home.path(), task);
@@ -469,6 +472,9 @@ fn flow29_finalize_blocks_naming_only_the_python_component() {
     // Delete component B's Python symbol (rename it away); A's TypeScript file is untouched.
     fs::write(repo.path().join(COMPONENT_B_FILE), component_b_deleted())
         .expect("delete component B's Python symbol");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees B's symbol gone.
+    git(repo.path(), &["add", COMPONENT_B_FILE]);
 
     let before = head_count(repo.path());
     let (out, rendered) = finalize_json(repo.path(), home.path(), task);

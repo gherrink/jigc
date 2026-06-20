@@ -501,11 +501,20 @@ impl TaskArea {
             )
         })?;
         let tracked = self.tracked_predicate()?;
+        // Materialize the current git index into a self-cleaning temp tree and resolve
+        // cited code anchors against it (M30 Inc 3, G4): the `doc-code` probe validates
+        // what *commits*, not the ambient working tree, so a symbol present on disk but
+        // left unstaged blocks ("validated reality == committed reality"). This is the
+        // single shared `validate` entry (`design/finalize.md` → no private check path),
+        // so `task validate` and `finalize` both gate on the index. The index is a pure
+        // function of the staged set, so the snapshot stays deterministic.
+        let index_tree = self.materialize_index()?;
         let report = validate_task(
             &self.dir,
             &schemas,
             &mut record,
             &self.repo_root,
+            index_tree.path(),
             &self.jigc_root,
             &head,
             &self.severity_cascade()?,
@@ -538,6 +547,23 @@ impl TaskArea {
             .map(str::to_owned)
             .collect();
         Ok(move |path: &str| !untracked.contains(path))
+    }
+
+    /// Materialize the current git **index** into a fresh, self-cleaning temp tree — the
+    /// `doc-code` probe's code-resolution root (M30 Inc 3, G4). `git checkout-index -a`
+    /// writes every staged blob under `<temp>/`, so a cited symbol present on disk but
+    /// absent from the index does not resolve (the about-to-be-committed code is exactly
+    /// the staged set). An empty index yields an empty tree (no anchor resolves); the
+    /// [`ScratchTree`] removes itself on drop, so neither a clean nor a blocked validate
+    /// leaks scratch.
+    fn materialize_index(&self) -> Result<ScratchTree> {
+        let tree = ScratchTree::new();
+        std::fs::create_dir_all(tree.path()).with_context(|| {
+            format!("could not create the index scratch tree {:?}", tree.path())
+        })?;
+        let prefix = format!("--prefix={}/", tree.path().display());
+        git_run(&self.repo_root, &["checkout-index", "-a", &prefix])?;
+        Ok(tree)
     }
 
     /// Render blocking `findings` through the shared validation funnel and return the
@@ -2006,6 +2032,37 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
     match finding.route {
         Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
         None => anyhow::anyhow!("{}", finding.message),
+    }
+}
+
+/// A process-and-time-unique temp directory that removes itself on drop — the scratch
+/// tree [`Task::materialize_index`] checks the git index out into (the `store_scratch_path`
+/// / `describe::TempDir` idiom). Self-cleaning so a clean *or* blocked validate leaks
+/// nothing.
+struct ScratchTree(PathBuf);
+
+impl ScratchTree {
+    fn new() -> Self {
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "jigc-index-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        ScratchTree(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for ScratchTree {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 

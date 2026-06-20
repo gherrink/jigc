@@ -616,6 +616,9 @@ fn a_vanished_anchored_symbol_blocks_at_doc_code_symbol_exists() {
     // block, not a file-absent one.
     fs::write(repo.path().join(COMPONENT_FILE), component_deleted())
         .expect("delete the anchored symbol");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees the symbol gone.
+    git(repo.path(), &["add", COMPONENT_FILE]);
 
     let out = finalize_approve_json(repo.path(), home.path(), &pack, &task);
     assert!(

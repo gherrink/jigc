@@ -567,3 +567,145 @@ fn created_adr_materializes_doc_level_status_and_date() {
         "render(parse(staged)) must equal the staged bytes",
     );
 }
+
+/// Append a top-level `pub fn <name>()` to the tracked `src/lib.rs` (alongside
+/// `present_symbol`) — the agent writing a cited code symbol into a tracked file.
+fn append_symbol(repo: &Path, name: &str) {
+    let lib = repo.join("src").join("lib.rs");
+    let mut body = fs::read_to_string(&lib).expect("read src/lib.rs");
+    body.push_str(&format!("\npub fn {name}() -> u32 {{\n    7\n}}\n"));
+    fs::write(&lib, body).expect("append symbol to src/lib.rs");
+}
+
+/// Set up an anchored task whose created ADR `cites-code` the symbol `symbol` in the
+/// tracked `src/lib.rs` (every author-required slot/field filled, so the only lever is the
+/// `doc-code` gate). The symbol is **not** written or staged here — the caller controls
+/// the index state the gate sees (G4).
+fn stage_citing_task(repo: &Path, home: &Path, task: &str, slug: &str, symbol: &str) {
+    start_task(repo, home, task.replace('-', " ").as_str());
+    create_adr(repo, home, &slug.replace('-', " "), &format!("adr:{slug}"));
+    fill_adr_slots(repo, home, slug);
+    fill_commit(repo, home, task);
+    inject_cites_code(repo, task, slug, &format!("src/lib.rs#{symbol}"));
+}
+
+/// G4 (a) — a `cites-code` to a symbol the agent wrote into a tracked file **and staged**
+/// → `finalize` PASSES: the materialized index carries the staged symbol, so the
+/// finalize-scope `doc-code` probe resolves it.
+#[test]
+fn finalize_passes_when_cited_symbol_is_staged() {
+    let repo = TempDir::new("g4-staged-repo");
+    let home = TempDir::new("g4-staged-home");
+    init_repo(repo.path());
+
+    let task = "cite-a-staged-symbol";
+    stage_citing_task(
+        repo.path(),
+        home.path(),
+        task,
+        "staged-cite",
+        "staged_symbol",
+    );
+
+    // The agent writes the cited symbol into the tracked file AND stages it.
+    append_symbol(repo.path(), "staged_symbol");
+    git(repo.path(), &["add", "src/lib.rs"]);
+
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_ok(
+        &out,
+        &format!("finalize with the cited symbol staged must pass; got:\n{rendered}"),
+    );
+    assert!(
+        !rendered.contains("doc-code.symbol-exists"),
+        "a staged cited symbol must surface no doc-code.symbol-exists block; got:\n{rendered}",
+    );
+}
+
+/// G4 (b) — the **same** symbol left **unstaged** (present only on disk, with an unrelated
+/// staged file so the narrowed set is non-empty) → `finalize` BLOCKS naming the dangling
+/// anchor: the materialized index lacks the symbol, so the finalize-scope `doc-code` probe
+/// catches it (RED before the index split — the probe read the working tree and passed —
+/// GREEN after). This is the keystone: validated reality == committed reality.
+#[test]
+fn finalize_blocks_when_cited_symbol_is_unstaged() {
+    let repo = TempDir::new("g4-unstaged-repo");
+    let home = TempDir::new("g4-unstaged-home");
+    init_repo(repo.path());
+
+    let task = "cite-an-unstaged-symbol";
+    stage_citing_task(
+        repo.path(),
+        home.path(),
+        task,
+        "unstaged-cite",
+        "unstaged_symbol",
+    );
+
+    // The agent writes the cited symbol into the tracked file but does NOT stage it.
+    append_symbol(repo.path(), "unstaged_symbol");
+    // An unrelated staged file so the narrowed finalize set is non-empty — the block is
+    // the doc-code gate, never the empty-commit guard.
+    fs::write(repo.path().join("other.rs"), "pub fn other() {}\n").expect("write other.rs");
+    git(repo.path(), &["add", "other.rs"]);
+
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.status.success(),
+        "an unstaged cited symbol must make finalize block (index, not working tree); got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("doc-code.symbol-exists"),
+        "the block surfaces the doc-code.symbol-exists check; got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("unstaged_symbol"),
+        "the block names the dangling anchor target; got:\n{rendered}",
+    );
+}
+
+/// G4 (d) — no false-block: a cited symbol that **is staged** in a file carrying an
+/// **unrelated unstaged hunk** → `finalize` PASSES. The index holds the staged symbol; the
+/// later unstaged hunk never reaches the index, so the probe resolves the citation.
+#[test]
+fn finalize_passes_when_staged_symbol_has_unrelated_unstaged_hunk() {
+    let repo = TempDir::new("g4-hunk-repo");
+    let home = TempDir::new("g4-hunk-home");
+    init_repo(repo.path());
+
+    let task = "cite-a-symbol-with-a-dirty-file";
+    stage_citing_task(repo.path(), home.path(), task, "hunk-cite", "hunk_symbol");
+
+    // Write + stage the cited symbol.
+    append_symbol(repo.path(), "hunk_symbol");
+    git(repo.path(), &["add", "src/lib.rs"]);
+    // An unrelated unstaged hunk in the SAME file — present on disk, absent from the index.
+    append_symbol(repo.path(), "later_unstaged");
+
+    let out = jigc(repo.path(), home.path(), &["task", "finalize", task]);
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_ok(
+        &out,
+        &format!(
+            "a staged symbol in a file with an unrelated unstaged hunk must not false-block; got:\n{rendered}"
+        ),
+    );
+    assert!(
+        !rendered.contains("doc-code.symbol-exists"),
+        "the staged symbol resolves against the index — no false doc-code block; got:\n{rendered}",
+    );
+}

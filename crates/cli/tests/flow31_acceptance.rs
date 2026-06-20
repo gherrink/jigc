@@ -428,6 +428,9 @@ fn flow31_finalize_blocks_naming_only_the_web_component() {
     // Delete component A's service key (drop the `web:` block); B's `db:` block stays.
     fs::write(repo.path().join(COMPOSE_FILE), compose(false, true))
         .expect("delete component A's service key");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees A's service key gone.
+    git(repo.path(), &["add", COMPOSE_FILE]);
 
     let before = head_count(repo.path());
     let (out, rendered) = finalize_json(repo.path(), home.path(), task);
@@ -480,6 +483,9 @@ fn flow31_finalize_blocks_naming_only_the_database_component() {
     // Delete component B's service key (drop the `db:` block); A's `web:` block stays.
     fs::write(repo.path().join(COMPOSE_FILE), compose(true, false))
         .expect("delete component B's service key");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees B's service key gone.
+    git(repo.path(), &["add", COMPOSE_FILE]);
 
     let before = head_count(repo.path());
     let (out, rendered) = finalize_json(repo.path(), home.path(), task);

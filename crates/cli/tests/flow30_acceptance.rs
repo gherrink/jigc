@@ -419,6 +419,9 @@ fn flow30_finalize_blocks_naming_only_the_card_component() {
     // Delete component A's CSS class (drop the `.card` rule); B's `.title` rule stays.
     fs::write(repo.path().join(STYLESHEET_FILE), stylesheet(false, true))
         .expect("delete component A's CSS class");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees A's class gone.
+    git(repo.path(), &["add", STYLESHEET_FILE]);
 
     let before = head_count(repo.path());
     let (out, rendered) = finalize_json(repo.path(), home.path(), task);
@@ -471,6 +474,9 @@ fn flow30_finalize_blocks_naming_only_the_title_component() {
     // Delete component B's CSS class (drop the `.title` rule); A's `.card` rule stays.
     fs::write(repo.path().join(STYLESHEET_FILE), stylesheet(true, false))
         .expect("delete component B's CSS class");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees B's class gone.
+    git(repo.path(), &["add", STYLESHEET_FILE]);
 
     let before = head_count(repo.path());
     let (out, rendered) = finalize_json(repo.path(), home.path(), task);

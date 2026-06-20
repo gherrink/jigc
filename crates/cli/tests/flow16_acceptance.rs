@@ -379,6 +379,9 @@ fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
     // Delete component A's symbol (rename it away); B's file is untouched and stays valid.
     fs::write(repo.path().join(COMPONENT_A_FILE), component_a_deleted())
         .expect("delete component A's symbol");
+    // Stage the deletion so the finalize-scope `doc-code` probe — which validates the git
+    // index, not the working tree (M30 Inc 3, G4) — sees A's symbol gone.
+    git(repo.path(), &["add", COMPONENT_A_FILE]);
 
     // ---- BLOCK half ----
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
@@ -445,6 +448,8 @@ fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
     // Restore A's symbol so the anchor resolves again.
     fs::write(repo.path().join(COMPONENT_A_FILE), component_a_present())
         .expect("restore component A's symbol");
+    // Stage the restoration so the index the doc-code probe validates carries A's symbol.
+    git(repo.path(), &["add", COMPONENT_A_FILE]);
     // Re-point the dangling cites at the committed adr through the binary. `cites` is a
     // list-cardinality (`0..*`) ref already carrying a value, so the re-point uses the
     // explicit bracket-list form (the blessed whole-list replace) — a bare single value
