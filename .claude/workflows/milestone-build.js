@@ -148,6 +148,25 @@ const base = a.base ? String(a.base) : null
 // agent-call cache at all, so it is immune to a cache-replay that won't fast-forward.
 const skipThrough = a.skipThrough != null ? Number(a.skipThrough) : 0
 
+// resumeLine — the EXACT correct resume invocation, surfaced IN every halt return so the
+// operator sees it at the moment they need it (not buried in the RULE 0 header they won't
+// re-read mid-run). The M30 resume failed precisely because `args` was dropped on the
+// re-invoke — `milestone` then defaulted to 'the next milestone' and the run halted at the
+// read phase. So this spells out: ALWAYS re-pass args (resumeFromRunId does NOT restore
+// them), and gives the cache-independent skipThrough fallback. `id`/`baseRef` are
+// interpolated so the line is copy-paste-ready.
+function resumeLine(id, baseRef) {
+  const argsObj = "{ milestone: '" + id + "'" + (baseRef ? ", base: '" + baseRef + "'" : '') + ' }'
+  return (
+    'TO RESUME — re-pass args ALWAYS (RULE 0: resumeFromRunId does NOT restore args; omit them and ' +
+    "`milestone` resets to 'the next milestone' and the resume dies at the read phase). " +
+    'First resolve the blocker on `main` via a build-fixer subagent and leave the tree CLEAN, then: ' +
+    'Workflow({ scriptPath: <the snapshot path printed at launch>, args: ' + argsObj + ', resumeFromRunId: <this run id> }). ' +
+    'If cache-replay will not fast-forward, use the deterministic fallback — a FRESH run (no resumeFromRunId) with ' +
+    'args: { milestone: ' + "'" + id + "'" + ', base, skipThrough: <highest fully-built+validated increment> }.'
+  )
+}
+
 // ---- structured-output schemas ----
 const INCREMENTS_SCHEMA = {
   type: 'object',
@@ -363,7 +382,21 @@ const increments = read && read.increments ? read.increments : []
 // when the caller passed no args and the workflow auto-selected the next milestone.
 const builtMilestone = read && read.milestone ? String(read.milestone) : milestone
 if (increments.length === 0) {
-  return { status: 'halted', halted: { phase: 'read', reason: 'no roadmap decomposition for ' + milestone + ' — run the milestone-planning workflow first.' }, note: read ? read.note : null }
+  // A read-phase halt is the classic DROPPED-ARGS symptom on a resume: if `milestone` is
+  // 'the next milestone', the caller almost certainly omitted args on the re-invoke (RULE 0).
+  const droppedArgs = milestone === 'the next milestone'
+  return {
+    status: 'halted',
+    halted: {
+      phase: 'read',
+      reason: 'no roadmap decomposition for ' + milestone + ' — '
+        + (droppedArgs
+            ? 'this is almost certainly a DROPPED-ARGS resume (RULE 0): re-invoke with args: { milestone: "<id>", base } explicitly.'
+            : 'run the milestone-planning workflow first.'),
+    },
+    resume: resumeLine(milestone, base),
+    note: read ? read.note : null,
+  }
 }
 log(builtMilestone + ' has ' + increments.length + ' increment(s): ' + increments.map((i) => 'I' + i.n).join(', '))
 
@@ -428,7 +461,7 @@ for (const inc of increments) {
 }
 
 if (halted) {
-  return { status: 'halted', halted, message: builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.', milestone: builtMilestone, incrementReports }
+  return { status: 'halted', halted, message: builtMilestone + ' build HALTED — human attention needed before continuing. Prior committed work stands.', resume: resumeLine(builtMilestone, base), milestone: builtMilestone, incrementReports }
 }
 
 // ---- milestone-completion audit (independent, adversarial, parallel) ----
