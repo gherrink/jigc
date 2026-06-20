@@ -58,6 +58,23 @@ pub enum Grammar {
     /// the field-walk over-match). Non-function bash symbols (variables, aliases) stay
     /// unverified. bash is the only grammar a POSIX sh-family shebang dispatches to.
     Bash,
+    /// CSS — the HD1 keystone: no `.name`-field declarations, so it does **not** use the
+    /// shared field read. Its addressable units are **selector / `@keyframes` / custom-property
+    /// names** ([`css_item_names`]), the four-arm extractor [validation.md] → Multi-language
+    /// resolution describes. Sigils are stripped for class/id/keyframe names (`.btn`→`btn`),
+    /// while a custom property keeps its `--` (`--color`→`--color`). Not yet reached by
+    /// [`grammar_for`] (the `.css` extension wire lands in a later increment); constructed only
+    /// by tests this increment. The non-test build constructs it nowhere yet (only a match
+    /// *reads* it), so the staged-away `.css` wire would leave it dead there — the
+    /// expectation is lifted when T2 adds the `grammar_for` `.css`→`Css` arm.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "constructed in tests; .css extension wire staged to T2"
+        )
+    )]
+    Css,
 }
 
 impl Grammar {
@@ -71,6 +88,7 @@ impl Grammar {
             Grammar::Python => tree_sitter_python::LANGUAGE.into(),
             Grammar::Php => tree_sitter_php::LANGUAGE_PHP.into(),
             Grammar::Bash => tree_sitter_bash::LANGUAGE.into(),
+            Grammar::Css => tree_sitter_css::LANGUAGE.into(),
         }
     }
 }
@@ -218,6 +236,10 @@ pub fn grammar_for_shebang(src: &str) -> Option<Grammar> {
 /// - **PHP** uses its own node-kind allowlist ([`is_php_citable`]) — the six declaration kinds
 ///   (function/class/method/interface/trait/enum) at any nesting; a `simple_parameter` carries
 ///   a `name` and is excluded.
+/// - **CSS** has no `.name`-field declarations: it dispatches to its own four-arm extractor
+///   ([`css_item_names`]) — selector / `@keyframes` / custom-property names — instead of the
+///   shared field read (the HD1 keystone generalization from a fused field read to per-grammar
+///   extraction).
 fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
     let citable = match grammar {
         Grammar::Rust => true,
@@ -227,6 +249,9 @@ fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
         Grammar::Python => is_py_citable(node),
         Grammar::Php => is_php_citable(node),
         Grammar::Bash => is_bash_citable(node),
+        // CSS has no `.name`-field declarations — it dispatches to its own addressable-unit
+        // extractor instead of the shared field read below (the HD1 keystone generalization).
+        Grammar::Css => return css_item_names(node, src),
     };
     if !citable {
         return Vec::new();
@@ -309,6 +334,50 @@ fn is_php_citable(node: &Node) -> bool {
 /// Non-function bash symbols (variables, aliases) are intentionally unverified.
 fn is_bash_citable(node: &Node) -> bool {
     node.kind() == "function_definition"
+}
+
+/// The CSS addressable units `node` names — the HD1 keystone extractor ([validation.md] →
+/// Multi-language resolution). CSS has no `.name`-field declarations, so it does not share the
+/// field read; instead **four node-kind arms** each name an addressable unit by reading a
+/// specific child, sigil already stripped by the grammar:
+///
+/// - `class_selector` → its `class_name` child (`.btn`→`btn`). **Parent-constrained** by keying
+///   on `class_selector`, not the bare `class_name`: a `pseudo_class_selector` (`:hover`,
+///   `:root`) *also* carries a `class_name` child, so reading `class_name` only under a
+///   `class_selector` closes that pseudo-class over-match.
+/// - `id_selector` → its `id_name` child (`#header`→`header`).
+/// - `keyframes_statement` → its `keyframes_name` child (`@keyframes spin`→`spin`).
+/// - `declaration` → its `property_name` child, **only when it starts with `--`** (a custom
+///   property), and **kept verbatim** (`--color`→`--color`). The `--` gate excludes every plain
+///   property (`color`, `display`), closing the every-property over-match.
+///
+/// Compound / chained / `@media`-nested selectors need no special handling: each constituent
+/// `class_selector` is visited by the caller's full-tree walk, so `.card > .title` contributes
+/// both `card` and `title`. A name living only in a comment/string is never an addressable unit.
+fn css_item_names(node: &Node, src: &str) -> Vec<String> {
+    match node.kind() {
+        "class_selector" => css_child_text(node, "class_name", src),
+        "id_selector" => css_child_text(node, "id_name", src),
+        "keyframes_statement" => css_child_text(node, "keyframes_name", src),
+        "declaration" => css_child_text(node, "property_name", src)
+            .into_iter()
+            .filter(|name| name.starts_with("--"))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// The text of `node`'s first direct child of kind `kind`, as a single-element vector (empty if
+/// absent). The CSS extractor reads addressable-unit names this way — `class_name` under a
+/// `class_selector`, `id_name` under an `id_selector`, etc. — so the name is taken from the
+/// grammar's own (sigil-stripped) child node, not by string-slicing the source.
+fn css_child_text(node: &Node, kind: &str, src: &str) -> Vec<String> {
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .find(|child| child.kind() == kind)
+        .and_then(|child| child.utf8_text(src.as_bytes()).ok())
+        .map(|name| vec![name.to_string()])
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -977,6 +1046,133 @@ called_but_undefined
             "function ☃ { local π=1; }",
         ] {
             let _ = symbol_exists(src, "x", Grammar::Bash);
+        }
+    }
+
+    // A real stylesheet exercising every CSS addressable-unit extractor arm and every
+    // over-match negative: a class selector, an id selector, an `@keyframes` name, a custom
+    // property (`--color`), a compound selector contributing BOTH names, plus the negatives —
+    // a pseudo-class (`:hover`/`:root`), plain properties (`color`/`display`), an element/tag,
+    // an attribute, the universal selector, and a name living only in a comment.
+    const CSS: &str = "\
+.btn {
+    color: red;
+}
+
+#header {
+    display: none;
+}
+
+@keyframes spin {
+    from {}
+    to {}
+}
+
+:root {
+    --color: blue;
+}
+
+.card > .title {
+    font-size: 1px;
+}
+
+:hover {
+    color: green;
+}
+
+div {
+    color: black;
+}
+
+[data-x] {
+    color: red;
+}
+
+* {
+    margin: 0;
+}
+
+/* commentname lives only here */
+a::before {
+    content: '';
+}
+";
+
+    #[test]
+    fn css_resolves_addressable_units_and_blocks_vanished() {
+        // The four addressable-unit kinds resolve (sigils stripped for class/id/keyframe), a
+        // vanished one does not (the headline block-on-rename).
+        assert!(symbol_exists(CSS, "btn", Grammar::Css));
+        assert!(symbol_exists(CSS, "header", Grammar::Css));
+        assert!(symbol_exists(CSS, "spin", Grammar::Css));
+        assert!(!symbol_exists(CSS, "btn_renamed", Grammar::Css));
+    }
+
+    #[test]
+    fn css_custom_property_resolves_with_dashes_kept() {
+        // A custom property is the one unit whose `--` is KEPT verbatim — it resolves as
+        // `--color`, not `color` (the `--`-gate that also closes the every-property over-match).
+        assert!(symbol_exists(CSS, "--color", Grammar::Css));
+        assert!(!symbol_exists(CSS, "color", Grammar::Css));
+    }
+
+    #[test]
+    fn css_compound_selector_contributes_both_names() {
+        // A compound/child selector (`.card > .title`) contributes ALL its class names via the
+        // existing full-tree walk — both must resolve.
+        assert!(symbol_exists(CSS, "card", Grammar::Css));
+        assert!(symbol_exists(CSS, "title", Grammar::Css));
+    }
+
+    #[test]
+    fn css_pseudo_class_does_not_resolve() {
+        // A pseudo-class (`:hover`, `:root`) parses as `pseudo_class_selector` carrying a
+        // `class_name` child — the parent-constraint (read `class_name` ONLY under a
+        // `class_selector`) closes that over-match, so neither resolves.
+        assert!(!symbol_exists(CSS, "hover", Grammar::Css));
+        assert!(!symbol_exists(CSS, "root", Grammar::Css));
+    }
+
+    #[test]
+    fn css_plain_property_does_not_resolve() {
+        // A plain CSS property (`color`, `display`, `margin`) is a `declaration` whose
+        // `property_name` lacks the `--` prefix — the `--`-gate excludes it.
+        assert!(!symbol_exists(CSS, "display", Grammar::Css));
+        assert!(!symbol_exists(CSS, "margin", Grammar::Css));
+    }
+
+    #[test]
+    fn css_element_attribute_universal_do_not_resolve() {
+        // An element/tag (`div`), an attribute name (`data-x`), and the universal selector
+        // (`*`) are not addressable units — none resolves.
+        assert!(!symbol_exists(CSS, "div", Grammar::Css));
+        assert!(!symbol_exists(CSS, "data-x", Grammar::Css));
+        assert!(!symbol_exists(CSS, "a", Grammar::Css));
+    }
+
+    #[test]
+    fn css_name_only_in_comment_does_not_resolve() {
+        // A name living only in a `/* comment */` is not an AST addressable unit.
+        assert!(!symbol_exists(CSS, "commentname", Grammar::Css));
+    }
+
+    #[test]
+    fn css_hostile_input_does_not_panic() {
+        // The panic-free property carries to CSS: garbage / truncated / BOM / non-ASCII /
+        // unterminated source resolves to false, never crashes.
+        let bom = "\u{feff}.btn { color: red; }";
+        for src in [
+            "",
+            ".btn",
+            "}{)(",
+            ".btn { color:",
+            "@keyframes",
+            bom,
+            ".☃ { --π: 1; }",
+            "#",
+            ":::",
+        ] {
+            let _ = symbol_exists(src, "x", Grammar::Css);
         }
     }
 }
