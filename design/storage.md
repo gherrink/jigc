@@ -114,6 +114,8 @@ A task is **pinned to its base** (the commit it started against). Operating a ta
 
 Only `finalize` produces committed changes; the working area itself is never committed (it persists on disk across sessions, so work resumes, but is lost on a clean/clone — acceptable for staging).
 
+**The working area stages managed docs; the git index stages the code.** This scratch dir is the *managed-doc* staging surface — its working copies promote at finalize. A task's **code** is staged on a separate surface, the **git index**: under the agent-stage contract the agent `git add`s its own code edits as it works, and per-task `finalize` commits that index together with the docs it promotes ([finalize.md](finalize.md) → Dirty-tree policy). So a per-task commit set has two stages with two owners — the agent's index (code, plus any agent-written owner-artifact) and jigc's promotion (docs + first-commit config) — and finalize unions exactly those, never sweeping unstaged/untracked working-tree WIP. (The milestone fan-out join stays a whole-tree sweep; that per-task/milestone divergence is the M30/M31 seam — [finalize.md](finalize.md) → Dirty-tree policy.)
+
 ### Derived caches
 
 The edge index and the file↔state hashes are **rebuildable from the committed docs**, so they are gitignored, never committed: committing them would churn diffs *and* reintroduce the dual-source-of-truth we eliminated with derived inverses. Each cache is **stamped with the HEAD (or a doc-set fingerprint) it was built against**; a branch switch, pull, or rebase changes the docs underneath it, so on a stamp mismatch the cache rebuilds. (The hash baseline's first-run edge case is noted in [write-commands.md](write-commands.md) → reconciliation.)

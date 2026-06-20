@@ -13,7 +13,7 @@ jigc task finalize <task-id>
   → validate                (blocking findings abort cleanly)
   → render commit-doc       (→ git message string)
   → promote managed docs    (working area → canonical paths)
-  → stage                   (git add: promoted docs + code changes)
+  → stage                   (git add: promoted docs + first-commit config, into the agent-staged index)
   → git commit              (pre-commit hook may reject)
   → post-commit             (invalidate caches, update hashes, cleanup)
 ```
@@ -57,12 +57,12 @@ Promotion is **copy, not move**, so rollback (if a later phase fails) is removal
 
 ### 5. Stage
 
-`git add` for:
+The agent has already `git add`ed its own code edits as it worked (the **agent-stage contract** — [Dirty-tree policy](#dirty-tree-policy)). This phase stages **jigc's own** managed artifacts into that existing index:
 
 - every promoted doc (canonical paths from phase 4),
-- every change in the working tree between base `<A>` and current (the agent's code changes).
+- on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`).
 
-The stage set is "managed docs the task produced + every code-change the tree shows," in that order. See [Dirty-tree policy](#dirty-tree-policy) for what "every code-change" includes and excludes.
+The commit set is therefore **the git index** — the agent's staged code plus jigc's just-staged docs/config — committed whole (no curated pathspec, so an agent-staged owner-artifact like `completions/artifacts/**` rides along). finalize **never** runs `git add --all`: untracked and unstaged working-tree changes stay out of the commit and are surfaced (see [Dirty-tree policy](#dirty-tree-policy)).
 
 ### 6. Commit
 
@@ -88,19 +88,22 @@ A failure in any of these is **logged**, not raised — the commit is real, the 
 
 ## Dirty-tree policy
 
-A task is pinned to base commit `<A>` at start. At `finalize`, **everything in the working tree differing from `<A>`** is the task's work and gets committed in phase 5 — managed docs (via promotion) and code changes (via direct stage).
+A task is pinned to base commit `<A>` at start. **The commit set is the git index, not a sweep of the working tree** ([DECISIONS.md](../DECISIONS.md) 2026-06-20 → M30; this inverts the pre-M30 "everything differing from `<A>`" sweep). Under the **agent-stage contract**, the agent `git add`s its own code edits as it works; at `finalize` the CLI stages **its own** managed artifacts into that same index — the promoted docs (phase 4) and, on a first commit, the project config layer (`.jigc/config`, `.jigc/.gitignore`) — then commits the whole index as one logical change. The agent stages code; the CLI commits the index; neither places what the other owns ([write-commands.md](write-commands.md) → Staging and the transaction model).
 
-The rule is simple by design:
+What this means for the working tree:
 
-- **No "declared touch-set."** The agent doesn't tell the CLI what it plans to edit; the CLI doesn't refuse changes outside a scope.
-- **No `--include-all` flag, no "stash unrelated."** A task is a coherent unit of work; the tree's deltas from base define it.
-- **Parallel hand-editing** (a human editing other files on the same branch while a task runs) is caught upstream by the base-pin: if the human commits, HEAD moves and the base-mismatch rejection in phase 1 fires; if the human only edits without committing, the changes show in `jigc task diff <id>` before `finalize` so they're visible at preview time.
+- **No `git add --all`.** Untracked files and unstaged tracked edits are **left out** of the commit — they are not the task's work until the agent stages them. The index *is* the declared touch-set, expressed by `git add`, not inferred from the tree's delta from base.
+- **Left-out WIP is surfaced, not committed (and not refused)** — a landed `finalize` names what it left behind (see *Surfaced, not prevented*, below), so a stray `scratch.txt` stands out rather than riding the commit silently.
+- **Block on nothing staged.** If the narrowed commit set is empty while the tree is dirty, `finalize` blocks (*"you staged nothing — `git add` your changes"*) rather than sweeping unrelated WIP in to avoid an empty commit (see [Empty commit](#commit-doc-rendering), below).
+- **Parallel hand-editing** (a human editing other files on the same branch while a task runs) is caught upstream by the base-pin: if the human commits, HEAD moves and the base-mismatch rejection in phase 1 fires; if the human only edits without committing, the changes show in `jigc task diff <id>` before `finalize` and stay out of the commit unless the agent stages them.
 
   **Amended at M17 planning (2026-06-12) — phase 1 gains a re-pin path.** The unconditional rejection proved wrong for serial-task shapes the methodology itself mandates: a completion task minted at audit-start finalizes *after* its fix commits land, so its base has moved **by design**, and discard-and-reauthor was the only route (verified by exercise on a foreign repo). Phase 1 now **auto-re-pins** when the moved history is disjoint from the task's work: re-pin to the new HEAD iff *(paths changed in commits between the recorded base and HEAD)* ∩ *(currently-dirty working-tree paths ∪ the task's promote destinations)* = ∅, then re-run the preflight sweep against the new base. Any overlap keeps the block — now with a conflict route naming the overlapping paths — which is exactly the parallel-hand-editing case this bullet exists to catch. ([DECISIONS.md](../DECISIONS.md) 2026-06-12; the M17 pre-fix set.)
 
-The cost is honesty: if you started a task on a checkout, the tree-diff from base **is** the task. The benefit is the absence of a hidden allow/deny list the agent would have to reason about.
+The benefit is precision: the commit carries exactly what the agent staged plus the docs/config jigc manages — no hidden allow/deny list the agent must reason about, and no unrelated working-tree WIP silently riding along.
 
-**Surfaced, not prevented (B1, [DECISIONS.md](../DECISIONS.md) 2026-06-19).** Because the sweep is unconditional, a landed `finalize` now emits a **pre-commit manifest** — every path in the commit set tagged by how it entered (promoted / modified / deleted, and an **untracked sweep flagged distinctly**) so a stray `scratch.txt` stands out. `jigc task finalize <id> --dry-run` prints that manifest and stops — committing nothing, no destructive side effect (and needing no `--approve` on a migration task). This *surfaces* the set; it does not refuse anything (a declared task change-manifest — Option A — stays deferred).
+**Per-task `IndexHonoring` vs milestone `Sweep` — the M30/M31 seam.** The index-honoring scope above is the **per-task** finalize policy (`StagePolicy::IndexHonoring`; a migration task uses the fixed `MigrationFixed` narrowing). The **milestone fan-out** squash / per-sub-task paths deliberately stay a whole-tree **`Sweep`**: a fan-out sub-agent's code is *unstaged by design* in the shared checkout, so narrowing the milestone commit to the index would drop every line of sub-agent code — a data-loss regression in disguise. The principled fix is a worktree-per-sub-agent code isolation so each sub-agent stages in its own index; that redesign is **M31**, and until it lands the milestone path sweeps. So the staging policy is three-way (per-task non-migration → `IndexHonoring`, per-task migration → `MigrationFixed`, milestone → `Sweep`), and the per-task/milestone divergence is the explicit M30/M31 seam ([DECISIONS.md](../DECISIONS.md) 2026-06-20 → M30, the SPLIT + G1).
+
+**Surfaced, not prevented (B1, [DECISIONS.md](../DECISIONS.md) 2026-06-19; narrowed at M30).** A landed `finalize` emits a **change-set manifest** — the committed set (the index: the agent's staged code + the promoted docs + first-commit config), each path tagged by how it entered (promoted / modified / deleted), **plus a distinct `left-out` list** naming what the commit excluded (untracked files + unstaged tracked edits) so a stray `scratch.txt` stands out as left-behind rather than swept in. A staged-then-further-modified path appears in **both** lists — its staged bytes commit, its later worktree delta is left out. `jigc task finalize <id> --dry-run` prints that manifest and stops — committing nothing, no destructive side effect (and needing no `--approve` on a migration task). This *surfaces* the set; it does not refuse anything beyond the empty/nothing-staged block.
 
 ## Rollback discipline
 
@@ -158,7 +161,7 @@ The rendered shape:
 
 **Cascade customization.** The commit doc's schema lives in the pack and is overridable like any doc type. A project that rejects Conventional Commits ships its own commit schema in its project layer; the renderer reads the schema, so no code changes. Trailer fields are particularly common to extend (e.g., `Co-Authored-By:`, `Refs:`, `Signed-off-by:`); these are added as `field` declarations under the `trailers` repeatable section.
 
-**Empty commit.** If validate passes but the staged diff (managed docs + code changes) is empty, `finalize` aborts with "task validated but produced no diff — nothing to finalize." No empty commits.
+**Empty commit.** If validate passes but the narrowed commit set (`git diff --cached` + the promoted docs + first-commit config) is empty, `finalize` aborts — no empty commits. The CLI selects the message by *why* it is empty: a **dirty tree with nothing staged** blocks with *"you staged nothing — `git add` your changes"* (the agent has work but never staged it); a **genuinely clean** tree aborts with *"task validated but produced no diff — nothing to finalize."* This narrowed empty-check is **per-task only**; the milestone `Sweep` path keeps its whole-tree empty-check (see [Dirty-tree policy](#dirty-tree-policy)).
 
 ## What `finalize` does NOT do
 
@@ -170,5 +173,5 @@ The rendered shape:
 ## Open questions
 
 - **Multi-doc promotion ordering** — when a task produces multiple managed docs (e.g., an ADR plus edits to an existing SPEC), the stage set is order-independent for git, and the edge-index updates after commit. Flagged as a non-issue under the current edge-index design; revisit if it surfaces.
-- **`finalize --dry-run`** — `jigc task validate <id>` already previews validation; whether to add a dry-run that also walks render/promote/stage (without commit) is pending. `validate` covers most of the value.
+- **`finalize --dry-run`** — **resolved (B1 / M30):** `jigc task finalize <id> --dry-run` walks the transaction without committing and prints the **change-set manifest** — what would be committed (the index) and what would be left out (untracked / unstaged WIP) — alongside the validation preview `jigc task validate <id>` already gives. See [Surfaced, not prevented](#dirty-tree-policy).
 - **Commit-msg hook output capture** — **resolved (M19):** the CLI relays the captured `git commit` stdout/stderr to the agent **on success** (not only on rejection — phase 6), so a non-blocking hook's warning (e.g. the M19 doc↔code backstop) reaches the agent instead of being swallowed. The richer structured blocked/error-payload shape ([write-commands.md](write-commands.md#open-questions)) stays the broader open question; M19 settles the success-relay specifically.

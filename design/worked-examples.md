@@ -219,9 +219,9 @@ $ jigc task finalize add-rate-limiter
 [2 validate]   no blocking findings (1 advisory: subject 71 chars)
 [3 render]     commit message rendered: feat + summary + body
 [4 promote]    adr:rate-limit-at-the-gateway → decisions/adr-rate-limit-at-the-gateway.md
-[5 stage]      git add decisions/adr-rate-limit-at-the-gateway.md
-               git add (code changes between a3f9c2 and HEAD-tree)
-[6 commit]     git commit -F <message-file>
+[5 stage]      git add decisions/adr-rate-limit-at-the-gateway.md   (jigc stages its promoted doc)
+               (the agent's code edits were already `git add`ed under the agent-stage contract)
+[6 commit]     git commit <the index — staged code + promoted doc> -F <message-file>
                → b8e2d4 "feat: add per-client rate limit at the gateway"
 [7 post]       edge-index stamp invalidated
                file-state hashes updated (1 doc)
@@ -230,7 +230,7 @@ $ jigc task finalize add-rate-limiter
 
 A pre-commit hook rejection at phase 6 would have rolled back phases 4–5: `git restore --staged --worktree` on the promoted ADR path, the ADR copy deleted from `decisions/`, the working area `.jigc/tasks/add-rate-limiter/` intact ([finalize.md](finalize.md) → Rollback discipline). The agent sees the hook's stderr verbatim and re-runs `finalize` after fixing the issue. **Never `--no-verify`** — hooks are user policy.
 
-The [dirty-tree policy](finalize.md#dirty-tree-policy) applies: the code changes the agent made directly in the working tree (between base `a3f9c2` and HEAD-tree) are committed alongside the ADR — one task → one commit. The base-pin check in phase 1 would have caught a "you switched branches mid-task" accident before any staging happened.
+The [dirty-tree policy](finalize.md#dirty-tree-policy) applies: the commit carries the agent's **staged** code edits (the agent `git add`ed them under the agent-stage contract) alongside jigc's promoted ADR — it commits the **git index**, not a working-tree sweep, so any unstaged or untracked WIP is left out and surfaced rather than swept in. One task → one commit. The base-pin check in phase 1 would have caught a "you switched branches mid-task" accident before any staging happened.
 
 After phase 7, `jigc start` returns to the "clean project" orientation ([bootstrap.md](bootstrap.md) → Orientation output examples 2) — the task is gone, the recent-finalizations list ticks up by one, the cascade is unchanged, the next `jigc start "<intent>"` mints the next task.
 
@@ -1782,7 +1782,7 @@ $ jigc task finalize migrate-changelog       # WITHOUT --approve → the review 
 $ jigc task finalize migrate-changelog --approve
 > promote changelog/changelog.md · retire CHANGELOG.md · adopt · commit (auto-provisioned commit doc, #4)
 >   docs(changelog): migrate CHANGELOG.md to managed shape        ← formulaic message, CLI-provided, NOT authored by the agent
-> committed: D CHANGELOG.md  A changelog/changelog.md  A .jigc/config/…  A .jigc/.gitignore   ← the migration set + jigc's own tracked config; NO unrelated user WIP swept in (#9a)
+> committed: D CHANGELOG.md  A changelog/changelog.md  A .jigc/config/…  A .jigc/.gitignore   ← the migration set + jigc's own tracked config; unrelated user WIP stays out — the general change-set scoping (finalize commits a scoped set, not a working-tree sweep), here the migration variant (#9a)
 ```
 
 The committed `changelog/changelog.md` carries all 12 releases, dateless ones rendered **with no date line** (no fabricated history), byte-stable; `jigc ingest` reports it adopted. The project-gamma run is the same path at ~50 releases.
@@ -1814,7 +1814,7 @@ $ jigc migrate changelog/changelog.md --as changelog   # a non-conformant file A
 3. **Dateless sources don't fabricate history (#6)** — a release with no foreign date renders with no date, not today's.
 4. **Write-time validation gives immediate feedback (#2/#3)** — id-from enum and item-field values are rejected at the authoring point, not deferred to finalize.
 5. **`remove-item` retracts a mistake, including a nested change-group (#1)** — no whole-task discard needed.
-6. **The migration commit doc is auto-provided (#4)**, the review gate carries a structural release-delta summary (#5), categories map-and-merge onto the enum (#7), the in-location squatter authors end-to-end (#8), and finalize commits only the migration set {promote + retire + jigc's own tracked config}, not unrelated user WIP (#9a).
+6. **The migration commit doc is auto-provided (#4)**, the review gate carries a structural release-delta summary (#5), categories map-and-merge onto the enum (#7), the in-location squatter authors end-to-end (#8), and finalize commits only the migration set {promote + retire + jigc's own tracked config}, leaving unrelated user WIP out. Since M30 this is the **general** finalize contract — the change-set scoping commits a scoped set, never a working-tree sweep ([finalize.md](finalize.md) → Dirty-tree policy) — of which the migration's fixed set is one variant, not a migration-only special case (#9a).
 7. **No new schemas, Framing A intact.** Every hardening fix is CLI/engine/guidance over the existing `changelog`/`commit` schemas; the strict parser stays the sole structural authority.
 
 ## 27. Migration generalized — a cross-referencing ADR corpus + a spec + a prd, one file at a time (M25)
