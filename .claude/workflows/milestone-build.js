@@ -306,9 +306,25 @@ function e2ePrompt() {
 // Read-only agents (reader/validator/code-reviewer/e2e) treat the reset as a harmless no-op.
 // Domain-agnostic: no milestone/project specifics — keep it that way (this harness is the
 // self-hosting distill target).
+//
+// TWO failure SHAPES, both transient, both must retry (M30 root cause — get this right):
+//   1. a THROW — agent() rejects (an error escaped the agent loop). Caught below.
+//   2. a NULL RETURN — agent() RETURNS `null` when the subagent dies on a terminal API
+//      error AFTER its own internal retries (e.g. a sustained 529), or the user skips it.
+//      This does NOT throw — so the original `try/return` let it sail straight through
+//      WITHOUT retrying, and the caller's `if (!r)` then halted the whole run on what was
+//      just a momentary overload (M30 lost an inc-4 executor to exactly this — a 529 null
+//      return that bypassed the 2 retries entirely). So a null return is retried here too.
+// ON EXHAUSTION we RETURN null (not throw): every caller already treats a falsy result as
+// a clean, structured halt ("returned no result") with prior committed work standing — far
+// better than throwing, which crashes the run and forfeits every committed increment. The
+// harness surfaces the underlying error separately in its failures channel, so visibility
+// is not lost. (Bonus: on a later RESUME, attempt 0 replays the cached null but the live
+// retry below then re-runs it — so a transient-failed call self-heals on resume.)
 const TRANSIENT_RETRIES = 2
 async function agentR(prompt, opts) {
   let lastErr
+  const lbl = (opts && opts.label) ? opts.label : 'agent'
   for (let attempt = 0; attempt <= TRANSIENT_RETRIES; attempt++) {
     // attempt 0 uses the prompt verbatim, so its (prompt, opts) stays cache-key-identical
     // on resume; only live retries carry the reset note (and are inherently uncached).
@@ -320,13 +336,22 @@ async function agentR(prompt, opts) {
       're-derive and report your structured result from the existing commit.'
     )
     try {
-      return await agent(prompt + note, opts)
+      const result = await agent(prompt + note, opts)
+      if (result != null) return result
+      // null return = the subagent died on a terminal error after its own retries, or was
+      // skipped. Same transient class as a throw — fall through to retry rather than return it.
+      lastErr = new Error('agent returned null (subagent died on a terminal error, or was skipped)')
+      log('null return on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ') — retrying')
     } catch (e) {
       lastErr = e
-      log('transient failure on ' + (opts && opts.label ? opts.label : 'agent') + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ') — ' + ((e && e.message) || e))
+      log('transient failure on ' + lbl + ' (attempt ' + (attempt + 1) + '/' + (TRANSIENT_RETRIES + 1) + ') — ' + ((e && e.message) || e))
     }
   }
-  throw lastErr
+  // Retries exhausted. Return null so the caller's existing halt path fires with a clean,
+  // structured reason and prior committed work stands — instead of throwing (which would
+  // crash the run and forfeit every committed increment).
+  log('exhausted ' + (TRANSIENT_RETRIES + 1) + ' attempts on ' + lbl + ' — halting cleanly (' + ((lastErr && lastErr.message) || lastErr) + ')')
+  return null
 }
 
 // ---- read the milestone's increments from the roadmap ----
