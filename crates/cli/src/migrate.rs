@@ -28,6 +28,7 @@ use crate::render;
 use crate::start;
 use anyhow::{Context, Result, bail};
 use engine::compose::ComposedWorkflow;
+use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
@@ -62,6 +63,48 @@ pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> ExitCode {
 /// hard-wired.
 fn migration_workflow(doctype: &str) -> String {
     format!("migrate-{doctype}")
+}
+
+/// Validate `--as <doctype>` against the available `migrate-<doctype>` workflows
+/// **before** any task is minted — so a typo'd or non-migratable doctype strands no
+/// task dir (the `read_workflow` mint-after-validate discipline: a rejected migrate
+/// leaves `jigc task list` unchanged, never an orphan that can neither compose nor
+/// finalize). The message distinguishes an *unknown* doctype from a *known-but-not-
+/// migratable* one (a schema ships but no `migrate-<doctype>` workflow does — e.g.
+/// `commit`, or methodology's `roadmap`) and names the migratable set.
+fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
+    let workflow_id = migration_workflow(doctype);
+    if pack
+        .list(PackResourceKind::Workflows)
+        .iter()
+        .any(|id| *id == ResourceId::from(workflow_id.as_str()))
+    {
+        return Ok(());
+    }
+
+    // The migratable set: every doctype with a shipped `migrate-<doctype>` workflow,
+    // address-sorted (`list` returns sorted ids).
+    let migratable: Vec<String> = pack
+        .list(PackResourceKind::Workflows)
+        .iter()
+        .filter_map(|id| id.as_str().strip_prefix("migrate-").map(str::to_owned))
+        .collect();
+    let set = migratable.join(", ");
+
+    let known = pack
+        .list(PackResourceKind::Schemas)
+        .iter()
+        .any(|id| *id == ResourceId::from(doctype));
+    let message = if known {
+        format!(
+            "doctype `{doctype}` exists but is not migratable (no `migrate-{doctype}` workflow)"
+        )
+    } else {
+        format!("unknown doctype `{doctype}`")
+    };
+    bail!(
+        "{message}; migratable doctypes: {set}\n  route: re-run `jigc migrate <path> --as <doctype>` with one of: {set}"
+    );
 }
 
 /// Normalize the verb's `path` arg to a clean repo-relative string for recording as the
@@ -103,6 +146,13 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
     }
     let repo_root = ctx.repo_root;
     let project_config = repo_root.join(".jigc").join("config");
+
+    // Validate `--as <doctype>` BEFORE minting: a missing `migrate-<doctype>` workflow
+    // is rejected here so a typo'd or non-migratable doctype strands no task dir (the
+    // bug this guards: minting first then discovering the missing workflow left a
+    // permanent orphan in `jigc task list`).
+    let pack = crate::pack::make_pack();
+    ensure_migratable(pack.as_ref(), doctype)?;
 
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.

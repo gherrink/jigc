@@ -325,6 +325,110 @@ fn migrate_adr_composes_the_shipped_workflow_with_seam_and_adr_author_spine() {
     );
 }
 
+/// The directory names under `.jigc/tasks/` (the single task-namespace enumeration) —
+/// empty when the dir is absent. Lets a test assert that a rejected `migrate` minted no
+/// orphan task.
+fn task_dirs(repo: &Path) -> Vec<String> {
+    let tasks = repo.join(".jigc").join("tasks");
+    let mut ids: Vec<String> = match fs::read_dir(&tasks) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_dir())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    ids.sort();
+    ids
+}
+
+#[test]
+fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
+    // The state-pollution bug: `jigc migrate <path> --as <X>` where no `migrate-<X>`
+    // workflow exists must reject with a clear message and mint NO task — the workflow
+    // existence is validated BEFORE the mint, so a typo strands no orphan in
+    // `jigc task list` (which can never compose or finalize).
+    let repo = TempDir::new("reject-repo");
+    let home = TempDir::new("reject-home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    ok_stdout(setup, "jigc setup");
+
+    fs::write(repo.path().join("STATE.md"), "# State\n").expect("write foreign file");
+
+    let before = task_dirs(repo.path());
+
+    // (a) An unknown doctype (a typo) — rejected, no task minted.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "STATE.md", "--as", "nonsense"],
+    );
+    assert!(
+        !out.status.success(),
+        "`jigc migrate --as nonsense` must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unknown doctype `nonsense`"),
+        "the message must name the unknown doctype; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("changelog") && stderr.contains("adr"),
+        "the message must name the migratable set; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        task_dirs(repo.path()),
+        before,
+        "a rejected migrate must mint NO task — `.jigc/tasks/` must be unchanged",
+    );
+
+    // (b) A known-but-not-migratable doctype (`commit` ships a schema but no
+    // `migrate-commit` workflow) — distinguished message, still no task minted.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "STATE.md", "--as", "commit"],
+    );
+    assert!(
+        !out.status.success(),
+        "`jigc migrate --as commit` must exit non-zero; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("commit") && stderr.contains("not migratable"),
+        "a known-but-not-migratable doctype must say so; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        task_dirs(repo.path()),
+        before,
+        "a rejected migrate of a known-but-not-migratable doctype must mint NO task",
+    );
+
+    // (c) The happy path still mints + stages: a VALID `--as changelog` composes and
+    // leaves exactly one task behind (the validate-before-mint guard didn't break it).
+    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+    );
+    ok_stdout(out, "jigc migrate CHANGELOG.md --as changelog");
+    assert_eq!(
+        task_dirs(repo.path()).len(),
+        before.len() + 1,
+        "a valid migrate must mint exactly one task",
+    );
+}
+
 /// Extract the `doc author adr --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
