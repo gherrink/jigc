@@ -1,0 +1,65 @@
+==================================================================
+### ARM: pass
+repo: /tmp/jigc-m29-flow31-CyNxuT   HEAD-before: 3
+compose.yaml service keys present: web db
+--- compose.yaml ---
+services:
+  web:
+    image: nginx
+    ports:
+      - "8080:80"
+  db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: secret
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "committed": {
+    "files": 1,
+    "hash": "925091d",
+    "manifest": [
+      {
+        "kind": "promoted",
+        "path": "docs/architecture/gateway.md"
+      }
+    ],
+    "promoted": [
+      "docs/architecture/gateway.md"
+    ],
+    "subject": "docs(arch-doc): document the gateway"
+  },
+  "findings": [
+    {
+      "check": "baseline-adopt",
+      "code": "file-state.baseline-adopt",
+      "location": {
+        "address": "docs/arch-doc:gateway.md",
+        "col": 1,
+        "line": 1
+      },
+      "message": "baseline adopted: `docs/arch-doc:gateway.md`",
+      "probe": "file-state",
+      "route": null,
+      "severity": "advisory"
+    },
+    {
+      "check": "baseline-adopt",
+      "code": "file-state.baseline-adopt",
+      "location": {
+        "address": "docs/commit:document-the-gateway.md",
+        "col": 1,
+        "line": 1
+      },
+      "message": "baseline adopted: `docs/commit:document-the-gateway.md`",
+      "probe": "file-state",
+      "route": null,
+      "severity": "advisory"
+    }
+  ],
+  "schema_version": 2
+}
+FINALIZE_EXIT=0
+HEAD-after: 4   (delta 1)
+PROMOTED: docs/architecture/gateway.md PRESENT
+--- git log -1 --format=%s ---
+docs(arch-doc): document the gateway

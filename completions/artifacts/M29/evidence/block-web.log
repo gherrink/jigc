@@ -1,0 +1,32 @@
+==================================================================
+### ARM: block-web
+repo: /tmp/jigc-m29-flow31-MbWUfI   HEAD-before: 3
+compose.yaml service keys present: db
+--- compose.yaml ---
+services:
+  db:
+    image: postgres
+    environment:
+      POSTGRES_PASSWORD: secret
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `compose.yaml#web` resolves to no symbol (`web` is absent from `compose.yaml`)",
+      "location": {
+        "address": "arch-doc:gateway#components/web/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 3   (delta 0)
+PROMOTED: docs/architecture/gateway.md ABSENT (nothing promoted)

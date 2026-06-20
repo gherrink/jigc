@@ -1,0 +1,32 @@
+==================================================================
+### ARM: block-db
+repo: /tmp/jigc-m29-flow31-BM3Krv   HEAD-before: 3
+compose.yaml service keys present: web
+--- compose.yaml ---
+services:
+  web:
+    image: nginx
+    ports:
+      - "8080:80"
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `compose.yaml#db` resolves to no symbol (`db` is absent from `compose.yaml`)",
+      "location": {
+        "address": "arch-doc:gateway#components/database/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 3   (delta 0)
+PROMOTED: docs/architecture/gateway.md ABSENT (nothing promoted)
