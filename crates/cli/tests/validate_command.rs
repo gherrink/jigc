@@ -334,6 +334,32 @@ fn validate_stale_anchor_surfaces_finding_and_exits_zero() {
         !stdout.contains("pack-probe-integrity"),
         "a healthy probe yields no pack-probe-integrity meta-finding; stdout:\n{stdout}",
     );
+    // The content finding is reported on a `blocking · …` line yet the run exits 0, so the
+    // output must clarify it is report-only at store scope and name where it actually gates —
+    // otherwise a human eyeballing `blocking` (or a script chaining `jigc validate && deploy`)
+    // misreads it (`design/validation.md` → Severity — report-only).
+    assert!(
+        stdout.contains("report-only at store scope (exit 0)")
+            && stdout.contains("jigc task validate")
+            && stdout.contains("jigc task finalize"),
+        "a content-only store sweep must clarify its findings are report-only (exit 0) and \
+         where they gate; stdout:\n{stdout}",
+    );
+
+    // The `--format json` surface carries a machine-readable report-only signal.
+    let out = jigc(repo.path(), &["validate", "--format", "json"]);
+    assert!(
+        out.status.success(),
+        "`jigc validate --format json` over a content-only store must exit 0",
+    );
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    assert_eq!(value["scope"], "store");
+    assert_eq!(
+        value["report_only"],
+        serde_json::Value::Bool(true),
+        "a content-only store sweep is report-only; json:\n{value}",
+    );
 }
 
 /// The injected-probe-failure half of the two-class exit rule (M18 inc-3 / T3): the probe
@@ -362,5 +388,26 @@ fn validate_injected_probe_failure_exits_non_zero() {
         stdout.contains("pack-probe-integrity"),
         "a crashing probe must surface a pack-probe-integrity meta-finding in the rendered \
          report; stdout:\n{stdout}",
+    );
+    // The probe-integrity path must stay clearly distinguished from a report-only content
+    // finding: it does not claim report-only, it says the sweep could not complete.
+    assert!(
+        stdout.contains("the sweep could not complete and exits"),
+        "the probe-integrity (exit-non-zero) path must be distinguished from a report-only \
+         content finding; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("report-only at store scope"),
+        "a probe-integrity run is not report-only — it must not claim so; stdout:\n{stdout}",
+    );
+
+    // The `--format json` surface marks the run not-report-only.
+    let out = jigc_with_probe(repo.path(), &["validate", "--format", "json"], &crasher);
+    let value: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
+    assert_eq!(
+        value["report_only"],
+        serde_json::Value::Bool(false),
+        "a probe-integrity run is not report-only; json:\n{value}",
     );
 }

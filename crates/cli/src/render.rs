@@ -269,25 +269,93 @@ fn explain_agent_text(tree: &ResolutionTree, pack_label: &str) -> String {
 /// `finalize`: validate previews what finalize blocks on). The exit code — which
 /// tracks `report.has_blocking()` — is the dispatcher's concern, not the renderer's.
 pub fn validation(format: Format, report: &ValidationReport) -> String {
-    validation_scoped(format, report, "no findings — the task validates clean")
-}
-
-/// Render a [`ValidationReport`] for the **store-scope** sweep (`jigc validate`):
-/// identical to [`validation`] except the clean line is store-scoped — the sweep is
-/// task-less (it validates the committed store, not a task), so it must not reuse the
-/// task-scoped "the task validates clean" wording (M26 shakedown #10b).
-pub fn validation_store(format: Format, report: &ValidationReport) -> String {
     validation_scoped(
         format,
         report,
-        "no findings — the committed store validates clean",
+        "no findings — the task validates clean",
+        None,
     )
 }
 
+/// Render a [`ValidationReport`] for the **store-scope** sweep (`jigc validate`): like
+/// [`validation`] but task-less, so (a) the clean line is store-scoped — it validates the
+/// committed store, not a task, and must not reuse the "the task validates clean" wording
+/// (M26 shakedown #10b) — and (b) it carries a **report-only clarification** so the
+/// exit-code contract is unambiguous from the output. The store sweep is detect-and-report:
+/// content findings are *listed on `blocking · …` lines* (the doc's **cascade** severity —
+/// what would gate at `finalize`) yet the run **exits 0**; only a `pack-probe-integrity.*`
+/// meta-finding exits non-zero (`design/validation.md` → Severity — report-only, with one
+/// exit-code exception). Without a trailer a human eyeballing `blocking`, or a script
+/// chaining `jigc validate && deploy`, misreads a report-only store finding as a gate
+/// failure. So the agent/human view appends a [`store_trailer`] naming where these findings
+/// actually gate, and the JSON adds a machine-readable `report_only` (+ `scope`) signal —
+/// the per-finding severity token is left untouched (it is meaningful) and the exit-code
+/// contract is unchanged.
+pub fn validation_store(format: Format, report: &ValidationReport) -> String {
+    // The one exit-non-zero exception: a `pack-probe-integrity.*` meta-finding means the
+    // probe could not be trusted, so the sweep cannot claim a result (it is *not* report-
+    // only). Keyed on the probe id directly, mirroring `run_validate_store`'s exit rule.
+    let probe_unreliable = report
+        .findings
+        .iter()
+        .any(|f| f.probe == "pack-probe-integrity");
+    match format {
+        Format::Json => {
+            let mut value = serde_json::to_value(report).expect("validation report serializes");
+            if let Some(object) = value.as_object_mut() {
+                object.insert(
+                    "scope".to_string(),
+                    serde_json::Value::String("store".to_string()),
+                );
+                object.insert(
+                    "report_only".to_string(),
+                    serde_json::Value::Bool(!probe_unreliable),
+                );
+            }
+            json(&value)
+        }
+        Format::Agent | Format::Human => {
+            let trailer = store_trailer(report, probe_unreliable);
+            validation_scoped(
+                format,
+                report,
+                "no findings — the committed store validates clean",
+                Some(&trailer),
+            )
+        }
+    }
+}
+
+/// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
+/// exit-0-with-`blocking`-findings is unambiguous. For content findings it states they are
+/// **report-only** at store scope (exit 0) and names where they actually gate; for the one
+/// `pack-probe-integrity.*` exception (`probe_unreliable`) it instead says the sweep could
+/// not complete and exits non-zero — keeping the two exit classes clearly distinguished.
+/// Ends with a newline so the caller appends the routing footer on its own line.
+fn store_trailer(report: &ValidationReport, probe_unreliable: bool) -> String {
+    if probe_unreliable {
+        "pack-probe-integrity finding(s) present — the sweep could not complete and exits \
+         non-zero; the store result is not trustworthy.\n"
+            .to_string()
+    } else {
+        let n = report.findings.len();
+        format!(
+            "{n} finding(s) — report-only at store scope (exit 0); these gate at \
+             `jigc task validate` / `jigc task finalize`.\n"
+        )
+    }
+}
+
 /// Shared body for the validation views: emit one line per finding (or `clean_line`
-/// when the report is empty) followed by the routing footer; JSON is the generic
-/// projection with no footer. The only scope-dependent surface is the clean line.
-fn validation_scoped(format: Format, report: &ValidationReport, clean_line: &str) -> String {
+/// when the report is empty), then an optional `trailer` (only when findings are present),
+/// followed by the routing footer; JSON is the generic projection with no footer. The
+/// scope-dependent surfaces are the clean line and the trailer.
+fn validation_scoped(
+    format: Format,
+    report: &ValidationReport,
+    clean_line: &str,
+    trailer: Option<&str>,
+) -> String {
     match format {
         Format::Json => json(report),
         Format::Agent | Format::Human => {
@@ -298,6 +366,9 @@ fn validation_scoped(format: Format, report: &ValidationReport, clean_line: &str
             } else {
                 for finding in &report.findings {
                     out.push_str(&finding_line(finding));
+                }
+                if let Some(trailer) = trailer {
+                    out.push_str(trailer);
                 }
             }
             out.push_str(ROUTING_FOOTER);
@@ -2092,6 +2163,75 @@ mod tests {
 
         // The store view must NOT reuse the task-scoped wording.
         assert!(!clean.contains("the task validates clean"));
+    }
+
+    /// The store sweep is **report-only** for content findings (exit 0) — a human or
+    /// script must be able to tell that from the output, so the per-finding cascade-severity
+    /// token (`blocking · doc-code…`) is not misread as a gate failure. The view appends a
+    /// clarifying trailer naming where these findings *actually* gate, and the JSON carries a
+    /// machine-readable `report_only` signal. A `pack-probe-integrity.*` meta-finding (the
+    /// one exit-non-zero exception) flips both surfaces so it stays clearly distinguished.
+    #[test]
+    fn render_validation_store_trailer_clarifies_report_only_vs_probe_integrity() {
+        use engine::finding::{Finding, Location, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+
+        // A blocking-cascade content finding at store scope is report-only (exit 0).
+        let content = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                "doc-code.symbol-exists",
+                "cited symbol `evict_lru` not found",
+                Some(Location::addressed("adr:cache#status/cites-code", 1, 1)),
+                None,
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &content);
+        insta::assert_snapshot!(agent, @r"
+        blocking · doc-code.symbol-exists — cited symbol `evict_lru` not found
+        1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        assert_eq!(validation_store(Format::Human, &content), agent);
+
+        // JSON carries the machine-readable report-only signal + the scope tag.
+        let json_out = validation_store(Format::Json, &content);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["scope"], "store");
+        assert_eq!(value["report_only"], serde_json::Value::Bool(true));
+        // The findings array is still the generic projection — no shape break.
+        assert_eq!(
+            value["findings"].as_array().expect("findings array").len(),
+            1
+        );
+
+        // A pack-probe-integrity meta-finding (the exit-non-zero exception) flips both
+        // surfaces: the trailer distinguishes it and `report_only` goes false.
+        let probe = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                "pack-probe-integrity.crash",
+                "the doc-code probe exited 2",
+                None,
+                None,
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &probe);
+        assert!(
+            agent.contains("the sweep could not complete and exits"),
+            "the probe-integrity path must be distinguished from a report-only content \
+             finding: {agent}",
+        );
+        assert!(
+            !agent.contains("report-only at store scope"),
+            "the probe-integrity trailer must not claim report-only: {agent}",
+        );
+        let json_out = validation_store(Format::Json, &probe);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["report_only"], serde_json::Value::Bool(false));
     }
 
     /// The dry-run manifest renders a titled block listing each entry by kind — an
