@@ -915,10 +915,11 @@ mod tests {
     fn step_implement_body_is_canonical() {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Steps, "implement");
-        insta::assert_snapshot!(body, @r###"
-        Implement the change directly in the working tree. When done, set the required
-        Conventional-Commits type — your editorial call on what this change does — then
-        stage the summary prose:
+        insta::assert_snapshot!(body, @"
+        Implement the change directly in the working tree. `git add` your code edits
+        before finalize — it commits only what you have staged. When done, set the
+        required Conventional-Commits type — your editorial call on what this change
+        does — then stage the summary prose:
 
         {{ cli.set-commit-type }}
         {{ cli.set-commit-summary }}
@@ -935,7 +936,7 @@ mod tests {
         {{ cli.create-adr }}
 
         {{fill: extra-guidance}}
-        "###);
+        ");
     }
 
     #[test]
@@ -954,11 +955,13 @@ mod tests {
     fn step_finalize_body_is_canonical() {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Steps, "finalize");
-        insta::assert_snapshot!(body, @r###"
-        Validate and commit the task as one logical commit:
+        insta::assert_snapshot!(body, @"
+        Validate and commit the task as one logical commit. Make sure your code edits
+        are staged (`git add`) first — finalize commits only the staged set plus the
+        docs it manages:
 
         {{ cli.finalize-task }}
-        "###);
+        ");
     }
 
     /// list(Config) carries the `defaults` resource whose `default-workflow`

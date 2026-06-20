@@ -924,7 +924,7 @@ mod tests {
           - hook: { event: SessionStart, run: "jigc start" }
         allowlist:
           file: .claude/settings.json
-          permit: ["jigc *"]
+          permit: ["jigc *", "git add *"]
         spawn:
           template: "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`"
         "###);
@@ -973,8 +973,8 @@ mod tests {
         );
         assert_eq!(
             profile.allowlist.permit,
-            vec!["jigc *".to_string()],
-            "the allowlist permits the `jigc *` command pattern",
+            vec!["jigc *".to_string(), "git add *".to_string()],
+            "the allowlist permits the `jigc *` command pattern and `git add *` staging",
         );
 
         let spawn = profile
@@ -1368,15 +1368,16 @@ mod tests {
             "the permit appears exactly once — no duplicate, got:\n{after_first}",
         );
 
-        insta::assert_snapshot!(after_first, @r###"
+        insta::assert_snapshot!(after_first, @r#"
         {
           "permissions": {
             "allow": [
-              "jigc *"
+              "jigc *",
+              "git add *"
             ]
           }
         }
-        "###);
+        "#);
     }
 
     /// Merging into a `.claude/settings.json` that already holds an unrelated
@@ -1433,7 +1434,7 @@ mod tests {
         let after_second = std::fs::read_to_string(&settings).expect("read after second");
         assert_eq!(after, after_second, "re-merge is byte-identical");
 
-        insta::assert_snapshot!(after, @r###"
+        insta::assert_snapshot!(after, @r#"
         {
           "enabledPlugins": {
             "rust-analyzer-lsp@claude-plugins-official": true
@@ -1441,11 +1442,12 @@ mod tests {
           "permissions": {
             "allow": [
               "Bash(ls:*)",
-              "jigc *"
+              "jigc *",
+              "git add *"
             ]
           }
         }
-        "###);
+        "#);
     }
 
     /// First hook install into a project with **no** `.claude/settings.json`
@@ -1528,7 +1530,7 @@ mod tests {
             "re-running both merges is byte-identical"
         );
 
-        insta::assert_snapshot!(after, @r###"
+        insta::assert_snapshot!(after, @r#"
         {
           "hooks": {
             "SessionStart": [
@@ -1544,11 +1546,12 @@ mod tests {
           },
           "permissions": {
             "allow": [
-              "jigc *"
+              "jigc *",
+              "git add *"
             ]
           }
         }
-        "###);
+        "#);
     }
 
     /// An unknown assistant name is a clear not-found error, never a panic.

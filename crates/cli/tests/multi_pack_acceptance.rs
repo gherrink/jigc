@@ -386,9 +386,10 @@ add a thing
 The relevant code paths are not yet known. Inspect the codebase to confirm
 scope before implementing.
 
-Implement the change directly in the working tree. When done, set the required
-Conventional-Commits type — your editorial call on what this change does — then
-stage the summary prose:
+Implement the change directly in the working tree. `git add` your code edits
+before finalize — it commits only what you have staged. When done, set the
+required Conventional-Commits type — your editorial call on what this change
+does — then stage the summary prose:
 
 Run: `jigc doc set-field commit:add-a-thing#type --value <COMMIT_TYPE> --task add-a-thing`
 Run: `jigc doc set-slot commit:add-a-thing#summary --from-file - --task add-a-thing`
@@ -408,7 +409,9 @@ If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can
 explain what changes (nothing appears if it supersedes none).
 
-Validate and commit the task as one logical commit:
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages:
 
 Run: `jigc task finalize add-a-thing`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.

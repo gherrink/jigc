@@ -4,6 +4,6 @@ inject:
   - hook: { event: SessionStart, run: "jigc start" }
 allowlist:
   file: .claude/settings.json
-  permit: ["jigc *"]
+  permit: ["jigc *", "git add *"]
 spawn:
   template: "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`"

@@ -1,3 +1,5 @@
-Validate and commit the task as one logical commit:
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages:
 
 {{ cli.finalize-task }}

@@ -86,7 +86,7 @@ fn adapters_dir_with_template(tag: &str, template: &str) -> TempDir {
         \x20 - hook: {{ event: SessionStart, run: \"jigc start\" }}\n\
          allowlist:\n\
         \x20 file: .claude/settings.json\n\
-        \x20 permit: [\"jigc *\"]\n\
+        \x20 permit: [\"jigc *\", \"git add *\"]\n\
          spawn:\n\
         \x20 template: {template:?}\n",
     );
