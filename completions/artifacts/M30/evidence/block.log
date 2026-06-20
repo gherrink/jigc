@@ -1,6 +1,6 @@
 ==================================================================
 ### ARM: block (Fact 3 — an unstaged cited symbol blocks finalize)
-repo: /tmp/jigc-m30-block-qsPArp   HEAD-before: 2
+repo: /tmp/jigc-m30-block-Ciiw44   HEAD-before: 2
 cited item address: arch-doc:gateway#components/widget/implemented-by   anchor: widget.rs#render_widget
 --- widget.rs (working tree — render_widget present but NOT staged) ---
 pub fn placeholder() {}

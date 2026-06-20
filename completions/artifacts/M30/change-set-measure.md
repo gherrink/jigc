@@ -18,13 +18,13 @@ hits, now with the G5 pack embedded.
 
 | | |
 |---|---|
-| `jigc` sha256 | `aa5bda96f93481500e57732bd2e7434de838bb6ab67f65d0393f7d3ebd535a70` |
+| `jigc` sha256 | `43f06ab131aa5a7fec171825042adb09dcf91b700aabf9728ed03492031bc8b5` |
 | `doc-code` probe sha256 | `530dd89f32d7c6a6afbb617b7672744897316d9ecb243a6cd06710ec22302398` |
-| HEAD commit | Built at `bd5849b` (M30 Inc-4 T3 — `flow32_acceptance.rs` + flow 32 prose; the G5 pack/adapter edit landed Inc-4 T1, the doc fold-back Inc-4 T2, the narrowing logic Inc 1–3). This T4 artifact commit adds **only** `completions/artifacts/M30/` (this file + `evidence/`) — no Rust source change — so the pinned binary stays **byte-identical to a fresh `cargo install` at final HEAD**. |
+| HEAD commit | Built at `427475f` (M30 milestone-audit fix — the manifest renders a `git add`-ed new file as `added`, not the retired `swept (was untracked)`; the cold-start install-footprint fix landed `f38d2e1`, the G5 agent-stages pack Inc-4 T1, the narrowing logic Inc 1–3). Both audit fixes changed the `jigc` binary, so this run **re-pins** the binary and **refreshes** the captured facts (the old `aa5bda9…` sha and the stale `swept (was untracked)` evidence are retired). This re-pin commit adds **only** `completions/artifacts/M30/` (this file + `evidence/`) — no Rust source change — so the pinned binary stays **byte-identical to a fresh `cargo install` at final HEAD**. |
 | Built | `cargo install --path crates/cli --force` (release; `build.rs` builds the eight-grammar `doc-code` probe — Rust + TypeScript/TSX + JavaScript/JSX + Python + PHP + bash + CSS + YAML — and embeds it via `OUT_DIR/doc-code`, plus the now-G5 dev pack); `rustc 1.95.0` |
-| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` placed `jigc` at `~/.cargo/bin/jigc`; it was copied to `~/.local/bin/jigc`; a `jigc setup` run from **each** bin dir confirmed that dir's `doc-code` sibling (the extract is a **no-op** when byte-identical — G5 changed only the pack YAML embedded in `jigc`, not the `doc-code` probe's grammar set, so the sibling stays the M29 eight-grammar probe). **All four sha256 identical** — `jigc` identical across both dirs (`aa5bda9…`), `doc-code` identical across both dirs (`530dd89…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
-| Fresh-build cross-check | The relocated `jigc` is **byte-identical** to the freshly-`cargo install`-built `target/release/jigc` (same `aa5bda9…`); the `doc-code` siblings are byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`530dd89…`) — i.e. the pinned binaries match a fresh `cargo install` at this HEAD. |
-| Size | release `jigc` **13.69 MB** (13 689 424 B), `doc-code` **8.49 MB** (8 486 360 B). The G5 pack edit (three step bodies + one adapter permit) nudged `jigc` from M29's 13.66 MB; `doc-code` is unchanged from M29 (the probe binary didn't change). The size guard's **90 MiB** ceiling ([`crates/cli/tests/cargo_install_probe.rs`](../../../crates/cli/tests/cargo_install_probe.rs)) protects the **debug** `CARGO_BIN_EXE_jigc` (**71.89 MiB**, 75 386 064 B); still well under. |
+| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` placed `jigc` at `~/.cargo/bin/jigc`; it was copied to `~/.local/bin/jigc`; a `jigc setup` run from **each** bin dir confirmed that dir's `doc-code` sibling (the extract is a **no-op** when byte-identical — the audit fixes changed only `jigc` source, not the `doc-code` probe's grammar set, so the sibling stays the M29 eight-grammar probe). **All four sha256 identical** — `jigc` identical across both dirs (`43f06ab…`), `doc-code` identical across both dirs (`530dd89…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
+| Fresh-build cross-check | The relocated `jigc` is **byte-identical** to the freshly-`cargo install`-built `target/release/jigc` (same `43f06ab…`); the `doc-code` siblings are byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`530dd89…`) — i.e. the pinned binaries match a fresh `cargo install` at this HEAD. |
+| Size | release `jigc` **13.69 MB** (13 688 808 B), `doc-code` **8.49 MB** (8 486 360 B). The two audit fixes (the cold-start install footprint + the `added`-manifest tag) left `jigc` essentially unchanged from M30 Inc-4's 13.69 MB; `doc-code` is unchanged from M29 (the probe binary didn't change). The size guard's **90 MiB** ceiling ([`crates/cli/tests/cargo_install_probe.rs`](../../../crates/cli/tests/cargo_install_probe.rs)) protects the **debug** `CARGO_BIN_EXE_jigc` (**71.87 MiB**, 75 358 152 B); still well under. |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (**no** `JIGC_PACK_DIR`) and the `doc-code` probe resolved **as the sibling beside the installed binary** (**no** `JIGC_DOC_CODE_PROBE` — the driver `unset`s both) — the production probe-resolution path (the M20 embed/sibling). |
 | Driver | [`evidence/drive.sh`](evidence/drive.sh) — two detached scratch repos + isolated `$HOME` per arm; logs in [`evidence/`](evidence/). |
 
@@ -56,7 +56,7 @@ Full logs per arm in [`evidence/`](evidence/).
 
 ## The three measured facts — each observed on the installed binary
 
-All three observed by running `~/.local/bin/jigc` (sha256 `aa5bda9…`) from `PATH`, **no
+All three observed by running `~/.local/bin/jigc` (sha256 `43f06ab…`) from `PATH`, **no
 `JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE`**, resolving the `doc-code` sibling (`530dd89…`) beside it.
 
 ### Fact 1 — finalize commits only the declared change-set ([`evidence/scope.log`](evidence/scope.log))
@@ -65,9 +65,9 @@ Pre-finalize `git status --porcelain`: `A  feature.rs` (staged), ` M README.md` 
 tracked), `?? scratch.txt` (untracked), `?? .jigc/` (jigc's own). `jigc task finalize scope-the-set`:
 
 ```
-finalized 35132b9 — feat(cache): scope the declared change set
-  swept (was untracked) .jigc/.gitignore
-  swept (was untracked) feature.rs
+finalized 28bb9d8 — feat(cache): scope the declared change set
+  added .jigc/.gitignore
+  added feature.rs
   2 files committed
 ```
 
@@ -75,7 +75,9 @@ finalized 35132b9 — feat(cache): scope the declared change set
 **only** `feature.rs` (the staged task edit) and `.jigc/.gitignore` (jigc's own config file) — **not**
 `scratch.txt`, **not** `README.md`. `git show HEAD:README.md` is the unedited baseline (`hello`): the
 unrelated local edit never landed. The staged index plus jigc's own files committed; everything else
-stayed in the working tree.
+stayed in the working tree. The manifest now tags both included files **`added`** (the post-audit
+`427475f` wording — a `git add`-ed new file, porcelain `A`, is an *included* member, not the retired,
+inaccurate `swept (was untracked)`).
 
 ### Fact 2 — finalize names the left-out set ([`evidence/scope.log`](evidence/scope.log))
 
@@ -131,7 +133,7 @@ and ran the probe over the **index**, not the working tree: validated reality ==
 ## Verdict — done-bar met
 
 Per-task `finalize` commits **exactly the declared change-set** and **surfaces the rest** —
-**measured on the actually-pinned, `cargo install`-built binary** (`jigc` `aa5bda9…`, `doc-code`
+**measured on the actually-pinned, `cargo install`-built binary** (`jigc` `43f06ab…`, `doc-code`
 `530dd89…`, both identical across `~/.local/bin` + `~/.cargo/bin` and matching a fresh build at HEAD),
 resolving the probe through the **production sibling path** with **no env overrides**. (1) The commit
 carries **only** the staged task edit + jigc's own files, never the unrelated untracked or

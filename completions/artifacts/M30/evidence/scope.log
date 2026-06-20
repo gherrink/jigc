@@ -1,6 +1,6 @@
 ==================================================================
 ### ARM: scope (Facts 1 + 2 — commits only the declared change-set, names the rest)
-repo: /tmp/jigc-m30-scope-i6avgG   HEAD-before: 1
+repo: /tmp/jigc-m30-scope-qjks77   HEAD-before: 1
 --- git status --porcelain (pre-finalize) ---
  M README.md
 A  feature.rs
@@ -10,9 +10,9 @@ A  feature.rs
 advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:scope-the-set.md`
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 
-finalized 35132b9 — feat(cache): scope the declared change set
-  swept (was untracked) .jigc/.gitignore
-  swept (was untracked) feature.rs
+finalized 28bb9d8 — feat(cache): scope the declared change set
+  added .jigc/.gitignore
+  added feature.rs
   2 files committed
   left-out (unstaged/untracked — git add to include):
     README.md
