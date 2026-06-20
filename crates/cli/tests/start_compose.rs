@@ -109,8 +109,9 @@ If a decision is warranted, create an ADR and author its slots:
 
 Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
-If your decision supersedes an earlier one, here is that decision for
-reference — make your consequences explain what changes:
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
 
 Validate and commit the task as one logical commit:
 
@@ -1036,16 +1037,23 @@ fn form_d_architecture_documentation_mints_and_emits_the_create_gate_author_slot
 
     // The `overview` prose slot emits as exactly one `<<author: …>>` line. The
     // `arch-doc` role is unbound on this first compose (the doc is not created yet),
-    // so the slot address resolves empty — `<<author: >>` — exactly as prd's slots
-    // do; the load-bearing fact is that the overview author directive composes (one
-    // and only one), not the resolved fragment text.
-    let author_lines = stdout
+    // so the bound slug is not knowable — but the directive still names the slot
+    // from the path's role + `#fragment` (`<<author: arch-doc#overview>>`) rather
+    // than emitting an empty target the agent must guess into; a re-compose after
+    // the create fills in the resolved slug.
+    let author_lines: Vec<&str> = stdout
         .lines()
-        .filter(|l| l.trim_start().starts_with("<<author:"))
-        .count();
+        .map(str::trim_start)
+        .filter(|l| l.starts_with("<<author:"))
+        .collect();
     assert_eq!(
-        author_lines, 1,
+        author_lines.len(),
+        1,
         "author-arch-doc must emit exactly one `<<author: …>>` slot line (the overview); got:\n{stdout}",
+    );
+    assert_eq!(
+        author_lines[0], "<<author: arch-doc#overview>>",
+        "the unbound overview author directive must name the `#overview` slot, not emit an empty target; got:\n{stdout}",
     );
 
     // The doc-level `cites` set-field guidance line composes (the n→n cites→adr edge).

@@ -959,12 +959,37 @@ fn emit_author_line(
     let address = match path.resolve(ctx)? {
         Resolution::Address { address } | Resolution::Content { address } => address.to_string(),
         Resolution::Scalar { value } => value,
-        Resolution::Absent => String::new(),
+        // An unbound role (a doc created in-task is not yet bound on this compose)
+        // would otherwise emit `<<author: >>` — an empty target the agent must
+        // guess into. Name the slot from the path's own role + `#fragment` (e.g.
+        // `arch-doc#overview`) so the directive still says which slot to author;
+        // a re-compose after the create fills in the resolved slug.
+        Resolution::Absent => pending_author_address(&path),
         Resolution::Catalog { .. } | Resolution::Store { .. } | Resolution::Milestone { .. } => {
             return Err(collection_not_lone());
         }
     };
     Ok(Some(format!("<<author: {address}>>")))
+}
+
+/// The best-effort slot reference for an `<<author: …>>` directive whose role is
+/// still **unbound** (the target doc is created in-task, so the bound address —
+/// with its slug — is not knowable on this compose). Built from the path's own
+/// `.relation` hops + `#fragment` (the `task.` root dropped): `task.arch-doc#overview`
+/// → `arch-doc#overview`. Names the slot to author into rather than emitting an
+/// empty target; the resolved slug arrives on a re-compose once the doc exists.
+fn pending_author_address(path: &crate::data_value::Path) -> String {
+    use crate::data_value::Relation;
+    let role = path
+        .hops
+        .iter()
+        .map(Relation::as_str)
+        .collect::<Vec<_>>()
+        .join(".");
+    match &path.fragment {
+        Some(fragment) => format!("{role}#{fragment}"),
+        None => role,
+    }
 }
 
 /// Parse a data-value path string into a [`Path`](crate::data_value::Path),
@@ -2601,6 +2626,27 @@ If your decision supersedes an earlier one, here is that decision:
         "###);
     }
 
+    /// An `<<author: …>>` directive on a **declared-but-unbound** role names the
+    /// slot from the path's own role + `#fragment` rather than emitting an empty
+    /// `<<author: >>` target the agent must guess into. The doc is created in-task,
+    /// so the bound slug is not knowable on this compose — but the slot (`#fragment`)
+    /// is, and a re-compose after the create fills the resolved address in.
+    #[test]
+    fn emit_unbound_author_names_the_slot() {
+        let ctx = emit_ctx();
+        let catalog = CommandCatalog {
+            commands: std::collections::BTreeMap::new(),
+        };
+        // `decision` is declared-but-unbound in `emit_ctx`.
+        let emitted = emit_step_body(
+            "<<author: {{ task.decision#consequences }}>>\n",
+            &ctx,
+            &catalog,
+        )
+        .expect("emits");
+        assert_eq!(emitted, "<<author: decision#consequences>>\n");
+    }
+
     /// Core done-criterion (M23 inc-1 T1): the **source seam** — a lone
     /// `{{source}}` read-only context placeholder surfaces the foreign bytes fed
     /// on [`ComposeContext::source`] **verbatim** into the emitted step body, and
@@ -3963,8 +4009,9 @@ scope before implementing.
     /// The shipped `superseded-context` step body — kept in sync with
     /// `crates/cli/pack/steps/superseded-context.yaml` (also front-matter-less).
     const STEP_SUPERSEDED: &str = "\
-If your decision supersedes an earlier one, here is that decision for
-reference — make your consequences explain what changes:
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
 {{ @task.decision.supersedes#decision }}
 ";
 
@@ -3992,8 +4039,9 @@ reference — make your consequences explain what changes:
         assert_eq!(superseded.id, "superseded-context");
         assert_eq!(superseded.body, STEP_SUPERSEDED);
         insta::assert_snapshot!(superseded.body, @r###"
-        If your decision supersedes an earlier one, here is that decision for
-        reference — make your consequences explain what changes:
+        If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+        superseded decision then appears below for reference, so your consequences can
+        explain what changes (nothing appears if it supersedes none).
         {{ @task.decision.supersedes#decision }}
         "###);
 
@@ -4950,8 +4998,9 @@ reference — make your consequences explain what changes:
 
         Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
-        If your decision supersedes an earlier one, here is that decision for
-        reference — make your consequences explain what changes:
+        If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+        superseded decision then appears below for reference, so your consequences can
+        explain what changes (nothing appears if it supersedes none).
 
         Validate and commit the task as one logical commit:
 

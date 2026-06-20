@@ -404,8 +404,9 @@ If a decision is warranted, create an ADR and author its slots:
 
 Run: `jigc doc create adr --title <TITLE> --task add-a-thing`
 
-If your decision supersedes an earlier one, here is that decision for
-reference — make your consequences explain what changes:
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
 
 Validate and commit the task as one logical commit:
 

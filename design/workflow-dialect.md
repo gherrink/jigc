@@ -172,8 +172,9 @@ Read the spec for this task:
 
 ```markdown
 # steps/superseded-context.md   — a plain step: surfaces the decision this task supersedes, if any
-If your decision supersedes an earlier one, here is that decision for reference —
-make your consequences explain what changes:
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
 {{ @task.decision.supersedes#decision }}
 ```
 

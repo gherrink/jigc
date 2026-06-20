@@ -272,8 +272,9 @@ The agent **re-composes** to pick up context now that the edge exists ([workflow
 $ jigc start --task shared-redis-session-cache
 ...
 ## superseded-context
-If your decision supersedes an earlier one, here is that decision for reference —
-make your consequences explain what changes:
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
 > A single in-memory node keeps session lookups sub-millisecond and avoids a
 > network hop; acceptable because sessions are cheap to reconstruct on a cold node.
 
