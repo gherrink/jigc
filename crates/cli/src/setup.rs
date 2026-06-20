@@ -345,10 +345,14 @@ pub enum InstallCommit {
     /// Nothing to commit — a re-run over an unchanged install (a clean idempotent
     /// no-op, never an empty commit).
     Nothing,
-    /// No commit was made: not a git repo, no commit identity, or git declined. The
-    /// install writes still succeeded — the commit is a convenience, never a gate
-    /// (`design/assistant-adapter.md` → setup is the CLI writing install artifacts; it
-    /// degrades gracefully exactly as the writes do).
+    /// No commit was made for a **benign** reason: not a git repo, an unborn HEAD, no
+    /// committable install footprint, or git could not be spawned. The install writes
+    /// still succeeded and nothing was staged-but-orphaned — the commit is a
+    /// convenience here, so it degrades gracefully exactly as the writes do
+    /// (`design/assistant-adapter.md` → setup is the CLI writing install artifacts). A
+    /// genuine commit **rejection** (e.g. no identity, leaving the staged files
+    /// uncommitted) is NOT this — [`commit_install`] surfaces it as an error so
+    /// [`install`] can fail loudly rather than print an unqualified success.
     Skipped,
 }
 
@@ -526,8 +530,24 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
 
     // 7. Commit setup's own install files as a dedicated commit (M26 shakedown), so the
     //    user's first `jigc finalize` doesn't sweep the scaffolding into their first
-    //    feature commit. Best-effort + idempotent; never gates the install.
-    let install_commit = commit_install(repo_root, &line_file, &allowlist_file);
+    //    feature commit. Idempotent; benign skips (no repo / unborn HEAD / git absent)
+    //    degrade gracefully — but a genuine commit *rejection* (e.g. no git identity)
+    //    leaves the install staged-but-uncommitted, so it fails loudly with an actionable
+    //    finding rather than masquerading as a clean success (mirrors `finalize`'s
+    //    identical git-identity failure).
+    let install_commit =
+        commit_install(repo_root, &line_file, &allowlist_file).map_err(|git_err| {
+            Finding::block(
+                "setup.install-commit",
+                format!(
+                    "the jigc install files were written and staged, but `git commit` was rejected \
+                 (no install commit was made):\n{git_err}"
+                ),
+                "tell git who you are — set `git config user.email \"you@example.com\"` and \
+             `git config user.name \"Your Name\"` — then re-run `jigc setup` to commit the \
+             staged install files",
+            )
+        })?;
 
     Ok(SetupSummary {
         line_file,
@@ -562,15 +582,23 @@ fn install_tracked_paths(line_file: &str, allowlist_file: &str) -> Vec<String> {
 /// unrelated changes the user already staged stay staged and untouched.
 ///
 /// **Idempotent:** a re-run over an unchanged install stages no net change →
-/// [`InstallCommit::Nothing`] (no empty commit). **Graceful:** not-a-git-repo, no commit
-/// identity, or a git that declines → [`InstallCommit::Skipped`] (the install writes
-/// already succeeded; the commit is a convenience, never a gate). Uses `--no-verify`: the
+/// `Ok(`[`InstallCommit::Nothing`]`)` (no empty commit). **Graceful skip** for the
+/// benign cases — not-a-git-repo, an unborn HEAD, or a git that could not be spawned →
+/// `Ok(`[`InstallCommit::Skipped`]`)` (nothing was staged-but-orphaned; the commit is a
+/// convenience there). But a genuine commit **rejection** (git ran and declined — e.g.
+/// no `user.email`/`user.name`) leaves the install files staged-but-uncommitted, so it
+/// returns `Err(<git's rejection>)` for [`install`] to surface as a loud blocking
+/// finding rather than a silent skip behind a success banner. Uses `--no-verify`: the
 /// only hook present is the warn-only `pre-commit` setup just installed, and running the
 /// doc↔code backstop against this commit is pointless (it carries install artifacts, not
 /// managed docs) — and the hook must not self-trigger on the very commit that installs
 /// it. (This is setup's install commit, distinct from `finalize`'s never-`--no-verify`
 /// commit of managed work, which the user's hooks *are* policy for.)
-fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> InstallCommit {
+fn commit_install(
+    repo_root: &Path,
+    line_file: &str,
+    allowlist_file: &str,
+) -> Result<InstallCommit, String> {
     // Require an existing HEAD. This both covers the not-a-git-repo case (`rev-parse`
     // fails → Skipped) and, on an unborn HEAD (a brand-new repo with no commits), leaves
     // the install files for the user's first finalize rather than minting the repo's first
@@ -581,7 +609,7 @@ fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> In
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
-        return InstallCommit::Skipped;
+        return Ok(InstallCommit::Skipped);
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.
@@ -591,7 +619,7 @@ fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> In
         .filter(|p| !git_path_ignored(repo_root, p))
         .collect();
     if paths.is_empty() {
-        return InstallCommit::Skipped;
+        return Ok(InstallCommit::Skipped);
     }
 
     // Stage exactly those paths — never a blanket `git add -A`.
@@ -599,7 +627,7 @@ fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> In
     add.extend(paths.iter().map(String::as_str));
     match git_output(repo_root, add) {
         Some(out) if out.status.success() => {}
-        _ => return InstallCommit::Skipped,
+        _ => return Ok(InstallCommit::Skipped),
     }
 
     // Nothing staged among our paths (a re-run over an unchanged install) → clean no-op.
@@ -612,7 +640,7 @@ fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> In
         .map(|o| o.status.success())
         .unwrap_or(false)
     {
-        return InstallCommit::Nothing;
+        return Ok(InstallCommit::Nothing);
     }
 
     // Commit only our paths: a pathspec-limited commit commits exactly those files and
@@ -621,7 +649,17 @@ fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> In
     commit.extend(paths.iter().map(String::as_str));
     match git_output(repo_root, commit) {
         Some(out) if out.status.success() => {}
-        _ => return InstallCommit::Skipped,
+        // git ran and REJECTED the commit (e.g. no `user.email`/`user.name`). The files
+        // are now staged-but-uncommitted — unlike the benign skips above, this must not
+        // hide behind a success banner. Surface git's own rejection (its "tell me who you
+        // are" guidance) for `install` to turn into a loud blocking finding.
+        Some(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(format!("{}{}", stdout.trim(), stderr.trim()));
+        }
+        // git could not be spawned at all — benign skip (the writes still succeeded).
+        None => return Ok(InstallCommit::Skipped),
     }
 
     // Resolve the short sha of the commit just made, for the success surface.
@@ -629,12 +667,12 @@ fn commit_install(repo_root: &Path, line_file: &str, allowlist_file: &str) -> In
         Some(out) if out.status.success() => {
             let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if sha.is_empty() {
-                InstallCommit::Skipped
+                Ok(InstallCommit::Skipped)
             } else {
-                InstallCommit::Committed(sha)
+                Ok(InstallCommit::Committed(sha))
             }
         }
-        _ => InstallCommit::Skipped,
+        _ => Ok(InstallCommit::Skipped),
     }
 }
 

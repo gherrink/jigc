@@ -659,6 +659,178 @@ fn setup_writes_compose_embedded_methodology_marker() {
     );
 }
 
+/// Run the built `jigc setup` with `cwd = repo` and **no usable git identity**:
+/// `$HOME = home` (an empty temp dir, no `~/.gitconfig`), global/system config
+/// neutralized to `/dev/null`, and the `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars
+/// cleared — so the install commit is rejected by git ("tell me who you are").
+fn run_setup_no_identity(repo: &Path, home: &Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("setup")
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env_remove("GIT_AUTHOR_NAME")
+        .env_remove("GIT_AUTHOR_EMAIL")
+        .env_remove("GIT_COMMITTER_NAME")
+        .env_remove("GIT_COMMITTER_EMAIL")
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Run `git -C <root> <args>` with an **inline, non-persisted** throwaway identity
+/// (`-c user.email=… -c user.name=…`) and global/system config neutralized — used to
+/// seed an initial commit so HEAD exists without writing any identity into the repo
+/// config. Asserts success.
+fn git_inline_identity(root: &Path, args: &[&str]) {
+    let mut full = vec!["-c", "user.email=seed@example.com", "-c", "user.name=Seed"];
+    full.extend_from_slice(args);
+    let out = Command::new("git")
+        .args(&full)
+        .current_dir(root)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .expect("run git with an inline identity");
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Seed an initial commit so `HEAD` exists (a *born* HEAD — the bug's precondition;
+/// an unborn HEAD is the intended graceful-skip path). The seed identity is passed
+/// inline and is NOT persisted to the repo config, so the subsequent `jigc setup`
+/// still runs against a repo with no usable identity.
+fn seed_initial_commit(root: &Path) {
+    fs::write(root.join("README.md"), "seed\n").expect("seed README");
+    git_inline_identity(root, &["add", "README.md"]);
+    git_inline_identity(root, &["commit", "-q", "-m", "seed"]);
+}
+
+/// REGRESSION (dogfood): `jigc setup` must NOT print an unqualified success and exit 0
+/// when its install commit is silently rejected (e.g. no git identity), leaving the
+/// install files staged-but-uncommitted. Over a repo with a born HEAD but no usable
+/// identity, the rejected install commit must fail loudly — exit non-zero with an
+/// actionable message naming the rejected `git commit` — mirroring `finalize`'s
+/// identical git-identity failure. The install files stay staged so a re-run (once the
+/// identity is configured) commits them (recoverable, not lost).
+#[test]
+fn setup_fails_loudly_when_install_commit_is_rejected() {
+    let repo = TempDir::new("commit-rejected");
+    let home = TempDir::new("home");
+    mark_repo(repo.path());
+    seed_initial_commit(repo.path());
+
+    let head_before = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["-C"])
+            .arg(repo.path())
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse HEAD")
+            .stdout,
+    )
+    .trim()
+    .to_string();
+
+    let out = run_setup_no_identity(repo.path(), home.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // (1) NOT an unqualified exit-0 success.
+    assert!(
+        !out.status.success(),
+        "a rejected install commit must NOT report an unqualified exit-0 success; \
+         got exit {:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        out.status,
+    );
+
+    // (2) The message names the cause — the rejected `git commit` — actionably.
+    assert!(
+        stderr.contains("git commit") && stderr.contains("rejected"),
+        "the failure must name the rejected git commit; got stderr:\n{stderr}",
+    );
+
+    // (3) No install commit landed — HEAD is unchanged.
+    let head_after = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["-C"])
+            .arg(repo.path())
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .expect("rev-parse HEAD")
+            .stdout,
+    )
+    .trim()
+    .to_string();
+    assert_eq!(
+        head_before, head_after,
+        "no install commit must have landed when the commit was rejected",
+    );
+
+    // (4) The install files are left STAGED — recoverable: configure an identity and
+    //     re-run `jigc setup` to commit them. (The writes themselves succeeded.)
+    let staged = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["-C"])
+            .arg(repo.path())
+            .args(["diff", "--cached", "--name-only"])
+            .output()
+            .expect("diff --cached")
+            .stdout,
+    )
+    .into_owned();
+    assert!(
+        staged.lines().any(|l| l == "CLAUDE.md"),
+        "the install files must be left staged for a re-run; staged:\n{staged}",
+    );
+}
+
+/// The happy path the fix must NOT break: over a repo with a usable git identity and a
+/// born HEAD, `jigc setup` self-commits its install files and the success banner names
+/// the install commit (`- install commit → <sha>`), exiting 0.
+#[test]
+fn setup_self_commits_install_with_a_git_identity() {
+    let repo = TempDir::new("commit-ok");
+    let home = TempDir::new("home");
+    mark_repo(repo.path());
+    // A usable local identity (persisted to the repo config) + a born HEAD.
+    git_inline_identity(repo.path(), &["config", "user.email", "dev@example.com"]);
+    git_inline_identity(repo.path(), &["config", "user.name", "Dev"]);
+    git_inline_identity(repo.path(), &["config", "commit.gpgsign", "false"]);
+    seed_initial_commit(repo.path());
+
+    let out = run_setup(repo.path(), home.path());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "`jigc setup` with a git identity must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stdout.contains("install commit →"),
+        "the success banner must name the install commit; got stdout:\n{stdout}",
+    );
+    // The HEAD subject is the dedicated install commit.
+    let subject = String::from_utf8_lossy(
+        &Command::new("git")
+            .args(["-C"])
+            .arg(repo.path())
+            .args(["log", "-1", "--format=%s"])
+            .output()
+            .expect("git log")
+            .stdout,
+    )
+    .trim()
+    .to_string();
+    assert_eq!(
+        subject, "chore(jigc): install jigc workspace config",
+        "HEAD must be the dedicated install commit",
+    );
+}
+
 /// Whether `settings` carries a `hooks.PreToolUse[*].hooks[*]` entry running the
 /// seeded `house-precheck.sh` command — the pre-existing non-jigc hook the merge
 /// must preserve.
