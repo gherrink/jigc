@@ -474,6 +474,66 @@ pub fn compose_named_in_repo(
     )
 }
 
+/// Compose the explicitly-named `workflow_id` with **no `<intent>` positional** —
+/// the `jigc start --workflow <X>` form with no intent. Branches on the workflow's
+/// `creates-task` declaration (read through the cascade, the same read the compose
+/// path uses to decide minting — never a hardcode):
+///
+/// - A **`creates-task: true`** `<X>` slugs its task id *from the intent*
+///   (`design/write-commands.md` → Task origination), so it cannot mint without one.
+///   It is **rejected** here with an actionable message naming the workflow and the
+///   corrected intent-bearing form — mirroring `start`'s other reject discipline
+///   (unknown `<X>`, slug collision) rather than silently falling through to the
+///   read-only orientation listing.
+/// - A **`creates-task: false`** `<X>` (the router, `ingest-existing`,
+///   `milestone-execution`) composes with **no mint** — the intent threads nowhere
+///   on that arm — so it composes here over an empty intent, exactly as the
+///   intent-bearing Form D would.
+///
+/// An unknown `<X>` surfaces its routed not-found finding from the cascade read,
+/// before any branch — the same rejection the intent-bearing Form D gives.
+pub fn compose_named_no_intent_in_repo(
+    start: &Path,
+    workflow_id: &str,
+) -> Result<ComposedWorkflow> {
+    let repo_root = discover_repo_root(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
+    let project_config = repo_root.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+
+    let pack = make_pack();
+    let pack = pack.as_ref();
+    let (resolved, overrides) = resolve_cascade(pack, &project_config)?;
+    // Read the named workflow's `creates-task` declaration through the cascade — the
+    // same definition read `compose_core` performs to decide minting — so the gate
+    // below keys off the real declaration. An unknown `<X>` is rejected here (the
+    // `read_workflow` membership check maps `NotFound` to a routed finding).
+    let def_bytes =
+        CascadeDefs::new(&resolved, &project_config).read_workflow(pack, workflow_id)?;
+    let def = load_workflow_def(&def_bytes).map_err(finding_to_err)?;
+    if def.creates_task {
+        bail!(
+            "workflow '{workflow_id}' requires an intent: jigc start \"<intent>\" --workflow {workflow_id}"
+        );
+    }
+
+    let source = CascadeStepSource::new(pack, &resolved, &project_config);
+    compose_drained(
+        &repo_root,
+        "",
+        pack,
+        workflow_id,
+        &source,
+        &overrides,
+        &[],
+        None,
+    )
+}
+
 /// Execute a milestone work-unit — compose the **explicitly-named**
 /// `creates-task: false` `workflow_id` over the milestone's id-sorted sub-task list,
 /// feeding `milestone_ids` into `{{milestone.tasks}}` so the workflow's `fan-out`

@@ -1454,3 +1454,80 @@ fn form_d_sub_task_mints_and_composes_fan_out_free_without_finalize() {
         "sub-task is fan-out-free — its composed view must emit no `Spawn:` directive; got:\n{stdout}",
     );
 }
+
+#[test]
+fn form_d_creates_task_workflow_with_no_intent_rejects() {
+    // A `creates-task: true` workflow slugs its task id from the `<intent>`
+    // positional (`design/write-commands.md` → Task origination), so `--workflow <X>`
+    // with NO intent cannot mint. It must be rejected with an actionable message —
+    // never silently fall through to the read-only orientation listing (the bug).
+    let repo = TempDir::new("form-d-no-intent-reject");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &["--workflow", "architecture-documentation"],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let stderr = String::from_utf8(out.stderr).expect("utf-8 stderr");
+
+    // Non-zero: the missing intent is a rejection, not a silent orient.
+    assert!(
+        !out.status.success(),
+        "`--workflow <creates-task> ` with no intent must exit non-zero; got {:?}\nstdout:\n{stdout}",
+        out.status,
+    );
+    // The message names the workflow and shows the correct intent-bearing form.
+    assert!(
+        stderr.contains("architecture-documentation") && stderr.contains("requires an intent"),
+        "the rejection must name the workflow and say it requires an intent; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("jigc start \"<intent>\" --workflow architecture-documentation"),
+        "the rejection must show the corrected `jigc start \"<intent>\" --workflow X` form; got:\n{stderr}",
+    );
+    // It must NOT emit the orientation listing (the silent-fallthrough bug).
+    assert!(
+        !stdout.contains(ROUTING_FOOTER) && stdout.trim().is_empty(),
+        "a rejected `--workflow` with no intent must emit no orientation output on stdout; got:\n{stdout}",
+    );
+    // No task dir is opened — rejected before any mint.
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "a rejected `--workflow <creates-task>` must mint nothing — no .jigc/tasks/ dir",
+    );
+}
+
+#[test]
+fn form_d_no_task_workflow_with_no_intent_still_composes() {
+    // A `creates-task: false` workflow composes with NO intent — `jigc start
+    // --workflow ingest-existing` is valid (`design/write-commands.md` → Task
+    // origination): it mints nothing and the intent threads nowhere. This path must
+    // NOT be broken by the missing-intent rejection (which is gated on creates-task).
+    let repo = TempDir::new("form-d-no-intent-compose");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let out = run_start(repo.path(), home.path(), &["--workflow", "ingest-existing"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`--workflow ingest-existing` (creates-task: false) with no intent must compose + exit 0; \
+         got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    // It composed the workflow body (its ingest launch line), not orientation.
+    assert!(
+        stdout.contains("Run: `jigc ingest`"),
+        "the composed `ingest-existing` view must carry its `jigc ingest` launch line; got:\n{stdout}",
+    );
+    // `creates-task: false` mints nothing.
+    assert!(
+        !repo.path().join(".jigc").join("tasks").exists(),
+        "a `creates-task: false` workflow must mint nothing — no .jigc/tasks/ dir",
+    );
+}

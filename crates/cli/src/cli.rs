@@ -202,10 +202,19 @@ impl Cli {
             } => run_explain(self.format, intent.as_deref(), workflow.as_deref()),
             Command::Start {
                 intent: None,
-                workflow: _,
+                workflow: None,
                 task: None,
                 explain: false,
             } => run_orient(self.format),
+            // `--workflow <X>` with no `<intent>`: a `creates-task: false` `<X>`
+            // composes (no mint); a `creates-task: true` `<X>` is rejected (it slugs
+            // its task id from the intent), instead of silently orienting.
+            Command::Start {
+                intent: None,
+                workflow: Some(workflow),
+                task: None,
+                explain: false,
+            } => run_compose_named_no_intent(self.format, &workflow),
             Command::Start {
                 intent: Some(intent),
                 workflow: None,
@@ -685,6 +694,34 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str) -> ExitCode {
         }
     };
     match start::compose_named_in_repo(&cwd, intent, workflow) {
+        Ok(view) => {
+            println!("{}", render::composed(format, &view));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{}", render::operational_error(format, &err));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Compose the explicitly-named `workflow` with **no `<intent>`** against the
+/// current working directory — the `jigc start --workflow <X>` form with no
+/// positional. A `creates-task: false` `<X>` composes (no mint); a
+/// `creates-task: true` `<X>` is rejected with an actionable message (it slugs its
+/// task id from the intent), rather than silently falling through to orientation
+/// (`design/write-commands.md` → Task origination). Renders the composed view on
+/// success (exit 0); a rejection or blocking finding surfaces on stderr (with its
+/// route) and exits non-zero.
+fn run_compose_named_no_intent(format: Format, workflow: &str) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match start::compose_named_no_intent_in_repo(&cwd, workflow) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
             ExitCode::SUCCESS
