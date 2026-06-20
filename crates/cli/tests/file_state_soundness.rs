@@ -264,6 +264,7 @@ fn stage_commit_only(repo: &Path, home: &Path, task: &str, intent: &str) {
     let out = jigc(repo, home, &["start", "--workflow", "single-task", intent]);
     assert_ok(&out, &format!("`jigc start` ({task})"));
     fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    git(repo, &["add", &format!("{task}.txt")]);
     fill_commit(repo, home, task);
 }
 
@@ -441,6 +442,7 @@ fn stage_dev_task(repo: &Path, home: &Path, task: &str, intent: &str) {
         &format!("`jigc start --workflow dev-task` ({task})"),
     );
     fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    git(repo, &["add", &format!("{task}.txt")]);
     fill_commit_methodology(repo, home, task);
 }
 
@@ -705,6 +707,7 @@ fn stage_commit_only_with_pack(repo: &Path, home: &Path, pack: &Path, task: &str
     );
     assert_ok(&out, &format!("`jigc start` ({task})"));
     fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    git(repo, &["add", &format!("{task}.txt")]);
     fill_commit_with_pack(repo, home, pack, task);
 }
 

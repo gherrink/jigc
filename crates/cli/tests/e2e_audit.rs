@@ -344,6 +344,7 @@ fn scenario_3_single_task_happy_path_one_commit() {
 
     // The agent authors a code change directly in the working tree.
     fs::write(repo.path().join("limiter.rs"), "// rate limiter\n").expect("write code");
+    git(repo.path(), &["add", "limiter.rs"]);
 
     // Fill the commit doc via the real write verbs.
     fill_commit(repo.path(), home.path(), task);

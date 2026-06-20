@@ -444,6 +444,7 @@ fn mint_bind_and_author_adr(
 
     // A real code change so the empty-commit guard is satisfied by more than the doc.
     fs::write(repo.join("limiter.txt"), "rate limiter\n").expect("write code change");
+    git(repo, &["add", "limiter.txt"]);
 
     slug
 }

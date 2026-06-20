@@ -201,6 +201,7 @@ fn finalize_makes_one_commit_with_the_rendered_message_and_cleans_up() {
         "// a per-client rate limiter\n",
     )
     .expect("write code change");
+    git(repo.path(), &["add", "limiter.rs"]);
 
     // Fill the commit doc so validate is clean.
     make_commit_conformant(repo.path(), home.path(), task);
@@ -272,6 +273,7 @@ fn finalize_minimal_commit_type_and_summary_only_lands_clean() {
     let task = "tidy-the-readme";
 
     fs::write(repo.path().join("README.md"), "hello world\n").expect("write code change");
+    git(repo.path(), &["add", "README.md"]);
 
     // Only the two REQUIRED levers: the `type` enum + the `summary` slot. The
     // optional `scope` field and `body` slot are deliberately left unset.
@@ -671,6 +673,10 @@ fn finalize_repins_and_lands_when_moved_history_is_disjoint() {
     fs::write(repo.path().join("other.txt"), "unrelated\n").expect("write");
     git(repo.path(), &["add", "other.txt"]);
     git(repo.path(), &["commit", "-q", "-m", "unrelated work"]);
+
+    // Stage the task's code AFTER the disjoint human commit, so it rides the task's
+    // finalize and not the intervening whole-index commit above.
+    git(repo.path(), &["add", "limiter.rs"]);
 
     let log_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()

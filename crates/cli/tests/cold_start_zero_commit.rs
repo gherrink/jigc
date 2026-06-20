@@ -219,6 +219,7 @@ fn zero_commit_repo_mints_against_the_sentinel_and_first_finalize_lands_one_comm
         "// a per-client rate limiter\n",
     )
     .expect("write code change");
+    git(repo.path(), &["add", "limiter.rs"]);
     make_commit_conformant(repo.path(), home.path(), task);
 
     let finalize = run_jigc(repo.path(), home.path(), &["task", "finalize", task]);
