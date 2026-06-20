@@ -407,19 +407,10 @@ deploy() {
     fn un_grammared_file_with_symbol_emits_unsupported_language_advisory() {
         // A present file whose extension+shebang map to no grammar, carrying a `#symbol`,
         // emits exactly one `unsupported-language` advisory — not a silent pass, not a
-        // blocking `symbol-exists` (the M10 silent-skip Inc 3 supersedes, fork F2).
-        // docker-compose (a `.yaml`) — takes the advisory (un-grammared, parked).
-        let compose = check_one(
-            "compose.yaml",
-            "services:\n  web:\n    image: nginx\n",
-            "web",
-        );
-        assert_eq!(compose.len(), 1);
-        assert_eq!(compose[0].severity, Severity::Advisory);
-        assert_eq!(compose[0].check, "unsupported-language");
-
-        // A `#!/usr/bin/perl` shebang maps to no grammar (the sniff is `sh`-only), so it too
-        // takes the advisory rather than the old silent-skip.
+        // blocking `symbol-exists` (the M10 silent-skip M27 superseded, fork F2).
+        // A `#!/usr/bin/perl` shebang maps to no grammar (the sniff is `sh`-only — `.pl` is the
+        // surviving un-grammared exemplar now that `.yaml` activates at M29), so it takes the
+        // advisory rather than the old silent-skip.
         let perl = check_one("script.pl", "#!/usr/bin/perl\nsub thing { }\n", "thing");
         assert_eq!(perl.len(), 1);
         assert_eq!(perl[0].severity, Severity::Advisory);
@@ -553,6 +544,21 @@ def test_rate_limit():
         let css = ".btn { color: red; }\n";
         assert!(check_one("styles.css", css, "btn").is_empty());
         let gone = check_one("styles.css", css, "btn_renamed");
+        assert_eq!(gone.len(), 1);
+        assert_eq!(gone[0].severity, Severity::Blocking);
+        assert_eq!(gone[0].check, "symbol-exists");
+        assert_eq!(gone[0].code, "doc-code.symbol-exists");
+    }
+
+    #[test]
+    fn yaml_file_with_symbol_resolves_present_blocks_vanished() {
+        // The M29 activation: a `.yaml#key` now resolves through the YAML grammar (no longer the
+        // `unsupported-language` advisory) — a present mapping key emits no finding; a vanished
+        // one BLOCKS with one `doc-code.symbol-exists`. (`compose.yaml#web` means "a YAML key
+        // named `web` exists" — schema-blind, the F7 honest bound.)
+        let compose = "services:\n  web:\n    image: nginx\n";
+        assert!(check_one("compose.yaml", compose, "web").is_empty());
+        let gone = check_one("compose.yaml", compose, "web_renamed");
         assert_eq!(gone.len(), 1);
         assert_eq!(gone[0].severity, Severity::Blocking);
         assert_eq!(gone[0].check, "symbol-exists");

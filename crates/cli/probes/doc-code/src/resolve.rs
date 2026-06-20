@@ -3,9 +3,9 @@
 //! The grammar is chosen by file extension ([`grammar_for`]): `.rs`→Rust;
 //! `.ts`/`.mts`/`.cts`→TypeScript; `.tsx`→**TSX** (a *distinct* grammar — the plain
 //! TypeScript grammar parses JSX with errors); `.js`/`.jsx`/`.mjs`/`.cjs`→JavaScript
-//! (one grammar; JSX parses natively). An extension with no shipped grammar
-//! resolves to `None` and the caller keeps the M10 silent-skip (the
-//! `unsupported-language` advisory is a later increment). A bare `<path>` (no `#`) is a
+//! (one grammar; JSX parses natively); `.css`→CSS; `.yaml`/`.yml`→YAML. An extension with no
+//! shipped grammar resolves to `None` and the caller emits the `unsupported-language` advisory
+//! (M27 shipped it, replacing M10's silent skip). A bare `<path>` (no `#`) is a
 //! pure file-existence check and never reaches here. For a `<path>#<symbol>` anchor the
 //! file is parsed statically (no `cargo`, no build, no wall-clock — the determinism
 //! contract's rules 1/3/5/6) and `<symbol>` is matched against the named items of the
@@ -65,6 +65,15 @@ pub enum Grammar {
     /// while a custom property keeps its `--` (`--color`→`--color`). Reached by [`grammar_for`]
     /// via the `.css` extension.
     Css,
+    /// YAML — the first language to **ride** the HD1 seam (CSS forced it at M28). No
+    /// `.name`-field declarations, so it dispatches to its own extractor ([`yaml_item_names`]).
+    /// Its addressable units are **mapping keys** — both block (`block_mapping_pair`) and flow
+    /// (`flow_pair`) — at any nesting, surrounding matched quotes stripped (`"web"`→`web`, the
+    /// deliberate opposite of CSS's kept `--`: quotes are not part of the YAML identifier).
+    /// Anchors / aliases / tags / mapping values / sequence items are never a `key` field child,
+    /// so they do not resolve. Reached by [`grammar_for`] via the `.yaml` / `.yml` extension
+    /// (extension-only — no docker-compose filename special-casing).
+    Yaml,
 }
 
 impl Grammar {
@@ -79,6 +88,7 @@ impl Grammar {
             Grammar::Php => tree_sitter_php::LANGUAGE_PHP.into(),
             Grammar::Bash => tree_sitter_bash::LANGUAGE.into(),
             Grammar::Css => tree_sitter_css::LANGUAGE.into(),
+            Grammar::Yaml => tree_sitter_yaml::LANGUAGE.into(),
         }
     }
 }
@@ -170,9 +180,11 @@ fn with_root(src: &str, grammar: Grammar, f: impl FnOnce(Node) -> bool) -> bool 
 /// The grammar to resolve a file's symbols against, chosen by extension. `.rs`→Rust;
 /// `.ts`/`.mts`/`.cts`→TypeScript; `.tsx`→**TSX** (a distinct grammar — the plain
 /// TypeScript grammar parses JSX with errors); `.js`/`.jsx`/`.mjs`/`.cjs`→JavaScript (one
-/// grammar — JSX parses natively, no TSX-style split). An extension with no shipped grammar yields
-/// `None` and the caller keeps the M10 silent-skip (the `unsupported-language` advisory is
-/// a later increment).
+/// grammar — JSX parses natively, no TSX-style split); `.css`→CSS; `.yaml`/`.yml`→YAML
+/// (extension-only — no `compose.yaml`/`docker-compose.yml` filename special-casing, so this
+/// resolves a `#key` on *any* YAML, not just docker-compose). An extension with no shipped
+/// grammar yields `None` and the caller emits the `unsupported-language` advisory (M27 shipped
+/// it, replacing M10's silent skip).
 pub fn grammar_for(path: &Path) -> Option<Grammar> {
     match path.extension().and_then(|e| e.to_str())? {
         "rs" => Some(Grammar::Rust),
@@ -183,6 +195,7 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "php" | "phtml" => Some(Grammar::Php),
         "sh" | "bash" => Some(Grammar::Bash),
         "css" => Some(Grammar::Css),
+        "yaml" | "yml" => Some(Grammar::Yaml),
         _ => None,
     }
 }
@@ -243,6 +256,9 @@ fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
         // CSS has no `.name`-field declarations — it dispatches to its own addressable-unit
         // extractor instead of the shared field read below (the HD1 keystone generalization).
         Grammar::Css => return css_item_names(node, src),
+        // YAML rides the same seam: mapping keys are its addressable units, extracted (and
+        // quote-stripped) by its own arm rather than the shared field read.
+        Grammar::Yaml => return yaml_item_names(node, src),
     };
     if !citable {
         return Vec::new();
@@ -369,6 +385,45 @@ fn css_child_text(node: &Node, kind: &str, src: &str) -> Vec<String> {
         .and_then(|child| child.utf8_text(src.as_bytes()).ok())
         .map(|name| vec![name.to_string()])
         .unwrap_or_default()
+}
+
+/// The YAML mapping-key `node` names as a citable symbol — the HD1-seam extractor for YAML
+/// ([validation.md] → Multi-language resolution). YAML has no `.name`-field declarations; its
+/// addressable units are **mapping keys**, drawn from the two pair kinds:
+///
+/// - `block_mapping_pair` — a block-style `key: value` (`web:` under `services:`).
+/// - `flow_pair` — a flow-style `{key: value}` entry (B1: `{web: 1}` resolves, not false-blocked
+///   for living in flow syntax).
+///
+/// Each reads the pair's `key` field and **strips a single pair of surrounding matched quotes**
+/// (B2: `"web"`/`'web'` cite as `#web` — quotes are not part of the YAML identifier, the
+/// deliberate opposite of CSS's kept `--`). This is **not** a [`css_child_text`] reuse: CSS reads
+/// a named child verbatim, YAML reads the `key` field and post-strips quotes. Keys at any nesting
+/// are reached by the caller's full-tree walk (no walk change); an anchor / alias / tag / value /
+/// sequence item is never a `key` field child, so the over-match census stays closed. A merge key
+/// (`<<`) is an ordinary `block_mapping_pair` key and resolves — admitted-harmless (never a real
+/// citation; filtering it would be code for nothing, F1).
+fn yaml_item_names(node: &Node, src: &str) -> Vec<String> {
+    if !matches!(node.kind(), "block_mapping_pair" | "flow_pair") {
+        return Vec::new();
+    }
+    node.child_by_field_name("key")
+        .and_then(|n| n.utf8_text(src.as_bytes()).ok())
+        .map(|key| vec![strip_matched_quotes(key).to_string()])
+        .unwrap_or_default()
+}
+
+/// Strip a single pair of surrounding matched quotes (`"web"`/`'web'` → `web`); text without a
+/// matched surrounding pair is returned verbatim. Only the *outermost* matched pair is removed —
+/// internal YAML escapes (`"a\"b"`, `'a''b'`) are **not** normalized (the documented quote-strip
+/// bound). The quote chars are ASCII, so the byte slice lands on a char boundary.
+fn strip_matched_quotes(text: &str) -> &str {
+    for quote in ['"', '\''] {
+        if text.len() >= 2 && text.starts_with(quote) && text.ends_with(quote) {
+            return &text[1..text.len() - 1];
+        }
+    }
+    text
 }
 
 #[cfg(test)]
@@ -1171,6 +1226,122 @@ a::before {
             ":::",
         ] {
             let _ = symbol_exists(src, "x", Grammar::Css);
+        }
+    }
+
+    // A real YAML document (docker-compose-shaped) exercising both mapping-key arms, quoted
+    // keys, deep nesting, and every over-match negative: a block key (`web`), a deeply-nested
+    // key (`services: web: build: context:`), a double- and single-quoted key (`"api"`,
+    // `'cache'`), a flow-mapping key (`{web2: 1}` — B1), plus the negatives — an anchor
+    // (`&theanchor`), an alias (`*theanchor`), a tag (`!!str tagval`), a mapping value
+    // (`WEB_HOST: hostval`), a sequence item (`- seqitem`), and a name living only in a comment.
+    const YAML: &str = "\
+services:
+  web:
+    build:
+      context: .
+  \"api\":
+    image: nginx
+  'cache':
+    image: redis
+flowblock: {web2: 1, db2: 2}
+anchored: &theanchor anchorval
+aliased: *theanchor
+tagged: !!str tagval
+WEB_HOST: hostval
+seq:
+  - seqitem
+# commentkey lives only here
+";
+
+    #[test]
+    fn yaml_dispatches_by_extension() {
+        // The activation: both `.yaml` and `.yml` map to the YAML grammar (extension-only).
+        for ext in ["yaml", "yml"] {
+            let path = std::path::PathBuf::from(format!("deploy/compose.{ext}"));
+            assert_eq!(grammar_for(&path), Some(Grammar::Yaml), "ext .{ext}");
+        }
+    }
+
+    #[test]
+    fn yaml_resolves_block_key_and_blocks_vanished() {
+        // A present block mapping key resolves; a vanished one does not (block-on-rename).
+        assert!(symbol_exists(YAML, "web", Grammar::Yaml));
+        assert!(!symbol_exists(YAML, "web_renamed", Grammar::Yaml));
+    }
+
+    #[test]
+    fn yaml_resolves_deeply_nested_key() {
+        // A key at deep nesting (`services: web: build: context:`) resolves via the existing
+        // full-tree walk — no walk change.
+        assert!(symbol_exists(YAML, "build", Grammar::Yaml));
+        assert!(symbol_exists(YAML, "context", Grammar::Yaml));
+    }
+
+    #[test]
+    fn yaml_b1_flow_mapping_key_resolves() {
+        // B1 (the new false-BLOCK failure mode): a flow-mapping key (`{web2: 1}`, a `flow_pair`)
+        // must resolve — not be silently false-negative for living in flow syntax.
+        assert!(symbol_exists(YAML, "web2", Grammar::Yaml));
+        assert!(symbol_exists(YAML, "db2", Grammar::Yaml));
+    }
+
+    #[test]
+    fn yaml_b2_quoted_key_resolves_unquoted() {
+        // B2 (the quote-strip): a double- or single-quoted key cites as `#name` (quotes are not
+        // part of the YAML identifier — the deliberate opposite of CSS's kept `--`).
+        assert!(symbol_exists(YAML, "api", Grammar::Yaml));
+        assert!(symbol_exists(YAML, "cache", Grammar::Yaml));
+        // And the raw quoted forms do NOT resolve — the quotes really are stripped.
+        assert!(!symbol_exists(YAML, "\"api\"", Grammar::Yaml));
+        assert!(!symbol_exists(YAML, "'cache'", Grammar::Yaml));
+    }
+
+    #[test]
+    fn yaml_over_match_negatives_do_not_resolve() {
+        // The over-match census: an anchor name, an alias name, a tag's scalar, a mapping value,
+        // and a sequence item are never a `key` field child — none resolves. (No `<<`-negative:
+        // a merge key is an ordinary key, admitted-harmless, F1.)
+        for sym in [
+            "theanchor",  // anchor `&theanchor` / alias `*theanchor`
+            "anchorval",  // the anchored scalar value
+            "tagval",     // a `!!str`-tagged scalar value
+            "hostval",    // a mapping value (`WEB_HOST: hostval`)
+            "seqitem",    // a sequence item (`- seqitem`)
+            "commentkey", // a name living only in a comment
+        ] {
+            assert!(
+                !symbol_exists(YAML, sym, Grammar::Yaml),
+                "expected `{sym}` to NOT resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn yaml_merge_key_is_admitted_harmless() {
+        // F1: a merge `<<: *anchor` parses as an ordinary `block_mapping_pair` keyed `<<`, so the
+        // rule ADMITS `<<` (filtering it would be code for nothing — never a real citation).
+        let src = "base: &b\n  x: 1\nderived:\n  <<: *b\n  y: 2\n";
+        assert!(symbol_exists(src, "<<", Grammar::Yaml));
+    }
+
+    #[test]
+    fn yaml_hostile_input_does_not_panic() {
+        // The panic-free property carries to YAML: garbage / truncated / BOM / non-ASCII /
+        // unterminated-quote / tab-indent source resolves to false, never crashes.
+        let bom = "\u{feff}services:\n  web:\n";
+        for src in [
+            "",
+            "services:",
+            "}{)(",
+            "key: \"unterminated",
+            "  - just a sequence",
+            bom,
+            "☃: π\n",
+            "a:\n\tb: 1\n",
+            "{flow: ",
+        ] {
+            let _ = symbol_exists(src, "x", Grammar::Yaml);
         }
     }
 }
