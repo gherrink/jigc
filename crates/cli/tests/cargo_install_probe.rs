@@ -389,6 +389,14 @@ fn store_validate_reports_clean_absence_then_resolves_via_setup_extract() {
     // --- setup extracts the probe sibling beside the installed jigc.
     let setup_repo = TempDir::new("setup-repo");
     git(setup_repo.path(), &["init", "-q"]);
+    // `jigc setup` commits its own install footprint (M30 audit finding 1) — mint needs
+    // a usable identity + signing off.
+    git(
+        setup_repo.path(),
+        &["config", "user.email", "test@example.com"],
+    );
+    git(setup_repo.path(), &["config", "user.name", "Test"]);
+    git(setup_repo.path(), &["config", "commit.gpgsign", "false"]);
     run_setup(&jigc_bin, setup_repo.path(), home.path());
     assert!(
         sibling.exists(),

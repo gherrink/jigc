@@ -81,6 +81,26 @@ fn mark_repo(root: &Path) {
         "git init failed: {}",
         String::from_utf8_lossy(&out.stderr),
     );
+    // `jigc setup` commits its own install footprint (M30 audit finding 1) — even on an
+    // unborn HEAD it mints the repo's first commit — so a test repo needs a usable
+    // identity and signing off for that commit to land. The deliberate no-identity
+    // rejection test (`setup_fails_loudly_when_install_commit_is_rejected`) strips this
+    // back out.
+    for kv in [
+        ["user.email", "test@example.com"],
+        ["user.name", "Test"],
+        ["commit.gpgsign", "false"],
+    ] {
+        let ok = Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["config", kv[0], kv[1]])
+            .output()
+            .expect("run git config")
+            .status
+            .success();
+        assert!(ok, "git config {} failed", kv[0]);
+    }
 }
 
 /// Run the built `jigc setup` binary with `cwd = repo` and `$HOME = home`.
@@ -722,6 +742,10 @@ fn setup_fails_loudly_when_install_commit_is_rejected() {
     let home = TempDir::new("home");
     mark_repo(repo.path());
     seed_initial_commit(repo.path());
+    // `mark_repo` now seeds a repo-local identity (setup commits its install); strip it
+    // so this test still exercises the no-usable-identity rejection path.
+    git_inline_identity(repo.path(), &["config", "--unset", "user.email"]);
+    git_inline_identity(repo.path(), &["config", "--unset", "user.name"]);
 
     let head_before = String::from_utf8_lossy(
         &Command::new("git")

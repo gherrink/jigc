@@ -582,10 +582,14 @@ fn install_tracked_paths(line_file: &str, allowlist_file: &str) -> Vec<String> {
 /// unrelated changes the user already staged stay staged and untouched.
 ///
 /// **Idempotent:** a re-run over an unchanged install stages no net change →
-/// `Ok(`[`InstallCommit::Nothing`]`)` (no empty commit). **Graceful skip** for the
-/// benign cases — not-a-git-repo, an unborn HEAD, or a git that could not be spawned →
-/// `Ok(`[`InstallCommit::Skipped`]`)` (nothing was staged-but-orphaned; the commit is a
-/// convenience there). But a genuine commit **rejection** (git ran and declined — e.g.
+/// `Ok(`[`InstallCommit::Nothing`]`)` (no empty commit). On an **unborn HEAD** (a
+/// brand-new repo with no commits) this **mints the repo's first commit** with the
+/// install footprint rather than skipping (M30 audit finding 1 — setup owns committing
+/// its own install regardless of HEAD state, since the first `finalize` now stages only
+/// the task's change-set). **Graceful skip** for the benign cases — not-a-git-repo or a
+/// git that could not be spawned → `Ok(`[`InstallCommit::Skipped`]`)` (nothing was
+/// staged-but-orphaned; the commit is a convenience there). But a genuine commit
+/// **rejection** (git ran and declined — e.g.
 /// no `user.email`/`user.name`) leaves the install files staged-but-uncommitted, so it
 /// returns `Err(<git's rejection>)` for [`install`] to surface as a loud blocking
 /// finding rather than a silent skip behind a success banner. Uses `--no-verify`: the
@@ -599,17 +603,18 @@ fn commit_install(
     line_file: &str,
     allowlist_file: &str,
 ) -> Result<InstallCommit, String> {
-    // Require an existing HEAD. This both covers the not-a-git-repo case (`rev-parse`
-    // fails → Skipped) and, on an unborn HEAD (a brand-new repo with no commits), leaves
-    // the install files for the user's first finalize rather than minting the repo's first
-    // commit — preserving the zero-commit sentinel path (`jigc start` pins the empty-tree
-    // base on an unborn HEAD; `tests/cold_start_zero_commit.rs`) and matching the
-    // "require a repo as today" latitude for the no-HEAD edge.
-    if !git_output(repo_root, ["rev-parse", "--verify", "-q", "HEAD"])
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return Ok(InstallCommit::Skipped);
+    // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
+    // no commits). Setup owns committing its own install footprint regardless of HEAD
+    // state (M30 audit finding 1): on a cold-start repo the first `finalize` since M30
+    // stages only the task's change-set ([`crate::task::stage_index_honoring`]), so if
+    // setup skipped the install here, `CLAUDE.md`/`.claude/settings.json`/`.jigc/AGENT.md`
+    // would be left untracked after the first managed commit. On an unborn HEAD the
+    // `git add`/`git commit -- <paths>` below mint the repo's first commit (the staged
+    // diff is taken against the empty tree). Skip only when there is no git work tree /
+    // git is unavailable — the writes still succeeded; the commit is a convenience there.
+    match git_output(repo_root, ["rev-parse", "--is-inside-work-tree"]) {
+        Some(out) if out.status.success() => {}
+        _ => return Ok(InstallCommit::Skipped),
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.

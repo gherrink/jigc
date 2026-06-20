@@ -201,6 +201,11 @@ fn scenario_1_setup_is_idempotent() {
     // hooks dir via git — so the repo must be a real `git init`, not a bare `.git`
     // marker (as the real `jigc setup` always runs inside a git repo).
     git(repo.path(), &["init", "-q"]);
+    // `jigc setup` commits its own install footprint (M30 audit finding 1) — mint needs
+    // a usable identity + signing off.
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    git(repo.path(), &["config", "commit.gpgsign", "false"]);
 
     let first = jigc(repo.path(), home.path(), &["setup"]);
     assert_ok(&first, "first `jigc setup`");

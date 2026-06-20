@@ -10,14 +10,21 @@
 //! pre-first-commit and the first finalize diffs against the empty tree and commits
 //! cleanly as the repo's first commit.
 //!
-//! Three real-binary (`CARGO_BIN_EXE_jigc`) assertions over a throwaway `git init`:
-//!   (i)   `jigc setup` then `jigc start --workflow single-task "<intent>"` mints
-//!         (exit 0, the working area + a `base.json` pinning the empty-tree sentinel
-//!         SHA appear) where today it crashes;
-//!   (ii)  after a conformant commit-doc fill + a code change, `jigc task finalize`
-//!         produces exactly ONE commit (the repo's first) carrying the code change +
+//! Four real-binary (`CARGO_BIN_EXE_jigc`) assertions over a throwaway `git init`:
+//!   (i)   on a zero-commit repo, `jigc start --workflow single-task "<intent>"` (run
+//!         WITHOUT setup, so HEAD stays unborn) mints against the empty-tree sentinel —
+//!         exit 0, the working area + a `base.json` pinning the empty-tree SHA appear —
+//!         where today it crashes;
+//!   (ii)  the cold-start install footprint lands in git: `jigc setup` on an unborn
+//!         HEAD MINTS the repo's first commit carrying jigc's own install files
+//!         (`CLAUDE.md` / `.claude/settings.json` / `.jigc/AGENT.md`), so they are
+//!         tracked before any work commit (M30 audit finding 1 — setup owns committing
+//!         its install regardless of HEAD state; finalize since M30 stages only the
+//!         task's change-set and would otherwise leave the footprint untracked);
+//!   (iii) after that setup commit, `jigc start` + a conformant commit-doc fill + a code
+//!         change → `jigc task finalize` lands a SECOND commit carrying the code change +
 //!         promoted docs, exit 0 — no empty-commit-guard false-abort;
-//!   (iii) an existing repo WITH a seed commit still pins/diffs against the real HEAD
+//!   (iv)  an existing repo WITH a seed commit still pins/diffs against the real HEAD
 //!         SHA — the sentinel never fires when HEAD resolves.
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
@@ -161,35 +168,29 @@ fn make_commit_conformant(repo: &Path, home: &Path, task: &str) {
     );
 }
 
-/// (i) + (ii): a fresh zero-commit repo mints against the empty-tree sentinel and the
-/// first finalize lands the repo's first commit cleanly.
-#[test]
-fn zero_commit_repo_mints_against_the_sentinel_and_first_finalize_lands_one_commit() {
-    let (repo, home) = fresh_unborn_repo();
-    let task = "add-rate-limiter";
-
-    // Sanity: the repo genuinely has no commits (unborn HEAD).
+/// Assert the repo's HEAD is unborn (no commits) — the zero-commit precondition.
+fn assert_unborn(repo: &Path) {
     assert!(
         !Command::new("git")
             .args(["rev-parse", "--verify", "-q", "HEAD"])
-            .current_dir(repo.path())
+            .current_dir(repo)
             .output()
             .expect("run git")
             .status
             .success(),
         "the repo must start with an unborn HEAD (no commits)"
     );
+}
 
-    // `jigc setup` installs the adapter — must run pre-first-commit.
-    let setup = run_jigc(repo.path(), home.path(), &["setup"]);
-    assert!(
-        setup.status.success(),
-        "`jigc setup` must run on a zero-commit repo; stderr:\n{}",
-        String::from_utf8_lossy(&setup.stderr)
-    );
+/// (i) The sentinel proper: on a zero-commit repo, `jigc start` (run WITHOUT setup, so
+/// HEAD stays unborn) must mint against the empty-tree sentinel rather than crashing on
+/// `git rev-parse HEAD`.
+#[test]
+fn zero_commit_repo_starts_against_the_empty_tree_sentinel() {
+    let (repo, home) = fresh_unborn_repo();
+    let task = "add-rate-limiter";
+    assert_unborn(repo.path());
 
-    // (i) `jigc start --workflow single-task` must mint where today it crashes on
-    // `git rev-parse HEAD`.
     let start = run_jigc(
         repo.path(),
         home.path(),
@@ -211,9 +212,61 @@ fn zero_commit_repo_mints_against_the_sentinel_and_first_finalize_lands_one_comm
         base_json.contains(EMPTY_TREE_SHA),
         "the base pin must record the empty-tree sentinel SHA on a zero-commit repo; got:\n{base_json}"
     );
+}
 
-    // (ii) A conformant commit-doc fill + a code change → the first finalize lands ONE
-    // commit (the repo's first), exit 0, no empty-commit-guard false-abort.
+/// (ii) + (iii): the cold-start install footprint lands in git. On a zero-commit repo,
+/// `jigc setup` MINTS the repo's first commit carrying jigc's own install files, so
+/// `CLAUDE.md` / `.claude/settings.json` / `.jigc/AGENT.md` are tracked before any work
+/// commit — then `jigc start` + a conformant fill + a code change → `jigc task finalize`
+/// lands a SECOND commit with the code change (M30 audit finding 1).
+#[test]
+fn cold_start_setup_commits_its_install_footprint_then_finalize_lands_the_work() {
+    let (repo, home) = fresh_unborn_repo();
+    let task = "add-rate-limiter";
+    assert_unborn(repo.path());
+
+    // `jigc setup` installs the adapter — must run pre-first-commit.
+    let setup = run_jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must run on a zero-commit repo; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr)
+    );
+
+    // (ii) setup minted the repo's first commit and jigc's install footprint is TRACKED
+    // in git (not left untracked for a manual `git add`).
+    let count_after_setup: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(
+        count_after_setup, 1,
+        "`jigc setup` on an unborn HEAD must mint the repo's first commit (the install)"
+    );
+    let tracked = git(repo.path(), &["ls-files"]);
+    for f in ["CLAUDE.md", ".claude/settings.json", ".jigc/AGENT.md"] {
+        assert!(
+            tracked.lines().any(|l| l == f),
+            "setup's install footprint `{f}` must be tracked in git after a cold-start setup; \
+             tracked:\n{tracked}"
+        );
+    }
+
+    // (iii) `jigc start --workflow single-task` mints over the install commit.
+    let start = run_jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
+    assert!(
+        start.status.success(),
+        "`jigc start` must mint after a cold-start setup; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&start.stdout),
+        String::from_utf8_lossy(&start.stderr)
+    );
+    let area = repo.path().join(".jigc").join("tasks").join(task);
+    assert!(area.exists(), "mint must open the working area at {area:?}");
+
+    // A conformant commit-doc fill + a code change → finalize lands the work commit.
     fs::write(
         repo.path().join("limiter.rs"),
         "// a per-client rate limiter\n",
@@ -225,26 +278,35 @@ fn zero_commit_repo_mints_against_the_sentinel_and_first_finalize_lands_one_comm
     let finalize = run_jigc(repo.path(), home.path(), &["task", "finalize", task]);
     assert!(
         finalize.status.success(),
-        "the first `jigc task finalize` must exit 0 on a zero-commit repo; stdout:\n{}\nstderr:\n{}",
+        "the cold-start `jigc task finalize` must exit 0; stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&finalize.stdout),
         String::from_utf8_lossy(&finalize.stderr)
     );
 
-    // Exactly ONE commit exists — the repo's first.
+    // Two commits exist now: the setup install commit + the finalize work commit.
     let count: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
     assert_eq!(
-        count, 1,
-        "the first finalize must produce exactly ONE commit (the repo's first)"
+        count, 2,
+        "a cold start lands TWO commits: setup's install commit, then the finalize work commit"
     );
 
-    // The code change rode in that first commit.
+    // The code change rode in the finalize (HEAD) commit.
     let files = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
     assert!(
         files.lines().any(|l| l == "limiter.rs"),
-        "the code change must land in the first commit; files:\n{files}"
+        "the code change must land in the finalize commit; files:\n{files}"
     );
+
+    // The install footprint is still tracked after finalize.
+    let tracked_after = git(repo.path(), &["ls-files"]);
+    for f in ["CLAUDE.md", ".claude/settings.json", ".jigc/AGENT.md"] {
+        assert!(
+            tracked_after.lines().any(|l| l == f),
+            "the install footprint `{f}` must remain tracked after finalize; tracked:\n{tracked_after}"
+        );
+    }
 
     // The working area is gone (phase 7).
     assert!(
@@ -253,7 +315,7 @@ fn zero_commit_repo_mints_against_the_sentinel_and_first_finalize_lands_one_comm
     );
 }
 
-/// (iii) The hardening #5 omitting-context guard: an existing repo WITH a seed commit
+/// (iv) The hardening #5 omitting-context guard: an existing repo WITH a seed commit
 /// must still pin against the **real** HEAD SHA — the sentinel must never fire when
 /// HEAD resolves.
 #[test]
