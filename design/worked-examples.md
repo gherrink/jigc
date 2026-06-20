@@ -2117,3 +2117,53 @@ The two components anchor into the **same file** at different service keys, so t
 2. **A second YAML citation validates against reality, symmetrically.** Deleting component B's `db:` block while A's `web:` block stays valid blocks `finalize` on `doc-code.symbol-exists` naming **B's** item address (`#components/database/implemented-by`) and **never** A's. Per-item disambiguation holds **over the same compose file** — the single lever that proves the extractor picked each anchor's own key out of the shared file.
 3. **Both keys present → exactly one commit.** With the `web:` and `db:` blocks both present, `finalize` validates clean, lands **exactly one** `docs(arch-doc):` commit, promotes the doc to `architecture/gateway.md`, and cleans the working area. Zero `doc-code` findings on the passing arm is the masking failure the pass↔block contrast guards against — the block arms prove the enumeration reached each anchor-bearing component independently, so the clean pass is "the probe ran and both keys resolved," not "the probe never ran (or advised them un-grammared)."
 4. **The sibling probe resolves with the YAML grammar.** The `doc-code` subprocess is found beside the running `jigc` (`<bin-dir>/doc-code`, **no** `JIGC_DOC_CODE_PROBE` override) — the production path a real install hits — and runs with the eight-grammar set the M29 YAML extractor links in. (The measured-on-the-`cargo install`-installed-binary proof + the re-run size budget are M29 Increment 2.)
+
+## 32. WIP left out and surfaced — `finalize` commits the declared change-set, names the rest (M30)
+
+The M30 acceptance: **per-task `finalize` commits exactly the *declared* change-set — the agent's git index + jigc's promoted docs + the first-commit config layer — and *surfaces* everything else rather than sweeping it in.** M30 inverted the per-task stage from "`git add --all` the whole dirty tree" to "honor the agent's existing index" ([finalize.md](finalize.md#dirty-tree-policy) → Dirty-tree policy, revised M30; [DECISIONS.md](../DECISIONS.md) → 2026-06-20 M30 planning, G1/G2/G3/G6). Two consequences fall out, and this flow proves both end-to-end on the **production path** a real install hits — the cargo-built binary with the **embedded** dev pack and the `doc-code` probe resolved as a **sibling of `jigc`** (no `JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE` override; the flow30/31 real-binary idiom). The agent's half of the contract is G5: the workflow now tells the agent to `git add` its task's code edits before finalize, and the Claude Code adapter permits `git add *` ([assistant-adapter.md](assistant-adapter.md); the pack steps + adapter permit land in M30 Increment 4). Notation illustrative; the flow below is the shape the acceptance test (`crates/cli/tests/flow32_acceptance.rs`) drives end-to-end through the built binary.
+
+### The walk — stage your change, leave the rest; a cited-but-unstaged symbol blocks
+
+```text
+# the agent stages its task edit; an unrelated untracked file and an unrelated unstaged
+# tracked edit sit alongside it in the dirty tree:
+$ jigc start --workflow single-task "scope the set"
+$ git add feature.rs                          # the agent's own task edit — staged (G5)
+# scratch.txt        — unrelated, untracked   (never `git add`ed)
+# README.md          — unrelated, modified    (tracked, unstaged)
+$ jigc task finalize <id>
+  finalized <hash> — feat(cache): scope the declared change set
+    modified feature.rs
+    1 file(s) committed
+    left-out (unstaged/untracked — git add to include):
+      scratch.txt
+      README.md
+$ git show --name-only HEAD
+  feature.rs                                  ← ONLY the staged edit (+ jigc's own files)
+$ git status --porcelain
+  ?? scratch.txt                              ← still untracked, left behind
+   M README.md                                ← still modified, left behind
+
+# a doc citing a code symbol the agent WROTE but did NOT stage — the finalize-scope doc-code
+# probe validates the materialized git INDEX, so the symbol is absent → blocks:
+$ jigc start --workflow architecture-documentation "document the gateway"
+$ jigc doc create   arch-doc --title "Gateway"
+$ jigc doc add-item "arch-doc:gateway#components" --title "Widget"     # → #components/widget
+$ jigc doc set-field "arch-doc:gateway#components/widget/implemented-by" \
+        --value "widget.rs#render_widget"
+# agent appends `pub fn render_widget() {}` to the tracked widget.rs but never `git add`s it
+$ jigc --format json task finalize <id>
+  ✗ doc-code · symbol-exists · blocking
+    location.address: arch-doc:gateway#components/widget/implemented-by
+    message:          `widget.rs#render_widget` resolves to no symbol in the index
+  finalize blocked — HEAD unchanged, nothing promoted.
+```
+
+The commit carries only what the agent declared (the index) plus jigc's own promoted/config files — never the ambient WIP — and the left-out residual is the post-commit `git status --porcelain` worktree column, the same set the `--dry-run` forecast predicts (the included/left-out split, M30 G3). The block on the unstaged citation is the sharp half: the agent *wrote* the symbol, so a working-tree read would pass it; the index read catches it, because the index is exactly what is about to be committed. Validated reality == committed reality.
+
+### What it asserts (the M30 acceptance bar)
+
+1. **The commit is scoped to the staged index.** A finalize with a staged task edit, an unrelated untracked file, and an unrelated unstaged-modified tracked file commits **only** the staged edit (plus jigc's promoted/config files); `git show --name-only HEAD` carries the staged edit and **neither** unrelated file, and the unrelated local edit never reaches the committed bytes.
+2. **The rest is surfaced, not swept.** Both unrelated changes **remain** uncommitted in the working tree post-commit (`git status --porcelain` still shows the untracked file and the modified tracked file), and the emitted finalize output **names the left-out set** — the untracked file and the unstaged-tracked file — so the agent can `git add` them on a follow-up rather than discovering them silently committed.
+3. **A citation the agent wrote but did NOT stage blocks.** A component anchoring a Rust symbol appended to a tracked file but never `git add`ed makes `finalize` block on `doc-code.symbol-exists` naming the citing item's anchor address (`arch-doc:gateway#components/widget/implemented-by`) and the dangling target (`widget.rs#render_widget`); HEAD is unchanged, nothing is promoted. The finalize-scope `doc-code` probe validates the materialized git **index** (M30 Increment 3, G4), so an unstaged symbol is absent reality — the keystone the index-as-change-manifest model rests on.
+4. **The production path resolves.** The whole loop runs on the cargo-built `jigc` against the **embedded** dev pack with the `doc-code` probe found beside the binary (no `JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE` override) — the path a real install hits; a missing sibling would surface as a `pack-probe-integrity` meta-finding, asserted absent.
