@@ -2018,3 +2018,52 @@ The `symbol-exists` block naming **A's** address (a TypeScript symbol) while B's
 2. **A Python citation validates against reality, symmetrically.** Deleting component B's Python symbol while A's TypeScript symbol stays valid blocks `finalize` on `doc-code.symbol-exists` naming **B's** item address (`#components/token-limiter/implemented-by`) and **never** A's. Per-item disambiguation holds **across two grammars** — the single lever that proves the probe dispatched each anchor to its own language.
 3. **Both anchors present → exactly one commit.** With the TypeScript and Python symbols both present, `finalize` validates clean, lands **exactly one** `docs(arch-doc):` commit, promotes the doc to `architecture/gateway.md`, and cleans the working area. Zero `doc-code` findings on the passing arm is the masking failure the pass↔block contrast guards against — the block arms (one per language) prove the enumeration reached each anchor-bearing component independently, so the clean pass is "the probe ran and both symbols resolved," not "the probe never ran."
 4. **The sibling probe resolves with the larger grammar set.** The `doc-code` subprocess is found beside the running `jigc` (`<bin-dir>/doc-code`, **no** `JIGC_DOC_CODE_PROBE` override) — the production path a real install hits — and runs with the six-grammar set the M27 generalization links in. (The measured-on-the-`cargo install`-installed-binary proof + the size budget are M27 Increment 4.)
+
+## 30. doc↔code on a CSS target — two selector citations validated against the stylesheet (M28)
+
+The M28 acceptance: **the `doc-code` differentiator turns on for a CSS target.** Flow 29 generalized the probe Rust→six **AST** languages, where a citable `#symbol` is an AST *named item* (a class, a function). A CSS *selector* is not — it is an addressable unit of a different model, so it needed a **per-grammar extractor** (the HD1 keystone: read the addressable-unit name per node-kind, not a single `.name` field) rather than the unsupported-language advisory CSS took until now ([validation.md](validation.md#multi-language-resolution-m27) → Multi-language resolution; [DECISIONS.md](../DECISIONS.md) → 2026-06-20 M28 planning, forks F4/F5). This flow mirrors flow 29 — an `arch-doc` with **two** components, each carrying an independently-resolving `implemented-by` anchor, the per-item-disambiguation A-deleted/B-valid proof — but anchored at real **CSS classes** in a single `styles.css`: component A's anchor at `styles.css#card`, component B's at `styles.css#title`. The CSS extractor is **probe-internal** — no engine, CLI, or pack-schema change; the `code-anchor` field type and the workflow stay language-blind. The design of record is [validation.md](validation.md#multi-language-resolution-m27); the extractor's node-kind→name table and the CSS honest bounds live there and are not restated. Notation illustrative; the flow below is the shape the acceptance test (`crates/cli/tests/flow30_acceptance.rs`) drives end-to-end through the built binary against the real `doc-code` subprocess, resolved as a **sibling of `jigc`** (no `JIGC_DOC_CODE_PROBE` override — the production path a real install hits; the measured-on-the-installed-binary proof is M28 Increment 2).
+
+### The walk — author two components over one stylesheet, block on each vanished selector, fix → one commit
+
+```text
+# a single styles.css carries two real CSS classes: `.card` and `.title`.
+$ jigc start --workflow architecture-documentation "document the gateway"
+$ jigc doc create arch-doc --title "Gateway" --task <id>             # mints arch-doc:gateway
+$ jigc doc set-slot  "arch-doc:gateway#overview" --from-file - --task <id>
+$ jigc doc set-field "arch-doc:gateway#cites" --value "adr:use-a-cache" --task <id>   # a committed adr
+
+# component A → the `.card` selector; component B → the `.title` selector (one file, two selectors):
+$ jigc doc add-item  "arch-doc:gateway#components" --title "Card"  --task <id>   # → #components/card
+$ jigc doc set-field "arch-doc:gateway#components/card/implemented-by" \
+        --value "styles.css#card" --task <id>
+$ jigc doc add-item  "arch-doc:gateway#components" --title "Title" --task <id>   # → #components/title
+$ jigc doc set-field "arch-doc:gateway#components/title/implemented-by" \
+        --value "styles.css#title" --task <id>
+
+# delete component A's CSS class (drop the `.card` rule) while B's `.title` rule stays:
+$ jigc --format json task finalize <id>
+  ✗ doc-code · symbol-exists · blocking
+    location.address: arch-doc:gateway#components/card/implemented-by     ← A's item address, NOT B's
+    message:          `styles.css#card` resolves to no symbol in the working tree
+  finalize blocked — HEAD unchanged, nothing promoted.
+
+# symmetrically: restore `.card`, delete component B's `.title` rule while A's `.card` stays valid:
+$ jigc --format json task finalize <id>
+  ✗ doc-code · symbol-exists · blocking
+    location.address: arch-doc:gateway#components/title/implemented-by    ← B's item address, NOT A's
+    message:          `styles.css#title` resolves to no symbol in the working tree
+
+# restore both → finalize PASSES: one docs(arch-doc): commit; arch-doc:gateway promotes to architecture/gateway.md.
+$ jigc task finalize <id>
+$ git log --oneline -1
+  docs(arch-doc): document the gateway        ← exactly one commit; both CSS anchors resolved
+```
+
+The two components anchor into the **same file** at different selectors, so the only lever that picks A from B is the per-selector extractor over the shared `styles.css` — the sharpest per-item-disambiguation fixture. The `symbol-exists` block naming **A's** address while B's selector stays silent — and the symmetric block naming **B's** address while A's stays silent — is the proof that each item's anchor resolves against its own authored selector through the CSS extractor, never a clobbered shared one. The passing walk lands the commit only because the probe genuinely ran the CSS grammar over `styles.css` and both selectors resolved — the masking guard is the pass↔block contrast over the same fixture (a silently-skipped enumeration, or CSS still taking the `unsupported-language` advisory, would land the commit in every arm).
+
+### What it asserts (the M28 acceptance bar)
+
+1. **A CSS selector citation validates against reality.** Deleting component A's CSS class (the file stays, the `.card` rule is dropped) **blocks** `finalize` on `doc-code.symbol-exists`, the rendered report's `location.address` is **A's** item address (`arch-doc:gateway#components/card/implemented-by`) and **never** B's, HEAD is unchanged, nothing is promoted. The CSS extractor resolved a present selector and surfaced an absent one — the CSS half of the parked "CSS + docker-compose" deferral is closed.
+2. **A second CSS citation validates against reality, symmetrically.** Deleting component B's `.title` rule while A's `.card` stays valid blocks `finalize` on `doc-code.symbol-exists` naming **B's** item address (`#components/title/implemented-by`) and **never** A's. Per-item disambiguation holds **over the same stylesheet** — the single lever that proves the extractor picked each anchor's own selector out of the shared file.
+3. **Both selectors present → exactly one commit.** With the `.card` and `.title` rules both present, `finalize` validates clean, lands **exactly one** `docs(arch-doc):` commit, promotes the doc to `architecture/gateway.md`, and cleans the working area. Zero `doc-code` findings on the passing arm is the masking failure the pass↔block contrast guards against — the block arms prove the enumeration reached each anchor-bearing component independently, so the clean pass is "the probe ran and both selectors resolved," not "the probe never ran (or advised them un-grammared)."
+4. **The sibling probe resolves with the CSS grammar.** The `doc-code` subprocess is found beside the running `jigc` (`<bin-dir>/doc-code`, **no** `JIGC_DOC_CODE_PROBE` override) — the production path a real install hits — and runs with the seven-grammar set the M28 CSS extractor links in. (The measured-on-the-`cargo install`-installed-binary proof + the re-run size budget are M28 Increment 2.)
