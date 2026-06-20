@@ -1,0 +1,30 @@
+==================================================================
+### ARM: scope (Facts 1 + 2 — commits only the declared change-set, names the rest)
+repo: /tmp/jigc-m30-scope-i6avgG   HEAD-before: 1
+--- git status --porcelain (pre-finalize) ---
+ M README.md
+A  feature.rs
+?? .jigc/
+?? scratch.txt
+--- jigc task finalize scope-the-set ---
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:scope-the-set.md`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+
+finalized 35132b9 — feat(cache): scope the declared change set
+  swept (was untracked) .jigc/.gitignore
+  swept (was untracked) feature.rs
+  2 files committed
+  left-out (unstaged/untracked — git add to include):
+    README.md
+    scratch.txt
+
+FINALIZE_EXIT=0
+HEAD-after: 2   (delta 1)
+--- git show --name-only --format= HEAD (the landed change-set) ---
+.jigc/.gitignore
+feature.rs
+--- git status --porcelain (post-finalize — the left-out files REMAIN) ---
+ M README.md
+?? scratch.txt
+--- git show HEAD:README.md (the unrelated local edit must NOT be committed) ---
+hello

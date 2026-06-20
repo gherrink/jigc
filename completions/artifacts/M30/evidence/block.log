@@ -1,0 +1,31 @@
+==================================================================
+### ARM: block (Fact 3 — an unstaged cited symbol blocks finalize)
+repo: /tmp/jigc-m30-block-qsPArp   HEAD-before: 2
+cited item address: arch-doc:gateway#components/widget/implemented-by   anchor: widget.rs#render_widget
+--- widget.rs (working tree — render_widget present but NOT staged) ---
+pub fn placeholder() {}
+pub fn render_widget() {}
+--- git show :widget.rs (the INDEX — render_widget ABSENT) ---
+pub fn placeholder() {}
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `widget.rs#render_widget` resolves to no symbol (`render_widget` is absent from `widget.rs`)",
+      "location": {
+        "address": "arch-doc:gateway#components/widget/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 2   (delta 0)
+PROMOTED: gateway.md ABSENT (nothing promoted)
