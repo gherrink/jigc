@@ -1025,7 +1025,11 @@ mod tests {
         # not a project-overridable value, so it stays in defaults.yaml.
         # The `validation.*.severity` keys are the per-check severity surface; their
         # defaults + intrinsic-ness are governed by the single source of truth,
-        # validation.md → MVP check inventory (20 checks across 6 categories). The two
+        # validation.md → MVP check inventory (27 checks across 9 categories — pinned by
+        # engine::knobs per_check_severity_surface_reconciles_to_the_27_18_9_inventory).
+        # (The engine's CHECK_INVENTORY post-pass membership set is a 24-row subset of
+        # these 27 — it drops the 3 compose-time marker checks; see engine::result
+        # check_inventory_membership_count_is_stable.) The two
         # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
         # per-probe *defaults* (never a rename) so an M4-authored manifest still
         # resolves; they sit alongside the per-check keys.
