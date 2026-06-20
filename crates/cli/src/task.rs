@@ -698,8 +698,11 @@ impl TaskArea {
         // above is computed read-only (`plan_finalize` only reads), so deriving the
         // prediction from it is side-effect-free.
         if dry_run {
-            let entries = self.predict_manifest(&plan, is_migration)?;
-            print!("{}", render::finalize_manifest(format, &entries));
+            let (included, left_out) = self.predict_manifest(&plan, is_migration)?;
+            print!(
+                "{}",
+                render::finalize_manifest(format, &included, &left_out)
+            );
             if format != Format::Json {
                 println!();
             }
@@ -824,7 +827,7 @@ impl TaskArea {
         &self,
         plan: &engine::finalize::FinalizePlan,
         is_migration: bool,
-    ) -> Result<Vec<render::ManifestEntry>> {
+    ) -> Result<(Vec<render::ManifestEntry>, Vec<render::ManifestEntry>)> {
         use render::{ManifestEntry, ManifestKind};
 
         let promoted: Vec<String> = plan
@@ -859,24 +862,46 @@ impl TaskArea {
                     kind: ManifestKind::Modified,
                 });
             }
-            return Ok(entries);
+            // A migration is `MigrationFixed` — it stages its own narrowed pathspec and
+            // never sweeps user WIP, so there is no left-out set.
+            return Ok((entries, Vec::new()));
         }
 
+        // Non-migration `IndexHonoring`: the commit lands the INDEX, so split each dirty
+        // path by its porcelain column (M30 G3) — the X (index) column is **included** in
+        // the commit, the Y (worktree) column is **left out** (unstaged/untracked WIP the
+        // agent must `git add` to include). A staged-then-further-modified (`MM`) path is
+        // non-blank in both columns, so it appears in **both** sets.
         let promoted_set: std::collections::HashSet<&str> =
             promoted.iter().map(String::as_str).collect();
-        let mut entries: Vec<ManifestEntry> = Vec::new();
+        let mut included: Vec<ManifestEntry> = Vec::new();
+        let mut left_out: Vec<ManifestEntry> = Vec::new();
         for (code, path) in git_status_entries(&self.repo_root)? {
             // A promotion lands at its canonical path and wins the dedup; it is added below.
             if promoted_set.contains(path.as_str()) {
                 continue;
             }
-            entries.push(ManifestEntry {
-                path,
-                kind: status_code_to_kind(&code),
-            });
+            let mut columns = code.chars();
+            let x = columns.next().unwrap_or(' ');
+            let y = columns.next().unwrap_or(' ');
+            // X names the staged change the commit carries. `?` (untracked) is not in the
+            // index, so it never counts as included.
+            if x != ' ' && x != '?' {
+                included.push(ManifestEntry {
+                    path: path.clone(),
+                    kind: column_kind(x),
+                });
+            }
+            // Y names the un-staged worktree residual left out of the commit.
+            if y != ' ' {
+                left_out.push(ManifestEntry {
+                    path,
+                    kind: column_kind(y),
+                });
+            }
         }
         for path in &promoted {
-            entries.push(ManifestEntry {
+            included.push(ManifestEntry {
                 path: path.clone(),
                 kind: ManifestKind::Promoted,
             });
@@ -887,13 +912,13 @@ impl TaskArea {
             if let Some(spec) = retirement.to_str()
                 && path_at_head(&self.repo_root, spec)
             {
-                entries.push(ManifestEntry {
+                included.push(ManifestEntry {
                     path: spec.to_owned(),
                     kind: ManifestKind::Deleted,
                 });
             }
         }
-        Ok(entries)
+        Ok((included, left_out))
     }
 
     /// Steps 2–5 of the bind enforcement (`design/write-commands.md` → Binding a
@@ -1607,11 +1632,11 @@ fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
 }
 
 /// The status-preserving sibling of [`git_dirty_paths`] (B1 dirty-tree sweep): each dirty
-/// working-tree path paired with its two-column porcelain status code (`git status
-/// --porcelain --untracked-files=all`). Used by the `--dry-run` manifest prediction to map
-/// each path to a [`render::ManifestKind`] without staging anything. A rename `R old -> new`
-/// splits to `old` (deleted) + `new` (untracked) — the shape `git add --all` would carry
-/// into the commit under `--no-renames`.
+/// working-tree path paired with its **two-column** porcelain status code (`git status
+/// --porcelain --untracked-files=all`). The full XY is preserved (never collapsed) so the
+/// `--dry-run` manifest prediction can split the X (index → included) and Y (worktree →
+/// left-out) columns independently (M30 G3). A rename `R old -> new` splits to `old`
+/// (`D `, staged delete) + `new` (`A `, staged add) — the shape the staged index carries.
 fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
     let out = Command::new("git")
         .args(["status", "--porcelain", "--untracked-files=all"])
@@ -1641,23 +1666,14 @@ fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
     Ok(entries)
 }
 
-/// Map a porcelain status code to the manifest kind `git add --all` would land it as: `??`
-/// is an untracked sweep; otherwise read the worktree (then index) column — `D`→deleted,
-/// `A`→untracked (a new/added file reads as a fresh add in the commit), everything else
-/// (`M`/`T`/…)→modified.
-fn status_code_to_kind(code: &str) -> render::ManifestKind {
-    if code == "??" {
-        return render::ManifestKind::Untracked;
-    }
-    let c = code
-        .chars()
-        .nth(1)
-        .filter(|c| *c != ' ')
-        .or_else(|| code.chars().next())
-        .unwrap_or('M');
+/// Map a single porcelain status-column char to its manifest kind (M30 G3 — each column
+/// classified independently so the dry-run forecast can split included/left-out): `D`→
+/// deleted, `A`/`?`→untracked (a fresh add / an untracked file), everything else
+/// (`M`/`T`/`C`/…)→modified.
+fn column_kind(c: char) -> render::ManifestKind {
     match c {
         'D' => render::ManifestKind::Deleted,
-        'A' => render::ManifestKind::Untracked,
+        'A' | '?' => render::ManifestKind::Untracked,
         _ => render::ManifestKind::Modified,
     }
 }

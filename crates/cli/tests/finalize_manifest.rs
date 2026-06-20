@@ -259,10 +259,10 @@ fn dry_run_prints_manifest_and_commits_nothing() {
         "jigc task finalize --dry-run",
     );
 
-    // The manifest is printed and surfaces the stray.
+    // The manifest is printed and names the unstaged stray as left out of the commit.
     assert!(
-        stdout.contains("dry-run") && stdout.contains("swept (was untracked) scratch.txt"),
-        "the dry-run prints a manifest flagging the stray; stdout:\n{stdout}",
+        stdout.contains("dry-run") && stdout.contains("left-out") && stdout.contains("scratch.txt"),
+        "the dry-run prints a manifest naming the stray as left-out; stdout:\n{stdout}",
     );
 
     // No commit landed.
@@ -298,10 +298,11 @@ fn dry_run_prints_manifest_and_commits_nothing() {
     );
 }
 
-/// (iii) `--format json` — the dry-run JSON carries `dry_run: true` + a `manifest[]` that
-/// still forecasts the stray (the Inc-1 `predict_manifest` is unchanged — Inc 2 reworks
-/// it to the narrowed model); the landed-run JSON carries `committed.manifest` with the
-/// promoted ADR but NOT the stray (M30 — the per-task narrowing no longer commits it).
+/// (iii) `--format json` — the dry-run JSON carries `dry_run: true` + a `manifest[]`
+/// (included) that does NOT carry the unstaged stray and a `left_out[]` that names it as
+/// untracked (M30 G3 — the included/left-out split); the landed-run JSON carries
+/// `committed.manifest` with the promoted ADR but NOT the stray (M30 — the per-task
+/// narrowing no longer commits it).
 #[test]
 fn json_manifest_on_dry_run_and_landed_run() {
     let repo = TempDir::new("json");
@@ -324,10 +325,15 @@ fn json_manifest_on_dry_run_and_landed_run() {
     );
     let dry_manifest = dry["manifest"].as_array().expect("manifest is an array");
     assert!(
-        dry_manifest
+        !dry_manifest.iter().any(|e| e["path"] == "scratch.txt"),
+        "dry-run included manifest must NOT carry the unstaged stray; manifest:\n{dry_manifest:?}",
+    );
+    let dry_left_out = dry["left_out"].as_array().expect("left_out is an array");
+    assert!(
+        dry_left_out
             .iter()
             .any(|e| e["path"] == "scratch.txt" && e["kind"] == "untracked"),
-        "dry-run manifest carries the stray as untracked; manifest:\n{dry_manifest:?}",
+        "dry-run left_out names the stray as untracked; left_out:\n{dry_left_out:?}",
     );
 
     // Landed-run JSON.
@@ -462,5 +468,105 @@ sections:
         head_before,
         git(repo.path(), &["rev-parse", "HEAD"]),
         "a migration dry-run must not move HEAD",
+    );
+}
+
+/// (v) T1 — the dry-run forecast splits the porcelain XY into **included** (X column, the
+/// index the commit lands) vs **left_out** (Y column, unstaged/untracked WIP). Over a
+/// staged task edit, an unrelated untracked file, an unrelated unstaged-modified tracked
+/// file, and a staged-then-further-modified (`MM`) path, the included `manifest` carries the
+/// staged edit and the X side of `MM` (plus the promoted ADR) while `left_out` names the
+/// untracked file, the unstaged-tracked edit, and the Y side of `MM` — the `MM` path in
+/// **both** sets. Drives the emitted `--format json` bytes the binary printed, not a rebuild.
+#[test]
+fn dry_run_splits_included_from_left_out() {
+    let repo = TempDir::new("split");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    // Tracked files for the included / left-out / MM cases (committed so they are tracked).
+    fs::write(repo.path().join("staged.rs"), "fn a() {}\n").expect("write staged.rs");
+    fs::write(repo.path().join("unstaged.rs"), "fn b() {}\n").expect("write unstaged.rs");
+    fs::write(repo.path().join("mm.rs"), "fn c() {}\n").expect("write mm.rs");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "seed tracked"]);
+
+    let (task, slug) = seed_task_with_stray(repo.path(), home.path(), "split forecast");
+
+    // A staged task edit — X column → included.
+    fs::write(repo.path().join("staged.rs"), "fn a() { /* edit */ }\n").expect("edit staged.rs");
+    git(repo.path(), &["add", "staged.rs"]);
+    // An unrelated unstaged-modified tracked file — Y column → left-out.
+    fs::write(repo.path().join("unstaged.rs"), "fn b() { /* wip */ }\n").expect("edit unstaged.rs");
+    // A staged-then-further-modified (`MM`) path — X → included, Y → left-out.
+    fs::write(repo.path().join("mm.rs"), "fn c() { /* staged */ }\n").expect("stage mm.rs");
+    git(repo.path(), &["add", "mm.rs"]);
+    fs::write(
+        repo.path().join("mm.rs"),
+        "fn c() { /* staged then more */ }\n",
+    )
+    .expect("re-edit mm.rs");
+    // `scratch.txt` is the unrelated untracked stray the seed left (left-out).
+
+    let dry = ok_stdout(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "finalize", &task, "--dry-run"],
+        "jigc task finalize --dry-run --format json",
+    );
+    let dry: serde_json::Value = serde_json::from_str(&dry).expect("dry-run stdout parses as JSON");
+    let manifest = dry["manifest"].as_array().expect("manifest is an array");
+    let left_out = dry["left_out"].as_array().expect("left_out is an array");
+    let has = |arr: &[serde_json::Value], path: &str, kind: &str| {
+        arr.iter().any(|e| e["path"] == path && e["kind"] == kind)
+    };
+    let names = |arr: &[serde_json::Value], path: &str| arr.iter().any(|e| e["path"] == path);
+
+    // Included: the staged edit + the X side of `MM` + the promoted ADR.
+    assert!(
+        has(manifest, "staged.rs", "modified"),
+        "included manifest carries the staged edit; manifest:\n{manifest:?}",
+    );
+    assert!(
+        has(manifest, "mm.rs", "modified"),
+        "included manifest carries the X side of MM; manifest:\n{manifest:?}",
+    );
+    assert!(
+        has(manifest, &format!("docs/decisions/{slug}.md"), "promoted"),
+        "included manifest carries the promoted ADR; manifest:\n{manifest:?}",
+    );
+    // Included must NOT carry the left-out-only paths.
+    assert!(
+        !names(manifest, "unstaged.rs"),
+        "included manifest must NOT carry the unstaged-only edit; manifest:\n{manifest:?}",
+    );
+    assert!(
+        !names(manifest, "scratch.txt"),
+        "included manifest must NOT carry the untracked stray; manifest:\n{manifest:?}",
+    );
+
+    // Left-out: the untracked stray + the unstaged-tracked edit + the Y side of `MM`.
+    assert!(
+        has(left_out, "scratch.txt", "untracked"),
+        "left_out names the untracked stray; left_out:\n{left_out:?}",
+    );
+    assert!(
+        has(left_out, "unstaged.rs", "modified"),
+        "left_out names the unstaged-tracked edit; left_out:\n{left_out:?}",
+    );
+    assert!(
+        has(left_out, "mm.rs", "modified"),
+        "left_out names the Y side of MM; left_out:\n{left_out:?}",
+    );
+    // The staged-only edit is not left out.
+    assert!(
+        !names(left_out, "staged.rs"),
+        "left_out must NOT carry the staged-only edit; left_out:\n{left_out:?}",
+    );
+
+    // The `MM` path appears in BOTH sets — a kind cannot express "partially included".
+    assert!(
+        names(manifest, "mm.rs") && names(left_out, "mm.rs"),
+        "the MM path is reported in both included and left_out",
     );
 }

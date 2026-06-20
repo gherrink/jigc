@@ -433,22 +433,42 @@ fn manifest_line(entry: &ManifestEntry) -> String {
     }
 }
 
+/// The left-out section a finalize manifest appends when the working tree carries
+/// unstaged/untracked changes the commit (the index) leaves behind (M30 G3): a guidance
+/// header naming the set, then one indented path per [`ManifestEntry`]. Empty when nothing
+/// is left out. Shared by the dry-run forecast and the landed residual so both surfaces
+/// render the left-out set identically.
+fn left_out_lines(left_out: &[ManifestEntry]) -> Vec<String> {
+    if left_out.is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec!["  left-out (unstaged/untracked — git add to include):".to_string()];
+    lines.extend(left_out.iter().map(|entry| format!("    {}", entry.path)));
+    lines
+}
+
 /// Render the `task finalize --dry-run` pre-commit manifest to the surface `format`
-/// selects (B1 dirty-tree sweep — surface the commit file-set, commit nothing): `json`
-/// emits `{ "dry_run": true, "manifest": [{path,kind}…] }` (tooling-consumed, no footer);
-/// `agent` / `human` emit a titled block, one [`manifest_line`] per entry (untracked
-/// flagged), with **no trailing newline** — the caller's `println!` closes it, symmetric
-/// with [`landed_summary`].
-pub fn finalize_manifest(format: Format, entries: &[ManifestEntry]) -> String {
+/// selects (M30 G3 — name what is **included** in the commit vs **left out** of it): `json`
+/// emits `{ "dry_run": true, "manifest": [{path,kind}…], "left_out": [{path,kind}…] }`
+/// (tooling-consumed, no footer); `agent` / `human` emit a titled block, one
+/// [`manifest_line`] per included entry, then the [`left_out_lines`] section, with **no
+/// trailing newline** — the caller's `println!` closes it, symmetric with [`landed_summary`].
+pub fn finalize_manifest(
+    format: Format,
+    included: &[ManifestEntry],
+    left_out: &[ManifestEntry],
+) -> String {
     match format {
         Format::Json => json(&serde_json::json!({
             "dry_run": true,
-            "manifest": entries,
+            "manifest": included,
+            "left_out": left_out,
         })),
         Format::Agent | Format::Human => {
             let mut lines =
                 vec!["finalize --dry-run — pre-commit manifest (nothing committed)".to_string()];
-            lines.extend(entries.iter().map(manifest_line));
+            lines.extend(included.iter().map(manifest_line));
+            lines.extend(left_out_lines(left_out));
             lines.join("\n")
         }
     }
@@ -2281,36 +2301,39 @@ mod tests {
     /// `dry_run: true` and a `manifest[]` of `{path,kind}` (kebab-case kinds).
     #[test]
     fn render_finalize_manifest_flags_untracked_and_json_carries_dry_run() {
-        let entries = vec![
-            ManifestEntry {
-                path: "docs/decisions/x.md".to_string(),
-                kind: ManifestKind::Promoted,
-            },
-            ManifestEntry {
-                path: "scratch.txt".to_string(),
-                kind: ManifestKind::Untracked,
-            },
-        ];
+        let included = vec![ManifestEntry {
+            path: "docs/decisions/x.md".to_string(),
+            kind: ManifestKind::Promoted,
+        }];
+        let left_out = vec![ManifestEntry {
+            path: "scratch.txt".to_string(),
+            kind: ManifestKind::Untracked,
+        }];
 
-        let agent = finalize_manifest(Format::Agent, &entries);
+        let agent = finalize_manifest(Format::Agent, &included, &left_out);
         insta::assert_snapshot!(agent, @r"
         finalize --dry-run — pre-commit manifest (nothing committed)
           promoted docs/decisions/x.md
-          swept (was untracked) scratch.txt");
+          left-out (unstaged/untracked — git add to include):
+            scratch.txt");
         assert!(
             !agent.ends_with('\n'),
             "no trailing newline — the caller closes it"
         );
-        assert_eq!(finalize_manifest(Format::Human, &entries), agent);
+        assert_eq!(
+            finalize_manifest(Format::Human, &included, &left_out),
+            agent
+        );
 
-        let json_out = finalize_manifest(Format::Json, &entries);
+        let json_out = finalize_manifest(Format::Json, &included, &left_out);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["dry_run"], serde_json::Value::Bool(true));
         let manifest = value["manifest"].as_array().expect("manifest array");
         assert_eq!(manifest[0]["path"], "docs/decisions/x.md");
         assert_eq!(manifest[0]["kind"], "promoted");
-        assert_eq!(manifest[1]["path"], "scratch.txt");
-        assert_eq!(manifest[1]["kind"], "untracked");
+        let left = value["left_out"].as_array().expect("left_out array");
+        assert_eq!(left[0]["path"], "scratch.txt");
+        assert_eq!(left[0]["kind"], "untracked");
     }
 
     /// A landed finalize's JSON `committed` object carries the `manifest[]` alongside the
