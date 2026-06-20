@@ -70,3 +70,14 @@ behaviors (the YAML extractor is untouched by both):
 
 Both fixed post-hardening (test-first, one commit each) — see DECISIONS
 2026-06-20 M29 F8 hardening.
+
+## Post-fix re-pin (the two papercuts now live)
+
+After the two fixes (`5df6d3d`, `e3a663c`), both bin dirs were rebuilt + re-pinned:
+
+| | sha256 |
+|---|---|
+| `~/.cargo/bin/jigc` = `~/.local/bin/jigc` = fresh `target/release/jigc` | `64ad102a1387258825434baa4575461900ade0d470ed6439e5ca798c8516230f` |
+| `~/.cargo/bin/doc-code` = `~/.local/bin/doc-code` | `d99fc650e27ce2d46a469585513c0cabf84477af8b95241034a8a15bf9f01e2e` (unchanged — probe source untouched, reproduced byte-identically) |
+
+The production `jigc` is now M29 + the two CLI fixes; the `doc-code` probe is byte-identical to the M29 measurement.
