@@ -1344,4 +1344,68 @@ seq:
             let _ = symbol_exists(src, "x", Grammar::Yaml);
         }
     }
+
+    /// Every addressable-unit name the extractor yields over `src` under `grammar`, at any
+    /// nesting — the same full-tree walk [`symbol_exists`] resolves over, but collecting the
+    /// names instead of matching one. Drives the `:`-reservation guard below.
+    fn all_unit_names(src: &str, grammar: Grammar) -> Vec<String> {
+        fn collect(node: &tree_sitter::Node, src: &str, grammar: Grammar, out: &mut Vec<String>) {
+            out.extend(item_names(node, src, grammar));
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect(&child, src, grammar, out);
+            }
+        }
+        let mut out = Vec::new();
+        with_root(src, grammar, |root| {
+            collect(&root, src, grammar, &mut out);
+            true
+        });
+        out
+    }
+
+    #[test]
+    fn no_extractor_yields_a_colon_bearing_unit_name() {
+        // Reservation guard ([DECISIONS.md] 2026-06-20 — "address-syntax fork settled"): the `:`
+        // in a code-anchor fragment is RESERVED for the future `path#kind:name` disambiguation
+        // qualifier (deferred — built only when a real collision causes a *wrong* resolution).
+        // The reservation stays free only while no shipped grammar's addressable-unit extractor
+        // emits a unit name containing `:` — then `#kind:name` is an unambiguous future namespace.
+        // This pins that property over every shipped grammar's representative real fixture; a
+        // future grammar/extractor that emitted a `:`-bearing unit name trips this test and forces
+        // a conscious decision rather than silently colliding with the reserved form.
+        let tsx = "\
+export function Button() {
+    return <div className=\"btn\">click</div>;
+}
+";
+        let cases: [(&str, &str, Grammar); 9] = [
+            ("Rust", NESTED, Grammar::Rust),
+            ("TypeScript", TS, Grammar::TypeScript),
+            ("TSX", tsx, Grammar::Tsx),
+            ("JavaScript", JS, Grammar::JavaScript),
+            ("Python", PY, Grammar::Python),
+            ("PHP", PHP, Grammar::Php),
+            ("bash", BASH, Grammar::Bash),
+            ("CSS", CSS, Grammar::Css),
+            ("YAML", YAML, Grammar::Yaml),
+        ];
+        for (lang, src, grammar) in cases {
+            let names = all_unit_names(src, grammar);
+            // Guard against a vacuous pass: the fixture must actually exercise the extractor.
+            assert!(
+                !names.is_empty(),
+                "{lang}: fixture yielded no addressable units — the `:`-reservation guard would \
+                 be vacuous; the fixture must produce real units"
+            );
+            for name in &names {
+                assert!(
+                    !name.contains(':'),
+                    "{lang}: extractor yielded the `:`-bearing unit name `{name}` — this breaks \
+                     the reserved `path#kind:name` namespace (DECISIONS 2026-06-20). If a grammar \
+                     legitimately needs a `:` in a unit name, the reservation must be revisited."
+                );
+            }
+        }
+    }
 }
