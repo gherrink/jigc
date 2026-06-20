@@ -1,0 +1,31 @@
+==================================================================
+### ARM: block-title
+repo: /tmp/jigc-m28-flow30-v87kUK   HEAD-before: 3
+styles.css selectors present: .card
+--- styles.css ---
+.card {
+  border: 1px solid black;
+}
+
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `styles.css#title` resolves to no symbol (`title` is absent from `styles.css`)",
+      "location": {
+        "address": "arch-doc:gateway#components/title/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 3   (delta 0)
+PROMOTED: docs/architecture/gateway.md ABSENT (nothing promoted)

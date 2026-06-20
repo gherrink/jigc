@@ -1,0 +1,30 @@
+==================================================================
+### ARM: block-card
+repo: /tmp/jigc-m28-flow30-A6v5ix   HEAD-before: 3
+styles.css selectors present: .title
+--- styles.css ---
+.title {
+  font-weight: bold;
+}
+--- jigc --format json task finalize document-the-gateway ---
+{
+  "schema_version": 2,
+  "findings": [
+    {
+      "severity": "blocking",
+      "probe": "doc-code",
+      "check": "symbol-exists",
+      "code": "doc-code.symbol-exists",
+      "message": "anchor `styles.css#card` resolves to no symbol (`card` is absent from `styles.css`)",
+      "location": {
+        "address": "arch-doc:gateway#components/card/implemented-by",
+        "line": 1,
+        "col": 1
+      },
+      "route": null
+    }
+  ]
+}
+FINALIZE_EXIT=3
+HEAD-after: 3   (delta 0)
+PROMOTED: docs/architecture/gateway.md ABSENT (nothing promoted)
