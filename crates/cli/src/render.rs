@@ -392,10 +392,18 @@ pub struct Landed {
     pub promoted: Vec<String>,
     /// The number of files the landed commit touched (`= manifest.len()`).
     pub files: usize,
-    /// The pre-commit manifest — every path in the commit set tagged by how it entered
-    /// (B1 dirty-tree sweep): a swept untracked file is flagged distinctly so a tester
-    /// notices a stray `scratch.txt`.
+    /// The **included** manifest — every path the landed commit carried (its `git show
+    /// --name-status HEAD` delta), tagged by how it entered. The per-task `IndexHonoring`
+    /// stage lands the index, so this is the staged set (a promoted doc, a modified/deleted
+    /// tracked file, the staged side of an `MM` path).
     pub manifest: Vec<ManifestEntry>,
+    /// The **left-out** residual the index commit left behind (post-commit `git status
+    /// --porcelain` worktree column — M30 G3): unstaged/untracked WIP the agent must
+    /// `git add` to include. Rendered identically to the dry-run forecast's `left_out`
+    /// (the measurement envelope's dry-run/landed symmetry). A staged-then-further-modified
+    /// (`MM`) path lands its staged side in `manifest` and its worktree residual here, so it
+    /// appears in **both**.
+    pub left_out: Vec<ManifestEntry>,
 }
 
 /// How a path entered the finalize commit set in the pre-commit manifest (B1 dirty-tree
@@ -508,11 +516,11 @@ pub fn finalize_landed(format: Format, report: &ValidationReport, landed: &Lande
 }
 
 /// The agent-text success section a landed finalize appends after the routing footer:
-/// `finalized <hash> — <subject>`, the pre-commit [`manifest_line`] for each path in the
-/// commit set (promoted / modified / deleted, and an untracked sweep flagged distinctly so
-/// a stray `scratch.txt` stands out — B1 dirty-tree sweep), and a `  <n> file(s) committed`
-/// tally. Ends without a trailing newline — the caller's `println!` closes the line,
-/// symmetric with [`validation`].
+/// `finalized <hash> — <subject>`, the [`manifest_line`] for each **included** path in the
+/// commit (promoted / modified / deleted), a `  <n> file(s) committed` tally, then the
+/// [`left_out_lines`] residual section naming the unstaged/untracked WIP the index commit
+/// left behind (M30 G3 — rendered identically to the dry-run forecast). Ends without a
+/// trailing newline — the caller's `println!` closes the line, symmetric with [`validation`].
 fn landed_summary(landed: &Landed) -> String {
     let mut out = format!("finalized {} — {}\n", landed.hash, landed.subject);
     for entry in &landed.manifest {
@@ -521,6 +529,10 @@ fn landed_summary(landed: &Landed) -> String {
     }
     let noun = if landed.files == 1 { "file" } else { "files" };
     out.push_str(&format!("  {} {noun} committed", landed.files));
+    for line in left_out_lines(&landed.left_out) {
+        out.push('\n');
+        out.push_str(&line);
+    }
     out
 }
 
@@ -2336,8 +2348,11 @@ mod tests {
         assert_eq!(left[0]["kind"], "untracked");
     }
 
-    /// A landed finalize's JSON `committed` object carries the `manifest[]` alongside the
-    /// existing `files` count; the agent-text summary lists each manifest entry by kind.
+    /// A landed finalize's JSON `committed` object carries the **included** `manifest[]`
+    /// alongside the `files` count *and* the **left_out[]** residual (M30 G3); the agent-text
+    /// summary lists each included entry by kind, then the left-out section rendered
+    /// identically to the dry-run forecast. The uncommitted stray is in `left_out`, not the
+    /// included manifest.
     #[test]
     fn render_finalize_landed_carries_the_manifest() {
         let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
@@ -2346,34 +2361,45 @@ mod tests {
             hash: "abc1234".to_string(),
             subject: "feat: surface the manifest".to_string(),
             promoted: vec!["docs/decisions/x.md".to_string()],
-            files: 2,
-            manifest: vec![
-                ManifestEntry {
-                    path: "docs/decisions/x.md".to_string(),
-                    kind: ManifestKind::Promoted,
-                },
-                ManifestEntry {
-                    path: "scratch.txt".to_string(),
-                    kind: ManifestKind::Untracked,
-                },
-            ],
+            files: 1,
+            manifest: vec![ManifestEntry {
+                path: "docs/decisions/x.md".to_string(),
+                kind: ManifestKind::Promoted,
+            }],
+            left_out: vec![ManifestEntry {
+                path: "scratch.txt".to_string(),
+                kind: ManifestKind::Untracked,
+            }],
         };
 
         let agent = finalize_landed(Format::Agent, &report, &landed);
         assert!(agent.contains("promoted docs/decisions/x.md"));
+        assert!(agent.contains("1 file committed"));
+        // The left-out residual is rendered identically to the dry-run (the shared helper).
         assert!(
-            agent.contains("swept (was untracked) scratch.txt"),
-            "the swept stray is flagged distinctly; agent:\n{agent}",
+            agent.contains("left-out (unstaged/untracked — git add to include):")
+                && agent.contains("    scratch.txt"),
+            "the landed summary names the left-out stray identically to the dry-run; agent:\n{agent}",
         );
-        assert!(agent.contains("2 files committed"));
+        // The stray is NOT a swept inclusion — it is left out, not in the committed set.
+        assert!(
+            !agent.contains("swept (was untracked) scratch.txt"),
+            "the stray is left-out, never a swept inclusion; agent:\n{agent}",
+        );
 
         let json_out = finalize_landed(Format::Json, &report, &landed);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         let committed = &value["committed"];
-        assert_eq!(committed["files"], 2);
+        assert_eq!(committed["files"], 1);
         let manifest = committed["manifest"].as_array().expect("manifest array");
-        assert_eq!(manifest.len(), 2);
-        assert_eq!(manifest[1]["path"], "scratch.txt");
-        assert_eq!(manifest[1]["kind"], "untracked");
+        assert_eq!(manifest.len(), 1);
+        assert_eq!(manifest[0]["path"], "docs/decisions/x.md");
+        assert!(
+            !manifest.iter().any(|e| e["path"] == "scratch.txt"),
+            "the stray is absent from committed.manifest; manifest:\n{manifest:?}",
+        );
+        let left_out = committed["left_out"].as_array().expect("left_out array");
+        assert_eq!(left_out[0]["path"], "scratch.txt");
+        assert_eq!(left_out[0]["kind"], "untracked");
     }
 }

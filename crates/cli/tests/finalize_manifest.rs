@@ -201,8 +201,9 @@ fn seed_task_with_stray(repo: &Path, home: &Path, intent: &str) -> (String, Stri
 
 /// (i) M30 — a normal finalize with an unstaged stray `scratch.txt` does NOT commit it
 /// (the per-task `IndexHonoring` narrowing no longer sweeps the ambient dirty tree); the
-/// stray stays untracked in the working tree, and the landed manifest carries only the
-/// promoted ADR (plus jigc's own files), never the stray.
+/// stray stays untracked in the working tree, the landed **included** manifest carries only
+/// the promoted ADR (never the stray), and the landed **left-out** residual names the stray
+/// (G3 — post-commit `git status --porcelain` symmetry with the dry-run forecast).
 #[test]
 fn normal_finalize_leaves_unstaged_stray_uncommitted() {
     let repo = TempDir::new("normal");
@@ -230,14 +231,20 @@ fn normal_finalize_leaves_unstaged_stray_uncommitted() {
         "the stray stays untracked after the commit; status:\n{status}",
     );
 
-    // The emitted manifest does not carry the stray, and lists the promoted ADR.
-    assert!(
-        !stdout.contains("scratch.txt"),
-        "the manifest must not carry the uncommitted stray; stdout:\n{stdout}",
-    );
+    // The emitted manifest lists the promoted ADR as included...
     assert!(
         stdout.contains(&format!("promoted docs/decisions/{slug}.md")),
         "the manifest lists the promoted ADR; stdout:\n{stdout}",
+    );
+    // ...and names the uncommitted stray in the left-out residual (G3 — landed symmetry with
+    // the dry-run forecast), never as a swept inclusion.
+    assert!(
+        stdout.contains("left-out") && stdout.contains("scratch.txt"),
+        "the landed manifest names the uncommitted stray as left-out; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("swept (was untracked) scratch.txt"),
+        "the stray is left-out, never a swept inclusion; stdout:\n{stdout}",
     );
 }
 
@@ -301,8 +308,8 @@ fn dry_run_prints_manifest_and_commits_nothing() {
 /// (iii) `--format json` — the dry-run JSON carries `dry_run: true` + a `manifest[]`
 /// (included) that does NOT carry the unstaged stray and a `left_out[]` that names it as
 /// untracked (M30 G3 — the included/left-out split); the landed-run JSON carries
-/// `committed.manifest` with the promoted ADR but NOT the stray (M30 — the per-task
-/// narrowing no longer commits it).
+/// `committed.manifest` with the promoted ADR but NOT the stray, and `committed.left_out`
+/// naming the stray as untracked (T2 — the post-commit residual, symmetric with the dry-run).
 #[test]
 fn json_manifest_on_dry_run_and_landed_run() {
     let repo = TempDir::new("json");
@@ -367,6 +374,17 @@ fn json_manifest_on_dry_run_and_landed_run() {
             .expect("files is a number"),
         manifest.len() as u64,
         "committed.files equals the manifest length",
+    );
+    // T2 — `committed.left_out` (the post-commit worktree residual) names the uncommitted
+    // stray as untracked, symmetric with the dry-run forecast's `left_out`.
+    let left_out = landed["committed"]["left_out"]
+        .as_array()
+        .expect("committed.left_out is an array");
+    assert!(
+        left_out
+            .iter()
+            .any(|e| e["path"] == "scratch.txt" && e["kind"] == "untracked"),
+        "committed.left_out names the uncommitted stray as untracked; left_out:\n{left_out:?}",
     );
 }
 

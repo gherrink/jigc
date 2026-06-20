@@ -766,17 +766,20 @@ impl TaskArea {
                 // near-silent, leaving a user to run `git log` to tell it worked. The
                 // commit is already truth here, so HEAD names the landed hash; the plan
                 // names what promoted where.
-                // B1 dirty-tree sweep — derive the pre-commit manifest from the LANDED
-                // commit's own delta (`git show --name-status HEAD`), so an untracked file
-                // `git add --all` swept in is surfaced (flagged distinctly), never silently
-                // bundled. The committed bytes are the contract, not a reconstruction.
+                // M30 G3 — derive the manifest split from the LANDED commit: the **included**
+                // set is the commit's own delta (`git show --name-status HEAD`); the
+                // **left-out** residual is the post-commit `git status --porcelain` worktree
+                // column (the unstaged/untracked WIP the index commit left behind, symmetric
+                // with the dry-run forecast). The committed bytes are the contract, not a
+                // reconstruction.
                 let promoted_dests: std::collections::HashSet<String> = plan
                     .promotions
                     .iter()
                     .map(|promotion| promotion.destination.clone())
                     .collect();
-                let manifest = classify_landed_manifest(
+                let (manifest, left_out) = classify_landed_manifest(
                     git_commit_name_status(&self.repo_root)?,
+                    git_status_entries(&self.repo_root)?,
                     &promoted_dests,
                 );
                 let landed = render::Landed {
@@ -789,6 +792,7 @@ impl TaskArea {
                         .collect(),
                     files: manifest.len(),
                     manifest,
+                    left_out,
                 };
                 print!("{}", render::finalize_landed(format, &report, &landed));
                 if format != Format::Json {
@@ -1902,15 +1906,22 @@ fn git_commit_name_status(repo_root: &Path) -> Result<Vec<(char, String)>> {
     Ok(entries)
 }
 
-/// Classify the landed commit's name-status delta into the pre-commit manifest (B1
-/// dirty-tree sweep): a path in `promoted` is a `Promoted` managed doc; otherwise the
-/// status char maps `A`→untracked (a swept stray / new file — the signal a tester needs),
-/// `M`→modified, `D`→deleted, any other (`C`/`T`/…)→modified.
+/// Classify the landed commit into the manifest split (M30 G3 — dry-run/landed symmetry):
+///
+/// - **included** — the commit's own delta (`name_status` from `git show --name-status HEAD`):
+///   a path in `promoted` is a `Promoted` managed doc; otherwise the status char maps
+///   `A`→untracked (a new file), `M`→modified, `D`→deleted, any other (`C`/`T`/…)→modified.
+/// - **left_out** — the post-commit `git status --porcelain` worktree residual (`porcelain`):
+///   the index commit landed the staged set, so each entry's **Y (worktree) column** names the
+///   unstaged/untracked WIP it left behind (the agent `git add`s to include it), classified by
+///   [`column_kind`]. A staged-then-further-modified (`MM`) path commits its staged side into
+///   `included` and shows its worktree residual here, so it appears in **both**.
 fn classify_landed_manifest(
     name_status: Vec<(char, String)>,
+    porcelain: Vec<(String, String)>,
     promoted: &std::collections::HashSet<String>,
-) -> Vec<render::ManifestEntry> {
-    name_status
+) -> (Vec<render::ManifestEntry>, Vec<render::ManifestEntry>) {
+    let included = name_status
         .into_iter()
         .map(|(code, path)| {
             let kind = if promoted.contains(&path) {
@@ -1924,7 +1935,20 @@ fn classify_landed_manifest(
             };
             render::ManifestEntry { path, kind }
         })
-        .collect()
+        .collect();
+    let mut left_out = Vec::new();
+    for (code, path) in porcelain {
+        // The Y (worktree) column names the residual the index commit left behind; a blank
+        // Y means the worktree matches the index (nothing left out for that path).
+        let y = code.chars().nth(1).unwrap_or(' ');
+        if y != ' ' {
+            left_out.push(render::ManifestEntry {
+                path,
+                kind: column_kind(y),
+            });
+        }
+    }
+    (included, left_out)
 }
 
 /// Whether `path` (repo-relative) exists at `HEAD` (`git cat-file -e HEAD:<path>`).
