@@ -609,14 +609,47 @@ impl TaskArea {
         // branch drops it.
         let (report, swept) = self.validate()?;
 
-        // The diff-presence signal the planner's empty-commit guard needs: any
-        // working-tree change from base, any staged managed doc, or any untracked
-        // file. `git diff <base>` lists only tracked changes, but the stage step
-        // (`git add --all`) also commits untracked files — so they count too, else
-        // an untracked-only task would abort as falsely "empty".
-        let has_diff = !git_diff(&self.repo_root, &base.sha)?.trim().is_empty()
-            || !self.staged_docs()?.is_empty()
-            || !git_untracked(&self.repo_root)?.trim().is_empty();
+        // A migration task is identified once by the staged source seam: it selects the
+        // stage policy (`MigrationFixed`), gates the review block, and — read here, ahead
+        // of the empty-commit signal — keeps the migration `has_diff` on the proven
+        // whole-tree probe (its blocks, e.g. the missing-replacement F1 retire-safety
+        // gate, must precede the empty-commit guard inside `plan_finalize`).
+        let source_seam = self.dir.join(crate::migrate::SOURCE_FILE);
+        let is_migration = source_seam.exists();
+
+        // The diff-presence signal the planner's empty-commit guard needs. On the per-task
+        // `IndexHonoring` path it is the NARROWED stage set the commit actually lands (M30
+        // G2; `design/finalize.md` → Dirty-tree policy) — never the ambient dirty tree: the
+        // agent's staged code (`git diff --cached`), any staged doc that will PROMOTE (the
+        // transient commit doc never promotes, so a commit-only task that staged no code
+        // reads empty), and the git-tracked config layer a first finalize must land;
+        // unstaged/untracked WIP is excluded. A migration task keeps the original
+        // whole-tree probe (`MigrationFixed` stages its own fixed set regardless).
+        let has_diff = if is_migration {
+            !git_diff(&self.repo_root, &base.sha)?.trim().is_empty()
+                || !self.staged_docs()?.is_empty()
+                || !git_untracked(&self.repo_root)?.trim().is_empty()
+        } else {
+            let staged_code = !git_capture(&self.repo_root, &["diff", "--cached"])?.is_empty();
+            let staged_promotable = self.staged_docs()?.iter().any(|(name, _)| {
+                name.strip_suffix(".md")
+                    .and_then(|stem| stem.split_once(':'))
+                    .and_then(|(ty, _)| schemas.get(ty))
+                    .is_some_and(|schema| schema.location.is_some())
+            });
+            let config_pending = !git_capture(
+                &self.repo_root,
+                &[
+                    "status",
+                    "--porcelain",
+                    "--",
+                    ".jigc/config",
+                    ".jigc/.gitignore",
+                ],
+            )?
+            .is_empty();
+            staged_code || staged_promotable || config_pending
+        };
 
         let commit_schema = schemas
             .get(COMMIT_TYPE)
@@ -635,20 +668,29 @@ impl TaskArea {
             &schemas,
         ) {
             Ok(plan) => plan,
+            // M30 G2 — recolor the engine's clean-empty block as the staged-nothing block
+            // when the narrowed set is empty BUT the working tree is dirty: the agent has
+            // changes it never `git add`ed, so point at `git add` rather than "produced no
+            // diff". CLI-side message selection — the shared engine finding is left
+            // untouched (it also serves the whole-tree milestone planner). Validation /
+            // forward-ref / base-mismatch blocks keep their precedence (plan_finalize
+            // surfaces them ahead of the empty-commit guard, so they fall through here).
+            Err(findings)
+                if findings.iter().any(|f| f.code == "finalize.empty-commit")
+                    && !git_dirty_paths(&self.repo_root)?.is_empty() =>
+            {
+                return self.blocked(vec![nothing_staged_finding()], format);
+            }
             Err(findings) => return self.blocked(findings, format),
         };
 
         // The migration review gate (`design/auto-migration.md` → The review gate). On a
-        // migration task (the source seam is staged), finalize without `--approve` renders
-        // the fidelity diff — the staged source-seam bytes vs each staged canonical doc,
-        // both read pre-commit — and blocks (exit 4, committing nothing), because the
-        // strict parse guarantees structure, never content-faithfulness; the human is its
-        // only check. `--approve` falls through to the transaction. Inert on a
-        // non-migration task: no source seam, so the existing path runs unchanged.
-        let source_seam = self.dir.join(crate::migrate::SOURCE_FILE);
-        // A migration task is identified once by the staged source seam (T2): it gates
-        // both the review block below and the narrowed `git add` in the transaction.
-        let is_migration = source_seam.exists();
+        // migration task (the source seam is staged, determined above), finalize without
+        // `--approve` renders the fidelity diff — the staged source-seam bytes vs each
+        // staged canonical doc, both read pre-commit — and blocks (exit 4, committing
+        // nothing), because the strict parse guarantees structure, never
+        // content-faithfulness; the human is its only check. `--approve` falls through to
+        // the transaction. Inert on a non-migration task: no source seam.
 
         // B1 dirty-tree sweep — `--dry-run` surfaces the commit file-set and stops, with no
         // commit and no destructive side effect. It is placed BEFORE the migration review
@@ -691,6 +733,13 @@ impl TaskArea {
         // Phases 4–7: the shared transactional core — promote + stage + commit +
         // rollback + post-commit. The working area is the cleanup dir removed on a
         // landed commit.
+        // M30 G1 — the per-task stage policy: a migration keeps its proven fixed-pathspec
+        // stage; every other per-task finalize honors the agent's existing index.
+        let stage = if is_migration {
+            StagePolicy::MigrationFixed
+        } else {
+            StagePolicy::IndexHonoring
+        };
         match try_execute_finalize_plan(
             &self.repo_root,
             &self.jigc_root,
@@ -699,7 +748,7 @@ impl TaskArea {
             &self.dir,
             &schemas,
             Some(swept),
-            is_migration,
+            stage,
         )? {
             // T1 captures the aggregate hook output; the per-task relay site (T2) consumes it.
             Ok(hook_output) => {
@@ -966,6 +1015,24 @@ impl TaskArea {
     }
 }
 
+/// Which working-tree changes the finalize stage commits (`design/finalize.md` →
+/// Dirty-tree policy, revised M30; `DECISIONS.md` 2026-06-20 M30 planning, G1). The
+/// per-task path narrows to the agent's own index; the migration path keeps its proven
+/// fixed-pathspec stage; the milestone boundary keeps the whole-tree sweep (the
+/// data-loss-safe choice the M31 worktree redesign owns).
+pub(crate) enum StagePolicy {
+    /// Migration finalize — stage exactly its own paths ([`stage_migration`]): the
+    /// promoted canonical doc(s), each retired original's deletion, and the config layer.
+    MigrationFixed,
+    /// Per-task non-migration finalize (M30) — honor the agent's existing index, adding
+    /// only jigc's promoted-doc destinations + the first-commit config layer
+    /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted.
+    IndexHonoring,
+    /// Milestone single-commit boundary — `git add --all` (sub-agent code is
+    /// unstaged-by-design; narrowing it would drop it).
+    Sweep,
+}
+
 /// Execute a [`FinalizePlan`]'s commit phases 4–7 (`design/finalize.md` → 4. Promote /
 /// 5. Stage / 6. Commit / 7. Post-commit) — the **shared** executor the per-task
 /// [`TaskArea::finalize`] and the milestone single-commit boundary
@@ -1005,9 +1072,10 @@ pub(crate) fn execute_finalize_plan(
         cleanup_dir,
         schemas,
         None,
-        // The milestone single-commit boundary is never a migration — it keeps the
-        // blanket `git add --all` sweep (the general dirty-tree redesign stays deferred).
-        false,
+        // The milestone single-commit boundary keeps the whole-tree `git add --all`
+        // sweep (M30 G1): sub-agent code is unstaged-by-design, so narrowing it would
+        // drop it — the data-loss-safe choice the M31 worktree redesign owns.
+        StagePolicy::Sweep,
     )? {
         // T3 — relay the aggregate `git_commit`'s non-blocking hook output (the
         // `squash: true` milestone boundary; the per-sub-task `commit_empty_message`
@@ -1040,11 +1108,12 @@ pub(crate) fn execute_finalize_plan(
 /// durably exactly once (`design/reconciliation.md` → Persistence of the shifted
 /// baseline). The milestone callers run no sweep and pass `None`.
 ///
-/// `is_migration` narrows the stage step: a migration finalize stages only its own paths
-/// (see [`stage_migration`]) instead of the blanket `git add --all` every other caller
-/// passes `false` to use.
+/// `stage` selects the stage step (M30 G1 — [`StagePolicy`]): a migration stages only its
+/// own fixed paths ([`stage_migration`]); a per-task non-migration finalize honors the
+/// agent's existing index ([`stage_index_honoring`]); the milestone boundary sweeps the
+/// whole tree (`git add --all`).
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
-// roots, the plan, schemas, the post-sweep record, the migration flag); each is a real
+// roots, the plan, schemas, the post-sweep record, the stage policy); each is a real
 // input, not incidental coupling, so an allow is clearer here than a parameter struct.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn try_execute_finalize_plan(
@@ -1055,7 +1124,7 @@ pub(crate) fn try_execute_finalize_plan(
     cleanup_dir: &Path,
     schemas: &BTreeMap<String, Schema>,
     post_sweep: Option<FileStateRecord>,
-    is_migration: bool,
+    stage: StagePolicy,
 ) -> Result<Result<String>> {
     let msg_path = msg_tmp_dir.join("finalize-message.tmp");
     std::fs::write(&msg_path, &plan.message)
@@ -1077,18 +1146,24 @@ pub(crate) fn try_execute_finalize_plan(
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
         ensure_jigc_gitignore(jigc_root)?;
-        if is_migration {
+        match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
             // changes — the promoted canonical doc(s), each retired original's deletion,
             // and jigc's git-tracked config layer (`.jigc/config/` + `.jigc/.gitignore`,
             // which `setup` writes but never commits, so this first migration commit must
-            // land them) — never arbitrary user WIP. The general dirty-tree-sweep
-            // redesign for non-migration tasks stays deferred.
-            stage_migration(repo_root, plan)?;
-        } else {
-            git_run(repo_root, &["add", "--all"])?;
+            // land them) — never arbitrary user WIP.
+            StagePolicy::MigrationFixed => stage_migration(repo_root, plan)?,
+            // Per-task IndexHonoring (M30 G6): honor the agent's existing index and add
+            // ONLY jigc's promoted docs + the config layer into it; never sweep the
+            // ambient dirty tree. The whole-index `git_commit` below lands the lot.
+            StagePolicy::IndexHonoring => stage_index_honoring(repo_root, plan)?,
+            // The milestone single-commit boundary keeps the whole-tree sweep — sub-agent
+            // code is unstaged-by-design (the M31 worktree redesign owns the narrowing).
+            StagePolicy::Sweep => git_run(repo_root, &["add", "--all"])?,
         }
+        // Commit the WHOLE index (`git commit -F`, never `-- <pathspec>`), so an agent
+        // `git add`ed but non-promoted artifact (the `owner-artifact`) still lands (G6).
         git_commit(repo_root, &msg_path)
     })();
     let _ = std::fs::remove_file(&msg_path);
@@ -1246,6 +1321,49 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
     git_run(repo_root, &args)
+}
+
+/// The per-task non-migration stage (M30 G6, `DECISIONS.md` 2026-06-20). Honor the
+/// agent's **existing index** (the code it `git add`ed) and add ONLY jigc's own
+/// contributions — each promoted canonical doc destination + the git-tracked config
+/// layer (`.jigc/config` / `.jigc/.gitignore`, which `setup` writes but never commits, so
+/// the first finalize must land them) — INTO that index. The caller's whole-index
+/// `git_commit` then lands the lot, so an agent-`git add`ed but non-promoted artifact
+/// (the `owner-artifact`) still rides the commit; a curated `git commit -- <pathspec>`
+/// would silently drop it. It NEVER sweeps the ambient dirty tree (unstaged/untracked
+/// WIP). A subset of [`stage_migration`] — a non-migration task has no retirements — and
+/// shares its [`existing_pathspecs`] existence guard so an absent config layer never makes
+/// the `git add` fatal (exit 128).
+fn stage_index_honoring(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> Result<()> {
+    let mut pathspecs: Vec<String> = Vec::new();
+    for promotion in &plan.promotions {
+        pathspecs.push(promotion.destination.clone());
+    }
+    pathspecs.extend(existing_pathspecs(
+        repo_root,
+        &[".jigc/config", ".jigc/.gitignore"],
+    ));
+    // Nothing jigc-owned to add — the agent's existing index stands alone (a `git add --`
+    // with no pathspec is an error, so guard it).
+    if pathspecs.is_empty() {
+        return Ok(());
+    }
+    let mut args: Vec<&str> = vec!["add", "--"];
+    args.extend(pathspecs.iter().map(String::as_str));
+    git_run(repo_root, &args)
+}
+
+/// The M30 G2 block-on-empty guidance: the working tree is dirty but the narrowed index
+/// is empty, so a per-task `IndexHonoring` commit would land nothing the agent staged. A
+/// routed blocking finding pointing at `git add` — distinct from the genuinely-clean
+/// engine `finalize.empty-commit` ("produced no diff"), selected CLI-side
+/// (`design/finalize.md` → Dirty-tree policy, revised M30).
+fn nothing_staged_finding() -> Finding {
+    Finding::block(
+        "finalize.nothing-staged",
+        "you staged nothing — the working tree has changes but the index is empty",
+        "`git add` your changes, then re-run `jigc task finalize`",
+    )
 }
 
 /// Keep only the fixed `candidates` (repo-relative) that actually exist on disk under

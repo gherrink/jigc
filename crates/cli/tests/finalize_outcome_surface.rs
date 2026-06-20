@@ -217,13 +217,14 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
 }
 
 /// A **conformant** OOB edit on the committed ADR, made outside the CLI (plain
-/// `fs::write` — the human-in-git channel): prose-only, so the reconcile classifier
-/// re-parses clean and routes to absorb, never to a conformance block.
+/// `fs::write` — the human-in-git channel) and **staged** by the human: prose-only, so
+/// the reconcile classifier re-parses clean and routes to absorb, never to a conformance
+/// block. The `git add` is the M30 G5 contract — the human-in-git channel stages its own
+/// edit so the per-task `IndexHonoring` finalize commits it (the narrowing no longer
+/// sweeps the unstaged tree), keeping the committed bytes == the absorbed baseline.
 fn oob_edit_committed_adr(repo: &Path) {
-    let path = repo
-        .join("docs")
-        .join("decisions")
-        .join("single-node-cache.md");
+    let rel = "docs/decisions/single-node-cache.md";
+    let path = repo.join(rel);
     let body = fs::read_to_string(&path).expect("read the committed ADR");
     let edited = body.replacen(
         "A cold node loses its sessions.",
@@ -232,6 +233,7 @@ fn oob_edit_committed_adr(repo: &Path) {
     );
     assert_ne!(body, edited, "the OOB edit must change the committed ADR");
     fs::write(&path, edited).expect("apply the OOB edit");
+    git(repo, &["add", rel]);
 }
 
 /// The absorb scenario: task A promotes the ADR, the OOB edit hits it, then task B
@@ -307,6 +309,11 @@ fn landed_clean_finalize(format: Option<&str>) -> String {
         &["start", "--workflow", "single-task", "add rate limiter"],
     );
     assert_ok(&out, "`jigc start` (clean task)");
+    // A staged code change (M30 G5) so the per-task narrowing has something to commit —
+    // the narrowing no longer treats the transient commit doc alone as a non-empty diff.
+    fs::write(repo.path().join(format!("{task}.txt")), "the code change\n")
+        .expect("write code change");
+    git(repo.path(), &["add", &format!("{task}.txt")]);
     fill_commit(repo.path(), home.path(), task);
     seed_in_sync(repo.path(), task);
 
@@ -772,6 +779,7 @@ fn land_commit_only(
     let out = jigc(repo, home, &["start", "--workflow", "single-task", intent]);
     assert_ok(&out, &format!("`jigc start` ({task})"));
     fs::write(repo.join(format!("{task}.txt")), "the code change\n").expect("write code change");
+    git(repo, &["add", &format!("{task}.txt")]); // M30 G5 — the agent stages its own edit.
     fill_commit(repo, home, task);
     seed_in_sync(repo, task);
     finalize(repo, home, task, format)

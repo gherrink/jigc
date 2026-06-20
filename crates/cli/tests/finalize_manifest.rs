@@ -199,10 +199,12 @@ fn seed_task_with_stray(repo: &Path, home: &Path, intent: &str) -> (String, Stri
     (task, slug)
 }
 
-/// (i) A normal finalize with a stray untracked `scratch.txt` still commits it (B1 does
-/// not prevent inclusion) — and its emitted manifest flags it as a swept untracked file.
+/// (i) M30 — a normal finalize with an unstaged stray `scratch.txt` does NOT commit it
+/// (the per-task `IndexHonoring` narrowing no longer sweeps the ambient dirty tree); the
+/// stray stays untracked in the working tree, and the landed manifest carries only the
+/// promoted ADR (plus jigc's own files), never the stray.
 #[test]
-fn normal_finalize_commits_stray_and_surfaces_it_as_untracked() {
+fn normal_finalize_leaves_unstaged_stray_uncommitted() {
     let repo = TempDir::new("normal");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -215,18 +217,23 @@ fn normal_finalize_commits_stray_and_surfaces_it_as_untracked() {
         "jigc task finalize",
     );
 
-    // B1 still commits the stray (the sweep is not prevented).
+    // M30 — the unstaged stray is NOT swept into the commit.
     let committed = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
     assert!(
-        committed.lines().any(|l| l == "scratch.txt"),
-        "the stray `scratch.txt` is in the landed commit (B1 does not prevent inclusion); files:\n{committed}",
+        !committed.lines().any(|l| l == "scratch.txt"),
+        "the unstaged stray `scratch.txt` must NOT ride the commit (M30 narrowing); files:\n{committed}",
+    );
+    // It remains untracked in the working tree post-commit.
+    let status = git(repo.path(), &["status", "--porcelain"]);
+    assert!(
+        status.lines().any(|l| l == "?? scratch.txt"),
+        "the stray stays untracked after the commit; status:\n{status}",
     );
 
-    // The emitted manifest flags the stray distinctly as an untracked sweep, and the
-    // promoted ADR as promoted.
+    // The emitted manifest does not carry the stray, and lists the promoted ADR.
     assert!(
-        stdout.contains("swept (was untracked) scratch.txt"),
-        "the manifest flags the stray as a swept untracked file; stdout:\n{stdout}",
+        !stdout.contains("scratch.txt"),
+        "the manifest must not carry the uncommitted stray; stdout:\n{stdout}",
     );
     assert!(
         stdout.contains(&format!("promoted docs/decisions/{slug}.md")),
@@ -291,9 +298,10 @@ fn dry_run_prints_manifest_and_commits_nothing() {
     );
 }
 
-/// (iii) `--format json` — the dry-run JSON carries `dry_run: true` + a `manifest[]`; the
-/// landed-run JSON carries `committed.manifest` with the stray (untracked) + the ADR
-/// (promoted).
+/// (iii) `--format json` — the dry-run JSON carries `dry_run: true` + a `manifest[]` that
+/// still forecasts the stray (the Inc-1 `predict_manifest` is unchanged — Inc 2 reworks
+/// it to the narrowed model); the landed-run JSON carries `committed.manifest` with the
+/// promoted ADR but NOT the stray (M30 — the per-task narrowing no longer commits it).
 #[test]
 fn json_manifest_on_dry_run_and_landed_run() {
     let repo = TempDir::new("json");
@@ -334,11 +342,11 @@ fn json_manifest_on_dry_run_and_landed_run() {
     let manifest = landed["committed"]["manifest"]
         .as_array()
         .expect("committed.manifest is an array");
+    // M30 — the unstaged stray is no longer committed, so it is absent from the landed
+    // manifest (which is derived from the commit's own delta).
     assert!(
-        manifest
-            .iter()
-            .any(|e| e["path"] == "scratch.txt" && e["kind"] == "untracked"),
-        "committed.manifest carries the stray as untracked; manifest:\n{manifest:?}",
+        !manifest.iter().any(|e| e["path"] == "scratch.txt"),
+        "committed.manifest must NOT carry the uncommitted stray; manifest:\n{manifest:?}",
     );
     assert!(
         manifest.iter().any(|e| {

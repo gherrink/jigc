@@ -578,6 +578,7 @@ fn non_migration_finalize_ignores_approve() {
     );
     let task = "add-rate-limiter";
     fs::write(repo.path().join("limiter.rs"), "// limiter\n").expect("write code change");
+    git(repo.path(), &["add", "limiter.rs"]); // M30 G5 — the agent stages its own edit.
     make_commit_conformant(repo.path(), home.path(), &pack, task);
 
     let log_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])

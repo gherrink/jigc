@@ -592,6 +592,24 @@ mod g4_baseline_adopt_gate {
         );
     }
 
+    /// Run a `git` command in `repo`, asserting success, returning trimmed stdout.
+    fn git_out(repo: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout)
+            .expect("utf-8")
+            .trim_end_matches('\n')
+            .to_string()
+    }
+
     /// A real `git init` repo with one commit + the `.jigc/config/` project layer.
     fn init_repo(repo: &Path) {
         git(repo, &["init", "-q"]);
@@ -658,6 +676,10 @@ mod g4_baseline_adopt_gate {
         assert_ok(&out, &format!("`jigc start` ({task})"));
         fs::write(repo.join(format!("{task}.txt")), "the code change\n")
             .expect("write code change");
+        // M30 G5 — the agent stages its own edit so the per-task narrowing commits it (the
+        // narrowing no longer sweeps the unstaged tree, so a finalize here would otherwise
+        // block as nothing-staged).
+        git(repo, &["add", &format!("{task}.txt")]);
         let set_field = |addr: &str, value: &str| {
             assert_ok(
                 &jigc_doc_stdin(repo, home, &["set-field", addr, "--value", value], b""),
@@ -889,20 +911,22 @@ mod g4_baseline_adopt_gate {
         );
     }
 
-    /// The **finalize post-commit door** the G4 gate must also guard (M21 inc-3 fix): a
-    /// freeform `notes.md` that is **uncommitted at `jigc start`** and only enters git via
-    /// the finalize aggregate (`git add --all`) must **not** be baseline-adopted by the
-    /// post-commit `advance_file_state` re-hash of the committed working set — else the
-    /// foreign file becomes `IN_SYNC` and the store-sweep advisory never recurs.
+    /// The **finalize post-commit door** the G4 gate must also guard (M21 inc-3 fix),
+    /// re-cast for M30: a freeform `notes.md` that is **uncommitted at `jigc start`** is
+    /// detected by the finalize-preflight store sweep (which reads the on-disk tree) and
+    /// routed an advisory — and must **not** be baseline-adopted by the post-commit
+    /// `advance_file_state` re-hash, else the foreign file becomes `IN_SYNC` and the
+    /// advisory never recurs. Under the M30 per-task narrowing the unstaged notes.md is
+    /// **no longer swept into the commit** (it stays untracked in the working tree), which
+    /// makes the not-adopted guarantee even tighter — and the advisory still re-fires from
+    /// the on-disk preflight sweep on a later task.
     ///
     /// Distinct from `freeform_notes_in_decisions_routes_advisory_and_recurs`, where the
-    /// notes are committed to git **before** `jigc start` (so they never appear in the
-    /// finalize commit's changed set). Here the file rides the finalize commit itself —
-    /// the path the validator reproduced. Asserts: finalize 1 emits the advisory once, the
-    /// landed record does **not** contain the foreign path, and a second task's finalize
-    /// **re-fires** the same advisory.
+    /// notes are committed to git **before** `jigc start`. Asserts: finalize 1 emits the
+    /// advisory once, notes.md is NOT in the landed commit, the landed record does **not**
+    /// contain the foreign path, and a second task's finalize **re-fires** the advisory.
     #[test]
-    fn freeform_notes_swept_into_finalize_commit_not_baseline_adopted() {
+    fn freeform_notes_uncommitted_route_advisory_not_baseline_adopted() {
         let repo = Repo::new("notes-mid-task");
         let home = Repo::new("home-mid-task");
         init_repo(repo.path());
@@ -915,8 +939,7 @@ mod g4_baseline_adopt_gate {
             .join("file-state.json");
 
         // ── task A: drop the foreign notes.md AFTER start (uncommitted), then finalize ──
-        // `git add --all` at the finalize boundary sweeps the freeform file into the
-        // aggregate commit — the door `advance_file_state` re-hashes through.
+        // The on-disk preflight sweep sees it; the M30 narrowing does NOT commit it.
         let task_a = "first-pass";
         stage_commit_only(repo.path(), home.path(), task_a, task_a);
         fs::create_dir_all(repo.path().join("docs").join("decisions")).expect("mk docs/decisions/");
@@ -933,8 +956,23 @@ mod g4_baseline_adopt_gate {
             "finalize 1 routes the freeform notes.md exactly one advisory; got:\n{findings:#?}",
         );
 
-        // The finalize aggregate committed notes.md to git, but the post-commit re-hash
-        // must NOT record it (it failed the conformance gate) — it stays UNKNOWN.
+        // M30 — the unstaged notes.md is NOT swept into the commit, and stays untracked.
+        let committed = git_out(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+        assert!(
+            !committed.lines().any(|l| l == NOTES),
+            "the unstaged freeform notes.md must NOT ride the commit (M30 narrowing); files:\n{committed}",
+        );
+        let status = git_out(
+            repo.path(),
+            &["status", "--porcelain", "--untracked-files=all"],
+        );
+        assert!(
+            status.lines().any(|l| l.contains(NOTES)),
+            "the freeform notes.md stays uncommitted in the working tree; status:\n{status}",
+        );
+
+        // The post-commit re-hash must NOT record notes.md (it failed the conformance
+        // gate) — it stays UNKNOWN so the advisory recurs.
         let record = fs::read_to_string(&record_path)
             .expect("task A's landed finalize persists the file-state record");
         let value: serde_json::Value =
@@ -944,8 +982,7 @@ mod g4_baseline_adopt_gate {
             .expect("the record carries a `hashes` map");
         assert!(
             !hashes.contains_key(NOTES),
-            "the foreign notes.md swept into the finalize commit must not be \
-             baseline-adopted into the record; got:\n{record}",
+            "the foreign notes.md must not be baseline-adopted into the record; got:\n{record}",
         );
 
         // ── task B: a second finalize re-fires the advisory (still UNKNOWN) ─────────────

@@ -353,8 +353,10 @@ fn implement_from_spec_arc_slices_criteria_and_passes_the_implements_edge_walk()
         b"Bound per-client volume at the edge.\n",
     );
 
-    // A real code change so the empty-commit guard is satisfied by more than the doc.
+    // A real code change, staged (M30 G5) so the narrowed IndexHonoring finalize commits
+    // it — the empty-commit guard is satisfied by more than the doc.
     fs::write(repo.path().join("limiter.txt"), "rate limiter\n").expect("write code change");
+    git(repo.path(), &["add", "limiter.txt"]);
 
     // ── Finalize: the implements edge walk passes (target in the committed store) ──
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])

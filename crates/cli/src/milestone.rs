@@ -532,9 +532,18 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         commit_per_subtask_messages(&repo_root, &dir, milestone_id, &list, &schemas)?;
 
         // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
-        // The milestone boundary runs no reconcile sweep → no post-sweep record (`None`).
+        // The milestone boundary runs no reconcile sweep → no post-sweep record (`None`),
+        // and keeps the whole-tree `git add --all` sweep (M30 G1 — sub-agent code is
+        // unstaged-by-design; narrowing it would drop it, the M31 worktree redesign owns it).
         match crate::task::try_execute_finalize_plan(
-            &repo_root, &jigc_root, &dir, &plan, &dir, &schemas, None, false,
+            &repo_root,
+            &jigc_root,
+            &dir,
+            &plan,
+            &dir,
+            &schemas,
+            None,
+            crate::task::StagePolicy::Sweep,
         )? {
             Ok(hook_output) => {
                 // T3 — relay ONLY the aggregate `git_commit`'s non-blocking hook output

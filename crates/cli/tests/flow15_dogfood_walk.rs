@@ -289,6 +289,9 @@ fn flow15_deterministic_dogfood_walk_lands_one_code_only_commit_on_a_galey_copy(
         "export function greet(name: string): string {\n  return `Hello, ${name}!`;\n}\n",
     )
     .expect("write the stand-in TS edit");
+    // The agent stages its own edit (M30 G5) so the per-task IndexHonoring finalize
+    // commits it (the narrowing no longer sweeps the unstaged tree).
+    git(&copy, &["add", edit_rel]);
 
     // --- step 3: the four fill verbs — `set-field type/scope --value`, `set-slot
     // summary/body --from-file -` (the commit schema requires all four non-empty;
