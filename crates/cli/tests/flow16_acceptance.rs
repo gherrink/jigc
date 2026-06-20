@@ -445,12 +445,15 @@ fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
     // Restore A's symbol so the anchor resolves again.
     fs::write(repo.path().join(COMPONENT_A_FILE), component_a_present())
         .expect("restore component A's symbol");
-    // Re-point the dangling cites at the committed adr through the binary.
+    // Re-point the dangling cites at the committed adr through the binary. `cites` is a
+    // list-cardinality (`0..*`) ref already carrying a value, so the re-point uses the
+    // explicit bracket-list form (the blessed whole-list replace) — a bare single value
+    // would be rejected by the list-overwrite guard.
     set_field(
         repo.path(),
         home.path(),
         "arch-doc:index-layer#cites",
-        "adr:use-a-cache",
+        "[adr:use-a-cache]",
     );
 
     // ---- PASS half ----
@@ -491,8 +494,8 @@ fn flow16_finalize_blocks_naming_only_component_a_then_passes_when_fixed() {
     );
     let body = String::from_utf8(committed.stdout).expect("utf-8");
     assert!(
-        body.contains("cites: adr:use-a-cache"),
-        "the promoted arch-doc carries its fixed cites edge; got:\n{body}",
+        body.contains("cites: [adr:use-a-cache]"),
+        "the promoted arch-doc carries its fixed cites edge (the bracket-list re-point form); got:\n{body}",
     );
     // Both component anchors survived into the promoted doc.
     assert!(

@@ -4255,6 +4255,64 @@ fn check_ref(field: &SchemaField, value: &str) -> Result<(), String> {
     check_ref_shape(field, value)
 }
 
+/// Whether `field` is a **list-cardinality** ref — a `ref` whose forward `card:` has
+/// an unbounded (`*`) upper bound (`0..*`, `1..*`). Such a field carries an ordered
+/// list of edges; a single-value `set-field` onto a populated one replaces the whole
+/// list rather than accumulating.
+fn is_list_ref(field: &SchemaField) -> bool {
+    field.ty == FieldType::Ref && field.card.as_deref().is_some_and(|c| c.contains('*'))
+}
+
+/// The list-cardinality overwrite guard for a present-field `set-field`. Returns a
+/// blocking [`Finding`] when the write would silently drop prior value(s): the field
+/// is a list-cardinality ref, its `existing_value` carries ≥1 element, and the
+/// `new_value` is a single (non-bracket) element. The bracket-list form `[a, b]` is an
+/// explicit whole-list replace and passes (it names the full list — no silent loss).
+fn check_list_overwrite(
+    field: &SchemaField,
+    existing_value: &str,
+    new_value: &Value,
+    field_key: &str,
+) -> Option<Finding> {
+    if !is_list_ref(field) {
+        return None;
+    }
+    let new_text = value_text(new_value);
+    // An explicit bracket-list replace is allowed (the whole list is named).
+    if new_text.trim_start().starts_with('[') {
+        return None;
+    }
+    // Count the existing edges: a bracket-list's comma-separated elements, else (a bare
+    // scalar) one. An empty / `[]` value carries nothing to drop.
+    let existing = existing_value.trim();
+    let count = match existing.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+        Some(inner) if inner.trim().is_empty() => 0,
+        Some(inner) => inner.split(',').count(),
+        None if existing.is_empty() => 0,
+        None => 1,
+    };
+    if count == 0 {
+        return None;
+    }
+    // Suggest the inline-list form combining the existing value(s) with the new one —
+    // the actionable fix, the only way to set multiple values in one call.
+    let existing_inner = existing
+        .strip_prefix('[')
+        .and_then(|s| s.strip_suffix(']'))
+        .unwrap_or(existing)
+        .trim();
+    let suggested = format!("[{existing_inner}, {}]", new_text.trim());
+    Some(Finding::blocking(
+        "write.list-overwrite",
+        format!(
+            "write rejected: field {field_key:?} already has {count} value(s); `set-field` \
+             replaces the whole list and would silently drop them. To set multiple values, \
+             pass them all in one call: --value {suggested:?}"
+        ),
+        Location::at(1, 1),
+    ))
+}
+
 /// The `<type>:<slug>` shape check for a single ref element — `<type>` must equal the
 /// field's declared `to:` (when present) and `<slug>` must be a well-formed slug.
 fn check_ref_shape(field: &SchemaField, value: &str) -> Result<(), String> {
@@ -4414,6 +4472,18 @@ pub fn set_field_validated(
     // case is an optional header ref the fillable form omits (`commit#header/implements`).
     match locate_field_value(source, field_key) {
         Some(target) => {
+            // List-cardinality (`0..*`) ref overwrite guard. A single-value `set-field`
+            // onto a ref that already carries value(s) would surgically replace the
+            // *whole* list — silently dropping the prior entries (the NGT-surfaced
+            // last-write-wins footgun). Reject it, naming the field and showing the
+            // inline-list form (the only multi-value path). The explicit bracket-list
+            // form is allowed: naming the whole list is an intentional replace, not a
+            // silent loss — that is the blessed re-point/replace idiom.
+            if let Some(finding) =
+                check_list_overwrite(field, &source[target.clone()], new_value, field_key)
+            {
+                return Err(finding);
+            }
             let edited = set_field(
                 schema,
                 source,

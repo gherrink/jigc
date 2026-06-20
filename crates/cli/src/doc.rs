@@ -77,11 +77,17 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
-    /// Set a field leaf's value (inline, adjudicated at write time).
+    /// Set a field leaf's value (inline, adjudicated at write time). For a
+    /// list-cardinality (`0..*`) ref, set ALL values in one call with the inline-list
+    /// form `--value "[a, b, c]"` — repeated single-value calls replace the whole list
+    /// (and are rejected once it is populated, to prevent silently dropping prior
+    /// entries).
     SetField {
         /// The leaf address — `<type>:<slug>#<field>` (or `#<section>/<field>`).
         addr: String,
-        /// The new value (inline — fields are short + escaping-safe).
+        /// The new value (inline — fields are short + escaping-safe). A
+        /// list-cardinality (`0..*`) ref takes the inline-list form `"[a, b, c]"` to
+        /// set multiple values in one call.
         #[arg(long)]
         value: String,
         /// The active task to scope the write to (see `Create::task`).
