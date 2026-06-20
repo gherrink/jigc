@@ -408,13 +408,7 @@ deploy() {
         // A present file whose extension+shebang map to no grammar, carrying a `#symbol`,
         // emits exactly one `unsupported-language` advisory — not a silent pass, not a
         // blocking `symbol-exists` (the M10 silent-skip Inc 3 supersedes, fork F2).
-        let css = check_one("styles.css", ".btn { color: red; }\n", "btn");
-        assert_eq!(css.len(), 1);
-        assert_eq!(css[0].severity, Severity::Advisory);
-        assert_eq!(css[0].check, "unsupported-language");
-        assert_eq!(css[0].code, "doc-code.unsupported-language");
-
-        // docker-compose (a `.yaml`) — same outcome (parked, takes the advisory).
+        // docker-compose (a `.yaml`) — takes the advisory (un-grammared, parked).
         let compose = check_one(
             "compose.yaml",
             "services:\n  web:\n    image: nginx\n",
@@ -434,12 +428,13 @@ deploy() {
 
     #[test]
     fn bare_path_on_un_grammared_file_emits_no_finding() {
-        // A bare path (no `#symbol`) on the same un-grammared file is the file-existence
-        // check only — the present file passes, no advisory (the advisory rides a `#symbol`).
+        // A bare path (no `#symbol`) on an un-grammared file (`.pl` — off-roadmap, no shipped
+        // grammar) is the file-existence check only — the present file passes, no advisory
+        // (the advisory rides a `#symbol`).
         let root = temp_root();
-        std::fs::write(root.join("styles.css"), ".btn { color: red; }\n").unwrap();
+        std::fs::write(root.join("script.pl"), "sub thing { }\n").unwrap();
         let snapshot = EffectiveStateSnapshot {
-            anchors: vec![anchor("styles.css")],
+            anchors: vec![anchor("script.pl")],
             working_tree_root: root,
         };
         assert!(check_anchors(&snapshot).is_empty());
@@ -448,10 +443,10 @@ deploy() {
     #[test]
     fn missing_un_grammared_file_still_blocks() {
         // The file-existence floor wins: a `#symbol` anchor on an absent un-grammared file
-        // emits one blocking finding before any grammar/advisory dispatch.
+        // (`.pl`) emits one blocking finding before any grammar/advisory dispatch.
         let root = temp_root();
         let snapshot = EffectiveStateSnapshot {
-            anchors: vec![anchor("ghost.css#btn")],
+            anchors: vec![anchor("ghost.pl#thing")],
             working_tree_root: root,
         };
         let findings = check_anchors(&snapshot);
@@ -548,5 +543,19 @@ def test_rate_limit():
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Blocking);
         assert_eq!(findings[0].check, "criterion-maps-to-test");
+    }
+
+    #[test]
+    fn css_file_with_symbol_resolves_present_blocks_vanished() {
+        // The M28 keystone activation: a `.css#selector` now resolves through the CSS grammar
+        // (no longer the `unsupported-language` advisory) — a present selector emits no
+        // finding; a vanished one BLOCKS with one `doc-code.symbol-exists`.
+        let css = ".btn { color: red; }\n";
+        assert!(check_one("styles.css", css, "btn").is_empty());
+        let gone = check_one("styles.css", css, "btn_renamed");
+        assert_eq!(gone.len(), 1);
+        assert_eq!(gone[0].severity, Severity::Blocking);
+        assert_eq!(gone[0].check, "symbol-exists");
+        assert_eq!(gone[0].code, "doc-code.symbol-exists");
     }
 }

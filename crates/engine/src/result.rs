@@ -985,7 +985,7 @@ mod tests {
             Severity::Advisory,
             "doc-code.unsupported-language",
             "no shipped grammar maps to this file",
-            Some(Location::addressed("styles/site.css", 1, 1)),
+            Some(Location::addressed("scripts/build.pl", 1, 1)),
             None,
         );
         let report = ValidationReport::new(vec![advisory.clone()], &resolved);

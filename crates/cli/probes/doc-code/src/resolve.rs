@@ -62,18 +62,8 @@ pub enum Grammar {
     /// shared field read. Its addressable units are **selector / `@keyframes` / custom-property
     /// names** ([`css_item_names`]), the four-arm extractor [validation.md] → Multi-language
     /// resolution describes. Sigils are stripped for class/id/keyframe names (`.btn`→`btn`),
-    /// while a custom property keeps its `--` (`--color`→`--color`). Not yet reached by
-    /// [`grammar_for`] (the `.css` extension wire lands in a later increment); constructed only
-    /// by tests this increment. The non-test build constructs it nowhere yet (only a match
-    /// *reads* it), so the staged-away `.css` wire would leave it dead there — the
-    /// expectation is lifted when T2 adds the `grammar_for` `.css`→`Css` arm.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "constructed in tests; .css extension wire staged to T2"
-        )
-    )]
+    /// while a custom property keeps its `--` (`--color`→`--color`). Reached by [`grammar_for`]
+    /// via the `.css` extension.
     Css,
 }
 
@@ -192,6 +182,7 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "py" | "pyi" => Some(Grammar::Python),
         "php" | "phtml" => Some(Grammar::Php),
         "sh" | "bash" => Some(Grammar::Bash),
+        "css" => Some(Grammar::Css),
         _ => None,
     }
 }
@@ -1097,6 +1088,13 @@ a::before {
     content: '';
 }
 ";
+
+    #[test]
+    fn css_dispatches_by_extension() {
+        // The T2 activation: the `.css` extension maps to the CSS grammar.
+        let path = std::path::PathBuf::from("styles/site.css");
+        assert_eq!(grammar_for(&path), Some(Grammar::Css));
+    }
 
     #[test]
     fn css_resolves_addressable_units_and_blocks_vanished() {

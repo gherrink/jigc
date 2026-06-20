@@ -700,20 +700,46 @@ called_but_undefined
     assert_eq!(called[0].code, "doc-code.symbol-exists");
 }
 
-/// The `unsupported-language` advisory: a `#symbol` on a `.css` file emits EXACTLY ONE
-/// finding with `severity: advisory`, `check: unsupported-language`,
-/// `code: doc-code.unsupported-language` — NOT a block, NOT silent.
+/// The `unsupported-language` advisory: a `#symbol` on a `.pl` file (perl — off-roadmap, no
+/// shipped grammar) emits EXACTLY ONE finding with `severity: advisory`,
+/// `check: unsupported-language`, `code: doc-code.unsupported-language` — NOT a block, NOT
+/// silent.
 #[test]
-fn unsupported_language_css_emits_one_advisory() {
+fn unsupported_language_perl_emits_one_advisory() {
     let findings = run_lang_fixture(
-        "styles.css",
-        ".btn { color: red; }\n",
-        vec![symbol_exists_anchor("styles.css", "btn")],
+        "script.pl",
+        "#!/usr/bin/perl\nsub thing { }\n",
+        vec![symbol_exists_anchor("script.pl", "thing")],
     );
     assert_eq!(findings.len(), 1, "exactly one finding: {findings:?}");
     assert_eq!(findings[0].severity, Severity::Advisory);
     assert_eq!(findings[0].check, "unsupported-language");
     assert_eq!(findings[0].code, "doc-code.unsupported-language");
+}
+
+/// The M28 keystone through the binary: a `.css#selector` resolves through the CSS grammar —
+/// a present selector emits NO finding; a vanished one BLOCKS with one
+/// `doc-code.symbol-exists` (CSS is grammared, no longer the `unsupported-language` advisory).
+#[test]
+fn css_selector_resolves_present_blocks_vanished() {
+    const CSS: &str = ".btn { color: red; }\n";
+    assert!(
+        run_lang_fixture(
+            "styles.css",
+            CSS,
+            vec![symbol_exists_anchor("styles.css", "btn")]
+        )
+        .is_empty(),
+        "a present CSS selector resolves",
+    );
+    let gone = run_lang_fixture(
+        "styles.css",
+        CSS,
+        vec![symbol_exists_anchor("styles.css", "btn_renamed")],
+    );
+    assert_eq!(gone.len(), 1, "a vanished CSS selector blocks: {gone:?}");
+    assert_eq!(gone[0].severity, Severity::Blocking);
+    assert_eq!(gone[0].code, "doc-code.symbol-exists");
 }
 
 /// The non-Rust `criterion-maps-to-test` truth table through the binary: a non-Rust
