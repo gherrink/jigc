@@ -677,6 +677,50 @@ fn config_operational_error_honors_json() {
     );
 }
 
+/// The `--format json` structured report is the primary machine output: it must ride
+/// **stdout** regardless of the exit code, so `jigc --format json task finalize <task>
+/// > report.json` captures the findings on a block, not an empty file. The exit code
+/// (0 vs 3) carries pass/block; the report carries the findings. A blocked
+/// `--format json` finalize must therefore exit 3 with a non-empty, parseable report
+/// on stdout (the `{schema_version, findings}` envelope, ≥1 blocking finding), never on
+/// stderr. (Human-oriented agent-text diagnostics stay on stderr — `validation_blocked_exits_3`.)
+#[test]
+fn blocked_json_finalize_report_rides_stdout() {
+    let repo = TempDir::new("blocked-json-stdout");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let task = stage_dangling_supersedes(repo.path(), home.path());
+
+    let out = finalize(repo.path(), home.path(), task, Some("json"));
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a validation-blocked --format json finalize must exit 3; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert!(
+        !out.stdout.is_empty(),
+        "the --format json report must ride stdout on a block (so `> report.json` is \
+         non-empty), not stderr; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let value: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
+        panic!("the blocked json report on stdout must parse ({err}); got:\n{stdout}")
+    });
+    assert_eq!(
+        value["schema_version"].as_u64(),
+        Some(2),
+        "the stdout report carries the schema_version envelope; got:\n{stdout}",
+    );
+    let findings = parse_envelope(&stdout, "blocked finalize (json, stdout)");
+    assert!(
+        findings.iter().any(|f| f["severity"] == "blocking"),
+        "the stdout report carries ≥1 blocking finding; got:\n{stdout}",
+    );
+}
+
 #[test]
 fn landed_finalize_emits_findings() {
     // ── agent format: the absorb advisory is on stdout, not swallowed ────────────
@@ -751,7 +795,9 @@ fn code_of(out: &std::process::Output, what: &str) -> i32 {
 /// renderer families (agent default + `--format json`):
 ///
 /// - **landed finalize** → exit 0, the findings envelope on **stdout**;
-/// - **validation-blocked finalize** → exit 3, the findings envelope on **stderr**;
+/// - **validation-blocked finalize** → exit 3; the agent-text diagnostic on **stderr**,
+///   but the `--format json` structured report on **stdout** (machine output, captured
+///   by `> report.json` regardless of exit code);
 /// - **operational error** → exit 1, the `{"error": …}` envelope on stderr under
 ///   `--format json` (plain `{err:#}` text under agent);
 /// - **usage error** → exit 2 (clap's convention), format-independent.
@@ -832,19 +878,16 @@ fn outcome_space_is_discriminable() {
         "the blocked agent envelope rides stderr, naming the dangling target; got:\n{stderr}",
     );
 
-    // A block consumes nothing — the same blocked task re-runs under json.
+    // A block consumes nothing — the same blocked task re-runs under json. The
+    // `--format json` report is machine output: it rides stdout regardless of the
+    // blocking exit (so `> report.json` captures it), unlike the agent-text diagnostic.
     let blocked_json = finalize(repo.path(), home.path(), task, Some("json"));
     assert_eq!(code_of(&blocked_json, "blocked finalize (json)"), 3);
-    assert!(
-        blocked_json.stdout.is_empty(),
-        "a blocked json finalize keeps stdout silent; stdout:\n{}",
-        String::from_utf8_lossy(&blocked_json.stdout),
-    );
-    let stderr = String::from_utf8(blocked_json.stderr.clone()).expect("utf-8 stderr");
-    let findings = parse_envelope(&stderr, "blocked finalize (json, stderr)");
+    let stdout = String::from_utf8(blocked_json.stdout.clone()).expect("utf-8 stdout");
+    let findings = parse_envelope(&stdout, "blocked finalize (json, stdout)");
     assert!(
         findings.iter().any(|f| f["severity"] == "blocking"),
-        "the blocked json envelope carries ≥1 blocking finding; got:\n{stderr}",
+        "the blocked json envelope rides stdout and carries ≥1 blocking finding; got:\n{stdout}",
     );
 
     // ── outcome: operational error → 1; json gets the error envelope ─────────────

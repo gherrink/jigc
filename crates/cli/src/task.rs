@@ -540,13 +540,22 @@ impl TaskArea {
         Ok(move |path: &str| !untracked.contains(path))
     }
 
-    /// Render blocking `findings` through the shared validation funnel (stderr) and
-    /// return the validation-blocked exit (3) — the planner-block surface shared by
-    /// the phase-1 re-pin decision and [`plan_finalize`].
+    /// Render blocking `findings` through the shared validation funnel and return the
+    /// validation-blocked exit (3) — the planner-block surface shared by the phase-1
+    /// re-pin decision and [`plan_finalize`].
+    ///
+    /// The `--format json` report is the primary machine output: it rides **stdout**
+    /// regardless of the exit code (so `jigc --format json task finalize > report.json`
+    /// captures the findings on a block, not an empty file), symmetric with the landed
+    /// path and `task validate`. The exit code (0 vs 3) carries pass/block; the report
+    /// carries the findings. The agent-text rendering stays a human-oriented diagnostic
+    /// on stderr.
     fn blocked(&self, findings: Vec<Finding>, format: Format) -> Result<ExitCode> {
         let report = engine::result::ValidationReport::new(findings, &self.severity_cascade()?);
-        eprint!("{}", render::validation(format, &report));
-        if format != Format::Json {
+        if format == Format::Json {
+            print!("{}", render::validation(format, &report));
+        } else {
+            eprint!("{}", render::validation(format, &report));
             eprintln!();
         }
         Ok(ExitCode::from(EXIT_VALIDATION_BLOCKED))

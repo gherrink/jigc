@@ -497,11 +497,12 @@ fn mint_bind_and_author_adr(
 }
 
 /// The `findings` array of a **blocked** `task finalize --format json` invocation. The
-/// finalize block path renders the report to **stderr** (`task.rs` → `finalize`: a blocking
-/// branch `eprint!`s the report), so the JSON is parsed from stderr.
+/// `--format json` report is machine output: it rides **stdout** regardless of the
+/// blocking exit (`task.rs` → `finalize`: the `blocked` branch `print!`s the json report
+/// to stdout, so `> report.json` captures it), so the JSON is parsed from stdout.
 fn finalize_block_findings(out: &std::process::Output) -> Vec<serde_json::Value> {
-    let value: serde_json::Value = serde_json::from_slice(&out.stderr)
-        .expect("a blocked finalize --format json emits a parseable report on stderr");
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout)
+        .expect("a blocked finalize --format json emits a parseable report on stdout");
     value["findings"].as_array().cloned().unwrap_or_default()
 }
 
