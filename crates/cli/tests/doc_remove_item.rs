@@ -500,6 +500,36 @@ fn remove_top_level_release_round_trips_byte_stable_including_the_last() {
 }
 
 #[test]
+fn remove_item_prints_a_success_confirmation() {
+    let fx = provision(&["1-3-0"]);
+    let slug = &fx.slug;
+    let addr = format!("changelog:{slug}#releases/1-3-0");
+
+    // Agent-text: a terse confirmation naming the removed item address, so the
+    // outcome is visible without re-reading the working-area file.
+    let stdout = ok_stdout(
+        fx.run(&["doc", "remove-item", &addr], None),
+        "remove-item confirmation",
+    );
+    assert!(
+        stdout.contains(&addr),
+        "remove-item confirms the removed address on stdout; got:\n{stdout}"
+    );
+
+    // JSON: a structured ack on stdout.
+    let fx = provision(&["2-0-0"]);
+    let slug = &fx.slug;
+    let addr = format!("changelog:{slug}#releases/2-0-0");
+    let stdout = ok_stdout(
+        fx.run(&["doc", "remove-item", &addr, "--format", "json"], None),
+        "remove-item json ack",
+    );
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("remove-item json ack parses");
+    assert_eq!(ack["address"], addr);
+}
+
+#[test]
 fn remove_mis_named_target_blocks_and_leaves_the_doc_byte_unchanged() {
     let fx = provision(&["1-3-0"]);
     let slug = &fx.slug;

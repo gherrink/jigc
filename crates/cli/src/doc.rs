@@ -163,15 +163,17 @@ impl DocCommand {
             DocCommand::AddItem { addr, title, task } => {
                 run_add_item(cwd, &addr, &title, task.as_deref())
             }
-            DocCommand::RemoveItem { addr, task } => run_remove_item(cwd, &addr, task.as_deref()),
+            DocCommand::RemoveItem { addr, task } => {
+                run_remove_item(cwd, &addr, task.as_deref(), format)
+            }
             DocCommand::SetField { addr, value, task } => {
-                run_set_field(cwd, &addr, &value, task.as_deref())
+                run_set_field(cwd, &addr, &value, task.as_deref(), format)
             }
             DocCommand::SetSlot {
                 addr,
                 from_file,
                 task,
-            } => run_set_slot(cwd, &addr, &from_file, task.as_deref()),
+            } => run_set_slot(cwd, &addr, &from_file, task.as_deref(), format),
             DocCommand::Author {
                 doctype,
                 from_file,
@@ -211,6 +213,7 @@ fn run_set_field(
     addr: &str,
     value: &str,
     task_id: Option<&str>,
+    format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
@@ -224,6 +227,17 @@ fn run_set_field(
     let edited = apply_field_target(&schema, &source, target, addr, value)?;
 
     persist(&path, &edited)?;
+    // Confirm the landed value — the positive ack the silent verb was missing.
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::Field {
+                address: addr.to_string(),
+                value: value.to_string(),
+            },
+        )
+    );
     Ok(())
 }
 
@@ -285,6 +299,7 @@ fn run_set_slot(
     addr: &str,
     from_file: &str,
     task_id: Option<&str>,
+    format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
@@ -300,6 +315,17 @@ fn run_set_slot(
     let edited = apply_slot_target(&schema, &source, target, addr, &prose)?;
 
     persist(&path, &edited)?;
+    // Confirm the spliced prose by length — the slot bytes are too large to echo.
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::Slot {
+                address: addr.to_string(),
+                chars: prose.chars().count(),
+            },
+        )
+    );
     Ok(())
 }
 
@@ -575,7 +601,12 @@ fn add_item_target(address: &Address) -> Option<AddItemTarget> {
 /// `remove_nested_item` (both byte-stable, including the last/only block), and persist.
 /// An absent item / non-repeatable section routes the engine's [`engine::write::SpliceError`]
 /// through the shared blocking [`Finding`] mapping (`design/write-commands.md`).
-fn run_remove_item(cwd: &Path, addr: &str, task_id: Option<&str>) -> Result<(), DocFailure> {
+fn run_remove_item(
+    cwd: &Path,
+    addr: &str,
+    task_id: Option<&str>,
+    format: Format,
+) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
     let schema = task.schema(address.r#type.as_str())?;
@@ -610,6 +641,16 @@ fn run_remove_item(cwd: &Path, addr: &str, task_id: Option<&str>) -> Result<(), 
     };
 
     persist(&path, &edited)?;
+    // Confirm the removed item address — the positive ack the silent verb was missing.
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::RemovedItem {
+                address: addr.to_string(),
+            },
+        )
+    );
     Ok(())
 }
 

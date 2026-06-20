@@ -211,6 +211,118 @@ fn set_field_inline_stages_the_field_value() {
 }
 
 #[test]
+fn set_field_prints_a_success_confirmation() {
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+
+    // Agent-text: a terse confirmation naming the address + the value that landed,
+    // so the write outcome is visible without `cat`-ing the working-area file.
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "feat",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "`set-field` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains(&format!("commit:{task}#type")) && stdout.contains("feat"),
+        "set-field confirms the address + value on stdout; got:\n{stdout}"
+    );
+
+    // JSON: a structured ack on stdout (the house serde-object shape), parseable.
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            &format!("commit:{task}#type"),
+            "--value",
+            "fix",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "`set-field --format json` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("set-field json ack parses");
+    assert_eq!(ack["address"], format!("commit:{task}#type"));
+    assert_eq!(ack["value"], "fix");
+}
+
+#[test]
+fn set_slot_prints_a_success_confirmation() {
+    let (repo, home) = started_repo("add rate limiter");
+    let task = "add-rate-limiter";
+    let prose = b"Add a per-client rate limiter at the gateway.\n";
+
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-slot",
+            &format!("commit:{task}#summary"),
+            "--from-file",
+            "-",
+        ],
+        Some(prose),
+    );
+    assert!(
+        out.status.success(),
+        "`set-slot` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        stdout.contains(&format!("commit:{task}#summary")) && stdout.contains("char"),
+        "set-slot confirms the address + a char count on stdout; got:\n{stdout}"
+    );
+
+    // JSON: a structured ack on stdout.
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-slot",
+            &format!("commit:{task}#summary"),
+            "--from-file",
+            "-",
+            "--format",
+            "json",
+        ],
+        Some(prose),
+    );
+    assert!(
+        out.status.success(),
+        "`set-slot --format json` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("set-slot json ack parses");
+    assert_eq!(ack["address"], format!("commit:{task}#summary"));
+    assert!(
+        ack["chars"].is_number(),
+        "json ack carries a char count; got:\n{stdout}"
+    );
+}
+
+#[test]
 fn set_slot_from_stdin_stages_the_prose() {
     let (repo, home) = started_repo("add rate limiter");
     let task = "add-rate-limiter";

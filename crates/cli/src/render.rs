@@ -504,6 +504,48 @@ fn landed_summary(landed: &Landed) -> String {
     out
 }
 
+/// A successful single-write `jigc doc` verb's confirmation — the positive ack the
+/// silent write verbs were missing, so a write outcome is visible without re-reading
+/// the working-area file (dogfood papercut). Rendered through `--format` by
+/// [`doc_ack`]: a terse one-line confirmation on agent-text / human, a small
+/// structured object on JSON. The plain-happy-path doc surface carries **no** routing
+/// footer (the `create` / `add-item` sibling verbs emit a bare line too — only the
+/// composed reading surfaces carry the footer).
+pub enum DocAck {
+    /// A `set-field` landed `value` at `address`.
+    Field { address: String, value: String },
+    /// A `set-slot` spliced `chars` characters of prose at `address`.
+    Slot { address: String, chars: usize },
+    /// A `remove-item` dropped the item at `address`.
+    RemovedItem { address: String },
+}
+
+/// Render a successful single-write `jigc doc` verb confirmation ([`DocAck`]) to the
+/// surface `format` selects: `agent` / `human` emit a terse one-line confirmation (no
+/// footer — symmetric with the bare line `doc create` / `doc add-item` emit); `json`
+/// emits a small structured ack object on stdout (the house serde-object shape, like
+/// [`milestone`]), so an agent on `--format json` gets a parseable confirmation.
+pub fn doc_ack(format: Format, ack: &DocAck) -> String {
+    match format {
+        Format::Json => match ack {
+            DocAck::Field { address, value } => json(&serde_json::json!({
+                "set": "field", "address": address, "value": value,
+            })),
+            DocAck::Slot { address, chars } => json(&serde_json::json!({
+                "set": "slot", "address": address, "chars": chars,
+            })),
+            DocAck::RemovedItem { address } => json(&serde_json::json!({
+                "removed": "item", "address": address,
+            })),
+        },
+        Format::Agent | Format::Human => match ack {
+            DocAck::Field { address, value } => format!("set {address} = {value}"),
+            DocAck::Slot { address, chars } => format!("set slot {address} ({chars} chars)"),
+            DocAck::RemovedItem { address } => format!("removed item {address}"),
+        },
+    }
+}
+
 /// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
 /// `route:` line when the finding carries a repair direction (the settled
 /// block-payload envelope — a hard block is a blocking finding carrying a route).
