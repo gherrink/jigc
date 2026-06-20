@@ -408,14 +408,18 @@ pub struct Landed {
 
 /// How a path entered the finalize commit set in the pre-commit manifest (B1 dirty-tree
 /// sweep): a managed doc `Promoted` to its canonical location, a tracked `Modified` file,
-/// a tracked `Deleted` file, or an `Untracked` file `git add --all` swept in (the stray-file
-/// signal a tester needs).
+/// a tracked `Deleted` file, a newly-`Added` (deliberately staged) file, or an `Untracked`
+/// file left out of the commit (the stray-file signal a tester needs). `Added` and
+/// `Untracked` are distinct on purpose: a staged new file the agent `git add`-ed is an
+/// **included** add (nothing was swept), while `Untracked` only ever tags a **left-out**
+/// file the commit excluded.
 #[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
 pub enum ManifestKind {
     Promoted,
     Modified,
     Deleted,
+    Added,
     Untracked,
 }
 
@@ -429,15 +433,18 @@ pub struct ManifestEntry {
     pub kind: ManifestKind,
 }
 
-/// One agent-text manifest line: `  promoted <path>` / `  modified <path>` / `  deleted
-/// <path>`, and an untracked sweep flagged distinctly as `  swept (was untracked) <path>`
-/// so a stray file stands out. No trailing newline — the caller joins / closes it.
+/// One agent-text manifest line for an **included** commit member: `  promoted <path>` /
+/// `  modified <path>` / `  deleted <path>` / `  added <path>` (a deliberately-staged new
+/// file). No trailing newline — the caller joins / closes it. `Untracked` never reaches
+/// the included path (it tags only left-out files, rendered by [`left_out_lines`]); a
+/// defensive arm renders it under the left-out wording rather than the retired "swept".
 fn manifest_line(entry: &ManifestEntry) -> String {
     match entry.kind {
         ManifestKind::Promoted => format!("  promoted {}", entry.path),
         ManifestKind::Modified => format!("  modified {}", entry.path),
         ManifestKind::Deleted => format!("  deleted {}", entry.path),
-        ManifestKind::Untracked => format!("  swept (was untracked) {}", entry.path),
+        ManifestKind::Added => format!("  added {}", entry.path),
+        ManifestKind::Untracked => format!("  untracked {}", entry.path),
     }
 }
 
@@ -2346,6 +2353,31 @@ mod tests {
         let left = value["left_out"].as_array().expect("left_out array");
         assert_eq!(left[0]["path"], "scratch.txt");
         assert_eq!(left[0]["kind"], "untracked");
+    }
+
+    /// An *included* deliberately-staged new file renders `added <path>` (M30 audit finding
+    /// 3), never the retired `swept (was untracked)` wording — that string is gone from the
+    /// included path entirely; JSON serializes the kebab-case kind `added`.
+    #[test]
+    fn render_finalize_manifest_renders_staged_new_file_as_added() {
+        let included = vec![ManifestEntry {
+            path: "src/feature.rs".to_string(),
+            kind: ManifestKind::Added,
+        }];
+
+        let agent = finalize_manifest(Format::Agent, &included, &[]);
+        assert!(
+            agent.contains("  added src/feature.rs"),
+            "a staged new file renders `added`; agent:\n{agent}",
+        );
+        assert!(
+            !agent.contains("swept"),
+            "the retired `swept` wording must not appear on the included path; agent:\n{agent}",
+        );
+
+        let json_out = finalize_manifest(Format::Json, &included, &[]);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["manifest"][0]["kind"], "added");
     }
 
     /// A landed finalize's JSON `committed` object carries the **included** `manifest[]`

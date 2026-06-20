@@ -315,6 +315,90 @@ fn cold_start_setup_commits_its_install_footprint_then_finalize_lands_the_work()
     );
 }
 
+/// M30 audit finding 2 (re-verify, resolved by finding 1) — on a cold start the `finalize`
+/// **dry-run forecast** and the **landed manifest** must agree (G3 dry-run/landed
+/// symmetry). Finding 1's fix (setup commits the `.jigc/config` layer on the unborn HEAD)
+/// makes the config layer already-tracked by the first finalize, so it leaks into NEITHER
+/// surface's `left_out`. This guards the symmetry so a future staging change cannot
+/// silently reintroduce the asymmetry the audit flagged.
+#[test]
+fn cold_start_dry_run_and_landed_manifests_agree_on_the_config_layer() {
+    let (repo, home) = fresh_unborn_repo();
+    let task = "add-rate-limiter";
+    assert_unborn(repo.path());
+
+    let setup = run_jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must run on a cold start"
+    );
+    let start = run_jigc(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "add rate limiter"],
+    );
+    assert!(start.status.success(), "`jigc start` must mint after setup");
+
+    fs::write(
+        repo.path().join("limiter.rs"),
+        "// a per-client rate limiter\n",
+    )
+    .expect("write code change");
+    git(repo.path(), &["add", "limiter.rs"]);
+    make_commit_conformant(repo.path(), home.path(), task);
+
+    // The dry-run forecast (commits nothing) ...
+    let dry = run_jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "finalize", task, "--dry-run"],
+    );
+    assert!(dry.status.success(), "the dry-run must exit 0");
+    let dry: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(dry.stdout).expect("utf-8")).expect("dry JSON");
+
+    // ... then the real landed finalize.
+    let landed = run_jigc(
+        repo.path(),
+        home.path(),
+        &["--format", "json", "task", "finalize", task],
+    );
+    assert!(landed.status.success(), "the landed finalize must exit 0");
+    let landed: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(landed.stdout).expect("utf-8"))
+            .expect("landed JSON");
+    let committed = &landed["committed"];
+
+    // Dry-run and landed agree on both the included manifest and the left-out residual.
+    assert_eq!(
+        dry["manifest"], committed["manifest"],
+        "dry-run and landed must forecast the same included set (G3 symmetry)",
+    );
+    assert_eq!(
+        dry["left_out"], committed["left_out"],
+        "dry-run and landed must forecast the same left-out set (G3 symmetry)",
+    );
+
+    // The config layer leaks into NEITHER left_out (setup already committed it — finding 1).
+    let mentions_config = |v: &serde_json::Value| {
+        v.as_array().is_some_and(|arr| {
+            arr.iter().any(|e| {
+                e["path"]
+                    .as_str()
+                    .is_some_and(|p| p.starts_with(".jigc/config") || p == ".jigc/.gitignore")
+            })
+        })
+    };
+    assert!(
+        !mentions_config(&dry["left_out"]),
+        "the config layer must not be forecast as left-out (it is already tracked); dry:\n{dry}",
+    );
+    assert!(
+        !mentions_config(&committed["left_out"]),
+        "the config layer must not land as left-out; committed:\n{committed}",
+    );
+}
+
 /// (iv) The hardening #5 omitting-context guard: an existing repo WITH a seed commit
 /// must still pin against the **real** HEAD SHA — the sentinel must never fire when
 /// HEAD resolves.

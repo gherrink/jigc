@@ -588,3 +588,60 @@ fn dry_run_splits_included_from_left_out() {
         "the MM path is reported in both included and left_out",
     );
 }
+
+/// (iv) M30 audit finding 3 — a deliberately **staged new** file (porcelain X=`A`) is an
+/// *included* commit member, so it must render `added <path>`, never `swept (was
+/// untracked) <path>` (nothing was swept — the agent staged it; "swept" is exactly the
+/// wording M30 retired, and `design/finalize.md` defines the included vocabulary as
+/// promoted/modified/deleted/added). The dry-run forecast and the landed manifest must
+/// agree on the `added` tag (G3 symmetry).
+#[test]
+fn staged_new_file_renders_added_not_swept() {
+    let repo = TempDir::new("added");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    let (task, _slug) = seed_task_with_stray(repo.path(), home.path(), "stage a new file");
+
+    // A brand-new file the agent deliberately stages — X column `A` → an included add.
+    fs::write(repo.path().join("feature.rs"), "pub fn feature() {}\n").expect("write feature.rs");
+    git(repo.path(), &["add", "feature.rs"]);
+
+    // Dry-run: forecasts the staged-new file as `added`, never `swept`.
+    let dry = ok_stdout(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", &task, "--dry-run"],
+        "jigc task finalize --dry-run",
+    );
+    assert!(
+        dry.contains("added feature.rs"),
+        "the dry-run forecasts the staged-new file as `added`; stdout:\n{dry}",
+    );
+    assert!(
+        !dry.contains("swept"),
+        "no `swept` wording on the included path (nothing was swept); stdout:\n{dry}",
+    );
+
+    // Landed: the commit summary tags the same file `added` (dry-run/landed symmetry).
+    let landed = ok_stdout(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", &task],
+        "jigc task finalize",
+    );
+    assert!(
+        landed.contains("added feature.rs"),
+        "the landed manifest tags the staged-new file `added`; stdout:\n{landed}",
+    );
+    assert!(
+        !landed.contains("swept"),
+        "no `swept` wording on the included path; stdout:\n{landed}",
+    );
+
+    // The staged-new file actually rode the commit.
+    let committed = git(repo.path(), &["show", "--name-only", "--format=", "HEAD"]);
+    assert!(
+        committed.lines().any(|l| l == "feature.rs"),
+        "the staged-new file lands in the commit; files:\n{committed}",
+    );
+}

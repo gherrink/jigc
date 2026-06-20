@@ -1698,12 +1698,14 @@ fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
 
 /// Map a single porcelain status-column char to its manifest kind (M30 G3 — each column
 /// classified independently so the dry-run forecast can split included/left-out): `D`→
-/// deleted, `A`/`?`→untracked (a fresh add / an untracked file), everything else
-/// (`M`/`T`/`C`/…)→modified.
+/// deleted, `A`→added (a deliberately-staged new file; only ever the X/index column, so
+/// always an *included* member), `?`→untracked (an untracked file; only the worktree side,
+/// so always *left-out*), everything else (`M`/`T`/`C`/…)→modified.
 fn column_kind(c: char) -> render::ManifestKind {
     match c {
         'D' => render::ManifestKind::Deleted,
-        'A' | '?' => render::ManifestKind::Untracked,
+        'A' => render::ManifestKind::Added,
+        '?' => render::ManifestKind::Untracked,
         _ => render::ManifestKind::Modified,
     }
 }
@@ -1936,7 +1938,8 @@ fn git_commit_name_status(repo_root: &Path) -> Result<Vec<(char, String)>> {
 ///
 /// - **included** — the commit's own delta (`name_status` from `git show --name-status HEAD`):
 ///   a path in `promoted` is a `Promoted` managed doc; otherwise the status char maps
-///   `A`→untracked (a new file), `M`→modified, `D`→deleted, any other (`C`/`T`/…)→modified.
+///   `A`→added (a deliberately-staged new file), `M`→modified, `D`→deleted, any other
+///   (`C`/`T`/…)→modified.
 /// - **left_out** — the post-commit `git status --porcelain` worktree residual (`porcelain`):
 ///   the index commit landed the staged set, so each entry's **Y (worktree) column** names the
 ///   unstaged/untracked WIP it left behind (the agent `git add`s to include it), classified by
@@ -1954,7 +1957,7 @@ fn classify_landed_manifest(
                 render::ManifestKind::Promoted
             } else {
                 match code {
-                    'A' => render::ManifestKind::Untracked,
+                    'A' => render::ManifestKind::Added,
                     'D' => render::ManifestKind::Deleted,
                     _ => render::ManifestKind::Modified,
                 }
