@@ -4,6 +4,7 @@ description: A parallel execution of a planned milestone's sub-tasks, joined and
 usage: a milestone is decomposed into independent sub-tasks you want run together and landed as a single commit.
 creates-task: false
 ---
+{{ include: step:provision-worktrees }}
 {{ include: step:implement-tasks }}
 {{ include: step:join-tasks }}
 {{ include: step:milestone-finalize }}

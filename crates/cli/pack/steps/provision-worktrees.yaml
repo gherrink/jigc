@@ -1,0 +1,4 @@
+Provision one isolated worktree per sub-task at the milestone's base pin — each
+fanned sub-agent runs against its own detached checkout, keyed by task id:
+
+{{ cli.milestone-provision }}

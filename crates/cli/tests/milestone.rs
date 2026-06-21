@@ -1525,6 +1525,66 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
     );
 }
 
+/// T2 (M31 Inc 3): the real `milestone-execution` workflow composes the worktree-
+/// provisioning `Run:` step **before** the fan-out's first `Spawn:` directive, and the
+/// compose raises no `command-ref-resolves` block — proving the `milestone-provision`
+/// catalog entry resolves the provision step's `{{cli.…}}` ref. The assertion reads the
+/// agent-facing composed bytes the agent runs, never a hand-built equivalent.
+#[test]
+fn milestone_execute_emits_the_provision_run_before_the_first_spawn() {
+    let repo = TempDir::new("execute-provision");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk config layer");
+
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Zebra fix", "Alpha fix"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    let out = run_milestone(repo.path(), home.path(), &["execute", "cache-rework"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "`jigc milestone execute cache-rework` must exit 0 (the `milestone-provision` catalog \
+         entry resolves the provision step's command-ref); got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    // `workflow-refs.command-ref-resolves` passes — no blocking finding leaked to the view.
+    assert!(
+        !stdout.contains("command-ref-resolves"),
+        "the provision step's `{{cli.milestone-provision}}` must resolve against the catalog; \
+         got:\n{stdout}",
+    );
+
+    let provision_at = stdout
+        .find("Run: `jigc milestone provision <MILESTONE_ID>`")
+        .expect("the provision step must resolve a `Run:` line into the composed view");
+    let first_spawn_at = stdout
+        .find("Spawn: `jigc workflow")
+        .expect("the fan-out emits at least one `Spawn:` directive");
+    assert!(
+        provision_at < first_spawn_at,
+        "the worktree-provisioning `Run:` step must compose BEFORE the fan-out's first \
+         `Spawn:` directive; got:\n{stdout}",
+    );
+}
+
 /// Mint `milestone` under `repo` with its sub-tasks added in `add_order`, set up the
 /// cascade layer, then run `jigc milestone execute` and return the composed stdout.
 /// Two callers feed divergent add orders to prove the Spawn emit is order-invariant.

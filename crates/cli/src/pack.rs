@@ -890,6 +890,7 @@ mod tests {
                 ResourceId::from("milestone-finalize"),
                 ResourceId::from("present-catalog"),
                 ResourceId::from("project-finalize"),
+                ResourceId::from("provision-worktrees"),
                 ResourceId::from("review-verdicts"),
                 ResourceId::from("route-to-workflow"),
                 ResourceId::from("run-scan"),

@@ -104,6 +104,14 @@ commands:
       - { from: "task.id" }
     hint: "Bind the spec this work implements to the task's spec role."
 
+  - id: milestone-provision
+    command: jigc
+    args:
+      - "milestone"
+      - "provision"
+      - { agent: milestone_id, hint: "the milestone:<slug> id being executed" }
+    hint: "Provision one detached base-pin worktree per sub-task before the fan-out."
+
   - id: milestone-finalize
     command: jigc
     args:

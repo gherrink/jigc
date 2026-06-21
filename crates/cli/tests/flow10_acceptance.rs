@@ -335,6 +335,113 @@ fn the_rendered_spawn_line_resolves_to_the_real_reentry_verb() {
     );
 }
 
+/// **T2 hardening #4 — the emitted provision `Run:` line reaches the real verb.** The
+/// `jigc milestone execute` view's worktree-provisioning `Run:` line, lifted verbatim
+/// from the composed bytes the agent runs, executes against the built binary and reaches
+/// the T1 `milestone provision` verb (exit 0) — never a clap unknown-subcommand error. The
+/// agent fills the one `<MILESTONE_ID>` marker (its documented run-time substitution point,
+/// exactly as the spawn line's `task_id`); every other byte runs verbatim, so a regression
+/// in the catalog entry or the verb wiring fails here rather than being masked.
+#[test]
+fn the_emitted_provision_run_line_reaches_the_real_provision_verb() {
+    let repo = TempDir::new("provision-run");
+    let home = TempDir::new("provision-run-home");
+    init_repo(repo.path());
+
+    expect_ok(
+        &run(
+            repo.path(),
+            home.path(),
+            &["milestone", "create", "Cache hardening"],
+        ),
+        "milestone create",
+    );
+    for intent in ["add an LRU eviction ADR", "tune the cache size"] {
+        expect_ok(
+            &run(
+                repo.path(),
+                home.path(),
+                &[
+                    "milestone",
+                    "add-task",
+                    "cache-hardening",
+                    intent,
+                    "--workflow",
+                    "sub-task",
+                ],
+            ),
+            "milestone add-task",
+        );
+    }
+
+    let executed = run(
+        repo.path(),
+        home.path(),
+        &["milestone", "execute", "cache-hardening"],
+    );
+    expect_ok(&executed, "milestone execute");
+    let view = String::from_utf8(executed.stdout).expect("utf-8 execute stdout");
+
+    // Lift the provision `Run:` line's backticked command VERBATIM from the composed view —
+    // the bytes the agent runs, not a reconstruction.
+    let command = view
+        .lines()
+        .filter_map(|l| l.strip_prefix("Run: `").and_then(|r| r.strip_suffix('`')))
+        .find(|c| c.starts_with("jigc milestone provision"))
+        .unwrap_or_else(|| {
+            panic!("the composed view must carry the provision Run line; got:\n{view}")
+        })
+        .to_owned();
+
+    // The line carries exactly the one `<MILESTONE_ID>` agent fill marker (the run-time
+    // substitution point) and the real `milestone provision` verb tokens.
+    let tokens: Vec<&str> = command.split_whitespace().collect();
+    assert_eq!(
+        &tokens[..3],
+        &["jigc", "milestone", "provision"],
+        "the provision Run line must invoke the `jigc milestone provision` verb; got {command:?}",
+    );
+    assert!(
+        command.contains("<MILESTONE_ID>"),
+        "the provision Run line must leave the milestone id as the agent fill marker; got {command:?}",
+    );
+
+    // Fill the one agent marker (what the agent does at run-time), then execute the line
+    // VERBATIM against the built binary (drop the leading `jigc` token — the built-binary
+    // path replaces the program name).
+    let filled: Vec<String> = tokens
+        .iter()
+        .map(|t| {
+            if *t == "<MILESTONE_ID>" {
+                "cache-hardening".to_owned()
+            } else {
+                (*t).to_owned()
+            }
+        })
+        .collect();
+    let arg_refs: Vec<&str> = filled[1..].iter().map(String::as_str).collect();
+    let provisioned = run(repo.path(), home.path(), &arg_refs);
+
+    // It must REACH the real `milestone provision` verb and exit 0 — never a clap
+    // unknown-subcommand / usage error (a Run line naming a nonexistent verb).
+    let stderr = String::from_utf8_lossy(&provisioned.stderr);
+    assert!(
+        provisioned.status.success(),
+        "the emitted provision Run line must reach the real provision verb and exit 0, not a \
+         clap unknown-subcommand error; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("Usage:") && !stderr.to_lowercase().contains("unrecognized"),
+        "the emitted provision Run line must not trip a clap parse error; stderr:\n{stderr}",
+    );
+    let stdout = String::from_utf8(provisioned.stdout).expect("utf-8 provision stdout");
+    assert!(
+        stdout.contains("provisioned"),
+        "the executed Run line must reach the provision verb (its summary), proving it is not a \
+         clap parse failure; got:\n{stdout}",
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Half-A step 2 — the real write→join seam (`implementation/roadmap.md` → inc-6
 // bullet 1; `design/worked-examples.md` → flow 10 Half-A step 2;
