@@ -8,5 +8,6 @@
 //! cross-cutting, separately-testable items live here.
 
 pub mod author;
+pub mod combine;
 pub mod invoke;
 pub mod repo;
