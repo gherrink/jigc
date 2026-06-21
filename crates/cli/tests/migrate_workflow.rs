@@ -429,6 +429,93 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
     );
 }
 
+/// The on-disk path of a task's workflow-provisioned `commit:<id>` doc:
+/// `.jigc/tasks/<id>/docs/commit:<id>.md`.
+fn commit_doc_path(repo: &Path, id: &str) -> PathBuf {
+    repo.join(".jigc")
+        .join("tasks")
+        .join(id)
+        .join("docs")
+        .join(format!("commit:{id}.md"))
+}
+
+#[test]
+fn reentered_filled_migrate_commit_survives_byte_untouched() {
+    // M32 Inc-2 (T1) regression guard. Inc-1 widened `provision_on_first_entry` to fire
+    // for every `creates-task: true` workflow (dropping the `|| !selectable` early-out),
+    // which now reaches the `migrate-changelog` re-entry. The `migrate` path auto-provisions
+    // the `commit:<id>` doc *FILLED* at mint (Hardening #4 — the templated migration summary
+    // + body name the foreign source, so the no-author finalize composes a real message). The
+    // property under guard: the `path.exists()` write-once guard (start.rs) makes the now-
+    // ungated `provision_commit_doc` a NO-OP on re-entry — the empty fillable form NEVER
+    // clobbers the auto-authored migration prose (`FALLBACK_TYPE == schema.scope`, so the
+    // guard checks the exact path the migrate provisioner wrote). This is a no-clobber
+    // regression (passes before AND after the fix), not RED->GREEN.
+    let repo = TempDir::new("reentry-repo");
+    let home = TempDir::new("reentry-home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    ok_stdout(setup, "jigc setup");
+
+    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+
+    // `jigc migrate` mints the `migrate-changelog-<slug>` task + auto-provisions a FILLED
+    // `commit:<id>` doc.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+    );
+    ok_stdout(out, "jigc migrate CHANGELOG.md --as changelog");
+
+    // Exactly one task minted — the migrate task; its id is the directory name.
+    let ids = task_dirs(repo.path());
+    assert_eq!(
+        ids.len(),
+        1,
+        "migrate must mint exactly one task; got {ids:?}"
+    );
+    let id = &ids[0];
+
+    // Capture the FILLED commit doc bytes. Assert it is genuinely FILLED (the migration
+    // prose, not the empty fillable) so the byte-identity check below has teeth — a guard
+    // over an already-empty form would prove nothing about no-clobber.
+    let doc_path = commit_doc_path(repo.path(), id);
+    let before = fs::read(&doc_path).expect("read the auto-provisioned filled commit doc");
+    let before_text = String::from_utf8(before.clone()).expect("utf-8 commit doc");
+    assert!(
+        before_text.contains("adopt CHANGELOG.md as a managed changelog")
+            && before_text.contains("Migrate the foreign CHANGELOG.md"),
+        "the migrate commit doc must be auto-authored FILLED (Hardening #4); doc:\n{before_text}",
+    );
+
+    // Re-enter the migration workflow: `jigc workflow migrate-changelog --task <id>` must
+    // compose cleanly (exit 0). The widened `provision_on_first_entry` runs, but the
+    // `path.exists()` guard short-circuits `provision_commit_doc` to a no-op.
+    let reentry = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["workflow", "migrate-changelog", "--task", id],
+    );
+    ok_stdout(
+        reentry,
+        "jigc workflow migrate-changelog --task <id> (re-entry)",
+    );
+
+    // The contract: the filled commit doc is BYTE-IDENTICAL after re-entry — the empty
+    // fillable never overwrote the auto-authored migration prose.
+    let after = fs::read(&doc_path).expect("read the commit doc after re-entry");
+    assert_eq!(
+        before, after,
+        "a re-entered filled migrate commit doc must survive byte-untouched; \
+         the empty fillable clobbered the migration prose",
+    );
+}
+
 /// Extract the `doc author adr --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
