@@ -70,6 +70,7 @@ The doctype/relation/grammar shapes deliberately left un-schema'd until a workfl
 
 Tracked so they're not lost, but honestly *not* milestone-scheduled — assigning each a milestone now would be false precision:
 
+- **The planning gate-record doctype (pack-shaped D)** — the consolidated plan-time forcing-functions, specified pack-shaped ([methodology-docs.md](../design/methodology-docs.md) → The planning gate-record): a per-milestone `planning-record` doctype, one required presence-slot per gate (judgment-content agent-authored, never scored — the A-3 bound). Run by hand from that table today; **encode owed at the self-hosting planning-workflow re-encode / v1 migration** (the M16 planning encode predates it). *Trigger:* the planning workflow is (re-)encoded into the methodology pack, or the v1 in-place migration ([DECISIONS.md](../DECISIONS.md) → 2026-06-21 Direction). Pairs with the in-place-migration deferral below.
 - **Per-developer `local` layer · team-layer distribution** ([overrides.md](../design/overrides.md)) — when multi-developer / team adoption is real.
 - **`import` three-way-merge authoring** ([write-commands.md](../design/write-commands.md)) — detection ships; *authoring* deferred past M5/M6, fires when a real merge-conflict authoring need arises.
 - **Reconciliation strictness · concurrent-OOB-during-a-task · external-edit notification** ([reconciliation.md](../design/reconciliation.md)) — post-MVP robustness.
