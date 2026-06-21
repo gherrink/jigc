@@ -23,8 +23,9 @@
 //! a self-cleaning `TempDir` keeps the test off the developer's real repo.
 
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 /// A throwaway directory that removes itself on drop.
 struct TempDir(PathBuf);
@@ -2398,5 +2399,335 @@ fn milestone_finalize_warns_on_a_leaked_worktree_but_still_succeeds() {
     assert!(
         !list.contains("worktrees/area-zed"),
         "the unlocked worktree must be unregistered; got:\n{list}",
+    );
+}
+
+/// Run `jigc <args>` with an explicit `cwd` (a fan-out worktree) and `$HOME = home`,
+/// optionally piping `stdin` — the genuine sub-agent re-entry + author path runs from
+/// **inside** the sub-task's worktree, so the cwd is `.jigc/worktrees/<sub>`, not the
+/// main checkout. (`jigc_home_or_repo` resolves the shared `.jigc/` against the main
+/// checkout regardless, so the writes still land in `jigc_home/.jigc/tasks/<sub>/`.)
+fn run_jigc_in(
+    cwd: &Path,
+    home: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(args)
+        .current_dir(cwd)
+        .env("HOME", home)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let mut child = command.spawn().expect("spawn jigc");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// HEAD~n's full commit message at `rev` (`git log -1 --format=%B <rev>`) — the
+/// per-sub-task body assertion reads it off the landed sub-task commit.
+fn message_at(repo: &Path, rev: &str) -> String {
+    let out = Command::new("git")
+        .args(["log", "-1", "--format=%B", rev])
+        .current_dir(repo)
+        .output()
+        .expect("git log rev");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// The `commit:<sub>` doc the genuine re-entry provisions, bound to **jigc_home** (the
+/// main checkout): `.jigc/tasks/<sub>/docs/commit:<sub>.md` — the surface the join reads.
+fn subtask_commit_doc(repo: &Path, sub: &str) -> PathBuf {
+    repo.join(".jigc")
+        .join("tasks")
+        .join(sub)
+        .join("docs")
+        .join(format!("commit:{sub}.md"))
+}
+
+/// The genuine sub-agent re-entry + author spine over the **real `sub-task` workflow** and
+/// the M31 worktrees — the acceptance the masked `single-task` / hand-staged
+/// `stage_subtask_commit` fixtures never drove. Mints `Cache rework` + two default
+/// (`sub-task`) sub-tasks in `add_order`, provisions the N base-pin worktrees, `execute`s
+/// the milestone, then **for each sub-task, from inside its worktree**: genuinely re-enters
+/// via `jigc workflow sub-task --task <sub>` (which provisions the `commit:<sub>` doc on
+/// first entry — the property the gate fix decouples from `selectable`), asserts the doc
+/// landed (case d), authors its `type`/`summary`/`body`, then stages a disjoint persisted
+/// ADR (the merged-doc tree the parent aggregate lands) + disjoint worktree code (the
+/// per-sub-task commit's tree). The caller finalizes + asserts the squash-mode outcome.
+fn drive_genuine_reentry(repo: &Path, home: &Path, add_order: &[&str]) {
+    assert!(
+        run_milestone(repo, home, &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in add_order {
+        assert!(
+            run_milestone(repo, home, &["add-task", "cache-rework", intent])
+                .status
+                .success(),
+            "add-task `{intent}` (default sub-task) must exit 0",
+        );
+    }
+    let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+    let executed = run_milestone(repo, home, &["execute", "cache-rework"]);
+    assert!(
+        executed.status.success(),
+        "execute must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&executed.stderr),
+    );
+
+    // (sub, summary, body, code-path, code-body) — id-sorted [area-low, area-zed], each
+    // with distinct authored prose + disjoint code so the per-sub-task render + tree are
+    // genuinely the sub-agent's own.
+    let subs = [
+        (
+            "area-low",
+            "rework the low cache path",
+            "Reworks the low cache path body.",
+            "src/low.rs",
+            "pub fn low() {}\n",
+        ),
+        (
+            "area-zed",
+            "rework the zed cache path",
+            "Reworks the zed cache path body.",
+            "src/zed.rs",
+            "pub fn zed() {}\n",
+        ),
+    ];
+    for (sub, summary, body, code_rel, code_body) in subs {
+        let wt = repo.join(".jigc").join("worktrees").join(sub);
+        assert!(wt.is_dir(), "the worktree for `{sub}` must be provisioned");
+
+        // Genuine re-entry from INSIDE the worktree — provisions `commit:<sub>` on first
+        // entry (the gate fix; RED before it: the `sub-task` (`selectable: false`) branch
+        // returns early, provisioning nothing).
+        let reentry = run_jigc_in(&wt, home, &["workflow", "sub-task", "--task", sub], None);
+        assert!(
+            reentry.status.success(),
+            "genuine re-entry `jigc workflow sub-task --task {sub}` must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&reentry.stderr),
+        );
+        // (case d) the provisioning assertion the masked fixtures never made: the commit
+        // doc landed in jigc_home over the REAL `sub-task` workflow.
+        assert!(
+            subtask_commit_doc(repo, sub).is_file(),
+            "re-entry over the real `sub-task` workflow must provision \
+             jigc_home/.jigc/tasks/{sub}/docs/commit:{sub}.md",
+        );
+
+        // Author the commit prose through the CLI — `set-field` here is exactly the call
+        // that exits 1 ("no staged instance — provision it first") on current code.
+        let set_field = run_jigc_in(
+            &wt,
+            home,
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{sub}#type"),
+                "--value",
+                "feat",
+                "--task",
+                sub,
+            ],
+            None,
+        );
+        assert!(
+            set_field.status.success(),
+            "set-field commit:{sub}#type must exit 0 after the genuine re-entry provisions \
+             it; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&set_field.stdout),
+            String::from_utf8_lossy(&set_field.stderr),
+        );
+        let set_summary = run_jigc_in(
+            &wt,
+            home,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{sub}#summary"),
+                "--from-file",
+                "-",
+                "--task",
+                sub,
+            ],
+            Some(summary.as_bytes()),
+        );
+        assert!(
+            set_summary.status.success(),
+            "set-slot commit:{sub}#summary must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&set_summary.stderr),
+        );
+        let set_body = run_jigc_in(
+            &wt,
+            home,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{sub}#body"),
+                "--from-file",
+                "-",
+                "--task",
+                sub,
+            ],
+            Some(body.as_bytes()),
+        );
+        assert!(
+            set_body.status.success(),
+            "set-slot commit:{sub}#body must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&set_body.stderr),
+        );
+
+        // A disjoint persisted ADR (the merged-doc tree the parent aggregate lands) +
+        // disjoint worktree code (the per-sub-task commit's tree). Staged AFTER the
+        // re-entry so the commit doc's recorded provenance survives.
+        stage_doc(
+            repo,
+            sub,
+            &format!("adr:{sub}-policy"),
+            &adr_plain(&format!("{sub} policy")),
+            "edited-from-base",
+        );
+        stage_worktree_code(repo, sub, code_rel, code_body);
+    }
+}
+
+#[test]
+fn milestone_finalize_squash_false_genuine_reentry_authors_per_subtask_commits() {
+    // The genuine acceptance (review-A1, worktree-active): a real fan-out sub-agent
+    // provisions AND authors its `commit:<sub>` doc through a genuine
+    // `jigc workflow sub-task --task <sub>` re-entry, and that authored commit flows
+    // through join + finalize in squash:false — the rendered per-sub-task message carries
+    // the AUTHORED summary/body (not merely exit 0). RED on current code: the re-entry
+    // provisions nothing (`provision_on_first_entry`'s `!def.selectable` early-returns for
+    // `sub-task`), so the provisioning assertion + the subsequent `set-field` both fail.
+    let repo = TempDir::new("reentry-squash-false");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    set_squash_false(repo.path());
+
+    let before = rev_list_count(repo.path());
+    // Non-id add order (zed before low) so the id-sorted commit sequence is not an accident
+    // of insertion order.
+    drive_genuine_reentry(repo.path(), home.path(), &["Area zed", "Area low"]);
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize` (squash:false) must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // N+1 = 3 new commits: one per sub-task (2) + the parent aggregate.
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 3,
+        "squash:false must land N+1 commits (2 sub-task + 1 parent)",
+    );
+
+    // The committed SEQUENCE (oldest first): the two AUTHORED sub-task subjects id-sorted
+    // (area-low before area-zed, NOT add order), then the parent's synthesized aggregate.
+    let subjects = recent_subjects(repo.path(), 3);
+    assert_eq!(
+        subjects,
+        vec![
+            "feat: rework the low cache path".to_owned(),
+            "feat: rework the zed cache path".to_owned(),
+            "Finalize milestone cache-rework (2 sub-tasks)".to_owned(),
+        ],
+        "the commit sequence must be the id-sorted AUTHORED sub-task messages then the parent",
+    );
+
+    // Each per-sub-task commit carries THAT sub-task's authored BODY — proving the genuine
+    // re-entry's authored prose (not merely an exit code) flows through the render. HEAD~2
+    // == area-low, HEAD~1 == area-zed (oldest first), HEAD == the aggregate.
+    let low_msg = message_at(repo.path(), "HEAD~2");
+    assert!(
+        low_msg.contains("Reworks the low cache path body."),
+        "the area-low commit must carry its authored body; got:\n{low_msg}",
+    );
+    let zed_msg = message_at(repo.path(), "HEAD~1");
+    assert!(
+        zed_msg.contains("Reworks the zed cache path body."),
+        "the area-zed commit must carry its authored body; got:\n{zed_msg}",
+    );
+
+    // The parent aggregate landed the merged persisted ADRs.
+    let tree = head_tree_paths(repo.path());
+    assert!(
+        tree.contains(&"docs/decisions/area-low-policy.md".to_owned())
+            && tree.contains(&"docs/decisions/area-zed-policy.md".to_owned()),
+        "the parent aggregate must commit the merged persisted docs; got:\n{tree:?}",
+    );
+}
+
+#[test]
+fn milestone_finalize_squash_true_genuine_reentry_materializes_transient_then_lands_aggregate() {
+    // The squash:true face of the same genuine re-entry: the authored `commit:<sub>` docs
+    // are TRANSIENT — materialized in staging, then skipped at promote (no `location:`) —
+    // and the single CLI-synthesized aggregate still lands the merged docs + worktree code.
+    // No `.jigc/config/` knob → the pack-default squash:true.
+    let repo = TempDir::new("reentry-squash-true");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+    // The project cascade layer the `execute` / re-entry surfaces require; no squash knob
+    // → the pack-default squash:true.
+    fs::create_dir_all(repo.path().join(".jigc").join("config")).expect("mk config layer");
+
+    let before = rev_list_count(repo.path());
+    drive_genuine_reentry(repo.path(), home.path(), &["Area zed", "Area low"]);
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize` (squash:true) must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // EXACTLY ONE new commit (the synthesized aggregate).
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 1,
+        "squash:true must land exactly one aggregate commit",
+    );
+    let message = head_message(repo.path());
+    assert!(
+        message.contains("Finalize milestone cache-rework (2 sub-tasks)"),
+        "the aggregate message must be the synthesized projection; got:\n{message}",
+    );
+
+    let tree = head_tree_paths(repo.path());
+    // The authored commit docs are transient — never promoted (materialize-then-skip).
+    assert!(
+        !tree.iter().any(|p| p.contains("commit:")),
+        "the transient authored commit docs must NOT be promoted into the tree; got:\n{tree:?}",
+    );
+    // The aggregate DID land the merged persisted docs + the disjoint worktree code.
+    assert!(
+        tree.contains(&"docs/decisions/area-low-policy.md".to_owned())
+            && tree.contains(&"docs/decisions/area-zed-policy.md".to_owned()),
+        "the aggregate must commit the merged persisted docs; got:\n{tree:?}",
+    );
+    assert!(
+        tree.contains(&"src/low.rs".to_owned()) && tree.contains(&"src/zed.rs".to_owned()),
+        "the aggregate must combine the disjoint worktree code; got:\n{tree:?}",
     );
 }

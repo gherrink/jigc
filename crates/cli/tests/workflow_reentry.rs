@@ -204,7 +204,12 @@ fn workflow_reentry_composes_w_with_the_equality_guard() {
     //     workflow now shipped (increment 5, T2) the compose succeeds, emitting the
     //     fan-out-free sub-task view (locate / implement / author-commit) — and,
     //     crucially, **no `jigc task finalize` line**, since the parent milestone's
-    //     finalize is the only commit boundary.
+    //     finalize is the only commit boundary. This asserts only that re-entry
+    //     **composes** the `sub-task` view; that the same re-entry also **provisions**
+    //     the `commit:<sub>` doc (`sub-task` is `creates-task: true`, so
+    //     `should_provision_commit_doc` holds despite `selectable: false`) is the
+    //     genuine worktree-active acceptance in `milestone.rs`
+    //     (`milestone_finalize_squash_*_genuine_reentry_*`).
     let composed_sub = run(
         repo.path(),
         home.path(),

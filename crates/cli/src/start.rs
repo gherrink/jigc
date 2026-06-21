@@ -314,25 +314,44 @@ fn migration_commit_body(source_path: &str, doctype: &str) -> String {
     )
 }
 
+/// Whether a workflow provisions a commit doc — the **single source of truth** for the
+/// provisioning property, consumed at both call sites (the mint arm in [`compose_core`]
+/// and [`provision_on_first_entry`]). A workflow provisions a commit doc iff it
+/// `creates-task: true` — every task that can reach a commit boundary owns one, and a
+/// `creates-task: false` `<W>` (the router and its kind) provisions nothing.
+///
+/// **`selectable` is deliberately NOT a provisioning gate.** `selectable` governs only
+/// router *membership* (the `selectable_workflows` catalog filter) — a
+/// `creates-task: true, selectable: false` workflow (the fan-out `sub-task`) still owns
+/// and authors its own commit doc, it just never appears in a router's selection list
+/// (`workflow-dialect.md` → the `selectable` contract: a non-selectable work-workflow
+/// reaches its commit boundary only through the parent milestone's `finalize`, but it is
+/// a commit-bearing task all the same).
+fn should_provision_commit_doc(def: &WorkflowDef) -> bool {
+    def.creates_task
+}
+
 /// Provision the sub-workflow's deterministic commit doc into the sub-task's
 /// working area **on first re-entry only** — `jigc workflow <W> --task <id>`'s
 /// deferred mirror of `jigc start`'s mint-time provisioning (`write-commands.md` →
 /// Sub-agent re-entry: the first re-entry provisions the sub-workflow's deterministic
 /// instances, deferred to first entry so unspawned areas aren't provisioned).
 ///
-/// **Gated on `creates_task`** — a `creates-task: false` `<W>` (the router and its
-/// kind) provisions nothing, mirroring [`compose_core`]'s no-task arm. **Idempotent /
-/// first-entry-only** — keyed on the **absence** of the `docs/commit:<id>.md` skeleton
-/// (the mint-time write-once), so a sub-agent's in-progress edits survive a later
-/// re-entry; the doc is provisioned exactly once, on the first entry that finds it
-/// missing.
+/// **Gated on [`should_provision_commit_doc`]** (`creates_task`) — a `creates-task: false`
+/// `<W>` (the router and its kind) provisions nothing, mirroring [`compose_core`]'s
+/// no-task arm; a `creates-task: true, selectable: false` `<W>` (the fan-out `sub-task`)
+/// **does** provision (`selectable` is router-membership, not a provisioning gate — see
+/// [`should_provision_commit_doc`]). **Idempotent / first-entry-only** — keyed on the
+/// **absence** of the `docs/commit:<id>.md` skeleton (the mint-time write-once), so a
+/// sub-agent's in-progress edits survive a later re-entry; the doc is provisioned exactly
+/// once, on the first entry that finds it missing.
 fn provision_on_first_entry(
     pack: &dyn PackSource,
     def: &WorkflowDef,
     dir: &Path,
     id: &str,
 ) -> Result<()> {
-    if !def.creates_task || !def.selectable {
+    if !should_provision_commit_doc(def) {
         return Ok(());
     }
     // The skeleton's presence marks the area already-provisioned: a re-entry never
@@ -840,7 +859,7 @@ fn compose_core(
     let store_root = cli::repo::jigc_home(repo_root).unwrap_or_else(|| repo_root.to_path_buf());
     let store = committed_store(&store_root, &schemas);
 
-    let ctx = if def.creates_task {
+    let ctx = if should_provision_commit_doc(&def) {
         // Mint the task (reads HEAD). Minting after the definition loads so a
         // malformed pack never leaves a task dir behind.
         let minted = mint_in_repo(repo_root, intent, workflow_id)?;
