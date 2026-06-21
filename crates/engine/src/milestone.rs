@@ -118,6 +118,18 @@ pub fn milestone_dir(jigc_root: &Path, id: &str) -> PathBuf {
     jigc_root.join("milestones").join(id)
 }
 
+/// The on-disk location of a fanned sub-agent's ephemeral code worktree, **relative
+/// to jigc_home**: `.jigc/worktrees/<sub-task-id>` (`design/storage.md` → repository
+/// layout). A **pure function of the sub-task id** so the `Spawn:` line can render it
+/// at compose time with no jigc_home in hand (the relative token the sub-agent `cd`s
+/// into); the provisioning verb joins it onto jigc_home for the absolute worktree path.
+/// One shared convention for the engine emit (`emit_fan_out_spawns`) and the CLI
+/// (`render_spawn` / the provision verb) — a doc-elaboration pin (`DECISIONS.md`
+/// 2026-06-21 → M31 Increment 3).
+pub fn worktree_path(id: &str) -> PathBuf {
+    Path::new(".jigc").join("worktrees").join(id)
+}
+
 /// Mint a milestone: slug the `title` (empty → the `milestone` type-name
 /// fallback, the same [`crate::slug::slugify`] + fallback discipline as
 /// `state::mint_task`), reject on a serial collision with an existing milestone

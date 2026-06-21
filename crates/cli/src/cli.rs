@@ -1363,6 +1363,27 @@ mod cli_parse {
     }
 
     #[test]
+    fn milestone_provision_parses_the_id() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "provision", "cache-rework"])
+            .expect("`jigc milestone provision <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Provision {
+                    milestone_id: "cache-rework".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_provision_requires_a_milestone_id() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "provision"])
+            .expect_err("`milestone provision` with no id must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
     fn milestone_execute_parses_the_id() {
         let cli = Cli::try_parse_from(["jigc", "milestone", "execute", "cache-rework"])
             .expect("`jigc milestone execute <id>` parses");

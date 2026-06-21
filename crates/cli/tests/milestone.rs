@@ -1660,3 +1660,159 @@ fn add_task_records_the_default_and_explicit_minting_workflow() {
         "with `--workflow single-task`, the sub-task must record `single-task`",
     );
 }
+
+/// `git rev-parse HEAD` in `dir` — when `dir` is a linked worktree this reads the
+/// worktree's own detached HEAD, so the provision test can prove each worktree is
+/// detached at the milestone base pin (C0), not at advanced main HEAD (C1).
+fn rev_parse_head(dir: &Path) -> String {
+    let out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(dir)
+        .output()
+        .expect("run git rev-parse");
+    assert!(out.status.success(), "rev-parse HEAD failed in {dir:?}");
+    String::from_utf8(out.stdout)
+        .expect("utf-8 head")
+        .trim()
+        .to_string()
+}
+
+/// Count the immediate sub-directories of `dir` (the provisioned worktree dirs) —
+/// the "exactly N worktrees / same N on a re-run" assertion.
+fn dir_child_count(dir: &Path) -> usize {
+    fs::read_dir(dir)
+        .expect("read worktrees dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().is_dir())
+        .count()
+}
+
+#[test]
+fn milestone_provision_creates_detached_base_pin_worktrees_idempotently() {
+    let repo = TempDir::new("provision");
+    let pin = init_repo(repo.path()); // C0 — the milestone base pin
+    let home = TempDir::new("home");
+
+    // Mint the milestone + two sub-tasks, added in NON-id order (zed before low) so the
+    // id-sorted provisioning is not an accident of insertion order. id-sorted:
+    // [area-low, area-zed].
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+
+    // Advance MAIN past the pin AFTER minting, so jigc_home's HEAD (C1) != the pin (C0).
+    // The provisioned worktrees must detach at the recorded base PIN, never at main HEAD.
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .expect("run git");
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+    };
+    fs::write(repo.path().join("advance.txt"), "more\n").expect("write advance.txt");
+    git(&["add", "advance.txt"]);
+    git(&["commit", "-q", "-m", "advance main"]);
+    let main_head = rev_parse_head(repo.path());
+    assert_ne!(main_head, pin, "main HEAD must have advanced past the pin");
+
+    let wt_root = repo.path().join(".jigc").join("worktrees");
+
+    // Inject a STALE, non-registered leftover dir at one worktree path (a crashed-run
+    // remnant): provision must clear it and still succeed (the stale-leftover idempotency).
+    let stale = wt_root.join("area-low");
+    fs::create_dir_all(&stale).expect("mk stale leftover dir");
+    fs::write(stale.join("junk.txt"), "leftover\n").expect("write junk");
+
+    // Provision #1 — over the stale leftover.
+    let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "`jigc milestone provision cache-rework` must exit 0; got {:?}\nstderr:\n{}",
+        provisioned.status,
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+
+    // (a) EXACTLY N=2 worktrees, each a *linked* worktree detached at the base pin.
+    let subs = ["area-low", "area-zed"];
+    for sub in subs {
+        let wt = wt_root.join(sub);
+        assert!(
+            wt.is_dir(),
+            "worktree `{sub}` must exist under .jigc/worktrees/",
+        );
+        assert!(
+            wt.join(".git").is_file(),
+            "`{sub}` must be a linked worktree (its `.git` is a file pointer)",
+        );
+        assert_eq!(
+            rev_parse_head(&wt),
+            pin,
+            "`{sub}` must be detached at the base pin (C0), not main HEAD (C1)",
+        );
+    }
+    assert_eq!(
+        dir_child_count(&wt_root),
+        2,
+        "exactly N=2 worktrees must be provisioned, no extras",
+    );
+
+    // (c) gitignored — the provisioned worktrees stay out of the main checkout's
+    // `git status`, and git agrees via `check-ignore`.
+    let (_, status) = git_state(repo.path());
+    assert!(
+        !status.contains("worktrees"),
+        "the provisioned worktrees must not pollute the main checkout `git status`; got:\n{status}",
+    );
+    let check = Command::new("git")
+        .args(["check-ignore", ".jigc/worktrees/area-low"])
+        .current_dir(repo.path())
+        .output()
+        .expect("run git check-ignore");
+    assert!(
+        check.status.success(),
+        "git must treat `.jigc/worktrees/` as ignored; got {:?}\nstderr:\n{}",
+        check.status,
+        String::from_utf8_lossy(&check.stderr),
+    );
+
+    // (b) idempotent — a SECOND run exits 0 and yields the same 2 worktrees at the pin.
+    let again = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        again.status.success(),
+        "a second provision must exit 0 (idempotent); got {:?}\nstderr:\n{}",
+        again.status,
+        String::from_utf8_lossy(&again.stderr),
+    );
+    for sub in subs {
+        assert_eq!(
+            rev_parse_head(&wt_root.join(sub)),
+            pin,
+            "`{sub}` must still be detached at the pin after the idempotent re-run",
+        );
+    }
+    assert_eq!(
+        dir_child_count(&wt_root),
+        2,
+        "the idempotent re-run must yield the same 2 worktrees (no duplicates)",
+    );
+}

@@ -29,7 +29,7 @@ use engine::finding::Finding;
 use engine::index::load_committed;
 use engine::milestone::{
     JoinOutcome, add_from_spec, add_task, join, materialize, milestone_dir, mint_milestone,
-    read_base_pin, read_task_list, synthesized_message,
+    read_base_pin, read_task_list, synthesized_message, worktree_path,
 };
 use engine::packsource::PackResourceKind;
 use engine::schema::Schema;
@@ -91,6 +91,16 @@ pub enum MilestoneCommand {
     /// Emit a milestone's sub-task ids in canonical id-sorted order — the
     /// deterministic order the by-task-id join enumerates.
     ListTasks {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+    },
+    /// Provision the milestone's fan-out worktrees: add one **detached** `git
+    /// worktree` per sub-task at the milestone's recorded **base pin** under the
+    /// gitignored `.jigc/worktrees/<sub-task-id>` path, so each fanned sub-agent gets
+    /// an isolated code checkout. Idempotent — reuses a live worktree, clears a stale
+    /// leftover from a crashed run. Run as a `Run:` step before the fan-out
+    /// (`design/storage.md` → repository layout).
+    Provision {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
@@ -157,6 +167,7 @@ impl MilestoneCommand {
                 workflow,
             } => run_add_from_spec(cwd, &milestone_id, &spec_addr, &workflow),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
+            MilestoneCommand::Provision { milestone_id } => run_provision(cwd, &milestone_id),
             MilestoneCommand::Execute { .. } => unreachable!("`Execute` is handled above"),
             MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
             MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
@@ -296,6 +307,143 @@ fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
         ids.len(),
         ids.join(", ")
     ))
+}
+
+/// `jigc milestone provision <milestone-id>` — add one **detached** `git worktree`
+/// per sub-task at the milestone's recorded **base pin** (`read_base_pin().sha`, the
+/// commit every sub-task inherited — **never** main HEAD, which may have advanced),
+/// under the gitignored `.jigc/worktrees/<sub-task-id>` path, so each fanned sub-agent
+/// runs against an isolated code checkout (`design/storage.md` → repository layout;
+/// `DECISIONS.md` 2026-06-20 → M31 planning, WF4). Run as a `Run:` step before the
+/// fan-out (T2 wires the emission).
+///
+/// The CLI does the git I/O: HEAD never enters here (the base is the milestone's
+/// **stored** pin), but the worktree shell-outs run on the main checkout `repo_root`
+/// while the `.jigc/worktrees/` parent binds to jigc_home (the M31 WF3 split — outside
+/// a worktree the two coincide). **Idempotent**: a re-run reuses a live worktree, and a
+/// stale leftover dir from a crashed run is pruned/cleared before the add. An unknown
+/// milestone (no area) surfaces as a context-wrapped error.
+fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
+    // checkout's `git status` / `git add --all`.
+    ensure_jigc_gitignore(&jigc_root)?;
+
+    let dir = milestone_dir(&jigc_root, milestone_id);
+    if !dir.is_dir() {
+        bail!(
+            "milestone `{milestone_id}` does not exist\n  route: create it first with `jigc milestone create \"<title>\"`"
+        );
+    }
+    // The single shared base pin every sub-task inherited — the commit the worktrees
+    // detach at, never a fresh HEAD.
+    let base = read_base_pin(&dir).with_context(|| {
+        format!("could not read the shared base pin for milestone `{milestone_id}`")
+    })?;
+    let list = read_task_list(&dir)
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+    // Id-sorted ids — the deterministic order the fan-out spawns its sub-agents.
+    let ids = list.enumerate();
+
+    let paths = provision_worktrees(&repo_root, &jigc_home, &base.sha, &ids)?;
+    Ok(format!(
+        "provisioned {} worktree(s) for milestone:{milestone_id} at base {} ({})",
+        paths.len(),
+        base.short,
+        ids.join(", ")
+    ))
+}
+
+/// Add one **detached** worktree per sub-task at `base_sha` under
+/// `<jigc_home>/.jigc/worktrees/<id>`, **idempotently**. The worktrees-parent is
+/// created first (git makes only the leaf), then `git worktree prune` drops admin
+/// records for any worktree whose dir was deleted by a crashed run. For each sub-task:
+/// a worktree already registered at the exact path is reused (the crashed run's
+/// worktree, or a prior provision — left untouched); otherwise a stale non-registered
+/// leftover dir is cleared and `git worktree add --detach` lands a fresh one. Returns
+/// the absolute worktree paths in the input (id-sorted) order.
+fn provision_worktrees(
+    repo_root: &Path,
+    jigc_home: &Path,
+    base_sha: &str,
+    sub_ids: &[String],
+) -> Result<Vec<PathBuf>> {
+    // Canonicalize jigc_home so the per-id paths match `git worktree list`'s canonical
+    // absolute paths (git resolves symlinks at `add` time) — the reuse comparison below.
+    let canonical_home = jigc_home
+        .canonicalize()
+        .with_context(|| format!("could not canonicalize {jigc_home:?}"))?;
+    let worktrees_root = canonical_home.join(".jigc").join("worktrees");
+    std::fs::create_dir_all(&worktrees_root)
+        .with_context(|| format!("could not create {worktrees_root:?}"))?;
+
+    // Drop admin records for any worktree dir deleted out from under git by a crashed
+    // run, so a later `add` at that path is not rejected as a stale registration.
+    git_worktree(repo_root, &["worktree", "prune"])?;
+    let registered = registered_worktrees(repo_root)?;
+
+    let mut paths = Vec::with_capacity(sub_ids.len());
+    for id in sub_ids {
+        // The absolute worktree path; `worktree_path(id)` is the shared relative
+        // convention (`.jigc/worktrees/<id>`) the spawn line also renders.
+        let path = canonical_home.join(worktree_path(id));
+        if registered.iter().any(|w| w == &path) {
+            // Already a registered worktree at this exact path — reuse it (idempotent).
+            paths.push(path);
+            continue;
+        }
+        // A stale, non-registered leftover dir would make `git worktree add` fail
+        // ("already exists"); clear it first.
+        if path.exists() {
+            std::fs::remove_dir_all(&path)
+                .with_context(|| format!("could not clear the stale worktree dir {path:?}"))?;
+        }
+        let path_str = path
+            .to_str()
+            .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))?;
+        git_worktree(
+            repo_root,
+            &["worktree", "add", "--detach", path_str, base_sha],
+        )?;
+        paths.push(path);
+    }
+    Ok(paths)
+}
+
+/// The canonical absolute paths of the repo's currently-registered worktrees, parsed
+/// from `git worktree list --porcelain` (each `worktree <path>` line carries the
+/// canonical path git stored at `add` time). The provision reuse check compares against
+/// these.
+fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
+    let out = git_worktree(repo_root, &["worktree", "list", "--porcelain"])?;
+    Ok(out
+        .lines()
+        .filter_map(|line| line.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .collect())
+}
+
+/// Run `git <args>` in `repo_root`, returning full stdout on success — the worktree
+/// provisioning shell-outs ("CLI orchestrates, git executes"). Bails with git's stderr
+/// on a non-zero exit (the `git_rev_parse` envelope, kept separate because the worktree
+/// commands need the full multi-line stdout, not a single trimmed line).
+fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim(),
+        );
+    }
+    String::from_utf8(out.stdout).context("`git` produced non-UTF-8 output")
 }
 
 /// Dispatch `jigc milestone execute <milestone-id>`: compose the milestone-execution
@@ -680,15 +828,19 @@ fn commit_per_subtask_messages(
 }
 
 /// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including
-/// `milestones/` (`design/storage.md` → repository layout; `DECISIONS.md`
-/// 2026-06-04 → `milestones/` gitignored like `tasks/`). Idempotent — the file is
-/// (re)written only when it is absent or does not already list `milestones/`, so an
-/// adapter-written `.gitignore` (which predates `milestones/`) is amended once.
+/// `milestones/` and the fan-out `worktrees/` (`design/storage.md` → repository layout;
+/// `DECISIONS.md` 2026-06-04 → `milestones/` gitignored like `tasks/`; `DECISIONS.md`
+/// 2026-06-21 → M31 Inc 3 adds `worktrees/`). Idempotent — the file is (re)written only
+/// when it is absent or does not already list **both** `milestones/` and `worktrees/`,
+/// so an adapter-written `.gitignore` (which predates either) is amended once.
 fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
-    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\n";
+    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\n";
     let path = jigc_root.join(".gitignore");
     let needs_write = match std::fs::read_to_string(&path) {
-        Ok(existing) => !existing.lines().any(|l| l.trim() == "milestones/"),
+        Ok(existing) => {
+            let lines: Vec<&str> = existing.lines().map(str::trim).collect();
+            !lines.contains(&"milestones/") || !lines.contains(&"worktrees/")
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
         Err(err) => return Err(err).with_context(|| format!("could not read {path:?}")),
     };
