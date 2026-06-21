@@ -448,7 +448,7 @@ fn reentered_filled_migrate_commit_survives_byte_untouched() {
     // + body name the foreign source, so the no-author finalize composes a real message). The
     // property under guard: the `path.exists()` write-once guard (start.rs) makes the now-
     // ungated `provision_commit_doc` a NO-OP on re-entry — the empty fillable form NEVER
-    // clobbers the auto-authored migration prose (`FALLBACK_TYPE == schema.scope`, so the
+    // clobbers the auto-authored migration prose (`FALLBACK_TYPE == schema.ty`, so the
     // guard checks the exact path the migrate provisioner wrote). This is a no-clobber
     // regression (passes before AND after the fix), not RED->GREEN.
     let repo = TempDir::new("reentry-repo");
