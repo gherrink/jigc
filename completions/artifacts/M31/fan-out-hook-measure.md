@@ -229,3 +229,32 @@ HEAD unchanged, nothing promoted), naming the contended path; (4) unrelated main
 SUCCESSFUL combine byte-identically** (the regression the stale `cb0fb59b…` pin failed — the
 `git reset --hard` data loss `dec61c7` replaces with an ff-only merge). **One hook story, both
 paths, WIP-safe on the actually-pinned binary. The M31 done-bar is met.**
+
+## Completion addendum — 2026-06-21 (post-audit fix + re-pin at `5532f68`)
+
+The milestone-completion audit (e2e 13/13 on the installed binary + code-review) found one HIGH the
+above run missed: the **squash:false *abort* path** still ran `git reset --hard` on the live main
+checkout (`commit_subtask_code` applied each sub-task's patch directly onto main, and any abort —
+a per-sub-task hook rejection or the aggregate rejection — reset it), **destroying unrelated
+unstaged tracked WIP** — the symmetric twin of the bug `dec61c7` fixed for squash:true. Fixed at
+**`5532f68`** (`fix(finalize): squash:false fan-out abort is WIP-safe — never reset --hard the main
+checkout`): squash:false now builds its N+1 commit chain in a dedicated worktree and lands via
+`git merge --ff-only`, so an abort tears down the worktree and **never touches main**.
+
+**Re-pinned at `5532f68`** (replaces the `dec61c7`/`c9e7eb72…` pin above):
+
+| | |
+|---|---|
+| `jigc` sha256 | `8d33bb4ffb0c35c2669dda04c1622f05453ea0c909e3165f416a1454d1d492f4` (identical across `~/.local/bin` + `~/.cargo/bin`) |
+| `doc-code` probe sha256 | `530dd89f32d7c6a6afbb617b7672744897316d9ecb243a6cd06710ec22302398` (unchanged — `5532f68` touches no grammar) |
+| HEAD | `5532f68` · built `cargo install --path crates/cli --force`, copied to both bin dirs |
+
+**New measured fact (6) — squash:false ABORT is WIP-safe** (verified on the re-pinned installed
+binary, no env overrides, via the milestone-completion re-verify): with `finalize.fan-out.squash`
+false, a seeded unrelated **unstaged tracked** edit in the main checkout (`important.txt` =
+`PRECIOUS UNSAVED HUMAN WORK`), and an aggregate-rejecting `pre-commit` hook → `jigc milestone
+finalize` exits 1, **HEAD is unchanged** (no orphan per-sub-task commits), the **human edit
+survives byte-for-byte** (would be reverted to its committed content if `reset --hard` had run),
+and the worktrees are torn down. The success path re-confirmed: N+1 commits land, unrelated WIP
+preserved, and the committed sequence is **byte-identical across divergent sub-task add-orders**
+(by-task-id, not feed order). **The M30/M31 data-loss class is now retired on BOTH commit paths.**
