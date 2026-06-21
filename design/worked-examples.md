@@ -2167,3 +2167,48 @@ The commit carries only what the agent declared (the index) plus jigc's own prom
 2. **The rest is surfaced, not swept.** Both unrelated changes **remain** uncommitted in the working tree post-commit (`git status --porcelain` still shows the untracked file and the modified tracked file), and the emitted finalize output **names the left-out set** — the untracked file and the unstaged-tracked file — so the agent can `git add` them on a follow-up rather than discovering them silently committed.
 3. **A citation the agent wrote but did NOT stage blocks.** A component anchoring a Rust symbol appended to a tracked file but never `git add`ed makes `finalize` block on `doc-code.symbol-exists` naming the citing item's anchor address (`arch-doc:gateway#components/widget/implemented-by`) and the dangling target (`widget.rs#render_widget`); HEAD is unchanged, nothing is promoted. The finalize-scope `doc-code` probe validates the materialized git **index** (M30 Increment 3, G4), so an unstaged symbol is absent reality — the keystone the index-as-change-manifest model rests on.
 4. **The production path resolves.** The whole loop runs on the cargo-built `jigc` against the **embedded** dev pack with the `doc-code` probe found beside the binary (no `JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE` override) — the path a real install hits; a missing sibling would surface as a `pack-probe-integrity` meta-finding, asserted absent.
+
+## 33. The combine keystone — a `squash: true` fan-out folds N worktree-staged code-sets into one commit, drops none (M31)
+
+The M31 acceptance: **a `squash: true` fan-out `finalize` combines every sub-agent's worktree-staged code-set into one commit — disjoint-apply in task-id order, block + route a same-file collision, never `git merge` — committing every sub-agent's code and dropping none.** M31 isolated each fanned-out sub-agent's code in its own git worktree (`.jigc/worktrees/<sub-id>`, [storage.md](storage.md) → the third combine-mode). That isolation re-opened a data-loss hole: the old `squash: true` boundary `git add --all`ed the **main checkout**, where the worktree-isolated code never lives — so it committed **zero** sub-agent code. The combine channel closes it: at finalize the CLI reads each worktree's `git diff --cached`, computes a **rename-aware block-set** (the union of {staged path, rename old-path, delete path}), and — absent a cross-worktree intersection — builds the combined tree **off-line via a temp index** (`GIT_INDEX_FILE` at a throwaway path: `read-tree` the base, `git apply --cached` each worktree's patch in task-id order, `write-tree` → `commit-tree` → fast-forward + checkout). The live worktree/index is **never mutated until a clean commit lands**, so a blocked or failed combine needs no destructive reset — the M30 `git reset --hard` rollback hazard (which would wipe unrelated main-checkout WIP) is rejected ([DECISIONS.md](../DECISIONS.md) → 2026-06-20 M31 planning, the combine + off-substrate gate-review S1/S2). Notation illustrative; the flow below is the shape the acceptance test (`crates/cli/tests/flow33_acceptance.rs`) drives end-to-end through the built binary with the **embedded** dev pack.
+
+### The walk — two sub-agents on disjoint files combine; a same-file pair blocks
+
+```text
+# a milestone fans out to two sub-agents, each editing DISJOINT code in its own worktree:
+$ jigc milestone create "Cache rework"
+$ jigc milestone add-task cache-rework "Area low"     # → sub-task area-low
+$ jigc milestone add-task cache-rework "Area zed"     # → sub-task area-zed
+$ jigc milestone provision cache-rework               # N base-pin worktrees
+# area-low stages src/low.rs in .jigc/worktrees/area-low; area-zed stages src/zed.rs in its own
+# each sub-area also stages a disjoint persisted ADR (adr:low-policy, adr:zed-policy)
+$ jigc milestone finalize cache-rework
+  finalized <hash> — Finalize milestone cache-rework (2 sub-tasks)
+$ git show --name-only HEAD
+  src/low.rs                ← area-low's worktree code (dropped none)
+  src/zed.rs                ← area-zed's worktree code (dropped none)
+  docs/decisions/low-policy.md
+  docs/decisions/zed-policy.md
+$ git status --porcelain    ← clean: no ` D` drift after the combine + worktree teardown
+
+# two sub-agents touching the SAME file — one of them via a RENAME of it — BLOCK:
+# area-low edits shared.txt; area-zed `git mv shared.txt moved.txt` (its old-path collides)
+$ jigc milestone finalize cache-rework
+  ✗ combine.code-collision · blocking
+    code collision — `shared.txt` (sub-tasks [area-low, area-zed]) staged by more than one
+    worktree; the combine disjoint-applies code and never text-merges a shared file
+    route: have the contending sub-tasks touch distinct files, or combine by hand
+  # HEAD unchanged, nothing promoted; the off-line build never touched the live checkout,
+  # so unrelated main-checkout WIP survives untouched.
+```
+
+The disjoint case is the data-loss fix: both sub-agents' code rides the one commit because the combine reads it from the worktrees, not from a sweep of the (empty) main checkout. The collision case is the never-blind-merge discipline ([storage.md](storage.md) → the by-task-id join) applied to the code substrate — a shared file is routed to a human, never text-merged, and the rename-aware block-set catches the case where one sub-agent *moves* the contended path. Because the combine builds off-line in a temp index, a blocked finalize is non-destructive: the main checkout's index, working tree, and unrelated WIP are byte-identical afterward.
+
+### What it asserts (the M31 acceptance bar)
+
+1. **Disjoint code + docs, one commit, drops none.** A `squash: true` fan-out with two sub-agents on disjoint files commits **both** sub-agents' staged code (`src/low.rs`, `src/zed.rs`) **and** the merged docs in **one** commit — the data-loss repro (RED before the combine: the `git add --all` sweep committed zero sub-agent code).
+2. **The main checkout is clean post-commit.** `git status --porcelain` is empty after the combine + worktree teardown — no ` D` drift.
+3. **The commit is order-invariant.** The combined commit's **tree hash** and **message** are byte-identical across divergent sub-agent feed/completion orders (the recorded `tasks.json` order *and* the code-staging order varied) — tree+message, not the timestamped commit SHA (Validation hardening #7 extended to the code substrate).
+4. **A same-file collision blocks (incl. a rename).** Two sub-agents staging the same path — one of them via a rename of it — block with a routed `combine.code-collision` naming the contended path; HEAD is unchanged and nothing is applied or promoted.
+5. **Unrelated main-checkout WIP survives a blocked combine.** An untracked file and an unstaged tracked edit in the main checkout are byte-identical after a blocked finalize — the off-line temp-index build never touches the live checkout (review S2).
+6. **An advanced main blocks finalize.** When main advances past the milestone's pinned base, the `base == main-HEAD` preflight (review S1) blocks with the base-mismatch finding; HEAD is unchanged and nothing is applied — the precondition for a clean disjoint-apply.
