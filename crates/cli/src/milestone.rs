@@ -22,7 +22,7 @@
 use crate::cli::Format;
 use crate::pack::make_pack;
 use crate::render;
-use crate::task::{git_diff, git_head, git_untracked};
+use crate::task::git_head;
 use anyhow::{Context, Result, bail};
 use engine::finalize::plan_milestone_finalize;
 use engine::finding::Finding;
@@ -426,6 +426,56 @@ fn registered_worktrees(repo_root: &Path) -> Result<Vec<PathBuf>> {
         .collect())
 }
 
+/// The id-ordered paths of the milestone's still-provisioned fan-out worktrees — each
+/// sub-task whose `<jigc_home>/.jigc/worktrees/<id>` is a currently-registered git
+/// worktree (the [`remove_worktrees`] enumeration, reused for the combine channel). A
+/// never-provisioned (docs-only) milestone yields an empty list, so the `squash: true`
+/// combine degrades to a docs-only commit. Best-effort on the `git worktree list` read (an
+/// unreadable list yields no worktrees — the combine then commits the docs alone, never a
+/// spurious block).
+fn provisioned_worktrees(
+    repo_root: &Path,
+    jigc_home: &Path,
+    list: &engine::milestone::TaskList,
+) -> Vec<PathBuf> {
+    let registered = registered_worktrees(repo_root).unwrap_or_default();
+    // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
+    // `add` time); fall back to the raw path if canonicalization fails (then nothing
+    // matches and the worktree is treated as not-provisioned).
+    let canonical_home = jigc_home
+        .canonicalize()
+        .unwrap_or_else(|_| jigc_home.to_path_buf());
+    list.enumerate()
+        .into_iter()
+        .map(|id| canonical_home.join(worktree_path(&id)))
+        .filter(|path| registered.iter().any(|w| w == path))
+        .collect()
+}
+
+/// Whether any of the milestone's provisioned worktrees has staged code — Σ `git diff
+/// --cached --name-only` over the worktree list (the narrowed empty-commit signal for the
+/// worktree-isolation model, M31 Inc 4). An empty list (a docs-only milestone) yields
+/// `false`, so the empty-commit guard then rests on the materialized-docs signal alone.
+fn worktrees_have_staged_code(worktrees: &[PathBuf]) -> Result<bool> {
+    for wt in worktrees {
+        let out = Command::new("git")
+            .args(["diff", "--cached", "--name-only"])
+            .current_dir(wt)
+            .output()
+            .context("could not run `git` (is it on PATH?)")?;
+        if !out.status.success() {
+            bail!(
+                "`git diff --cached` in worktree {wt:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        if !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Run `git <args>` in `repo_root`, returning full stdout on success — the worktree
 /// provisioning shell-outs ("CLI orchestrates, git executes"). Bails with git's stderr
 /// on a non-zero exit (the `git_rev_parse` envelope, kept separate because the worktree
@@ -639,12 +689,18 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     // down only AFTER the planner's preflight validates base == HEAD below.
     let squash = resolve_squash(&jigc_home)?;
 
-    // The diff-presence signal the planner's empty-commit guard needs: the materialized
-    // docs that will be promoted, plus any working-tree change / untracked file from base.
+    // The id-ordered still-provisioned fan-out worktrees (empty for a docs-only milestone)
+    // — both the empty-commit signal below and the `squash: true` combine channel below
+    // read this set.
+    let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
+
+    // The diff-presence signal the planner's empty-commit guard needs, narrowed to the
+    // worktree-isolation model (M31 Inc 4): the materialized docs that will be promoted, OR
+    // any worktree's staged code (Σ `git diff --cached`). The main checkout no longer holds
+    // the fan-out's code — it lives in the isolated worktrees — so a main-checkout
+    // diff/untracked scan would both miss the real code and false-count unrelated WIP.
     let head = git_head(&repo_root)?;
-    let has_diff = !materialized.addresses.is_empty()
-        || !git_diff(&repo_root, &base.sha)?.trim().is_empty()
-        || !git_untracked(&repo_root)?.trim().is_empty();
+    let has_diff = !materialized.addresses.is_empty() || worktrees_have_staged_code(&worktrees)?;
 
     // Step 3 — the thin sibling planner over the materialized staging area (the parent of
     // `merged/docs/`): shared preflight + empty-commit guard + promote/hash sweep.
@@ -733,13 +789,23 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             }
         }
     } else {
-        // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
-        // The message temp file is written into the (gitignored) milestone area; the milestone
-        // area is the cleanup dir removed on a landed commit. The `squash: true` default path
-        // lands only the single CLI-synthesized aggregate (no per-sub-task commits), so it is
-        // byte-identical to what M7 shipped — left untouched.
+        // Step 4 — the SHARED executor: promote + combine + commit (one boundary) +
+        // post-commit. The message temp file is written into the (gitignored) milestone
+        // area; the milestone area is the cleanup dir removed on a landed commit. The
+        // `squash: true` boundary folds the N still-provisioned worktrees' staged code-sets
+        // into the single commit (M31 Inc 4) via the executor's `Combine` channel — never a
+        // whole-tree sweep (the code lives in the isolated worktrees, not this checkout). A
+        // docs-only (never-provisioned) milestone yields an empty list and degrades to a
+        // docs-only commit, byte-identical to what M7 shipped.
         let code = crate::task::execute_finalize_plan(
-            &repo_root, &jigc_root, &dir, &plan, &dir, &schemas, format,
+            &repo_root,
+            &jigc_root,
+            &dir,
+            &plan,
+            &dir,
+            &schemas,
+            format,
+            crate::task::StagePolicy::Combine(worktrees),
         )?;
         // On a landed commit, clean up the per-sub-task working areas too (the executor only
         // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves

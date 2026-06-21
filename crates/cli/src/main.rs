@@ -9,6 +9,7 @@
 mod adapter;
 mod cascade_util;
 mod cli;
+mod combine;
 mod config;
 mod describe;
 mod doc;

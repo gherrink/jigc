@@ -1130,7 +1130,9 @@ fn install_warning_hook(repo: &Path) {
 /// per-sub-task fires are intentionally swallowed (`commit_empty_message` relays nothing)
 /// and only the aggregate's capture surfaces. If the per-sub-task commits leaked into the
 /// relay the warning would appear N+1 times — the bug bullet B1 guards against. The
-/// `squash: true` default relays the single aggregate's output the same way.
+/// `squash: true` path now commits the off-line combine via `git commit-tree` (M31 Inc 4),
+/// which runs NO hook, so it captures and relays nothing (hook execution on this path is
+/// deferred to Inc 5; `DECISIONS.md` 2026-06-21).
 #[test]
 fn milestone_finalize_relays_only_the_aggregate_hook_output() {
     // ── squash:false: 2 sub-task commits + 1 aggregate; warning relayed ONCE ──────
@@ -1166,7 +1168,12 @@ fn milestone_finalize_relays_only_the_aggregate_hook_output() {
         "the relay must land in the delimited section; got:\n{stdout}",
     );
 
-    // ── squash:true: the single aggregate's output is relayed the same way ─────────
+    // ── squash:true: the M31 Inc 4 combine commits via `git commit-tree`, which runs no
+    // `pre-commit`/`commit-msg` hook — so the single aggregate lands but NO hook output is
+    // captured to relay (the deliberate Inc-4 consequence of the off-line temp-index
+    // combine, `DECISIONS.md` 2026-06-20 / 2026-06-21 — squash:true hook execution is
+    // deferred to Inc 5 alongside squash:false's per-sub-task relay). The non-blocking hook
+    // does not block (it never runs), and the commit still lands. ───────────────────────
     let repo = TempDir::new("relay-squash-true");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -1209,26 +1216,23 @@ fn milestone_finalize_relays_only_the_aggregate_hook_output() {
     let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
     assert!(
         finalized.status.success(),
-        "a non-blocking hook must not block the squash:true finalize; got {:?}\nstderr:\n{}",
+        "the squash:true combine must land its commit; got {:?}\nstderr:\n{}",
         finalized.status,
         String::from_utf8_lossy(&finalized.stderr),
     );
-    // squash:true lands EXACTLY one commit (the synthesized aggregate), so the hook fires
-    // once — the relay surfaces it once.
+    // squash:true lands EXACTLY one commit (the synthesized aggregate, off-line combined).
     assert_eq!(
         rev_list_count(repo.path()),
         before + 1,
         "squash:true must land exactly one aggregate commit",
     );
+    // `git commit-tree` runs no hook, so the warning is neither captured nor relayed (Inc 4).
     let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
     assert_eq!(
         stdout.matches(HOOK_WARNING).count(),
-        1,
-        "the squash:true aggregate's hook warning must be relayed once; got:\n{stdout}",
-    );
-    assert!(
-        stdout.contains("--- hook output ---"),
-        "the relay must land in the delimited section; got:\n{stdout}",
+        0,
+        "the squash:true combine (`commit-tree`) runs no pre-commit hook, so no warning is \
+         relayed (Inc 5 restores hook execution); got:\n{stdout}",
     );
 }
 
@@ -2047,6 +2051,149 @@ fn milestone_finalize_tears_down_the_provisioned_worktrees_on_an_aborted_finaliz
     assert!(
         !list.contains("worktrees/area-low") && !list.contains("worktrees/area-zed"),
         "an aborted finalize must UNREGISTER the fan-out worktrees; got:\n{list}",
+    );
+}
+
+/// Write + `git add` a code file IN a provisioned fan-out worktree
+/// (`.jigc/worktrees/<sub>/<rel>`) — the staged code a fanned-out sub-agent produces in
+/// its isolated worktree, the code-set the squash:true combine must fold into the single
+/// commit (M31 Inc 4). Stages in the worktree's OWN index (`git add` with `current_dir`
+/// the worktree), never the main checkout.
+fn stage_worktree_code(repo: &Path, sub: &str, rel: &str, body: &str) {
+    let wt = repo.join(".jigc").join("worktrees").join(sub);
+    let p = wt.join(rel);
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent).expect("mkdir worktree code parent");
+    }
+    fs::write(&p, body).expect("write worktree code");
+    let out = Command::new("git")
+        .args(["add", rel])
+        .current_dir(&wt)
+        .output()
+        .expect("git add in worktree");
+    assert!(
+        out.status.success(),
+        "staging `{rel}` in worktree `{sub}` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+#[test]
+fn milestone_finalize_squash_true_combines_disjoint_worktree_code() {
+    // The combine keystone (M31 Inc 4): a squash:true fan-out with two sub-agents touching
+    // DISJOINT files commits BOTH sub-agents' staged code (drops none) + the merged docs in
+    // ONE commit. RED before the wiring — the `Sweep` policy `git add --all`s the main
+    // checkout, where the worktree-isolated code never lives, so it commits ZERO worktree
+    // code (the data-loss repro). GREEN once the Combine channel folds the worktrees in.
+    let repo = TempDir::new("combine-disjoint");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Mint + 2 sub-tasks + 2 base-pin worktrees (provision_for_finalize also stages a
+    // disjoint persisted ADR per sub-area — the merged docs the same commit must carry).
+    provision_for_finalize(repo.path(), home.path());
+
+    // Each sub-agent stages DISJOINT code in its own isolated worktree.
+    stage_worktree_code(repo.path(), "area-low", "src/low.rs", "pub fn low() {}\n");
+    stage_worktree_code(repo.path(), "area-zed", "src/zed.rs", "pub fn zed() {}\n");
+
+    let before = rev_list_count(repo.path());
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize` (squash:true) must combine the worktree code + docs and \
+         exit 0; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // EXACTLY ONE new commit.
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 1,
+        "the combine must land exactly one commit",
+    );
+
+    // The single commit's tree carries BOTH worktrees' code AND the merged docs.
+    let tree = head_tree_paths(repo.path());
+    assert!(
+        tree.iter().any(|p| p == "src/low.rs"),
+        "worktree `area-low`'s staged code must land in the commit (dropped none); got:\n{tree:?}",
+    );
+    assert!(
+        tree.iter().any(|p| p == "src/zed.rs"),
+        "worktree `area-zed`'s staged code must land in the commit (dropped none); got:\n{tree:?}",
+    );
+    assert!(
+        tree.iter().any(|p| p == "docs/decisions/low-policy.md")
+            && tree.iter().any(|p| p == "docs/decisions/zed-policy.md"),
+        "the merged docs must land in the SAME commit; got:\n{tree:?}",
+    );
+
+    // The main checkout is clean after the combine (no ` D` drift; worktrees torn down).
+    let (_, status) = git_state(repo.path());
+    assert!(
+        status.trim().is_empty(),
+        "the main checkout must be clean after the combine; got:\n{status}",
+    );
+}
+
+#[test]
+fn milestone_finalize_squash_true_code_only_fan_out_does_not_false_block_as_empty() {
+    // A fan-out whose sub-agents touched ONLY code (no persisted docs) must finalize: the
+    // narrowed CLI-side has_diff sees the worktree-staged code (Σ `git diff --cached`), so
+    // the empty-commit guard does not false-block it. RED before the narrowing — has_diff
+    // scanned only the main checkout (empty under worktree isolation) and the milestone had
+    // no materialized docs, so the guard aborted it as empty.
+    let repo = TempDir::new("combine-code-only");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Mint + 2 sub-tasks, provision worktrees, stage NO docs — code only.
+    assert!(
+        run_milestone(repo.path(), home.path(), &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent]
+            )
+            .status
+            .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+    stage_worktree_code(repo.path(), "area-low", "src/low.rs", "pub fn low() {}\n");
+    stage_worktree_code(repo.path(), "area-zed", "src/zed.rs", "pub fn zed() {}\n");
+
+    let before = rev_list_count(repo.path());
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "a code-only fan-out must NOT false-block as empty; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before + 1,
+        "the code-only combine must land exactly one commit",
+    );
+    let tree = head_tree_paths(repo.path());
+    assert!(
+        tree.iter().any(|p| p == "src/low.rs") && tree.iter().any(|p| p == "src/zed.rs"),
+        "both worktrees' code must land in the code-only combine; got:\n{tree:?}",
     );
 }
 

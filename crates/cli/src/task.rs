@@ -1098,6 +1098,14 @@ pub(crate) enum StagePolicy {
     /// Milestone single-commit boundary — `git add --all` (sub-agent code is
     /// unstaged-by-design; narrowing it would drop it).
     Sweep,
+    /// The `squash: true` fan-out boundary (M31 Inc 4) — the id-ordered list of the
+    /// milestone's still-provisioned worktree paths. The sub-agent code lives in those
+    /// isolated worktrees, NOT this checkout, so a `git add --all` sweep would drop it;
+    /// instead [`combine_commit`] folds each worktree's staged code-set onto the base tree
+    /// **off-line**, overlays the promoted docs + config, and `commit-tree`s the result. An
+    /// empty list (a docs-only / never-provisioned milestone) degrades to a docs-only
+    /// commit, byte-identical to the M7 single-aggregate form.
+    Combine(Vec<PathBuf>),
 }
 
 /// Execute a [`FinalizePlan`]'s commit phases 4–7 (`design/finalize.md` → 4. Promote /
@@ -1112,10 +1120,18 @@ pub(crate) enum StagePolicy {
 /// area / the milestone staging area — both gitignored); `cleanup_dir` is the working
 /// area removed on a landed commit (the task dir / the milestone area). The flow: write
 /// the message to a temp file, copy each promoted doc to its canonical repo path, ensure
-/// `.jigc/.gitignore`, `git add --all`, `git commit -F <tmp>` (**never** `--no-verify`).
-/// A hook/git rejection surfaces git's stderr verbatim, rolls back the promoted copies,
-/// and lands no commit (exit `FAILURE`). On success, post-commit (best-effort: advance
-/// the file-state hashes, invalidate the edge-index stamp, remove the working area).
+/// `.jigc/.gitignore`, stage per `stage`, commit (**never** `--no-verify`). A hook/git
+/// rejection surfaces git's stderr verbatim, rolls back the promoted copies, and lands no
+/// commit (exit `FAILURE`). On success, post-commit (best-effort: advance the file-state
+/// hashes, invalidate the edge-index stamp, remove the working area).
+///
+/// `stage` selects the stage/commit mechanism ([`StagePolicy`]). The `squash: true`
+/// milestone boundary passes [`StagePolicy::Combine`] (fold the worktree code-sets +
+/// `commit-tree`); the migration path its fixed pathspec.
+// Each argument is a distinct, independent fact (repo/jigc/tmp/cleanup roots, the plan,
+// schemas, the output format, the stage policy) threaded straight to the shared executor;
+// an allow is clearer here than a parameter struct (matching `try_execute_finalize_plan`).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_finalize_plan(
     repo_root: &Path,
     jigc_root: &Path,
@@ -1124,6 +1140,7 @@ pub(crate) fn execute_finalize_plan(
     cleanup_dir: &Path,
     schemas: &BTreeMap<String, Schema>,
     format: Format,
+    stage: StagePolicy,
 ) -> Result<ExitCode> {
     // Map the landed/failed `Result` onto the historic `Ok(ExitCode)` contract the
     // per-task and `squash: true` milestone callers expect (a failure surfaces git's
@@ -1139,14 +1156,11 @@ pub(crate) fn execute_finalize_plan(
         cleanup_dir,
         schemas,
         None,
-        // The milestone single-commit boundary keeps the whole-tree `git add --all`
-        // sweep (M30 G1): sub-agent code is unstaged-by-design, so narrowing it would
-        // drop it — the data-loss-safe choice the M31 worktree redesign owns.
-        StagePolicy::Sweep,
+        stage,
     )? {
-        // T3 — relay the aggregate `git_commit`'s non-blocking hook output (the
-        // `squash: true` milestone boundary; the per-sub-task `commit_empty_message`
-        // commits relay nothing — `design/finalize.md` → 6. Commit, review B1).
+        // T3 — relay the landed commit's non-blocking hook output (the `squash: true`
+        // milestone boundary; the combine path's `commit-tree` runs no hook, so the stream
+        // is empty there — `design/finalize.md` → 6. Commit, review B1).
         Ok(hook_output) => {
             relay_hook_output(format, &hook_output);
             Ok(ExitCode::SUCCESS)
@@ -1219,19 +1233,34 @@ pub(crate) fn try_execute_finalize_plan(
             // changes — the promoted canonical doc(s), each retired original's deletion,
             // and jigc's git-tracked config layer (`.jigc/config/` + `.jigc/.gitignore`,
             // which `setup` writes but never commits, so this first migration commit must
-            // land them) — never arbitrary user WIP.
-            StagePolicy::MigrationFixed => stage_migration(repo_root, plan)?,
+            // land them) — never arbitrary user WIP. The whole-index `git commit -F`
+            // (never `-- <pathspec>`) then lands it, so an agent-`git add`ed but
+            // non-promoted artifact (the `owner-artifact`) still rides the commit (G6).
+            StagePolicy::MigrationFixed => {
+                stage_migration(repo_root, plan)?;
+                git_commit(repo_root, &msg_path)
+            }
             // Per-task IndexHonoring (M30 G6): honor the agent's existing index and add
             // ONLY jigc's promoted docs + the config layer into it; never sweep the
-            // ambient dirty tree. The whole-index `git_commit` below lands the lot.
-            StagePolicy::IndexHonoring => stage_index_honoring(repo_root, plan)?,
+            // ambient dirty tree. The whole-index `git_commit` lands the lot.
+            StagePolicy::IndexHonoring => {
+                stage_index_honoring(repo_root, plan)?;
+                git_commit(repo_root, &msg_path)
+            }
             // The milestone single-commit boundary keeps the whole-tree sweep — sub-agent
-            // code is unstaged-by-design (the M31 worktree redesign owns the narrowing).
-            StagePolicy::Sweep => git_run(repo_root, &["add", "--all"])?,
+            // code is unstaged-by-design on this (non-worktree) path.
+            StagePolicy::Sweep => {
+                git_run(repo_root, &["add", "--all"])?;
+                git_commit(repo_root, &msg_path)
+            }
+            // The `squash: true` fan-out boundary (M31 Inc 4): fold the N worktree-staged
+            // code-sets onto the base tree off-line, overlay the promoted docs + config,
+            // and `commit-tree` the result — never `git add --all` (the code lives in the
+            // isolated worktrees, not this checkout, so a sweep would drop it).
+            StagePolicy::Combine(worktrees) => {
+                combine_commit(repo_root, &worktrees, plan, &msg_path)
+            }
         }
-        // Commit the WHOLE index (`git commit -F`, never `-- <pathspec>`), so an agent
-        // `git add`ed but non-promoted artifact (the `owner-artifact`) still lands (G6).
-        git_commit(repo_root, &msg_path)
     })();
     let _ = std::fs::remove_file(&msg_path);
     let hook_output = match commit_result {
@@ -1905,6 +1934,153 @@ pub(crate) fn commit_empty_message(
         );
     }
     Ok(())
+}
+
+/// The `squash: true` fan-out commit (M31 Inc 4 T2): fold the N worktree-staged code-sets
+/// onto the base tree off-line via the [combine engine](crate::combine), overlay the
+/// promoted docs + jigc's git-tracked config layer, and `commit-tree` the result as a
+/// child of HEAD — never `git add --all` (the sub-agent code lives in the isolated
+/// worktrees, not this checkout, so a sweep would drop it, the data-loss the redesign
+/// fixes). The whole build is **off-line** (a throwaway index, `GIT_INDEX_FILE`), so the
+/// live index/worktree are untouched until the clean commit lands (`git reset --hard`):
+/// a blocked/failed combine needs no destructive reset and leaves unrelated main-checkout
+/// WIP intact (review S2). An empty `worktrees` list (a docs-only / never-provisioned
+/// milestone) folds nothing and degrades to a docs-only commit, byte-identical to the M7
+/// single-aggregate form.
+///
+/// A cross-worktree code collision blocks with a routed [`Finding`] (the combine never
+/// text-merges code) surfaced as an `Err` — the same shape a same-doc join clash takes;
+/// the caller's rollback restores the promoted docs and lands no commit.
+///
+/// Returns an EMPTY hook stream — `commit-tree` runs no `pre-commit`/`commit-msg` hook
+/// (the Inc 4 consequence; the per-sub-task hook relay through this temp-index combine is
+/// the Inc 5 `squash: false` concern, `DECISIONS.md` 2026-06-20).
+fn combine_commit(
+    repo_root: &Path,
+    worktrees: &[PathBuf],
+    plan: &engine::finalize::FinalizePlan,
+    msg_path: &Path,
+) -> Result<String> {
+    // base == HEAD (the milestone preflight guaranteed it before we got here), so the
+    // fan-out's pin tree is this checkout's HEAD tree.
+    let code_tree = match crate::combine::combine_worktree_trees(repo_root, "HEAD", worktrees)? {
+        crate::combine::CombineOutcome::Combined(tree) => tree,
+        crate::combine::CombineOutcome::Blocked(finding) => return Err(finding_to_err(finding)),
+    };
+    // Overlay the promoted docs + the git-tracked config layer onto the combined code tree
+    // in a throwaway index (the live index is never touched). The promote step already
+    // copied each doc into this checkout's working tree, so a targeted `git add` stages
+    // exactly jigc's own contributions — never the ambient dirty tree.
+    let index = CombineIndex::new();
+    git_index(repo_root, index.path(), &["read-tree", &code_tree])?;
+    let mut pathspecs: Vec<String> = plan
+        .promotions
+        .iter()
+        .map(|promotion| promotion.destination.clone())
+        .collect();
+    pathspecs.extend(existing_pathspecs(
+        repo_root,
+        &[".jigc/config", ".jigc/.gitignore"],
+    ));
+    if !pathspecs.is_empty() {
+        let mut args: Vec<&str> = vec!["add", "--"];
+        args.extend(pathspecs.iter().map(String::as_str));
+        git_index(repo_root, index.path(), &args)?;
+    }
+    let tree = git_index(repo_root, index.path(), &["write-tree"])?;
+    // `commit-tree` the combined tree as a child of HEAD, then fast-forward the ref + sync
+    // the working tree to it (clean afterward). Nothing live was mutated until this point,
+    // so any failure above left no commit and no destructive reset to undo.
+    let head = git_head(repo_root)?;
+    let commit = git_commit_tree(repo_root, &tree, &head, msg_path)?;
+    git_run(repo_root, &["reset", "--hard", &commit])?;
+    Ok(String::new())
+}
+
+/// Run `git <args>` in `repo_root` with `GIT_INDEX_FILE` redirected to `index` — the
+/// off-line combine overlay's throwaway index, so the live index/worktree are never
+/// touched. Returns trimmed stdout (the tree sha for `write-tree`, empty for
+/// `read-tree`/`add`); bails with git's stderr on a non-zero exit.
+fn git_index(repo_root: &Path, index: &Path, args: &[&str]) -> Result<String> {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(repo_root)
+        .env("GIT_INDEX_FILE", index)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git {}` failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    String::from_utf8(out.stdout)
+        .context("`git` produced non-UTF-8 output")
+        .map(|s| s.trim().to_string())
+}
+
+/// `git commit-tree <tree> -p <parent> -F <message-file>` — create a commit object for an
+/// off-line-built tree (the `squash: true` fan-out combine, M31 Inc 4). Unlike
+/// [`git_commit`], commit-tree commits a given tree directly (never the live index) and
+/// **runs no `pre-commit`/`commit-msg` hook** — the seam the off-line combine needs to
+/// land the worktree-folded tree without a `git add`. Returns the new commit sha.
+fn git_commit_tree(
+    repo_root: &Path,
+    tree: &str,
+    parent: &str,
+    message_file: &Path,
+) -> Result<String> {
+    let out = Command::new("git")
+        .arg("commit-tree")
+        .arg(tree)
+        .arg("-p")
+        .arg(parent)
+        .arg("-F")
+        .arg(message_file)
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git commit-tree` (is git on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git commit-tree` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    String::from_utf8(out.stdout)
+        .context("`git commit-tree` produced non-UTF-8 output")
+        .map(|s| s.trim().to_string())
+}
+
+/// A throwaway index file for the off-line combine overlay, removed on drop — never the
+/// live `.git/index`, so the overlay cannot mutate this checkout's staging state (the
+/// `crate::combine::TempIndex` idiom, kept private to its own off-line build).
+struct CombineIndex(PathBuf);
+
+impl CombineIndex {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "jigc-combine-overlay-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        // `git read-tree` creates the file; clear any stale leftover first.
+        let _ = std::fs::remove_file(&path);
+        CombineIndex(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for CombineIndex {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
 }
 
 /// The paths the just-landed `HEAD` commit touched (`git show --name-only`). Used by
