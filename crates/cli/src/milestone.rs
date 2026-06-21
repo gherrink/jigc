@@ -997,7 +997,8 @@ mod tests {
     /// The T1 milestone-feeding contract: composing the `creates-task: false`
     /// `milestone-execution` fixture workflow through [`execute_milestone_core`] with a
     /// milestone's id-sorted sub-task list fed into `{{milestone.tasks}}` emits **one**
-    /// `` Spawn: `jigc workflow sub-task --task <id>` `` per id, **in id-sorted order**.
+    /// `` Spawn: `cd <worktree> && jigc workflow sub-task --task <id>` `` per id, **in
+    /// id-sorted order**.
     /// The feed is given in NON-id order (zebra before alpha) so the id-sorted emit is
     /// not an accident of feed order — and (Validation hardening #7) the **reversed**
     /// feed emits the byte-identical block, proving the resolver sorts on resolve, not a
@@ -1017,16 +1018,19 @@ mod tests {
             execute_milestone_core(repo_root, &pack, "milestone-execution", &source, &fed)
                 .expect("milestone-execution composes over the fed sub-task list");
 
-        // Exactly one Spawn line per sub-task, naming the bare re-entry workflow + id.
-        let alpha = "Spawn: `jigc workflow sub-task --task alpha-fix`";
-        let zebra = "Spawn: `jigc workflow sub-task --task zebra-fix`";
+        // Exactly one Spawn line per sub-task, each `cd`-ing into its own worktree
+        // before the bare re-entry workflow + id.
+        let alpha =
+            "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`";
+        let zebra =
+            "Spawn: `cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix`";
         assert!(
             composed.text.contains(alpha) && composed.text.contains(zebra),
             "the fan-out must emit one Spawn directive per sub-task; got:\n{}",
             composed.text,
         );
         assert_eq!(
-            composed.text.matches("Spawn: `jigc workflow").count(),
+            composed.text.matches("Spawn: `cd .jigc/worktrees/").count(),
             2,
             "exactly one Spawn per sub-task (no duplicates / extras); got:\n{}",
             composed.text,

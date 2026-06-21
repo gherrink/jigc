@@ -9,18 +9,18 @@
 //! N sub-tasks, asserting on the bytes the agent actually receives on stdout.
 //!
 //!   - **Deterministic id-sorted emit (hardening #7).** A milestone whose sub-tasks
-//!     are added in NON-id order emits exactly N `` Spawn: `jigc workflow sub-task
-//!     --task <id>` `` directives in **id-sorted** order. A sibling milestone with
-//!     the same sub-tasks added in the **reverse** order emits the **byte-identical**
-//!     `execute` stdout — the resolver sorts on resolve, not on add order. One green
-//!     run over a single order would mask a completion-ordered emit; ≥2 divergent
-//!     add orders with byte-identical output is the real red→green.
+//!     are added in NON-id order emits exactly N `` Spawn: `cd .jigc/worktrees/<id>
+//!     && jigc workflow sub-task --task <id>` `` directives in **id-sorted** order. A
+//!     sibling milestone with the same sub-tasks added in the **reverse** order emits
+//!     the **byte-identical** `execute` stdout — the resolver sorts on resolve, not on
+//!     add order. One green run over a single order would mask a completion-ordered
+//!     emit; ≥2 divergent add orders with byte-identical output is the real red→green.
 //!   - **The L1 guard (#4 face).** The **shipped** `adapters/claude-code.yaml` spawn
 //!     template, rendered for a real `(sub-task, <id>)` and its single backticked
-//!     span executed as a subprocess, resolves to the real `jigc workflow … --task`
-//!     re-entry verb (composes, exit 0) — never a clap unknown-subcommand error (a
-//!     template naming a nonexistent verb). The contract is the rendered bytes, never
-//!     a reconstruction.
+//!     `cd <worktree> && jigc workflow … --task` span executed as a subprocess into a
+//!     **provisioned** worktree, resolves to the real re-entry verb (composes, exit 0)
+//!     — never a clap unknown-subcommand error (a template naming a nonexistent verb).
+//!     The contract is the rendered bytes, never a reconstruction.
 
 use std::fs;
 use std::io::Write;
@@ -159,7 +159,9 @@ fn milestone_execute_emits_n_id_sorted_spawns_byte_identical_across_add_orders()
     let id_alpha = "alpha-rework";
     let id_middle = "middle-rework";
     let id_zebra = "zebra-rework";
-    let spawn = |id: &str| format!("Spawn: `jigc workflow sub-task --task {id}`");
+    let spawn = |id: &str| {
+        format!("Spawn: `cd .jigc/worktrees/{id} && jigc workflow sub-task --task {id}`")
+    };
 
     // Add order #1: zebra, alpha, middle (scrambled, not id-sorted).
     let scrambled = execute_stdout_for_add_order(
@@ -169,7 +171,7 @@ fn milestone_execute_emits_n_id_sorted_spawns_byte_identical_across_add_orders()
 
     // Exactly N=3 Spawn directives, one per sub-task, naming the real re-entry verb.
     assert_eq!(
-        scrambled.matches("Spawn: `jigc workflow").count(),
+        scrambled.matches("Spawn: `cd .jigc/worktrees/").count(),
         3,
         "exactly one Spawn per sub-task (no extras/dupes); got:\n{scrambled}",
     );
@@ -225,13 +227,15 @@ fn shipped_spawn_template() -> String {
     rest[..close].to_owned()
 }
 
-/// The launch render: the lexical two-token substitution the adapter's `render_spawn`
-/// performs (`{{workflow}}`/`{{task_id}}` → the concrete ids, every other byte
-/// verbatim). The cli crate is a binary by invariant, so the integration test
-/// reproduces this one operation rather than linking the private fn — but it renders
-/// the *shipped* template bytes, so the command is composed, not authored.
+/// The launch render: the lexical three-token substitution the adapter's `render_spawn`
+/// performs (`{{worktree}}`/`{{workflow}}`/`{{task_id}}` → the concrete values, every
+/// other byte verbatim; `{{worktree}}` → `.jigc/worktrees/<task_id>`). The cli crate is
+/// a binary by invariant, so the integration test reproduces this one operation rather
+/// than linking the private fn — but it renders the *shipped* template bytes, so the
+/// command is composed, not authored.
 fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
     template
+        .replace("{{worktree}}", &format!(".jigc/worktrees/{task_id}"))
         .replace("{{workflow}}", workflow)
         .replace("{{task_id}}", task_id)
 }
@@ -252,12 +256,39 @@ fn backticked_span(rendered: &str) -> String {
     span.to_owned()
 }
 
+/// Execute `command` VERBATIM as a shell line with `cwd = repo`, `$HOME = home`, and
+/// the built `jigc` binary's directory **prepended to `$PATH`** so the bare `jigc`
+/// token in the launch span resolves to the binary under test. The span carries a
+/// `cd <worktree> && jigc workflow …` chain (M31 WF4), so it must run through a shell,
+/// not as a single argv — the executed-bytes contract for the worktree binding.
+fn run_shell(repo: &Path, home: &Path, command: &str) -> std::process::Output {
+    let bin_dir = Path::new(env!("CARGO_BIN_EXE_jigc"))
+        .parent()
+        .expect("the built jigc binary has a parent dir");
+    let path = match std::env::var_os("PATH") {
+        Some(existing) => {
+            let mut dirs = vec![bin_dir.to_path_buf()];
+            dirs.extend(std::env::split_paths(&existing));
+            std::env::join_paths(dirs).expect("join PATH")
+        }
+        None => bin_dir.as_os_str().to_owned(),
+    };
+    Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("PATH", path)
+        .output()
+        .expect("run the rendered launch span via a shell")
+}
+
 /// **Half-A step 1, the L1 guard (#4 face).** The shipped spawn template, rendered for
-/// a real `(sub-task, <id>)` provisioned through the binary and its single backticked
-/// span executed as a subprocess, resolves to the real `jigc workflow … --task`
-/// re-entry verb (composes, exit 0) — never a clap unknown-subcommand / usage error.
-/// The executed bytes are the contract: the command flows from the shipped template
-/// through the render, never reconstructed in test code.
+/// a real `(sub-task, <id>)` and its single backticked `cd <worktree> && jigc workflow
+/// … --task` span executed as a subprocess into a **provisioned** worktree, resolves to
+/// the real re-entry verb (composes, exit 0) — never a clap unknown-subcommand / usage
+/// error. The executed bytes are the contract: the command flows from the shipped
+/// template through the render, never reconstructed in test code.
 #[test]
 fn the_rendered_spawn_line_resolves_to_the_real_reentry_verb() {
     let repo = TempDir::new("l1");
@@ -289,6 +320,16 @@ fn the_rendered_spawn_line_resolves_to_the_real_reentry_verb() {
         ),
         "milestone add-task",
     );
+    // Provision the worktrees (T1) — the `cd <worktree>` half of the span needs the
+    // detached checkout to exist before the launch span runs.
+    expect_ok(
+        &run(
+            repo.path(),
+            home.path(),
+            &["milestone", "provision", "cache-hardening"],
+        ),
+        "milestone provision",
+    );
     let workflow = "sub-task";
     let sub = "add-an-lru-eviction-adr";
 
@@ -298,18 +339,19 @@ fn the_rendered_spawn_line_resolves_to_the_real_reentry_verb() {
     let rendered = render_spawn(&template, workflow, sub);
     let command = backticked_span(&rendered);
 
-    // The rendered command names the real re-entry verb — derived from the rendered
-    // bytes, not asserted against a hand-built string.
-    let tokens: Vec<&str> = command.split_whitespace().collect();
+    // The rendered command directs the sub-agent into its worktree, then names the real
+    // re-entry verb — derived from the rendered bytes, not a hand-built string.
     assert_eq!(
-        &tokens[..3],
-        &["jigc", "workflow", workflow],
-        "the rendered launch command must invoke the `jigc workflow <W>` verb; got {command:?}",
+        command,
+        format!("cd .jigc/worktrees/{sub} && jigc workflow {workflow} --task {sub}"),
+        "the rendered launch span must `cd` into the worktree then invoke the verb",
     );
 
-    // Execute the rendered command VERBATIM against the built binary (drop the leading
-    // `jigc` token — the built-binary path replaces the program name).
-    let executed = run(repo.path(), home.path(), &tokens[1..]);
+    // Execute the rendered span VERBATIM via a shell (cwd = repo, the built `jigc` on
+    // PATH): `cd .jigc/worktrees/<sub>` enters the provisioned worktree, then
+    // `jigc workflow …` re-enters from inside it (the WF3 jigc_home resolver finds the
+    // main checkout's `.jigc/`).
+    let executed = run_shell(repo.path(), home.path(), &command);
 
     // It must RESOLVE to the real `Command::Workflow` re-entry verb's compose path: for
     // this real sub-task it composes the sub-task view (exit 0), carrying the

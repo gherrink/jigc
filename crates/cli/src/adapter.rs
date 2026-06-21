@@ -174,9 +174,12 @@ pub struct SpawnTarget {
     pub template: String,
 }
 
-/// Render the spawn launch line: a lexical two-token substitution of the
-/// `{{workflow}}` and `{{task_id}}` placeholders in `template` with `workflow`
-/// and `task_id`, leaving every other byte verbatim.
+/// Render the spawn launch line: a lexical three-token substitution of the
+/// `{{worktree}}`, `{{workflow}}`, and `{{task_id}}` placeholders in `template`,
+/// leaving every other byte verbatim. `{{worktree}}` resolves to the sub-task's
+/// deterministic worktree path (`.jigc/worktrees/<task_id>`, the shared
+/// [`engine::milestone::worktree_path`] convention the fan-out emit also uses) so
+/// the launched sub-agent `cd`s into its own detached checkout (M31 WF4).
 ///
 /// Plain string replacement, **not** the engine `{{…}}` data-value grammar — the
 /// spawn template's tokens are launch-line placeholders the adapter fills, never
@@ -185,7 +188,9 @@ pub struct SpawnTarget {
 /// (this increment's later tasks).
 #[allow(dead_code)]
 pub fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
+    let worktree = engine::milestone::worktree_path(task_id);
     template
+        .replace("{{worktree}}", &worktree.display().to_string())
         .replace("{{workflow}}", workflow)
         .replace("{{task_id}}", task_id)
 }
@@ -222,6 +227,13 @@ pub enum SpawnTemplateReason {
     /// an ATX heading (`#`/`##` at a line start), or a `Run:`/`Spawn:`/`> `
     /// directive marker — signalling re-authored workflow-body prose.
     ForbiddenMarker,
+
+    /// The backticked span carries shell beyond the permitted shape: the only
+    /// allowed prefix on the `jigc workflow …` invocation is a single
+    /// `cd <one-token> &&` (the worktree `cd`); any other command, a multi-token
+    /// `cd` argument, or trailing `&&`-chaining is rejected (the M31 scoped
+    /// relaxation — one structured token, validated structurally).
+    DisallowedShellPrefix,
 }
 
 impl fmt::Display for SpawnTemplateReason {
@@ -244,6 +256,9 @@ impl fmt::Display for SpawnTemplateReason {
             }
             SpawnTemplateReason::ForbiddenMarker => {
                 "contains a forbidden marker (`<<author:`, an ATX heading, or a `Run:`/`Spawn:`/`> ` directive)"
+            }
+            SpawnTemplateReason::DisallowedShellPrefix => {
+                "carries disallowed shell — the invocation may take only a single `cd <worktree> &&` prefix"
             }
         };
         write!(f, "spawn template {pointer}")
@@ -304,7 +319,48 @@ pub fn validate_spawn_template(template: &str) -> Result<(), SpawnTemplateReason
         return Err(SpawnTemplateReason::ForbiddenMarker);
     }
 
+    // (4) the backticked span itself carries only the permitted shape — the bare
+    //     `jigc workflow … --task …` invocation, optionally preceded by a single
+    //     `cd <one-token> &&` worktree prefix, and no other shell (the M31 scoped
+    //     relaxation, validated structurally). The exactly-one-span clause above
+    //     guarantees the span sits between the two backticks.
+    let span = template
+        .split('`')
+        .nth(1)
+        .expect("exactly one backticked span is guaranteed above");
+    if !spawn_span_is_permitted(span) {
+        return Err(SpawnTemplateReason::DisallowedShellPrefix);
+    }
+
     Ok(())
+}
+
+/// Whether the backticked launch span is the permitted shape: the bare
+/// `jigc workflow …` invocation, optionally preceded by a single `cd <one-token> &&`
+/// worktree prefix, and with **no** further shell chaining — the structural half of
+/// the M31 spawn-template reopen (`design/assistant-adapter.md` → Bind the spawn
+/// mechanism). The `cd` argument is one whitespace-delimited token validated
+/// structurally (it is a CLI-filled `{{worktree}}` placeholder), never matched
+/// against a value — the determinism rationale preserved.
+fn spawn_span_is_permitted(span: &str) -> bool {
+    // Strip an optional single `cd <token> &&` prefix; the remainder must be the
+    // bare invocation with no residual shell chaining.
+    let invocation = match span.split_once("&&") {
+        None => span.trim(),
+        Some((prefix, rest)) => {
+            let Some(arg) = prefix.trim().strip_prefix("cd ") else {
+                return false;
+            };
+            // Exactly one whitespace-delimited token after `cd`.
+            if arg.split_whitespace().count() != 1 {
+                return false;
+            }
+            rest.trim()
+        }
+    };
+    // The remainder is exactly the invocation: it starts with `jigc workflow` and
+    // chains nothing further (the single permitted `&&` is already consumed).
+    invocation.starts_with("jigc workflow") && !invocation.contains("&&")
 }
 
 /// Whether a single line opens with an ATX heading (`#`/`##` …) or a
@@ -909,6 +965,51 @@ mod tests {
         }
     }
 
+    /// The M31 reopen (scoped relaxation, determinism rationale preserved): the
+    /// backtick span may carry **only** an optional single `cd <one-token> &&` prefix
+    /// before the `jigc workflow … --task …` invocation. The bare invocation still
+    /// passes; the worktree-`cd` prefix passes; **any other shell** (e.g.
+    /// `rm -rf x && jigc workflow …`) is rejected structurally — the load-bearing red
+    /// (the old purely-lexical rule accepted it).
+    #[test]
+    fn spawn_template_permits_only_the_cd_worktree_prefix() {
+        // (a) the worktree `cd` prefix PASSES — exactly one structured token.
+        validate_spawn_template(
+            "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`",
+        )
+        .expect("the `cd {{worktree}} &&` prefix is permitted");
+
+        // (b) the bare invocation still PASSES (no prefix).
+        validate_spawn_template(
+            "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`",
+        )
+        .expect("the bare invocation still passes");
+
+        // (c) any OTHER shell prefix FAILS — the structural rejection (red: the old
+        //     lexical rule accepted `rm -rf x && jigc workflow …`).
+        let err = validate_spawn_template(
+            "Use your Task tool to run: `rm -rf x && jigc workflow {{workflow}} --task {{task_id}}`",
+        )
+        .expect_err("a non-`cd` shell prefix must be rejected");
+        assert_eq!(
+            err,
+            SpawnTemplateReason::DisallowedShellPrefix,
+            "the rejection must name the disallowed-shell-prefix clause",
+        );
+
+        // (d) a chained shell AFTER the invocation also FAILS (no trailing `&&`).
+        validate_spawn_template(
+            "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}} && rm -rf x`",
+        )
+        .expect_err("trailing shell chaining must be rejected");
+
+        // (e) a multi-token `cd` argument FAILS (only one structured token permitted).
+        validate_spawn_template(
+            "Use your Task tool to run: `cd a b && jigc workflow {{workflow}} --task {{task_id}}`",
+        )
+        .expect_err("a multi-token `cd` argument must be rejected");
+    }
+
     /// Golden over the embedded `claude-code.yaml` bytes — the canonical profile
     /// contract. The file *is* the source of truth (no serializer here), so the
     /// golden pins exactly the bytes that ship: the inject reference floor + the
@@ -926,7 +1027,7 @@ mod tests {
           file: .claude/settings.json
           permit: ["jigc *", "git add *"]
         spawn:
-          template: "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`"
+          template: "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`"
         "###);
     }
 
@@ -982,31 +1083,37 @@ mod tests {
             .expect("the profile declares a spawn launch template");
         assert_eq!(
             spawn.template,
-            "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`",
+            "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`",
             "the spawn template is the shipped one-line Claude Code launch template",
         );
     }
 
-    /// [`render_spawn`] is a lexical two-token substitution: it replaces both
-    /// `{{workflow}}` and `{{task_id}}` with the given values, leaving the rest of
-    /// the template (the wrapping prose and the backticks) verbatim. The rendered
-    /// launch line carries the backticked `jigc workflow … --task …` invocation
-    /// with no residual placeholder tokens.
+    /// [`render_spawn`] is a lexical three-token substitution: it replaces
+    /// `{{worktree}}`, `{{workflow}}`, and `{{task_id}}` with the given values,
+    /// leaving the rest of the template (the wrapping prose and the backticks)
+    /// verbatim. The rendered launch line carries the backticked
+    /// `cd .jigc/worktrees/<id> && jigc workflow … --task …` invocation with no
+    /// residual placeholder tokens, and the rendered span passes the install rule.
     #[test]
-    fn render_spawn_substitutes_both_tokens() {
-        let template = "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`";
+    fn render_spawn_substitutes_all_tokens() {
+        let template = "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`";
         let rendered = render_spawn(template, "sub-task", "alpha-fix");
 
         assert_eq!(
-            rendered, "Use your Task tool to run: `jigc workflow sub-task --task alpha-fix`",
-            "both tokens are substituted, wrapping prose preserved",
+            rendered,
+            "Use your Task tool to run: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`",
+            "all three tokens are substituted, wrapping prose preserved",
         );
         assert!(
-            rendered.contains("`jigc workflow sub-task --task alpha-fix`"),
-            "the backticked invocation is present, got:\n{rendered}",
+            rendered.contains(
+                "`cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`"
+            ),
+            "the backticked worktree-`cd` invocation is present, got:\n{rendered}",
         );
         assert!(
-            !rendered.contains("{{workflow}}") && !rendered.contains("{{task_id}}"),
+            !rendered.contains("{{worktree}}")
+                && !rendered.contains("{{workflow}}")
+                && !rendered.contains("{{task_id}}"),
             "no residual placeholder tokens, got:\n{rendered}",
         );
     }

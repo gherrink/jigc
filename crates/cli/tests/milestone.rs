@@ -1495,11 +1495,12 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
     assert_eq!(
         spawns,
         vec![
-            "jigc workflow sub-task --task alpha-fix".to_owned(),
-            "jigc workflow sub-task --task zebra-fix".to_owned(),
+            "cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix".to_owned(),
+            "cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix".to_owned(),
         ],
         "the real `milestone-execution` workflow must emit one id-sorted `Spawn:` directive \
-         per sub-task (alpha before zebra, not add order); got:\n{stdout}",
+         per sub-task, each `cd`-ing into its own worktree (alpha before zebra, not add order); \
+         got:\n{stdout}",
     );
 
     // The join barrier prose sits AFTER the spawns and BEFORE the finalize Run line.
@@ -1507,7 +1508,7 @@ fn milestone_execute_composes_the_real_fanout_join_finalize_workflow() {
         .find("merged by task-id order")
         .expect("the join-tasks step's barrier prose must compose into the view");
     let last_spawn_at = stdout
-        .rfind("Spawn: `jigc workflow")
+        .rfind("Spawn: `cd .jigc/worktrees/")
         .expect("at least one Spawn directive");
     let run_at = stdout
         .find("Run: `jigc milestone finalize <MILESTONE_ID>`")
@@ -1576,7 +1577,7 @@ fn milestone_execute_emits_the_provision_run_before_the_first_spawn() {
         .find("Run: `jigc milestone provision <MILESTONE_ID>`")
         .expect("the provision step must resolve a `Run:` line into the composed view");
     let first_spawn_at = stdout
-        .find("Spawn: `jigc workflow")
+        .find("Spawn: `cd .jigc/worktrees/")
         .expect("the fan-out emits at least one `Spawn:` directive");
     assert!(
         provision_at < first_spawn_at,
@@ -1644,9 +1645,9 @@ fn milestone_execute_spawn_emit_is_byte_identical_across_divergent_add_orders() 
     assert_eq!(
         fwd_spawns,
         vec![
-            "jigc workflow sub-task --task alpha-fix".to_owned(),
-            "jigc workflow sub-task --task mid-fix".to_owned(),
-            "jigc workflow sub-task --task zebra-fix".to_owned(),
+            "cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix".to_owned(),
+            "cd .jigc/worktrees/mid-fix && jigc workflow sub-task --task mid-fix".to_owned(),
+            "cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix".to_owned(),
         ],
         "the forward add order must emit id-sorted Spawn directives",
     );

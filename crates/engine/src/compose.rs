@@ -852,9 +852,11 @@ fn emit_bare_data_value(
 }
 
 /// Emit a `fan-out` step's `Spawn:` directive block — one
-/// `` Spawn: `jigc workflow <run> --task <id>` `` line per id of the resolved
-/// `over:` collection, in the collection's (already id-sorted) order, joined by
-/// newlines (`workflow-dialect.md` → Emitted format, rule 4: the 5th class).
+/// `` Spawn: `cd <worktree> && jigc workflow <run> --task <id>` `` line per id of
+/// the resolved `over:` collection, in the collection's (already id-sorted) order,
+/// joined by newlines (`workflow-dialect.md` → Emitted format, rule 4: the 5th
+/// class). The `cd <worktree>` prefix directs each sub-agent into its own detached
+/// worktree (M31 WF4), the shared [`crate::milestone::worktree_path`] convention.
 ///
 /// `over` carries the verbatim marker placeholder text (e.g. `{{ milestone.tasks }}`);
 /// its `{{…}}` braces are stripped and the inner data-value path resolved against
@@ -900,7 +902,14 @@ fn emit_fan_out_spawns(
     let lines: Vec<String> = ids
         .iter()
         .map(|id| {
-            let cmd = format!("jigc workflow {workflow} --task {id}");
+            // Each spawn directs its sub-agent into its own detached worktree first
+            // (M31 WF4) via the shared `worktree_path` convention `render_spawn` also
+            // uses, then runs the bare re-entry payload there.
+            let worktree = crate::milestone::worktree_path(id);
+            let cmd = format!(
+                "cd {} && jigc workflow {workflow} --task {id}",
+                worktree.display()
+            );
             format!("Spawn: `{cmd}`")
         })
         .collect();
@@ -6434,9 +6443,10 @@ Follow the house rule.
 
     /// The done-criterion fixture: a `fan-out` step over `{{ milestone.tasks }}` with
     /// `run: workflow:sub-task`, plus a later `join` step. Fed two ids it must emit
-    /// **exactly** one `` Spawn: `jigc workflow sub-task --task <id>` `` per id in id
-    /// order, no others; the `Spawn:` line matches the same strict line-start/backtick
-    /// pattern `Run:` uses (`workflow-dialect.md` → Emitted format, rule 4).
+    /// **exactly** one `` Spawn: `cd <worktree> && jigc workflow sub-task --task <id>` ``
+    /// per id in id order, no others; the `Spawn:` line matches the same strict
+    /// line-start/backtick pattern `Run:` uses (`workflow-dialect.md` → Emitted format,
+    /// rule 4).
     #[test]
     fn fan_out_emits_one_spawn_per_id_in_id_order() {
         let source = MapSource::new(&[
@@ -6475,8 +6485,8 @@ Follow the house rule.
         assert_eq!(
             spawns,
             vec![
-                "Spawn: `jigc workflow sub-task --task alpha-fix`",
-                "Spawn: `jigc workflow sub-task --task zebra-fix`",
+                "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`",
+                "Spawn: `cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix`",
             ],
             "exactly one Spawn per id, in id order, no others"
         );
@@ -6616,8 +6626,10 @@ Follow the house rule.
                 .collect()
         };
         let expected = vec![
-            "Spawn: `jigc workflow sub-task --task alpha-fix`".to_owned(),
-            "Spawn: `jigc workflow sub-task --task zebra-fix`".to_owned(),
+            "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`"
+                .to_owned(),
+            "Spawn: `cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix`"
+                .to_owned(),
         ];
         assert_eq!(
             spawns(&forward),
@@ -6686,9 +6698,12 @@ Follow the house rule.
                 .collect()
         };
         let expected = vec![
-            "Spawn: `jigc workflow sub-task --task alpha-fix`".to_owned(),
-            "Spawn: `jigc workflow sub-task --task mid-fix`".to_owned(),
-            "Spawn: `jigc workflow sub-task --task zebra-fix`".to_owned(),
+            "Spawn: `cd .jigc/worktrees/alpha-fix && jigc workflow sub-task --task alpha-fix`"
+                .to_owned(),
+            "Spawn: `cd .jigc/worktrees/mid-fix && jigc workflow sub-task --task mid-fix`"
+                .to_owned(),
+            "Spawn: `cd .jigc/worktrees/zebra-fix && jigc workflow sub-task --task zebra-fix`"
+                .to_owned(),
         ];
         assert_eq!(
             spawns(&forward),

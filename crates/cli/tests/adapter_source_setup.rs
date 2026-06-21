@@ -236,8 +236,7 @@ fn valid_spawn_template_over_the_seam_installs_clean() {
 #[test]
 fn unset_env_installs_byte_identically_to_the_embedded_profile() {
     // The embedded profile's exact spawn template (`adapters/claude-code.yaml`).
-    let shipped_template =
-        "Use your Task tool to run: `jigc workflow {{workflow}} --task {{task_id}}`";
+    let shipped_template = "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`";
 
     // (a) Override path: a faithful copy of the shipped profile via the seam.
     let repo_env = TempDir::new("det-env");

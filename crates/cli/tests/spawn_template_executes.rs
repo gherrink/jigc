@@ -8,11 +8,12 @@
 //! The contract is the **rendered bytes**, never a reconstruction. So the command
 //! is never hand-written in test code: it flows from the **shipped** spawn template
 //! bytes (the embedded `adapters/claude-code.yaml` asset — what actually ships)
-//! through the launch render (the lexical `{{workflow}}`/`{{task_id}}` two-token
+//! through the launch render (the lexical `{{worktree}}`/`{{workflow}}`/`{{task_id}}`
 //! substitution `render_spawn` performs) for a **real** provisioned milestone
-//! sub-task, the single backticked span the install-time validation rule guarantees
-//! is extracted verbatim, and **that** span is executed as a subprocess against the
-//! built `jigc` binary.
+//! sub-task, the single backticked `cd <worktree> && jigc workflow …` span the
+//! install-time validation rule guarantees is extracted verbatim, and **that** span
+//! is executed as a subprocess (through a shell, into the provisioned worktree)
+//! against the built `jigc` binary.
 //!
 //! The L1 guard: a template naming a nonexistent verb would surface as a clap
 //! unknown-subcommand / usage error (non-zero, a clap diagnostic). The shipped
@@ -114,14 +115,16 @@ fn shipped_spawn_template() -> String {
     rest[..close].to_owned()
 }
 
-/// The launch render: the lexical two-token substitution the adapter's
-/// `render_spawn` performs (`{{workflow}}`/`{{task_id}}` → the concrete ids,
-/// every other byte verbatim). The cli crate is a binary by invariant
+/// The launch render: the lexical three-token substitution the adapter's
+/// `render_spawn` performs (`{{worktree}}`/`{{workflow}}`/`{{task_id}}` → the
+/// concrete values, every other byte verbatim; `{{worktree}}` →
+/// `.jigc/worktrees/<task_id>`). The cli crate is a binary by invariant
 /// (`module-layout.md` → the I/O boundary), so the integration test reproduces
 /// this one operation rather than linking the private fn — but it renders the
 /// *shipped* template bytes, so the command is composed, not authored.
 fn render_spawn(template: &str, workflow: &str, task_id: &str) -> String {
     template
+        .replace("{{worktree}}", &format!(".jigc/worktrees/{task_id}"))
         .replace("{{workflow}}", workflow)
         .replace("{{task_id}}", task_id)
 }
@@ -142,10 +145,31 @@ fn backticked_span(rendered: &str) -> String {
     span.to_owned()
 }
 
-/// Split a rendered command line into argv tokens (the shipped invocation is
-/// whitespace-separated, no quoting).
-fn argv(command: &str) -> Vec<&str> {
-    command.split_whitespace().collect()
+/// Execute `command` VERBATIM as a shell line with `cwd = repo`, `$HOME = home`, and
+/// the built `jigc` binary's directory **prepended to `$PATH`** so the bare `jigc`
+/// token in the launch span resolves to the binary under test. The shipped span now
+/// carries a `cd <worktree> && jigc workflow …` chain (M31 WF4), so it must run
+/// through a shell, not as a single argv — the executed-bytes contract.
+fn run_shell(repo: &Path, home: &Path, command: &str) -> std::process::Output {
+    let bin_dir = Path::new(env!("CARGO_BIN_EXE_jigc"))
+        .parent()
+        .expect("the built jigc binary has a parent dir");
+    let path = match std::env::var_os("PATH") {
+        Some(existing) => {
+            let mut dirs = vec![bin_dir.to_path_buf()];
+            dirs.extend(std::env::split_paths(&existing));
+            std::env::join_paths(dirs).expect("join PATH")
+        }
+        None => bin_dir.as_os_str().to_owned(),
+    };
+    Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("PATH", path)
+        .output()
+        .expect("run the rendered launch span via a shell")
 }
 
 #[test]
@@ -183,6 +207,18 @@ fn rendered_spawn_line_resolves_to_the_real_reentry_verb() {
         "`add-task --workflow single-task` must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&added.stderr),
     );
+    // Provision the worktrees (T1) — the `cd <worktree>` half of the shipped span
+    // needs the detached checkout to exist before the launch span runs.
+    let provisioned = run(
+        repo.path(),
+        home.path(),
+        &["milestone", "provision", "cache-rework"],
+    );
+    assert!(
+        provisioned.status.success(),
+        "`jigc milestone provision` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
     let workflow = "single-task";
     let sub = "move-cache-to-redis";
 
@@ -192,18 +228,19 @@ fn rendered_spawn_line_resolves_to_the_real_reentry_verb() {
     let rendered = render_spawn(&template, workflow, sub);
     let command = backticked_span(&rendered);
 
-    // The rendered command names the real re-entry verb — derived from the rendered
-    // bytes, not asserted against a hand-built string.
-    let tokens = argv(&command);
+    // The rendered command directs the sub-agent into its worktree, then names the
+    // real re-entry verb — derived from the rendered bytes, not a hand-built string.
     assert_eq!(
-        &tokens[..3],
-        &["jigc", "workflow", workflow],
-        "the rendered launch command must invoke the `jigc workflow <W>` verb; got {command:?}",
+        command,
+        format!("cd .jigc/worktrees/{sub} && jigc workflow {workflow} --task {sub}"),
+        "the rendered launch span must `cd` into the worktree then invoke the verb; got {command:?}",
     );
 
-    // Execute the rendered command VERBATIM against the built binary (drop the
-    // leading `jigc` token — the built-binary path replaces the program name).
-    let executed = run(repo.path(), home.path(), &tokens[1..]);
+    // Execute the rendered span VERBATIM via a shell (cwd = repo, the built `jigc` on
+    // PATH): `cd .jigc/worktrees/<sub>` enters the provisioned worktree, then
+    // `jigc workflow …` re-enters from inside it (the WF3 jigc_home resolver finds the
+    // main checkout's `.jigc/`).
+    let executed = run_shell(repo.path(), home.path(), &command);
 
     // It must RESOLVE to the real `Command::Workflow` re-entry verb's compose path:
     // for this real sub-task it composes the single-task view (exit 0), carrying the
