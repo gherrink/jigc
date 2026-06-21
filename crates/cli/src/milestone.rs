@@ -712,6 +712,9 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
                 // executor only removed the milestone area). On a failure (below) the areas
                 // survive for retry.
                 cleanup_subtask_areas(&jigc_root, &list);
+                // Tear down the fan-out worktrees the provision verb laid down (the heavier
+                // A2 teardown — a non-blocking warning on a leaked worktree, never a block).
+                remove_worktrees(&repo_root, &jigc_home, &list);
                 Ok(ExitCode::SUCCESS)
             }
             // Aggregate rejected (a commit/hook rejection). The executor already rolled
@@ -721,6 +724,10 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             // The sub-task areas are left intact (not cleaned) so a retry works.
             Err(err) => {
                 crate::task::git_reset_hard(&repo_root, &pre_finalize_head)?;
+                // The aborted boundary still tears down the fan-out worktrees (the sub-task
+                // areas survive for retry, but a leaked worktree is heavier scratch); they
+                // can be re-provisioned on the retry.
+                remove_worktrees(&repo_root, &jigc_home, &list);
                 eprintln!("{}", render::operational_error(format, &err));
                 Ok(ExitCode::FAILURE)
             }
@@ -739,6 +746,9 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         // the areas intact for retry.
         if code == ExitCode::SUCCESS {
             cleanup_subtask_areas(&jigc_root, &list);
+            // Tear down the fan-out worktrees on the landed default-path commit too (the
+            // heavier A2 teardown — a non-blocking warning on a leaked worktree).
+            remove_worktrees(&repo_root, &jigc_home, &list);
         }
         Ok(code)
     }
@@ -764,6 +774,49 @@ fn cleanup_subtask_areas(jigc_root: &Path, list: &engine::milestone::TaskList) {
             );
         }
     }
+}
+
+/// Tear down the milestone's fan-out worktrees once the commit boundary settles — a
+/// landed finalize (success) or an abort reset. For each sub-task id whose
+/// `<jigc_home>/.jigc/worktrees/<id>` checkout is still a **registered** worktree,
+/// `git worktree remove --force` it, then `git worktree prune` the admin records (the
+/// [`provision_worktrees`] inverse). A never-provisioned (or already-removed) sub-task
+/// has nothing registered and is skipped, so a non-fan-out finalize tears down nothing.
+///
+/// Best-effort, but **heavier than** [`cleanup_subtask_areas`]' silent self-heal
+/// (review A2, `DECISIONS.md` 2026-06-20 → M31 planning): a removal that fails surfaces
+/// a **non-blocking warning** naming the leaked worktree path + the `git worktree prune`
+/// remedy — a leaked worktree is a registered git object, not gitignored scratch — yet
+/// it never blocks a commit that already landed (the F1 rollback/landed-commit stance).
+fn remove_worktrees(repo_root: &Path, jigc_home: &Path, list: &engine::milestone::TaskList) {
+    let registered = registered_worktrees(repo_root).unwrap_or_default();
+    // Match `provision_worktrees`' canonical-path convention (git stores canonical paths at
+    // `add` time); fall back to the raw path if canonicalization fails (then nothing matches
+    // and the worktree is left registered — surfaced by the prune-only no-op below).
+    let canonical_home = jigc_home
+        .canonicalize()
+        .unwrap_or_else(|_| jigc_home.to_path_buf());
+    for sub_id in list.enumerate() {
+        let path = canonical_home.join(worktree_path(&sub_id));
+        if !registered.iter().any(|w| w == &path) {
+            // Never provisioned (or already torn down) — nothing to remove.
+            continue;
+        }
+        let Some(path_str) = path.to_str() else {
+            eprintln!("warning: fan-out worktree path {path:?} is not valid UTF-8 (left in place)");
+            continue;
+        };
+        if let Err(err) = git_worktree(repo_root, &["worktree", "remove", "--force", path_str]) {
+            // A2 — pinned non-blocking warning, naming the leaked path + the prune remedy.
+            eprintln!(
+                "warning: could not remove the fan-out worktree {path_str}: {err:#}\n  \
+                 remedy: run `git worktree prune`, then `git worktree remove --force {path_str}`"
+            );
+        }
+    }
+    // Drop admin records for any worktree dir removed out-of-band (the provision prune
+    // inverse) — best-effort; a prune failure is itself non-fatal to a landed commit.
+    let _ = git_worktree(repo_root, &["worktree", "prune"]);
 }
 
 /// The `commit` doc type the per-sub-task render addresses — a sub-task's authored

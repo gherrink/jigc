@@ -1877,3 +1877,241 @@ fn milestone_provision_creates_detached_base_pin_worktrees_idempotently() {
         "the idempotent re-run must yield the same 2 worktrees (no duplicates)",
     );
 }
+
+/// The `git worktree list --porcelain` listing of `repo` — the registered worktrees
+/// (one `worktree <path>` line each). The teardown assertions read it to prove the
+/// fan-out worktrees were unregistered (removed), not merely deleted on disk.
+fn worktree_list(repo: &Path) -> String {
+    let out = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo)
+        .output()
+        .expect("git worktree list");
+    String::from_utf8(out.stdout).unwrap()
+}
+
+/// Mint `Cache rework` + two sub-tasks under `repo` (added NON-id-order), stage in each
+/// sub-area a clean disjoint persisted ADR so the finalize has a real tree diff and
+/// lands, then `provision` the N=2 base-pin worktrees. Returns the `.jigc/worktrees/`
+/// root. Main is NOT advanced, so the milestone base pin == HEAD (the finalize preflight
+/// requires `base == HEAD`). The teardown tests share this provisioned-and-ready setup.
+fn provision_for_finalize(repo: &Path, home: &Path) -> PathBuf {
+    assert!(
+        run_milestone(repo, home, &["create", "Cache rework"])
+            .status
+            .success(),
+        "create must exit 0",
+    );
+    for intent in ["Area zed", "Area low"] {
+        assert!(
+            run_milestone(repo, home, &["add-task", "cache-rework", intent])
+                .status
+                .success(),
+            "add-task `{intent}` must exit 0",
+        );
+    }
+    stage_doc(
+        repo,
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo,
+        "area-zed",
+        "adr:zed-policy",
+        &adr_plain("Zed policy"),
+        "edited-from-base",
+    );
+
+    let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "`jigc milestone provision cache-rework` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+    let wt_root = repo.join(".jigc").join("worktrees");
+    assert_eq!(
+        dir_child_count(&wt_root),
+        2,
+        "the setup must provision exactly N=2 worktrees before the finalize",
+    );
+    assert!(
+        worktree_list(repo).contains("worktrees/area-low")
+            && worktree_list(repo).contains("worktrees/area-zed"),
+        "both fan-out worktrees must be registered before the finalize",
+    );
+    wt_root
+}
+
+#[test]
+fn milestone_finalize_tears_down_the_provisioned_worktrees_on_a_landed_commit() {
+    // (a) A landed milestone finalize must tear down the N provisioned fan-out worktrees
+    // (`git worktree remove --force` + `prune`), not just the milestone/sub-task areas —
+    // a leaked worktree is a registered git object, heavier than gitignored scratch. RED
+    // before the teardown wiring (the worktrees persist), GREEN after.
+    let repo = TempDir::new("teardown-ok");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let wt_root = provision_for_finalize(repo.path(), home.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        finalized.status.success(),
+        "`jigc milestone finalize cache-rework` must exit 0; got {:?}\nstderr:\n{}",
+        finalized.status,
+        String::from_utf8_lossy(&finalized.stderr),
+    );
+
+    // Every fan-out worktree dir is gone AND unregistered (removed, not orphaned).
+    assert_eq!(
+        dir_child_count(&wt_root),
+        0,
+        "a landed finalize must remove every provisioned worktree dir",
+    );
+    let list = worktree_list(repo.path());
+    assert!(
+        !list.contains("worktrees/area-low") && !list.contains("worktrees/area-zed"),
+        "a landed finalize must UNREGISTER the fan-out worktrees (not just delete dirs); got:\n{list}",
+    );
+
+    // The main checkout `git status` is clean after the commit + teardown.
+    let (_, status) = git_state(repo.path());
+    assert!(
+        status.trim().is_empty(),
+        "the main checkout must be clean after the finalize + worktree teardown; got:\n{status}",
+    );
+}
+
+#[test]
+fn milestone_finalize_tears_down_the_provisioned_worktrees_on_an_aborted_finalize() {
+    // (b) An aborted milestone finalize (a `pre-commit` hook rejects the aggregate, driving
+    // the `squash: false` rollback) must STILL tear down the provisioned worktrees, even
+    // though the sub-task areas are left intact for retry. HEAD rolls back to the
+    // pre-finalize sha and the worktrees are removed. RED before the abort-branch teardown
+    // wiring (the worktrees survive the abort), GREEN after.
+    let repo = TempDir::new("teardown-abort");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // The aggregate-rejecting hook + `squash: false` mode is the controllable abort point
+    // (the `milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head`
+    // pattern); set `squash: false` + author each sub-task's commit doc.
+    install_aggregate_rejecting_hook(repo.path());
+    setup_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+
+    let provisioned = run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "`jigc milestone provision cache-rework` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+    let wt_root = repo.path().join(".jigc").join("worktrees");
+    assert_eq!(
+        dir_child_count(&wt_root),
+        2,
+        "the setup must provision exactly N=2 worktrees before the aborted finalize",
+    );
+
+    let (before_head, _) = git_state(repo.path());
+    let before_count = rev_list_count(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        !finalized.status.success(),
+        "the aggregate-rejecting hook must make the finalize fail; got success\nstdout:\n{}",
+        String::from_utf8_lossy(&finalized.stdout),
+    );
+
+    // HEAD rolled back to the pre-finalize sha (the abort reset).
+    let (after_head, _) = git_state(repo.path());
+    assert_eq!(
+        after_head, before_head,
+        "an aborted finalize must reset HEAD to the pre-finalize sha",
+    );
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before_count,
+        "an aborted finalize must leave the commit count unchanged",
+    );
+
+    // The worktrees are torn down despite the abort.
+    assert_eq!(
+        dir_child_count(&wt_root),
+        0,
+        "an aborted finalize must still remove every provisioned worktree dir",
+    );
+    let list = worktree_list(repo.path());
+    assert!(
+        !list.contains("worktrees/area-low") && !list.contains("worktrees/area-zed"),
+        "an aborted finalize must UNREGISTER the fan-out worktrees; got:\n{list}",
+    );
+}
+
+#[test]
+fn milestone_finalize_warns_on_a_leaked_worktree_but_still_succeeds() {
+    // (c) A forced teardown failure (a `git worktree lock` makes single-`--force` removal
+    // refuse the leaf) surfaces a NON-BLOCKING warning naming the leaked worktree path +
+    // the `git worktree prune` remedy (review A2 — pinned, not silent-log/block), and the
+    // landed commit's exit code is UNCHANGED. The unlocked sibling is still torn down.
+    let repo = TempDir::new("teardown-leak");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    let wt_root = provision_for_finalize(repo.path(), home.path());
+
+    // Lock `area-low` so `git worktree remove --force` refuses it (needs `--force --force`),
+    // forcing the teardown of that one worktree to fail.
+    let locked = wt_root.join("area-low");
+    let lock = Command::new("git")
+        .args(["worktree", "lock", locked.to_str().unwrap()])
+        .current_dir(repo.path())
+        .output()
+        .expect("git worktree lock");
+    assert!(
+        lock.status.success(),
+        "locking the worktree must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&lock.stderr),
+    );
+
+    let before_count = rev_list_count(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    let stderr = String::from_utf8(finalized.stderr).expect("utf-8 stderr");
+
+    // The commit still landed — a teardown failure never blocks a landed commit.
+    assert!(
+        finalized.status.success(),
+        "a leaked-worktree teardown failure must NOT change the finalize exit code; got {:?}\nstderr:\n{stderr}",
+        finalized.status,
+    );
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before_count + 1,
+        "the finalize must still land its one commit despite the teardown warning",
+    );
+
+    // The non-blocking warning names the leaked worktree path + the `git worktree prune`
+    // remedy.
+    assert!(
+        stderr.contains("area-low"),
+        "the teardown warning must name the leaked worktree path; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("git worktree prune"),
+        "the teardown warning must name the `git worktree prune` remedy; got:\n{stderr}",
+    );
+
+    // The unlocked sibling was still torn down (best-effort proceeds past the failure).
+    assert!(
+        !wt_root.join("area-zed").exists(),
+        "the unlocked worktree must still be torn down despite the locked sibling failing",
+    );
+    let list = worktree_list(repo.path());
+    assert!(
+        !list.contains("worktrees/area-zed"),
+        "the unlocked worktree must be unregistered; got:\n{list}",
+    );
+}
