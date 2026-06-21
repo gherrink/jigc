@@ -9,3 +9,4 @@
 
 pub mod author;
 pub mod invoke;
+pub mod repo;
