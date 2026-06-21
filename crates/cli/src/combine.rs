@@ -59,26 +59,17 @@ pub fn combine_worktree_trees(
     base_tree: &str,
     worktrees: &[PathBuf],
 ) -> Result<CombineOutcome> {
+    // Collision detect first — a non-empty cross-worktree path intersection blocks before
+    // anything is built (the same rename-aware check the `squash: false` honest-rework path
+    // runs up front, factored into [`detect_code_collision`]).
+    if let Some(finding) = detect_code_collision(worktrees)? {
+        return Ok(CombineOutcome::Blocked(finding));
+    }
+
     // Apply strictly in task-id order (the worktree dir's final component); the result is
     // then byte-identical regardless of how the caller ordered the input list.
     let mut ordered: Vec<&PathBuf> = worktrees.iter().collect();
     ordered.sort_by_key(|wt| task_id(wt));
-
-    // Collision detect first — a non-empty cross-worktree path intersection blocks before
-    // anything is built. `touched`: path -> the task ids that touch it, both sorted (so
-    // the finding message is byte-stable across input orders, hardening #7).
-    let mut touched: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for wt in &ordered {
-        let id = task_id(wt);
-        for path in block_set(wt)? {
-            touched.entry(path).or_default().insert(id.clone());
-        }
-    }
-    let colliding: Vec<(&String, &BTreeSet<String>)> =
-        touched.iter().filter(|(_, ids)| ids.len() > 1).collect();
-    if !colliding.is_empty() {
-        return Ok(CombineOutcome::Blocked(collision_finding(&colliding)));
-    }
 
     // No collision — build the combined tree off-line in a throwaway index, never
     // touching the live index/worktree.
@@ -106,6 +97,38 @@ pub fn combine_worktree_trees(
         .trim()
         .to_string();
     Ok(CombineOutcome::Combined(tree))
+}
+
+/// Detect a **rename-aware cross-worktree code collision** across `worktrees` — a path
+/// touched (staged, deleted, or **either** side of a rename) by **more than one** worktree
+/// — returning the routed blocking [`Finding`] naming the colliding path(s) + contending
+/// sub-tasks, or `None` when the staged sets are disjoint. The combine never text-merges
+/// code ([storage.md](../../../design/storage.md), the join's never-blind-merge discipline
+/// applied to the code substrate).
+///
+/// [`combine_worktree_trees`] runs this before building the `squash: true` combined tree;
+/// the `squash: false` honest-rework path ([`crate::milestone`]) runs it **up front, before
+/// any per-sub-task commit**, so its disjoint per-sub-task patches apply cleanly in
+/// sequence. The `touched` map is keyed path -> the sorted task ids touching it, so the
+/// finding message is byte-stable across input orders (hardening #7); reads only each
+/// worktree's staged name-status (no commit, no tree build).
+pub fn detect_code_collision(worktrees: &[PathBuf]) -> Result<Option<Finding>> {
+    // `touched`: path -> the task ids that touch it, both sorted (so the finding message is
+    // byte-stable across input orders, hardening #7).
+    let mut touched: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for wt in worktrees {
+        let id = task_id(wt);
+        for path in block_set(wt)? {
+            touched.entry(path).or_default().insert(id.clone());
+        }
+    }
+    let colliding: Vec<(&String, &BTreeSet<String>)> =
+        touched.iter().filter(|(_, ids)| ids.len() > 1).collect();
+    if colliding.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(collision_finding(&colliding)))
+    }
 }
 
 /// A worktree's task id — its path's final component (the `.jigc/worktrees/<id>`

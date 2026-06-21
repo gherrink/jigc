@@ -43,8 +43,9 @@ use engine::state::{self, BasePin, RolesRecord};
 use engine::store::canonical_path;
 use engine::validate::validate_task;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 
 /// The validation-blocked exit code: a blocking-`ValidationReport` /
 /// `plan_finalize`-findings outcome — distinct from an operational error (1) and
@@ -1085,19 +1086,23 @@ impl TaskArea {
 /// Which working-tree changes the finalize stage commits (`design/finalize.md` →
 /// Dirty-tree policy, revised M30; `DECISIONS.md` 2026-06-20 M30 planning, G1). The
 /// per-task path narrows to the agent's own index; the migration path keeps its proven
-/// fixed-pathspec stage; the milestone boundary keeps the whole-tree sweep (the
-/// data-loss-safe choice the M31 worktree redesign owns).
+/// fixed-pathspec stage; the `squash: true` milestone boundary folds the isolated
+/// worktrees' code off-line ([`StagePolicy::Combine`]). The `squash: false` boundary
+/// commits each sub-task's code per-sub-task (in [`crate::milestone`]) and then promotes
+/// the merged docs through `IndexHonoring` over the now-clean index (M31 Inc 5 — the old
+/// whole-tree `Sweep` is retired: under worktree isolation it dropped every line of
+/// sub-agent code, the data-loss the redesign fixes).
 pub(crate) enum StagePolicy {
     /// Migration finalize — stage exactly its own paths ([`stage_migration`]): the
     /// promoted canonical doc(s), each retired original's deletion, and the config layer.
     MigrationFixed,
-    /// Per-task non-migration finalize (M30) — honor the agent's existing index, adding
-    /// only jigc's promoted-doc destinations + the first-commit config layer
-    /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted.
+    /// Per-task non-migration finalize (M30) **and** the `squash: false` milestone
+    /// aggregate (M31 Inc 5) — honor the agent's existing index, adding only jigc's
+    /// promoted-doc destinations + the first-commit config layer
+    /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted. The
+    /// `squash: false` aggregate runs over the clean index the per-sub-task code commits
+    /// left, so it stages just the merged docs + config.
     IndexHonoring,
-    /// Milestone single-commit boundary — `git add --all` (sub-agent code is
-    /// unstaged-by-design; narrowing it would drop it).
-    Sweep,
     /// The `squash: true` fan-out boundary (M31 Inc 4) — the id-ordered list of the
     /// milestone's still-provisioned worktree paths. The sub-agent code lives in those
     /// isolated worktrees, NOT this checkout, so a `git add --all` sweep would drop it;
@@ -1193,9 +1198,10 @@ pub(crate) fn execute_finalize_plan(
 /// baseline). The milestone callers run no sweep and pass `None`.
 ///
 /// `stage` selects the stage step (M30 G1 — [`StagePolicy`]): a migration stages only its
-/// own fixed paths ([`stage_migration`]); a per-task non-migration finalize honors the
-/// agent's existing index ([`stage_index_honoring`]); the milestone boundary sweeps the
-/// whole tree (`git add --all`).
+/// own fixed paths ([`stage_migration`]); a per-task non-migration finalize **and** the
+/// `squash: false` milestone aggregate honor the agent's existing index
+/// ([`stage_index_honoring`]); the `squash: true` milestone boundary folds the isolated
+/// worktrees off-line ([`combine_commit`]).
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
 // roots, the plan, schemas, the post-sweep record, the stage policy); each is a real
 // input, not incidental coupling, so an allow is clearer here than a parameter struct.
@@ -1248,12 +1254,6 @@ pub(crate) fn try_execute_finalize_plan(
             // ambient dirty tree. The whole-index `git_commit` lands the lot.
             StagePolicy::IndexHonoring => {
                 stage_index_honoring(repo_root, plan)?;
-                git_commit(repo_root, &msg_path)
-            }
-            // The milestone single-commit boundary keeps the whole-tree sweep — sub-agent
-            // code is unstaged-by-design on this (non-worktree) path.
-            StagePolicy::Sweep => {
-                git_run(repo_root, &["add", "--all"])?;
                 git_commit(repo_root, &msg_path)
             }
             // The `squash: true` fan-out boundary (M31 Inc 4 / Inc 5): fold the N
@@ -1903,38 +1903,66 @@ fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
     Ok(stderr.trim_end().to_owned())
 }
 
-/// Commit a per-sub-task authored message in the `squash: false` fan-out finalize
-/// mode (`design/finalize.md` → `fan-out` finalize: "one commit per sub-task in
-/// task-id order"). Writes `message` to a temp file under `msg_tmp_dir` (the
-/// gitignored milestone area) and runs `git commit --allow-empty -F <tmp>` — the
-/// sub-task commit carries the authored prose; the merged tree lands in the parent
-/// aggregate that follows, so each sub-task commit is intentionally tree-empty
-/// (`--allow-empty`) yet a real commit in the deterministic id-ordered sequence. As
-/// with [`git_commit`], **never** `--no-verify`: the user's `commit-msg` hook is
-/// policy. A rejection surfaces git's stderr verbatim and lands no commit.
-pub(crate) fn commit_empty_message(
+/// Commit one sub-task's worktree-attributed code in the `squash: false` **honest-rework**
+/// fan-out finalize mode (M31 Inc 5; `design/finalize.md` → `fan-out` finalize: "one commit
+/// per sub-task in task-id order"). `patch` is the worktree's `git diff --cached --binary`;
+/// [`git_apply_index`] applies it onto the **main checkout's** index + working tree, then
+/// `message` (the sub-task's rendered `commit:<sub-id>` doc) is written to a temp file under
+/// `msg_tmp_dir` (the gitignored milestone area) and committed via the shared [`git_commit`]
+/// (`git commit -F`) so the per-sub-task commit carries **that** sub-task's code — a real
+/// tree, never the retired tree-empty `--allow-empty` form. The cross-worktree collision
+/// block runs up front (the caller), so the disjoint patches apply cleanly in sequence.
+///
+/// As with [`git_commit`], **never** `--no-verify`: the user's `pre-commit`/`commit-msg`
+/// hooks run and the captured non-blocking hook stream is returned so the caller relays it.
+/// A hook/git rejection surfaces git's stderr verbatim and lands no commit (the caller
+/// `git reset --hard`s back to the pre-finalize HEAD, undoing any earlier per-sub-task
+/// commits — the boundary stays all-or-nothing).
+pub(crate) fn commit_subtask_code(
     repo_root: &Path,
     msg_tmp_dir: &Path,
+    patch: &[u8],
     message: &str,
-) -> Result<()> {
+) -> Result<String> {
+    git_apply_index(repo_root, patch)?;
     let msg_path = msg_tmp_dir.join("finalize-subtask-message.tmp");
     std::fs::write(&msg_path, message)
         .with_context(|| format!("could not write the sub-task commit message to {msg_path:?}"))?;
-    let out = Command::new("git")
-        .args(["commit", "--allow-empty", "-F"])
-        .arg(&msg_path)
-        .current_dir(repo_root)
-        .output()
-        .context("could not run `git commit` (is git on PATH?)");
+    let result = git_commit(repo_root, &msg_path);
     let _ = std::fs::remove_file(&msg_path);
-    let out = out?;
+    result
+}
+
+/// Apply a worktree's staged `patch` (`git diff --cached --binary`) onto the **main
+/// checkout's** index **and** working tree — `git apply --index --whitespace=nowarn`,
+/// feeding the patch on stdin (the `squash: false` honest-rework, M31 Inc 5). `--index`
+/// updates both so the working tree stays consistent with the commit that follows (a
+/// `--cached`/index-only apply would leave the code missing from the tree, dirtying the
+/// checkout); `--binary` produced the patch so binary blobs apply. A disjoint patch (the
+/// up-front collision block guarantees disjointness) applies cleanly atop the prior
+/// per-sub-task commits. Bails with git's stderr on a non-zero exit.
+fn git_apply_index(repo_root: &Path, patch: &[u8]) -> Result<()> {
+    let mut child = Command::new("git")
+        .args(["apply", "--index", "--whitespace=nowarn"])
+        .current_dir(repo_root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("could not run `git apply` (is git on PATH?)")?;
+    child
+        .stdin
+        .take()
+        .expect("stdin was piped")
+        .write_all(patch)
+        .context("could not write the worktree patch to `git apply`")?;
+    let out = child
+        .wait_with_output()
+        .context("wait for `git apply` to finish")?;
     if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let stdout = String::from_utf8_lossy(&out.stdout);
         bail!(
-            "`git commit` for a sub-task message was rejected (no commit was made):\n{}{}",
-            stdout.trim(),
-            stderr.trim()
+            "`git apply` of a sub-task's worktree code failed (no commit was made): {}",
+            String::from_utf8_lossy(&out.stderr).trim()
         );
     }
     Ok(())

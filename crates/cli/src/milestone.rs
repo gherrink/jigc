@@ -741,13 +741,49 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     // its own promotions; this reset additionally undoes the per-sub-task commits the
     // milestone boundary laid down ahead of it.
     if !squash {
-        let pre_finalize_head = git_head(&repo_root)?;
-        commit_per_subtask_messages(&repo_root, &dir, milestone_id, &list, &schemas)?;
+        // A cross-worktree code collision blocks **up front**, before any commit — the
+        // disjoint per-sub-task patches must apply cleanly in sequence, so a same-path
+        // collision blocks naming the path and commits nothing (the combine's
+        // never-text-merge discipline, applied to the honest-rework path;
+        // `crate::combine::detect_code_collision`).
+        if let Some(finding) = crate::combine::detect_code_collision(&worktrees)? {
+            return Err(finding_to_err(finding));
+        }
 
-        // Step 4 — the SHARED executor: promote + stage + commit (one boundary) + post-commit.
-        // The milestone boundary runs no reconcile sweep → no post-sweep record (`None`),
-        // and keeps the whole-tree `git add --all` sweep (M30 G1 — sub-agent code is
-        // unstaged-by-design; narrowing it would drop it, the M31 worktree redesign owns it).
+        // Capture the pre-finalize HEAD before any per-sub-task commit moves it, so a hook
+        // rejection (per sub-task or the aggregate) can `git reset --hard` back to
+        // as-if-finalize-was-never-called (`CLAUDE.md` "Writes are transactional";
+        // `design/finalize.md` → Rollback discipline). `execute_finalize_plan` rolls back
+        // its own promotions; this reset additionally undoes the per-sub-task commits.
+        let pre_finalize_head = git_head(&repo_root)?;
+
+        // Lay down one commit per sub-task carrying **that** sub-task's worktree code
+        // (hooks run + relay each), in id order. The merged docs land in the parent
+        // aggregate below — review B1/B2: the by-task-id doc-join is a cross-sub-task merge
+        // with suffix resolution (`design/storage.md`), a milestone-level artifact, not
+        // cleanly partitionable per sub-task.
+        if let Err(err) = commit_per_subtask_code(
+            &repo_root,
+            &jigc_home,
+            &dir,
+            milestone_id,
+            &worktrees,
+            &schemas,
+            format,
+        ) {
+            // A per-sub-task apply/commit failed (a hook rejection, a render finding): undo
+            // any per-sub-task commits already laid down, tear down the fan-out worktrees,
+            // and surface the error. The sub-task areas survive for retry.
+            crate::task::git_reset_hard(&repo_root, &pre_finalize_head)?;
+            remove_worktrees(&repo_root, &jigc_home, &list);
+            return Err(err);
+        }
+
+        // Step 4 — the SHARED executor: promote the merged docs + stage + commit the parent
+        // aggregate (one boundary) + post-commit. `IndexHonoring` over the **clean index**
+        // the per-sub-task code commits left stages exactly the promoted docs + the
+        // git-tracked config layer (the code already landed per sub-task, M31 Inc 5). No
+        // reconcile sweep runs → no post-sweep record (`None`).
         match crate::task::try_execute_finalize_plan(
             &repo_root,
             &jigc_root,
@@ -756,13 +792,12 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             &dir,
             &schemas,
             None,
-            crate::task::StagePolicy::Sweep,
+            crate::task::StagePolicy::IndexHonoring,
         )? {
             Ok(hook_output) => {
-                // T3 — relay ONLY the aggregate `git_commit`'s non-blocking hook output
-                // (the N per-sub-task `commit_empty_message` commits laid down above
-                // relay nothing — `design/finalize.md` → 6. Commit, review B1: fan-out
-                // relays only the aggregate). Same placement discipline as T2.
+                // Relay the aggregate `git_commit`'s non-blocking hook output (each
+                // per-sub-task commit already relayed its own — M31 Inc 5; every fan-out
+                // commit now runs the user's hooks, `design/finalize.md` → 6. Commit).
                 crate::task::relay_hook_output(format, &hook_output);
                 // The boundary landed — clean up the per-sub-task working areas too (the
                 // executor only removed the milestone area). On a failure (below) the areas
@@ -905,28 +940,55 @@ fn resolve_squash(repo_root: &Path) -> Result<bool> {
     Ok(resolved.scalar_required("finalize.fan-out.squash")? == "true")
 }
 
-/// Lay down **one commit per sub-task in id-sorted order** for the `squash: false` mode
-/// (`design/finalize.md` → `fan-out` finalize). The engine renders each sub-task's
-/// authored `commit:<sub-id>` doc into its message in id order
-/// ([`engine::finalize::render_subtask_messages`] over the **id-sorted**
-/// [`engine::milestone::TaskList::enumerate`] ids); the CLI commits each with
-/// `--allow-empty` (the merged tree lands in the parent aggregate that follows, so a
-/// sub-task commit is intentionally tree-empty yet a real commit in the deterministic
-/// sequence). A sub-task missing its authored commit doc routes the engine's blocking
-/// render finding and commits nothing further.
-fn commit_per_subtask_messages(
+/// Lay down **one commit per sub-task in id-sorted order** for the `squash: false`
+/// **honest-rework** mode (M31 Inc 5; `design/finalize.md` → `fan-out` finalize). Each
+/// per-sub-task commit carries **that** sub-task's worktree-attributed code: for each
+/// provisioned worktree (already id-sorted) that staged code, live-apply its staged patch
+/// (`git diff --cached --binary` in the worktree → `git apply --index` on the main
+/// checkout, via [`crate::task::commit_subtask_code`]), render its authored `commit:<sub-id>`
+/// doc ([`engine::finalize::render_subtask_messages`]), and `git commit -F` it so the user's
+/// hooks run; each commit's non-blocking hook output is relayed. A worktree with **nothing
+/// staged** contributes no commit (the retired `--allow-empty` tree-empty form is gone), so
+/// the commit *sequence* is a pure function of the id set of code-carrying sub-tasks
+/// (hardening #7). The merged docs land in the parent aggregate that follows (review
+/// B1/B2). A sub-task missing its authored commit doc routes the engine's blocking render
+/// finding and commits nothing further; the caller resets on any error.
+fn commit_per_subtask_code(
     repo_root: &Path,
+    jigc_home: &Path,
     msg_tmp_dir: &Path,
     milestone_id: &str,
-    list: &engine::milestone::TaskList,
+    worktrees: &[PathBuf],
     schemas: &BTreeMap<String, Schema>,
+    format: Format,
 ) -> Result<()> {
     let commit_schema = schemas
         .get(COMMIT_TYPE)
         .with_context(|| format!("the embedded pack ships no `{COMMIT_TYPE}` schema"))?;
-    let tasks_root = repo_root.join(".jigc").join("tasks");
-    // Id-sorted ids — the deterministic order the commit sequence is laid down in.
-    let ids = list.enumerate();
+    // The sub-task working areas bind to jigc_home (the main checkout), not the per-task
+    // worktree (M31 WF3); outside a worktree the two coincide.
+    let tasks_root = jigc_home.join(".jigc").join("tasks");
+
+    // The id-ordered worktrees that staged code, paired with their staged patch — a
+    // worktree with nothing staged contributes no per-sub-task commit (no `--allow-empty`);
+    // its docs ride the parent aggregate. `worktrees` is already id-sorted (the provisioned
+    // set), the deterministic order the commit sequence is laid down in.
+    let mut coded: Vec<(String, Vec<u8>)> = Vec::new();
+    for wt in worktrees {
+        let id = wt
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let patch = worktree_staged_patch(wt)?;
+        if patch.is_empty() {
+            continue;
+        }
+        coded.push((id, patch));
+    }
+
+    // Render each code-carrying sub-task's authored commit doc in id order (one engine
+    // call) — the message each per-sub-task commit carries.
+    let ids: Vec<String> = coded.iter().map(|(id, _)| id.clone()).collect();
     let messages = engine::finalize::render_subtask_messages(&ids, &tasks_root, commit_schema)
         .map_err(|findings| {
             // The first blocking finding carries the route (the `dispatch_finalize` envelope).
@@ -940,10 +1002,32 @@ fn commit_per_subtask_messages(
                     )
                 })
         })?;
-    for message in &messages {
-        crate::task::commit_empty_message(repo_root, msg_tmp_dir, message)?;
+
+    // Apply + commit each worktree's code in id order, relaying each commit's hook output.
+    for ((_, patch), message) in coded.iter().zip(messages.iter()) {
+        let hook_output = crate::task::commit_subtask_code(repo_root, msg_tmp_dir, patch, message)?;
+        crate::task::relay_hook_output(format, &hook_output);
     }
     Ok(())
+}
+
+/// A provisioned worktree's staged patch (`git diff --cached --binary`) as raw bytes —
+/// binary-safe (a patch is not guaranteed UTF-8) and empty when nothing is staged. The
+/// `squash: false` honest-rework reads it per worktree, then applies it onto the main
+/// checkout ([`crate::task::commit_subtask_code`]).
+fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
+    let out = Command::new("git")
+        .args(["diff", "--cached", "--binary"])
+        .current_dir(worktree)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git diff --cached` in worktree {worktree:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(out.stdout)
 }
 
 /// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including

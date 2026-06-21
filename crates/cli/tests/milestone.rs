@@ -883,10 +883,13 @@ fn finalize_squash_false(repo: &Path, home: &Path, add_order: &[&str]) -> std::p
 }
 
 /// The `finalize_squash_false` setup WITHOUT the terminating `finalize` call: opt into
-/// `squash: false`, mint the milestone + two sub-tasks in `add_order`, and stage in each
-/// sub-area a clean disjoint persisted ADR + that sub-task's authored `commit:<sub>` doc.
-/// Split out so a caller can capture the pre-finalize HEAD/tree state between setup and
-/// the `finalize` invocation (the transactionality assertion's baseline).
+/// `squash: false`, mint the milestone + two sub-tasks in `add_order`, stage in each
+/// sub-area a clean disjoint persisted ADR + that sub-task's authored `commit:<sub>` doc,
+/// **provision the N base-pin worktrees, and stage disjoint code in each** — the honest
+/// rework (M31 Inc 5) commits that worktree code per sub-task. Split out so a caller can
+/// capture the pre-finalize HEAD/tree state between setup and the `finalize` invocation
+/// (the transactionality assertion's baseline). Main is NOT advanced, so the base pin ==
+/// HEAD (the finalize preflight requires it).
 fn setup_squash_false(repo: &Path, home: &Path, add_order: &[&str]) {
     set_squash_false(repo);
     assert!(
@@ -921,6 +924,35 @@ fn setup_squash_false(repo: &Path, home: &Path, add_order: &[&str]) {
         "edited-from-base",
     );
     stage_subtask_commit(repo, "area-zed", "rework the zed cache path");
+
+    // Provision the N base-pin worktrees and stage DISJOINT code in each — the code each
+    // per-sub-task commit carries under the honest rework. Idempotent (a caller may
+    // re-provision).
+    let provisioned = run_milestone(repo, home, &["provision", "cache-rework"]);
+    assert!(
+        provisioned.status.success(),
+        "provision must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&provisioned.stderr),
+    );
+    stage_worktree_code(repo, "area-low", "src/low.rs", "pub fn low() {}\n");
+    stage_worktree_code(repo, "area-zed", "src/zed.rs", "pub fn zed() {}\n");
+}
+
+/// The repo-relative paths a single commit changed (`git show --name-only --format= <rev>`)
+/// — proves a per-sub-task commit carries **that** sub-task's files (a real tree), not the
+/// retired tree-empty `--allow-empty` form, and that the merged docs ride the aggregate.
+fn commit_changed_files(repo: &Path, rev: &str) -> Vec<String> {
+    let out = Command::new("git")
+        .args(["show", "--name-only", "--format=", rev])
+        .current_dir(repo)
+        .output()
+        .expect("git show --name-only");
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 #[test]
@@ -965,6 +997,36 @@ fn milestone_finalize_squash_false_lands_n_plus_one_commits_in_id_order() {
         tracked.contains(&"docs/decisions/low-policy.md".to_owned())
             && tracked.contains(&"docs/decisions/zed-policy.md".to_owned()),
         "the parent aggregate must commit the merged persisted docs; got:\n{tracked:?}",
+    );
+
+    // Each per-sub-task commit carries THAT sub-task's worktree code — a real tree, not the
+    // retired tree-empty `--allow-empty` form (the honest rework, M31 Inc 5). Sequence
+    // (oldest→newest): HEAD~2 = area-low, HEAD~1 = area-zed, HEAD = aggregate.
+    let low_files = commit_changed_files(repo.path(), "HEAD~2");
+    assert!(
+        low_files.contains(&"src/low.rs".to_owned()),
+        "the area-low per-sub-task commit must carry its worktree code (src/low.rs), not an \
+         empty tree; got:\n{low_files:?}",
+    );
+    let zed_files = commit_changed_files(repo.path(), "HEAD~1");
+    assert!(
+        zed_files.contains(&"src/zed.rs".to_owned()),
+        "the area-zed per-sub-task commit must carry its worktree code (src/zed.rs), not an \
+         empty tree; got:\n{zed_files:?}",
+    );
+    // The merged docs land in the parent AGGREGATE (HEAD), never partitioned into a
+    // per-sub-task commit (review B1/B2 — docs are a milestone-level merge artifact).
+    let agg_files = commit_changed_files(repo.path(), "HEAD");
+    assert!(
+        agg_files.contains(&"docs/decisions/low-policy.md".to_owned())
+            && agg_files.contains(&"docs/decisions/zed-policy.md".to_owned()),
+        "the merged docs must land in the parent aggregate commit; got:\n{agg_files:?}",
+    );
+    assert!(
+        !low_files.iter().any(|p| p.starts_with("docs/decisions/"))
+            && !zed_files.iter().any(|p| p.starts_with("docs/decisions/")),
+        "no merged doc may be partitioned into a per-sub-task code commit; \
+         low={low_files:?} zed={zed_files:?}",
     );
 
     // Clean tree + the milestone area removed after the boundary.
@@ -1019,10 +1081,11 @@ fn milestone_finalize_squash_false_sequence_is_byte_identical_across_feed_orders
 }
 
 /// Install a `pre-commit` hook in `repo` that rejects any commit which stages a path
-/// under `docs/decisions/` (the promoted ADRs the parent aggregate stages via `git add
-/// --all`). The `squash: false` per-sub-task commits run `git commit --allow-empty`
-/// staging nothing, so they pass; only the parent aggregate trips the hook — a clean,
-/// controllable failure point AFTER the N sub-task commits have landed.
+/// under `docs/decisions/` (the promoted ADRs the parent aggregate stages). The
+/// `squash: false` per-sub-task commits stage only their worktree CODE (`src/*.rs`, never
+/// `docs/decisions/`), so they pass; only the parent aggregate (which stages the merged
+/// docs) trips the hook — a clean, controllable failure point AFTER the N sub-task commits
+/// have landed.
 fn install_aggregate_rejecting_hook(repo: &Path) {
     let hook = repo.join(".git").join("hooks").join("pre-commit");
     fs::write(
@@ -1096,16 +1159,66 @@ fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head
     );
 }
 
+#[test]
+fn milestone_finalize_squash_false_blocks_a_cross_worktree_code_collision() {
+    // The WF2 same-file block fires across the fan-out: two sub-tasks staging the SAME code
+    // path in their isolated worktrees must block (the honest rework disjoint-applies each
+    // worktree's patch in sequence and never text-merges a shared file), naming the
+    // colliding path, committing nothing, HEAD unchanged. RED before the up-front
+    // `detect_code_collision` block.
+    let repo = TempDir::new("squash-false-collision");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // setup stages disjoint code (src/low.rs, src/zed.rs); now ALSO stage the SAME path in
+    // BOTH worktrees → a cross-worktree collision on `src/shared.rs`.
+    setup_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+    stage_worktree_code(repo.path(), "area-low", "src/shared.rs", "fn low() {}\n");
+    stage_worktree_code(repo.path(), "area-zed", "src/shared.rs", "fn zed() {}\n");
+
+    let (before_head, _) = git_state(repo.path());
+    let before_count = rev_list_count(repo.path());
+
+    let finalized = run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]);
+    assert!(
+        !finalized.status.success(),
+        "a cross-worktree code collision must make `jigc milestone finalize` fail; got success\nstdout:\n{}",
+        String::from_utf8_lossy(&finalized.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&finalized.stderr);
+    assert!(
+        stderr.contains("src/shared.rs"),
+        "the collision block must name the contended path; got:\n{stderr}",
+    );
+
+    // Nothing committed — the block fires UP FRONT, before any per-sub-task commit.
+    let (after_head, _) = git_state(repo.path());
+    assert_eq!(
+        after_head, before_head,
+        "a collision block must commit nothing (HEAD unchanged)",
+    );
+    assert_eq!(
+        rev_list_count(repo.path()),
+        before_count,
+        "a collision block must leave the commit count unchanged",
+    );
+    assert!(
+        !repo.path().join("docs").join("decisions").exists(),
+        "a collision block must promote no ADR",
+    );
+}
+
 /// The marker a non-blocking `pre-commit` hook writes to stderr before exiting 0 — git
 /// redirects a hook's own stdout to stderr, so a warn-only hook (the M19 doc↔code
 /// backstop's shape) speaks on the hook stream `git_commit` captures.
 const HOOK_WARNING: &str = "NON-BLOCKING-MILESTONE-HOOK-WARNING";
 
 /// Install a **non-blocking** `pre-commit` hook in `repo` that prints `HOOK_WARNING` and
-/// exits 0 — git surfaces it on every commit's stderr (the hook stream). It fires on the
-/// N per-sub-task `commit_empty_message` commits AND the parent aggregate, so the relay's
-/// once-not-(N+1) discipline (`design/finalize.md` → 6. Commit, review B1) is asserted at
-/// the binary: only the aggregate's capture is relayed.
+/// exits 0 — git surfaces it on every commit's stderr (the hook stream). Under the honest
+/// rework (M31 Inc 5) it fires on the N per-sub-task CODE commits AND the parent aggregate,
+/// and **every** fan-out commit now relays its hook output, so a `squash: false` finalize
+/// surfaces the warning N+1 times — one per code commit + the aggregate
+/// (`design/finalize.md` → 6. Commit; never bypass hooks).
 fn install_warning_hook(repo: &Path) {
     let hook = repo.join(".git").join("hooks").join("pre-commit");
     fs::write(
@@ -1122,22 +1235,19 @@ fn install_warning_hook(repo: &Path) {
     }
 }
 
-/// M19 increment 2, T3 — a milestone finalize relays the **aggregate** commit's
-/// non-blocking hook output to the agent, exactly ONCE, never once-per-sub-task
-/// (`design/finalize.md` → 6. Commit, review B1: fan-out relays only the aggregate). The
-/// `pre-commit` hook fires on **every** commit, so a `squash: false` finalize runs it N+1
-/// times (N tree-empty `commit_empty_message` per-sub-task commits + 1 aggregate); the N
-/// per-sub-task fires are intentionally swallowed (`commit_empty_message` relays nothing)
-/// and only the aggregate's capture surfaces. If the per-sub-task commits leaked into the
-/// relay the warning would appear N+1 times — the bug bullet B1 guards against. The
-/// `squash: true` path commits the off-line combine from a dedicated detached worktree via
-/// `git commit -F` (M31 Inc 5), so the user's `pre-commit`/`commit-msg` hooks run against
-/// the combined tree (`design/finalize.md` → never bypass hooks; `DECISIONS.md` 2026-06-21
-/// — squash:true hook restoration); the single aggregate fires the non-blocking hook EXACTLY
-/// once and relays its output.
+/// M31 Inc 5 — **every** fan-out commit runs the user's hooks and relays their output
+/// (`design/finalize.md` → 6. Commit; never bypass hooks; `DECISIONS.md` 2026-06-21 —
+/// squash:true hook restoration + squash:false honest rework). The `pre-commit` hook fires
+/// on **every** commit, so a `squash: false` finalize runs it N+1 times (N per-sub-task
+/// CODE commits + 1 aggregate), and each fan-out commit now relays its non-blocking hook
+/// output — so the warning surfaces N+1 times (review B1/B2: each per-sub-task commit
+/// carries real code, the merged docs ride the aggregate). The `squash: true` path commits
+/// the off-line combine from a dedicated detached worktree via `git commit -F`, so the
+/// user's hooks run against the combined tree; its single aggregate fires the non-blocking
+/// hook EXACTLY once and relays its output.
 #[test]
-fn milestone_finalize_relays_only_the_aggregate_hook_output() {
-    // ── squash:false: 2 sub-task commits + 1 aggregate; warning relayed ONCE ──────
+fn milestone_finalize_relays_every_fan_out_commit_hook_output() {
+    // ── squash:false: 2 per-sub-task code commits + 1 aggregate; warning relayed N+1 = 3 ──
     let repo = TempDir::new("relay-squash-false");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -1151,8 +1261,8 @@ fn milestone_finalize_relays_only_the_aggregate_hook_output() {
         finalized.status,
         String::from_utf8_lossy(&finalized.stderr),
     );
-    // N+1 = 3 commits landed (2 per-sub-task + 1 aggregate), so the hook fired 3 times —
-    // the precondition that makes once-not-(N+1) a genuine distinction.
+    // N+1 = 3 commits landed (2 per-sub-task code commits + 1 aggregate), so the hook fired
+    // 3 times.
     assert_eq!(
         rev_list_count(repo.path()),
         before + 3,
@@ -1161,9 +1271,10 @@ fn milestone_finalize_relays_only_the_aggregate_hook_output() {
     let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
     assert_eq!(
         stdout.matches(HOOK_WARNING).count(),
-        1,
-        "the aggregate hook warning must be relayed EXACTLY once — not N+1 times, one per \
-         sub-task commit (review B1: fan-out relays only the aggregate); got:\n{stdout}",
+        3,
+        "every fan-out commit (the 2 per-sub-task code commits + the aggregate) must relay \
+         its hook output — N+1 = 3 times, not once (honest rework: each code commit runs \
+         the user's hooks); got:\n{stdout}",
     );
     assert!(
         stdout.contains("--- hook output ---"),
