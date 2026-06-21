@@ -1,0 +1,20 @@
+==================================================================
+### ARM: wip-survives-success (a SUCCESSFUL squash:true combine leaves main WIP byte-identical)
+repo: /tmp/jigc-m31-wipok-K3G2p1   HEAD-before-commits: 1   (default squash:true — no override)
+--- README.md (pre-finalize: seeded unrelated unstaged WIP) ---
+README.md = [hello|UNRELATED WIP THE USER IS EDITING]
+--- jigc milestone finalize cache-rework ---
+--- hook output ---
+NON-BLOCKING-MILESTONE-HOOK-WARNING
+
+FINALIZE_EXIT=0 (zero — the combine SUCCEEDS)
+HEAD-after-commits: 2   (delta 1 — squash:true lands ONE aggregate)
+--- unrelated MAIN WIP after the SUCCESSFUL combine (must be byte-identical) ---
+README.md = [hello|UNRELATED WIP THE USER IS EDITING]   (expect [hello|UNRELATED WIP THE USER IS EDITING|])
+README byte-identical before==after: yes
+--- the unrelated WIP stays OUT of the aggregate commit (git show --name-only HEAD) ---
+.jigc/.gitignore
+docs/decisions/low-policy.md
+docs/decisions/zed-policy.md
+src/low.rs
+src/zed.rs

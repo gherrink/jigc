@@ -360,9 +360,73 @@ run_wip_survives() {
   rm -rf "$repo" "$home"
 }
 
-echo "### running the four arms (installed binary, no overrides)"
+# -----------------------------------------------------------------------------------------
+# ARM WIP-SURVIVES-SUCCESS — a SUCCESSFUL squash:true combine (two disjoint-code sub-agents)
+# leaves unrelated MAIN-checkout WIP byte-identical (the success-path twin of WIP-SURVIVES,
+# mirroring crates/cli/tests/flow33_acceptance.rs::flow33_unrelated_wip_survives_successful_combine).
+# The dec61c7 fix lands the combine via `git merge --ff-only`, NOT `git reset --hard` — so
+# unstaged WIP a human is editing in the main checkout rides the fast-forward intact.
+# -----------------------------------------------------------------------------------------
+run_wip_survives_success() {
+  local log="$EVID/wip-survives-success.log"
+  local home repo
+  home=$(mktemp -d /tmp/jigc-m31-home-XXXXXX)
+  repo=$(mktemp -d /tmp/jigc-m31-wipok-XXXXXX)
+  init_repo "$repo"
+  install_warning_hook "$repo"
+
+  ( cd "$repo"
+    HOME="$home" jigc milestone create "Cache rework" >/dev/null 2>&1
+    HOME="$home" jigc milestone add-task cache-rework "Area zed" >/dev/null 2>&1
+    HOME="$home" jigc milestone add-task cache-rework "Area low" >/dev/null 2>&1 )
+  stage_doc "$repo" area-low "adr:low-policy" "$(adr_plain 'Low policy')"
+  write_provenance "$repo" area-low '{ "adr:low-policy": "edited-from-base" }'
+  stage_doc "$repo" area-zed "adr:zed-policy" "$(adr_plain 'Zed policy')"
+  write_provenance "$repo" area-zed '{ "adr:zed-policy": "edited-from-base" }'
+  ( cd "$repo" && HOME="$home" jigc milestone provision cache-rework >/dev/null 2>&1 )
+  # Disjoint code in each worktree — the combine SUCCEEDS (no collision).
+  stage_worktree_code "$repo" area-low "src/low.rs" "pub fn low() {}\n"
+  stage_worktree_code "$repo" area-zed "src/zed.rs" "pub fn zed() {}\n"
+
+  # Seed UNRELATED unstaged tracked WIP in the MAIN checkout, the way a human edits.
+  printf 'hello\nUNRELATED WIP THE USER IS EDITING\n' > "$repo/README.md"
+  local readme_before head_before
+  readme_before=$(cat "$repo/README.md")
+  head_before=$(git -C "$repo" rev-list --count HEAD)
+
+  {
+    echo "=================================================================="
+    echo "### ARM: wip-survives-success (a SUCCESSFUL squash:true combine leaves main WIP byte-identical)"
+    echo "repo: $repo   HEAD-before-commits: $head_before   (default squash:true — no override)"
+    echo "--- README.md (pre-finalize: seeded unrelated unstaged WIP) ---"
+    echo "README.md = [$(printf '%s' "$readme_before" | tr '\n' '|')]"
+    echo "--- jigc milestone finalize cache-rework ---"
+  } >> "$log"
+  local out exit
+  out=$( cd "$repo" && HOME="$home" jigc milestone finalize cache-rework 2>/dev/null )
+  exit=$?
+  local head_after readme_after
+  head_after=$(git -C "$repo" rev-list --count HEAD)
+  readme_after=$(cat "$repo/README.md")
+  {
+    echo "$out"
+    echo
+    echo "FINALIZE_EXIT=$exit (zero — the combine SUCCEEDS)"
+    echo "HEAD-after-commits: $head_after   (delta $((head_after - head_before)) — squash:true lands ONE aggregate)"
+    echo "--- unrelated MAIN WIP after the SUCCESSFUL combine (must be byte-identical) ---"
+    echo "README.md = [$(printf '%s' "$readme_after" | tr '\n' '|')]   (expect [hello|UNRELATED WIP THE USER IS EDITING|])"
+    echo "README byte-identical before==after: $([ "$readme_before" = "$readme_after" ] && echo yes || echo NO)"
+    echo "--- the unrelated WIP stays OUT of the aggregate commit (git show --name-only HEAD) ---"
+    git -C "$repo" show --name-only --format= HEAD
+  } >> "$log"
+  echo "  wip-survives-success: exit=$exit  head-delta=$((head_after - head_before))  wip-intact=$([ "$readme_before" = "$readme_after" ] && echo yes || echo NO)  log=$log"
+  rm -rf "$repo" "$home"
+}
+
+echo "### running the five arms (installed binary, no overrides)"
 run_squash_true_hooks
 run_squash_false
 run_wf2_block
 run_wip_survives
+run_wip_survives_success
 echo "### done"

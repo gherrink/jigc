@@ -1,6 +1,6 @@
 # M31 — the fan-out finalize hook contract (both commit paths run the user's hooks, WIP-safely)
 
-**Run 2026-06-21.** The M31 done-bar mandated by [finalize.md](../../../design/finalize.md)
+**Run 2026-06-21 (re-pinned at HEAD `dec61c7`).** The M31 done-bar mandated by [finalize.md](../../../design/finalize.md)
 → `fan-out` finalize / never-bypass-hooks, [worked-examples.md](../../../design/worked-examples.md)
 → flow 9 + flow 33, [DECISIONS.md](../../../DECISIONS.md) → 2026-06-21 M31 Inc 5 (squash:true
 hook restoration, WIP-safe) + 2026-06-20 M31 planning (squash:false honest rework), and
@@ -11,7 +11,10 @@ tree **without touching the main checkout**; under **squash:false** each per-sub
 carries **that sub-task's worktree-attributed code** and relays its hooks. The hook restoration
 + honest rework shipped Inc 1–T3 (the off-line worktree combine engine, the WIP-safe
 dedicated-worktree hook commit, the per-sub-task code commits, the one-hook-story doc fold-back);
-this T4 artifact records the **four measured facts**, each **observed by running the
+the **WIP-safe combine landing** (`git merge --ff-only`, never `git reset --hard`) shipped at
+`dec61c7` — the commit that prompted this re-pin, because the earlier T4 pin (`cb0fb59b…`,
+built at `c675e1a`) predated it and still carried the destructive-reset WIP-loss bug.
+This artifact records the **five measured facts**, each **observed by running the
 ACTUALLY-PINNED `cargo install`-built binary** (NOT `cargo test`) over real git repos with **no
 environment overrides** — the production path a real install hits, with the embedded dev pack and
 the sibling `doc-code` probe.
@@ -20,12 +23,12 @@ the sibling `doc-code` probe.
 
 | | |
 |---|---|
-| `jigc` sha256 | `cb0fb59b14f59e7f7d2465daf94e0f88a2cc0afe9a11863cfc41162dcfbd2f52` |
+| `jigc` sha256 | `c9e7eb72100df899af1b48cc5030e9d2337f0af7b348d1a30ca16d88b0263ec8` |
 | `doc-code` probe sha256 | `530dd89f32d7c6a6afbb617b7672744897316d9ecb243a6cd06710ec22302398` |
-| HEAD commit | Built at `c675e1a` (M31 Inc 5 T3 — the one-hook-story doc fold-back; T1 restored the squash:true WIP-safe hook commit, T2 the squash:false per-sub-task honest rework). This re-pin commit (T4) adds **only** `completions/artifacts/M31/` (this file + `evidence/`) — no Rust source change — so the pinned binary stays **byte-identical to a fresh `cargo install` at final HEAD**. |
+| HEAD commit | Built at `dec61c7` (`fix(finalize): land squash:true combine via ff-only merge, not destructive reset`) — the WIP-safe-landing fix. **The prior pin (`cb0fb59b…`, built at `c675e1a`) was STALE**: `dec61c7` changed `crates/cli/src/task.rs` (the combine land step) *after* that pin, so the installed binary still wiped unrelated unstaged WIP on a successful `squash:true` combine. This pin rebuilds at `dec61c7` and re-copies into both bin dirs. The binary is **not** byte-reproducible across builds (release binaries are not stripped — embedded build paths / debug-info differ build-to-build), so the sha recorded here is the exact output of the `cargo install` that produced the pinned bytes, identical across `target/release`, `~/.cargo/bin`, and `~/.local/bin`. `dec61c7` touches no grammar, so `doc-code` stays the M29 eight-grammar probe (`530dd89…`). |
 | Built | `cargo install --path crates/cli --force` (release; `build.rs` builds the eight-grammar `doc-code` probe — Rust + TypeScript/TSX + JavaScript/JSX + Python + PHP + bash + CSS + YAML — and embeds it via `OUT_DIR/doc-code`, plus the embedded dev pack); `rustc 1.95.0` |
-| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install` placed `jigc` at `~/.cargo/bin/jigc`; it was copied to `~/.local/bin/jigc`; a `jigc setup` run from **each** bin dir confirmed that dir's `doc-code` sibling (the extract is a **no-op** when byte-identical — T1–T3 changed only `milestone.rs`, not the `doc-code` probe's grammar set, so the sibling stays the M29 eight-grammar probe). **All four sha256 identical** — `jigc` identical across both dirs (`cb0fb59b…`), `doc-code` identical across both dirs (`530dd89…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
-| Fresh-build cross-check | The relocated `jigc` is **byte-identical** to the freshly-`cargo install`-built `target/release/jigc` (same `cb0fb59b…`); the `doc-code` sibling is byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`530dd89…`) — i.e. the pinned binaries match a fresh `cargo install` at this HEAD. |
+| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/`. `cargo install --path crates/cli --force` placed `jigc` at `~/.cargo/bin/jigc`; it was copied to `~/.local/bin/jigc`; the `doc-code` sibling (unchanged by `dec61c7`, still the M29 eight-grammar probe) is the same `530dd89…` in both dirs. **All four sha256 identical** — `jigc` identical across both dirs (`c9e7eb72…`), `doc-code` identical across both dirs (`530dd89…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
+| Fresh-build cross-check | The pinned `jigc` IS the output of this `cargo install` at `dec61c7` — byte-identical to the `target/release/jigc` it co-produced (same `c9e7eb72…`); the `doc-code` sibling is byte-identical to the `build.rs`-embedded `OUT_DIR/doc-code` and to `target/release/doc-code` (`530dd89…`). (Release `jigc` is not stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this install wrote, not a reproducibility claim.) |
 | Size | release `jigc` **13.80 MB** (13 801 600 B), `doc-code` **8.49 MB** (8 486 360 B). The size guard's **90 MiB** ceiling ([`crates/cli/tests/cargo_install_probe.rs`](../../../crates/cli/tests/cargo_install_probe.rs)) protects the **debug** `CARGO_BIN_EXE_jigc` (**73.02 MiB**, 76 568 336 B); still well under. |
 | Invocation | `jigc` from `PATH`, with the **embedded** dev pack (**no** `JIGC_PACK_DIR`) and the `doc-code` probe resolved **as the sibling beside the installed binary** (**no** `JIGC_DOC_CODE_PROBE` — the driver `unset`s both) — the production probe-resolution path (the M20 embed/sibling). |
 | Driver | [`evidence/drive.sh`](evidence/drive.sh) — a self-cleaning scratch git repo + isolated `$HOME` per arm; logs in [`evidence/`](evidence/). |
@@ -47,13 +50,13 @@ guarantee are independently **binary-proven** by
 artifact's job is to show those facts *on the binary a real install actually resolves*, with the
 production sibling probe and no overrides.
 
-## Corpus — four scratch git repos (mirrors the M31 acceptance suite)
+## Corpus — five scratch git repos (mirrors the M31 acceptance suite)
 
 Each arm stands up a throwaway `git init` repo with one base commit, mints
 `milestone:cache-rework` + two sub-tasks (`area-low`, `area-zed`, added NON-id order so id-order
 is no accident of insertion), stages each sub-task's docs into its `.jigc/tasks/<sub>/docs/` area
 and (where the arm needs code) provisions the base-pin worktrees and stages disjoint code in each
-`.jigc/worktrees/<sub>/`. The four arms:
+`.jigc/worktrees/<sub>/`. The five arms:
 
 - **squash-true-hooks** — default `squash: true`; two disjoint-code sub-agents; a non-blocking
   `pre-commit` hook installed. Proves the combine runs the hook against the combined tree.
@@ -64,13 +67,18 @@ and (where the arm needs code) provisions the base-pin worktrees and stages disj
   the cross-worktree collision blocks up front.
 - **wip-survives** — default `squash: true`; a same-file collision (`area-low` edits `shared.txt`,
   `area-zed` renames it — the rename old-path collides) **plus** unrelated main-checkout WIP.
-  Proves the blocked combine leaves the live checkout byte-identical.
+  Proves the **blocked** combine leaves the live checkout byte-identical.
+- **wip-survives-success** — default `squash: true`; two **disjoint**-code sub-agents (the combine
+  succeeds) **plus** unrelated unstaged tracked WIP in the main checkout. Proves a **successful**
+  combine leaves the live checkout byte-identical — the regression this re-pin closes (the success
+  path is exactly where the stale binary's `git reset --hard` wiped WIP). Mirrors
+  `flow33_acceptance.rs::flow33_unrelated_wip_survives_successful_combine`.
 
 Full logs per arm in [`evidence/`](evidence/).
 
-## The four measured facts — each observed on the installed binary
+## The five measured facts — each observed on the installed binary
 
-All four observed by running `~/.local/bin/jigc` (sha256 `cb0fb59b…`) from `PATH`, **no
+All five observed by running `~/.local/bin/jigc` (sha256 `c9e7eb72…`) from `PATH`, **no
 `JIGC_PACK_DIR`, no `JIGC_DOC_CODE_PROBE`**, the embedded dev pack, resolving the `doc-code`
 sibling (`530dd89…`) beside it.
 
@@ -166,12 +174,32 @@ git status --porcelain before == after       byte-identical: yes
 
 No ADR doc file is promoted (the rolled-back promotions leave no doc).
 
+### Fact 5 — unrelated main-checkout WIP survives a SUCCESSFUL combine ([`evidence/wip-survives-success.log`](evidence/wip-survives-success.log))
+
+The success-path twin of Fact 4 — and the fact the stale pin **failed**. With default
+`squash: true` and two **disjoint**-code sub-agents (so the combine succeeds), unrelated unstaged
+tracked WIP is seeded in the main checkout before the finalize:
+`README.md = hello\nUNRELATED WIP THE USER IS EDITING\n`. `jigc milestone finalize cache-rework`:
+`FINALIZE_EXIT=0`, HEAD **delta +1** (one aggregate). The unrelated WIP survives
+**byte-identically** — the `dec61c7` fix lands the combine via `git merge --ff-only`, which carries
+the unstaged WIP across the fast-forward instead of the prior `git reset --hard` that discarded it:
+
+```
+README.md = [hello|UNRELATED WIP THE USER IS EDITING]   byte-identical before == after: yes
+```
+
+The WIP stays **out** of the aggregate commit — `git show --name-only HEAD` is exactly the two
+sub-agents' code + the merged docs (`src/low.rs`, `src/zed.rs`, `docs/decisions/{low,zed}-policy.md`,
+`.jigc/.gitignore`), no `README.md`. (Re-run against the **stale** `cb0fb59b…` pin, this same arm
+gave `FINALIZE_EXIT=0` but `README.md` wiped back to `hello\n` — the data loss `dec61c7` fixes.)
+
 ## Bounds (carried in honestly)
 
-- **n = 4 arms** over hand-built fixtures — a done-bar shape check, not a distribution. The hook
-  restoration, the honest rework, the cross-worktree block, and WIP-safety are binary-proven by
-  `milestone.rs` + `flow33_acceptance.rs` against this same binary's source; this artifact is the
-  *observed-on-the-installed-binary* shadow.
+- **n = 5 arms** over hand-built fixtures — a done-bar shape check, not a distribution. The hook
+  restoration, the honest rework, the cross-worktree block, and WIP-safety on **both** the blocked
+  and the successful path are binary-proven by `milestone.rs` + `flow33_acceptance.rs`
+  (incl. `flow33_unrelated_wip_survives_successful_combine`) against this same binary's source; this
+  artifact is the *observed-on-the-installed-binary* shadow.
 - **Owner-artifact recording**, not a CLI-emitted metric — the recorded-alongside posture. Only
   the finalize exit / landed commit count / committed trees / promotion is the binary's own
   yes/no; the hook-relay count + WIP-survival reading is the owner's inspection of the emitted
@@ -188,14 +216,16 @@ No ADR doc file is promoted (the rolled-back promotions leave no doc).
 ## Verdict — done-bar met
 
 The milestone fan-out finalize fires the user's `pre-commit`/`commit-msg` hooks on **both** commit
-paths while WIP-safety holds — **measured on the actually-pinned, `cargo install`-built binary**
-(`jigc` `cb0fb59b…`, `doc-code` `530dd89…`, both identical across `~/.local/bin` + `~/.cargo/bin`
-and matching a fresh build at HEAD), resolving the probe through the **production sibling path**
-with **no env overrides**. (1) A **squash:true** combine fires the user's hook on the single
-aggregate (relayed exactly once) and carries both sub-agents' code + the merged docs; (2) a
-**squash:false** fan-out lays **N+1** commits — each per-sub-task commit carrying **its own
-worktree's code** (a real tree, not an empty one) and relaying its hook, with the merged docs in
-the parent aggregate; (3) a cross-worktree same-file collision **blocks** up front (exit 1, HEAD
-unchanged, nothing promoted), naming the contended path; and (4) unrelated main-checkout WIP
-**survives a blocked combine byte-identically**. **One hook story, both paths, WIP-safe. The M31
-done-bar is met.**
+paths while WIP-safety holds — **measured on the actually-pinned, `cargo install`-built binary at
+`dec61c7`** (`jigc` `c9e7eb72…`, `doc-code` `530dd89…`, both identical across `~/.local/bin` +
+`~/.cargo/bin` and the `target/release` the install co-produced), resolving the probe through the
+**production sibling path** with **no env overrides**. (1) A **squash:true** combine fires the
+user's hook on the single aggregate (relayed exactly once) and carries both sub-agents' code + the
+merged docs; (2) a **squash:false** fan-out lays **N+1** commits — each per-sub-task commit carrying
+**its own worktree's code** (a real tree, not an empty one) and relaying its hook, with the merged
+docs in the parent aggregate; (3) a cross-worktree same-file collision **blocks** up front (exit 1,
+HEAD unchanged, nothing promoted), naming the contended path; (4) unrelated main-checkout WIP
+**survives a blocked combine byte-identically**; and (5) unrelated main-checkout WIP **survives a
+SUCCESSFUL combine byte-identically** (the regression the stale `cb0fb59b…` pin failed — the
+`git reset --hard` data loss `dec61c7` replaces with an ff-only merge). **One hook story, both
+paths, WIP-safe on the actually-pinned binary. The M31 done-bar is met.**

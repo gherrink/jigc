@@ -1,6 +1,6 @@
 ==================================================================
 ### ARM: squash-false (N per-sub-task code commits + parent aggregate; hook relayed each)
-repo: /tmp/jigc-m31-sqfalse-bWIAxI   HEAD-before-commits: 1   (finalize.fan-out.squash: false override)
+repo: /tmp/jigc-m31-sqfalse-ZNguRj   HEAD-before-commits: 1   (finalize.fan-out.squash: false override)
 --- jigc milestone finalize cache-rework ---
 --- hook output ---
 NON-BLOCKING-MILESTONE-HOOK-WARNING

@@ -1,6 +1,6 @@
 ==================================================================
 ### ARM: squash-true-hooks (the squash:true combine runs the user's pre-commit hook)
-repo: /tmp/jigc-m31-sqtrue-gKOxOs   HEAD-before-commits: 1   (default squash:true — no override)
+repo: /tmp/jigc-m31-sqtrue-d7G0yx   HEAD-before-commits: 1   (default squash:true — no override)
 --- jigc milestone finalize cache-rework ---
 --- hook output ---
 NON-BLOCKING-MILESTONE-HOOK-WARNING
