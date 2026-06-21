@@ -1,0 +1,82 @@
+{
+ "S01": {
+  "task": "task1",
+  "arm": "gsd",
+  "model": "claude-opus-4-8"
+ },
+ "S02": {
+  "task": "task2",
+  "arm": "static",
+  "model": "claude-opus-4-8"
+ },
+ "S03": {
+  "task": "task1",
+  "arm": "static",
+  "model": "claude-sonnet-4-6"
+ },
+ "S04": {
+  "task": "task2",
+  "arm": "jigc",
+  "model": "claude-sonnet-4-6"
+ },
+ "S05": {
+  "task": "task1",
+  "arm": "jigc",
+  "model": "claude-opus-4-8"
+ },
+ "S06": {
+  "task": "task1",
+  "arm": "plain",
+  "model": "claude-sonnet-4-6"
+ },
+ "S07": {
+  "task": "task2",
+  "arm": "plain",
+  "model": "claude-opus-4-8"
+ },
+ "S08": {
+  "task": "task1",
+  "arm": "static",
+  "model": "claude-opus-4-8"
+ },
+ "S09": {
+  "task": "task2",
+  "arm": "gsd",
+  "model": "claude-sonnet-4-6"
+ },
+ "S10": {
+  "task": "task1",
+  "arm": "jigc",
+  "model": "claude-sonnet-4-6"
+ },
+ "S11": {
+  "task": "task2",
+  "arm": "jigc",
+  "model": "claude-opus-4-8"
+ },
+ "S12": {
+  "task": "task1",
+  "arm": "plain",
+  "model": "claude-opus-4-8"
+ },
+ "S13": {
+  "task": "task2",
+  "arm": "plain",
+  "model": "claude-sonnet-4-6"
+ },
+ "S14": {
+  "task": "task1",
+  "arm": "gsd",
+  "model": "claude-sonnet-4-6"
+ },
+ "S15": {
+  "task": "task2",
+  "arm": "static",
+  "model": "claude-sonnet-4-6"
+ },
+ "S16": {
+  "task": "task2",
+  "arm": "gsd",
+  "model": "claude-opus-4-8"
+ }
+}

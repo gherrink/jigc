@@ -1,0 +1,11 @@
+FROM pilot-toolchain
+COPY clones/jigc /work
+COPY docker/bin/jigc /usr/local/bin/jigc
+COPY docker/bin/doc-code /usr/local/bin/doc-code
+RUN git config --global user.email "pilot@example.com" \
+ && git config --global user.name "Pilot Runner" \
+ && git config --global --add safe.directory /work
+RUN pnpm install --frozen-lockfile --ignore-scripts || pnpm install --no-frozen-lockfile --ignore-scripts
+RUN mkdir -p /home/node/.claude && printf "[user]\n\temail = pilot@example.com\n\tname = Pilot Runner\n[safe]\n\tdirectory = /work\n" > /home/node/.gitconfig && chown -R node:node /work /home/node
+USER node
+ENV HOME=/home/node

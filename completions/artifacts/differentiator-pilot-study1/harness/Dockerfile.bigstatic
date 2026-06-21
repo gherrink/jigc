@@ -1,0 +1,3 @@
+FROM pilot-deps
+COPY --chown=node:node docker/bigstatic-methodology-CLAUDE.md /work/CLAUDE.md
+RUN cd /work && git add CLAUDE.md && git commit -q -m "docs: add project working agreement"

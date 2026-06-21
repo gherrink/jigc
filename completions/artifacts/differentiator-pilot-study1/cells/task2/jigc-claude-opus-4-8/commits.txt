@@ -1,0 +1,2 @@
+102c065 docs(arch-doc): reflect MarkdownDescriptionParser rename to MarkdownDocParser in core public API doc
+73b8be6 refactor(core): rename public class MarkdownDescriptionParser to MarkdownDocParser

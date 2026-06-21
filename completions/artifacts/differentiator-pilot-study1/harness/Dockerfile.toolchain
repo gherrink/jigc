@@ -1,0 +1,8 @@
+FROM node:20-trixie-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ripgrep ca-certificates ssh-client \
+    && rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@9.1.0 --activate
+ENV HOME=/root
+WORKDIR /work
+# claude binary mounted to /usr/local/bin/claude at runtime; creds to /root/.claude/.credentials.json

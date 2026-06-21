@@ -25,8 +25,13 @@ independently.
 The damage mode is **migration labor, not silent breakage** — drift is detected
 and *blocked*, never silently corrupted. And the value question that would justify
 paying any lock-in cost (does jigc beat a static `CLAUDE.md` when the
-differentiators are engaged?) is **still unproven** — M17 tied and *relocated* the
-thesis to untested.
+differentiators are engaged?) is **not cleared** — the reversible value-gate pilot
+ran (2026-06-21, doc↔code engaged) and jigc **did not beat static**: it tied the
+unguided baselines (plain, GSD) and lost to a static-methodology `CLAUDE.md`
+(4/4 clean) — even when that rule was diluted into a realistic 157-line file. Not a
+clean refutation (one small task; jigc's case narrows to the *long-horizon
+many-edit* regime), but the gate is **unproven, leaning negative**. Full result:
+[completions/artifacts/differentiator-pilot-study1/VERDICT.md](completions/artifacts/differentiator-pilot-study1/VERDICT.md).
 
 ## Per-surface verdict
 
@@ -47,13 +52,24 @@ thesis to untested.
 
 So the failure mode of going productive too early is *expensive manual migration on the next schema change*, not *data loss*.
 
-## The de-risking path (productive signal now, without the lock-in)
+## The de-risking path (productive signal now, without the lock-in) — DONE
 
 The M17 protocol already does this by design: test on a **twin** of a real project
 + a fitting domain pack + differentiator-engaging tasks, with records **exported as
 plain files** — the productive project and jigc's own repo stay unmanaged. This
 yields the real signal (does jigc beat a static `CLAUDE.md` when the differentiators
-are engaged — the M17-relocated, still-untested hypothesis) **reversibly**.
+are engaged — the M17-relocated hypothesis) **reversibly**.
+
+**Executed 2026-06-21** ([study 1](completions/artifacts/differentiator-pilot-study1/)):
+a 4-arm (jigc / GSD / static-methodology / plain) × 2-model × 2-task matrix on
+isolated container twins of `gherrink-ui-doc @ 542b3206`, doc↔code engaged via the
+shipped `arch-doc` doctype, blind-judged. **Result: jigc did not beat static** —
+jigc 2/4 clean, tied plain (2/4) and GSD (dormant, 2/4), and **lost to the
+static-methodology arm (4/4)**, which held even when the rule was diluted into a
+realistic 157-line `CLAUDE.md` (arm E, 4/4). Three diagnosed jigc failure modes:
+the weaker model **bypassed the adapter**; the anchor check has a **prose blind
+spot**; on bypass jigc adds only **friction** (blocks a correct out-of-band edit).
+Reversible as designed — zero corpus lock-in.
 
 ## Recommendation — the gates before the irreversible step
 
@@ -68,10 +84,20 @@ Do **not** commit a productive corpus (or self-host this repo) yet. Three gates:
   migration). A per-doc schema-version stamp + an `upgrade`-class transform that
   takes a v1 managed corpus to a v2 schema (the explicitly-deferred "v1 in-place
   migration"). Until this is built, every schema change is hand-priced.
-- **Value gate** (M17 already named it) — a differentiator-engaging pilot showing
-  jigc **>** static, not **≈** static. Lock-in is only worth paying for a proven win.
+- **Value gate** (M17 named it; **study 1 ran 2026-06-21 — not cleared**) — a
+  differentiator-engaging pilot showing jigc **>** static, not **≈** static. Study 1
+  found jigc **≈** plain/GSD **<** static, so the gate is **unproven, leaning
+  negative**. It is not refuted (one small task; dilution didn't hurt static even at
+  realistic file size), but jigc's case has **narrowed to the long-horizon many-edit
+  regime** — the one test that could still flip it. That is the **owed next study**
+  before this gate can be called either way. Two fixable jigc weaknesses surfaced
+  (make the warn-only pre-commit hook *blocking*; close the doc prose blind spot) —
+  see [LESSONS.md](completions/artifacts/differentiator-pilot-study1/LESSONS.md).
 
-**Net:** point a *twin* at it now (reversible, high-information); point a *productive
-corpus* at it after **M33 + M34 + the value gate**. The placeholder **name** is a
-separate, deferrable cleanup (a 100%-surface rename) — settle it before any adopter
-builds muscle memory, but it does not gate the twin pilot.
+**Net:** the twin pilot is **done and reversible** — it spent no lock-in and
+returned a *negative-leaning* value signal. Point a *productive corpus* at jigc only
+after **M33 + M34 + a value gate that actually clears** (the long-horizon study, plus
+the two product fixes, are the path to clearing it — or to honestly concluding a
+well-maintained static file suffices). The placeholder **name** is a separate,
+deferrable cleanup (a 100%-surface rename) — settle it before any adopter builds
+muscle memory, but it does not gate the pilots.

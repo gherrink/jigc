@@ -1,0 +1,3 @@
+blocking · doc-code.symbol-exists — anchor `packages/core/src/CommentBlockParser.ts#CommentBlockParser` resolves to no file (`packages/core/src/CommentBlockParser.ts` is absent from the working tree)
+1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.

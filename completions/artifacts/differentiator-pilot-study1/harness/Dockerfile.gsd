@@ -1,0 +1,3 @@
+FROM pilot-deps
+ENV CI=1 GSD_PORTABLE_HOOKS=1
+RUN npx --yes @opengsd/gsd-core@latest --claude --global --portable-hooks --profile=full < /dev/null 2>&1 | tail -20

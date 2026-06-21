@@ -1,0 +1,655 @@
+===== SAMPLE S01 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentTagParser
+The default CommentTagParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentTagParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentTagParser = new CommentTagParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentTagParser  {#commenttagparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S02 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDocParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDocParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDocParser  {#markdowndocparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDocParser.ts#MarkdownDocParser
+
+
+===== SAMPLE S03 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentTagParser
+The default CommentTagParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentTagParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentTagParser = new CommentTagParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentTagParser  {#commenttagparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S04 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDocParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDocParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDocParser  {#markdowndocparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDocParser.ts#MarkdownDocParser
+
+
+===== SAMPLE S05 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentTagParser
+The default CommentTagParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentTagParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentTagParser = new CommentTagParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S06 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentBlockParser
+The default CommentBlockParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentBlockParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S07 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDocParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDocParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDocParser  {#markdowndocparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDocParser.ts#MarkdownDocParser
+
+
+===== SAMPLE S08 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentTagParser
+The default CommentTagParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentTagParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentTagParser = new CommentTagParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentTagParser  {#commenttagparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S09 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S10 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentBlockParser
+The default CommentBlockParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentBlockParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S11 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDocParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDocParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDocParser  {#markdowndocparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDocParser.ts#MarkdownDocParser
+
+
+===== SAMPLE S12 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentTagParser
+The default CommentTagParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentTagParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentTagParser = new CommentTagParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentTagParser  {#commenttagparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S13 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S14 =====
+TASK: rename class `CommentBlockParser` -> `CommentTagParser`
+CODE: declaration of `CommentTagParser` present in diff: True
+README.md lines mentioning either symbol:
+## CommentBlockParser
+The default CommentBlockParser extracts comment blocks from the source using comment tags to create the context.
+Per default the `CommentBlockParser` will use the `MarkdownDescriptionParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDescriptionParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDescriptionParser  {#markdowndescriptionparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser
+
+
+===== SAMPLE S15 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDocParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDocParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDocParser  {#markdowndocparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDocParser.ts#MarkdownDocParser
+
+
+===== SAMPLE S16 =====
+TASK: rename class `MarkdownDescriptionParser` -> `MarkdownDocParser`
+CODE: declaration of `MarkdownDocParser` present in diff: True
+README.md lines mentioning either symbol:
+Per default the `CommentBlockParser` will use the `MarkdownDocParser` to parse descriptions from markdown into HTML.
+const commentBlockParser = new CommentBlockParser(new MarkdownDocParser())
+--- docs/architecture/core-public-api.md (full) ---
+---
+---
+
+# Core Public API
+
+## Overview
+
+The public entry points of @ui-doc/core: the documentation engine and the parsers that turn source comments into a documentation context.
+
+## Components
+
+### UIDoc  {#uidoc}
+
+The main documentation engine: ingests sources and emits the rendered documentation.
+
+<!-- fields -->
+- implemented-by: packages/core/src/UIDoc.ts#UIDoc
+
+### CommentBlockParser  {#commentblockparser}
+
+The default block parser: extracts comment blocks from source and builds the context via tag transformers.
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentBlockParser.ts#CommentBlockParser
+
+### MarkdownDocParser  {#markdowndocparser}
+
+Parses block descriptions from Markdown into HTML.
+
+<!-- fields -->
+- implemented-by: packages/core/src/MarkdownDocParser.ts#MarkdownDocParser
+

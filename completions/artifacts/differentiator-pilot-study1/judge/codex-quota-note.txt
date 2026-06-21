@@ -1,0 +1,1 @@
+codex cross-model judge: QUOTA EXCEEDED at run time ('Check your plan and billing details') — recorded limitation; re-run when quota resets.

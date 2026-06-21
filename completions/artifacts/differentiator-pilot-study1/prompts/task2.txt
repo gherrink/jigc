@@ -1,0 +1,1 @@
+Rename the public class `MarkdownDescriptionParser` to `MarkdownDocParser` throughout this project.
