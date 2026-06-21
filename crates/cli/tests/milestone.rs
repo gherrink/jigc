@@ -1103,23 +1103,34 @@ fn install_aggregate_rejecting_hook(repo: &Path) {
 }
 
 #[test]
-fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head() {
-    // The `squash: false` boundary must be all-or-nothing: the N per-sub-task commits
-    // advance HEAD BEFORE the parent aggregate lands. If the aggregate commit fails
-    // (here: a `pre-commit` hook rejects the staged ADRs), HEAD must reset to the
-    // pre-finalize sha — no orphaned sub-task commits, clean tree, as-if-finalize-was-
-    // never-called (`CLAUDE.md`: "Writes are transactional"; `finalize.md` rollback
-    // discipline). RED before the fix (HEAD left advanced by N), GREEN after.
+fn milestone_finalize_squash_false_aggregate_failure_is_wip_safe_and_resets_to_pre_finalize_head() {
+    // The `squash: false` boundary must be all-or-nothing AND WIP-safe (review S2; the M30/M31
+    // data-loss class). The N per-sub-task commits + the parent aggregate are built away from
+    // the live main checkout (a dedicated worktree), so on ANY abort — here a `pre-commit` hook
+    // rejecting the staged ADRs — main is NEVER touched: HEAD stays at the pre-finalize sha (no
+    // orphaned sub-task commits) AND a human's unrelated unstaged tracked edit SURVIVES
+    // byte-for-byte. The old path `git reset --hard`ed the live checkout, silently reverting
+    // that edit (the data loss this retires). RED before the fix (the WIP edit is destroyed),
+    // GREEN after (`CLAUDE.md`: "Writes are transactional"; `finalize.md` rollback discipline;
+    // `combine.rs::wip_survives_a_blocked_combine` is the squash:true sibling).
     let repo = TempDir::new("finalize-squash-false-reset");
     init_repo(repo.path());
     let home = TempDir::new("home");
 
     install_aggregate_rejecting_hook(repo.path());
 
-    // Set up the milestone + two sub-tasks + staged docs, then capture the pre-finalize
-    // HEAD + status JUST before the `finalize` call — the "as-if-never-called" baseline
-    // (the staged `.jigc/` working area is part of this baseline, left intact on failure).
+    // Set up the milestone + two sub-tasks + staged docs.
     setup_squash_false(repo.path(), home.path(), &["Area zed", "Area low"]);
+
+    // Seed an UNRELATED unstaged edit to a TRACKED file (`README.md`, committed by
+    // `init_repo`) — the human WIP a `git reset --hard` of the live checkout would silently
+    // destroy. Captured AFTER setup, so it is part of the pre-finalize baseline.
+    const WIP: &str = "LOCAL WIP — do not lose me\n";
+    fs::write(repo.path().join("README.md"), WIP).expect("seed unrelated tracked WIP");
+
+    // Capture the pre-finalize HEAD + status JUST before the `finalize` call — the
+    // "as-if-never-called" baseline (the staged `.jigc/` working area + the unrelated WIP
+    // are part of this baseline, left intact on failure).
     let (before_head, before_status) = git_state(repo.path());
     let before_count = rev_list_count(repo.path());
 
@@ -1132,7 +1143,16 @@ fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head
         String::from_utf8_lossy(&finalized.stdout),
     );
 
-    // HEAD is back at the pre-finalize sha — the N sub-task commits were rolled back,
+    // The headline: the unrelated tracked WIP SURVIVED the abort byte-for-byte — the abort
+    // never reset --hard the live checkout (the data-loss class is retired).
+    assert_eq!(
+        fs::read_to_string(repo.path().join("README.md")).expect("read README"),
+        WIP,
+        "on a squash:false abort, unrelated unstaged tracked WIP in the main checkout must SURVIVE \
+         (the abort must never `git reset --hard` the live checkout)",
+    );
+
+    // HEAD is back at the pre-finalize sha — the N sub-task commits never landed on main,
     // not left orphaned on HEAD.
     let (after_head, after_status) = git_state(repo.path());
     assert_eq!(
@@ -1145,10 +1165,10 @@ fn milestone_finalize_squash_false_aggregate_failure_resets_to_pre_finalize_head
         "on aggregate failure the commit count must be unchanged (the N sub-task commits are gone)",
     );
 
-    // The working tree is restored to the pre-finalize state — no dangling staging from
-    // the sub-task commits and no leftover promoted ADR from the failed aggregate. The
-    // staged `.jigc/` working area is left intact (the executor's "working area intact on
-    // failure" guarantee), so the status matches the pre-finalize baseline byte-for-byte.
+    // The working tree matches the pre-finalize state — no dangling staging from the
+    // sub-task commits and no leftover promoted ADR from the failed aggregate, and the
+    // unrelated WIP still shows as a modification. The status matches the pre-finalize
+    // baseline byte-for-byte.
     assert_eq!(
         after_status, before_status,
         "on aggregate failure the working tree must match the pre-finalize state (as-if-finalize-was-never-called)",

@@ -1087,21 +1087,19 @@ impl TaskArea {
 /// Dirty-tree policy, revised M30; `DECISIONS.md` 2026-06-20 M30 planning, G1). The
 /// per-task path narrows to the agent's own index; the migration path keeps its proven
 /// fixed-pathspec stage; the `squash: true` milestone boundary folds the isolated
-/// worktrees' code off-line ([`StagePolicy::Combine`]). The `squash: false` boundary
-/// commits each sub-task's code per-sub-task (in [`crate::milestone`]) and then promotes
-/// the merged docs through `IndexHonoring` over the now-clean index (M31 Inc 5 — the old
-/// whole-tree `Sweep` is retired: under worktree isolation it dropped every line of
+/// worktrees' code off-line ([`StagePolicy::Combine`]). The `squash: false` boundary builds
+/// its N+1 commit chain (one per sub-task carrying its own code, then the merged-docs
+/// aggregate) in a dedicated worktree and fast-forwards main ([`StagePolicy::ChainPerSubtask`])
+/// — WIP-safe like the `squash: true` path, never `git reset --hard`ing the live checkout (the
+/// old whole-tree `Sweep` is retired: under worktree isolation it dropped every line of
 /// sub-agent code, the data-loss the redesign fixes).
 pub(crate) enum StagePolicy {
     /// Migration finalize — stage exactly its own paths ([`stage_migration`]): the
     /// promoted canonical doc(s), each retired original's deletion, and the config layer.
     MigrationFixed,
-    /// Per-task non-migration finalize (M30) **and** the `squash: false` milestone
-    /// aggregate (M31 Inc 5) — honor the agent's existing index, adding only jigc's
-    /// promoted-doc destinations + the first-commit config layer
-    /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted. The
-    /// `squash: false` aggregate runs over the clean index the per-sub-task code commits
-    /// left, so it stages just the merged docs + config.
+    /// Per-task non-migration finalize (M30) — honor the agent's existing index, adding
+    /// only jigc's promoted-doc destinations + the first-commit config layer
+    /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted.
     IndexHonoring,
     /// The `squash: true` fan-out boundary (M31 Inc 4) — the id-ordered list of the
     /// milestone's still-provisioned worktree paths. The sub-agent code lives in those
@@ -1112,6 +1110,19 @@ pub(crate) enum StagePolicy {
     /// docs-only / never-provisioned milestone) degrades to a docs-only commit, byte-identical
     /// to the M7 single-aggregate form.
     Combine(Vec<PathBuf>),
+    /// The `squash: false` fan-out boundary (M31 — WIP-safe rework). The id-ordered
+    /// `(staged-patch, rendered-commit-message)` pairs for the code-carrying sub-tasks, plus
+    /// the output [`Format`] for the per-commit hook relay. [`chain_commit`] builds the whole
+    /// N+1 commit chain (one commit per sub-task carrying THAT sub-task's code with the user's
+    /// hooks running + relayed, then the merged-docs aggregate) in a **dedicated worktree**,
+    /// then fast-forwards main — the live checkout is never the commit site and is never `git
+    /// reset --hard`ed, so an abort (a hook rejection) leaves unrelated main-checkout WIP
+    /// intact (review S2; the squash:true [`Combine`](StagePolicy::Combine) WIP-safety, mirrored
+    /// onto the honest-rework path). An empty list degrades to a docs-only aggregate.
+    ChainPerSubtask {
+        subtasks: Vec<(Vec<u8>, String)>,
+        format: Format,
+    },
 }
 
 /// Execute a [`FinalizePlan`]'s commit phases 4–7 (`design/finalize.md` → 4. Promote /
@@ -1187,10 +1198,10 @@ pub(crate) fn execute_finalize_plan(
 /// (empty when no hook spoke) — threaded up so the success-relay sites (per-task T2,
 /// milestone T3) can surface it to the agent (`design/finalize.md` → 6. Commit). The
 /// outer `Result` carries only setup I/O errors (writing the message temp file). The
-/// `squash: false` milestone boundary calls this directly so it can detect the aggregate
-/// failure and undo the per-sub-task commits it laid down ahead of the aggregate
-/// (`git_reset_hard`); the `Ok(Err(_))` carries the original error so the caller can
-/// still surface it.
+/// `squash: false` milestone boundary calls this directly with [`StagePolicy::ChainPerSubtask`]
+/// — [`chain_commit`] builds the whole N+1 chain in a dedicated worktree and fast-forwards main,
+/// so an aborted chain commits nothing to the live checkout (no `git reset --hard`) and the
+/// `Ok(Err(_))` carries the original error so the caller can still surface it.
 ///
 /// `post_sweep` is the per-task preflight's post-sweep file-state record — persisted
 /// by post-commit **only when the commit lands**, so an absorbed OOB baseline advances
@@ -1198,10 +1209,11 @@ pub(crate) fn execute_finalize_plan(
 /// baseline). The milestone callers run no sweep and pass `None`.
 ///
 /// `stage` selects the stage step (M30 G1 — [`StagePolicy`]): a migration stages only its
-/// own fixed paths ([`stage_migration`]); a per-task non-migration finalize **and** the
-/// `squash: false` milestone aggregate honor the agent's existing index
-/// ([`stage_index_honoring`]); the `squash: true` milestone boundary folds the isolated
-/// worktrees off-line ([`combine_commit`]).
+/// own fixed paths ([`stage_migration`]); a per-task non-migration finalize honors the
+/// agent's existing index ([`stage_index_honoring`]); the `squash: true` milestone boundary
+/// folds the isolated worktrees off-line ([`combine_commit`]); the `squash: false` boundary
+/// builds its N+1 commit chain in a dedicated worktree and fast-forwards main
+/// ([`chain_commit`]).
 // The shared executor threads many distinct, independent facts (repo/jigc/tmp/cleanup
 // roots, the plan, schemas, the post-sweep record, the stage policy); each is a real
 // input, not incidental coupling, so an allow is clearer here than a parameter struct.
@@ -1263,6 +1275,16 @@ pub(crate) fn try_execute_finalize_plan(
             // worktrees, not this checkout, so a sweep would drop it).
             StagePolicy::Combine(worktrees) => {
                 combine_commit(repo_root, &worktrees, plan, &msg_path)
+            }
+            // The `squash: false` honest-rework boundary (M31 — WIP-safe): build the N+1
+            // commit chain in a dedicated worktree (one commit per sub-task carrying its own
+            // code with hooks running + relayed, then the merged-docs aggregate) and
+            // fast-forward main — never touching the live checkout, so an abort leaves
+            // unrelated WIP intact (no `git reset --hard`). Returns the aggregate's hook
+            // output (the success-relay site surfaces it; the per-sub-task outputs are relayed
+            // inside).
+            StagePolicy::ChainPerSubtask { subtasks, format } => {
+                chain_commit(repo_root, &subtasks, plan, &msg_path, format)
             }
         }
     })();
@@ -1508,6 +1530,17 @@ fn rollback_promotions(
         // (new) doc has no HEAD content, so remove the copy outright.
         if !path_at_head(repo_root, &promotion.destination) {
             let _ = std::fs::remove_file(&dest);
+            // Sweep up any now-empty parent dirs `promote`'s `create_dir_all` opened (e.g.
+            // an untracked `docs/decisions/`), up to — but never including — repo_root, so the
+            // rollback leaves no empty scratch dir behind ("as-if-finalize-was-never-called").
+            // `remove_dir` only succeeds on an EMPTY dir, so a dir holding other ADRs survives.
+            let mut parent = dest.parent();
+            while let Some(dir) = parent {
+                if dir == repo_root || std::fs::remove_dir(dir).is_err() {
+                    break;
+                }
+                parent = dir.parent();
+            }
         }
     }
     for retirement in retirements {
@@ -1843,15 +1876,6 @@ pub(crate) fn git_head(repo_root: &Path) -> Result<String> {
     git_capture(repo_root, &["rev-parse", "HEAD"])
 }
 
-/// `git reset --hard <sha>` in `repo_root` — restore HEAD, the index, and the working
-/// tree to `sha`. The `squash: false` milestone boundary uses this to undo the N
-/// per-sub-task commits (and any staging) when the parent aggregate fails, returning
-/// the repo to as-if-finalize-was-never-called (`design/finalize.md` → Rollback
-/// discipline; `CLAUDE.md` "Writes are transactional").
-pub(crate) fn git_reset_hard(repo_root: &Path, sha: &str) -> Result<()> {
-    git_run(repo_root, &["reset", "--hard", sha])
-}
-
 /// Run `git <args>` in `repo_root` for its side effect (e.g. `add`), bailing with
 /// git's stderr on a non-zero exit. Shells out to the user's `git`.
 fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
@@ -1903,43 +1927,13 @@ fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
     Ok(stderr.trim_end().to_owned())
 }
 
-/// Commit one sub-task's worktree-attributed code in the `squash: false` **honest-rework**
-/// fan-out finalize mode (M31 Inc 5; `design/finalize.md` → `fan-out` finalize: "one commit
-/// per sub-task in task-id order"). `patch` is the worktree's `git diff --cached --binary`;
-/// [`git_apply_index`] applies it onto the **main checkout's** index + working tree, then
-/// `message` (the sub-task's rendered `commit:<sub-id>` doc) is written to a temp file under
-/// `msg_tmp_dir` (the gitignored milestone area) and committed via the shared [`git_commit`]
-/// (`git commit -F`) so the per-sub-task commit carries **that** sub-task's code — a real
-/// tree, never the retired tree-empty `--allow-empty` form. The cross-worktree collision
-/// block runs up front (the caller), so the disjoint patches apply cleanly in sequence.
-///
-/// As with [`git_commit`], **never** `--no-verify`: the user's `pre-commit`/`commit-msg`
-/// hooks run and the captured non-blocking hook stream is returned so the caller relays it.
-/// A hook/git rejection surfaces git's stderr verbatim and lands no commit (the caller
-/// `git reset --hard`s back to the pre-finalize HEAD, undoing any earlier per-sub-task
-/// commits — the boundary stays all-or-nothing).
-pub(crate) fn commit_subtask_code(
-    repo_root: &Path,
-    msg_tmp_dir: &Path,
-    patch: &[u8],
-    message: &str,
-) -> Result<String> {
-    git_apply_index(repo_root, patch)?;
-    let msg_path = msg_tmp_dir.join("finalize-subtask-message.tmp");
-    std::fs::write(&msg_path, message)
-        .with_context(|| format!("could not write the sub-task commit message to {msg_path:?}"))?;
-    let result = git_commit(repo_root, &msg_path);
-    let _ = std::fs::remove_file(&msg_path);
-    result
-}
-
-/// Apply a worktree's staged `patch` (`git diff --cached --binary`) onto the **main
-/// checkout's** index **and** working tree — `git apply --index --whitespace=nowarn`,
-/// feeding the patch on stdin (the `squash: false` honest-rework, M31 Inc 5). `--index`
-/// updates both so the working tree stays consistent with the commit that follows (a
-/// `--cached`/index-only apply would leave the code missing from the tree, dirtying the
-/// checkout); `--binary` produced the patch so binary blobs apply. A disjoint patch (the
-/// up-front collision block guarantees disjointness) applies cleanly atop the prior
+/// Apply a worktree's staged `patch` (`git diff --cached --binary`) onto `repo_root`'s index
+/// **and** working tree — `git apply --index --whitespace=nowarn`, feeding the patch on stdin
+/// (the `squash: false` honest-rework, M31; [`chain_commit`] runs it in the dedicated worktree,
+/// never the live checkout). `--index` updates both so the working tree stays consistent with
+/// the commit that follows (a `--cached`/index-only apply would leave the code missing from the
+/// tree, dirtying the checkout); `--binary` produced the patch so binary blobs apply. A disjoint
+/// patch (the up-front collision block guarantees disjointness) applies cleanly atop the prior
 /// per-sub-task commits. Bails with git's stderr on a non-zero exit.
 fn git_apply_index(repo_root: &Path, patch: &[u8]) -> Result<()> {
     let mut child = Command::new("git")
@@ -2004,12 +1998,44 @@ fn combine_commit(
         crate::combine::CombineOutcome::Combined(tree) => tree,
         crate::combine::CombineOutcome::Blocked(finding) => return Err(finding_to_err(finding)),
     };
-    // Overlay the promoted docs + the git-tracked config layer onto the combined code tree
-    // in a throwaway index (the live index is never touched). The promote step already
-    // copied each doc into this checkout's working tree, so a targeted `git add` stages
-    // exactly jigc's own contributions — never the ambient dirty tree.
+    // Overlay the promoted docs + config onto the combined code tree and commit it (with the
+    // user's hooks) as a child of HEAD, then fast-forward main — the shared WIP-safe aggregate.
+    let head = git_head(repo_root)?;
+    overlay_docs_commit_and_ff(repo_root, &code_tree, &head, plan, msg_path)
+}
+
+/// Build the merged-docs aggregate commit **off the live checkout** and fast-forward main —
+/// the WIP-safe commit-and-land both fan-out modes share (the `squash: true`
+/// [`combine_commit`] and the `squash: false` [`chain_commit`]).
+///
+/// Overlay the promoted docs + the git-tracked config layer onto `base_treeish` in a throwaway
+/// index (`GIT_INDEX_FILE` — the live index is never touched; the promote step already copied
+/// each doc into this checkout's working tree, so a targeted `git add` stages exactly jigc's
+/// own contributions, never the ambient dirty tree), write the tree, then commit it as a child
+/// of `parent` with the user's hooks running from a clean **dedicated worktree**
+/// ([`commit_combined_tree_with_hooks`] — the main checkout is never the commit site).
+///
+/// Land it on main with a **non-destructive** fast-forward, NOT `git reset --hard` (the M30
+/// hazard the redesign rejects — a `reset --hard` resets the live working tree to the commit,
+/// silently wiping any unrelated unstaged WIP a human is editing; `design/finalize.md` →
+/// `fan-out` finalize, `design/worked-examples.md` flow 33). First stage jigc's own
+/// contributions (the promoted docs + first-commit config, already in the working tree from
+/// `promote`) into the LIVE index — the same `pathspecs` overlaid above — so the fast-forward
+/// sees them as matching the target, not as untracked/dirty paths it would refuse to overwrite;
+/// then `git merge --ff-only` advances the ref + brings the fan-out code into the checkout while
+/// CARRYING unrelated WIP. If WIP genuinely collides with a committed path, `--ff-only` refuses
+/// (surfaced as an `Err` → rollback) rather than silently discarding it — the contract is
+/// carry-or-refuse, never destroy (review S2). Returns the dedicated-worktree commit's captured
+/// non-blocking hook stream (empty when no hook spoke) for the caller's success-relay.
+fn overlay_docs_commit_and_ff(
+    repo_root: &Path,
+    base_treeish: &str,
+    parent: &str,
+    plan: &engine::finalize::FinalizePlan,
+    msg_path: &Path,
+) -> Result<String> {
     let index = CombineIndex::new();
-    git_index(repo_root, index.path(), &["read-tree", &code_tree])?;
+    git_index(repo_root, index.path(), &["read-tree", base_treeish])?;
     let mut pathspecs: Vec<String> = plan
         .promotions
         .iter()
@@ -2025,21 +2051,8 @@ fn combine_commit(
         git_index(repo_root, index.path(), &args)?;
     }
     let tree = git_index(repo_root, index.path(), &["write-tree"])?;
-    // Commit the combined tree as a child of HEAD with the user's hooks running, from a clean
-    // dedicated worktree (WIP-safe — the main checkout is never the commit site), then land it
-    // on main with a **non-destructive** fast-forward. NOT `git reset --hard` (the M30 hazard
-    // the redesign rejects — it resets the live working tree to the commit, silently wiping any
-    // unrelated unstaged WIP a human is editing in the main checkout; `design/finalize.md` →
-    // `fan-out` finalize, `design/worked-examples.md` flow 33). Instead stage jigc's own
-    // contributions (the promoted docs + first-commit config, already copied into the working
-    // tree by `promote`) into the LIVE index — the same `pathspecs` folded above — so the
-    // fast-forward sees them as matching the target, not as untracked/dirty paths it would
-    // refuse to overwrite; then `git merge --ff-only` advances the ref + brings the worktree
-    // code into the checkout while CARRYING unrelated WIP. If WIP genuinely collides with a
-    // committed path, `--ff-only` refuses (surfaced as an Err → rollback) rather than silently
-    // discarding it — the contract is carry-or-refuse, never destroy (review S2).
-    let head = git_head(repo_root)?;
-    let (commit, hook_output) = commit_combined_tree_with_hooks(repo_root, &tree, &head, msg_path)?;
+    let (commit, hook_output) =
+        commit_combined_tree_with_hooks(repo_root, &tree, parent, msg_path)?;
     if !pathspecs.is_empty() {
         let mut args: Vec<&str> = vec!["add", "--"];
         args.extend(pathspecs.iter().map(String::as_str));
@@ -2047,6 +2060,57 @@ fn combine_commit(
     }
     git_run(repo_root, &["merge", "--ff-only", &commit])?;
     Ok(hook_output)
+}
+
+/// The `squash: false` honest-rework fan-out commit (M31 — WIP-safe rework): build the whole
+/// N+1 commit chain **away from the live checkout** and fast-forward main, so an abort never
+/// touches main (no `git reset --hard`) and unrelated main-checkout WIP survives (review S2;
+/// the squash:true [`combine_commit`] WIP-safety, mirrored onto the per-sub-task path that the
+/// pre-M31 code reintroduced the hazard on).
+///
+/// `subtasks` is the id-ordered `(staged-patch, rendered-commit-message)` list for the
+/// code-carrying sub-tasks (the caller dropped the empty ones). In a **dedicated detached
+/// worktree** at HEAD (a linked worktree shares `.git`, so the user's hooks fire), apply each
+/// sub-task's staged patch onto the worktree's index + tree and `git commit -F` its rendered
+/// `commit:<sub-id>` doc — so each per-sub-task commit carries THAT sub-task's code (a real
+/// tree, never the retired `--allow-empty` form), the user's hooks run, and each commit's
+/// non-blocking hook output is relayed. The disjoint patches (the caller's up-front collision
+/// block guarantees disjointness) apply cleanly in sequence.
+///
+/// Then overlay the merged docs + config onto the last sub-task commit's tree and commit the
+/// aggregate (hooks running) as its child, and fast-forward main onto the whole chain — the
+/// shared [`overlay_docs_commit_and_ff`]. The dedicated worktree is torn down on drop; on ANY
+/// abort (a per-sub-task or the aggregate hook rejection) it returns `Err` having committed
+/// NOTHING to main — HEAD stays at the pre-finalize sha and unrelated WIP is intact. Returns
+/// the aggregate's captured non-blocking hook stream for the caller's success-relay.
+fn chain_commit(
+    repo_root: &Path,
+    subtasks: &[(Vec<u8>, String)],
+    plan: &engine::finalize::FinalizePlan,
+    msg_path: &Path,
+    format: Format,
+) -> Result<String> {
+    let head = git_head(repo_root)?;
+    // The per-sub-task commits accrue in a dedicated worktree at HEAD — never the live
+    // checkout, so an abort leaves main untouched (no `git reset --hard`).
+    let dedicated = DedicatedWorktree::add(repo_root, &head)?;
+    let wt = dedicated.path();
+    let sub_msg = wt.join(".jigc-subtask-message.tmp");
+    for (patch, message) in subtasks {
+        git_apply_index(wt, patch)?;
+        std::fs::write(&sub_msg, message).with_context(|| {
+            format!("could not write the sub-task commit message to {sub_msg:?}")
+        })?;
+        let commit_result = git_commit(wt, &sub_msg);
+        let _ = std::fs::remove_file(&sub_msg);
+        // Relay each per-sub-task commit's non-blocking hook output (M31 Inc 5 — every fan-out
+        // commit runs the user's hooks; `design/finalize.md` → 6. Commit).
+        relay_hook_output(format, &commit_result?);
+    }
+    // The aggregate carries the merged docs (a milestone-level merge artifact, review B1/B2),
+    // built off the last sub-task commit's tree and fast-forwarded onto main with the chain.
+    let subtask_head = git_head(wt)?;
+    overlay_docs_commit_and_ff(repo_root, &subtask_head, &subtask_head, plan, msg_path)
 }
 
 /// Commit the off-line-built combined `tree` as a child of `parent`, **running the repo's
