@@ -18,7 +18,7 @@
 //! shadow; `worked-examples.md` → flow 14). The project layer is also the "is this
 //! project set up" setup gate, exactly as `jigc ingest` requires it.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use std::path::{Path, PathBuf};
 
 use engine::compose::{WorkflowDef, load_workflow_def};
@@ -92,23 +92,16 @@ fn load_schemas(pack: &dyn PackSource, defs: &CascadeDefs<'_>) -> Result<Vec<Sch
 /// `jigc ingest` uses. Errors with routed messages when the repo or the project layer
 /// is absent.
 fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
+    // The `.jigc/` project layer binds to jigc_home (the main checkout), so a worktree
+    // resolves the one shared layer (M31 Inc 2 / WF3). `describe` reads only the cascade
+    // + pack, so jigc_home is the single base it needs (no git, no worktree code).
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    if !jigc_home.join(".jigc").join("config").is_dir() {
         bail!(
             "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
         );
     }
-    Ok(repo_root)
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root).
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
+    Ok(jigc_home)
 }
 
 /// Map an engine [`Finding`] to an `anyhow` error carrying its message + route — the

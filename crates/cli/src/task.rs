@@ -162,9 +162,9 @@ pub struct TaskListRow {
 /// three never disagree — and surfaces each task's minting workflow + intent from its
 /// working area. Always exit 0; the empty roster is a clean message, not an error.
 fn run_list(cwd: &Path, format: Format) -> Result<()> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
+    // The `.jigc/` working area binds to jigc_home (the main checkout), so a worktree
+    // lists the project's shared task roster (M31 Inc 2 / WF3).
+    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
     let mut rows = Vec::new();
     for id in state::list_active_task_ids(&jigc_root) {
         let dir = jigc_root.join("tasks").join(&id);
@@ -350,28 +350,36 @@ pub(crate) fn doc_code_invoker(request: &ProbeRequest) -> std::io::Result<ProbeR
     }
 }
 
-/// A named task's working area: the repo root, the `.jigc/` home, and the task dir.
+/// A named task's working area. `repo_root` is the **worktree** (code, the git index,
+/// HEAD — every `git` shell-out routes here); `jigc_root` (and the doc-store base
+/// `jigc_home`) bind to **jigc_home**, the main checkout, so all worktrees of one
+/// project share a single `.jigc/` (M31 Inc 2 / WF3). Outside a worktree the two
+/// coincide.
 struct TaskArea {
     repo_root: PathBuf,
+    jigc_home: PathBuf,
     jigc_root: PathBuf,
     dir: PathBuf,
     pack: Box<dyn PackSource>,
 }
 
 impl TaskArea {
-    /// Resolve the task `id`'s working area from `cwd`. The repo root is the
-    /// nearest `.git` ancestor; the task dir is `<repo>/.jigc/tasks/<id>/`. A
-    /// task that does not exist rejects with the start-a-task route.
+    /// Resolve the task `id`'s working area from `cwd`. The repo root is the nearest
+    /// `.git` ancestor (the worktree); jigc_home is the main checkout, and the task dir is
+    /// `<jigc_home>/.jigc/tasks/<id>/`. A task that does not exist rejects with the
+    /// start-a-task route.
     fn resolve(cwd: &Path, id: &str) -> Result<Self> {
         let repo_root = discover_repo_root(cwd)
             .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-        let jigc_root = repo_root.join(".jigc");
+        let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+        let jigc_root = jigc_home.join(".jigc");
         let dir = jigc_root.join("tasks").join(id);
         if !dir.is_dir() {
             bail!("no task `{id}` — start one with `jigc start \"<intent>\"`");
         }
         Ok(Self {
             repo_root,
+            jigc_home,
             jigc_root,
             dir,
             pack: make_pack(),
@@ -442,7 +450,7 @@ impl TaskArea {
     /// no-anchor sweep, which never invokes the probe.
     fn require_doc_code_probe(&self, schemas: &BTreeMap<String, Schema>) -> Result<()> {
         let (anchors, _guard) =
-            engine::target_surface::enumerate_target_surface(&self.dir, &self.repo_root, schemas)
+            engine::target_surface::enumerate_target_surface(&self.dir, &self.jigc_home, schemas)
                 .with_context(|| {
                 format!(
                     "enumerating the task's code-anchor surface at {:?}",
@@ -513,7 +521,9 @@ impl TaskArea {
             &self.dir,
             &schemas,
             &mut record,
-            &self.repo_root,
+            // The committed doc-store reads bind to jigc_home; the code anchors resolve
+            // against the materialized index tree (the worktree's staged set) (M31 Inc 2).
+            &self.jigc_home,
             index_tree.path(),
             &self.jigc_root,
             &head,
@@ -684,7 +694,9 @@ impl TaskArea {
         // The engine plans; the CLI executes. A blocking branch returns the findings.
         let plan = match plan_finalize(
             &self.dir,
-            &self.repo_root,
+            // The committed doc-store base (supersede targets, promotion destinations,
+            // retirements) binds to jigc_home (M31 Inc 2 / WF3).
+            &self.jigc_home,
             &base,
             &head,
             &report,
@@ -984,7 +996,7 @@ impl TaskArea {
         let schemas = self.schemas()?;
         let resolves = schemas
             .get(address.r#type.as_str())
-            .and_then(|schema| canonical_path(&self.repo_root, schema, address.slug.as_str()))
+            .and_then(|schema| canonical_path(&self.jigc_home, schema, address.slug.as_str()))
             .is_some_and(|path| path.is_file());
         if !resolves {
             bail!("no such doc `{addr}`");

@@ -244,6 +244,7 @@ mod tests {
     fn ctx(project_config: Option<PathBuf>) -> RunContext {
         RunContext {
             repo_root: PathBuf::from("/repo"),
+            jigc_home: PathBuf::from("/repo"),
             project_config,
             team_config: PathBuf::from("/home/u/.config/jigc"),
         }

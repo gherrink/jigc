@@ -75,28 +75,33 @@ pub struct IngestReport {
 /// index → baseline, register-only), then persist the advanced index + record and
 /// assemble the triage report. Adopt never moves or rewrites a candidate file.
 pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
-    let repo_root = require_project_layer(cwd)?;
+    // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); only the
+    // edge-index HEAD stamp reads the worktree HEAD (M31 Inc 2 / WF3). Outside a worktree
+    // the two coincide, so the sweep is byte-identical.
+    let jigc_home = require_project_layer(cwd)?;
+    let worktree = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let pack = make_pack();
     let resolved =
-        crate::start::resolve_severity_cascade(pack.as_ref(), &repo_root.join(".jigc/config"))?;
+        crate::start::resolve_severity_cascade(pack.as_ref(), &jigc_home.join(".jigc/config"))?;
     let schemas = load_schemas(pack.as_ref(), &resolved)?;
 
     // The adopt substrate: the committed edge index keyed to the current HEAD and the
     // file-state record. Adopt advances these in memory (`adopt` persists nothing
     // itself), then `run` saves the result — register-only, no candidate file touched.
-    let jigc_root = repo_root.join(".jigc");
-    let head = git_head(&repo_root)?;
+    let jigc_root = jigc_home.join(".jigc");
+    let head = git_head(&worktree)?;
     let schema_map: std::collections::BTreeMap<String, Schema> =
         schemas.iter().map(|s| (s.ty.clone(), s.clone())).collect();
-    let mut index = index::load_committed(&repo_root, &jigc_root, &schema_map, &head);
+    let mut index = index::load_committed(&jigc_home, &jigc_root, &schema_map, &head);
     let mut record = FileStateRecord::load(&jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
 
-    let candidates = discover_candidates(&repo_root, &schemas);
+    let candidates = discover_candidates(&jigc_home, &schemas);
     let mut rows = Vec::with_capacity(candidates.len());
     let mut adopted_any = false;
     for rel_path in candidates {
-        let bytes = read_candidate_bytes(&repo_root, &rel_path)?;
+        let bytes = read_candidate_bytes(&jigc_home, &rel_path)?;
         let source = String::from_utf8_lossy(&bytes).into_owned();
         let mut row = classify_row(&rel_path, &source, &schemas);
 
@@ -299,15 +304,16 @@ pub(crate) fn load_schemas(
 /// preamble the `jigc upgrade` seam uses. Errors with routed messages when the repo
 /// or the project layer is absent.
 pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
+    // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); a worktree
+    // resolves the project's shared layer (M31 Inc 2 / WF3).
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let project_config = jigc_home.join(".jigc").join("config");
     if !project_config.is_dir() {
         bail!(
             "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
         );
     }
-    Ok(repo_root)
+    Ok(jigc_home)
 }
 
 /// Walk up from `start` to the directory holding `.git` (the repo root).

@@ -38,7 +38,7 @@ use engine::result::CatalogEntry;
 use engine::schema::Schema;
 use engine::state::{self, BasePin, MintedTask, RolesRecord};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The default doc-type name minting falls back to when the intent slugs to
@@ -79,12 +79,39 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
     if engine::slug::slugify(intent).is_empty() {
         bail!("intent must contain at least one letter or digit (got {intent:?})");
     }
+    // The base pin is the *worktree* HEAD (code/HEAD resolve against the worktree); the
+    // `.jigc/` working area binds to **jigc_home**, the main checkout, so every worktree
+    // of one project shares a single `.jigc/` (M31 Inc 2 / WF3). Outside a worktree the
+    // two coincide, so the mint is byte-identical.
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let jigc_root = repo_root.join(".jigc");
+    let jigc_root = jigc_home_or_repo(start)?.join(".jigc");
     let base = read_head(&repo_root)?;
 
     state::mint_task(&jigc_root, intent, FALLBACK_TYPE, workflow_id, base).map_err(finding_to_err)
+}
+
+/// Resolve **jigc_home** — the main checkout the committed doc-store + `.jigc/` bind to
+/// — from `start`, mapping a not-in-repo result to the standard routed error. Outside a
+/// worktree this is the byte-identical walk-up root [`discover_repo_root`] returns (M31
+/// Inc 2 / WF3); inside a linked worktree it redirects to the main checkout.
+pub(crate) fn jigc_home_or_repo(start: &Path) -> Result<PathBuf> {
+    cli::repo::jigc_home(start)
+        .with_context(|| format!("not inside a git repository (from {})", start.display()))
+}
+
+/// Resolve the project cascade layer dir (`<jigc_home>/.jigc/config`) from `start`,
+/// bailing with the routed setup prompt when the project layer is absent. The `.jigc/`
+/// layer binds to **jigc_home** (the main checkout), so a worktree resolves the one
+/// shared project layer rather than its own (absent) `.jigc/` (M31 Inc 2 / WF3).
+pub(crate) fn require_project_config(start: &Path) -> Result<PathBuf> {
+    let project_config = jigc_home_or_repo(start)?.join(".jigc").join("config");
+    if !project_config.is_dir() {
+        bail!(
+            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
+        );
+    }
+    Ok(project_config)
 }
 
 /// Mint an **off-router migration task** under `repo_root`: read HEAD, open the
@@ -119,6 +146,9 @@ pub(crate) fn mint_migration_in_repo(
     workflow_id: &str,
     source_path: &str,
 ) -> Result<MintedTask> {
+    // The migrate path (mint → stage → compose) stays uniformly on the caller's
+    // worktree `repo_root`; threading it to jigc_home is the deferred worktree-migrate
+    // concern (M31 Inc 2 binds the start/resume/reenter + task/finalize read paths).
     let jigc_root = repo_root.join(".jigc");
     let base = read_head(repo_root)?;
     // Empty intent → the id slugs from this per-file `migrate-<doctype>-<slug>` fallback,
@@ -403,12 +433,7 @@ const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
 pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
     let pack = make_pack();
     let pack = pack.as_ref();
@@ -448,12 +473,7 @@ pub fn compose_named_in_repo(
 ) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
     let pack = make_pack();
     let pack = pack.as_ref();
@@ -498,12 +518,7 @@ pub fn compose_named_no_intent_in_repo(
 ) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
     let pack = make_pack();
     let pack = pack.as_ref();
@@ -551,12 +566,7 @@ pub fn execute_milestone_in_repo(
 ) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
     let pack = make_pack();
     let pack = pack.as_ref();
@@ -823,7 +833,12 @@ fn compose_core(
     // engine resolves). Schemas resolve through the cascade so a project
     // `schemas/<id>.yaml` shadow's `location:` drives the enumeration.
     let schemas = defs.all_schemas(pack)?;
-    let store = committed_store(repo_root, &schemas);
+    // The committed doc-store binds to **jigc_home** (the main checkout): `repo_root` here
+    // is the worktree, so enumerate instances from jigc_home. Outside a worktree the two
+    // coincide, so the feed is byte-identical (M31 Inc 2 / WF3); `mint_in_repo` below
+    // resolves the same split internally for its `.jigc/` write + worktree HEAD read.
+    let store_root = cli::repo::jigc_home(repo_root).unwrap_or_else(|| repo_root.to_path_buf());
+    let store = committed_store(&store_root, &schemas);
 
     let ctx = if def.creates_task {
         // Mint the task (reads HEAD). Minting after the definition loads so a
@@ -1087,14 +1102,7 @@ pub fn compose_explain_in_repo(
     workflow: Option<&str>,
 ) -> Result<(engine::result::ResolutionTree, String)> {
     let _ = intent; // task-independent: the tree never embeds the intent.
-    let repo_root = discover_repo_root(start)
-        .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
     let pack = make_pack();
     let pack = pack.as_ref();
@@ -1351,14 +1359,13 @@ pub(crate) fn selectable_workflows(pack: &dyn PackSource) -> Result<Vec<CatalogE
 pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
-    let task_dir = repo_root.join(".jigc").join("tasks").join(id);
+    // The committed doc-store + `.jigc/` working area bind to **jigc_home** (the main
+    // checkout); only the base-pin HEAD read below stays on the worktree `repo_root`
+    // (M31 Inc 2 / WF3).
+    let jigc_home = jigc_home_or_repo(start)?;
+    let task_dir = jigc_home.join(".jigc").join("tasks").join(id);
     if !task_dir.is_dir() {
         bail!("no task `{id}` — list live tasks with `jigc start`");
     }
@@ -1389,7 +1396,7 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
             )
         })?;
     compose_task_workflow(
-        &repo_root,
+        &jigc_home,
         &project_config,
         &task_dir,
         id,
@@ -1419,14 +1426,14 @@ pub fn resume_in_repo(start: &Path, id: &str) -> Result<ComposedWorkflow> {
 pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_config(start)?;
 
-    let task_dir = repo_root.join(".jigc").join("tasks").join(id);
+    // The committed doc-store + `.jigc/` working area bind to **jigc_home** (the main
+    // checkout) so a fanned sub-agent re-enters from its worktree against the project's
+    // shared `.jigc/`; only the base-pin HEAD read below stays on the worktree
+    // `repo_root` — the worktree HEAD == the milestone pin under WF4 (M31 Inc 2 / WF3).
+    let jigc_home = jigc_home_or_repo(start)?;
+    let task_dir = jigc_home.join(".jigc").join("tasks").join(id);
     if !task_dir.is_dir() {
         bail!(
             "no task `{id}` — list a milestone's sub-tasks with `jigc milestone list-tasks <milestone-id>`"
@@ -1472,7 +1479,7 @@ pub fn reenter_in_repo(start: &Path, workflow_id: &str, id: &str) -> Result<Comp
     }
 
     compose_task_workflow(
-        &repo_root,
+        &jigc_home,
         &project_config,
         &task_dir,
         id,

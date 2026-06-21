@@ -179,9 +179,11 @@ impl MilestoneCommand {
 /// lists `milestones/` (the area is disposable runtime state). Returns the summary
 /// line; a serial collision surfaces as the engine's routed blocking finding.
 fn run_create(cwd: &Path, title: &str) -> Result<String> {
+    // The base pin is the *worktree* HEAD; the `.jigc/` area binds to jigc_home (the main
+    // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
+    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
     ensure_jigc_gitignore(&jigc_root)?;
     let base = read_head(&repo_root)?;
 
@@ -197,9 +199,8 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
 /// summary line; an unknown milestone or a within-milestone collision surfaces as
 /// the engine's routed blocking finding.
 fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) -> Result<String> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
+    // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
+    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
 
     let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
     Ok(format!(
@@ -223,14 +224,15 @@ fn run_add_from_spec(
     spec_addr: &str,
     workflow: &str,
 ) -> Result<String> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
-    let schemas = shipped_schemas(&repo_root)?;
+    // The committed spec read + the `.jigc/` sub-task mint both bind to jigc_home (the
+    // main checkout); no git read here (sub-tasks pin to the milestone's stored base).
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    let schemas = shipped_schemas(&jigc_home)?;
 
     let added = add_from_spec(
         &jigc_root,
-        &repo_root,
+        &jigc_home,
         &schemas,
         milestone_id,
         spec_addr,
@@ -276,9 +278,8 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// unknown milestone (no area / unreadable list) surfaces as a context-wrapped
 /// error and exits non-zero.
 fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
+    // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
+    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
         bail!(
@@ -324,9 +325,11 @@ fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode 
 /// [`ComposeContext::milestone`] non-empty; **mints nothing** (the milestone and its
 /// sub-tasks already exist).
 fn run_execute(cwd: &Path, milestone_id: &str) -> Result<engine::compose::ComposedWorkflow> {
+    // The `.jigc/` area binds to jigc_home (the main checkout); the compose feed resolves
+    // the same split internally (it derives jigc_home from the worktree `repo_root`).
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
+    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
         bail!(
@@ -389,10 +392,11 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
 /// resolved inputs (`design/storage.md` → The by-task-id join). An unknown milestone
 /// (no area) surfaces as the engine's routed `milestone.unknown` block.
 fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
-    let schemas = shipped_schemas(&repo_root)?;
+    // The committed doc-store + `.jigc/` index bind to jigc_home (the main checkout); the
+    // join performs no git I/O (the base is the milestone's *stored* pin) (M31 Inc 2).
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    let schemas = shipped_schemas(&jigc_home)?;
 
     // The committed edge index is keyed to the milestone's shared base — the commit
     // every sub-task inherited — so the cross-area ref walk resolves against the store
@@ -402,9 +406,9 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
         Ok(pin) => pin.sha,
         Err(_) => String::new(),
     };
-    let committed = load_committed(&repo_root, &jigc_root, &schemas, &head);
+    let committed = load_committed(&jigc_home, &jigc_root, &schemas, &head);
 
-    join(&jigc_root, &repo_root, milestone_id, &schemas, &committed).map_err(finding_to_err)
+    join(&jigc_root, &jigc_home, milestone_id, &schemas, &committed).map_err(finding_to_err)
 }
 
 /// Dispatch `jigc milestone finalize <milestone-id>`: run the materialized join +
@@ -439,10 +443,15 @@ fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode
 /// boundary, removing the milestone area on success. The engine performs no git; the CLI
 /// reads HEAD and locates `.jigc/`.
 fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Result<ExitCode> {
+    // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); HEAD + the
+    // git commit/stage stay on the worktree `repo_root` (M31 Inc 2 / WF3). The promote
+    // transaction (`try_execute_finalize_plan` / `execute_finalize_plan`) is kept on
+    // `repo_root` — the worktree-finalize promote placement is the deferred WF4/WF5 concern.
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = repo_root.join(".jigc");
-    let schemas = shipped_schemas(&repo_root)?;
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    let schemas = shipped_schemas(&jigc_home)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
@@ -457,12 +466,12 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let base = read_base_pin(&dir).with_context(|| {
         format!("could not read the shared base pin for milestone `{milestone_id}`")
     })?;
-    let committed = load_committed(&repo_root, &jigc_root, &schemas, &base.sha);
+    let committed = load_committed(&jigc_home, &jigc_root, &schemas, &base.sha);
 
     // Step 1 — materialize the join's suffix-resolved bodies. A blocking join finding (a
     // same-doc clash) surfaces here and commits nothing (the materialize blocks before it
     // writes — the `dispatch_join` precedent, planner-note (c)).
-    let materialized = materialize(&jigc_root, &repo_root, milestone_id, &schemas, &committed)
+    let materialized = materialize(&jigc_root, &jigc_home, milestone_id, &schemas, &committed)
         .map_err(finding_to_err)?;
 
     // Step 2 — the CLI-synthesized message (a milestone has no commit doc to render).
@@ -480,7 +489,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     // sub-task message carries the sub-agent's authored prose (the CLI owns the ordering).
     // Read here (before any sub-task commit moves HEAD); the per-sub-task commits are laid
     // down only AFTER the planner's preflight validates base == HEAD below.
-    let squash = resolve_squash(&repo_root)?;
+    let squash = resolve_squash(&jigc_home)?;
 
     // The diff-presence signal the planner's empty-commit guard needs: the materialized
     // docs that will be promoted, plus any working-tree change / untracked file from base.

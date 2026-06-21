@@ -16,7 +16,7 @@
 
 use crate::pack::make_pack;
 use crate::start::load_project_layer;
-use anyhow::{Context, Result, bail};
+use anyhow::Result;
 use engine::override_default::RecordedDeltas;
 use engine::packsource::PackSource;
 use engine::probe::{OverrideCtx, OverrideDefaultProbe, Probe};
@@ -95,24 +95,10 @@ pub(crate) fn upgrade_with_pack(
 /// here so the upgrade seam has no cross-module private dependency. Errors with the
 /// same routed messages when the repo or the project layer is absent.
 fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
-    Ok(project_config)
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root) — the same
-/// discovery `crate::config` / `crate::start` / `crate::task` do.
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
+    // The `.jigc/` project layer binds to jigc_home (the main checkout), so a worktree
+    // resolves the one shared layer (M31 Inc 2 / WF3). `upgrade` rewrites the project
+    // cascade only, so jigc_home is the single base it needs (no git, no worktree code).
+    crate::start::require_project_config(cwd)
 }
 
 #[cfg(test)]

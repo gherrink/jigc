@@ -164,14 +164,7 @@ impl ConfigCommand {
 ///    (last-write-wins; any existing `scalar:` entries and `deltas:` block are
 ///    preserved).
 fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_layer(cwd)?;
 
     // `docs-root` treats an empty value as "no prefix" (the flat repo-root layout),
     // but the opaque-scalar floor (`check_value`) rejects an empty string — that floor
@@ -236,14 +229,7 @@ fn run_insert_step(
     before: Option<&str>,
     file: &Path,
 ) -> Result<()> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
+    let project_config = require_project_layer(cwd)?;
 
     // The native step's id is the source file's basename (`overrides.md` →
     // Native-file id = filename basename).
@@ -636,15 +622,9 @@ pub(crate) fn check_fill_point_present(
 /// same routed messages [`run_set`] / [`run_insert_step`] use when the repo or the
 /// project layer is absent. The shared preamble of every `config` verb.
 fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
-    let repo_root = discover_repo_root(cwd)
-        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let project_config = repo_root.join(".jigc").join("config");
-    if !project_config.is_dir() {
-        bail!(
-            "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
-        );
-    }
-    Ok(project_config)
+    // The project cascade layer lives at `<jigc_home>/.jigc/config` (the main checkout),
+    // so a worktree resolves the one shared layer (M31 Inc 2 / WF3). No git read here.
+    crate::start::require_project_config(cwd)
 }
 
 /// Record `scalar.<key> = <value>` into `<project_config>/manifest.yaml`,
@@ -974,15 +954,6 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
         Some(route) => anyhow::anyhow!("{}\n  route: {route}", finding.message),
         None => anyhow::anyhow!("{}", finding.message),
     }
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root) — the same
-/// discovery `crate::start` / `crate::task` do.
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
 }
 
 #[cfg(test)]

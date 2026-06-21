@@ -889,7 +889,7 @@ fn run_create(
         &gate.allows_create,
         type_name,
         title,
-        &task.repo_root,
+        &task.jigc_home,
         &on_create,
     )
     .map_err(|f| block(&f, "create", type_name))?;
@@ -944,7 +944,7 @@ fn run_author(
         &gate.allows_create,
         doctype,
         &plan.title,
-        &task.repo_root,
+        &task.jigc_home,
         &on_create,
     )
     .map_err(|f| block(&f, "author", doctype))?;
@@ -1024,9 +1024,11 @@ struct ActiveTask {
     /// the write-time barrier scopes the staged-doc destination to.
     id: String,
     dir: PathBuf,
-    /// The repo root the task lives under — the anchor copy-on-first-touch resolves
-    /// a base-committed `<location>/<slug>.md` against (`canonical_path`).
-    repo_root: PathBuf,
+    /// **jigc_home** — the main checkout the `.jigc/` working area + committed doc-store
+    /// bind to (M31 Inc 2 / WF3). Copy-on-first-touch resolves a base-committed
+    /// `<location>/<slug>.md` against it (`canonical_path`); `doc` verbs do no git I/O, so
+    /// jigc_home is the single base this surface needs.
+    jigc_home: PathBuf,
     pack: Box<dyn PackSource>,
 }
 
@@ -1039,9 +1041,8 @@ impl ActiveTask {
     /// directory under `<repo>/.jigc/tasks/`; **none** rejects with the start-a-task
     /// route, **more than one** with no `--task` rejects asking for the selector.
     fn resolve(cwd: &Path, task_id: Option<&str>) -> Result<Self> {
-        let repo_root = discover_repo_root(cwd)
-            .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-        let jigc_root = repo_root.join(".jigc");
+        let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+        let jigc_root = jigc_home.join(".jigc");
         let tasks = jigc_root.join("tasks");
 
         if let Some(id) = task_id {
@@ -1052,7 +1053,7 @@ impl ActiveTask {
             return Ok(Self {
                 id: id.to_string(),
                 dir,
-                repo_root,
+                jigc_home,
                 pack: make_pack(),
             });
         }
@@ -1068,7 +1069,7 @@ impl ActiveTask {
                 Ok(Self {
                     id,
                     dir,
-                    repo_root,
+                    jigc_home,
                     pack: make_pack(),
                 })
             }
@@ -1110,7 +1111,7 @@ impl ActiveTask {
         // committed `<location>/<slug>.md` exists at base — resolved by the same
         // `schema.location`-keyed path the committed store / `task bind` use.
         let slug = address.slug.as_str();
-        if let Some(committed) = engine::store::canonical_path(&self.repo_root, schema, slug)
+        if let Some(committed) = engine::store::canonical_path(&self.jigc_home, schema, slug)
             && committed.is_file()
         {
             let body = std::fs::read_to_string(&committed)
@@ -1140,7 +1141,7 @@ impl ActiveTask {
     fn resolved(&self) -> Result<engine::cascade::Resolved> {
         crate::start::resolve_severity_cascade(
             self.pack.as_ref(),
-            &self.repo_root.join(".jigc/config"),
+            &self.jigc_home.join(".jigc/config"),
         )
     }
 
@@ -1495,15 +1496,6 @@ fn finding_to_err(finding: Finding) -> anyhow::Error {
         .map(|r| format!("\n  route: {r}"))
         .unwrap_or_default();
     anyhow::anyhow!("{}{route}", finding.message)
-}
-
-/// Walk up from `start` to the directory holding `.git` (the repo root) — the
-/// same discovery `crate::start` / `crate::locate` do.
-fn discover_repo_root(start: &Path) -> Option<PathBuf> {
-    start
-        .ancestors()
-        .find(|dir| dir.join(".git").exists())
-        .map(PathBuf::from)
 }
 
 #[cfg(test)]

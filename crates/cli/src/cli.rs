@@ -560,11 +560,11 @@ fn run_validate_store(format: Format) -> ExitCode {
 /// locate preamble + `task.rs`'s `schemas()` / `resolve_severity_cascade` idiom; the
 /// engine stays domain-empty (the CLI feeds the pack in).
 fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport> {
-    let repo_root = require_project_layer(cwd)?;
+    let jigc_home = require_project_layer(cwd)?;
     require_doc_code_probe()?;
     let pack = crate::pack::make_pack();
     let pack = pack.as_ref();
-    let project_config = repo_root.join(".jigc").join("config");
+    let project_config = jigc_home.join(".jigc").join("config");
     let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
 
     // workflow↔refs family: enumerate every cascade-resolved workflow definition as a
@@ -589,12 +589,12 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
 
     // file↔CLI-state family: the loaded file-state record, read **read-only** (the
     // detect-without-absorb twin borrows it `&`, opens no write).
-    let jigc_root = repo_root.join(".jigc");
+    let jigc_root = jigc_home.join(".jigc");
     let record = engine::file_state::FileStateRecord::load(&jigc_root)
         .with_context(|| format!("loading the file-state record at {jigc_root:?}"))?;
 
     engine::validate::validate_store_families(
-        &repo_root,
+        &jigc_home,
         &schemas,
         &resolved,
         &crate::task::doc_code_invoker,
@@ -602,7 +602,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         &workflow_source,
         &record,
     )
-    .with_context(|| format!("validating the committed store at {repo_root:?}"))
+    .with_context(|| format!("validating the committed store at {jigc_home:?}"))
 }
 
 /// The store sweep's **probe pre-flight**: resolve the `doc-code` probe program (the
@@ -632,7 +632,9 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
             "this project isn't set up — run `jigc setup` (no `.jigc/config/` cascade layer found)"
         );
     }
-    Ok(ctx.repo_root)
+    // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); the store
+    // sweep does no git I/O, so jigc_home is the single base it needs (M31 Inc 2 / WF3).
+    Ok(ctx.jigc_home)
 }
 
 /// Dispatch a `jigc doc <verb>` write against the active task in the current

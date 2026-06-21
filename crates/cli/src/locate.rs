@@ -21,10 +21,15 @@ use std::path::{Path, PathBuf};
 /// whose population the engine checks).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunContext {
-    /// The discovered repository root (the directory holding `.git`).
+    /// The discovered **worktree** root (the directory holding `.git`) — where code,
+    /// the git index, and `HEAD` live.
     pub repo_root: PathBuf,
-    /// The in-repo project cascade layer at `<repo_root>/.jigc/config/`, when
-    /// that directory exists. `None` means the project layer is absent.
+    /// **jigc_home** — the main checkout the committed doc-store and `.jigc/` bind to. In
+    /// a linked worktree this is the *main* checkout, not [`repo_root`](Self::repo_root);
+    /// outside a worktree the two coincide (M31 Inc 2 / WF3).
+    pub jigc_home: PathBuf,
+    /// The in-repo project cascade layer at `<jigc_home>/.jigc/config/`, when that
+    /// directory exists. `None` means the project layer is absent.
     pub project_config: Option<PathBuf>,
     /// The external team cascade layer at `~/.config/jigc/`. This is the path
     /// the layer *would* live at; the engine checks whether it is populated.
@@ -54,14 +59,18 @@ fn locate_from(start: &Path, home: &Path) -> Result<RunContext> {
             start.display()
         );
     };
+    // jigc_home — the main checkout the `.jigc/` layer + committed doc-store bind to;
+    // outside a worktree it is the byte-identical walk-up root (M31 Inc 2 / WF3).
+    let jigc_home = cli::repo::jigc_home(start).unwrap_or_else(|| repo_root.clone());
 
-    let project_dir = repo_root.join(PROJECT_CONFIG_REL);
+    let project_dir = jigc_home.join(PROJECT_CONFIG_REL);
     let project_config = project_dir.is_dir().then_some(project_dir);
 
     let team_config = home.join(TEAM_CONFIG_REL);
 
     Ok(RunContext {
         repo_root,
+        jigc_home,
         project_config,
         team_config,
     })
