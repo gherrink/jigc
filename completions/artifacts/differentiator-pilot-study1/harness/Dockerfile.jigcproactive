@@ -1,0 +1,5 @@
+FROM pilot-jigc
+COPY --chown=node:node docker/jigc-stop-hook-logged.js /work/.jigc/jigc-stop-hook.js
+COPY --chown=node:node docker/jigc-proactive-settings.json /work/.claude/settings.json
+COPY --chown=node:node docker/proactive-AGENT.md /work/.jigc/AGENT.md
+RUN cd /work && git add -A && git commit -q -m "chore: proactive jigc bootstrap + always-on validation"

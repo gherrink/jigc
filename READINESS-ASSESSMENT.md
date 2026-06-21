@@ -87,18 +87,23 @@ Do **not** commit a productive corpus (or self-host this repo) yet. Three gates:
 - **Value gate** (M17 named it; **study 1 ran 2026-06-21 — not cleared**) — a
   differentiator-engaging pilot showing jigc **>** static, not **≈** static. Study 1
   found jigc **≈** plain/GSD **<** static; the gate is **unproven, leaning negative**.
-  **Follow-on (2026-06-22): a cheap fix reached *parity*.** Folding the #1 learning
-  back in — an always-on `Stop` hook running `jigc validate` (no binary rebuild) —
-  took the jigc arm **2/4 → 4/4, parity with static** (arm A′; [ADDENDUM](completions/artifacts/differentiator-pilot-study1/ADDENDUM-jigc-enforced.md)).
-  So jigc's *self-inflicted* losses (bypass, prose blind spot via the hook's
-  instruction) are fixable — but **parity is not superiority**: beating a static
-  `CLAUDE.md` still requires the **long-horizon many-edit regime** where instruction
-  degrades and enforcement holds. That remains the **owed next study**. Engineering
-  path: (1) always-on enforcement, (2) broaden the probe beyond anchors, (3) sharpen
-  proactive routing in the bootstrap (so the agent engages jigc up front, not just
-  gets caught) — *guardrail:* a "use jigc" instruction must not collapse jigc into a
-  more elaborate static instruction; the durable value is enforcement that doesn't
-  degrade. See [LESSONS.md](completions/artifacts/differentiator-pilot-study1/LESSONS.md).
+  **Follow-on (2026-06-22): a cheap fix *appeared* to reach parity, but the signal
+  is variance-confounded.** An always-on `Stop` hook running `jigc validate` (no
+  binary rebuild) coincided with the jigc arm going 2/4 → 4/4 (arm A′). But arm A″
+  (proactive bootstrap + instrumented catch) showed the **recovery is largely
+  run-to-run variance at n=1**: the catch fired only once, and the "recovered" cells
+  were clean with **zero jigc engagement** — the agent simply did a complete rename
+  on its own that run. The catch *mechanism is sound* (deterministic when it fires)
+  but rarely fired; **proactive instruction did not route the weaker model** (Sonnet
+  still bypassed). So jigc's self-inflicted losses look *fixable*, but the parity is
+  **not established** — and parity wouldn't be superiority anyway. See the
+  [ADDENDUM](completions/artifacts/differentiator-pilot-study1/ADDENDUM-jigc-enforced.md)
+  follow-on. **Owed next steps:** (i) **replicate** (5–10 runs/cell) to separate
+  mechanism from noise; (ii) the **long-horizon many-edit study** for superiority.
+  Engineering lean: always-on enforcement + broaden the probe beyond anchors +
+  **harder routing** (a gate that can't be skipped) over softer instruction —
+  *guardrail:* a "use jigc" instruction must not collapse jigc into a more elaborate
+  static instruction; the durable value is enforcement that doesn't degrade.
 
 **Net:** the twin pilot is **done and reversible** — it spent no lock-in and
 returned a *negative-leaning* value signal. Point a *productive corpus* at jigc only

@@ -1,8 +1,13 @@
 # Addendum — folding the learnings back into jigc (arm A′)
 
-**Written 2026-06-21**, after the main verdict. Question: *if we fold Study-1's
-diagnosed fixes into jigc and re-run the jigc arm, does it recover the loss?*
-Answer: **yes, to parity with static (4/4) — but not yet to superiority.**
+**Written 2026-06-21** (arm A′), **extended 2026-06-22** (arm A″). Question: *if we
+fold Study-1's diagnosed fixes into jigc and re-run the jigc arm, does it recover
+the loss?* First read (A′): *yes, to parity with static (4/4).* **Corrected read
+after A″ + instrumentation: the apparent recovery is largely run-to-run variance at
+n=1 — the catch mechanism is sound but rarely fired, and proactive routing did not
+raise engagement.** Read the [follow-on section](#follow-on-arm-a-proactive-bootstrap--and-the-variance-caveat-that-tempers-the-parity-claim)
+at the end before trusting the A′ "parity" framing below. The A′ sections are kept
+as originally written, with this banner as the correction.
 
 ## The intervention (light — no binary rebuild)
 
@@ -72,3 +77,50 @@ purely-mechanical gap is the probe's prose blind spot. Both are now precisely
 scoped follow-ups, not open questions. The product implication: **make jigc's
 doc↔code enforcement always-on (not finalize-gated), and broaden the probe beyond
 anchors** — then re-run the long-horizon study to test for superiority.
+
+---
+
+## Follow-on (arm A″, proactive bootstrap) — and the variance caveat that TEMPERS the parity claim
+
+Per the catch-*and*-route direction, **arm A″** = arm A′ (always-on catch) + a
+**sharpened `.jigc/AGENT.md`** that proactively routes the agent to engage jigc up
+front for code changes (framed about the *tool*, not the doc-rule — to avoid
+conflating with arm C). The catch hook was instrumented to log each block.
+
+**Result — A″ is 4/4 clean, but the intervention did not work as hoped, and it
+exposes a variance problem that walks back the strong reading of A′:**
+
+| metric (totals over 4 cells) | A (orig) | A′ (catch) | A″ (proactive+catch) |
+|---|---|---|---|
+| clean / 4 | 2/4 | 4/4 | 4/4 |
+| jigc-verbs (agent engagement) | 3 | 5 | **3** (down) |
+| catches that fired (logged) | n/a | unlogged | **1** |
+| total cost | $3.82 | $4.45 | $4.33 |
+
+1. **Proactive routing did NOT raise engagement.** Sonnet used **0 jigc-verbs** in
+   both A″ cells — it bypassed jigc despite the sharpened instruction; total verbs
+   fell (5→3) and Sonnet's turns ballooned (46 vs 17–20). The instruction bought
+   ceremony, not routing. (Opus engaged slightly — one `finalize`.)
+2. **The catch fired exactly once** across A″ (logged: task2-opus blocked→fixed);
+   every other clean cell logged `ALLOW`-only (no drift at stop).
+3. **The recovery is confounded by run-to-run variance.** task1-sonnet across the
+   three runs: orig **drift**, A′ **clean**, A″ **clean** — *all three with 0
+   jigc-verbs*, A″ with *0 catches*. The "recovered" cells were clean because the
+   agent did a complete rename **on its own that run**, not because of jigc. The
+   orig drift sits within the normal variance of a bypassing agent.
+
+**Corrected reading.** The mechanism is **sound** — it works deterministically when
+it fires (the seeded instrument check, the host linchpin test, and A″ task2-opus
+all confirm). But across these runs it **rarely fired**, and the apparent
+**2/4 → 4/4 "recovery" is not safely attributable to the fix** at n=1 — variance
+dominates. A′'s "parity" should be read as *"jigc-with-catch was clean in this one
+run set,"* not *"the catch closed the gap."* The proactive bootstrap, specifically,
+**failed to increase routing** for the weaker model.
+
+**The real methodological lesson:** n=1 per cell cannot separate mechanism from
+noise. The honest next step is **replication** (e.g. 5–10 runs per cell) to measure
+*base drift-rate by arm* and the *catch's marginal contribution* — not more
+single-shot arms. And to get jigc's value to actually show, the agent has to engage
+it: proactive prose instruction did not achieve that here, which pushes the design
+toward **harder routing** (e.g. the validation gate wired so it cannot be skipped)
+over softer instruction — consistent with jigc's *enforce-don't-instruct* thesis.

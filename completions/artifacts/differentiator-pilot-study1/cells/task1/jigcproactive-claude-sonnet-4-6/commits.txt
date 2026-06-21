@@ -1,0 +1,1 @@
+c017806 refactor: Rename public class CommentBlockParser to CommentTagParser throughout the project, including the source file, factory function, test file, README, and architecture documentation.

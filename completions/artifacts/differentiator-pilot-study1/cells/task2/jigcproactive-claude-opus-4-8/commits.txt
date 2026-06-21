@@ -1,0 +1,2 @@
+fea5327 docs: update managed docs for MarkdownDescriptionParser rename to MarkdownDocParser
+64a941e refactor: rename public class MarkdownDescriptionParser to MarkdownDocParser

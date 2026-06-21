@@ -1,0 +1,2 @@
+81bebf6 docs(arch-doc): update core public API arch doc for CommentBlockParser rename to CommentTagParser
+9055640 refactor(core): rename public class CommentBlockParser to CommentTagParser

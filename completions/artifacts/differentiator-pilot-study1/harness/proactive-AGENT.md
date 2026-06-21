@@ -1,0 +1,5 @@
+`jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: **never read or edit managed docs directly.**
+
+**Start every task by running `jigc start "<intent>"`** — then work the composed workflow and write every change back through `jigc`. This applies to *code* tasks too, not only doc tasks. A change to a public code symbol (renaming, moving, or removing an exported class/function/type) is exactly the kind of task to run through `jigc`: this project's managed documentation anchors to those symbols, and `jigc` maintains and validates that documentation for you — `jigc task validate` / `jigc task finalize` check that the code and the managed docs still agree, and finalize is your commit boundary.
+
+Skipping `jigc` and editing files directly is the failure mode to avoid: you lose the validation that keeps the project's docs honest against the code, and the work will not pass `jigc`'s checks. So: `jigc start` first, work through the verbs `jigc` gives you, finalize through `jigc`.
