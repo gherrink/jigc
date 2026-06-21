@@ -1,0 +1,19 @@
+==================================================================
+### ARM: wip-survives (a blocked squash:true combine leaves main WIP byte-identical)
+repo: /tmp/jigc-m31-wip-ocrDXT   HEAD-before: 32530171893d31c80952a1970547388fb0a6cb67   (default squash:true — no override)
+--- git status --porcelain (pre-finalize: seeded unrelated WIP) ---
+ M README.md
+?? .jigc/
+?? wip-untracked.txt
+--- jigc milestone finalize cache-rework (stdout+stderr) ---
+
+code collision — `shared.txt` (sub-tasks [area-low, area-zed]) staged by more than one worktree; the combine disjoint-applies code and never text-merges a shared file
+  route: have the contending sub-tasks touch distinct files, or combine their overlapping changes by hand
+
+FINALIZE_EXIT=1 (non-zero — the collision blocks the combine)
+HEAD before==after (nothing committed): 32530171893d31c80952a1970547388fb0a6cb67 == 32530171893d31c80952a1970547388fb0a6cb67
+--- unrelated MAIN WIP after the blocked combine (must be byte-identical) ---
+wip-untracked.txt = [scratch]   (expect [scratch])
+README.md = [hello|local WIP]   (expect [hello|local WIP])
+status before==after byte-identical: yes
+PROMOTED: no ADR doc file (nothing promoted)

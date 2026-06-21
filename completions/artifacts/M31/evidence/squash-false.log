@@ -1,0 +1,37 @@
+==================================================================
+### ARM: squash-false (N per-sub-task code commits + parent aggregate; hook relayed each)
+repo: /tmp/jigc-m31-sqfalse-bWIAxI   HEAD-before-commits: 1   (finalize.fan-out.squash: false override)
+--- jigc milestone finalize cache-rework ---
+--- hook output ---
+NON-BLOCKING-MILESTONE-HOOK-WARNING
+--- hook output ---
+NON-BLOCKING-MILESTONE-HOOK-WARNING
+--- hook output ---
+NON-BLOCKING-MILESTONE-HOOK-WARNING
+
+FINALIZE_EXIT=0
+HEAD-after-commits: 4   (delta 3 — expect 3 = 2 sub-task + 1 aggregate)
+HOOK_WARNING relays in stdout: 3 (expect 3 — every fan-out commit relays its hook)
+--- commit subjects (oldest-first; the id-sorted sub-task sequence then the aggregate) ---
+feat: rework the low cache path
+feat: rework the zed cache path
+Finalize milestone cache-rework (2 sub-tasks)
+--- per-sub-task commit trees (each carries THAT worktree's code, not an empty tree) ---
+[HEAD~2 = first sub-task commit] git show --stat:
+  feat: rework the low cache path
+
+ src/low.rs | 1 +
+ 1 file changed, 1 insertion(+)
+[HEAD~1 = second sub-task commit] git show --stat:
+  feat: rework the zed cache path
+
+ src/zed.rs | 1 +
+ 1 file changed, 1 insertion(+)
+[HEAD = parent aggregate] git show --name-only (the MERGED docs ride here, not per-sub-task) :
+  Finalize milestone cache-rework (2 sub-tasks)
+
+.jigc/.gitignore
+.jigc/config/manifest.yaml
+docs/decisions/low-policy.md
+docs/decisions/zed-policy.md
+--- git status --porcelain (working tree clean after the boundary) ---

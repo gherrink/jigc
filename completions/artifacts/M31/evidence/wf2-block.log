@@ -1,0 +1,14 @@
+==================================================================
+### ARM: wf2-block (the WF2 same-file block fires across the fan-out)
+repo: /tmp/jigc-m31-wf2-P6BHRT   HEAD-before: 0841a795e0b6f6123ada3c5a8a4691b14e0bbc5c
+both area-low and area-zed staged src/shared.rs in their own worktrees
+--- jigc milestone finalize cache-rework (stdout+stderr) ---
+
+code collision — `src/shared.rs` (sub-tasks [area-low, area-zed]) staged by more than one worktree; the combine disjoint-applies code and never text-merges a shared file
+  route: have the contending sub-tasks touch distinct files, or combine their overlapping changes by hand
+
+FINALIZE_EXIT=1 (non-zero — the collision blocks)
+names the contended path 'src/shared.rs': 1
+HEAD before==after (nothing committed): 0841a795e0b6f6123ada3c5a8a4691b14e0bbc5c == 0841a795e0b6f6123ada3c5a8a4691b14e0bbc5c
+commit count before==after: 1 == 1
+PROMOTED: no ADR doc file (nothing promoted)

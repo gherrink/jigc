@@ -1,0 +1,18 @@
+==================================================================
+### ARM: squash-true-hooks (the squash:true combine runs the user's pre-commit hook)
+repo: /tmp/jigc-m31-sqtrue-gKOxOs   HEAD-before-commits: 1   (default squash:true — no override)
+--- jigc milestone finalize cache-rework ---
+--- hook output ---
+NON-BLOCKING-MILESTONE-HOOK-WARNING
+
+FINALIZE_EXIT=0
+HEAD-after-commits: 2   (delta 1 — squash:true lands ONE aggregate)
+HOOK_WARNING relays in stdout: 1 (expect 1 — hook fires once on the combine)
+has '--- hook output ---' delimiter: 1
+--- git show --name-only --format= HEAD (the one combine commit carries both code + merged docs) ---
+.jigc/.gitignore
+docs/decisions/low-policy.md
+docs/decisions/zed-policy.md
+src/low.rs
+src/zed.rs
+--- git status --porcelain (main checkout clean after the combine + teardown) ---
