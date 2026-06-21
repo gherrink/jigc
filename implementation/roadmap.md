@@ -742,6 +742,8 @@ Encoding the harness's **harder** workflows (increment / planning / completion) 
 
 ## Milestone 32 — fan-out sub-task commit-doc provisioning (decouple provisioning from `selectable`): decomposition
 
+**Status: ✅ shipped + audited (2026-06-21).** Both increments built + validated clean (0 fix rounds); milestone audit (code-review + e2e through the real binary, overall pass) found one LOW/cosmetic finding (test comment `schema.scope`→`schema.ty`), fixed `e4dc280`; the §24 genuine-spawn artifact was run by the orchestrator (2 real concurrent sub-agents → finalize tree byte-identical to the sim, `579c315d…`, blackboard invariant witnessed — [completions/artifacts/M32/genuine-spawn.md](../completions/artifacts/M32/genuine-spawn.md)); installed binary re-pinned (`jigc` `dc5ae935…`). Full record: [DECISIONS.md](../DECISIONS.md) → 2026-06-21 M32 completion.
+
 **Two increments, risk-first + linear:** the **gate fix + genuine re-entry acceptance** first (the headline — retires the masked defect, proven end-to-end through the real worktree fan-out in both squash modes); then the **sibling-census regression guards** (the blast-radius safety net — proves the fix's now-widened re-entry reach is safe for the 6 mint-provisioned siblings). The design-doc contract (`selectable` in [workflow-dialect.md](../design/workflow-dialect.md)) landed at **planning/Settle** (a design-workflow change), so the build carries only code + in-code comment corrections + tests. Verify baseline green at the build's base sha before starting; line numbers drift — re-confirm at each increment's plan.
 
 ### Increment 1 — the gate fix (shared predicate) + the genuine sub-task re-entry authoring acceptance (both squash modes, worktree-active)
