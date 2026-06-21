@@ -213,7 +213,7 @@ Each part-doc tracks its own opens in its `## Open questions` section; this is t
 - [reconciliation.md](design/reconciliation.md#open-questions) — parser-tolerant vs parser-strict for cosmetic drift; concurrent OOB edits during a task; external-edit notification surface.
 - [finalize.md](design/finalize.md#open-questions) — multi-doc promotion ordering; `finalize --dry-run`; commit-msg hook output capture.
 - [command-catalog.md](design/command-catalog.md#open-questions) — per-workflow command-ref scoping; stdin as data-value binding; multi-target / variant commands.
-- [storage.md](design/storage.md#open-questions) — milestone worktree orchestration; multi-slot sub-label syntax; config internal structure.
+- [storage.md](design/storage.md#open-questions) — multi-slot sub-label syntax; config internal structure. *(Milestone worktree orchestration is settled — closed with worktrees, for **code** only; M31.)*
 - [validation.md](design/validation.md#open-questions) — pack-probe sandboxing; `doc-code` logic; findings recomputed vs cached.
 - [overrides.md](design/overrides.md#open-questions) — per-developer `local` layer; team-layer distribution; committed-config-dir layout.
 - [assistant-adapter.md](design/assistant-adapter.md#open-questions) — profiles beyond Claude Code; hook events per assistant.
