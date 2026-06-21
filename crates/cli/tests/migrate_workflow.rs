@@ -516,6 +516,102 @@ fn reentered_filled_migrate_commit_survives_byte_untouched() {
     );
 }
 
+// === Provisioning property census (M32 Inc-2 / T2) ==========================
+//
+// The commit-doc provisioning property fans out across FOUR siblings, all governed
+// by the one shared `should_provision_commit_doc` predicate (`creates_task`) and its
+// `path.exists()` write-once safety (`start.rs`). Inc-1 widened the property by
+// dropping the `selectable` gate, so the regression surface is the full census, not
+// any single arm:
+//
+//   1. mint arm            — `compose_core` on a fresh `jigc start`: provisions the
+//                            EMPTY fillable form (`provision_commit_doc`) at mint.
+//   2. re-entry first-touch — `provision_on_first_entry`, `jigc workflow <W> --task`:
+//                            provisions the empty fillable on the FIRST entry that
+//                            finds the doc missing, then no-ops forever after via
+//                            `path.exists()` (the T1 guard:
+//                            `reentered_filled_migrate_commit_survives_byte_untouched`).
+//   3. migrate dispatch    — `provision_migration_commit_doc`, `jigc migrate`:
+//                            provisions a FILLED commit doc at mint (Hardening #4 — the
+//                            templated migration prose, so the no-author finalize
+//                            composes a real message).
+//   4. RESUME              — `resume_in_repo` -> `compose_task_workflow(provision=false)`,
+//                            `jigc start --task <id>`: provisions NOTHING. The omitting
+//                            context — `provision == false` short-circuits before the
+//                            predicate is ever consulted, so a resume never re-touches
+//                            an already-provisioned doc. Guarded below
+//                            (`selectable_false_migrate_resume_short_circuits_byte_untouched`).
+//
+// Siblings 1 + 3 write; sibling 2 writes once then is inert; sibling 4 is inert by
+// construction. The two regression guards here lock the no-clobber property over the
+// two siblings that re-enter a task whose commit doc already exists (2 + 4) — both
+// must leave the FILLED migrate prose byte-untouched. These are no-clobber guards
+// (green before AND after the Inc-1 fix), not RED->GREEN.
+
+#[test]
+fn selectable_false_migrate_resume_short_circuits_byte_untouched() {
+    // M32 Inc-2 (T2) regression guard — the RESUME sibling of the provisioning census.
+    // `jigc migrate` mints a `selectable: false` `migrate-changelog-<slug>` task whose
+    // `commit:<id>` doc is auto-provisioned FILLED at mint. A `jigc start --task <id>`
+    // resume (`resume_in_repo` -> `compose_task_workflow` with `provision = false`)
+    // composes the task's recorded workflow but provisions NOTHING — the resume path
+    // never calls `provision_on_first_entry`, so the empty fillable can never reach the
+    // already-filled migration doc. The contract: resume exits 0 and the commit doc is
+    // byte-identical. No-clobber guard (green before AND after the fix), not RED->GREEN.
+    let repo = TempDir::new("resume-repo");
+    let home = TempDir::new("resume-home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    ok_stdout(setup, "jigc setup");
+
+    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+
+    // Mint the `selectable: false` migrate task + its auto-provisioned FILLED commit doc.
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+    );
+    ok_stdout(out, "jigc migrate CHANGELOG.md --as changelog");
+
+    let ids = task_dirs(repo.path());
+    assert_eq!(
+        ids.len(),
+        1,
+        "migrate must mint exactly one task; got {ids:?}"
+    );
+    let id = &ids[0];
+
+    // Capture the FILLED commit doc bytes — assert it is genuinely FILLED so the
+    // byte-identity check below has teeth (a guard over an empty form proves nothing).
+    let doc_path = commit_doc_path(repo.path(), id);
+    let before = fs::read(&doc_path).expect("read the auto-provisioned filled commit doc");
+    let before_text = String::from_utf8(before.clone()).expect("utf-8 commit doc");
+    assert!(
+        before_text.contains("adopt CHANGELOG.md as a managed changelog")
+            && before_text.contains("Migrate the foreign CHANGELOG.md"),
+        "the migrate commit doc must be auto-authored FILLED (Hardening #4); doc:\n{before_text}",
+    );
+
+    // Resume the task: `jigc start --task <id>` recomposes the recorded `migrate-changelog`
+    // workflow with `provision = false`. A clean exit 0 — a `selectable: false` task
+    // resumes like any other; resume short-circuits the provisioner entirely.
+    let resume = run_jigc(repo.path(), home.path(), &pack, &["start", "--task", id]);
+    ok_stdout(resume, "jigc start --task <id> (resume)");
+
+    // The contract: the filled commit doc is BYTE-IDENTICAL after resume — resume
+    // provisioned nothing, so the migration prose is untouched.
+    let after = fs::read(&doc_path).expect("read the commit doc after resume");
+    assert_eq!(
+        before, after,
+        "a `selectable: false` migrate commit doc must survive a resume byte-untouched; \
+         resume must provision nothing (`provision == false`)",
+    );
+}
+
 /// Extract the `doc author adr --from-file -` heredoc payload skeleton from the composed
 /// migrate guidance (between the `<<'EOF'` opener and the standalone `EOF` terminator) —
 /// the agent-facing artifact the LLM fills + pipes.
