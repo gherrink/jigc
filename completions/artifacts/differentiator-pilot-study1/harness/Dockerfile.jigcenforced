@@ -1,0 +1,4 @@
+FROM pilot-jigc
+COPY --chown=node:node docker/jigc-stop-hook.js /work/.jigc/jigc-stop-hook.js
+COPY --chown=node:node docker/jigc-enforced-settings.json /work/.claude/settings.json
+RUN cd /work && git add -A && git commit -q -m "chore: always-on jigc doc<->code validation (Stop hook)"

@@ -86,13 +86,19 @@ Do **not** commit a productive corpus (or self-host this repo) yet. Three gates:
   migration"). Until this is built, every schema change is hand-priced.
 - **Value gate** (M17 named it; **study 1 ran 2026-06-21 — not cleared**) — a
   differentiator-engaging pilot showing jigc **>** static, not **≈** static. Study 1
-  found jigc **≈** plain/GSD **<** static, so the gate is **unproven, leaning
-  negative**. It is not refuted (one small task; dilution didn't hurt static even at
-  realistic file size), but jigc's case has **narrowed to the long-horizon many-edit
-  regime** — the one test that could still flip it. That is the **owed next study**
-  before this gate can be called either way. Two fixable jigc weaknesses surfaced
-  (make the warn-only pre-commit hook *blocking*; close the doc prose blind spot) —
-  see [LESSONS.md](completions/artifacts/differentiator-pilot-study1/LESSONS.md).
+  found jigc **≈** plain/GSD **<** static; the gate is **unproven, leaning negative**.
+  **Follow-on (2026-06-22): a cheap fix reached *parity*.** Folding the #1 learning
+  back in — an always-on `Stop` hook running `jigc validate` (no binary rebuild) —
+  took the jigc arm **2/4 → 4/4, parity with static** (arm A′; [ADDENDUM](completions/artifacts/differentiator-pilot-study1/ADDENDUM-jigc-enforced.md)).
+  So jigc's *self-inflicted* losses (bypass, prose blind spot via the hook's
+  instruction) are fixable — but **parity is not superiority**: beating a static
+  `CLAUDE.md` still requires the **long-horizon many-edit regime** where instruction
+  degrades and enforcement holds. That remains the **owed next study**. Engineering
+  path: (1) always-on enforcement, (2) broaden the probe beyond anchors, (3) sharpen
+  proactive routing in the bootstrap (so the agent engages jigc up front, not just
+  gets caught) — *guardrail:* a "use jigc" instruction must not collapse jigc into a
+  more elaborate static instruction; the durable value is enforcement that doesn't
+  degrade. See [LESSONS.md](completions/artifacts/differentiator-pilot-study1/LESSONS.md).
 
 **Net:** the twin pilot is **done and reversible** — it spent no lock-in and
 returned a *negative-leaning* value signal. Point a *productive corpus* at jigc only

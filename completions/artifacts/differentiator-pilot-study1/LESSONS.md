@@ -97,11 +97,15 @@ This is testable, and it's the test that decides the productive-go question.
 1. **Close the prose blind spot.** Let `arch-doc` anchor component **titles**, or
    add a managed-doc **prose-mention check** (flag any prose naming a symbol absent
    from code). This directly removes the only Opus drift in the matrix — jigc's own.
-2. **Make enforcement actually enforce (the bypass fix).** The biggest loss was the
-   agent never using jigc. Today's git `pre-commit` hook is **warn-only**; making it
-   **block** on `jigc validate` failure converts "enforced-not-sandboxed" toward
-   "you cannot commit drift," regardless of whether the agent engaged the workflow.
-   That single change would likely have flipped task1-jigc-Sonnet from drift→caught.
+2. **Make enforcement actually enforce (the bypass fix) — TESTED, it works.** The
+   biggest loss was the agent never using jigc. The git `pre-commit` hook is
+   warn-only *and* only fires on commit (which the bypassing agents never did), so
+   the real fix is **always-on**: a `Stop` hook running `jigc validate` that blocks
+   the agent from finishing while a doc-anchor dangles. Implemented as **arm A′
+   (jigc-enforced)** and re-run: jigc went **2/4 → 4/4, parity with static** — it
+   recovered both original drifts. See [ADDENDUM-jigc-enforced.md](ADDENDUM-jigc-enforced.md).
+   Caveat: parity, not superiority; and the README/title breadth rode on the hook's
+   *instruction*, since `jigc validate` mechanically catches only the anchor.
 3. **Absorb conformant out-of-band edits (the friction fix).** task2-jigc-Sonnet was
    a *correct* rename that jigc would still block (`file-state.hash-matches`). The
    reconciliation design says *absorb* conformant OOB edits — align store/finalize

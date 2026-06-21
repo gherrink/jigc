@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "jigc start" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "node /work/.jigc/jigc-stop-hook.js" } ] }
+    ]
+  }
+}

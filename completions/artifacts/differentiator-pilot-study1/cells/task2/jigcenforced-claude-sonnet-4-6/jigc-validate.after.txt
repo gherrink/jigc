@@ -1,0 +1,4 @@
+blocking · file-state.hash-matches — on-disk content of `docs/architecture/core-public-api.md` differs from the recorded state
+  route: review the out-of-band edit to `docs/architecture/core-public-api.md` and re-author it through the owning workflow
+1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.

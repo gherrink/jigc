@@ -10,7 +10,8 @@ protocol home: [`design/measurement.md`](../../../design/measurement.md).
 
 1. **[VERDICT.md](VERDICT.md)** — the ruling: **jigc did not beat static; the
    static-`CLAUDE.md` arm won.** Three diagnosed mechanisms.
-2. **[pre-registration.md](pre-registration.md)** — the protocol, fixed before any run
+2. **[ADDENDUM-jigc-enforced.md](ADDENDUM-jigc-enforced.md)** — folding the fixes back in: an always-on validation hook brings jigc to **4/4, parity with static** (was 2/4).
+3. **[pre-registration.md](pre-registration.md)** — the protocol, fixed before any run
    (arms, tasks, prompts, acceptance, judging, design deviations from the handover).
 3. **[results.md](results.md)** — the full 16-cell per-cell outcome table.
 4. **[LESSONS.md](LESSONS.md)** — what we learned, the arm-C **dilution confound**, the reframe (jigc's value is cumulative/dilution-proof, not single-task), and concrete ways to beat/draw C.
