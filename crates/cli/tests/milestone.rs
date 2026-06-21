@@ -1130,9 +1130,11 @@ fn install_warning_hook(repo: &Path) {
 /// per-sub-task fires are intentionally swallowed (`commit_empty_message` relays nothing)
 /// and only the aggregate's capture surfaces. If the per-sub-task commits leaked into the
 /// relay the warning would appear N+1 times — the bug bullet B1 guards against. The
-/// `squash: true` path now commits the off-line combine via `git commit-tree` (M31 Inc 4),
-/// which runs NO hook, so it captures and relays nothing (hook execution on this path is
-/// deferred to Inc 5; `DECISIONS.md` 2026-06-21).
+/// `squash: true` path commits the off-line combine from a dedicated detached worktree via
+/// `git commit -F` (M31 Inc 5), so the user's `pre-commit`/`commit-msg` hooks run against
+/// the combined tree (`design/finalize.md` → never bypass hooks; `DECISIONS.md` 2026-06-21
+/// — squash:true hook restoration); the single aggregate fires the non-blocking hook EXACTLY
+/// once and relays its output.
 #[test]
 fn milestone_finalize_relays_only_the_aggregate_hook_output() {
     // ── squash:false: 2 sub-task commits + 1 aggregate; warning relayed ONCE ──────
@@ -1168,12 +1170,12 @@ fn milestone_finalize_relays_only_the_aggregate_hook_output() {
         "the relay must land in the delimited section; got:\n{stdout}",
     );
 
-    // ── squash:true: the M31 Inc 4 combine commits via `git commit-tree`, which runs no
-    // `pre-commit`/`commit-msg` hook — so the single aggregate lands but NO hook output is
-    // captured to relay (the deliberate Inc-4 consequence of the off-line temp-index
-    // combine, `DECISIONS.md` 2026-06-20 / 2026-06-21 — squash:true hook execution is
-    // deferred to Inc 5 alongside squash:false's per-sub-task relay). The non-blocking hook
-    // does not block (it never runs), and the commit still lands. ───────────────────────
+    // ── squash:true: the M31 Inc 5 WIP-safe combine commit runs the user's pre-commit/
+    // commit-msg hooks against the combined tree (from a dedicated detached worktree, then
+    // fast-forwards main) — so the single aggregate FIRES the non-blocking hook EXACTLY once
+    // and relays its output in the delimited section (`design/finalize.md` → never bypass
+    // hooks; `DECISIONS.md` 2026-06-21 — squash:true hook restoration). RED before (Inc 4's
+    // `commit-tree` ran none). ───────────────────────────────────────────────────────────
     let repo = TempDir::new("relay-squash-true");
     init_repo(repo.path());
     let home = TempDir::new("home");
@@ -1226,13 +1228,18 @@ fn milestone_finalize_relays_only_the_aggregate_hook_output() {
         before + 1,
         "squash:true must land exactly one aggregate commit",
     );
-    // `git commit-tree` runs no hook, so the warning is neither captured nor relayed (Inc 4).
+    // The Inc 5 dedicated-worktree commit runs the user's pre-commit hook against the
+    // combined tree, so the non-blocking warning is captured + relayed EXACTLY once.
     let stdout = String::from_utf8(finalized.stdout).expect("utf-8 stdout");
     assert_eq!(
         stdout.matches(HOOK_WARNING).count(),
-        0,
-        "the squash:true combine (`commit-tree`) runs no pre-commit hook, so no warning is \
-         relayed (Inc 5 restores hook execution); got:\n{stdout}",
+        1,
+        "the squash:true combine must run the user's pre-commit hook against the combined \
+         tree and relay its warning exactly once (Inc 5 hook restoration); got:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("--- hook output ---"),
+        "the squash:true aggregate hook output must land in the delimited section; got:\n{stdout}",
     );
 }
 

@@ -1102,9 +1102,10 @@ pub(crate) enum StagePolicy {
     /// milestone's still-provisioned worktree paths. The sub-agent code lives in those
     /// isolated worktrees, NOT this checkout, so a `git add --all` sweep would drop it;
     /// instead [`combine_commit`] folds each worktree's staged code-set onto the base tree
-    /// **off-line**, overlays the promoted docs + config, and `commit-tree`s the result. An
-    /// empty list (a docs-only / never-provisioned milestone) degrades to a docs-only
-    /// commit, byte-identical to the M7 single-aggregate form.
+    /// **off-line**, overlays the promoted docs + config, and commits the combined tree with
+    /// the user's hooks running from a dedicated worktree (M31 Inc 5). An empty list (a
+    /// docs-only / never-provisioned milestone) degrades to a docs-only commit, byte-identical
+    /// to the M7 single-aggregate form.
     Combine(Vec<PathBuf>),
 }
 
@@ -1127,7 +1128,8 @@ pub(crate) enum StagePolicy {
 ///
 /// `stage` selects the stage/commit mechanism ([`StagePolicy`]). The `squash: true`
 /// milestone boundary passes [`StagePolicy::Combine`] (fold the worktree code-sets +
-/// `commit-tree`); the migration path its fixed pathspec.
+/// commit the combined tree with the user's hooks running); the migration path its fixed
+/// pathspec.
 // Each argument is a distinct, independent fact (repo/jigc/tmp/cleanup roots, the plan,
 // schemas, the output format, the stage policy) threaded straight to the shared executor;
 // an allow is clearer here than a parameter struct (matching `try_execute_finalize_plan`).
@@ -1159,8 +1161,9 @@ pub(crate) fn execute_finalize_plan(
         stage,
     )? {
         // T3 — relay the landed commit's non-blocking hook output (the `squash: true`
-        // milestone boundary; the combine path's `commit-tree` runs no hook, so the stream
-        // is empty there — `design/finalize.md` → 6. Commit, review B1).
+        // milestone boundary; the combine commits the combined tree from a dedicated worktree
+        // where the user's hooks run, so this stream carries that hook output — M31 Inc 5;
+        // `design/finalize.md` → 6. Commit, review B1).
         Ok(hook_output) => {
             relay_hook_output(format, &hook_output);
             Ok(ExitCode::SUCCESS)
@@ -1253,10 +1256,11 @@ pub(crate) fn try_execute_finalize_plan(
                 git_run(repo_root, &["add", "--all"])?;
                 git_commit(repo_root, &msg_path)
             }
-            // The `squash: true` fan-out boundary (M31 Inc 4): fold the N worktree-staged
-            // code-sets onto the base tree off-line, overlay the promoted docs + config,
-            // and `commit-tree` the result — never `git add --all` (the code lives in the
-            // isolated worktrees, not this checkout, so a sweep would drop it).
+            // The `squash: true` fan-out boundary (M31 Inc 4 / Inc 5): fold the N
+            // worktree-staged code-sets onto the base tree off-line, overlay the promoted docs
+            // + config, and commit the combined tree with the user's hooks running from a
+            // dedicated worktree — never `git add --all` (the code lives in the isolated
+            // worktrees, not this checkout, so a sweep would drop it).
             StagePolicy::Combine(worktrees) => {
                 combine_commit(repo_root, &worktrees, plan, &msg_path)
             }
@@ -1936,25 +1940,28 @@ pub(crate) fn commit_empty_message(
     Ok(())
 }
 
-/// The `squash: true` fan-out commit (M31 Inc 4 T2): fold the N worktree-staged code-sets
-/// onto the base tree off-line via the [combine engine](crate::combine), overlay the
-/// promoted docs + jigc's git-tracked config layer, and `commit-tree` the result as a
-/// child of HEAD — never `git add --all` (the sub-agent code lives in the isolated
-/// worktrees, not this checkout, so a sweep would drop it, the data-loss the redesign
-/// fixes). The whole build is **off-line** (a throwaway index, `GIT_INDEX_FILE`), so the
-/// live index/worktree are untouched until the clean commit lands (`git reset --hard`):
-/// a blocked/failed combine needs no destructive reset and leaves unrelated main-checkout
-/// WIP intact (review S2). An empty `worktrees` list (a docs-only / never-provisioned
-/// milestone) folds nothing and degrades to a docs-only commit, byte-identical to the M7
-/// single-aggregate form.
+/// The `squash: true` fan-out commit (M31 Inc 4 T2 / Inc 5 hook restoration): fold the N
+/// worktree-staged code-sets onto the base tree off-line via the [combine engine](crate::combine),
+/// overlay the promoted docs + jigc's git-tracked config layer into a throwaway index, then
+/// commit the combined tree **with the user's hooks running** from a dedicated detached
+/// worktree — never `git add --all` (the sub-agent code lives in the isolated worktrees, not
+/// this checkout, so a sweep would drop it, the data-loss the redesign fixes). An empty
+/// `worktrees` list (a docs-only / never-provisioned milestone) folds nothing and degrades to
+/// a docs-only commit, byte-identical to the M7 single-aggregate form.
+///
+/// **WIP-safe (review S2):** the off-line tree build (a throwaway index, `GIT_INDEX_FILE`) and
+/// the hook-running commit both happen **away from the main checkout** — the commit lands in a
+/// clean dedicated worktree ([`commit_combined_tree_with_hooks`]), so the live index/worktree
+/// are untouched until the final fast-forward (`git reset --hard`). A blocked combine **or a
+/// hook rejection** lands nothing on main and leaves unrelated main-checkout WIP intact.
 ///
 /// A cross-worktree code collision blocks with a routed [`Finding`] (the combine never
 /// text-merges code) surfaced as an `Err` — the same shape a same-doc join clash takes;
 /// the caller's rollback restores the promoted docs and lands no commit.
 ///
-/// Returns an EMPTY hook stream — `commit-tree` runs no `pre-commit`/`commit-msg` hook
-/// (the Inc 4 consequence; the per-sub-task hook relay through this temp-index combine is
-/// the Inc 5 `squash: false` concern, `DECISIONS.md` 2026-06-20).
+/// Returns the dedicated-worktree commit's captured non-blocking hook stream (empty when no
+/// hook spoke) so the caller's success-relay surfaces it (`design/finalize.md` → 6. Commit;
+/// `DECISIONS.md` 2026-06-21 — the never-bypass-hooks contract on both fan-out commit paths).
 fn combine_commit(
     repo_root: &Path,
     worktrees: &[PathBuf],
@@ -1988,13 +1995,103 @@ fn combine_commit(
         git_index(repo_root, index.path(), &args)?;
     }
     let tree = git_index(repo_root, index.path(), &["write-tree"])?;
-    // `commit-tree` the combined tree as a child of HEAD, then fast-forward the ref + sync
-    // the working tree to it (clean afterward). Nothing live was mutated until this point,
-    // so any failure above left no commit and no destructive reset to undo.
+    // Commit the combined tree as a child of HEAD with the user's hooks running, from a clean
+    // dedicated worktree (WIP-safe — the main checkout is never the commit site), then
+    // fast-forward the ref + sync the working tree to it (clean afterward). Nothing live was
+    // mutated until the fast-forward, so a hook rejection above lands no commit and needs no
+    // destructive reset to undo — unrelated main-checkout WIP survives (review S2).
     let head = git_head(repo_root)?;
-    let commit = git_commit_tree(repo_root, &tree, &head, msg_path)?;
+    let (commit, hook_output) = commit_combined_tree_with_hooks(repo_root, &tree, &head, msg_path)?;
     git_run(repo_root, &["reset", "--hard", &commit])?;
-    Ok(String::new())
+    Ok(hook_output)
+}
+
+/// Commit the off-line-built combined `tree` as a child of `parent`, **running the repo's
+/// shared `pre-commit`/`commit-msg` hooks against it**, without touching the main checkout
+/// (M31 Inc 5 — the squash:true hook restoration; `design/finalize.md` → never bypass hooks).
+///
+/// `git commit-tree` (the Inc 4 mechanism this replaces) writes a commit object directly and
+/// runs **no** hook — bypassing the never-`--no-verify` contract. Instead this adds a clean
+/// **dedicated detached worktree** at `parent` (a linked worktree shares the main `.git`, so
+/// the user's hooks fire), resets its index + working tree to the combined `tree` (`read-tree
+/// --reset -u` — HEAD stays at `parent`, so the commit's parent is `parent` and its tree is
+/// the combined tree), and runs the shared [`git_commit`] (`git commit -F`, never
+/// `--no-verify`) there. A hook rejection surfaces git's stderr verbatim and lands nothing
+/// (the dedicated worktree is the only site mutated — the main checkout is untouched). Returns
+/// the new commit sha + the captured non-blocking hook stream. The dedicated worktree is torn
+/// down on drop regardless of outcome.
+fn commit_combined_tree_with_hooks(
+    repo_root: &Path,
+    tree: &str,
+    parent: &str,
+    msg_path: &Path,
+) -> Result<(String, String)> {
+    let dedicated = DedicatedWorktree::add(repo_root, parent)?;
+    let wt = dedicated.path();
+    // Set the dedicated worktree's index + working tree to the combined tree while leaving
+    // its detached HEAD at `parent` — so `git commit` records `parent` as the parent and the
+    // combined tree as the commit's tree. `--reset -u` forces both (the worktree was freshly
+    // checked out at `parent` and has no local changes to preserve).
+    git_run(wt, &["read-tree", "--reset", "-u", tree])?;
+    let hook_output = git_commit(wt, msg_path)?;
+    let commit = git_head(wt)?;
+    Ok((commit, hook_output))
+}
+
+/// A throwaway **detached** git worktree for the squash:true hook-running combine commit,
+/// removed on drop (`git worktree remove --force` + `prune`). A linked worktree shares the
+/// main repo's `.git` (object DB + hooks), so a commit made here runs the user's shared
+/// `pre-commit`/`commit-msg` hooks; committing here instead of the main checkout keeps the
+/// combine WIP-safe (the main index/worktree are never the commit site). Lives under the
+/// gitignored `.jigc/worktrees/` parent so a leaked dir never pollutes `git status`.
+struct DedicatedWorktree {
+    repo_root: PathBuf,
+    path: PathBuf,
+}
+
+impl DedicatedWorktree {
+    /// Add a detached worktree at `base` under `.jigc/worktrees/.combine-<pid>-<nanos>`,
+    /// clearing any stale leftover dir + pruning admin records first (a crashed prior run).
+    fn add(repo_root: &Path, base: &str) -> Result<Self> {
+        let name = format!(
+            ".combine-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        );
+        let path = repo_root.join(".jigc").join("worktrees").join(name);
+        std::fs::create_dir_all(path.parent().expect("worktree path has a parent"))
+            .with_context(|| format!("could not create the worktrees parent for {path:?}"))?;
+        // A stale leftover dir / admin record from a crashed run would make `add` fail.
+        let _ = std::fs::remove_dir_all(&path);
+        git_run(repo_root, &["worktree", "prune"])?;
+        let path_str = path
+            .to_str()
+            .with_context(|| format!("worktree path {path:?} is not valid UTF-8"))?;
+        git_run(repo_root, &["worktree", "add", "--detach", path_str, base])?;
+        Ok(DedicatedWorktree {
+            repo_root: repo_root.to_path_buf(),
+            path,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for DedicatedWorktree {
+    fn drop(&mut self) {
+        if let Some(path_str) = self.path.to_str() {
+            let _ = git_run(
+                &self.repo_root,
+                &["worktree", "remove", "--force", path_str],
+            );
+        }
+        let _ = git_run(&self.repo_root, &["worktree", "prune"]);
+    }
 }
 
 /// Run `git <args>` in `repo_root` with `GIT_INDEX_FILE` redirected to `index` — the
@@ -2017,38 +2114,6 @@ fn git_index(repo_root: &Path, index: &Path, args: &[&str]) -> Result<String> {
     }
     String::from_utf8(out.stdout)
         .context("`git` produced non-UTF-8 output")
-        .map(|s| s.trim().to_string())
-}
-
-/// `git commit-tree <tree> -p <parent> -F <message-file>` — create a commit object for an
-/// off-line-built tree (the `squash: true` fan-out combine, M31 Inc 4). Unlike
-/// [`git_commit`], commit-tree commits a given tree directly (never the live index) and
-/// **runs no `pre-commit`/`commit-msg` hook** — the seam the off-line combine needs to
-/// land the worktree-folded tree without a `git add`. Returns the new commit sha.
-fn git_commit_tree(
-    repo_root: &Path,
-    tree: &str,
-    parent: &str,
-    message_file: &Path,
-) -> Result<String> {
-    let out = Command::new("git")
-        .arg("commit-tree")
-        .arg(tree)
-        .arg("-p")
-        .arg(parent)
-        .arg("-F")
-        .arg(message_file)
-        .current_dir(repo_root)
-        .output()
-        .context("could not run `git commit-tree` (is git on PATH?)")?;
-    if !out.status.success() {
-        bail!(
-            "`git commit-tree` failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        );
-    }
-    String::from_utf8(out.stdout)
-        .context("`git commit-tree` produced non-UTF-8 output")
         .map(|s| s.trim().to_string())
 }
 

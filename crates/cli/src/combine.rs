@@ -19,9 +19,9 @@
 //! throwaway path, so the **live index and working tree are never mutated** — a blocked
 //! or failed combine needs no destructive reset, and unrelated main-checkout WIP survives
 //! ([DECISIONS.md](../../../DECISIONS.md) 2026-06-20 → review S2, the M30 WIP-safety
-//! hazard). The seam returns a **tree sha, never a commit** — the live-mutating
-//! `commit-tree` / ref-update / checkout is its caller's job (M31 Inc 4 T2), keeping
-//! WIP-safety provable in isolation here.
+//! hazard). The seam returns a **tree sha, never a commit** — the hook-running commit (from
+//! a dedicated worktree) / ref-update / checkout is its caller's job (M31 Inc 4 T2 / Inc 5),
+//! keeping WIP-safety provable in isolation here.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
