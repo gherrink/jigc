@@ -537,3 +537,96 @@ fn flow33_advanced_main_blocks_finalize() {
         "a base-mismatch block must apply no worktree code to the main checkout",
     );
 }
+
+/// **(f-twin) — unrelated main-checkout WIP survives a SUCCESSFUL `squash: true` combine.**
+/// The blocked-combine WIP guarantee (test above) only covers the path that returns before
+/// the ref advance; this is its success-path twin (Validation hardening #5): the landing must
+/// fast-forward main onto the hook-running commit **non-destructively** — carrying unrelated
+/// unstaged WIP, never `git reset --hard`ing it away (`design/finalize.md` → `fan-out`
+/// finalize: "The main checkout is never mutated until that clean fast-forward";
+/// `design/worked-examples.md` flow 33 — "needs no destructive reset … the M30 `git reset
+/// --hard` rollback hazard … is rejected").
+#[test]
+fn flow33_unrelated_wip_survives_successful_combine() {
+    let repo = TempDir::new("success-wip");
+    let home = TempDir::new("home");
+    init_repo(repo.path(), &[]);
+
+    expect_ok(
+        &run_milestone(repo.path(), home.path(), &["create", "Cache rework"]),
+        "milestone create",
+    );
+    for intent in ["Area zed", "Area low"] {
+        expect_ok(
+            &run_milestone(
+                repo.path(),
+                home.path(),
+                &["add-task", "cache-rework", intent],
+            ),
+            "milestone add-task",
+        );
+    }
+    stage_doc(
+        repo.path(),
+        "area-low",
+        "adr:low-policy",
+        &adr_plain("Low policy"),
+        "edited-from-base",
+    );
+    stage_doc(
+        repo.path(),
+        "area-zed",
+        "adr:zed-policy",
+        &adr_plain("Zed policy"),
+        "edited-from-base",
+    );
+    expect_ok(
+        &run_milestone(repo.path(), home.path(), &["provision", "cache-rework"]),
+        "milestone provision",
+    );
+    // DISJOINT sub-agent code, isolated in each worktree — none touches README.md.
+    stage_worktree_code(repo.path(), "area-low", "src/low.rs", "pub fn low() {}\n");
+    stage_worktree_code(repo.path(), "area-zed", "src/zed.rs", "pub fn zed() {}\n");
+
+    // Seed unrelated WIP in the MAIN checkout right before the finalize: an unstaged edit to a
+    // tracked file the combine never touches, plus an untracked scratch file. Neither is the
+    // milestone's work; both must survive the landing byte-identically.
+    fs::write(
+        repo.path().join("README.md"),
+        "hello\nUNRELATED WIP THE USER IS EDITING\n",
+    )
+    .expect("seed unstaged tracked WIP");
+    fs::write(repo.path().join("wip-untracked.txt"), "scratch\n").expect("seed untracked WIP");
+
+    expect_ok(
+        &run_milestone(repo.path(), home.path(), &["finalize", "cache-rework"]),
+        "milestone finalize (squash:true combine) must succeed",
+    );
+
+    // The combine landed: both sub-agents' code rode the one commit.
+    assert!(
+        repo.path().join("src").join("low.rs").exists()
+            && repo.path().join("src").join("zed.rs").exists(),
+        "a successful combine brings both worktrees' code into the main checkout",
+    );
+
+    // The unrelated WIP survives byte-identically (the success-path twin of the blocked-path
+    // assertion above) — the landing must NOT `git reset --hard` it away.
+    assert_eq!(
+        fs::read_to_string(repo.path().join("README.md")).unwrap(),
+        "hello\nUNRELATED WIP THE USER IS EDITING\n",
+        "the unstaged tracked WIP edit survives a SUCCESSFUL combine untouched",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join("wip-untracked.txt")).unwrap(),
+        "scratch\n",
+        "the untracked WIP file survives a SUCCESSFUL combine untouched",
+    );
+    // The WIP stayed OUT of the commit — left behind, never swept in.
+    let committed = head_paths(repo.path());
+    assert!(
+        !committed.contains(&"README.md".to_string())
+            && !committed.contains(&"wip-untracked.txt".to_string()),
+        "unrelated WIP is left behind, never committed; committed paths: {committed:?}",
+    );
+}

@@ -1980,8 +1980,10 @@ fn git_apply_index(repo_root: &Path, patch: &[u8]) -> Result<()> {
 /// **WIP-safe (review S2):** the off-line tree build (a throwaway index, `GIT_INDEX_FILE`) and
 /// the hook-running commit both happen **away from the main checkout** — the commit lands in a
 /// clean dedicated worktree ([`commit_combined_tree_with_hooks`]), so the live index/worktree
-/// are untouched until the final fast-forward (`git reset --hard`). A blocked combine **or a
-/// hook rejection** lands nothing on main and leaves unrelated main-checkout WIP intact.
+/// are untouched until the final **non-destructive** fast-forward (`git merge --ff-only`,
+/// never `git reset --hard` — which would wipe unrelated unstaged WIP). A blocked combine **or
+/// a hook rejection** lands nothing on main and leaves unrelated main-checkout WIP intact; even
+/// a successful land carries unrelated WIP (and refuses, never destroys, on a true collision).
 ///
 /// A cross-worktree code collision blocks with a routed [`Finding`] (the combine never
 /// text-merges code) surfaced as an `Err` — the same shape a same-doc join clash takes;
@@ -2024,13 +2026,26 @@ fn combine_commit(
     }
     let tree = git_index(repo_root, index.path(), &["write-tree"])?;
     // Commit the combined tree as a child of HEAD with the user's hooks running, from a clean
-    // dedicated worktree (WIP-safe — the main checkout is never the commit site), then
-    // fast-forward the ref + sync the working tree to it (clean afterward). Nothing live was
-    // mutated until the fast-forward, so a hook rejection above lands no commit and needs no
-    // destructive reset to undo — unrelated main-checkout WIP survives (review S2).
+    // dedicated worktree (WIP-safe — the main checkout is never the commit site), then land it
+    // on main with a **non-destructive** fast-forward. NOT `git reset --hard` (the M30 hazard
+    // the redesign rejects — it resets the live working tree to the commit, silently wiping any
+    // unrelated unstaged WIP a human is editing in the main checkout; `design/finalize.md` →
+    // `fan-out` finalize, `design/worked-examples.md` flow 33). Instead stage jigc's own
+    // contributions (the promoted docs + first-commit config, already copied into the working
+    // tree by `promote`) into the LIVE index — the same `pathspecs` folded above — so the
+    // fast-forward sees them as matching the target, not as untracked/dirty paths it would
+    // refuse to overwrite; then `git merge --ff-only` advances the ref + brings the worktree
+    // code into the checkout while CARRYING unrelated WIP. If WIP genuinely collides with a
+    // committed path, `--ff-only` refuses (surfaced as an Err → rollback) rather than silently
+    // discarding it — the contract is carry-or-refuse, never destroy (review S2).
     let head = git_head(repo_root)?;
     let (commit, hook_output) = commit_combined_tree_with_hooks(repo_root, &tree, &head, msg_path)?;
-    git_run(repo_root, &["reset", "--hard", &commit])?;
+    if !pathspecs.is_empty() {
+        let mut args: Vec<&str> = vec!["add", "--"];
+        args.extend(pathspecs.iter().map(String::as_str));
+        git_run(repo_root, &args)?;
+    }
+    git_run(repo_root, &["merge", "--ff-only", &commit])?;
     Ok(hook_output)
 }
 
