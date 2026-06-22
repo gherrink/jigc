@@ -113,7 +113,8 @@ fn streams(out: &std::process::Output) -> String {
 // (`pack/workflows/{single-task,quick-fix}.yaml`). The router renders one
 // `- <id> — <when>` option line per selectable workflow.
 const SINGLE_TASK_WHEN: &str = "implement one scoped change end-to-end";
-const QUICK_FIX_WHEN: &str = "apply a small commit-only fix with no decision to record";
+const QUICK_FIX_WHEN: &str =
+    "apply a small commit-only fix that touches no documented code and records no decision";
 const PLAN_WHEN: &str = "draft the specification for upcoming work before writing any code";
 const IMPLEMENT_FROM_SPEC_WHEN: &str =
     "build from a committed spec whose acceptance criteria already exist";

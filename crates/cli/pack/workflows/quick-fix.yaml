@@ -1,7 +1,7 @@
 ---
-when: apply a small commit-only fix with no decision to record
+when: apply a small commit-only fix that touches no documented code and records no decision
 description: A small commit-only fix — locate, implement, and commit, with no decision record.
-usage: the change is a quick, low-stakes fix that needs nothing preserved beyond the commit itself.
+usage: the change is a quick, low-stakes fix that needs nothing preserved beyond the commit itself, and changes no code a managed doc describes — if it renames or removes a documented symbol, the arch-doc anchoring it needs updating too, so pick single-task instead.
 creates-task: true
 allows-create: []
 ---
