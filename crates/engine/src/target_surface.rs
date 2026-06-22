@@ -21,10 +21,17 @@
 //!   `<repo_root>/<location>/<slug>.md` (the proven path the CLI's `{{@task.spec}}`
 //!   slice reads — [`crate::store::canonical_path`]).
 //!
-//! A committed doc **neither edited nor bound** is *not* in effective state and
-//! contributes **zero** pairs — the per-task gate blocks only on anchors the task's
-//! own state carries, never on pre-existing drift in unrelated committed docs
-//! (`validation.md` → Target surface; the masking-trap guard, hardening #5).
+//! A committed doc **neither edited nor bound** is *not* in this `enumerate_target_surface`
+//! pairing — the task's *own* effective state carries only its authored/edited/bound docs,
+//! never unrelated committed ones (the masking-trap guard, hardening #5). **But the
+//! per-task `finalize` gate is not limited to this surface:** the **code-anchor blast
+//! radius** ([`crate::validate::schedule_doc_code`]) additionally drags in *committed*
+//! anchors whose target file the task changed, and blocks on ones that **newly** dangle
+//! (resolved at `HEAD`, gone at the staged index) — so a task that renames a symbol cannot
+//! commit a dangling citation in a committed doc it never opened, while pre-existing drift
+//! in a touched file is *not* re-attributed to it (`validation.md` → Scope = effective
+//! state, the code-anchor blast radius). This module owns only the task's-own-state
+//! enumeration; the blast radius is the floor's separate, deliberate surface.
 //!
 //! ## The pairs
 //!

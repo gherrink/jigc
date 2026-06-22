@@ -182,6 +182,30 @@ impl Finding {
         finding
     }
 
+    /// One **advisory** `doc-code.symlink-anchor` finding for an anchor whose file is a
+    /// symlink — uncheckable under the engine's path-local change-set scoping (the citation
+    /// resolves through the link target, not the named path), so surfaced as uncheckable
+    /// rather than silently followed. Mirrors `unsupported-language`: distinct check-id,
+    /// advisory, un-keyed/informational, route-less.
+    fn symlink_anchor(anchor: &TargetAnchor, file: &str) -> Self {
+        Self {
+            severity: Severity::Advisory,
+            probe: "doc-code".to_string(),
+            check: "symlink-anchor".to_string(),
+            code: "doc-code.symlink-anchor".to_string(),
+            message: format!(
+                "anchor `{}` not validated — `{file}` is a symlink (path-locality not guaranteed)",
+                anchor.anchor_value,
+            ),
+            location: Some(Location {
+                address: anchor.address.clone(),
+                line: 1,
+                col: 1,
+            }),
+            route: None,
+        }
+    }
+
     /// One **advisory** `doc-code.unsupported-language` finding for a `#symbol` anchor on a
     /// present file whose extension/shebang maps to no shipped grammar — the citation is
     /// uncheckable, surfaced *as uncheckable* rather than hidden green (fork F2). A distinct
@@ -256,6 +280,15 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
         .filter_map(|anchor| {
             let (file, symbol) = split_anchor(&anchor.anchor_value);
             let path = snapshot.working_tree_root.join(file);
+            // A **symlink** anchor file breaks the engine's path-locality scoping (the
+            // citation's resolution depends on the link *target's* bytes, not `file`'s, so a
+            // change to the target in a different path would not place `file` in the
+            // change-set). Rather than silently follow it — which would make the blast
+            // radius miss that drift — surface it as an uncheckable citation (the
+            // `unsupported-language` precedent): advisory, non-blocking, never a wrong pass.
+            if path.symlink_metadata().is_ok_and(|m| m.file_type().is_symlink()) {
+                return Some(Finding::symlink_anchor(anchor, file));
+            }
             if !path.exists() {
                 return Some(Finding::dangling_file(anchor, file));
             }
@@ -402,6 +435,25 @@ deploy() {
         // The `#!/usr/bin/env bash` form also sniffs to bash.
         let src = "#!/usr/bin/env bash\nrun() { :; }\n";
         assert!(check_one("run-it", src, "run").is_empty());
+    }
+
+    #[test]
+    fn symlink_anchor_file_advises_rather_than_following() {
+        // A symlink anchor file is uncheckable under the engine's path-local change-set
+        // scoping (the citation resolves through the link target, in a different path), so the
+        // probe advises rather than silently following it — never a wrong pass, and the
+        // blast radius's path-locality stays sound.
+        let root = temp_root();
+        std::fs::write(root.join("target.rs"), "pub fn real() {}\n").unwrap();
+        std::os::unix::fs::symlink("target.rs", root.join("link.rs")).unwrap();
+        let snapshot = EffectiveStateSnapshot {
+            anchors: vec![anchor("link.rs#real")],
+            working_tree_root: root,
+        };
+        let findings = check_anchors(&snapshot);
+        assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
+        assert_eq!(findings[0].code, "doc-code.symlink-anchor");
+        assert!(matches!(findings[0].severity, Severity::Advisory));
     }
 
     #[test]

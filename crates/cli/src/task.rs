@@ -524,6 +524,11 @@ impl TaskArea {
         // under any workflow). Computed against the same staged index `materialize_index`
         // checks out, so the floor validates exactly the code that commits.
         let changed_code = git_staged_paths(&self.repo_root)?;
+        // The HEAD versions of the changed files — the base tree the blast radius's
+        // newly-dangled comparison resolves committed anchors against, so a task that merely
+        // touches a file already carrying pre-existing committed drift is not wedged on drift
+        // it did not cause (only anchors that resolved at HEAD but dangle at the index block).
+        let base_tree = self.materialize_head_subset(&changed_code)?;
         let report = validate_task(
             &self.dir,
             &schemas,
@@ -538,6 +543,7 @@ impl TaskArea {
             &doc_code_invoker,
             &tracked,
             &changed_code,
+            base_tree.path(),
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         Ok((report, record))
@@ -581,6 +587,44 @@ impl TaskArea {
         })?;
         let prefix = format!("--prefix={}/", tree.path().display());
         git_run(&self.repo_root, &["checkout-index", "-a", &prefix])?;
+        Ok(tree)
+    }
+
+    /// Materialize the **HEAD** versions of the task's `changed` files into a fresh,
+    /// self-cleaning temp tree — the `base_code_tree_root` the engine's blast-radius
+    /// newly-dangled comparison resolves committed anchors against (so a blast anchor blocks
+    /// only when it RESOLVED at HEAD but dangles at the staged index — never on pre-existing
+    /// drift in a file the task merely touches). Only the change-set is materialized (a blast
+    /// anchor's file is always in it), and only files **present at HEAD**: a file the task
+    /// *adds* is absent here, so an anchor into it correctly counts as not-resolved-at-base
+    /// (it was already dangling). An empty change-set yields an empty tree (the blast radius
+    /// is then inert anyway). The [`ScratchTree`] removes itself on drop.
+    fn materialize_head_subset(
+        &self,
+        changed: &std::collections::BTreeSet<String>,
+    ) -> Result<ScratchTree> {
+        let tree = ScratchTree::new();
+        std::fs::create_dir_all(tree.path())
+            .with_context(|| format!("could not create the base scratch tree {:?}", tree.path()))?;
+        for path in changed {
+            if !path_at_head(&self.repo_root, path) {
+                continue; // added-in-task (absent at HEAD) → not resolved at base
+            }
+            let out = Command::new("git")
+                .args(["cat-file", "blob", &format!("HEAD:{path}")])
+                .current_dir(&self.repo_root)
+                .output()
+                .context("could not run `git cat-file` for the base tree")?;
+            if !out.status.success() {
+                continue; // not a blob at HEAD (e.g. a directory path) — nothing to resolve
+            }
+            let dest = tree.path().join(path);
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).ok();
+            }
+            std::fs::write(&dest, &out.stdout)
+                .with_context(|| format!("could not write base blob {:?}", dest))?;
+        }
         Ok(tree)
     }
 
