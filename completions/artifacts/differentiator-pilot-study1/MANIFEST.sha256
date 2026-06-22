@@ -214,6 +214,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./cells/task2/
 bec14e08a2ff28e4d1a858b77e9591046a1f0bf2bf73dea9e250241d51b2f9fe  ./cells/task2/static-claude-sonnet-4-6/meta.txt
 8ad3bd1736d5b98b9d7c47f8c5a0168898848b96d9db401d23eddc64fddb7160  ./cells/task2/static-claude-sonnet-4-6/README.after.md
 32147c0640ca600b6f000ba04b625a619dbd9096eb632cf39aca9eadc75fae03  ./cells/task2/static-claude-sonnet-4-6/transcript.json
+7cdebacc04e71d3c66b4f1f83efd74315af46ce61961eb0f0485e804441efbcb  ./HANDOVER-next-session.md
 2255496af106c35c8fb848b6469b5d180d9909ce2331a739854868034070d570  ./harness/Dockerfile.bigstatic
 8b3db5764175ad1dc3907235782270e1e713523423d69b6630fc0b1b01b409c9  ./harness/Dockerfile.deps
 f090f93395d0593795343f022cefb4fa2c40ffbf89f6100e8afcfe54de59ddeb  ./harness/Dockerfile.gsd
