@@ -4889,3 +4889,13 @@ Before pushing, routed the floor diff through Codex (`/review-codex`) as an inde
 - Codex **confirmed no defect** in `anchor_file`-vs-`split_anchor` agreement and the dedup-by-address merge (matching the in-house analysis).
 
 Lesson banked: cross-model review before push earned its keep — it caught a load-bearing overclaim my own tests didn't. 516 engine + full cli + 79 probe tests green; fmt + clippy clean; the Phase-0 e2e repro still blocks productively.
+
+## 2026-06-22 — Floor remediation round 2: a second Codex pass confirmed the fixes closed the prior findings and caught three new ones (all fixed)
+
+Re-ran Codex over the remediation diff before pushing. It confirmed **all four prior findings CLOSED**, and found **three new defects the first remediation introduced** — all now fixed test-first:
+
+- **P2a — base-probe failures were swallowed.** The newly-dangled base comparison consumed the base probe's findings only to build the suppression set, discarding its `pack-probe-integrity.*` meta-findings — so a base probe that *crashed/timed-out* (the comparison never actually ran) passed silently. **Fix:** surface the base probe's integrity findings into the report, so a broken base comparison blocks loudly (the same contract the index probe holds).
+- **P2b — "resolved at base" was coded as "not *blocking* at base".** An *uncheckable* base advisory (a symlink-anchor / unsupported-language) wrongly counted as resolved, so an index dangle on such an anchor was attributed to the task. **Fix:** an anchor counts as resolved-at-base only if the base probe returned **no finding at all** for it; any base finding (dangle OR advisory) means we cannot claim it resolved, so its index dangle is not attributed (the store sweep still surfaces it). RED-confirmed.
+- **P3 — `git_staged_paths` corrupted paths with leading/trailing spaces or newlines** (`--name-only` + `lines()` + `trim()`). **Fix:** `git diff --cached --name-only -z` (NUL-separated, no trim) so any valid path survives verbatim. (Also fixed an orphaned doc comment the first cut left on `git_diff`.)
+
+Codex re-confirmed no defect in `anchor_file`/`split_anchor`, dedup, the symlink ordering, and the multi-valued store-scope decision. 517 engine + full cli + 79 probe tests green; fmt + clippy clean; e2e regression holds (genuine rename blocks, unrelated edit on a pre-drifted file commits). Two review rounds; the floor is now independently checked clean.

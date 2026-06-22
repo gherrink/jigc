@@ -1715,39 +1715,43 @@ fn advance_file_state(
     Ok(())
 }
 
-/// Run `git diff <base>` in `repo_root`, returning the unified diff of the working
-/// tree against the pinned base commit (`storage.md` → CLI and git: "CLI
-/// orchestrates, git executes"). Shells out to the user's `git`
-/// (`DECISIONS.md` 2026-05-31 → Git invocation).
-/// The repo-relative paths in the **staged** set (`git diff --cached --name-only`) — the
-/// task's code change-set the engine's code-anchor blast radius scopes its committed-anchor
-/// re-resolution to (`design/validation.md` → Scope = effective state, the universal
-/// `finalize` floor). Mirrors what [`Task::materialize_index`] checks out, so "the files
-/// the floor re-validates" and "the code that commits" are the same staged set. The CLI
-/// owns the shell-out; the engine stays shell-free. `--no-renames` so a rename reports both
-/// its old and new path (the old path is exactly the file a committed anchor may now dangle
-/// against).
+/// The repo-relative paths in the **staged** set — the task's code change-set the engine's
+/// code-anchor blast radius scopes its committed-anchor re-resolution to
+/// (`design/validation.md` → Scope = effective state, the universal `finalize` floor).
+/// Mirrors what [`Task::materialize_index`] checks out, so "the files the floor re-validates"
+/// and "the code that commits" are the same staged set. The CLI owns the shell-out; the
+/// engine stays shell-free. `--no-renames` so a rename reports both its old and new path (the
+/// old path is exactly the file a committed anchor may now dangle against). **`-z`**
+/// (NUL-separated) so a path containing a space, a leading/trailing space, or a newline
+/// survives verbatim — without it git quotes such paths and a line/`trim()` split would
+/// corrupt the change-set (so the blast radius would scope against the wrong file).
 pub(crate) fn git_staged_paths(repo_root: &Path) -> Result<std::collections::BTreeSet<String>> {
     let out = Command::new("git")
-        .args(["diff", "--cached", "--no-renames", "--name-only"])
+        .args(["diff", "--cached", "--no-renames", "--name-only", "-z"])
         .current_dir(repo_root)
         .output()
         .context("could not run `git` (is it on PATH?)")?;
     if !out.status.success() {
         bail!(
-            "`git diff --cached --name-only` failed: {}",
+            "`git diff --cached --name-only -z` failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
         );
     }
+    // `-z` terminates each entry with a NUL (the last one too), so the trailing split yields
+    // an empty string — filtered out. No `trim()`: a path's own leading/trailing whitespace
+    // is significant and must survive.
     Ok(String::from_utf8(out.stdout)
         .context("`git diff --cached` produced non-UTF-8 output")?
-        .lines()
-        .map(str::trim)
-        .filter(|l| !l.is_empty())
+        .split('\0')
+        .filter(|p| !p.is_empty())
         .map(str::to_owned)
         .collect())
 }
 
+/// Run `git diff <base>` in `repo_root`, returning the unified diff of the working
+/// tree against the pinned base commit (`storage.md` → CLI and git: "CLI
+/// orchestrates, git executes"). Shells out to the user's `git`
+/// (`DECISIONS.md` 2026-05-31 → Git invocation).
 pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
     let out = Command::new("git")
         .args(["diff", base_sha])

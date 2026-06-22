@@ -601,14 +601,20 @@ fn schedule_doc_code(
     let index_findings =
         run_doc_code_probe(&anchors, code_tree_root, &dir.join(SNAPSHOT_FILE), invoke)?;
 
-    // **Newly-dangled filter** — the cross-task-attribution guard. A *blast* finding that
-    // was ALSO dangling against the **base** (HEAD) tree is pre-existing drift this task did
-    // not cause: drop it, so a task that merely touches a file already carrying stale
-    // committed citations is not wedged on drift outside its control (`validation.md` →
-    // Scope = effective state, the newly-dangled rule). Task-surface findings are never
-    // filtered — the task authored or edited those docs, so a dangling anchor there is
-    // always its own integrity to fix. The base probe runs only over the blast set, only
-    // when there is one.
+    // **Newly-dangled filter** — the cross-task-attribution guard. A *blast* finding is kept
+    // (blocks) only if its anchor **affirmatively resolved at the base (HEAD) tree** — i.e.
+    // the base probe returned **no finding at all** for it — *and* it dangles at the index.
+    // So a task that merely touches a file already carrying stale committed citations is not
+    // wedged on drift outside its control (`validation.md` → Scope = effective state, the
+    // newly-dangled rule). "Affirmatively resolved" is stricter than "not blocking at base":
+    // a base **advisory** (an *uncheckable* anchor — a symlink-anchor / unsupported-language)
+    // is NOT proof the symbol was present, so it does not count as resolved and its index
+    // dangle is not attributed here (the store sweep still surfaces it). Task-surface findings
+    // are never filtered — the task authored those docs, so a dangling anchor there is always
+    // its own integrity to fix. The base probe runs only over the blast set, only when there
+    // is one; its `pack-probe-integrity.*` failures (a base comparison that did not actually
+    // run) are **surfaced**, never swallowed — a broken base probe blocks loudly rather than
+    // silently letting the comparison pass.
     let resolved_findings: Vec<Finding> = if blast_addresses.is_empty() {
         index_findings
     } else {
@@ -623,18 +629,27 @@ fn schedule_doc_code(
             &dir.join(BASE_SNAPSHOT_FILE),
             invoke,
         )?;
-        let base_dangling: BTreeSet<&str> = base_findings
+        // A base probe-integrity failure (timeout/crash/malformed) carries no address; surface
+        // these so a base comparison that did not run blocks rather than passing silently.
+        let base_meta: Vec<Finding> = base_findings
             .iter()
-            .filter(|f| f.severity == Severity::Blocking)
-            .filter_map(finding_address)
+            .filter(|f| f.probe == "pack-probe-integrity")
+            .cloned()
             .collect();
-        index_findings
+        // An anchor is "unresolved at base" if the base probe emitted **any** finding for it
+        // (a pre-existing dangle, OR an uncheckable advisory) — only an anchor with *no* base
+        // finding affirmatively resolved there.
+        let base_unresolved: BTreeSet<&str> =
+            base_findings.iter().filter_map(finding_address).collect();
+        let mut kept: Vec<Finding> = index_findings
             .into_iter()
             .filter(|f| {
                 !finding_address(f)
-                    .is_some_and(|a| blast_addresses.contains(a) && base_dangling.contains(a))
+                    .is_some_and(|a| blast_addresses.contains(a) && base_unresolved.contains(a))
             })
-            .collect()
+            .collect();
+        kept.extend(base_meta);
+        kept
     };
 
     // The probe's (newly-dangled-filtered) findings, plus any multi-valued guard findings (a
@@ -4213,6 +4228,142 @@ Effects.
         assert!(
             blast_blocks(&report),
             "a non-canonical `./src/foo.rs` anchor must still be caught, got {:?}",
+            report.findings,
+        );
+    }
+
+    /// (Codex round-2 P2b) "Resolved at base" must mean **affirmatively clean** (no base
+    /// finding), not merely "not blocking at base". An anchor that is only *uncheckable* at
+    /// base (an advisory — a symlink-anchor / unsupported-language) is NOT proof the symbol
+    /// resolved there, so its index dangle must NOT be attributed to this task.
+    #[test]
+    fn base_advisory_is_not_resolved_so_no_false_attribution() {
+        let repo = TempRoot::new("adv-repo");
+        repo.commit(
+            "decisions",
+            "cited",
+            &adr_citing("src/foo.rs#vanished_symbol"),
+        );
+        let task = TempRoot::new("adv-task");
+        let index = code_tree("adv-index", &[("src/foo.rs", "pub fn other() {}\n")]);
+        let base = code_tree("adv-base", &[("src/foo.rs", "anything\n")]);
+        let base_path = base.path().to_path_buf();
+        // Against the BASE tree: an uncheckable advisory (as a symlink would yield). Against
+        // the INDEX tree: a blocking dangle. The advisory must not count as resolved-at-base.
+        let invoker = |req: &ProbeRequest| -> std::io::Result<ProbeRun> {
+            let snapshot: EffectiveStateSnapshot =
+                serde_json::from_slice(&std::fs::read(&req.effective_state.snapshot_path)?)?;
+            let is_base = snapshot.working_tree_root == base_path;
+            let findings: Vec<Finding> = snapshot
+                .anchors
+                .iter()
+                .map(|a| {
+                    let (sev, code) = if is_base {
+                        (Severity::Advisory, "doc-code.symlink-anchor")
+                    } else {
+                        (Severity::Blocking, "doc-code.symbol-exists")
+                    };
+                    Finding::graded(
+                        sev,
+                        code,
+                        a.anchor_value.clone(),
+                        Some(Location::addressed(a.address.clone(), 1, 1)),
+                        None,
+                    )
+                })
+                .collect();
+            Ok(ProbeRun {
+                stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            })
+        };
+        let report = validate_task(
+            task.path(),
+            &schemas(),
+            &mut FileStateRecord::new(),
+            repo.path(),
+            index.path(),
+            repo.path(),
+            "HEAD",
+            &no_delta_resolved(),
+            &invoker,
+            &|_: &str| false,
+            &change_set(&["src/foo.rs"]),
+            base.path(),
+        )
+        .expect("sweep runs");
+        assert!(
+            !blast_blocks(&report),
+            "an anchor only uncheckable (advisory) at base must NOT be attributed, got {:?}",
+            report.findings,
+        );
+    }
+
+    /// (Codex round-2 P2a) A **base probe failure** (a base comparison that did not actually
+    /// run — crash/timeout/malformed) must be **surfaced** as a blocking `pack-probe-integrity`
+    /// finding, never swallowed: a broken base probe blocks loudly rather than silently
+    /// letting the newly-dangled comparison pass.
+    #[test]
+    fn base_probe_failure_is_surfaced_not_swallowed() {
+        let repo = TempRoot::new("bfail-repo");
+        repo.commit(
+            "decisions",
+            "cited",
+            &adr_citing("src/foo.rs#vanished_symbol"),
+        );
+        let task = TempRoot::new("bfail-task");
+        let index = code_tree("bfail-index", &[("src/foo.rs", "pub fn other() {}\n")]);
+        let base = code_tree("bfail-base", &[("src/foo.rs", "x\n")]);
+        let base_path = base.path().to_path_buf();
+        // The base probe CRASHES (non-zero exit, no output); the index probe blocks normally.
+        let invoker = |req: &ProbeRequest| -> std::io::Result<ProbeRun> {
+            let snapshot: EffectiveStateSnapshot =
+                serde_json::from_slice(&std::fs::read(&req.effective_state.snapshot_path)?)?;
+            if snapshot.working_tree_root == base_path {
+                return Ok(ProbeRun {
+                    stdout: Vec::new(),
+                    status: ProbeRunStatus::Exited { code: Some(2) },
+                });
+            }
+            let findings: Vec<Finding> = snapshot
+                .anchors
+                .iter()
+                .map(|a| {
+                    Finding::graded(
+                        Severity::Blocking,
+                        "doc-code.symbol-exists",
+                        "dangling".to_string(),
+                        Some(Location::addressed(a.address.clone(), 1, 1)),
+                        None,
+                    )
+                })
+                .collect();
+            Ok(ProbeRun {
+                stdout: serde_json::to_vec(&ProbeResponse::new(findings)).unwrap(),
+                status: ProbeRunStatus::Exited { code: Some(0) },
+            })
+        };
+        let report = validate_task(
+            task.path(),
+            &schemas(),
+            &mut FileStateRecord::new(),
+            repo.path(),
+            index.path(),
+            repo.path(),
+            "HEAD",
+            &no_delta_resolved(),
+            &invoker,
+            &|_: &str| false,
+            &change_set(&["src/foo.rs"]),
+            base.path(),
+        )
+        .expect("sweep runs");
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.probe == "pack-probe-integrity"),
+            "a base probe failure must surface a pack-probe-integrity finding, got {:?}",
             report.findings,
         );
     }
