@@ -1,0 +1,8 @@
+{"type":"system","subtype":"init","session_id":"fx1"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"I'll route this through jigc."},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"jigc start --workflow single-task \"rename Foo to Bar\"","description":"mint task"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"task rename-foo-to-bar composed"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"jigc doc set-field commit:rename-foo-to-bar#type --value refactor --task rename-foo-to-bar"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","content":"set"}]}}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t3","name":"Bash","input":{"command":"git add -A && jigc task finalize rename-foo-to-bar"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t3","content":"finalized abc1234"}]}}
+{"type":"result","subtype":"success","result":"Done — committed via jigc.","num_turns":6,"total_cost_usd":0.84}
