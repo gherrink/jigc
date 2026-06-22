@@ -518,6 +518,12 @@ impl TaskArea {
         // so `task validate` and `finalize` both gate on the index. The index is a pure
         // function of the staged set, so the snapshot stays deterministic.
         let index_tree = self.materialize_index()?;
+        // The staged code change-set — the engine's code-anchor blast radius re-resolves
+        // every committed anchor whose target file is in this set (the universal `finalize`
+        // floor: a rename can't dangle a citation in a committed doc the task never opened,
+        // under any workflow). Computed against the same staged index `materialize_index`
+        // checks out, so the floor validates exactly the code that commits.
+        let changed_code = git_staged_paths(&self.repo_root)?;
         let report = validate_task(
             &self.dir,
             &schemas,
@@ -531,6 +537,7 @@ impl TaskArea {
             &self.severity_cascade()?,
             &doc_code_invoker,
             &tracked,
+            &changed_code,
         )
         .with_context(|| format!("validating task at {:?}", self.dir))?;
         Ok((report, record))
@@ -1668,6 +1675,35 @@ fn advance_file_state(
 /// tree against the pinned base commit (`storage.md` → CLI and git: "CLI
 /// orchestrates, git executes"). Shells out to the user's `git`
 /// (`DECISIONS.md` 2026-05-31 → Git invocation).
+/// The repo-relative paths in the **staged** set (`git diff --cached --name-only`) — the
+/// task's code change-set the engine's code-anchor blast radius scopes its committed-anchor
+/// re-resolution to (`design/validation.md` → Scope = effective state, the universal
+/// `finalize` floor). Mirrors what [`Task::materialize_index`] checks out, so "the files
+/// the floor re-validates" and "the code that commits" are the same staged set. The CLI
+/// owns the shell-out; the engine stays shell-free. `--no-renames` so a rename reports both
+/// its old and new path (the old path is exactly the file a committed anchor may now dangle
+/// against).
+pub(crate) fn git_staged_paths(repo_root: &Path) -> Result<std::collections::BTreeSet<String>> {
+    let out = Command::new("git")
+        .args(["diff", "--cached", "--no-renames", "--name-only"])
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git` (is it on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git diff --cached --name-only` failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8(out.stdout)
+        .context("`git diff --cached` produced non-UTF-8 output")?
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
 pub(crate) fn git_diff(repo_root: &Path, base_sha: &str) -> Result<String> {
     let out = Command::new("git")
         .args(["diff", base_sha])

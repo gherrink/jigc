@@ -169,13 +169,17 @@ impl Finding {
     /// resolves to a real named item that is **not** a `#[test]` fn — the is-a-test
     /// predicate failed (T3).
     fn not_a_test(anchor: &TargetAnchor, file: &str, symbol: &str) -> Self {
-        Self::dangling(
+        let mut finding = Self::dangling(
             anchor,
             format!(
                 "anchor `{}` maps to no test (`{symbol}` in `{file}` is not a `#[test]` fn)",
                 anchor.anchor_value,
             ),
-        )
+        );
+        // A resolved-but-not-a-test symbol has its own repair: point the criterion at a
+        // real test, not the symbol-restore route the floor's dangling cases carry.
+        finding.route = Some("point the criterion at a real test, or correct the cited symbol".to_string());
+        finding
     }
 
     /// One **advisory** `doc-code.unsupported-language` finding for a `#symbol` anchor on a
@@ -203,6 +207,15 @@ impl Finding {
     }
 
     /// The common blocking-finding shape: `doc-code.<check_id>` keyed on the target.
+    ///
+    /// Carries the **actionable repair route** for a dangling code citation (the
+    /// symbol-exists floor — the universal `finalize` floor's block, `design/validation.md`
+    /// → Scope = effective state): the finding's `location.address` already names the
+    /// citing doc + field and the `message` names the anchor + symbol + file, so the route
+    /// states the two ways out — update the citation to match the renamed/moved code, or
+    /// restore what it cites. This turns a blocked `finalize` into a *productively* blocked
+    /// one (the weaker model can act on it), uniform across the task surface, the blast
+    /// radius, and the store sweep (`not_a_test` overrides it with its own repair).
     fn dangling(anchor: &TargetAnchor, message: String) -> Self {
         Self {
             severity: Severity::Blocking,
@@ -215,7 +228,11 @@ impl Finding {
                 line: 1,
                 col: 1,
             }),
-            route: None,
+            route: Some(
+                "update the citation to match the renamed/moved code, or restore the cited \
+                 symbol (e.g. revert the change)"
+                    .to_string(),
+            ),
         }
     }
 }

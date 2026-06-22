@@ -44,7 +44,7 @@ use crate::probe::{EffectiveStateSnapshot, ProbeRequest, ProbeRun, ingest_probe_
 use crate::result::ValidationReport;
 use crate::schema::{Field as SchemaField, FieldType, Schema, Section, SectionBody};
 use crate::target_surface::{enumerate_committed_surface, enumerate_target_surface};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 /// The working-area sub-directory holding the task's staged doc instances
@@ -166,6 +166,23 @@ pub type TrackedPredicate<'a> = dyn Fn(&str) -> bool + 'a;
 /// (the committed-store reads, the edge index, the #5 owner-artifact gate) stays on
 /// `repo_root`; only the doc-code snapshot's `working_tree_root` rides `code_tree_root`.
 /// Engine unit tests pass `repo_root` for it (no index to materialize against).
+///
+/// `changed_code` is the task's **staged code change-set** — the repo-relative paths
+/// `git diff --cached --name-only` reports (the CLI shells out; the engine stays
+/// shell-free). It drives the **code-anchor blast radius** (the universal `finalize`
+/// floor, `validation.md` → Scope = effective state): every committed doc's
+/// `code-anchor` whose **target file is in this set** is re-resolved against
+/// `code_tree_root` and **blocks** if it now dangles — so a task that renames a symbol
+/// cannot commit a dangling citation in a committed doc it never opened, *under any
+/// workflow* (the `doc→code` analog of the inbound-edge blast-radius walk: "a task
+/// can't commit breakage elsewhere"). **Change-set scoping is complete because anchor
+/// resolution is path-local** (`p#s` is a pure function of `p`'s bytes — see
+/// [`anchor_file`]): a committed `p#s` can newly-dangle only if `p` changed, so a
+/// full-store sweep would catch the identical set while also re-attributing *other*
+/// tasks' pre-existing drift to this one (the cross-task coupling the integrity /
+/// completeness split forbids). An **empty** set is the byte-identical pre-floor path
+/// (no committed anchor is in scope), so a task touching no code is never blocked by
+/// pre-existing committed drift.
 // Every parameter is a distinct determinism-boundary input the CLI threads in (the
 // engine produces none of them): the working area, the resolved schemas/cascade, the
 // committed-store + `.jigc/` roots, the git HEAD stamp, and the shell-free probe seam.
@@ -183,6 +200,7 @@ pub fn validate_task(
     resolved: &crate::cascade::Resolved,
     invoke_doc_code: &ProbeInvoker<'_>,
     tracked: &TrackedPredicate<'_>,
+    changed_code: &BTreeSet<String>,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
     for entry in staged_instances(dir)? {
@@ -234,18 +252,21 @@ pub fn validate_task(
     ));
 
     // `doc-code` — the pack-provided doc↔code probe (`validation.md` → The `doc-code`
-    // probe). The engine enumerates the task's effective-state `code-anchor` leaves,
-    // materializes the serializable snapshot, builds the wire request, and ingests the
-    // probe's findings; the CLI-supplied invoker runs the subprocess (the engine stays
-    // shell-free). A task whose effective state carries **no** anchor produces zero
-    // pairs, so the whole block is skipped — the invoker is never called and no snapshot
-    // is written, leaving the no-anchor path byte-identical to the pre-wiring sweep (the
-    // omitting-context guard, hardening #5).
+    // probe). The engine enumerates the task's effective-state `code-anchor` leaves
+    // **plus the code-anchor blast radius** (committed anchors whose target file is in
+    // `changed_code` — the universal `finalize` floor), materializes one serializable
+    // snapshot, builds the wire request, and ingests the probe's findings; the
+    // CLI-supplied invoker runs the subprocess (the engine stays shell-free). A task
+    // whose merged surface carries **no** anchor produces zero pairs, so the whole block
+    // is skipped — the invoker is never called and no snapshot is written, leaving the
+    // no-anchor path byte-identical to the pre-wiring sweep (the omitting-context guard,
+    // hardening #5).
     findings.extend(schedule_doc_code(
         dir,
         repo_root,
         code_tree_root,
         schemas,
+        changed_code,
         invoke_doc_code,
     )?);
 
@@ -450,6 +471,32 @@ fn store_scratch_path() -> std::path::PathBuf {
     path
 }
 
+/// The **file portion** of a `code-anchor` value (`<path>#<symbol>` → `<path>`; a bare
+/// path with no `#` is itself the file). Split on the **first** `#`, byte-identical to
+/// the `doc-code` probe's own `split_anchor` (`crates/cli/probes/doc-code/src/main.rs`),
+/// so the engine's change-set scoping and the probe's resolution agree on what "the
+/// file" is.
+///
+/// **This function is the path-locality chokepoint of the code-anchor blast radius.**
+/// The universal `finalize` floor scopes its sweep to committed anchors whose file is in
+/// the task's staged change-set, and that scoping is *complete* only because a
+/// `code-anchor` resolves **path-locally** — `p#s` is a pure function of `p`'s bytes, so
+/// a committed anchor can newly-dangle only when its file `p` changed. Every shipped
+/// grammar (the six languages + CSS + YAML) resolves this way, and the reserved
+/// `#kind:name` qualifier stays path-local. If a future resolver ever became **non-local**
+/// (resolving a citation through imports / re-exports / build config, so changing file
+/// `B` could dangle an anchor into file `A`), change-set scoping keyed on this function
+/// would under-cover — so the invariant is guarded by `path_locality_*` tests that pin
+/// "the scoped file is the literal pre-`#` path", forcing the model change to fail loud
+/// rather than silently leak drift (`validation.md` → Scope = effective state, the
+/// path-locality note; `DECISIONS.md` 2026-06-22 → Phase 2).
+pub(crate) fn anchor_file(anchor_value: &str) -> &str {
+    anchor_value
+        .split_once('#')
+        .map(|(file, _symbol)| file)
+        .unwrap_or(anchor_value)
+}
+
 /// Schedule the `doc-code` probe over the task's effective-state target surface
 /// (`validation.md` → The `doc-code` probe → Target surface). The engine owns three of
 /// the four steps — **enumerate** ([`enumerate_target_surface`]), **materialize** the
@@ -476,9 +523,34 @@ fn schedule_doc_code(
     repo_root: &Path,
     code_tree_root: &Path,
     schemas: &BTreeMap<String, Schema>,
+    changed_code: &BTreeSet<String>,
     invoke: &ProbeInvoker<'_>,
 ) -> std::io::Result<Vec<Finding>> {
-    let (anchors, guard_findings) = enumerate_target_surface(dir, repo_root, schemas)?;
+    let (mut anchors, guard_findings) = enumerate_target_surface(dir, repo_root, schemas)?;
+
+    // The **code-anchor blast radius** — the universal `finalize` floor. A committed
+    // doc's `code-anchor` whose target file the task changed (`changed_code`) is dragged
+    // into the surface and re-resolved against `code_tree_root`, so a rename that dangles
+    // a citation in a doc the task never opened is caught under *any* workflow (the
+    // `doc→code` analog of the inbound-edge blast-radius walk — `validation.md` → Scope =
+    // effective state). Scoping by the change-set is **complete** because resolution is
+    // path-local ([`anchor_file`]): a committed `p#s` can newly-dangle only if `p` is in
+    // the set. An empty set drags nothing in (the byte-identical pre-floor path), and a
+    // committed anchor already present in the task surface (a bound/edited doc the task
+    // both touched and whose code it changed) is not added twice — so the merged set is
+    // deduped by address, never double-reporting.
+    if !changed_code.is_empty() {
+        let (committed, _committed_guard) = enumerate_committed_surface(repo_root, schemas)?;
+        for anchor in committed {
+            if changed_code.contains(anchor_file(&anchor.anchor_value))
+                && !anchors.iter().any(|a| a.address == anchor.address)
+            {
+                anchors.push(anchor);
+            }
+        }
+        anchors.sort_by(|a, b| a.address.cmp(&b.address));
+    }
+
     if anchors.is_empty() {
         // No anchor to probe, but a list-valued `code-anchor` still surfaces its loud
         // guard finding (the multi-valued non-silent guard, `validation.md` →
@@ -2397,6 +2469,7 @@ kind: memo
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &BTreeSet::new(),
         )
         .expect("sweep runs");
 
@@ -2432,6 +2505,7 @@ kind: memo
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &BTreeSet::new(),
         )
         .expect("clean sweep runs");
 
@@ -2650,6 +2724,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &BTreeSet::new(),
         )
         .expect("sweep runs");
 
@@ -2704,6 +2779,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &BTreeSet::new(),
         )
         .expect("sweep runs");
 
@@ -2754,6 +2830,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &BTreeSet::new(),
         )
         .expect("sweep runs");
 
@@ -2802,6 +2879,7 @@ A failed node's sessions are re-routed on next request.
             &no_delta_resolved(),
             &unused_invoker(),
             &never_tracked(),
+            &BTreeSet::new(),
         )
         .expect("sweep runs");
 
@@ -3149,6 +3227,7 @@ The audit landed green.
             &no_delta_resolved(),
             &unused_invoker(),
             &|_p| true, // tracked is irrelevant — the file is absent.
+            &BTreeSet::new(),
         )
         .expect("validate runs");
         assert!(
@@ -3206,6 +3285,7 @@ The audit landed green.
             &no_delta_resolved(),
             &unused_invoker(),
             &|_p| true, // the artifact is tracked.
+            &BTreeSet::new(),
         )
         .expect("validate runs");
         assert!(
@@ -3837,5 +3917,112 @@ Effects.
             "a ref absent from the workflow's own catalog must still be caught: {:?}",
             report.findings,
         );
+    }
+
+    /// A committed ADR citing `anchor` from its header `cites-code` — the doc a task
+    /// never opens but whose citation its code change may dangle.
+    fn adr_citing(anchor: &str) -> String {
+        format!(
+            "---\nstatus: accepted\ndate: 2026-05-23\ncites-code: {anchor}\n---\n\n\
+             # Cited decision\n\n## Context\nForces.\n\n## Decision\nDecided.\n\n\
+             ## Consequences\nEffects.\n"
+        )
+    }
+
+    /// A repo-relative change-set from a path slice.
+    fn change_set(paths: &[&str]) -> BTreeSet<String> {
+        paths.iter().map(|p| p.to_string()).collect()
+    }
+
+    /// (Phase-2 floor — the universal `finalize` floor) The **code-anchor blast radius**:
+    /// a task that changes a code file dangles a `code-anchor` in a **committed** doc it
+    /// never opened, and `validate_task` (== what `finalize` gates on) **blocks** — the
+    /// `doc→code` analog of the inbound-edge blast-radius ("a task can't commit breakage
+    /// elsewhere"), workflow-agnostic. And the scoping is honest: an anchor whose file the
+    /// task did **not** change is never re-attributed to it, and a task that changes **no**
+    /// code is never blocked by pre-existing committed drift (no cross-task false
+    /// attribution — `validation.md` → Scope = effective state).
+    #[test]
+    fn finalize_floor_blocks_a_committed_anchor_dangled_by_changed_code() {
+        // A committed ADR citing a symbol in `src/foo.rs` — the task never opens this doc.
+        let repo = TempRoot::new("blast-repo");
+        repo.commit(
+            "decisions",
+            "cited",
+            &adr_citing("src/foo.rs#vanished_symbol"),
+        );
+        // An empty task working area: no staged docs, no roles → empty task surface, so
+        // the *only* anchor that can reach the probe is the committed one via the floor.
+        let task = TempRoot::new("blast-task");
+        let no_op_tracked = |_: &str| false;
+
+        let run = |changed: &BTreeSet<String>| {
+            let seen = RefCell::new(Vec::new());
+            validate_task(
+                task.path(),
+                &schemas(),
+                &mut FileStateRecord::new(),
+                repo.path(),
+                repo.path(),
+                repo.path(),
+                "HEAD",
+                &no_delta_resolved(),
+                &dangling_aware_invoker(&seen),
+                &no_op_tracked,
+                changed,
+            )
+            .expect("sweep runs")
+        };
+        let blocks_anchor = |r: &ValidationReport| {
+            r.findings
+                .iter()
+                .any(|f| f.code == "doc-code.symbol-exists" && f.severity == Severity::Blocking)
+        };
+
+        // (1) The task changed `src/foo.rs` → the committed anchor is in the blast radius
+        // → BLOCK. This is the quick-fix hole closed: a doc the task never staged is gated.
+        let changed = change_set(&["src/foo.rs"]);
+        let report = run(&changed);
+        assert!(
+            blocks_anchor(&report),
+            "a committed anchor dangled by the task's changed code MUST block, got {:?}",
+            report.findings,
+        );
+
+        // (2) The task changed an UNRELATED file → no false attribution → no doc-code block.
+        let unrelated = change_set(&["src/other.rs"]);
+        let report = run(&unrelated);
+        assert!(
+            !blocks_anchor(&report),
+            "an anchor whose file the task didn't change must NOT be re-attributed, got {:?}",
+            report.findings,
+        );
+
+        // (3) The task changed NO code → pre-existing committed drift is not its gate.
+        let report = run(&BTreeSet::new());
+        assert!(
+            !blocks_anchor(&report),
+            "a task that changes no code must NOT block on pre-existing committed drift, got {:?}",
+            report.findings,
+        );
+    }
+
+    /// The **path-locality guard** of the blast radius (`validation.md` → Scope = effective
+    /// state; [`anchor_file`]). Change-set scoping is *complete* only because a `code-anchor`
+    /// resolves path-locally — its scoped file is the literal pre-`#` path. This pins that
+    /// extraction so a future non-local resolver (one where changing file B could dangle an
+    /// anchor into file A) trips a red test instead of silently leaking drift.
+    #[test]
+    fn path_locality_scopes_blast_radius_by_anchor_file() {
+        assert_eq!(anchor_file("src/a.rs#Foo"), "src/a.rs");
+        assert_eq!(anchor_file("dir/sub/b.ts#Bar"), "dir/sub/b.ts");
+        // A bare path (no `#symbol`) is itself the file.
+        assert_eq!(anchor_file("src/c.css"), "src/c.css");
+        // The split is on the FIRST `#`, byte-identical to the probe's `split_anchor`.
+        assert_eq!(anchor_file("src/d.rs#a#b"), "src/d.rs");
+        // A committed anchor is in scope iff its file is the literal path the task changed.
+        let changed = change_set(&["src/a.rs"]);
+        assert!(changed.contains(anchor_file("src/a.rs#Foo")));
+        assert!(!changed.contains(anchor_file("src/b.rs#Foo")));
     }
 }
