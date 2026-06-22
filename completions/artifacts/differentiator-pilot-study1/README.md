@@ -11,7 +11,8 @@ protocol home: [`design/measurement.md`](../../../design/measurement.md).
 1. **[VERDICT.md](VERDICT.md)** — the ruling: **jigc did not beat static; the
    static-`CLAUDE.md` arm won.** Three diagnosed mechanisms.
 2. **[REPLICATION.md](REPLICATION.md)** — *the settled result* (n=16/arm): plain 88% · static 0% · jigc 19% · jigc-gate 0% drift, but **0/32 tool engagement, 0/16 gate fires** — jigc's benefit is its bootstrap-as-instruction, not its mechanism, and a static instruction beats it. **Supersedes the n=1 readings below.**
-3. **[ADDENDUM-jigc-enforced.md](ADDENDUM-jigc-enforced.md)** — the A′/A″ single-shot follow-ups (catch + proactive bootstrap). Read its top banner: the "parity" reading was variance, corrected by REPLICATION.
+3. **[WHY-SONNET-BYPASSES.md](WHY-SONNET-BYPASSES.md)** — diagnosis: Sonnet *reads* the instruction (quotes it verbatim) but bypasses anyway — retrieval-under-execution + consequence-modeling gaps; instruction is provably insufficient for the weaker model.
+4. **[ADDENDUM-jigc-enforced.md](ADDENDUM-jigc-enforced.md)** — the A′/A″ single-shot follow-ups (catch + proactive bootstrap). Read its top banner: the "parity" reading was variance, corrected by REPLICATION.
 4. **[VERDICT.md is #1 above]; [pre-registration.md](pre-registration.md)** — the protocol, fixed before any run.
 5. **[results.md](results.md)** — the full per-cell outcome table (7 arms).
 6. **[LESSONS.md](LESSONS.md)** — the arm-C **dilution confound** + improvement directions.
