@@ -14,6 +14,8 @@ repo). The exported `harness/` dir here is a copy of the build files for referen
 | **OAuth creds mount** | container auth | mount `~/.claude/.credentials.json` read-only into the run user's `.claude/` |
 | **No `/etc/claude-code/`** | org policy can't be disabled, would hit all arms | `ls /etc/claude-code/` → absent |
 | **`--model` honored** | a silent fallback ruins the tiers | in-container modelUsage = the pinned id only (host adds an aux haiku call — ignore) |
+| **`--permission-mode bypassPermissions` REQUIRED** | without it, headless `claude -p` permission-gates every tool — `jigc` and `Edit`/`Write` get **blocked**, the agent fumbles ("needs approval"/"catch-22"), and the run is garbage (looks like the agent "couldn't drive jigc" when really it was denied). Bit two one-off stream-json probes. | every headless run must pass `--permission-mode bypassPermissions`; if a transcript mentions "approval"/"blocked"/"catch-22", the flag is missing |
+| **Pass the prompt via `-e PILOT_PROMPT`, never inline** | the task prompts contain backticks (`` `CommentBlockParser` ``); inlining them into a `docker ... bash -c '…'` lets the **container's** shell command-substitute them ("CommentBlockParser: command not found") → mangled prompt. Bit a one-off probe. | always `-e PILOT_PROMPT="$(cat prompt)"` + `claude -p "$PILOT_PROMPT"` inside; **for ANY ad-hoc run, copy `run-rep.sh`'s docker invocation verbatim** rather than hand-rolling |
 
 ## 1. Baseline twins
 
