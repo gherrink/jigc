@@ -98,12 +98,21 @@ Do **not** commit a productive corpus (or self-host this repo) yet. Three gates:
   still bypassed). So jigc's self-inflicted losses look *fixable*, but the parity is
   **not established** — and parity wouldn't be superiority anyway. See the
   [ADDENDUM](completions/artifacts/differentiator-pilot-study1/ADDENDUM-jigc-enforced.md)
-  follow-on. **Owed next steps:** (i) **replicate** (5–10 runs/cell) to separate
-  mechanism from noise; (ii) the **long-horizon many-edit study** for superiority.
-  Engineering lean: always-on enforcement + broaden the probe beyond anchors +
-  **harder routing** (a gate that can't be skipped) over softer instruction —
-  *guardrail:* a "use jigc" instruction must not collapse jigc into a more elaborate
-  static instruction; the durable value is enforcement that doesn't degrade.
+  follow-on. **Replication (2026-06-22, n=16/arm) then settled it** ([REPLICATION.md](completions/artifacts/differentiator-pilot-study1/REPLICATION.md)):
+  drift-rates plain **88%** · static **0%** · jigc **19%** · jigc-gate **0%** — but
+  the agent ran a jigc command in **0 of 32** jigc runs and the gate fired **0/16**.
+  So jigc's benefit is its **bootstrap-as-instruction, not its mechanism** (which
+  never activated), and a **direct static instruction beats it** (0% vs 19%). The
+  *collapse-to-instruction* risk is confirmed: on a single small task jigc is "an
+  instruction," and a simpler static one wins. **Owed next steps (the only paths to a
+  genuine clear):** (i) **forced routing** — make jigc un-bypassable (managed files
+  un-editable directly, or an unconditional commit gate), since instruction does not
+  route the weaker model; (ii) the **long-horizon many-edit study**, the only regime
+  whose tail of instruction-failures the enforcement gate could differentiate.
+  Absent those, the honest recommendation is that a **maintained static instruction
+  suffices** — *guardrail held:* a "use jigc" instruction must not be mistaken for
+  the enforcement thesis; the durable value would be enforcement that doesn't
+  degrade, and it remains unproven.
 
 **Net:** the twin pilot is **done and reversible** — it spent no lock-in and
 returned a *negative-leaning* value signal. Point a *productive corpus* at jigc only

@@ -219,6 +219,7 @@ bec14e08a2ff28e4d1a858b77e9591046a1f0bf2bf73dea9e250241d51b2f9fe  ./cells/task2/
 f090f93395d0593795343f022cefb4fa2c40ffbf89f6100e8afcfe54de59ddeb  ./harness/Dockerfile.gsd
 e4d78bbaa157cf30ab17ab0bd6cb3185695aa5c0e6e1ef86d518f9c4e96cf62e  ./harness/Dockerfile.jigc
 9010d15af1afc0d9fdee59e0df98470c522b948763466c48559775278f8b329b  ./harness/Dockerfile.jigcenforced
+c4bce0cdeef69da0d671b9aec01ae576d71c9e56b03946bd2c2ef9374be39a33  ./harness/Dockerfile.jigcgate
 12e6c7f4c047f8d27aa6b4c59dc54a07eb8fe90fe478fffbd4becc488799b2ed  ./harness/Dockerfile.jigcproactive
 020c6790065d8b0123e36ce0318dda6569088470be20deeb5ddcf542c013a93c  ./harness/Dockerfile.static
 ecf842eb33005db4eb8863dd232196dd92c76e4738948787e627c44ae8118e7e  ./harness/Dockerfile.toolchain
@@ -229,6 +230,8 @@ a3518a30c23de579fbdade30ce334b7dd197ec0e1c427592a3296d8f148e0303  ./harness/jigc
 75d3e93f3f9bfef0432bbb5736a45b19cde3636ff45f129417c085121f6ae83d  ./harness/proactive-AGENT.md
 49669ad5178a5c7bb0ef191d47eaa757fabaefd66462df0c119fb159d4b5f7f2  ./harness/run-all.sh
 283e5a84e32a6913c3b040f0402271511e98d1dd2480b76f3aebeb017737b820  ./harness/run-arm.sh
+0acee3a9abc66de08672d2ff09ac6db300f2c427851e91eba7a2ef60b852882f  ./harness/run-replication.sh
+6ac92cae51497b65cf51599ca3bd4fcb90be5554902cb1e480af62b105c4c932  ./harness/run-rep.sh
 26cf99697b57fc9a1262d266b4b2ffdf0266ebfd145ed9f34401fd3e746c9766  ./judge/blind_input.txt
 4e1b8d3471e7b1ea03d90018c1f5bc9f08174a6467ec9ecb29c3f878d6be0866  ./judge/blind_judge_verdict.md
 8006f7c96035601656e21c116719960913698d0ccafcfe2c20ad4e520c2eaa18  ./judge/codex-quota-note.txt
@@ -237,7 +240,8 @@ e3a23fa916c0b10dfc1f7062da0685c93feef3aa51dfa698b673b65dc4188c92  ./judge/mappin
 136d3ba786aaeaa13f5d7cb8a34d9d5148f8a6440b946633a9c3debfb9738493  ./pre-registration.md
 519cddac2f8701ecf5eec1efec634bcdd6bbf0822b8d673dea7523bbcff9082b  ./prompts/task1.txt
 cdfa6ed2f189891b6805facd716fc547b991086db782b5dc3c7c08dd546ec42e  ./prompts/task2.txt
-3ed1a0e92b250b243748366460964df5af59f0616ce9b0f31fedb04342e1cf81  ./README.md
+0f73979ea42b1dd6245caf84975b9d417dfd8000f13a135b66ee480951e426ac  ./README.md
+f3b37c6c4872e848bedf648bf30891d988c1a81ccc555ea5e07ab4cf2fa61715  ./REPLICATION.md
 c598337b8114e17d5260032736b5e567d91dcbebf9de3cd1e60a2cc037c11ab0  ./results.md
 1fe26f38fe1459cb63a720a6d36dcbd809f96c4a62552d89ad2321239ca49232  ./RUNBOOK.md
 1e9a70d1dea2624ba6e2df6647d482bf3fc2f745d564ea1b69de8eb510b7b882  ./VERDICT.md
