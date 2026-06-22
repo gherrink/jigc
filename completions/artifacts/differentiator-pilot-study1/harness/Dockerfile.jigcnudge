@@ -1,0 +1,4 @@
+FROM pilot-jigc
+COPY --chown=node:node docker/jigc-prompt-nudge.js /work/.jigc/jigc-prompt-nudge.js
+COPY --chown=node:node docker/jigc-nudge-settings.json /work/.claude/settings.json
+RUN cd /work && git add -A && git commit -q -m "chore: UserPromptSubmit jigc routing nudge"

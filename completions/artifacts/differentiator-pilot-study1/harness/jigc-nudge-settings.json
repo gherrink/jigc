@@ -1,0 +1,6 @@
+{
+  "hooks": {
+    "SessionStart": [ { "hooks": [ { "type": "command", "command": "jigc start" } ] } ],
+    "UserPromptSubmit": [ { "hooks": [ { "type": "command", "command": "node /work/.jigc/jigc-prompt-nudge.js" } ] } ]
+  }
+}
