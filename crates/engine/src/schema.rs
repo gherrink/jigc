@@ -254,6 +254,21 @@ pub struct Field {
     /// existing golden byte-unchanged. See `design/changelog.md` → engine work #3.
     #[serde(default, skip_serializing_if = "is_false")]
     pub optional: bool,
+
+    /// `true` for a `code-anchor` whose sibling repeatable-item **title must
+    /// contain the symbol it names**. Arch-doc components are titled after their
+    /// implementing symbol, so a title left naming a renamed/removed symbol is
+    /// doc↔code drift the `symbol-exists` anchor check alone misses (the
+    /// long-horizon study's Opus prose blind spot: the agent fixes the anchor to
+    /// clear the gate and leaves the heading stale). Pack-declared so the engine
+    /// stays generic — spec criteria, whose titles are prose, do not opt in.
+    /// Skip-on-false keeps every existing golden byte-unchanged.
+    #[serde(
+        rename = "title-names-symbol",
+        default,
+        skip_serializing_if = "is_false"
+    )]
+    pub title_names_symbol: bool,
 }
 
 /// The field type vocabulary — **engine-native variants + a pack-declared

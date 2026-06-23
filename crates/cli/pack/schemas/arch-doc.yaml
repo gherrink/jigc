@@ -3,14 +3,20 @@
 # the code that implements it), and the decisions behind it. Persisted to
 # architecture/; the `meta` header carries the n→n `cites → adr` relation, an
 # `overview` prose slot, and a repeatable `components` section whose every item
-# anchors to its implementing code via a bare `implemented-by` code-anchor
-# (inheriting the type's `symbol-exists` check — no field override; `finalize`
-# blocks if that symbol has vanished). `id-from: title` derives the slug from the
-# document H1 (no declared `title` field), exactly like `adr`/`spec`/`prd`.
+# anchors to its implementing code via an `implemented-by` code-anchor (inheriting
+# the type's `symbol-exists` check — no field override; `finalize` blocks if that
+# symbol has vanished). That anchor also carries `title-names-symbol: true`: the
+# component's `###` heading must contain the symbol the anchor names, so a heading
+# left naming a renamed/removed symbol blocks too (the long-horizon study showed a
+# capable model fixes the anchor to clear `symbol-exists` and leaves the title
+# stale — outcome-determining prose drift the anchor check alone misses;
+# DECISIONS.md 2026-06-23). `id-from: title` derives the slug from the document H1
+# (no declared `title` field), exactly like `adr`/`spec`/`prd`.
 #
 # Section ids are SINGLE WORDS ONLY (`meta`/`overview`/`components`): a multi-word
 # id trips the logged title-case reparse defect, deferred — these ids route around
-# it (component *titles* on `###` item headings are free text, not matched).
+# it. Component *titles* on `###` item headings remain free text for the slug, but
+# (per `title-names-symbol`) must name their implementing symbol.
 # See architecture-documentation.md → The schema; document-type-schema.md →
 # Pack-declared field types; DECISIONS.md 2026-06-07 → M13 Increment 4 / T1.
 type: arch-doc
@@ -32,4 +38,4 @@ sections:
       block:
         - { id: title, type: string }
         - { id: description, slot: { hint: "The component's responsibility, in prose." } }
-        - { id: implemented-by, type: code-anchor }
+        - { id: implemented-by, type: code-anchor, title-names-symbol: true }

@@ -4895,6 +4895,7 @@ Each service drops its local limiter.
             inverse_card: None,
             check: None,
             optional: false,
+            title_names_symbol: false,
         };
 
         // enum

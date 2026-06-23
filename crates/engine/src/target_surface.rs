@@ -375,6 +375,51 @@ pub fn collect_repeatable(
             };
             let address = format!("{ty}:{slug}#{}/{}/{}", section.id, item.id, declared.id);
             if let Some(value) = scalar(&present.value, &address, guard_findings) {
+                // Title↔symbol consistency (pack-declared opt-in). The prose blind
+                // spot the `symbol-exists` anchor check alone misses: a capable model
+                // fixes the anchor to clear the gate and leaves the heading naming the
+                // *old* symbol (the long-horizon study's Opus failure). We flag a
+                // title that carries a **compound code-identifier** (a camelCase /
+                // PascalCase token — a hump like `…tB…`/`…kP…`) which is **not** the
+                // anchored symbol: that token is a stale/wrong symbol name. A purely
+                // descriptive title (`Session store`, `Cache Layer`) has no such token
+                // and never trips — so descriptive headings stay legal. Pure string
+                // work (no code resolution), emitted as a `doc-code.*` guard so the
+                // floor/hook catch it. Bound: a compound *tech word* in a title
+                // (`WebSocket`) that is not the symbol would flag — acceptable and rare.
+                if let Some((_, symbol)) = value.split_once('#')
+                    && declared.title_names_symbol
+                    && !symbol.is_empty()
+                {
+                    let title_symbols: Vec<&str> = item
+                        .title
+                        .split(|c: char| !c.is_alphanumeric() && c != '_')
+                        .filter(|t| is_compound_identifier(t))
+                        .collect();
+                    if !title_symbols.is_empty() && !title_symbols.contains(&symbol) {
+                        let title_address = format!(
+                            "{ty}:{slug}#{}/{}/{}",
+                            section.id, item.id, repeatable.id_from
+                        );
+                        guard_findings.push(Finding::graded(
+                            Severity::Blocking,
+                            "doc-code.title-names-symbol",
+                            format!(
+                                "component title `{}` names symbol(s) {title_symbols:?} \
+                                 but its anchor implements `{symbol}` (`{value}`) — the \
+                                 heading still names a renamed/removed symbol; update the \
+                                 title to match the code",
+                                item.title
+                            ),
+                            Some(Location::addressed(title_address, 1, 1)),
+                            Some(
+                                "rename the component heading to the symbol its \
+                                 `implemented-by` anchor names"
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+                }
                 anchors.push(TargetAnchor {
                     address,
                     anchor_value: value,
@@ -410,6 +455,31 @@ pub fn resolve_check_id(field: &crate::schema::Field) -> String {
 /// Whether a field's resolved type is the pack-declared `code-anchor`.
 pub fn is_code_anchor(ty: &FieldType) -> bool {
     matches!(ty, FieldType::Pack(p) if p.name == CODE_ANCHOR)
+}
+
+/// Whether `token` reads as a **compound code identifier** — a multi-word symbol
+/// name. This is the [`title-names-symbol`](crate::schema::Field::title_names_symbol)
+/// discriminator: a heading token shaped like a symbol is treated as a symbol name
+/// (so a stale one is caught), while a plain descriptive word is left alone, so
+/// descriptive titles stay legal. Two shapes count, covering both casing idioms:
+///
+/// - a **camelCase hump** — a lower→upper transition (`CommentBlockParser`, `myVar`,
+///   `WebSocket`);
+/// - an **acronym-then-word** — two+ uppercase then lowercase (`UIDoc`, `HTTPServer`,
+///   `IOError`), which has no lower→upper hump but is still plainly a symbol.
+///
+/// A single capitalized word (`Session`), an all-lower word (`store`), and a bare
+/// acronym (`HTTP`, `API`) match neither and are left alone. Bound: a compound tech
+/// word in a title (`WebSocket`, `OAuth`) that is not the symbol would flag — rare.
+fn is_compound_identifier(token: &str) -> bool {
+    let b = token.as_bytes();
+    let camel_hump = b
+        .windows(2)
+        .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase());
+    let acronym_then_word = b.windows(3).any(|w| {
+        w[0].is_ascii_uppercase() && w[1].is_ascii_uppercase() && w[2].is_ascii_lowercase()
+    });
+    camel_hump || acronym_then_word
 }
 
 /// The scalar text of a `code-anchor` field value, or `None` (with a **loud guard
@@ -788,6 +858,122 @@ sections:
             "a repeatable `code-anchor` with no field override inherits the \
              type-level `symbol-exists` — position is not the discriminator",
         );
+    }
+
+    /// A `code-anchor` field carrying `title-names-symbol: true` blocks when the
+    /// repeatable item's **title** does not contain the symbol the anchor names —
+    /// the long-horizon study's Opus prose blind spot (the agent fixed the anchor
+    /// to `CommentTagParser` to clear the symbol-exists gate but left the heading
+    /// `CommentBlockParser`). The opt-in is pack-declared so a doctype whose item
+    /// titles are prose (spec criteria) is unaffected.
+    #[test]
+    fn title_names_symbol_blocks_when_title_does_not_name_the_anchored_symbol() {
+        const ARCH_SCHEMA: &[u8] = b"\
+type: arch-doc
+location: architecture/
+id-from: title
+sections:
+  - id: components
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: implemented-by, type: code-anchor, title-names-symbol: true }
+";
+        // The anchor was updated to the renamed symbol; the title was NOT (the
+        // exact Opus failure shape). Anchor symbol = `CommentTagParser`, title =
+        // `CommentBlockParser` → the title does not name its symbol.
+        const ARCH_INSTANCE: &str = "\
+# Core public API
+
+## Components
+
+### CommentBlockParser  {#commentblockparser}
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+";
+
+        let repo = TempRoot::new("title-names-symbol-drift");
+        let task_dir = repo.path().join(".jigc").join("tasks").join("arch");
+        stage(&task_dir, "arch-doc:core-public-api", ARCH_INSTANCE);
+
+        let mut schemas = BTreeMap::new();
+        schemas.insert(
+            "arch-doc".to_string(),
+            load_schema_with_types(ARCH_SCHEMA, &dev_pack_field_types())
+                .expect("arch-doc fixture loads"),
+        );
+
+        let (anchors, guard_findings) =
+            enumerate_target_surface(&task_dir, repo.path(), &schemas).expect("enumerates");
+
+        // The anchor itself is still enumerated (symbol-exists runs against the code).
+        assert_eq!(anchors.len(), 1, "the code-anchor is still enumerated");
+        // …and the title-mismatch raises exactly one blocking guard finding.
+        assert_eq!(
+            guard_findings.len(),
+            1,
+            "one title finding: {guard_findings:?}"
+        );
+        let f = &guard_findings[0];
+        assert_eq!(f.code, "doc-code.title-names-symbol");
+        assert_eq!(f.severity, Severity::Blocking);
+
+        // Control: when the title DOES name the symbol, no finding.
+        const CONSISTENT: &str = "\
+# Core public API
+
+## Components
+
+### CommentTagParser  {#commenttagparser}
+
+<!-- fields -->
+- implemented-by: packages/core/src/CommentTagParser.ts#CommentTagParser
+";
+        let repo2 = TempRoot::new("title-names-symbol-clean");
+        let task_dir2 = repo2.path().join(".jigc").join("tasks").join("arch");
+        stage(&task_dir2, "arch-doc:core-public-api", CONSISTENT);
+        let (_a2, g2) =
+            enumerate_target_surface(&task_dir2, repo2.path(), &schemas).expect("enumerates");
+        assert!(g2.is_empty(), "consistent title raises no finding: {g2:?}");
+
+        // Control 2: a purely DESCRIPTIVE title (no compound identifier) raises no
+        // finding even though it does not literally contain the symbol — descriptive
+        // component headings stay legal (the false-positive the camel-hump rule avoids).
+        const DESCRIPTIVE: &str = "\
+# Core public API
+
+## Components
+
+### Session store  {#session-store}
+
+<!-- fields -->
+- implemented-by: packages/core/src/SessionStore.ts#SessionStore
+";
+        let repo3 = TempRoot::new("title-descriptive-ok");
+        let task_dir3 = repo3.path().join(".jigc").join("tasks").join("arch");
+        stage(&task_dir3, "arch-doc:core-public-api", DESCRIPTIVE);
+        let (_a3, g3) =
+            enumerate_target_surface(&task_dir3, repo3.path(), &schemas).expect("enumerates");
+        assert!(g3.is_empty(), "descriptive title raises no finding: {g3:?}");
+    }
+
+    #[test]
+    fn is_compound_identifier_flags_symbols_not_prose() {
+        assert!(is_compound_identifier("CommentBlockParser"));
+        assert!(is_compound_identifier("myVar"));
+        assert!(is_compound_identifier("WebSocket"));
+        // Acronym-prefixed identifiers (no lower→upper hump) still count — the gap the
+        // Opus re-test surfaced when `UIDoc` slipped through the camel-hump-only rule.
+        assert!(is_compound_identifier("UIDoc"));
+        assert!(is_compound_identifier("HTTPServer"));
+        assert!(is_compound_identifier("IOError"));
+        assert!(!is_compound_identifier("Session")); // single Capitalized word
+        assert!(!is_compound_identifier("store")); // all lower
+        assert!(!is_compound_identifier("HTTP")); // bare acronym, no trailing word
+        assert!(!is_compound_identifier("API")); // bare acronym
+        assert!(!is_compound_identifier("present_symbol")); // snake_case, no hump
     }
 
     /// Recursively collect every file path under `root` (relative to it), sorted —

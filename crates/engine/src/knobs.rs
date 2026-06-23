@@ -199,6 +199,7 @@ pub fn load_knobs(bytes: &[u8]) -> Result<KnobSet, KnobError> {
             inverse_card: None,
             check: None,
             optional: false,
+            title_names_symbol: false,
         });
     }
 
