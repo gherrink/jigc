@@ -1,0 +1,1 @@
+Rename the public class `UIDoc` to `DocEngine` throughout this project. Then commit your changes with an appropriate message.

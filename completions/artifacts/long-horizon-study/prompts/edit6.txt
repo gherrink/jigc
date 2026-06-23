@@ -1,0 +1,1 @@
+Rename the public class `CSSParseError` to `StyleParseError` throughout this project. Then commit your changes with an appropriate message.

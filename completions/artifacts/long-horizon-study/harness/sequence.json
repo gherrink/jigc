@@ -1,0 +1,25 @@
+{
+  "doc": "docs/architecture/core-public-api.md",
+  "anchors": [
+    "packages/core/src/UIDoc.ts#UIDoc",
+    "packages/core/src/CommentBlockParser.ts#CommentBlockParser",
+    "packages/core/src/MarkdownDescriptionParser.ts#MarkdownDescriptionParser",
+    "packages/core/src/errors/BlockParseError.ts#BlockParseError",
+    "packages/core/src/errors/CSSParseError.ts#CSSParseError",
+    "packages/core/src/errors/ColorParseError.ts#ColorParseError",
+    "packages/core/src/errors/TagTransformerError.ts#TagTransformerError",
+    "packages/core/src/BlockParser.types.ts#BlockParser"
+  ],
+  "edits": [
+    {"n": 1, "type": "rename", "old": "CommentBlockParser", "new": "CommentTagParser", "component": "CommentBlockParser"},
+    {"n": 2, "type": "rename", "old": "MarkdownDescriptionParser", "new": "MarkdownDocParser", "component": "MarkdownDescriptionParser"},
+    {"n": 3, "type": "move", "old": "BlockParseError", "new": "BlockParseError", "component": "BlockParseError"},
+    {"n": 4, "type": "rename", "old": "TagTransformerError", "new": "TagError", "component": "TagTransformerError"},
+    {"n": 5, "type": "delete", "old": "ColorParseError", "new": null, "component": "ColorParseError"},
+    {"n": 6, "type": "rename", "old": "CSSParseError", "new": "StyleParseError", "component": "CSSParseError"},
+    {"n": 7, "type": "rename", "old": "CommentTagParser", "new": "TagBlockParser", "component": "CommentBlockParser"},
+    {"n": 8, "type": "rename", "old": "UIDoc", "new": "DocEngine", "component": "UIDoc"}
+  ],
+  "control_anchor": "packages/core/src/BlockParser.types.ts#BlockParser",
+  "control_symbol": "BlockParser"
+}

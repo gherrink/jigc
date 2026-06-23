@@ -1,0 +1,23 @@
+#!/bin/sh
+# STUDY blocking doc<->code pre-commit hook.
+#
+# A one-line-delta variant of jigc's shipped warn-only hook (crates/cli/src/setup.rs
+# precommit_hook_body): identical detection — key on the `doc-code` CONTENT finding in
+# `jigc validate --format json` (never the wrong-way-round exit code) — but BLOCK
+# (exit 1) instead of warn (exit 0). This is the genuinely salience-independent
+# enforcement the long-horizon study tests: it fires on EVERY `git commit` regardless
+# of how the agent edited or whether it "chose" jigc.
+#
+# It keys ONLY on doc-code (not file-state): an agent that fixes the doc via a direct
+# file edit clears doc-code and commits cleanly (verified — file-state alone never
+# blocks here); an agent that leaves a dangling anchor is blocked, with an actionable
+# message naming the symbol and the fix.
+jigc='/usr/local/bin/jigc'
+report="$("$jigc" validate --format json 2>/dev/null)"
+if printf '%s' "$report" | grep -Eq '"probe"[[:space:]]*:[[:space:]]*"doc-code"'; then
+  echo 'jigc: COMMIT BLOCKED — doc<->code drift (a documented symbol no longer resolves):' >&2
+  "$jigc" validate 2>&1 | grep -iE 'doc-code|route' >&2
+  echo 'Update the documentation citation to match the renamed/moved/removed code, then commit again.' >&2
+  exit 1
+fi
+exit 0

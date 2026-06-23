@@ -1,0 +1,1 @@
+Rename the public class `CommentTagParser` to `TagBlockParser` throughout this project. Then commit your changes with an appropriate message.

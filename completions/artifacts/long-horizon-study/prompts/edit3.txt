@@ -1,0 +1,1 @@
+Move the public class `BlockParseError` from `packages/core/src/errors/BlockParseError.ts` into a new file `packages/core/src/errors/parse/BlockParseError.ts`, updating all imports and re-exports accordingly. Then commit your changes with an appropriate message.

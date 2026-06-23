@@ -1,0 +1,257 @@
+{
+  "mapping": {
+    "S01": {
+      "tag": "C40-6-rep2",
+      "arm": "C40",
+      "model": "claude-sonnet-4-6"
+    },
+    "S02": {
+      "tag": "A-6-rep2",
+      "arm": "A",
+      "model": "claude-sonnet-4-6"
+    },
+    "S03": {
+      "tag": "A-6-rep1",
+      "arm": "A",
+      "model": "claude-sonnet-4-6"
+    },
+    "S04": {
+      "tag": "C550-6-rep2",
+      "arm": "C550",
+      "model": "claude-sonnet-4-6"
+    },
+    "S05": {
+      "tag": "A-6-rep3",
+      "arm": "A",
+      "model": "claude-sonnet-4-6"
+    },
+    "S06": {
+      "tag": "P-6-rep2",
+      "arm": "P",
+      "model": "claude-sonnet-4-6"
+    },
+    "S07": {
+      "tag": "C40-6-rep3",
+      "arm": "C40",
+      "model": "claude-sonnet-4-6"
+    },
+    "S08": {
+      "tag": "C550-6-rep3",
+      "arm": "C550",
+      "model": "claude-sonnet-4-6"
+    },
+    "S09": {
+      "tag": "P-6-rep3",
+      "arm": "P",
+      "model": "claude-sonnet-4-6"
+    },
+    "S10": {
+      "tag": "A-8-rep2",
+      "arm": "A",
+      "model": "claude-opus-4-8"
+    },
+    "S11": {
+      "tag": "C550-8-rep2",
+      "arm": "C550",
+      "model": "claude-opus-4-8"
+    },
+    "S12": {
+      "tag": "C40-6-rep1",
+      "arm": "C40",
+      "model": "claude-sonnet-4-6"
+    },
+    "S13": {
+      "tag": "C550-8-rep1",
+      "arm": "C550",
+      "model": "claude-opus-4-8"
+    },
+    "S14": {
+      "tag": "C550-6-rep1",
+      "arm": "C550",
+      "model": "claude-sonnet-4-6"
+    },
+    "S15": {
+      "tag": "C160-6-rep2",
+      "arm": "C160",
+      "model": "claude-sonnet-4-6"
+    },
+    "S16": {
+      "tag": "C160-6-rep3",
+      "arm": "C160",
+      "model": "claude-sonnet-4-6"
+    },
+    "S17": {
+      "tag": "P-6-rep1",
+      "arm": "P",
+      "model": "claude-sonnet-4-6"
+    },
+    "S18": {
+      "tag": "C160-6-rep1",
+      "arm": "C160",
+      "model": "claude-sonnet-4-6"
+    },
+    "S19": {
+      "tag": "A-8-rep1",
+      "arm": "A",
+      "model": "claude-opus-4-8"
+    }
+  },
+  "verdicts": [
+    {
+      "code": "S01",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols exist in the actual-symbols list."
+    },
+    {
+      "code": "S02",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All documented code symbols are present in the actual-symbols list."
+    },
+    {
+      "code": "S03",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols exist in the actual-symbols list."
+    },
+    {
+      "code": "S04",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols exist in the actual-symbols list."
+    },
+    {
+      "code": "S05",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All documented symbols are present in the actual code symbols list."
+    },
+    {
+      "code": "S06",
+      "consistent": false,
+      "stale_refs": [
+        "CommentBlockParser",
+        "CSSParseError",
+        "ColorParseError",
+        "TagTransformerError"
+      ],
+      "n_stale": 4,
+      "note": "The document references four symbols that are absent from the actual code symbols."
+    },
+    {
+      "code": "S07",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols exist in the actual symbol list."
+    },
+    {
+      "code": "S08",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All documented symbols are present in the actual code symbols list."
+    },
+    {
+      "code": "S09",
+      "consistent": false,
+      "stale_refs": [
+        "CommentTagParser",
+        "CSSParseError",
+        "ColorParseError"
+      ],
+      "n_stale": 3,
+      "note": "The document references parser and error symbols that are absent from the actual code symbols."
+    },
+    {
+      "code": "S10",
+      "consistent": false,
+      "stale_refs": [
+        "UIDoc"
+      ],
+      "n_stale": 1,
+      "note": "The document references UIDoc, but the actual engine symbol is DocEngine."
+    },
+    {
+      "code": "S11",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All documented symbol references exist in the actual code symbols."
+    },
+    {
+      "code": "S12",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols are present in the actual-symbols list."
+    },
+    {
+      "code": "S13",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols exist in the actual-symbols list."
+    },
+    {
+      "code": "S14",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols are present in the actual-symbols list."
+    },
+    {
+      "code": "S15",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols are present in the actual-symbols list."
+    },
+    {
+      "code": "S16",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All referenced code symbols exist in the actual-symbols list."
+    },
+    {
+      "code": "S17",
+      "consistent": false,
+      "stale_refs": [
+        "UIDoc",
+        "CommentTagParser",
+        "CSSParseError",
+        "ColorParseError",
+        "TagTransformerError"
+      ],
+      "n_stale": 5,
+      "note": "The document references several renamed or removed public API symbols."
+    },
+    {
+      "code": "S18",
+      "consistent": true,
+      "stale_refs": [],
+      "n_stale": 0,
+      "note": "All documented component symbols are present in the actual code symbols list."
+    },
+    {
+      "code": "S19",
+      "consistent": false,
+      "stale_refs": [
+        "UIDoc",
+        "CommentBlockParser",
+        "MarkdownDescriptionParser",
+        "CSSParseError",
+        "TagTransformerError"
+      ],
+      "n_stale": 5,
+      "note": "Several component headings use stale public symbol names while their implemented-by anchors point to existing symbols."
+    }
+  ]
+}
