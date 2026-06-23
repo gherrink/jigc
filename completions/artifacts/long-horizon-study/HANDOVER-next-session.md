@@ -181,6 +181,18 @@ This file → [VERDICT.md](VERDICT.md) → [title-fix-retest.md](title-fix-retes
 proven-section → then the Step-1 code sites (`crates/engine/src/index.rs` `ref_resolves` /
 `target_reachable` / `dangling`; `crates/engine/src/validate.rs` `validate_store_families`).
 
+## Parallel concern flagged this session (not the next task, but owed)
+
+**Cost of enforcement.** The study measured a real ceremony tax — jigc ≈ static on Sonnet
+($4.52/seq) but **3–6× static on Opus** ($27.64 → ≈$50.7/seq post-title-fix). Root: the
+block→recovery loop (a capable model re-investigates jigc every blocked edit). Shaped with
+concrete levers in [ideas/cost-of-enforcement.md](../../../ideas/cost-of-enforcement.md)
+(prescriptive "mechanical fix, don't investigate" block messages · a deterministic
+title↔symbol `--fix` · a sharper front-loading bootstrap nudge · block-cycle
+instrumentation). Unscheduled; the cheap first pair (block-message wording + nudge) is a
+small, no-determinism-risk experiment reusing the same harness if a cost pass is wanted
+before/alongside the cross-doc study.
+
 ## Out of scope / do not
 
 - **Don't go productive** (commit a real corpus / self-host) — M33 (schema freeze) + M34

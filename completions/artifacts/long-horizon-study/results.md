@@ -49,6 +49,34 @@ was *variable and often absent*: A-Sonnet recovered from hook blocks on edits 1 
 engagement-driven** (the "enforce, don't instruct" thesis: the block forces repair
 whether or not the agent chooses the tool). Plain/static agents ran jigc 0 times (not installed).
 
+## Cost (the ceremony tax — and where it concentrates)
+
+Mean USD per full 8-edit sequence. **Sonnet — jigc's cost is in the static ballpark;
+Opus — jigc is multiples more.**
+
+| arm | Sonnet $/seq | Sonnet $/edit | Opus $/seq | Opus $/edit |
+|---|--:|--:|--:|--:|
+| plain | 2.77 | 0.35 | — | — |
+| static, clean rule (C40) | 3.87 | 0.48 | — | — |
+| static, 157-line (C160) | 4.34 | 0.54 | — | — |
+| static, 452-line (C550) | 4.68 | 0.59 | 8.71 | 1.09 |
+| **jigc (A), pre-title-fix** | **4.52** | **0.56** | **27.64** | **3.46** |
+| **jigc (A), post-title-fix** | (≈ unchanged) | | **≈50.7** (47–54) | **≈6.3** |
+
+- **Sonnet:** jigc ($4.52) ≈ static (3.87–4.68), ~1.6× plain — a modest tax for the win.
+- **Opus:** jigc is **~3× static pre-fix, ~6× post-fix.** The title fix *raised* cost: it
+  buys correctness (stale prose 3.0 → 0.5) by adding *more* block→recovery cycles (now
+  enforcing titles too). Honest tradeoff — the fix makes Opus correct, not cheap.
+
+**Why jigc costs more — the block→recovery loop.** jigc blocks the commit; the agent
+re-reads the error, re-orients, fixes, retries — each cycle is extra agent turns/tokens.
+A cheap model (Sonnet) recovers in a turn or two, so overhead stays small; a capable model
+(Opus) *thrashes* — it investigates jigc internals (it explored `validate`/`describe`/
+`status`/`ingest`/`unmanage` verbs) before fixing, and every arm-A-Opus edit blocked
+(8/8), so the loop ran every edit. **The cost is discovery-via-block + re-orientation, not
+the check itself.** This is a real product concern with concrete reduction levers — shaped
+in [ideas/cost-of-enforcement.md](../../../ideas/cost-of-enforcement.md).
+
 ## The three diagnosed mechanisms
 
 ### 1. Plain compounds catastrophically — drift is the norm at scale
