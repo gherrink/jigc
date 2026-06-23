@@ -428,6 +428,18 @@ pub fn validate_store_families(
         record, schemas, repo_root,
     ));
 
+    // Family 4 — cross-doc forward-ref integrity (the store-wide analog of the task-scope
+    // `ref-resolves` finalize gate): every committed forward edge's target must resolve in
+    // the committed store. Closes the doc↔code-vs-ref-resolves store-sweep asymmetry so the
+    // salience-independent pre-commit backstop reaches a dangling cross-doc ref. The rebuild
+    // is a pure in-memory builder (no save) — the stamp is inert at store scope.
+    let committed_index = crate::index::rebuild_committed(repo_root, schemas, "store-sweep");
+    findings.extend(crate::index::ref_resolves_store(
+        &committed_index,
+        repo_root,
+        schemas,
+    ));
+
     Ok(ValidationReport::new(findings, resolved))
 }
 
@@ -3899,6 +3911,151 @@ Effects.
             Some(hash_bytes(b"a different baseline").as_str()),
             "the file-state twin must not re-baseline the drift it reports",
         );
+    }
+
+    /// A committed ADR whose `supersedes` names `to` (an `adr:<slug>` identity). Required
+    /// slots are filled so the *only* possible blocking finding is a forward-ref one.
+    fn adr_superseding(to: &str) -> String {
+        format!(
+            "\
+---
+status: accepted
+date: 2026-05-30
+supersedes: {to}
+---
+
+# Shared redis session cache
+
+## Context
+A single node is a single point of failure.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+"
+        )
+    }
+
+    /// Family 4 — cross-doc forward-ref integrity at **store scope**: a committed ADR whose
+    /// `supersedes` target is absent from the committed store surfaces exactly one blocking
+    /// `schema-conformance.ref-resolves` finding. This is the store-wide analog of the
+    /// task-scope `ref_resolves` finalize gate — closing the asymmetry (doc↔code swept
+    /// store-wide since M18, `ref-resolves` never) so the salience-independent pre-commit
+    /// backstop reaches a dangling cross-doc ref in the committed store.
+    #[test]
+    fn validate_store_surfaces_dangling_cross_doc_supersedes() {
+        let repo = TempRoot::new("dangling-supersedes");
+        // adr-b supersedes `adr:absent-target`, which is NOT committed → a dangling edge.
+        let body = adr_superseding("adr:absent-target");
+        repo.commit("decisions", "shared-redis-cache", &body);
+
+        // Baseline the committed doc so the file-state family stays silent — isolate Family 4.
+        let mut record = FileStateRecord::new();
+        record.record(
+            "decisions/shared-redis-cache.md",
+            hash_bytes(body.as_bytes()),
+        );
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+        )
+        .expect("store sweep runs");
+
+        let ref_resolves: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.ref-resolves")
+            .collect();
+        assert_eq!(
+            ref_resolves.len(),
+            1,
+            "exactly one store-wide ref-resolves finding for the dangling supersedes, got {:?}",
+            report.findings,
+        );
+        let f = ref_resolves[0];
+        assert_eq!(
+            f.severity,
+            Severity::Blocking,
+            "store-wide ref-resolves mirrors the finalize gate's blocking severity",
+        );
+        assert!(
+            f.message.contains("adr:absent-target"),
+            "the finding must name the dangling target, got: {}",
+            f.message,
+        );
+    }
+
+    /// A committed store whose `supersedes` targets all resolve emits **no** ref-resolves
+    /// finding — the clean store-wide path (the false-positive guard for Family 4).
+    #[test]
+    fn validate_store_clean_on_resolvable_cross_doc_supersedes() {
+        let repo = TempRoot::new("resolvable-supersedes");
+        // The target ADR is committed, so the `supersedes` edge resolves store-wide.
+        repo.commit("decisions", "absent-target", &adr_superseding_target());
+        let body = adr_superseding("adr:absent-target");
+        repo.commit("decisions", "shared-redis-cache", &body);
+
+        let mut record = FileStateRecord::new();
+        record.record(
+            "decisions/shared-redis-cache.md",
+            hash_bytes(body.as_bytes()),
+        );
+        record.record(
+            "decisions/absent-target.md",
+            hash_bytes(adr_superseding_target().as_bytes()),
+        );
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+        )
+        .expect("store sweep runs");
+
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.code == "schema-conformance.ref-resolves"),
+            "a resolvable cross-doc supersedes must not surface a ref-resolves finding: {:?}",
+            report.findings,
+        );
+    }
+
+    /// A committed ADR with no forward ref — the resolvable `supersedes` target.
+    fn adr_superseding_target() -> String {
+        "\
+---
+status: accepted
+date: 2026-05-23
+---
+
+# Single-node session cache
+
+## Context
+Session lookups must stay sub-millisecond.
+
+## Decision
+A single in-memory node keeps session lookups sub-millisecond.
+
+## Consequences
+A cold node loses its sessions; clients re-authenticate.
+"
+        .to_string()
     }
 
     /// (Test 4) A store with **no** `code-anchor` leaf never calls the invoker and writes

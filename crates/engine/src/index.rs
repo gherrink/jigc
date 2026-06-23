@@ -386,6 +386,30 @@ pub fn ref_resolves(
     findings
 }
 
+/// The **store-wide** analog of [`ref_resolves`]: every committed forward edge's target
+/// must resolve in the committed store. For each `edge` in `committed.edges`, a `to` that
+/// is not [`committed_reachable`] emits the same blocking `schema-conformance.ref-resolves`
+/// [`dangling`] [`Finding`] the task-scope gate raises. Unlike [`ref_resolves`] there is no
+/// task working area (no surface b) and no `task_froms` filter — the committed store is
+/// closed, so *every* committed edge is in scope. Drive it over a committed [`EdgeIndex`]
+/// (e.g. [`rebuild_committed`]); a fully-resolvable store yields an empty `Vec`. This closes
+/// the store-sweep asymmetry (doc↔code swept store-wide since M18, `ref-resolves` only ever
+/// task-scoped) so the salience-independent pre-commit backstop reaches a dangling cross-doc
+/// ref in the committed store.
+pub fn ref_resolves_store(
+    committed: &EdgeIndex,
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for edge in &committed.edges {
+        if !committed_reachable(&edge.to, repo_root, schemas) {
+            findings.push(dangling(edge));
+        }
+    }
+    findings
+}
+
 /// Is `to` (`<type>:<slug>`) reachable in either surface — the committed store
 /// (`<location>/<slug>.md` exists) or this task's working area
 /// (`docs/<type>:<slug>.md` exists)?
@@ -400,6 +424,16 @@ fn target_reachable(
         return true;
     }
     // Surface a: the committed store at the target type's canonical path.
+    committed_reachable(to, repo_root, schemas)
+}
+
+/// Is `to` (`<type>:<slug>`) reachable in the **committed store** alone — its target
+/// type's canonical `<location>/<slug>.md` exists? This is surface-a of
+/// [`target_reachable`], extracted so the store-wide forward-ref sweep
+/// ([`ref_resolves_store`]) — which holds no task working area — reuses the identical
+/// committed-reachability rule. An unknown type or a non-`<type>:<slug>` identity is
+/// unreachable.
+fn committed_reachable(to: &str, repo_root: &Path, schemas: &BTreeMap<String, Schema>) -> bool {
     let (ty, slug) = match to.split_once(':') {
         Some(pair) => pair,
         None => return false, // not a `<type>:<slug>` identity: unreachable.
