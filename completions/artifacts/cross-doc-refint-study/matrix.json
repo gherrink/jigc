@@ -1,0 +1,166 @@
+{
+  "nedits": 8,
+  "cells": {
+    "A|claude-opus-4-8": {
+      "arm": "A",
+      "model": "claude-opus-4-8",
+      "reps": 2,
+      "dangling_curve": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final_dangling": 0,
+      "edits_with_drift": 0,
+      "commits_total": 8,
+      "any_blocked": 2,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 7.66
+    },
+    "A|claude-sonnet-4-6": {
+      "arm": "A",
+      "model": "claude-sonnet-4-6",
+      "reps": 3,
+      "dangling_curve": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final_dangling": 0,
+      "edits_with_drift": 0,
+      "commits_total": 8,
+      "any_blocked": 3,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 3.63
+    },
+    "C160|claude-sonnet-4-6": {
+      "arm": "C160",
+      "model": "claude-sonnet-4-6",
+      "reps": 3,
+      "dangling_curve": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final_dangling": 0,
+      "edits_with_drift": 0,
+      "commits_total": 8,
+      "any_blocked": 0,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 1.32
+    },
+    "C40|claude-sonnet-4-6": {
+      "arm": "C40",
+      "model": "claude-sonnet-4-6",
+      "reps": 3,
+      "dangling_curve": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final_dangling": 0,
+      "edits_with_drift": 0,
+      "commits_total": 8,
+      "any_blocked": 0,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 1.22
+    },
+    "C550|claude-opus-4-8": {
+      "arm": "C550",
+      "model": "claude-opus-4-8",
+      "reps": 2,
+      "dangling_curve": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final_dangling": 0,
+      "edits_with_drift": 0,
+      "commits_total": 8,
+      "any_blocked": 0,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 2.67
+    },
+    "C550|claude-sonnet-4-6": {
+      "arm": "C550",
+      "model": "claude-sonnet-4-6",
+      "reps": 3,
+      "dangling_curve": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "final_dangling": 0,
+      "edits_with_drift": 0,
+      "commits_total": 8,
+      "any_blocked": 0,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 1.55
+    },
+    "P|claude-sonnet-4-6": {
+      "arm": "P",
+      "model": "claude-sonnet-4-6",
+      "reps": 3,
+      "dangling_curve": [
+        0.67,
+        1,
+        2,
+        3,
+        4,
+        4,
+        4,
+        4
+      ],
+      "final_dangling": 4,
+      "edits_with_drift": 7.67,
+      "commits_total": 8.33,
+      "any_blocked": 0,
+      "any_no_verify": 0,
+      "control_violations": 0,
+      "oracle_disagreements": 0,
+      "total_cost": 0.87
+    }
+  }
+}
