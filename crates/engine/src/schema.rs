@@ -443,6 +443,18 @@ pub enum SchemaError {
         ty: String,
     },
 
+    /// An `include:` directive named a fragment **absent** from the schema's
+    /// top-level `fragments:` map (or whose value is not a block sequence). The
+    /// schema-fragment de-dup mechanism rejects a dangling include loudly here,
+    /// never silently dropping the block. See `design/document-type-schema.md`
+    /// → On-disk definition format (a genuinely-shared section pulled in with
+    /// `include`) and `design/corpus-migration.md` → schema-fragment `include`.
+    #[error("`include` names undefined fragment `{name}`")]
+    UnknownFragment {
+        /// The fragment name the include directive named.
+        name: String,
+    },
+
     /// A repeatable nests deeper than the heading-depth cap. Items render at
     /// heading level `2 + nesting-depth`; the cap is **H6 → 4 nesting levels**
     /// ([`MAX_NESTING_DEPTH`]). A 5th level would render at `H7`, which Markdown
@@ -499,7 +511,12 @@ pub fn load_schema_with_types(
     pack_types: &[PackTypeDecl],
 ) -> Result<Schema, SchemaError> {
     let text = std::str::from_utf8(bytes).map_err(|_| SchemaError::NotUtf8)?;
-    let mut schema: Schema = serde_yaml_ng::from_str(text)?;
+    // Pre-deserialize pass: expand any schema-fragment `include` directives,
+    // then deserialize the expanded value into the model (a schema with no
+    // `fragments:` map passes through structurally unchanged).
+    let raw: serde_yaml_ng::Value = serde_yaml_ng::from_str(text)?;
+    let expanded = expand_fragment_includes(raw)?;
+    let mut schema: Schema = serde_yaml_ng::from_value(expanded)?;
     for section in &mut schema.sections {
         match &mut section.body {
             SectionBody::Simple { fields, .. } => {
@@ -564,6 +581,83 @@ fn resolve_field_type(field: &mut Field, pack_types: &[PackTypeDecl]) -> Result<
     Ok(())
 }
 
+/// Pre-deserialize expansion of the schema-definition `include` directive.
+///
+/// A top-level `fragments:` map names genuinely-shared blocks; wherever a
+/// `block:` sequence carries an `{ include: <name> }` item, the named
+/// fragment's items are spliced in place — de-duplicating a section repeated
+/// across sites (the `changelog` change-group block at both the staging area
+/// and each cut release; `design/document-type-schema.md` → On-disk definition
+/// format, `design/corpus-migration.md` → schema-fragment `include`). A schema
+/// with **no** `fragments:` map passes through structurally unchanged, so no
+/// existing doctype's loaded model shifts. An include naming an undefined
+/// fragment is a typed [`SchemaError::UnknownFragment`], never a silent drop.
+fn expand_fragment_includes(
+    value: serde_yaml_ng::Value,
+) -> Result<serde_yaml_ng::Value, SchemaError> {
+    use serde_yaml_ng::{Mapping, Value};
+    let Value::Mapping(mut map) = value else {
+        return Ok(value);
+    };
+    // Lift the top-level `fragments:` map out before deserialization (the model
+    // is `deny_unknown_fields`); absent or non-mapping leaves no fragments.
+    let fragments = match map.remove("fragments") {
+        Some(Value::Mapping(f)) => f,
+        _ => Mapping::new(),
+    };
+    splice_includes(Value::Mapping(map), &fragments)
+}
+
+/// Recursively rewrite `value`, splicing each `{ include: <name> }` sequence
+/// item with the named fragment's items (looked up in `fragments`).
+fn splice_includes(
+    value: serde_yaml_ng::Value,
+    fragments: &serde_yaml_ng::Mapping,
+) -> Result<serde_yaml_ng::Value, SchemaError> {
+    use serde_yaml_ng::{Mapping, Value};
+    match value {
+        Value::Mapping(m) => {
+            let mut out = Mapping::new();
+            for (k, v) in m {
+                out.insert(k, splice_includes(v, fragments)?);
+            }
+            Ok(Value::Mapping(out))
+        }
+        Value::Sequence(seq) => {
+            let mut out = Vec::with_capacity(seq.len());
+            for item in seq {
+                match include_target(&item) {
+                    Some(name) => {
+                        let frag = fragments
+                            .get(name)
+                            .and_then(Value::as_sequence)
+                            .ok_or_else(|| SchemaError::UnknownFragment {
+                                name: name.to_owned(),
+                            })?;
+                        // Expand the fragment's items too, so a fragment may
+                        // itself include another (bounded by the H6 depth cap
+                        // the loader enforces downstream).
+                        for frag_item in frag.clone() {
+                            out.push(splice_includes(frag_item, fragments)?);
+                        }
+                    }
+                    None => out.push(splice_includes(item, fragments)?),
+                }
+            }
+            Ok(Value::Sequence(out))
+        }
+        other => Ok(other),
+    }
+}
+
+/// The fragment name of an `{ include: <name> }` directive item, or `None` for
+/// any other sequence item (a leaf field/slot/nested-repeatable).
+fn include_target(item: &serde_yaml_ng::Value) -> Option<&str> {
+    item.as_mapping()
+        .and_then(|m| m.get("include"))
+        .and_then(serde_yaml_ng::Value::as_str)
+}
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -589,6 +683,7 @@ mod tests {
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
 
     /// Golden: the parsed `commit` schema projection. Pins section ids in
     /// document order, the header flag, the `subject` string field, and the
@@ -1378,6 +1473,142 @@ sections:
                           - { id: d, type: string }
 ";
         load_schema(yaml).expect("4-level nesting (deepest items at H6) loads");
+    }
+
+    /// The exact pre-`include` (inline, duplicated) form of the `changelog`
+    /// schema — the change-group block spelled out verbatim at **both** the
+    /// `unreleased-changes` site and the nested `releases.changes` site. The
+    /// shipped `changelog.yaml` now de-duplicates this via `include`; this
+    /// fixture is the byte-identity reference (a managed mention-free,
+    /// engine-native-types-only schema, so the bare loader resolves it).
+    const INLINE_CHANGELOG: &str = r#"type: changelog
+location: changelog/
+singleton: true
+id-from: title
+description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.
+usage: a user-facing change lands and the project keeps a human-readable record of what changed, staged now and cut into versioned releases over time.
+
+sections:
+  - id: unreleased-changes
+    repeatable:
+      id-from: category
+      block:
+        - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+        - { id: notes, slot: { hint: "One bullet per change in this category." } }
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: date, type: date, set: on-create }
+        - { id: link, type: string, optional: true }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+              - { id: notes, slot: { hint: "One bullet per change in this category." } }
+"#;
+
+    /// Assert a block resolves to the change-group shape `[category enum, notes
+    /// slot]` — the fragment the `include` de-dup pulls in at both sites.
+    fn assert_change_group(block: &[Leaf]) {
+        assert_eq!(block.len(), 2, "the change-group is [category, notes]");
+        let Leaf::Field(category) = &block[0] else {
+            panic!("the first change-group leaf is the category field");
+        };
+        assert_eq!(category.id, "category");
+        assert_eq!(category.ty, FieldType::Enum);
+        assert_eq!(
+            category.of.as_deref(),
+            Some(
+                [
+                    "added",
+                    "changed",
+                    "deprecated",
+                    "removed",
+                    "fixed",
+                    "security"
+                ]
+                .map(String::from)
+                .as_slice()
+            )
+        );
+        assert!(matches!(&block[1], Leaf::Slot { id, .. } if id == "notes"));
+    }
+
+    /// (M33 inc-3 T2, done-criterion) The shipped `include`-form `changelog`
+    /// schema loads to a [`Schema`] model **byte-identical** to the inline
+    /// (duplicated) form: the change-group block resolves to `[category enum,
+    /// notes slot]` at **both** the `unreleased-changes` repeatable and the
+    /// nested `releases.changes` repeatable. The `include` directive
+    /// de-duplicates the genuinely-shared section with no instance-byte change.
+    /// See `design/document-type-schema.md` → On-disk definition format and
+    /// `design/corpus-migration.md` → schema-fragment `include`.
+    #[test]
+    fn changelog_include_form_loads_byte_identically_to_inline() {
+        let inline = load_schema(INLINE_CHANGELOG.as_bytes()).expect("inline changelog loads");
+        let shipped = load_schema(CHANGELOG_YAML).expect("shipped (include-form) changelog loads");
+        assert_eq!(
+            inline, shipped,
+            "the include-form changelog loads to a model byte-identical to the inline form",
+        );
+
+        // The change-group block resolves at the staging site.
+        let SectionBody::Repeatable {
+            repeatable: unreleased,
+        } = &shipped.sections[0].body
+        else {
+            panic!("unreleased-changes is repeatable");
+        };
+        assert_eq!(unreleased.id_from, "category");
+        assert_change_group(&unreleased.block);
+
+        // ...and again at the nested per-release `changes` site.
+        let SectionBody::Repeatable {
+            repeatable: releases,
+        } = &shipped.sections[1].body
+        else {
+            panic!("releases is repeatable");
+        };
+        let Leaf::Repeatable {
+            id,
+            repeatable: changes,
+        } = releases
+            .block
+            .last()
+            .expect("a release's last leaf is the nested changes repeatable")
+        else {
+            panic!("the nested changes leaf is a repeatable");
+        };
+        assert_eq!(id, "changes");
+        assert_eq!(changes.id_from, "category");
+        assert_change_group(&changes.block);
+    }
+
+    /// (M33 inc-3 T2) An `include:` directive naming a fragment **absent** from
+    /// the top-level `fragments:` map fails to load with a typed
+    /// [`SchemaError::UnknownFragment`] naming the offending fragment — a
+    /// dangling include is rejected loudly, never silently dropped.
+    #[test]
+    fn include_naming_an_undefined_fragment_is_a_typed_error() {
+        let yaml = b"\
+type: x
+fragments:
+  defined:
+    - { id: a, type: string }
+sections:
+  - id: s
+    repeatable:
+      id-from: a
+      block:
+        - include: missing
+";
+        let err = load_schema(yaml).expect_err("an include of an undefined fragment errors");
+        assert!(
+            matches!(&err, SchemaError::UnknownFragment { name } if name == "missing"),
+            "expected UnknownFragment for `missing`, got {err:?}",
+        );
     }
 
     /// An unknown top-level key is rejected (the `deny_unknown_fields` guard),

@@ -754,7 +754,7 @@ mod tests {
     fn changelog_schema_is_the_canonical_doctype() {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Schemas, "changelog");
-        insta::assert_snapshot!(body, @r###"
+        insta::assert_snapshot!(body, @r#"
         # changelog — the doctype-expansion (M22) project doctype: a Keep-a-Changelog
         # singleton maintained over time. A running SINGLETON (fixed slug = the type id,
         # always `changelog/changelog.md`), so a re-`create` deterministically targets the
@@ -776,9 +776,11 @@ mod tests {
         #
         # NO leading prose slot on a release item (review finding B1): a release holds only
         # scalar fields then the nested `changes` repeatable — a leading bare-prose slot
-        # would swallow the nested `####` groups. The change-group shape is duplicated
-        # across both sections deliberately (the engine has no schema-fragment reuse, and
-        # the staging-vs-released regions are domain-distinct — review finding S3).
+        # would swallow the nested `####` groups. The change-group block is the genuinely-
+        # shared section, declared ONCE under `fragments:` and pulled in with `include` at
+        # both the staging and per-release sites (M33 schema-fragment de-dup — byte-identical
+        # instance render; design/document-type-schema.md → On-disk definition format,
+        # design/corpus-migration.md → schema-fragment include).
         # Engine-native types only (no pack field-types declared).
         # See design/changelog.md → The `changelog` doctype.
         type: changelog
@@ -788,13 +790,19 @@ mod tests {
         description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.
         usage: a user-facing change lands and the project keeps a human-readable record of what changed, staged now and cut into versioned releases over time.
 
+        # The genuinely-shared change-group block (`category` enum + `notes` slot),
+        # included at both the staging area and each cut release.
+        fragments:
+          change-group:
+            - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+            - { id: notes, slot: { hint: "One bullet per change in this category." } }
+
         sections:
           - id: unreleased-changes
             repeatable:
               id-from: category
               block:
-                - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
-                - { id: notes, slot: { hint: "One bullet per change in this category." } }
+                - include: change-group
           - id: releases
             repeatable:
               id-from: title
@@ -806,9 +814,8 @@ mod tests {
                   repeatable:
                     id-from: category
                     block:
-                      - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
-                      - { id: notes, slot: { hint: "One bullet per change in this category." } }
-        "###);
+                      - include: change-group
+        "#);
     }
 
     /// The shipped `record-change` workflow is the changelog's standalone driver:
