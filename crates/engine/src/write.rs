@@ -6444,14 +6444,19 @@ mod spec_roundtrip {
             .expect("arch-doc.yaml loads")
     }
 
-    /// A canonical `spec` instance over the shipped schema: the `# H1` title (the
-    /// id-source — `spec` carries NO `title` field and NO header section, like
-    /// `adr`, so it renders no front-matter block), `goal` + `context` prose slots,
-    /// and two `criteria` items each with a frozen `{#id}` anchor and a `statement`
-    /// slot. Authored in the exact frozen byte form the canonical writer emits
-    /// (`# H1`, `## …` slots, `### …  {#id}` items with the two-space anchor gap).
+    /// A canonical `spec` instance over the shipped schema: the empty `---\n---`
+    /// header (the `meta` section carries an optional `derived-from → prd` ref, card
+    /// `0..1`; a PRD-less spec omits it → an empty fence pair, the production shape),
+    /// the `# H1` title (the id-source — `spec` carries NO `title` field, like `adr`),
+    /// `goal` + `context` prose slots, and two `criteria` items each with a frozen
+    /// `{#id}` anchor and a `statement` slot. Authored in the exact frozen byte form
+    /// the canonical writer emits (`---\n---`, `# H1`, `## …` slots, `### …  {#id}`
+    /// items with the two-space anchor gap).
     fn canonical_spec_source() -> &'static str {
         "\
+---
+---
+
 # Gateway rate limiting
 
 ## Goal
@@ -6522,6 +6527,9 @@ The next window admits requests again.
         let instance = instance_from_source(
             &schema,
             "\
+---
+---
+
 # Gateway rate limiting
 
 ## Goal

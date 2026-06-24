@@ -10,6 +10,20 @@ expression: json
   "usage": "you need to pin down what a piece of work must deliver before building it, so the criteria are agreed up front and code can be checked against them.",
   "sections": [
     {
+      "id": "meta",
+      "header": true,
+      "fields": [
+        {
+          "id": "derived-from",
+          "type": "ref",
+          "to": "prd",
+          "card": "0..1",
+          "inverse": "has-specs",
+          "inverse-card": "1..*"
+        }
+      ]
+    },
+    {
       "id": "goal",
       "slot": {
         "hint": "What this spec delivers — the outcome, in a sentence or two."

@@ -4,10 +4,15 @@
 # `id-from: title` derives the slug from the document title (the H1, supplied at
 # `jigc doc create spec --title "…"`) — exactly like `adr`, which carries NO title
 # field; the title is the document's H1, never a declared schema field.
-# No `status`/`date` and no `decided-by → adr` relation: nothing in the M3 arc
-# reads them, so they stay one-line additions when a flow earns them.
-# See document-type-schema.md → On-disk definition format + Sections and
-# repetition; implementation/doctype-map.md (spec location);
+# No `status`/`date`: nothing in the M3 arc reads them, so they stay one-line
+# additions when a flow earns them. The `meta` header carries the spec→prd edge of
+# the frozen doctype graph — `derived-from → prd` (modeled spec-side; the PRD's
+# `has-specs` inverse is derived, never stored — document-type-schema.md;
+# project-setup.md). `card: "0..1"` is the deadlock guard, NOT the worked `card: "1"`:
+# a PRD-less spec must stay valid (the field is never author-required), so PRD-first
+# authoring never deadlocks (DECISIONS.md 2026-06-24 → M33+M34 correction).
+# See document-type-schema.md → On-disk definition format + Cross-references + Sections
+# and repetition; implementation/doctype-map.md (spec location + the prd→spec edge);
 # DECISIONS.md 2026-06-01 → M3 Increment 1 elaboration pin T1.
 type: spec
 location: specs/
@@ -16,6 +21,10 @@ description: A specification of what a task implements — its goal, its context
 usage: you need to pin down what a piece of work must deliver before building it, so the criteria are agreed up front and code can be checked against them.
 
 sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: prd, card: "0..1", inverse: has-specs, inverse-card: "1..*" }
   - id: goal
     slot: { hint: "What this spec delivers — the outcome, in a sentence or two." }
   - id: context

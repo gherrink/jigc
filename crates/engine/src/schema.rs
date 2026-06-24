@@ -667,10 +667,11 @@ mod tests {
     }
 
     /// The shipped `spec` schema's structure is reachable through the model: the
-    /// `criteria` repeatable block carries `statement` as a `Leaf::Slot`, the spec
-    /// carries NO document-level `title` field (the slug derives from the H1, like
-    /// `adr`), and the cut fields (`status`/`date`/`decided-by`) are genuinely
-    /// absent.
+    /// `meta` header carries `derived-from` as a `ref → prd` (card `0..1`,
+    /// `inverse: has-specs`, `inverse-card: "1..*"`), the `criteria` repeatable block
+    /// carries `statement` as a `Leaf::Slot`, the spec carries NO document-level
+    /// `title` field (the slug derives from the H1, like `adr`), and the cut fields
+    /// (`status`/`date`/`decided-by`) are genuinely absent.
     #[test]
     fn spec_criteria_block_carries_statement_as_a_slot() {
         let schema =
@@ -679,9 +680,27 @@ mod tests {
         assert_eq!(schema.location.as_deref(), Some("specs/"));
         assert_eq!(schema.id_from.as_deref(), Some("title"));
 
-        // `goal` is the first section — a prose slot, no fields (the spec has no
-        // header/field section; its title is the document H1).
-        let goal = &schema.sections[0];
+        // `meta` is the header section — it carries the `derived-from → prd` edge of
+        // the frozen doctype graph (modeled spec-side; the PRD's `has-specs` inverse
+        // is derived, never stored), `card: "0..1"` the deadlock guard.
+        let meta = &schema.sections[0];
+        assert_eq!(meta.id, "meta");
+        assert!(meta.header);
+        let SectionBody::Simple { fields, .. } = &meta.body else {
+            panic!("meta is a header field section");
+        };
+        let derived_from = fields
+            .iter()
+            .find(|f| f.id == "derived-from")
+            .expect("meta carries derived-from");
+        assert_eq!(derived_from.ty, FieldType::Ref);
+        assert_eq!(derived_from.to.as_deref(), Some("prd"));
+        assert_eq!(derived_from.card.as_deref(), Some("0..1"));
+        assert_eq!(derived_from.inverse.as_deref(), Some("has-specs"));
+        assert_eq!(derived_from.inverse_card.as_deref(), Some("1..*"));
+
+        // `goal` follows the header — a prose slot, no fields.
+        let goal = &schema.sections[1];
         assert_eq!(goal.id, "goal");
         let SectionBody::Simple { slot, fields } = &goal.body else {
             panic!("goal is a simple slot section");
@@ -708,7 +727,7 @@ mod tests {
         assert!(!all_field_ids.contains(&"decided-by"));
 
         // The criteria repeatable block carries `statement` as a prose slot.
-        let criteria = &schema.sections[2];
+        let criteria = &schema.sections[3];
         assert_eq!(criteria.id, "criteria");
         let SectionBody::Repeatable { repeatable } = &criteria.body else {
             panic!("criteria is repeatable");
