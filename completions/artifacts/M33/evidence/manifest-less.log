@@ -1,0 +1,36 @@
+Reason about the change. The intent is:
+freeze-gate probe
+
+The relevant code paths are not yet known. Inspect the codebase to confirm
+scope before implementing.
+
+Implement the change directly in the working tree. `git add` your code edits
+before finalize — it commits only what you have staged. When done, set the
+required Conventional-Commits type — your editorial call on what this change
+does — then stage the summary prose:
+
+Run: `jigc doc set-field commit:freeze-gate-probe#type --value <COMMIT_TYPE> --task freeze-gate-probe`
+Run: `jigc doc set-slot commit:freeze-gate-probe#summary --from-file - --task freeze-gate-probe`
+<<author: commit:freeze-gate-probe#summary>>
+
+The `scope` and `body` are optional: add a `scope` to name the area touched, or
+author a `body` to explain the motivation, only when they earn their place —
+
+jigc doc set-field commit:freeze-gate-probe#scope --value <area> --task freeze-gate-probe
+jigc doc set-slot commit:freeze-gate-probe#body --from-file - --task freeze-gate-probe
+
+If a decision is warranted, create an ADR and author its slots:
+
+Run: `jigc doc create adr --title <TITLE> --task freeze-gate-probe`
+
+If your decision supersedes an earlier one, set `supersedes` on the ADR; the
+superseded decision then appears below for reference, so your consequences can
+explain what changes (nothing appears if it supersedes none).
+
+Validate and commit the task as one logical commit. Make sure your code edits
+are staged (`git add`) first — finalize commits only the staged set plus the
+docs it manages:
+
+Run: `jigc task finalize freeze-gate-probe`
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+ARM C (manifest-less, same drift) exit: 0

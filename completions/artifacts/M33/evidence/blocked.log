@@ -1,0 +1,2 @@
+pack-load freeze check failed: doctype `adr`: schema-hash mismatch (manifest declares `4882af1b5ca75b4214d8eeaa922930cbd2734576322342a0e2bc4312487de30b`, recomputed `64d9c428922f532494aa701d52a9115fd4148d8f540f7c6b2229932fe3c5f37a`)
+ARM B (drifted copy, JIGC_PACK_DIR) exit: 1

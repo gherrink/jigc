@@ -1,0 +1,18 @@
+# Embedded dev-pack freeze manifest — the frozen-v1 doctype set
+# Source: crates/cli/pack/config/schema-manifest.yaml (embedded via include_dir!)
+# Enumerated doctypes (each at schema-version 1):
+  - type: commit
+    schema-version: 1
+  - type: adr
+    schema-version: 1
+  - type: spec
+    schema-version: 1
+  - type: prd
+    schema-version: 1
+  - type: arch-doc
+    schema-version: 1
+  - type: changelog
+    schema-version: 1
+
+# Count of frozen doctypes:
+6
