@@ -1,0 +1,1 @@
+Split the `append-only-audit-log` decision into two separate decision records — one named `audit-write-log` covering write auditing and one named `audit-read-log` covering read auditing — and remove the original. Then commit the change.

@@ -1,0 +1,1 @@
+The `redis-session-cache` decision has itself been superseded by the move to clustering. Remove that decision record from the project, and commit the change.

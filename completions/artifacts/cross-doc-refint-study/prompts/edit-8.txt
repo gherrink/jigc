@@ -1,0 +1,1 @@
+We settled on a token-bucket implementation. Rename the `adaptive-rate-limiting` decision record to `token-bucket-rate-limiting` and update its heading to match. Then commit the change.

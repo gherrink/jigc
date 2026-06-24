@@ -1,0 +1,28 @@
+#!/bin/sh
+# STUDY blocking CROSS-DOC FORWARD-REF pre-commit hook.
+#
+# A one-line-delta variant of jigc's shipped warn-only hook (crates/cli/src/setup.rs
+# precommit_hook_body) and of the doc<->code study's `blocking-pre-commit`: identical
+# detection — key on a CONTENT finding in `jigc validate --format json` (never the
+# wrong-way-round exit code) — but BLOCK (exit 1) instead of warn (exit 0), and key on
+# the **cross-doc forward-ref** family rather than doc<->code.
+#
+# The detection delta from the doc<->code study: the dangling-ref finding is
+# `schema-conformance.ref-resolves` (probe = "schema-conformance"), surfaced store-wide by
+# the 4th store-sweep family (engine commit 55b7a1c). So this greps `"probe":
+# "schema-conformance"`. (The `doc-code` alternation is kept too, so a corpus that ever
+# carries a code anchor is still covered; the cross-doc seed has none, so it is inert.)
+#
+# This is the genuinely salience-independent enforcement the cross-doc study tests: it
+# fires on EVERY `git commit` regardless of how the agent edited the store or whether it
+# "chose" jigc — the thing no static CLAUDE.md instruction can make a cold agent do
+# (walk the whole store's forward-edge graph and reject a dangling reference).
+jigc='/usr/local/bin/jigc'
+report="$("$jigc" validate --format json 2>/dev/null)"
+if printf '%s' "$report" | grep -Eq '"probe"[[:space:]]*:[[:space:]]*"(schema-conformance|doc-code)"'; then
+  echo 'jigc: COMMIT BLOCKED — a managed document has a cross-reference that no longer resolves:' >&2
+  "$jigc" validate 2>&1 | grep -iE 'ref-resolves|forward-ref|doc-code|route' >&2
+  echo 'Fix the dangling reference (re-point it at an existing decision, or remove it), then commit again.' >&2
+  exit 1
+fi
+exit 0

@@ -1,0 +1,1 @@
+Sessions have moved entirely to stateless JWTs, so the `redis-cluster-sessions` decision no longer applies. Remove that decision record from the project, and commit the change.

@@ -1,0 +1,1 @@
+We replaced fixed IP rate limiting with an adaptive scheme. Rename the `ip-rate-limiting` decision record to `adaptive-rate-limiting` and update its heading to match. Then commit the change.

@@ -1,0 +1,1 @@
+The `in-memory-session-cache` decision is obsolete — it was superseded long ago and no longer reflects how sessions work. Remove that decision record from the project, and commit the change.

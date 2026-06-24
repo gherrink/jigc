@@ -1,0 +1,24 @@
+{
+  "study": "cross-doc-refint",
+  "store_roots": ["docs/decisions", "docs/architecture"],
+  "control_edge": "adr:stateless-jwt-sessions#supersedes -> adr:server-side-session-store",
+  "note": "Each edit breaks >=1 non-control forward edge 1-3 hops from the edit site. supersedes dangles are 1 hop; arch-doc `cites` dangles are 2 hops (the far case a static rule is least likely to make a cold agent catch). Edits 7-8 are compounding re-touches of docs renamed at edits 3-4 (they re-dangle only in an arm that REPAIRED the edit-3/4 dangle, e.g. arm A under the hook). The `breaks` field is the edge(s) that newly dangle on a NON-repairing arm; the oracle measures the actual HEAD per arm.",
+  "edits": [
+    {"n": 1, "type": "delete", "target": "in-memory-session-cache",
+     "breaks": ["adr:redis-session-cache#supersedes -> adr:in-memory-session-cache"], "hops": 1},
+    {"n": 2, "type": "delete", "target": "redis-session-cache",
+     "breaks": ["adr:redis-cluster-sessions#supersedes -> adr:redis-session-cache"], "hops": 1},
+    {"n": 3, "type": "rename", "target": "csrf-double-submit-cookie", "to": "csrf-origin-validation",
+     "breaks": ["arch-doc:session-management#cites -> adr:csrf-double-submit-cookie"], "hops": 2},
+    {"n": 4, "type": "rename", "target": "ip-rate-limiting", "to": "adaptive-rate-limiting",
+     "breaks": ["arch-doc:session-management#cites -> adr:ip-rate-limiting"], "hops": 2},
+    {"n": 5, "type": "split", "target": "append-only-audit-log", "to": ["audit-write-log", "audit-read-log"],
+     "breaks": ["arch-doc:session-management#cites -> adr:append-only-audit-log"], "hops": 2},
+    {"n": 6, "type": "delete", "target": "redis-cluster-sessions",
+     "breaks": ["arch-doc:session-management#cites -> adr:redis-cluster-sessions"], "hops": 2},
+    {"n": 7, "type": "rename", "target": "csrf-origin-validation", "to": "csrf-strict-origin",
+     "breaks": ["arch-doc:session-management#cites -> adr:csrf-origin-validation (compounding; only if edit 3 was repaired)"], "hops": 2},
+    {"n": 8, "type": "rename", "target": "adaptive-rate-limiting", "to": "token-bucket-rate-limiting",
+     "breaks": ["arch-doc:session-management#cites -> adr:adaptive-rate-limiting (compounding; only if edit 4 was repaired)"], "hops": 2}
+  ]
+}

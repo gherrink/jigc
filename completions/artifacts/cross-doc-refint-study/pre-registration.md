@@ -343,3 +343,51 @@ the seed uses doc-level `supersedes`/`cites` only, matching what `ref_resolves_s
 5. **Results + verdict** — `results.md` (the curves + rates), the blind-judge pass, and a
    `VERDICT.md` ruling on **capability-gap win vs salience-decay vs hypothesis-refuted** —
    the answer that gates productive-go.
+
+---
+
+## Amendments (recorded during the build, before the matrix ran)
+
+Deviations from the signed-off protocol, each with its reason — logged for honesty, not
+silently absorbed. All verified against the real binary 2026-06-24; the harness is the
+durable copy under `harness/` in this directory (canonical), copied into `~/lh-study/` to run.
+
+1. **Seed built by `jigc ingest` of hand-written conformant files, not `jigc doc create`/
+   `set-field`.** The deliverable §3 named the create/finalize workflow; ingesting
+   hand-authored conformant `adr`/`arch-doc` files is simpler and yields the *same* result —
+   genuinely **managed** docs (indexed + file-state-baselined, "adopted register-only"). The
+   store-wide `ref-resolves` sweep re-parses committed files index-independently, so the
+   edge graph is identical either way. Builder: `harness/build-seed.sh`.
+2. **Managed root is `docs/decisions/` + `docs/architecture/`** (not bare `decisions/`).
+   Confirmed against the binary: the canonical path is `docs/<location>/<slug>.md`; files
+   under bare `decisions/` are invisible to the store sweep. The oracle + seed builder use
+   the `docs/` root.
+3. **The arch-doc's `components` section is left EMPTY** — so the seed carries **no
+   `code-anchor`** and the `doc-code` probe is inert. This keeps the study purely about
+   *cross-doc refs* (`supersedes`/`cites`), the differentiator under test; doc↔code is the
+   prior study's subject.
+4. **The oracle is a sibling `measure-refint.py`, not an in-place extension of the doc↔code
+   `measure.py`.** They measure different things (edge-graph resolution over the doc store
+   vs tree-sitter over code); a sibling keeps the doc↔code oracle intact and the two
+   selftests independent. Path (a) edge-walker is arm-agnostic; path (b) (`jigc validate`
+   `ref-resolves` count) runs only where `.jigc/` exists (arm A) and must **agree** with (a)
+   — a mismatch is recorded as an oracle-integrity flag, never reconciled. Both paths verified
+   to agree on the live seed (clean=0, and on simulated edits 1→2 dangling).
+5. **The 8 edits are finalized (`harness/sequence.json` + `prompts/edit-*.txt`).** Deletes
+   for superseded ADRs (1-hop `supersedes` dangle), renames for cited ADRs (2-hop `cites`
+   dangle — the far case), one split, and edits 7–8 as **compounding re-touches** of docs
+   renamed at edits 3–4 (they re-dangle only on an arm that *repaired* the earlier dangle,
+   e.g. arm A under the hook). **Caveat:** rename tickets name the exact new slug
+   (`…to \`csrf-origin-validation\``) so edits 7–8 can reference it deterministically; this
+   leans on the agent using the named slug — a measured caveat, not assumed. Prompts are
+   byte-identical across all arms, hint-free, each ending "…and commit the change." (so the
+   pre-commit hook is reached symmetrically — the doc↔code study's amendment 3).
+6. **On-disk ref serialization confirmed:** inline bare (`supersedes: adr:x`) for a single
+   value, inline bracket (`cites: [adr:a, adr:b]`) for a list; the oracle parses both (plus a
+   defensive YAML-list form jigc does not currently emit).
+7. **Drift is measured on committed HEAD; the tree resets to HEAD between edits** (the
+   doc↔code study's amendment 4, unchanged) — the deliverable is what *ships*; a
+   blocked-and-unrecovered arm-A edit lands no commit (drift never enters HEAD), at the
+   faithful cost of an unlanded ticket (tracked as tickets-landed). A **never-edited,
+   never-cited control edge** (`adr:stateless-jwt-sessions#supersedes → adr:server-side-
+   session-store`) must resolve at every edit on every arm — a sanity tripwire (verified).
