@@ -410,6 +410,136 @@ pub fn ref_resolves_store(
     findings
 }
 
+/// The store-scope **`schema-completeness.inverse-cardinality`** check
+/// (`design/validation.md` → Integrity vs completeness; `design/document-type-schema.md`
+/// → Inverse-cardinality and orphan obligations). For every persisted `ref` field that
+/// declares an `inverse-card` **minimum** ≥ 1 (e.g. `spec.derived-from → prd`, `inverse:
+/// has-specs, inverse-card: "1..*"`), enumerate the committed docs of the **target** type
+/// and count each one's inbound edges of that relation over the committed index; a target
+/// below the declared minimum surfaces one **advisory** [`Finding`].
+///
+/// This is **completeness, not integrity** — a PRD's specs are *other tasks'* jobs, so the
+/// check **depends on the whole store**, never just one task: it is **never** a per-task
+/// `finalize` gate ([`ref_resolves`] is the integrity twin the task gate runs). Only
+/// [`validate_store_families`](crate::validate::validate_store_families) calls it. Advisory
+/// by default; the cascade may re-grade it (the severity post-pass at
+/// [`ValidationReport::new`](crate::result::ValidationReport) keyed on
+/// `validation.schema-completeness.inverse-cardinality.severity`).
+///
+/// Deterministic by construction: `schemas` is a [`BTreeMap`] (type-sorted), sections walk
+/// in schema order, and the target docs are enumerated slug-sorted ([`committed_slugs`]).
+pub fn inverse_cardinality_store(
+    committed: &EdgeIndex,
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for schema in schemas.values() {
+        for section in &schema.sections {
+            // A `ref` carrying an inverse-card obligation lives on a header / simple
+            // section (the same surface [`doc_edges`] extracts forward edges from).
+            let SectionBody::Simple { fields, .. } = &section.body else {
+                continue;
+            };
+            for field in fields {
+                if field.ty != FieldType::Ref {
+                    continue;
+                }
+                let (Some(target_ty), Some(inverse_card)) =
+                    (field.to.as_deref(), field.inverse_card.as_deref())
+                else {
+                    continue; // not a ref-with-inverse-card obligation.
+                };
+                let min = inverse_card_min(inverse_card);
+                if min == 0 {
+                    continue; // `0..*` / `0..1` impose no completeness floor.
+                }
+                let Some(target_schema) = schemas.get(target_ty) else {
+                    continue; // unknown target type: no committed docs to enumerate.
+                };
+                let Some(location) = target_schema.location.as_deref() else {
+                    continue; // a transient (location-less) target type has no committed docs.
+                };
+                for slug in committed_slugs(repo_root, location) {
+                    let identity = format!("{target_ty}:{slug}");
+                    let count = committed
+                        .edges
+                        .iter()
+                        .filter(|e| e.relation == field.id && e.to == identity)
+                        .count();
+                    if count < min {
+                        findings.push(below_inverse_minimum(
+                            &identity,
+                            &field.id,
+                            field.inverse.as_deref(),
+                            count,
+                            min,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    findings
+}
+
+/// The minimum of an `inverse-card` spelling — the integer before the `..` of a
+/// `min..max` range (`"1..*"` → 1), or the whole value when there is no range
+/// (`"1"` → 1). An unparseable minimum is treated as 0 (no completeness floor), so a
+/// malformed declaration never fabricates a finding.
+fn inverse_card_min(inverse_card: &str) -> usize {
+    let head = inverse_card
+        .split("..")
+        .next()
+        .unwrap_or(inverse_card)
+        .trim();
+    head.parse().unwrap_or(0)
+}
+
+/// The committed-doc slugs of a persisted type — the `.md` file stems under
+/// `<repo_root>/<location>`, **slug-sorted** (the deterministic enumeration order). A
+/// missing / unreadable location directory yields an empty list (no committed docs yet).
+fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
+    let dir = repo_root.join(location);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut slugs: Vec<String> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        .filter_map(|p| p.file_stem().and_then(|s| s.to_str()).map(str::to_string))
+        .collect();
+    slugs.sort();
+    slugs
+}
+
+/// An **advisory** `schema-completeness.inverse-cardinality` [`Finding`] for a target doc
+/// below its inverse-card minimum — located at the deficient target's identity, naming the
+/// inverse relation (when declared) so the operator knows which obligation is unmet. Carries
+/// no route: the fix is *another task's* job (author a referrer), not a structural repair.
+fn below_inverse_minimum(
+    target: &str,
+    relation: &str,
+    inverse: Option<&str>,
+    count: usize,
+    min: usize,
+) -> Finding {
+    let inverse_phrase = inverse
+        .map(|i| format!(" (its `{i}` inverse)"))
+        .unwrap_or_default();
+    Finding::graded(
+        Severity::Advisory,
+        "schema-completeness.inverse-cardinality",
+        format!(
+            "schema-completeness — `{target}` has {count} inbound `{relation}` edge(s){inverse_phrase}, \
+             below the inverse-card minimum of {min}",
+        ),
+        Some(Location::addressed(target.to_string(), 1, 1)),
+        None,
+    )
+}
+
 /// Is `to` (`<type>:<slug>`) reachable in either surface — the committed store
 /// (`<location>/<slug>.md` exists) or this task's working area
 /// (`docs/<type>:<slug>.md` exists)?

@@ -440,6 +440,23 @@ pub fn validate_store_families(
         schemas,
     ));
 
+    // Family 5 — schema-completeness (inverse / minimum-cardinality): the completeness twin
+    // of Family 4's integrity walk. For every persisted `ref` declaring an `inverse-card`
+    // minimum (`spec.derived-from → prd`, `inverse-card: "1..*"`), each committed target doc
+    // below the minimum surfaces an **advisory** `schema-completeness.inverse-cardinality`
+    // finding (a PRD with zero inbound `derived-from` edges → "needs ≥ 1 spec"). Reuses the
+    // Family-4 `committed_index` to count inbound edges. This is **completeness, not
+    // integrity** — it depends on *other* tasks, so it is **never** wired into
+    // [`validate_task`] (the per-task `finalize` gate); only this store / milestone scope
+    // sweep runs it (`design/document-type-schema.md` → Inverse-cardinality obligations are
+    // never a per-task gate; `design/validation.md` → Integrity vs completeness). Advisory by
+    // default — report-only, gating nothing.
+    findings.extend(crate::index::inverse_cardinality_store(
+        &committed_index,
+        repo_root,
+        schemas,
+    ));
+
     Ok(ValidationReport::new(findings, resolved))
 }
 
