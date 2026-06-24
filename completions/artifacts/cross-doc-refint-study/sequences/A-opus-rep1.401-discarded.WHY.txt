@@ -1,0 +1,6 @@
+A-opus-rep1: edit 8 hit a transient `authentication_failed` (OAuth token expired mid-batch,
+~09:06, the known short-lived-token behavior). The agent could not complete edit 8, so it
+landed no commit (tickets=7/8, $6.90). Edits 1-7 were clean and flat (dangling 0). Per the
+study protocol ("never let a 401 reach the verdict"), this sequence is DISCARDED and re-run
+on fresh auth as A-8-rep1. The token recovered on its own — A-opus-rep2 and both C550-opus
+sequences (run after) were clean.
