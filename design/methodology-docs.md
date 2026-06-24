@@ -50,7 +50,7 @@ All schemas live in the **methodology pack** (`packs/methodology/schemas/`) — 
 | Gate | What it requires recorded | Phase | Rationale |
 |---|---|---|---|
 | `reuse-exercised` | every "already exists / just reuses" claim exercised against the **exact new shape** *and its cold-start/empty form* (not analogy) | Detect gaps | M3, M13 |
-| `cheap-vs-robust` | each low-effort path surfaced as a **fork with its long-run cost**, not defaulted silently | Detect gaps | M30 |
+| `cheap-vs-robust` | each low-effort path surfaced as a **fork with its long-run cost** *and resolved against the **vision's committed trajectory**, not the local test* — **robust-now** if it's a *one-way door* (costly to reverse once a committed later milestone lands) **or** leaves a *known hole in a goal-complete/declared surface* (a freeze, a v1, a contract); **defer** only a need the vision genuinely doesn't commit to. The *cheap-local default* ("not necessary right now") is the bug; the **vision is the line, not "more."** | Detect gaps | M30, **M33** |
 | `foreclosed-by-doc` | each leaned-on doc/decision that blocks a better path surfaced, its **rationale engaged** | Detect gaps | M30 |
 | `prior-art-reconciled` | for each thing the milestone will build, **every design doc that already touches it agrees** — `grep` the concept across `design/`, don't anchor on the one the charter/map names; a contradiction between locked docs is a **blocking fork** | Detect gaps | **M33** |
 | `census` | every application site of a new *rule* **and every path that must uphold a new *property*** enumerated, each with acceptance | Settle | M14, **M31** |
