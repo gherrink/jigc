@@ -5573,6 +5573,7 @@ mod roundtrip {
 
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+    const PRD_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/prd.yaml");
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -5581,12 +5582,18 @@ mod roundtrip {
         crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
             .expect("adr.yaml loads")
     }
+    /// The shipped `prd` schema. `prd` carries NO pack `code-anchor` type (its
+    /// `requirements` block is just a `title` field + a `statement` slot, dropping the
+    /// `maps-to-test` anchor `spec.criteria` carries) and no front-matter, so it loads bare.
+    fn prd_schema() -> Schema {
+        crate::schema::load_schema(PRD_YAML).expect("prd.yaml loads")
+    }
 
     /// One generated arbitrary conformant document plus its known-canonical LF form
     /// and the metadata the surgical-edit clause needs.
     #[derive(Clone, Debug)]
     struct GenDoc {
-        /// `"commit"` or `"adr"` — selects the schema.
+        /// `"commit"`, `"adr"`, or `"prd"` — selects the schema.
         ty: String,
         /// The canonical LF document text (no BOM, exactly one trailing `\n`).
         canonical_lf: String,
@@ -5658,8 +5665,57 @@ mod roundtrip {
         )
     }
 
-    /// The generator: an arbitrary conformant `commit` or `adr` doc, with a chosen
-    /// EOL, returning the canonical-LF text + the EOL + a settable front-matter field.
+    /// Build a canonical-LF `prd` document from generated parts by constructing an
+    /// [`Instance`] and **rendering it** — the first fuzz of the populated
+    /// repeatable-item render path (`### <title>  {#id}` heading + per-item `statement`
+    /// slot). `prd` carries the `vision`/`context` fixed prose slots and a POPULATED
+    /// `requirements` section (one item per `(title, statement)`, the `title` consumed
+    /// as the `id-from` heading — never a field bullet, like `spec.criteria`). Building
+    /// through `render` guarantees the bytes match the writer's canonical form exactly.
+    fn build_prd(
+        title: &str,
+        vision: &str,
+        requirements: &[(String, String)],
+        context: &str,
+    ) -> String {
+        let items: Vec<ItemContent> = requirements
+            .iter()
+            .map(|(req_title, statement)| ItemContent {
+                id: crate::slug::slugify(req_title),
+                title: req_title.clone(),
+                slot: Some(statement.clone()),
+                slots: Vec::new(),
+                fields: Vec::new(),
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "vision".to_string(),
+                    slot: Some(vision.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "requirements".to_string(),
+                    items,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "context".to_string(),
+                    slot: Some(context.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&prd_schema(), &instance)
+    }
+
+    /// The generator: an arbitrary conformant `commit`, `adr`, or `prd` doc, with a
+    /// chosen EOL, returning the canonical-LF text + the EOL + a settable front-matter
+    /// field (`None` for `prd`, which carries no front-matter — the surgical clause
+    /// self-skips).
     fn arb_doc() -> impl Strategy<Value = GenDoc> {
         let eol = prop_oneof![Just("\n".to_string()), Just("\r\n".to_string())];
 
@@ -5710,7 +5766,34 @@ mod roundtrip {
                 )
             });
 
-        (prop_oneof![commit, adr], eol).prop_map(|((ty, canonical_lf, edit), eol)| GenDoc {
+        let prd = (
+            scalar_value(),
+            edgy_prose(),
+            prop::collection::vec((scalar_value(), edgy_prose()), 1..4),
+            edgy_prose(),
+        )
+            .prop_map(|(title, vision, reqs, context)| {
+                // Index-suffix each requirement title so the slugified `{#id}` anchors
+                // are distinct — a repeatable section rejects duplicate anchors, and
+                // two arbitrary titles can collide. The suffix also exercises the
+                // multi-word-heading parse on every item.
+                let requirements: Vec<(String, String)> = reqs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (req_title, statement))| {
+                        (format!("{} {i}", req_title.trim()), statement)
+                    })
+                    .collect();
+                (
+                    "prd".to_string(),
+                    build_prd(&title, &vision, &requirements, &context),
+                    // `prd` has no front-matter, so there is no settable field; the
+                    // surgical-edit clause self-skips on `edit: None`.
+                    None,
+                )
+            });
+
+        (prop_oneof![commit, adr, prd], eol).prop_map(|((ty, canonical_lf, edit), eol)| GenDoc {
             ty,
             canonical_lf,
             eol,
@@ -5721,6 +5804,7 @@ mod roundtrip {
     fn schema_for(ty: &str) -> Schema {
         match ty {
             "commit" => commit_schema(),
+            "prd" => prd_schema(),
             _ => adr_schema(),
         }
     }
