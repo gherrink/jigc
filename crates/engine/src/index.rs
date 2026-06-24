@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::field_block::Value;
 use crate::finding::{Finding, Location, Severity};
-use crate::schema::{FieldType, Schema, SectionBody};
+use crate::schema::{Field, FieldType, Leaf, Schema, SectionBody};
 
 /// The `edges.json` filename inside `<jigc_root>/index/`.
 const EDGES_FILE: &str = "edges.json";
@@ -615,43 +615,40 @@ pub fn edges_from_source(schema: &Schema, source: &str, from: &str) -> Vec<Edge>
 }
 
 /// Emit the forward edges a single parsed doc contributes: one per present schema
-/// `ref` field (a list-valued ref → one edge per element).
+/// `ref` field, on **both** a simple section's field group and a **repeatable
+/// section's item bodies** (a list-valued ref → one edge per element; a
+/// repeatable-item ref → one edge per item that carries it). Non-ref leaves (slots,
+/// `code-anchor` fields, nested repeatables) contribute nothing.
 fn doc_edges(schema: &Schema, doc: &crate::parse::Document, from: &str) -> Vec<Edge> {
     let mut edges = Vec::new();
 
     for section in &schema.sections {
-        let SectionBody::Simple { fields, .. } = &section.body else {
-            continue; // repeatable-section refs are not an MVP target.
-        };
-        let ref_ids: Vec<&str> = fields
-            .iter()
-            .filter(|f| f.ty == FieldType::Ref)
-            .map(|f| f.id.as_str())
-            .collect();
-        if ref_ids.is_empty() {
-            continue;
-        }
-
         let Some(parsed) = doc.sections.iter().find(|s| s.id == section.id) else {
             continue;
         };
-        for field in &parsed.fields {
-            if !ref_ids.contains(&field.key.as_str()) {
-                continue;
+        match &section.body {
+            SectionBody::Simple { fields, .. } => {
+                let ref_ids = simple_ref_ids(fields);
+                for field in &parsed.fields {
+                    if ref_ids.contains(&field.key.as_str()) {
+                        push_field_edges(field, from, &mut edges);
+                    }
+                }
             }
-            match &field.value {
-                Value::Scalar(v) => edges.push(Edge {
-                    from: from.to_string(),
-                    relation: field.key.clone(),
-                    to: v.clone(),
-                }),
-                Value::List(vs) => {
-                    for v in vs {
-                        edges.push(Edge {
-                            from: from.to_string(),
-                            relation: field.key.clone(),
-                            to: v.clone(),
-                        });
+            // A repeatable section: each item's ref-typed leaf contributes a forward
+            // edge from the containing doc. The general edge-extractor completion
+            // (M33 inc-2 / T3) — previously a bare skip. No shipped schema carries a
+            // repeatable-item ref, so production edge sets are unchanged.
+            SectionBody::Repeatable { repeatable } => {
+                let ref_ids = repeatable_ref_ids(&repeatable.block);
+                if ref_ids.is_empty() {
+                    continue;
+                }
+                for item in &parsed.items {
+                    for field in &item.fields {
+                        if ref_ids.contains(&field.key.as_str()) {
+                            push_field_edges(field, from, &mut edges);
+                        }
                     }
                 }
             }
@@ -659,6 +656,49 @@ fn doc_edges(schema: &Schema, doc: &crate::parse::Document, from: &str) -> Vec<E
     }
 
     edges
+}
+
+/// Push the forward edge(s) one ref-typed parsed field contributes under `from` —
+/// one per value (a list-valued ref → one edge per element, in value order). The
+/// shared value fan-out for both the simple-section and repeatable-item paths.
+fn push_field_edges(field: &crate::field_block::Field, from: &str, edges: &mut Vec<Edge>) {
+    match &field.value {
+        Value::Scalar(v) => edges.push(Edge {
+            from: from.to_string(),
+            relation: field.key.clone(),
+            to: v.clone(),
+        }),
+        Value::List(vs) => {
+            for v in vs {
+                edges.push(Edge {
+                    from: from.to_string(),
+                    relation: field.key.clone(),
+                    to: v.clone(),
+                });
+            }
+        }
+    }
+}
+
+/// The `ref`-typed field ids declared by a simple section's field group.
+fn simple_ref_ids(fields: &[Field]) -> Vec<&str> {
+    fields
+        .iter()
+        .filter(|f| f.ty == FieldType::Ref)
+        .map(|f| f.id.as_str())
+        .collect()
+}
+
+/// The `ref`-typed field ids declared by a repeatable item block's `Leaf::Field`
+/// leaves — slot and nested-repeatable leaves carry no edge.
+fn repeatable_ref_ids(block: &[Leaf]) -> Vec<&str> {
+    block
+        .iter()
+        .filter_map(|leaf| match leaf {
+            Leaf::Field(f) if f.ty == FieldType::Ref => Some(f.id.as_str()),
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -1426,6 +1466,98 @@ Layers the active task's working-area edges over the committed index in memory.
             ],
             "one cites edge per element, in order; the repeatable implemented-by \
              anchors contribute no edges",
+        );
+    }
+}
+
+#[cfg(test)]
+mod repeatable_ref_tests {
+    //! T3 (M33 inc-2): the edge-extractor recurses repeatable item bodies — a
+    //! ref-typed `Leaf::Field` in a repeatable item contributes a forward edge,
+    //! exactly as a simple-section ref does. No shipped schema carries a
+    //! repeatable-item ref (so production edge sets are byte-unchanged), so this
+    //! exercises the branch over a synthetic schema. Non-ref repeatable leaves
+    //! (slots, code-anchors) still contribute nothing — the `arch_doc_cites_tests`
+    //! invariant.
+
+    use super::*;
+
+    /// A synthetic schema whose repeatable `criteria` block carries a `ref` leaf
+    /// (`traces-to → adr`) alongside the id-source `title` field and a `statement`
+    /// slot. No shipped schema has this shape; the `ref` type is engine-native, so
+    /// the bare loader resolves it without any pack types.
+    fn schema_with_repeatable_ref() -> Schema {
+        let yaml = b"\
+type: spec
+location: specs/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"The criterion, testably phrased.\" } }
+        - { id: traces-to, type: ref, to: adr }
+";
+        crate::schema::load_schema(yaml).expect("synthetic repeatable-ref schema loads")
+    }
+
+    /// An instance with two `criteria` items, each carrying the repeatable-item
+    /// `traces-to` ref in its sentinelled per-item field block.
+    const SRC: &str = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+The gateway rejects the 101st request in a 60s window.
+
+<!-- fields -->
+- traces-to: adr:single-node-cache
+
+### Burst allowance  {#burst-allowance}
+A short burst above the limit is tolerated for 2s.
+
+<!-- fields -->
+- traces-to: adr:distributed-cache
+";
+
+    /// The repeatable-item ref enters the edge index: `doc_edges` emits one forward
+    /// edge per item's `traces-to` value, from the containing doc — the branch that
+    /// was a bare `continue` before this task (silently inert). Edges are in item
+    /// order (the same physical order the simple-section path emits in).
+    #[test]
+    fn doc_edges_emits_an_edge_per_repeatable_item_ref() {
+        let schema = schema_with_repeatable_ref();
+        let mut src = SRC.to_string();
+        crate::parse::strip_leading_bom(&mut src);
+        let doc = crate::parse::parse_sections(&schema, &src).expect("synthetic instance parses");
+
+        let edges = doc_edges(&schema, &doc, "spec:auth-flow");
+        assert_eq!(
+            edges,
+            vec![
+                Edge {
+                    from: "spec:auth-flow".to_string(),
+                    relation: "traces-to".to_string(),
+                    to: "adr:single-node-cache".to_string(),
+                },
+                Edge {
+                    from: "spec:auth-flow".to_string(),
+                    relation: "traces-to".to_string(),
+                    to: "adr:distributed-cache".to_string(),
+                },
+            ],
+            "one forward edge per repeatable-item ref value, in item order",
         );
     }
 }
