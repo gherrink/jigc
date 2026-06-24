@@ -22,6 +22,7 @@ pub mod index;
 pub mod ingest;
 pub mod introspect;
 pub mod knobs;
+pub mod manifest;
 pub mod milestone;
 pub mod override_default;
 pub mod parse;
