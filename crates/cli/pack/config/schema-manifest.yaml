@@ -1,0 +1,39 @@
+# schema-manifest.yaml — the dev pack's frozen v1 doctype-set manifest.
+#
+# The versioned/hashed declaration that makes the doctype-set + schema-definition
+# format a FROZEN v1 and the freeze self-enforcing: the engine recomputes each
+# shipped doctype's schema-hash (blake3 of its canonical JSON) and requires it to
+# match the entry here, with the declared set and the shipped set exactly equal.
+# A schema-shape change that bumps no version — or a doctype added/removed without
+# touching this file — fails LOUDLY at pack-load / build time, not at review
+# (design/corpus-migration.md → The freeze, declared and enforced).
+#
+# v1 frozen set = the SIX persisted dev-pack doctypes proven byte-stable. The
+# methodology self-host doctypes are out of the productive-go v1 freeze; the
+# mechanism is general (an absent manifest = unchecked, an unlisted shipped
+# doctype = ExtraEntry). To change a frozen schema's shape you bump its
+# schema-version and re-freeze its hash here (the means to satisfy a blocked
+# change is the M34 corpus migration).
+#
+# `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
+# is engine::manifest::schema_hash of its definition. Regenerate a hash only
+# alongside a deliberate, versioned schema change — never to silence this gate.
+doctypes:
+  - type: commit
+    schema-version: 1
+    schema-hash: 4d5a657475ddb4338d99d152ed3fe546374b0db18cb7164131ed5060245f3071
+  - type: adr
+    schema-version: 1
+    schema-hash: 4882af1b5ca75b4214d8eeaa922930cbd2734576322342a0e2bc4312487de30b
+  - type: spec
+    schema-version: 1
+    schema-hash: ce902ff73ee6f0609f6e354cda2c7fff9c4ee41887db1a6c3228ba614ba7376c
+  - type: prd
+    schema-version: 1
+    schema-hash: eaa322d12592a88c692b5869ddc8770cbf5eeea8cb177e70ad6d8ce4a3ba3824
+  - type: arch-doc
+    schema-version: 1
+    schema-hash: ec5a8bbef502924b075e3811f5ca341133aac797ad7ebca488ebaffc5a512103
+  - type: changelog
+    schema-version: 1
+    schema-hash: b2c1d8977783a435062545369621fa260f3f01462e67ebc728bf411f908dff0b

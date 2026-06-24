@@ -1275,6 +1275,78 @@ mod tests {
         );
     }
 
+    /// The **build-time freeze gate** (the intrinsic-floor-assertion sibling —
+    /// `design/corpus-migration.md` → The freeze, declared *and* enforced).
+    ///
+    /// Loads every shipped dev-pack doctype through the **production** loader
+    /// ([`load_pack_schema`]), reads the shipped `config/schema-manifest.yaml`, and
+    /// drives them through the real engine check ([`engine::manifest::check`]). It
+    /// passes only when the declared set and the shipped set are **exactly equal**
+    /// with every hash matching — so a schema-shape change that bumps no version (or
+    /// a doctype added/removed without touching the manifest) fails **here, loudly**,
+    /// at build time, instead of slipping past review. The artifact + this gate land
+    /// in one commit: the manifest must carry correct hashes the instant it ships or
+    /// this test fails.
+    ///
+    /// The v1 frozen set is the **six** persisted dev-pack doctypes (`commit`,
+    /// `adr`, `spec`, `prd`, `arch-doc`, `changelog`) — exactly the set proven
+    /// byte-stable. The methodology self-host doctypes are out of the productive-go
+    /// v1 freeze; the manifest mechanism is general (an unlisted doctype would be an
+    /// [`engine::manifest::ManifestError::ExtraEntry`]).
+    #[test]
+    fn shipped_schema_manifest_matches_the_frozen_doctype_set() {
+        use std::collections::BTreeMap;
+
+        let pack = EmbeddedPack::new();
+
+        // Every shipped doctype, loaded through the production field-type-resolving
+        // loader and keyed by its own type id — the exact set the gate freezes.
+        let schemas: BTreeMap<String, Schema> = pack
+            .list(PackResourceKind::Schemas)
+            .iter()
+            .map(|id| {
+                let bytes = pack
+                    .read(PackResourceKind::Schemas, id)
+                    .unwrap_or_else(|e| panic!("schema `{}` reads back: {e}", id.as_str()));
+                let schema = load_pack_schema(&pack, &bytes)
+                    .unwrap_or_else(|e| panic!("schema `{}` loads: {e:?}", id.as_str()));
+                (schema.ty.clone(), schema)
+            })
+            .collect();
+
+        // The shipped manifest artifact, parsed into the engine model.
+        let manifest_bytes = pack
+            .read(
+                PackResourceKind::Config,
+                &ResourceId::from("schema-manifest"),
+            )
+            .expect("the pack must ship config/schema-manifest.yaml");
+        let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
+            .expect("config/schema-manifest.yaml parses as a freeze manifest");
+
+        // The v1 frozen set is exactly the six persisted dev-pack doctypes, each at
+        // schema-version 1 — six present, no extra, no missing.
+        let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
+        declared.sort_unstable();
+        assert_eq!(
+            declared,
+            ["adr", "arch-doc", "changelog", "commit", "prd", "spec"],
+            "the freeze manifest must enumerate exactly the six frozen v1 doctypes",
+        );
+        for entry in &manifest.doctypes {
+            assert_eq!(
+                entry.schema_version, 1,
+                "doctype `{}` is frozen at schema-version 1",
+                entry.ty,
+            );
+        }
+
+        // The real freeze check: recompute each shipped hash and require exact
+        // equality with the manifest — the loud build-time failure on any drift.
+        engine::manifest::check(&manifest, &schemas)
+            .expect("shipped doctype set must match the frozen schema-manifest");
+    }
+
     mod pack_list {
         use super::super::*;
         use std::path::{Path, PathBuf};
