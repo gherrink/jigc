@@ -455,6 +455,20 @@ pub enum SchemaError {
         name: String,
     },
 
+    /// An `include:` directive forms a **cycle** — a fragment that includes
+    /// itself directly (`a → a`) or transitively (`a → b → a`). Fragment
+    /// expansion runs *before* deserialization, so a cycle would recurse without
+    /// bound (the `MAX_NESTING_DEPTH` cap is checked on the deserialized model,
+    /// which a non-terminating expansion never reaches). The expansion path is
+    /// guarded so the re-entered fragment is rejected loudly here, naming it,
+    /// rather than overflowing the stack. See `design/corpus-migration.md` →
+    /// schema-fragment `include`.
+    #[error("`include` forms a cycle through fragment `{name}`")]
+    CyclicFragment {
+        /// The fragment name re-entered along the current expansion path.
+        name: String,
+    },
+
     /// A repeatable nests deeper than the heading-depth cap. Items render at
     /// heading level `2 + nesting-depth`; the cap is **H6 → 4 nesting levels**
     /// ([`MAX_NESTING_DEPTH`]). A 5th level would render at `H7`, which Markdown
@@ -605,21 +619,30 @@ fn expand_fragment_includes(
         Some(Value::Mapping(f)) => f,
         _ => Mapping::new(),
     };
-    splice_includes(Value::Mapping(map), &fragments)
+    splice_includes(Value::Mapping(map), &fragments, &[])
 }
 
 /// Recursively rewrite `value`, splicing each `{ include: <name> }` sequence
 /// item with the named fragment's items (looked up in `fragments`).
+///
+/// `path` is the stack of fragment names currently being expanded along this
+/// branch. A fragment whose expansion re-enters a name already on `path` is a
+/// **cycle** (`a → a` or `a → b → a`): since this pass runs *before*
+/// deserialization, an unguarded cycle would recurse without bound (the
+/// downstream [`MAX_NESTING_DEPTH`] cap is checked on the deserialized model,
+/// which a non-terminating expansion never reaches). The guard rejects it as a
+/// typed [`SchemaError::CyclicFragment`] instead of overflowing the stack.
 fn splice_includes(
     value: serde_yaml_ng::Value,
     fragments: &serde_yaml_ng::Mapping,
+    path: &[&str],
 ) -> Result<serde_yaml_ng::Value, SchemaError> {
     use serde_yaml_ng::{Mapping, Value};
     match value {
         Value::Mapping(m) => {
             let mut out = Mapping::new();
             for (k, v) in m {
-                out.insert(k, splice_includes(v, fragments)?);
+                out.insert(k, splice_includes(v, fragments, path)?);
             }
             Ok(Value::Mapping(out))
         }
@@ -628,6 +651,11 @@ fn splice_includes(
             for item in seq {
                 match include_target(&item) {
                     Some(name) => {
+                        if path.contains(&name) {
+                            return Err(SchemaError::CyclicFragment {
+                                name: name.to_owned(),
+                            });
+                        }
                         let frag = fragments
                             .get(name)
                             .and_then(Value::as_sequence)
@@ -635,13 +663,18 @@ fn splice_includes(
                                 name: name.to_owned(),
                             })?;
                         // Expand the fragment's items too, so a fragment may
-                        // itself include another (bounded by the H6 depth cap
-                        // the loader enforces downstream).
-                        for frag_item in frag.clone() {
-                            out.push(splice_includes(frag_item, fragments)?);
+                        // itself include another — re-running include detection
+                        // over them with `name` pushed onto the path, so a cycle
+                        // is caught above rather than recursing unbounded.
+                        let mut child_path: Vec<&str> = path.to_vec();
+                        child_path.push(name);
+                        let expanded =
+                            splice_includes(Value::Sequence(frag.clone()), fragments, &child_path)?;
+                        if let Value::Sequence(items) = expanded {
+                            out.extend(items);
                         }
                     }
-                    None => out.push(splice_includes(item, fragments)?),
+                    None => out.push(splice_includes(item, fragments, path)?),
                 }
             }
             Ok(Value::Sequence(out))
@@ -1608,6 +1641,59 @@ sections:
         assert!(
             matches!(&err, SchemaError::UnknownFragment { name } if name == "missing"),
             "expected UnknownFragment for `missing`, got {err:?}",
+        );
+    }
+
+    /// (M33 completion fix) A **self-referential** fragment (`a` includes `a`)
+    /// must surface as a typed [`SchemaError::CyclicFragment`] — never an
+    /// unbounded recursion that aborts the process. The cycle guard catches the
+    /// fragment name re-entered along the current expansion path before the
+    /// recursion can overflow the stack.
+    #[test]
+    fn self_referential_fragment_is_a_typed_error_not_a_stack_overflow() {
+        let yaml = b"\
+type: x
+fragments:
+  a:
+    - include: a
+sections:
+  - id: s
+    repeatable:
+      id-from: f
+      block:
+        - include: a
+";
+        let err = load_schema(yaml).expect_err("a self-referential fragment errors");
+        assert!(
+            matches!(&err, SchemaError::CyclicFragment { name } if name == "a"),
+            "expected CyclicFragment for `a`, got {err:?}",
+        );
+    }
+
+    /// (M33 completion fix) A **mutually-referential** fragment pair
+    /// (`a → b → a`) is likewise a typed [`SchemaError::CyclicFragment`], naming
+    /// the fragment re-entered along the path — proving the guard tracks the
+    /// whole expansion path, not just direct self-reference.
+    #[test]
+    fn mutually_referential_fragments_are_a_typed_error() {
+        let yaml = b"\
+type: x
+fragments:
+  a:
+    - include: b
+  b:
+    - include: a
+sections:
+  - id: s
+    repeatable:
+      id-from: f
+      block:
+        - include: a
+";
+        let err = load_schema(yaml).expect_err("a mutually-referential fragment cycle errors");
+        assert!(
+            matches!(&err, SchemaError::CyclicFragment { name } if name == "a"),
+            "expected CyclicFragment for `a`, got {err:?}",
         );
     }
 
