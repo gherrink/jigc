@@ -8,23 +8,29 @@ A **planning aid**, not a schema spec: the eventual managed doctypes, each with 
 
 | Doctype | Purpose (one line) | Persistence / sink | Driver | Status |
 |---|---|---|---|---|
-| `commit` | the change description for one task | transient → git commit message | M1 | ✅ shipped |
-| `adr` | one architecture decision | persisted → `docs/decisions/` | M1 | ✅ shipped |
-| `spec` | the "what" a task implements | persisted → `docs/specs/` | M3 | planned |
-| `prd` | product requirements above specs | persisted → `docs/prds/` | M9 | planned |
-| `arch-doc` | living architecture documentation | persisted → `docs/architecture/` | M13 | ✅ shipped |
+| `commit` | the change description for one task | transient → git commit message | M1 | ✅ frozen v1 (M33) |
+| `adr` | one architecture decision | persisted → `docs/decisions/` | M1 | ✅ frozen v1 (M33) |
+| `spec` | the "what" a task implements | persisted → `docs/specs/` | M3 | ✅ frozen v1 (M33) |
+| `prd` | product requirements above specs | persisted → `docs/prds/` | M9 | ✅ frozen v1 (M33) |
+| `arch-doc` | living architecture documentation | persisted → `docs/architecture/` | M13 | ✅ frozen v1 (M33) |
 | `roadmap` | the milestone spine + per-milestone decomposition | persisted (running singleton) | M16 | ✅ shipped |
 | `deferral-ledger` | the forward look — keyed deferred decisions | persisted (running singleton) | M16 | ✅ shipped |
 | `decisions-log` | the running log of what was decided + why | persisted (running singleton) | M16 | ✅ shipped |
 | `completion-record` | one milestone's audit → findings → verdict | persisted → `completions/` | M16 | ✅ shipped |
 | `dogfood-record` | one measured jigc run's case, fact counts, seeded checks, verdict, judgment | persisted → `dogfood/` | M17 | ✅ shipped |
-| `changelog` | the running record of user-facing changes per version | persisted (running singleton), `docs/changelog/` | doctype-expansion | planned |
+| `changelog` | the running record of user-facing changes per version | persisted (running singleton), `docs/changelog/` | doctype-expansion | ✅ frozen v1 (M33) |
 
 The dev-pack persisted locations above carry the **`docs-root`** prefix (default `docs/`; [storage.md](../design/storage.md) → Config layout) — the doctype `location:` is declared bare (`decisions/`, `specs/`, …) and the resolved `docs-root` is prepended at schema load. The **methodology** doctypes (`completion-record → completions/`, `dogfood-record → dogfood/`, and the running singletons) stay flat run standalone: their pack's knob surface omits `docs-root`, and it is an opt-in knob (it nests only where the resolved cascade carries the key). Composed `[dev ▸ methodology]`, the dev pack's `docs-root` applies to all.
 
 `changelog` is the first member of the **doctype-expansion** track (G2, post-M21 — [decisions-pending.md](decisions-pending.md); design [changelog.md](../design/changelog.md)). Like the methodology + `dogfood-record` doctypes it sits **below VISION's named starting set** (a real-project doc graduating to managed, earned from a driver) — no new VISION document-model claim. It is a **dev-pack** doctype, singleton, edge-free, and is the consuming target that earns the four engine lifts (multi-level repetition, multi-word section-id, optional slot/field, doc-level `set: on-create`). The candidate **set** beyond it is mapped below.
 
 VISION's starting set (commit · arch-doc · prd · adr · spec — [VISION.md](../VISION.md) → Document model) is **complete**: every member ships. `arch-doc` was the last, driven at M13 by the architecture-documentation workflow ([architecture-documentation.md](../design/architecture-documentation.md); [roadmap.md](roadmap.md) → M13). The four **methodology working-doc** doctypes below the starting set are not part of VISION's named set — they are the methodology's *own* documents graduating from plain markdown to managed doctypes at M16 (the self-hosting fold-back), each earned from its driving workflow (planning drives `roadmap` + `deferral-ledger`; completion drives `decisions-log` + `completion-record`), schemas in the **methodology pack** ([methodology-docs.md](../design/methodology-docs.md); [roadmap.md](roadmap.md) → M16). `dogfood-record` (M17) is also below the starting set but is **net-new, not a graduation** — the per-run measurement record, earned from the `record-dogfood` workflow that authors it ([measurement.md](../design/measurement.md)).
+
+## The v1 freeze (M33)
+
+The **six dev-pack doctypes** above — `commit`, `adr`, `spec`, `prd`, `arch-doc`, `changelog` — are declared **frozen v1** at M33, together with the schema-definition format that shapes them (`id-from`/`card`/`set`/`of`/`header`/`to`/`inverse`/`inverse-card` — shipped + golden-locked, [document-type-schema.md](../design/document-type-schema.md):191). The freeze is **machine-checkable, not prose discipline**: a pack-shipped manifest (`crates/cli/pack/config/schema-manifest.yaml`) enumerates each frozen doctype's `schema-version` (v1) + `schema-hash`, and an engine pack-load assertion recomputes each shipped doctype's hash and **blocks loudly** on any un-migrated shape change (the intrinsic-floor-assertion sibling, *not* the report-only `validate` sweep). The freeze is a **one-way door** — the only way to change a frozen schema's shape is to bump its `schema-version` and ship the **M34 corpus migration** (or revert). This retires the productive-readiness gate **G1** ([corpus-migration.md](../design/corpus-migration.md) → The freeze, declared *and* enforced).
+
+**Scope pin (explicit, not a silent narrowing).** The v1 freeze covers exactly the **six dev-pack** doctypes — the *productive adopter's* corpus. The **methodology** self-host doctypes (`roadmap`, `deferral-ledger`, `decisions-log`, `completion-record`) and `dogfood-record` are deliberately **out** of the productive-go v1 freeze: M33 Inc-1's byte-stability floor scoped them out, so hash-freezing a shape never proven byte-stable would be premature. The manifest mechanism is **general** (a pack shipping a `config/schema-manifest.yaml` is checked; an absent manifest is unchecked), so the methodology pack adopts it when a driver earns it ([DECISIONS.md](../DECISIONS.md) → 2026-06-24 M33 Increment 4).
 
 ## The relations (edges)
 
