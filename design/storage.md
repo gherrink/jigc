@@ -22,7 +22,7 @@ The CLI parses an instance **against its type's schema**, never as blind Markdow
 
 Three parts, and only the first and third carry any "machine" content:
 
-1. **Front-matter** — the document's *header block* fields (status, dates, doc-level refs), as `key: value`. A **flat field block** (a strict YAML *subset*, not an arbitrary YAML document — values are typed by the schema, not coerced by YAML); a list-valued field uses **inline flow** (`relates-to: [adr:a, adr:b]`). Doc-level refs here keep the graph scannable without parsing the body.
+1. **Front-matter** — the document's *header block* fields (status, dates, doc-level refs, and the **schema-version stamp**), as `key: value`. A **flat field block** (a strict YAML *subset*, not an arbitrary YAML document — values are typed by the schema, not coerced by YAML); a list-valued field uses **inline flow** (`relates-to: [adr:a, adr:b]`). Doc-level refs here keep the graph scannable without parsing the body. The **schema-version stamp** (M34) is a **schema-declared, engine-valued** front-matter field on every persisted doctype recording the schema version it was authored against (the `status`/`date` model — in-schema, engine-set) — so the engine emits a `---` block even for doctypes that declare no other `header:` section ([corpus-migration.md](corpus-migration.md)).
 2. **Body** — schema-fixed section headings; under each, the slot prose plus (if any) a trailing field group rendered as a **bullet list** (`- key: value`). The field *grammar* is the same as front-matter; the bullet is the body's structural frame (the counterpart to front-matter's `---` fences) that keeps fields distinct from the opaque prose around them.
 3. **`{#id}` item anchors** — the *only* in-body marker, on each repeatable item.
 
