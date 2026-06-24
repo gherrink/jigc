@@ -10,7 +10,7 @@ Raw bytes become the schema's section/slot/field/item structure through **a full
 
 - **Library: `pulldown-cmark`** — pure-Rust (no C-dep cross-compile friction; see [language-runtime.md](language-runtime.md)), event stream with **byte-offset** ranges, ideal for offset-based edits. Rejected: `comrak` (line/col-only spans, documented inline imprecision); `tree-sitter-markdown` (C dependency, grammar targets highlighting not CommonMark semantics) — kept only as a fallback if span precision ever proves insufficient (worth a spike before any switch).
 - **Mapping:** heading text → schema section; the span between a heading and its trailing field group → the slot's content span; the trailing bullet group → fields; `###` + `{#id}` → items.
-- **Parsing respects the determinism boundary, literally.** The CLI parses and owns **block structure** (north of the line — which section, where it begins/ends, field positions, item anchors) and treats **slot prose as an opaque byte span** it never interprets (south of the line). The future "mentions in prose" ref-check ([document-type-schema.md](../design/document-type-schema.md) open question) is a separate, deferred validation layer that may scan *within* a slot span — it does not make the content non-opaque to the parser.
+- **Parsing respects the determinism boundary, literally.** The CLI parses and owns **block structure** (north of the line — which section, where it begins/ends, field positions, item anchors) and treats **slot prose as an opaque byte span** it never interprets (south of the line). The "mentions in prose" ref-check ([document-type-schema.md](../design/document-type-schema.md) → In-prose mentions, settled M33) is a separate validation layer that scans *within* a slot span for managed mentions (`#<type>:<slug>`) — it does not make the content non-opaque to the parser.
 
 ## Front-matter
 
@@ -134,4 +134,4 @@ Pure byte-identity can't hold for *non-canonical* input, so precisely: **idempot
 
 - **Span precision under stress** — pulldown-cmark inline/nested-span accuracy on real document shapes (and front-matter, which CommonMark treats as an extension) warrants an empirical spike before heavy reliance; `tree-sitter-markdown` is the fallback.
 - **Multi-slot sub-label syntax** — the rendering that delimits multiple slots within one section ([storage.md](../design/storage.md) open question) determines where the parser splits slot spans; tracked there.
-- **Mentions-in-prose scanning** — the deferred lighter ref-check *within* a slot span ([document-type-schema.md](../design/document-type-schema.md) open question).
+- **Mentions-in-prose scanning** — the lighter ref-check *within* a slot span: scans for managed mentions `#<type>:<slug>` and reports danglers (advisory, store-scope; settled M33 — [document-type-schema.md](../design/document-type-schema.md) → In-prose mentions, [validation.md](../design/validation.md) → mention-resolves).

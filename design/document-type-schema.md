@@ -29,7 +29,7 @@ LLM-authored prose on the write path. The CLI guarantees the slot's placement an
 
 **Addressing.** A section's single unnamed slot is addressed by the unit's address (`#unit`) — there is no named leaf below it in the schema. Multi-slot sections render each slot under a schema-fixed sub-label, and each sub-label is the slot's leaf id (`#unit/sub-label`). The address grammar permits both depths uniformly ([structural-grammar.md](structural-grammar.md#addressing)).
 
-The CLI's only checks on a slot are presence and the integrity of any references embedded in its prose (a lighter "mention" check, distinct from `field`-refs — see [Open questions](#open-questions)).
+The CLI's only checks on a slot are presence and the integrity of any references embedded in its prose (a lighter "mention" check, distinct from `field`-refs — see [In-prose mentions](#in-prose-mentions-settled-m33)).
 
 ### Field
 
@@ -192,8 +192,14 @@ Two derived conveniences, no extra source:
 
 **The schema-version stamp (M34).** Every persisted instance carries a front-matter field recording the schema version it was authored against — **declared in each doctype's schema** (engine-injected uniformly across all doctypes), with an **engine-supplied value** (a new "current active schema version" deriver, the `status`/`date` model: in-schema field, engine-set value). It is what lets the store-scope conformance detector and the migration transform tell a *known-old-version* doc (migrate it) from a *genuinely-corrupt* one. Because the field is *in-schema*, adding it is a genuine `added-field` schema-diff the transform classifies — so stamping the corpus is a real dogfood of M34's add-field transform, not a synthetic one. For the header-less doctypes (`spec`/`prd`/`changelog`, which render no `---` block today) the stamp **introduces a front-matter block** — a real v0→v1 shape change. Full shape in [corpus-migration.md](corpus-migration.md).
 
-## Open questions
+## In-prose mentions (settled M33)
 
-- **Inline references in prose** — "mentions" embedded in a `slot` (e.g. `#issue-42` in commit-body prose) are a lighter validation concern than `field`-refs; not yet designed.
+A **managed mention** is a cross-reference to a managed doc embedded in `slot` prose — lighter than a `field`-ref (which is a structured, typed leaf). Settled at M33 (the freeze completes the validation surface; [DECISIONS.md](../DECISIONS.md) → 2026-06-24 in-prose mentions):
+
+- **Syntax — `#<type>:<slug>`, `<type>` a known managed doctype.** A managed mention is a slot-prose token in the canonical managed-address form (`#adr:csrf-strict-origin`). The `:`-plus-known-doctype is the **deterministic discriminator**: a bare `#token` with no `<type>:` (the original `#issue-42` example — an *external*, unmanaged reference) is **never a managed mention** and is never flagged, so external issue/PR mentions in prose are not noise. The CLI scans prose for the pattern; the LLM still owns the prose (the determinism boundary holds — the CLI checks references, never authors).
+- **Resolution — the `committed_reachable` rule.** A mention resolves iff `<type>:<slug>` names a committed managed doc (`<location>/<slug>.md` exists) — the same rule the `ref-resolves` families use. *Dangling* = no such committed doc (the renamed/deleted-doc case). Doc-level only in v1 (section-anchor mentions — `#<type>:<slug>#<section>` — deferred).
+- **Severity + scope — advisory, store-scope only.** The check is `schema-conformance.mention-resolves` (a sibling of `ref-resolves`), **default severity advisory** (a cascade knob), surfaced by the **store-scope `jigc validate` sweep** (the cross-doc backstop — a mention dangles when *another* doc is renamed/deleted, so store scope is its home), **never a per-task finalize gate** — this is what "lighter than `field`-refs" means (field-refs block at finalize; mentions advise at store scope). See [validation.md](validation.md) → the mention-resolves check.
+
+## Open questions
 
 Skeleton-level open questions (multi-level repetition, minting mechanics) are tracked in [structural-grammar.md](structural-grammar.md#open-questions).

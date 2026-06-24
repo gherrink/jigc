@@ -792,9 +792,9 @@ Encoding the harness's **harder** workflows (increment / planning / completion) 
 
 ### Increment 3 — The additive v1 schema-format completions
 
-**Deliverable:** the two additive opens that finish a clean frozen v1 (no instance-byte change, no migration penalty) — **in-prose mentions** (a lighter `#ref` integrity check inside slot prose) and **schema-fragment `include`** (de-duplicate the `changelog` change-group block).
-**Grouped scope:** the slot-prose mention scanner + its `schema-conformance`-family finding (lighter than `field`-refs); the `include` directive in the schema-definition format + the changelog schema de-dup, byte-identical render.
-**Proves:** a dangling `#ref` in slot prose is reported; the `changelog` schema de-duplicates via `include` with byte-identical output. design_refs: document-type-schema.md (opens); corpus-migration.md (v1 completion).
+**Deliverable:** the two additive opens that finish a clean frozen v1 (no instance-byte change, no migration penalty) — **in-prose mentions** (the `schema-conformance.mention-resolves` check, settled M33) and **schema-fragment `include`** (de-duplicate the `changelog` change-group block).
+**Grouped scope:** the slot-prose **managed-mention** scanner (`#<type>:<slug>`, `<type>` a known doctype — a bare external `#issue-42` is *not* a mention) + the new **`schema-conformance.mention-resolves`** check id, **default severity advisory**, **store-scope only** (never a finalize gate — "lighter than `field`-refs"), resolving by the `committed_reachable` rule; the `include` directive in the schema-definition format + the changelog change-group de-dup, byte-identical render.
+**Proves:** a managed mention `#<type>:<slug>` in slot prose pointing at a non-existent doc is **reported** at store scope (advisory), while an external `#issue-42` and a resolving mention both pass; the `changelog` schema de-duplicates via `include` with byte-identical output. design_refs: document-type-schema.md (In-prose mentions, settled M33) + validation.md (mention-resolves); corpus-migration.md (v1 completion).
 
 ### Increment 4 — Declare v1 + institute the freeze (the dev-side enforcement gate)
 
