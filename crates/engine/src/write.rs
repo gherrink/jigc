@@ -5576,6 +5576,7 @@ mod roundtrip {
     const PRD_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/prd.yaml");
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
     const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -5613,12 +5614,29 @@ mod roundtrip {
         crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
             .expect("arch-doc.yaml loads")
     }
+    /// The shipped `changelog` schema — the riskiest fuzzed shape. It is the first
+    /// fuzzed doctype with a **TWO-LEVEL repeatable** (`releases` → nested `changes`
+    /// change-groups, the `Leaf::Repeatable` path), a **multi-word section id**
+    /// (`unreleased-changes` → `## Unreleased Changes`), and an **optional field**
+    /// (a release's `link`, present *and* absent). It declares only engine-native
+    /// field types (`enum`/`date`/`string`), so it loads bare (no pack types). It has
+    /// NO header/front-matter (`id-from: title`, the H1), so it carries no settable
+    /// scalar — the surgical-edit clause self-skips on `edit: None`.
+    fn changelog_schema() -> Schema {
+        crate::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads")
+    }
+
+    /// One generated `changelog` release: `(version, date, optional link, nested
+    /// change-groups)` — the `releases` two-level item, named to keep the generator's
+    /// release vectors readable (and below the type-complexity ceiling).
+    type GenRelease = (String, String, Option<String>, Vec<(String, String)>);
 
     /// One generated arbitrary conformant document plus its known-canonical LF form
     /// and the metadata the surgical-edit clause needs.
     #[derive(Clone, Debug)]
     struct GenDoc {
-        /// `"commit"`, `"adr"`, `"prd"`, `"spec"`, or `"arch-doc"` — selects the schema.
+        /// `"commit"`, `"adr"`, `"prd"`, `"spec"`, `"arch-doc"`, or `"changelog"` —
+        /// selects the schema.
         ty: String,
         /// The canonical LF document text (no BOM, exactly one trailing `\n`).
         canonical_lf: String,
@@ -5646,6 +5664,55 @@ mod roundtrip {
             "[a-zA-Z][a-zA-Z0-9 .,]{0,30}".prop_map(|s: String| format!("{s}\n\n\n{s}")), // extra interior blanks
         ];
         prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
+    }
+
+    /// Opaque change-group `notes` prose for a `changelog`. Like [`edgy_prose`] but its
+    /// deeper-heading fragment is at **`#####` (H5)**, never `####` (H4): a change-group
+    /// nests at `####` (a release's `Leaf::Repeatable`), so a `####` heading inside its
+    /// slot would collide with a *sibling* change-group heading and end the slot
+    /// (verified: a `####`-in-notes fixture fails the conformance gate with
+    /// `item-anchor-missing`). H5 is deeper than both the unreleased depth (`###`) and
+    /// the nested depth (`####`), so it stays prose at either — the safe deeper-heading
+    /// stress for this doctype. The fenced-`##`, `- x:` prose line, and interior-blank
+    /// edges (all proven safe at `####`) are kept.
+    fn notes_prose() -> impl Strategy<Value = String> {
+        let para = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        let fragment = prop_oneof![
+            para,
+            Just("- one bullet per change".to_string()),
+            Just("```\n## not a heading\n```".to_string()),
+            Just("- x: this is prose, not a field".to_string()),
+            Just("##### a deeper heading is allowed".to_string()),
+            "[a-zA-Z][a-zA-Z0-9 .,]{0,30}".prop_map(|s: String| format!("{s}\n\n\n{s}")),
+        ];
+        prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
+    }
+
+    /// A `changelog` change-group set: a `size`-bounded **distinct** subsequence of the
+    /// six `category` enum members, each paired with arbitrary `notes` prose. The
+    /// distinctness is load-bearing — a repeatable keyed `id-from: category` rejects
+    /// duplicate `{#id}` anchors, so two same-category groups in one section would be
+    /// non-conformant. Drawing a subsequence of the fixed enum guarantees both the
+    /// distinct ids and that every category renders as its exact lowercase enum value
+    /// (the heading text == the enum value, e.g. `#### added  {#added}`).
+    fn change_groups(
+        size: impl Into<proptest::collection::SizeRange>,
+    ) -> impl Strategy<Value = Vec<(String, String)>> {
+        let categories = vec![
+            "added",
+            "changed",
+            "deprecated",
+            "removed",
+            "fixed",
+            "security",
+        ];
+        prop::sample::subsequence(categories, size)
+            .prop_flat_map(|cats| {
+                let owned: Vec<String> = cats.into_iter().map(str::to_string).collect();
+                let n = owned.len();
+                (Just(owned), prop::collection::vec(notes_prose(), n))
+            })
+            .prop_map(|(cats, notes)| cats.into_iter().zip(notes).collect())
     }
 
     /// A canonical front-matter scalar value (trimmed, single-line, not list-shaped).
@@ -5879,6 +5946,102 @@ mod roundtrip {
         render(&arch_doc_schema(), &instance)
     }
 
+    /// One `changelog` change-group [`ItemContent`]: the `category` enum value is the
+    /// `id-from` heading (consumed as both the heading text and the `{#id}` anchor,
+    /// never a field bullet — like `prd.requirements`'s `title`), and `notes` is the
+    /// bare-prose slot. Shared by the single-level `unreleased-changes` groups and the
+    /// nested-under-a-release `changes` groups (the identical block, duplicated by the
+    /// schema deliberately).
+    fn change_group_item(category: &str, notes: &str) -> ItemContent {
+        ItemContent {
+            id: category.to_string(),
+            title: category.to_string(),
+            slot: Some(notes.to_string()),
+            slots: Vec::new(),
+            fields: Vec::new(),
+            items: Vec::new(),
+        }
+    }
+
+    /// A canonical `date` field value (`YYYY-MM-DD`, the form the `date` type and the
+    /// `set: on-create` stamp emit). Day capped at 28 so every `(y, m, d)` is a real
+    /// date.
+    fn date_value() -> impl Strategy<Value = String> {
+        (2020u32..2030, 1u32..=12, 1u32..=28).prop_map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"))
+    }
+
+    /// A canonical `link` field value (a KaC diff URL). Opaque single-line scalar with
+    /// no spaces, so it round-trips verbatim; modelling the real URL shape drives a
+    /// realistic optional-field value.
+    fn link_value() -> impl Strategy<Value = String> {
+        "[a-z][a-z0-9-]{0,12}".prop_map(|s: String| format!("https://example.com/compare/{s}"))
+    }
+
+    /// Build a canonical-LF `changelog` document from generated parts by constructing an
+    /// [`Instance`] and **rendering it** — the riskiest fuzzed shape. `changelog` has NO
+    /// front-matter; its two sections are the multi-word `## Unreleased Changes`
+    /// (`unreleased-changes`, a single-level change-group repeatable, possibly EMPTY —
+    /// the post-cut KaC state, which renders the bare `## Unreleased Changes` heading and
+    /// round-trips byte-stable) and `## Releases` (a TWO-LEVEL repeatable). Each release
+    /// is a slotless item carrying a `date` field, an OPTIONAL `link` field (present →
+    /// `[date, link]`, absent → `[date]` — the optional-field byte risk), then a NESTED
+    /// `changes` change-group repeatable (the `Leaf::Repeatable` path, each group at
+    /// `####`). Building through `render` guarantees the bytes match the canonical form.
+    fn build_changelog(
+        title: &str,
+        unreleased: &[(String, String)],
+        releases: &[GenRelease],
+    ) -> String {
+        let unreleased_items: Vec<ItemContent> = unreleased
+            .iter()
+            .map(|(category, notes)| change_group_item(category, notes))
+            .collect();
+        let release_items: Vec<ItemContent> = releases
+            .iter()
+            .map(|(version, date, link, changes)| {
+                // Field order follows the schema block order: `date` then the optional
+                // `link` (omitted when absent).
+                let mut fields = vec![Field {
+                    key: "date".to_string(),
+                    value: Value::Scalar(date.clone()),
+                }];
+                if let Some(link) = link {
+                    fields.push(Field {
+                        key: "link".to_string(),
+                        value: Value::Scalar(link.clone()),
+                    });
+                }
+                ItemContent {
+                    id: crate::slug::slugify(version),
+                    title: version.clone(),
+                    slot: None,
+                    slots: Vec::new(),
+                    fields,
+                    items: changes
+                        .iter()
+                        .map(|(category, notes)| change_group_item(category, notes))
+                        .collect(),
+                }
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "unreleased-changes".to_string(),
+                    items: unreleased_items,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "releases".to_string(),
+                    items: release_items,
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&changelog_schema(), &instance)
+    }
+
     /// The generator: an arbitrary conformant `commit`, `adr`, `prd`, or `spec` doc,
     /// with a chosen EOL, returning the canonical-LF text + the EOL + a settable
     /// front-matter field (`None` for `prd`/`spec`, which carry no front-matter — the
@@ -6025,14 +6188,59 @@ mod roundtrip {
                 )
             });
 
-        (prop_oneof![commit, adr, prd, spec, arch_doc], eol).prop_map(
-            |((ty, canonical_lf, edit), eol)| GenDoc {
+        let changelog = (
+            scalar_value(),
+            // `unreleased-changes`: 0..=6 distinct change-groups. The `0` lower bound
+            // generates the EMPTY-unreleased case (the post-cut KaC state → a bare
+            // `## Unreleased Changes` heading) as well as the populated one, so a single
+            // run covers both — and the multi-word section heading renders either way.
+            change_groups(0..=6),
+            // `releases`: 1..4 releases, EACH with 1..=6 nested change-groups (the
+            // done-criterion's ">=1 nested release with >=1 nested change-group") and an
+            // OPTIONAL `link` — `option::of` makes a single run cover BOTH present and
+            // absent.
+            prop::collection::vec(
+                (
+                    scalar_value(),
+                    date_value(),
+                    proptest::option::of(link_value()),
+                    change_groups(1..=6),
+                ),
+                1..4,
+            ),
+        )
+            .prop_map(|(title, unreleased, releases)| {
+                // Index-suffix each release version so the slugified `{#id}` anchors are
+                // distinct — a repeatable rejects duplicate anchors, and two arbitrary
+                // version strings can slug-collide (the version slugger drops dots, so
+                // `1.0.0` and `1.0.0` both mint `100`). The suffix also exercises the
+                // multi-word-heading parse on every release title.
+                let releases: Vec<GenRelease> = releases
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (version, date, link, changes))| {
+                        (format!("{} {i}", version.trim()), date, link, changes)
+                    })
+                    .collect();
+                (
+                    "changelog".to_string(),
+                    build_changelog(&title, &unreleased, &releases),
+                    // `changelog` has no front-matter, so there is no settable field; the
+                    // surgical-edit clause self-skips on `edit: None`.
+                    None,
+                )
+            });
+
+        (
+            prop_oneof![commit, adr, prd, spec, arch_doc, changelog],
+            eol,
+        )
+            .prop_map(|((ty, canonical_lf, edit), eol)| GenDoc {
                 ty,
                 canonical_lf,
                 eol,
                 edit,
-            },
-        )
+            })
     }
 
     fn schema_for(ty: &str) -> Schema {
@@ -6041,6 +6249,7 @@ mod roundtrip {
             "prd" => prd_schema(),
             "spec" => spec_schema(),
             "arch-doc" => arch_doc_schema(),
+            "changelog" => changelog_schema(),
             _ => adr_schema(),
         }
     }
