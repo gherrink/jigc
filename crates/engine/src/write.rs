@@ -5574,6 +5574,7 @@ mod roundtrip {
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const PRD_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/prd.yaml");
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -5588,12 +5589,22 @@ mod roundtrip {
     fn prd_schema() -> Schema {
         crate::schema::load_schema(PRD_YAML).expect("prd.yaml loads")
     }
+    /// The shipped `spec` schema. Unlike `prd`, its `criteria` block carries a
+    /// per-item `maps-to-test` **`code-anchor` field** (alongside the `title` field +
+    /// `statement` slot), so it loads with the dev-pack field types registered (the
+    /// `code-anchor` type — exactly as `adr` does for its `cites-code`). `spec` has no
+    /// front-matter (`id-from: title`, the title is the H1), so it carries no settable
+    /// field either — the surgical-edit clause self-skips.
+    fn spec_schema() -> Schema {
+        crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("spec.yaml loads")
+    }
 
     /// One generated arbitrary conformant document plus its known-canonical LF form
     /// and the metadata the surgical-edit clause needs.
     #[derive(Clone, Debug)]
     struct GenDoc {
-        /// `"commit"`, `"adr"`, or `"prd"` — selects the schema.
+        /// `"commit"`, `"adr"`, `"prd"`, or `"spec"` — selects the schema.
         ty: String,
         /// The canonical LF document text (no BOM, exactly one trailing `\n`).
         canonical_lf: String,
@@ -5712,10 +5723,75 @@ mod roundtrip {
         render(&prd_schema(), &instance)
     }
 
-    /// The generator: an arbitrary conformant `commit`, `adr`, or `prd` doc, with a
-    /// chosen EOL, returning the canonical-LF text + the EOL + a settable front-matter
-    /// field (`None` for `prd`, which carries no front-matter — the surgical clause
-    /// self-skips).
+    /// A canonical `code-anchor` field value: a backtick-wrapped `path#symbol` (the
+    /// shipped form `spec.criteria` writes — `parse.rs` golden + `flow13`). The reader
+    /// is opaque, so any single-line non-list-shaped scalar round-trips; this models
+    /// the real anchor (path with a `#symbol` fragment) so the fuzz drives a realistic
+    /// per-item field value, not a degenerate one.
+    fn code_anchor_value() -> impl Strategy<Value = String> {
+        (
+            "[a-z][a-z0-9_/-]{0,18}\\.(rs|rb|py)",
+            "[a-z][a-z0-9_]{0,15}",
+        )
+            .prop_map(|(path, sym): (String, String)| format!("`{path}#{sym}`"))
+    }
+
+    /// Build a canonical-LF `spec` document from generated parts by constructing an
+    /// [`Instance`] and **rendering it**. `spec` carries the `goal`/`context` fixed
+    /// prose slots and a POPULATED `criteria` repeatable whose item block is a `title`
+    /// field (consumed as the `id-from` heading, never a field bullet — like
+    /// `prd.requirements`), a `statement` slot, **and** a per-item `maps-to-test`
+    /// **`code-anchor` field**. The code-anchor field is the new shape this arm fuzzes:
+    /// a sentinelled `<!-- fields -->` group *inside* a repeatable item must
+    /// render/round-trip byte-stable. Building through `render` guarantees the bytes
+    /// match the writer's canonical form exactly.
+    fn build_spec(
+        title: &str,
+        goal: &str,
+        criteria: &[(String, String, String)],
+        context: &str,
+    ) -> String {
+        let items: Vec<ItemContent> = criteria
+            .iter()
+            .map(|(crit_title, statement, anchor)| ItemContent {
+                id: crate::slug::slugify(crit_title),
+                title: crit_title.clone(),
+                slot: Some(statement.clone()),
+                slots: Vec::new(),
+                fields: vec![Field {
+                    key: "maps-to-test".to_string(),
+                    value: Value::Scalar(anchor.clone()),
+                }],
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "goal".to_string(),
+                    slot: Some(goal.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "criteria".to_string(),
+                    items,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "context".to_string(),
+                    slot: Some(context.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&spec_schema(), &instance)
+    }
+
+    /// The generator: an arbitrary conformant `commit`, `adr`, `prd`, or `spec` doc,
+    /// with a chosen EOL, returning the canonical-LF text + the EOL + a settable
+    /// front-matter field (`None` for `prd`/`spec`, which carry no front-matter — the
+    /// surgical clause self-skips).
     fn arb_doc() -> impl Strategy<Value = GenDoc> {
         let eol = prop_oneof![Just("\n".to_string()), Just("\r\n".to_string())];
 
@@ -5793,11 +5869,40 @@ mod roundtrip {
                 )
             });
 
-        (prop_oneof![commit, adr, prd], eol).prop_map(|((ty, canonical_lf, edit), eol)| GenDoc {
-            ty,
-            canonical_lf,
-            eol,
-            edit,
+        let spec = (
+            scalar_value(),
+            edgy_prose(),
+            prop::collection::vec((scalar_value(), edgy_prose(), code_anchor_value()), 1..4),
+            edgy_prose(),
+        )
+            .prop_map(|(title, goal, crits, context)| {
+                // Index-suffix each criterion title so the slugified `{#id}` anchors are
+                // distinct (a repeatable section rejects duplicate anchors, and two
+                // arbitrary titles can collide). The suffix also exercises the
+                // multi-word-heading parse on every item.
+                let criteria: Vec<(String, String, String)> = crits
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (crit_title, statement, anchor))| {
+                        (format!("{} {i}", crit_title.trim()), statement, anchor)
+                    })
+                    .collect();
+                (
+                    "spec".to_string(),
+                    build_spec(&title, &goal, &criteria, &context),
+                    // `spec` has no front-matter, so there is no settable field; the
+                    // surgical-edit clause self-skips on `edit: None`.
+                    None,
+                )
+            });
+
+        (prop_oneof![commit, adr, prd, spec], eol).prop_map(|((ty, canonical_lf, edit), eol)| {
+            GenDoc {
+                ty,
+                canonical_lf,
+                eol,
+                edit,
+            }
         })
     }
 
@@ -5805,6 +5910,7 @@ mod roundtrip {
         match ty {
             "commit" => commit_schema(),
             "prd" => prd_schema(),
+            "spec" => spec_schema(),
             _ => adr_schema(),
         }
     }
