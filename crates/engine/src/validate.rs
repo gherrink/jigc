@@ -457,6 +457,18 @@ pub fn validate_store_families(
         schemas,
     ));
 
+    // Family 6 — in-prose managed-mention integrity (`schema-conformance.mention-resolves`,
+    // M33 Inc-3): the lighter, prose-embedded sibling of Family 4's `ref-resolves`. Scan
+    // every committed doc's **slot prose** for managed mentions (`#<type>:<slug>`, `<type>`
+    // a known doctype — the `:`-plus-known-doctype discriminator means a bare external
+    // `#issue-42` is never a mention) and report each whose target is not
+    // `committed_reachable`. **Advisory, store-scope only** — a mention dangles when
+    // *another* doc is renamed/deleted, so store scope is its home; it is **never** wired
+    // into [`validate_task`] (the per-task finalize gate). That advisory/store-scope
+    // placement is exactly what "lighter than `field`-refs" means (`design/validation.md`
+    // → the mention-resolves check; `design/document-type-schema.md` → In-prose mentions).
+    findings.extend(crate::index::mention_resolves_store(repo_root, schemas));
+
     Ok(ValidationReport::new(findings, resolved))
 }
 

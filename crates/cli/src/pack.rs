@@ -1030,10 +1030,10 @@ mod tests {
         # not a project-overridable value, so it stays in defaults.yaml.
         # The `validation.*.severity` keys are the per-check severity surface; their
         # defaults + intrinsic-ness are governed by the single source of truth,
-        # validation.md → MVP check inventory (27 checks across 9 categories — pinned by
-        # engine::knobs per_check_severity_surface_reconciles_to_the_27_18_9_inventory).
-        # (The engine's CHECK_INVENTORY post-pass membership set is a 24-row subset of
-        # these 27 — it drops the 3 compose-time marker checks; see engine::result
+        # validation.md → MVP check inventory (28 checks across 9 categories — pinned by
+        # engine::knobs per_check_severity_surface_reconciles_to_the_28_18_10_inventory).
+        # (The engine's CHECK_INVENTORY post-pass membership set is a 25-row subset of
+        # these 28 — it drops the 3 compose-time marker checks; see engine::result
         # check_inventory_membership_count_is_stable.) The two
         # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
         # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -1178,6 +1178,16 @@ mod tests {
 
         # --- schema-completeness.inverse-cardinality (1, tunable; advisory at task scope) ---
         validation.schema-completeness.inverse-cardinality.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: advisory
+
+        # --- schema-conformance.mention-resolves (1, tunable; advisory, store-scope only — M33) ---
+        # The lighter, prose-embedded sibling of `ref-resolves`: an in-prose managed mention
+        # `#<type>:<slug>` that names no committed doc is reported (never a per-task finalize
+        # gate). Tunable (unfloored) and advisory by default — that placement is exactly what
+        # "lighter than field-refs" means (validation.md → In-prose mention integrity).
+        validation.schema-conformance.mention-resolves.severity:
           type: enum
           of: [blocking, warning, advisory]
           default: advisory

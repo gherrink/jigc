@@ -483,6 +483,185 @@ pub fn inverse_cardinality_store(
     findings
 }
 
+/// The store-scope **`schema-conformance.mention-resolves`** check (M33 Inc-3;
+/// `design/document-type-schema.md` → In-prose mentions; `design/validation.md` → the
+/// mention-resolves check). Scans every committed doc's **slot prose** for **managed
+/// mentions** — a `#<type>:<slug>` token whose `<type>` is a key in `schemas` (a known
+/// managed doctype) — and reports each whose `<type>:<slug>` names no committed doc, by
+/// the same [`committed_reachable`] rule the `ref-resolves` families use. The
+/// `:`-plus-known-doctype is the deterministic discriminator: a bare external `#issue-42`
+/// (no `<type>:`) is **never** a managed mention and is never flagged, so external
+/// issue/PR mentions in prose are not noise.
+///
+/// This is the **lighter, prose-embedded sibling of `ref-resolves`** — a mention dangles
+/// when *another* doc is renamed/deleted, so store scope (the cross-doc backstop) is its
+/// home: it is **never** wired into [`crate::validate::validate_task`] (the per-task
+/// `finalize` gate), only this store sweep. Default [`Severity::Advisory`] (a cascade
+/// knob, re-graded by the post-pass keyed on
+/// `validation.schema-conformance.mention-resolves.severity`). Doc-level resolution in v1
+/// (a trailing `#<section>` anchor is left unparsed — section-anchor mentions deferred).
+/// Only [`mention_resolves_store`] callers — [`validate_store_families`](crate::validate::validate_store_families) —
+/// run it. The CLI scans the prose but never authors it: the determinism boundary holds.
+///
+/// Deterministic by construction: `schemas` is a [`BTreeMap`] (type-sorted), the committed
+/// docs enumerate slug-sorted, and slot spans walk in document order.
+pub fn mention_resolves_store(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (ty, schema) in schemas {
+        let Some(location) = schema.location.as_deref() else {
+            continue; // a transient (location-less) type has no committed docs.
+        };
+        let dir = repo_root.join(location);
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue; // no committed docs of this type yet.
+        };
+        // Enumerate `(slug, path)` slug-sorted — the deterministic walk order.
+        let mut docs: Vec<(String, PathBuf)> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+            .filter_map(|p| {
+                p.file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| (s.to_owned(), p.clone()))
+            })
+            .collect();
+        docs.sort();
+        for (slug, path) in docs {
+            let Ok(mut source) = std::fs::read_to_string(&path) else {
+                continue; // read race: skip; the next sweep re-checks.
+            };
+            crate::parse::strip_leading_bom(&mut source);
+            let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
+                continue; // unparseable committed file: skip — not this check's gate.
+            };
+            let from = format!("{ty}:{slug}");
+            for span in slot_spans(&doc) {
+                for mention in scan_mentions(span.slice(&source), schemas) {
+                    if !committed_reachable(&mention, repo_root, schemas) {
+                        findings.push(dangling_mention(&from, &mention));
+                    }
+                }
+            }
+        }
+    }
+    findings
+}
+
+/// Every slot-prose span a parsed doc carries, in document order: each simple section's
+/// slot, plus each repeatable item's slot(s), recursing into nested items. Slot prose is
+/// the only surface a managed mention can live on — fields are typed leaves and headings
+/// are structure, so the scan reads exactly these opaque spans.
+fn slot_spans(doc: &crate::parse::Document) -> Vec<&crate::parse::Span> {
+    let mut spans = Vec::new();
+    for section in &doc.sections {
+        if let Some(span) = &section.slot {
+            spans.push(span);
+        }
+        for item in &section.items {
+            collect_item_slot_spans(item, &mut spans);
+        }
+    }
+    spans
+}
+
+/// Gather one repeatable item's slot span(s) — the bare single-slot `slot` or the
+/// multi-slot `slots` entries — recursing into its nested items (the M22 multi-level
+/// shape). The recursive twin of [`slot_spans`]'s top-level walk.
+fn collect_item_slot_spans<'a>(
+    item: &'a crate::parse::ParsedItem,
+    spans: &mut Vec<&'a crate::parse::Span>,
+) {
+    if let Some(span) = &item.slot {
+        spans.push(span);
+    }
+    for (_leaf, span) in &item.slots {
+        spans.push(span);
+    }
+    for child in &item.items {
+        collect_item_slot_spans(child, spans);
+    }
+}
+
+/// Scan opaque slot `prose` for **managed mentions** — `#<type>:<slug>` tokens whose
+/// `<type>` is a key in `schemas` (a known managed doctype). The `:`-plus-known-doctype
+/// is the deterministic discriminator: a bare `#issue-42` (no `<type>:`, an external
+/// reference) is never a managed mention, so external issue/PR mentions are not flagged.
+/// Returns each match's `<type>:<slug>` identity, in scan order; doc-level only (a
+/// trailing `#<section>` anchor is left unparsed — section-anchor mentions are a v1
+/// deferral).
+fn scan_mentions(prose: &str, schemas: &BTreeMap<String, Schema>) -> Vec<String> {
+    let bytes = prose.as_bytes();
+    let mut mentions = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] != b'#' {
+            i += 1;
+            continue;
+        }
+        // The `<type>` run: token bytes after `#`, up to a `:`.
+        let type_start = i + 1;
+        let mut j = type_start;
+        while j < bytes.len() && is_mention_token_byte(bytes[j]) {
+            j += 1;
+        }
+        // A managed mention needs a non-empty `<type>` immediately followed by `:`.
+        if j == type_start || j >= bytes.len() || bytes[j] != b':' {
+            i += 1;
+            continue;
+        }
+        if !schemas.contains_key(&prose[type_start..j]) {
+            i += 1; // `:` present but `<type>` is not a known doctype — not managed.
+            continue;
+        }
+        // The `<slug>` run after the `:`.
+        let slug_start = j + 1;
+        let mut k = slug_start;
+        while k < bytes.len() && is_mention_token_byte(bytes[k]) {
+            k += 1;
+        }
+        if k == slug_start {
+            i += 1; // `#<type>:` with no slug — not a mention.
+            continue;
+        }
+        mentions.push(format!(
+            "{}:{}",
+            &prose[type_start..j],
+            &prose[slug_start..k]
+        ));
+        i = k; // resume past the slug (a trailing `#<section>` anchor stays unparsed).
+    }
+    mentions
+}
+
+/// A managed-mention token byte: ASCII alphanumeric or `-` (the canonical slug +
+/// doctype-name alphabet — `arch-doc`, `csrf-strict-origin`). A `:` separates `<type>`
+/// from `<slug>` and is *not* a token byte; everything else ends a run.
+fn is_mention_token_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'-'
+}
+
+/// An **advisory** `schema-conformance.mention-resolves` [`Finding`] for an in-prose
+/// managed mention that names no committed doc — located at the source doc's identity,
+/// naming the dangling `<type>:<slug>` so the operator knows which mention to fix.
+/// Carries no route: the fix is the prose author's (correct or drop the mention), not a
+/// structural repair (mirroring [`below_inverse_minimum`]'s no-route advisory).
+fn dangling_mention(from: &str, mention: &str) -> Finding {
+    Finding::graded(
+        Severity::Advisory,
+        "schema-conformance.mention-resolves",
+        format!(
+            "schema-conformance — in-prose mention `#{mention}` in `{from}` resolves to no \
+             committed doc (the renamed/deleted-doc case); correct or drop the mention",
+        ),
+        Some(Location::addressed(from.to_string(), 1, 1)),
+        None,
+    )
+}
+
 /// The minimum of an `inverse-card` spelling — the integer before the `..` of a
 /// `min..max` range (`"1..*"` → 1), or the whole value when there is no range
 /// (`"1"` → 1). An unparseable minimum is treated as 0 (no completeness floor), so a
