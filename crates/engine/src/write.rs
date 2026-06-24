@@ -5575,6 +5575,7 @@ mod roundtrip {
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const PRD_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/prd.yaml");
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
 
     fn commit_schema() -> Schema {
         crate::schema::load_schema(COMMIT_YAML).expect("commit.yaml loads")
@@ -5599,12 +5600,25 @@ mod roundtrip {
         crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
             .expect("spec.yaml loads")
     }
+    /// The shipped `arch-doc` schema. It is the first fuzzed doctype with a
+    /// **`header: true` section carrying a list-shaped front-matter field**: `meta`'s
+    /// `cites` is a `ref → adr` with `card: 0..*`, rendered as an inline-flow list in
+    /// the `---`-fenced header (`cites: [adr:a, adr:b]`). Its `components` repeatable
+    /// mirrors `spec.criteria` (a `title` `id-from` heading + a `description` slot + a
+    /// per-item `implemented-by` **`code-anchor` field**), so it loads with the dev-pack
+    /// field types registered (both `ref` and `code-anchor`, exactly as `adr` does).
+    /// `id-from: title` (the H1) → no settable header *scalar*, and `cites` is a ref-list
+    /// (not a `set_field` target), so the surgical-edit clause self-skips on `edit: None`.
+    fn arch_doc_schema() -> Schema {
+        crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("arch-doc.yaml loads")
+    }
 
     /// One generated arbitrary conformant document plus its known-canonical LF form
     /// and the metadata the surgical-edit clause needs.
     #[derive(Clone, Debug)]
     struct GenDoc {
-        /// `"commit"`, `"adr"`, `"prd"`, or `"spec"` — selects the schema.
+        /// `"commit"`, `"adr"`, `"prd"`, `"spec"`, or `"arch-doc"` — selects the schema.
         ty: String,
         /// The canonical LF document text (no BOM, exactly one trailing `\n`).
         canonical_lf: String,
@@ -5788,6 +5802,83 @@ mod roundtrip {
         render(&spec_schema(), &instance)
     }
 
+    /// A canonical `arch-doc` `implemented-by` value: a **bare** `path#symbol` (no
+    /// backticks — the shipped form `arch-doc` writes, per `migrate_arch_doc.rs` /
+    /// `arch_doc_acceptance.rs`, distinct from `spec.criteria`'s backtick-wrapped
+    /// anchor). Opaque to the reader, so it round-trips verbatim; modelling the real
+    /// `path#symbol` shape drives a realistic per-item field value.
+    fn arch_anchor_value() -> impl Strategy<Value = String> {
+        (
+            "[a-z][a-z0-9_/-]{0,18}\\.(rs|rb|py)",
+            "[a-z][a-z0-9_]{0,15}",
+        )
+            .prop_map(|(path, sym): (String, String)| format!("{path}#{sym}"))
+    }
+
+    /// Build a canonical-LF `arch-doc` document from generated parts by constructing an
+    /// [`Instance`] and **rendering it**. `arch-doc` is the first fuzzed doctype with a
+    /// **`header: true` section carrying a list-shaped front-matter field**: the `meta`
+    /// header's `cites` (a `ref → adr`, `card: 0..*`). When `cites` is empty the field is
+    /// **omitted** (the production form a 0-ref doc renders — an empty `---\n---` header,
+    /// exactly what the `migrate-arch-doc` smoke authors); when populated it renders as an
+    /// inline-flow list (`cites: [adr:a, adr:b]`) — the new front-matter-list shape this
+    /// arm fuzzes byte-stable. The body is the `overview` slot + a POPULATED `components`
+    /// repeatable whose item block mirrors `spec.criteria`: a `title` `id-from` heading, a
+    /// `description` slot, and a per-item `implemented-by` **`code-anchor` field**.
+    /// Building through `render` guarantees the bytes match the writer's canonical form.
+    fn build_arch_doc(
+        title: &str,
+        cites: &[String],
+        overview: &str,
+        components: &[(String, String, String)],
+    ) -> String {
+        let items: Vec<ItemContent> = components
+            .iter()
+            .map(|(comp_title, description, anchor)| ItemContent {
+                id: crate::slug::slugify(comp_title),
+                title: comp_title.clone(),
+                slot: Some(description.clone()),
+                slots: Vec::new(),
+                fields: vec![Field {
+                    key: "implemented-by".to_string(),
+                    value: Value::Scalar(anchor.clone()),
+                }],
+                items: Vec::new(),
+            })
+            .collect();
+        // 0 cites → omit the field (empty header, the production form); ≥1 → a
+        // list-shaped front-matter field (`cites: [adr:…, …]`).
+        let meta_fields = if cites.is_empty() {
+            Vec::new()
+        } else {
+            vec![Field {
+                key: "cites".to_string(),
+                value: Value::List(cites.to_vec()),
+            }]
+        };
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: meta_fields,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "overview".to_string(),
+                    slot: Some(overview.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "components".to_string(),
+                    items,
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&arch_doc_schema(), &instance)
+    }
+
     /// The generator: an arbitrary conformant `commit`, `adr`, `prd`, or `spec` doc,
     /// with a chosen EOL, returning the canonical-LF text + the EOL + a settable
     /// front-matter field (`None` for `prd`/`spec`, which carry no front-matter — the
@@ -5896,14 +5987,52 @@ mod roundtrip {
                 )
             });
 
-        (prop_oneof![commit, adr, prd, spec], eol).prop_map(|((ty, canonical_lf, edit), eol)| {
-            GenDoc {
+        let arch_doc = (
+            scalar_value(),
+            // `cites`: 0..3 adr refs. The `0..` lower bound makes proptest generate
+            // BOTH the empty-cites case (an omitted field → empty `---\n---` header) and
+            // the populated case (an inline-flow `cites: [adr:…, …]` list), so a single
+            // run covers both front-matter shapes (the done-criterion).
+            prop::collection::vec("[a-z][a-z0-9]{0,12}", 0..3),
+            edgy_prose(),
+            prop::collection::vec((scalar_value(), edgy_prose(), arch_anchor_value()), 1..4),
+        )
+            .prop_map(|(title, cite_slugs, overview, comps)| {
+                // Index-suffix each cite slug so the `adr:` refs are distinct, and each
+                // component title so the slugified `{#id}` item anchors are distinct (a
+                // repeatable section rejects duplicate anchors, and two arbitrary titles
+                // can collide). The suffix also exercises the multi-word-heading parse on
+                // every component.
+                let cites: Vec<String> = cite_slugs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, slug)| format!("adr:{slug}-{i}"))
+                    .collect();
+                let components: Vec<(String, String, String)> = comps
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (comp_title, description, anchor))| {
+                        (format!("{} {i}", comp_title.trim()), description, anchor)
+                    })
+                    .collect();
+                (
+                    "arch-doc".to_string(),
+                    build_arch_doc(&title, &cites, &overview, &components),
+                    // `cites` is a ref-list (not a scalar `set_field` target) and the H1
+                    // is the id source, so there is no settable header scalar; the
+                    // surgical-edit clause self-skips on `edit: None`.
+                    None,
+                )
+            });
+
+        (prop_oneof![commit, adr, prd, spec, arch_doc], eol).prop_map(
+            |((ty, canonical_lf, edit), eol)| GenDoc {
                 ty,
                 canonical_lf,
                 eol,
                 edit,
-            }
-        })
+            },
+        )
     }
 
     fn schema_for(ty: &str) -> Schema {
@@ -5911,6 +6040,7 @@ mod roundtrip {
             "commit" => commit_schema(),
             "prd" => prd_schema(),
             "spec" => spec_schema(),
+            "arch-doc" => arch_doc_schema(),
             _ => adr_schema(),
         }
     }
