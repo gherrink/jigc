@@ -2212,3 +2212,21 @@ The disjoint case is the data-loss fix: both sub-agents' code rides the one comm
 4. **A same-file collision blocks (incl. a rename).** Two sub-agents staging the same path — one of them via a rename of it — block with a routed `combine.code-collision` naming the contended path; HEAD is unchanged and nothing is applied or promoted.
 5. **Unrelated main-checkout WIP survives a blocked combine.** An untracked file and an unstaged tracked edit in the main checkout are byte-identical after a blocked finalize — the off-line temp-index build never touches the live checkout (review S2).
 6. **An advanced main blocks finalize.** When main advances past the milestone's pinned base, the `base == main-HEAD` preflight (review S1) blocks with the base-mismatch finding; HEAD is unchanged and nothing is applied — the precondition for a clean disjoint-apply.
+
+## 34. The freeze enforced — an un-migrated schema-shape change is blocked at pack-load (M33)
+
+The M33 acceptance: **the frozen-v1 doctype set self-enforces.** A versioned/hashed doctype-set manifest (`config/schema-manifest.yaml`) enumerates each frozen doctype's `schema-version` + `schema-hash`; the engine recomputes each shipped doctype's hash and requires an exact match. The enforcement gate fires at **pack-load** — the productive compose front door — not at the report-only `jigc validate` store sweep ([corpus-migration.md](corpus-migration.md) → The freeze, declared *and* enforced; review Finding 3). So a schema edit that changes a doctype's *shape* without bumping its version + shipping the M34 migration is **blocked**, loudly, rather than caught by review. The build-time sibling pins it for the bytes we ship; this flow is the runtime proof on a customer-shaped on-disk pack (`JIGC_PACK_DIR`). Notation illustrative; the flow below is the shape the acceptance test (`crates/cli/tests/freeze_enforcement.rs`) drives end-to-end through the built binary.
+
+### The walk — drift a schema, get blocked; drop the manifest, get through
+
+1. **Copy the dev pack to a directory pack and run clean.** `JIGC_PACK_DIR=<copy> jigc start --workflow single-task "<intent>"` composes normally — the copy's six schema shapes match the manifest hashes it shipped.
+2. **Drift one schema's shape, leave the manifest unbumped.** Edit `<copy>/schemas/adr.yaml` (e.g. relocate it, `location: decisions/` → `location: adr-records/`) — a hash-affecting change — without touching `schema-version` or the manifest's `schema-hash`.
+3. **Re-run — blocked at pack-load.** `jigc start …` now exits **non-zero** before composing, naming the breach: `pack-load freeze check failed: doctype 'adr': schema-hash mismatch (manifest declares '…', recomputed '…')`. The fix is to bump the version + ship the migration (M34), or revert.
+4. **Drop the manifest — the gate goes inert.** Remove `<copy>/config/schema-manifest.yaml` and re-run: the same drifted pack composes clean. A pack that ships **no** manifest is unchecked (the field-types-absent precedent), so seeded / composed / methodology packs that never froze stay inert — never an error.
+
+### What it asserts (the M33 acceptance bar)
+
+1. **A shape change with no version bump is blocked, naming the doctype + the mismatch.** The drifted-`adr` copy makes `jigc start` exit non-zero; stderr names `schema-hash mismatch` on `adr` (`schema_shape_drift_without_manifest_bump_is_blocked`).
+2. **The unmutated copy composes clean.** A faithful dev-pack copy matches its shipped manifest, so the gate is inert and `start` exits 0 (`unmutated_pack_copy_composes_clean`) — the control that proves the gate isn't a blanket reject.
+3. **A manifest-less pack is unaffected.** The *same* drift composes clean once `schema-manifest.yaml` is dropped (`manifest_less_pack_is_unaffected`) — the omitting context: the freeze records what a pack *declares* frozen, and a pack that declares none is never gated.
+4. **The freeze is composition-independent.** The gate checks the manifest-owning pack's *own* shipped shapes in isolation, so a higher-precedence pack that shadows a frozen doctype with a divergent shape (the embedded methodology pack's own `commit`) does not perturb the dev pack's freeze — every methodology / multi-pack composition still composes clean.

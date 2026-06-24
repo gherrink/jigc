@@ -617,6 +617,11 @@ fn copy_tree(src: &Path, dst: &Path) {
 /// post-sweep strip must discriminate on.
 fn docs_located_pack(dir: &Path) -> PathBuf {
     copy_tree(&embedded_pack_tree(), dir);
+    // This fixture relocates `adr` (a hash-affecting shape change), so it is NOT the
+    // frozen dev pack — drop the copied freeze manifest (M33 pack-load gate would
+    // otherwise block the un-bumped shape change). A manifest-less pack is unchecked.
+    fs::remove_file(dir.join("config").join("schema-manifest.yaml"))
+        .expect("drop the copied freeze manifest");
     let schema = dir.join("schemas").join("adr.yaml");
     let body = fs::read_to_string(&schema).expect("read the copied adr.yaml");
     let moved = body.replacen("location: decisions/", "location: docs/", 1);

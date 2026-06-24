@@ -46,6 +46,65 @@ pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, S
     load_schema_with_types(bytes, &pack_field_types(pack)?)
 }
 
+/// The `config/` resource id of a pack's frozen doctype-set manifest (the M33
+/// freeze artifact). A pack that ships this file gets its declared doctype shapes
+/// checked against it at pack-load by [`assert_schema_freeze`]; a pack that omits
+/// it is unchecked — the freeze records what a pack *declares* frozen, never a
+/// blanket requirement. See `design/corpus-migration.md` → The freeze.
+const SCHEMA_MANIFEST_ID: &str = "schema-manifest";
+
+/// The **runtime pack-load freeze assertion** — the productive-path sibling of the
+/// build-time freeze gate ([`tests::shipped_schema_manifest_matches_the_frozen_doctype_set`])
+/// and of the intrinsic-floor knob assertion, fired on the compose front door so an
+/// un-migrated schema-shape change is **blocked**, not merely reported
+/// (`design/corpus-migration.md` → The enforcement gate fires at pack-load — review
+/// Finding 3; *not* the report-only `validate` store sweep).
+///
+/// Recomputes each doctype's `schema-hash` over the **manifest-owning pack's own
+/// shipped schema shapes** and compares against the manifest
+/// ([`engine::manifest::check`]) — failing loudly on a drift, an added, or a removed
+/// doctype. It checks the pack that *ships* the manifest, located via
+/// [`origin_pack`](PackSource::origin_pack), **in isolation** — never the composed
+/// cascade: the freeze records what WE ship, so a higher-precedence pack that
+/// shadows a frozen doctype with a divergent shape (the methodology pack's own
+/// `commit`) does not perturb the dev pack's freeze. Schemas load through the
+/// field-type-resolving [`load_pack_schema`] against that same owning pack, and the
+/// read is shadow- / `docs-root`-independent (it reads the pack directly, not the
+/// project-resolved [`crate::start::CascadeDefs::all_schemas`]).
+///
+/// An **absent** manifest is skipped (`Ok(())`) — the field-types-absent precedent
+/// ([`pack_field_types`]): a seeded / composed / methodology pack that ships no
+/// manifest stays unchecked, so only a pack that opts into the freeze is held to it.
+pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    // The single constituent that SHIPS the manifest (origin = the pack itself for a
+    // non-composite). A composite with no manifest-owner yields `self`, whose read
+    // below is `NotFound` → skip — the manifest-less inert path.
+    let owner = pack.origin_pack(PackResourceKind::Config, &manifest_id);
+    let Ok(manifest_bytes) = owner.read(PackResourceKind::Config, &manifest_id) else {
+        return Ok(());
+    };
+    let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
+        .context("config/schema-manifest.yaml is not a valid freeze manifest")?;
+
+    // The manifest-owning pack's OWN shipped doctype shapes, keyed by type, loaded
+    // through the field-type-resolving loader against that same pack.
+    let mut schemas = std::collections::BTreeMap::new();
+    for id in owner.list(PackResourceKind::Schemas) {
+        let bytes = owner
+            .read(PackResourceKind::Schemas, &id)
+            .with_context(|| format!("the `{}` schema is unreadable", id.as_str()))?;
+        let schema = load_pack_schema(owner, &bytes)
+            .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+        schemas.insert(schema.ty.clone(), schema);
+    }
+
+    engine::manifest::check(&manifest, &schemas)
+        .map_err(|err| anyhow::anyhow!("pack-load freeze check failed: {err}"))
+}
+
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
 static PACK: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/pack");
 

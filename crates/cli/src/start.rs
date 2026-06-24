@@ -745,6 +745,12 @@ fn compose_drained(
     milestone_ids: &[String],
     seam: Option<&str>,
 ) -> Result<ComposedWorkflow> {
+    // Pack-load freeze gate (M33): block an un-migrated schema-shape change before
+    // any composition — recompute each shipped doctype's schema-hash against the
+    // pack's `config/schema-manifest.yaml` and fail loudly on drift
+    // (`design/corpus-migration.md` → The enforcement gate fires at pack-load).
+    // Inert for a manifest-less pack (origin/composed/methodology test packs).
+    crate::pack::assert_schema_freeze(pack)?;
     // Scope the step source's pack-default arm to the composing workflow's origin
     // pack, so its `{{include: step:X}}` resolves against the pack that *defines*
     // the workflow — the pack-local body-reference rule (`multi-pack.md` →

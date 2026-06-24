@@ -71,6 +71,11 @@ fn fixture_pack() -> TempDir {
     let pack = TempDir::new("pack");
     let dev_pack = Path::new(env!("CARGO_MANIFEST_DIR")).join("pack");
     copy_tree(&dev_pack, pack.path());
+    // This fixture ships a deliberately divergent `changelog` shape, so it is NOT the
+    // frozen dev pack — drop the copied freeze manifest (M33 pack-load gate would
+    // otherwise block the un-bumped shape change). A manifest-less pack is unchecked.
+    fs::remove_file(pack.path().join("config").join("schema-manifest.yaml"))
+        .expect("drop the copied freeze manifest");
 
     fs::write(
         pack.path().join("schemas").join("changelog.yaml"),
