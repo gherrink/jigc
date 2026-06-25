@@ -330,9 +330,12 @@ fn structural_v1_to_v2_migration_runs_through_the_real_binary() {
     let prd_before = fs::read_to_string(prd_path(repo.path(), "cache-prd")).expect("read prd");
     let adr_before = fs::read_to_string(adr_path(repo.path(), "alpha-decision")).expect("read adr");
 
-    // 1. DETECT — the version-aware store sweep routes each below-version, non-conformant prd
-    //    `migrate` (report-only, exit 0). The widened adr stays conformant, so it is not
-    //    flagged here — the verb still migrates it (the value-bump), proven below.
+    // 1. DETECT — the version-aware store sweep routes every below-version doc `migrate`
+    //    (report-only, exit 0). Both fixed-slot prd docs are structurally non-conformant under
+    //    v2 and route `migrate`. The widened adr is otherwise structurally conformant, but it is
+    //    stamped v1 under a manifest bumped to v2, so the version-mismatch break flags it too
+    //    (`doc_findings.is_empty() && stamp < current` → below-version): all THREE docs route
+    //    `migrate` here, and the verb migrates each of them below.
     let detect = jigc(repo.path(), home.path(), pack.path(), &["validate"]);
     let detect_out = String::from_utf8_lossy(&detect.stdout);
     assert!(
@@ -340,9 +343,17 @@ fn structural_v1_to_v2_migration_runs_through_the_real_binary() {
         "`jigc validate` over a below-version corpus stays report-only (exit 0); \
          stdout:\n{detect_out}",
     );
+    assert_eq!(
+        count(&detect_out, "route: migrate"),
+        3,
+        "every below-version doc is routed `migrate` — both fixed-slot prd docs AND the \
+         v1-stamped widened adr (flagged by the version-mismatch break); stdout:\n{detect_out}",
+    );
+    // The adr's version-mismatch break specifically must route `migrate`: a regression that
+    // stopped flagging the below-version-but-structurally-conformant adr turns this red.
     assert!(
-        count(&detect_out, "route: migrate") >= 2,
-        "both below-version fixed-slot prd docs are detected and routed `migrate`; \
+        detect_out.contains("route: migrate — `docs/decisions/alpha-decision.md`"),
+        "the v1-stamped widened adr is routed `migrate` by the version-mismatch break; \
          stdout:\n{detect_out}",
     );
 
