@@ -1,6 +1,6 @@
 # M34 — the v1→v2 structural corpus migration (the real reshape, end-to-end)
 
-**Run 2026-06-25 (pinned at HEAD `cf2b340`).** This artifact is the **productive-go G2
+**Run 2026-06-25 (re-pinned at HEAD `f71a255`, after the four M34 completion-audit fixes — `3695ce3` per-doc baseline, `011b1df` flow36 assertion, `f71a255` manifest-version-aware stamp deriver; finding-1 freeze framing was already a doc clarification). The audit fixes touched `cli` production code (the baseline-persist timing + the create-deriver), so `jigc` was rebuilt and re-pinned; the migration *output* bytes are unchanged — finding 4 is internal write-ordering and finding 2 is behaviour-neutral for the all-v1 dev pack — so the measured facts below stand as recorded.** This artifact is the **productive-go G2
 retirement record** for [roadmap.md](../../../implementation/roadmap.md) → M34 Increment 4 — the
 increment that retires G2 on a **real v1→v2 structural** migration, not only the v0→v1 stamp the
 Inc-3 dogfood proved ([migrate-loop-measure.md](migrate-loop-measure.md), flow 35). Increment 4
@@ -27,12 +27,12 @@ documented `JIGC_PACK_DIR` seam exactly as a real adopter would supply them.)
 
 | | |
 |---|---|
-| `jigc` sha256 | `cfd176a41f2c3748c41c5ebf0193223de3fbc83afeccbac6064330cda5e6b11d` |
+| `jigc` sha256 | `534e2144e031269922fffb31e4ff7761c8696305259960637c69ed599d7b56e2` (re-pinned at `f71a255` after the audit fixes; the prior Inc-4-T4 pin was `cfd176a4…` at `cf2b340`) |
 | `doc-code` probe sha256 | `b0a413a1cb8fa7fff6ceb85e3fdebc304508c42d76c57447112f4f208ea74304` (unchanged across all of M34 — the milestone added no grammar/probe code; byte-identical to the Inc-3 pin) |
-| HEAD commit | **`cf2b340`** (`test(cli): real-binary v1->v2 structural corpus migration acceptance (flow 36)` — the M34 Inc-4 T3 acceptance, the increment's code HEAD). T4 adds only this `completions/artifacts/M34/` record on top, so the shipped binary equals the increment's code HEAD. |
-| Built | `cargo install --path crates/cli --force` (release; `build.rs` builds the eight-grammar `doc-code` probe and embeds it via `OUT_DIR/doc-code` for the `jigc setup` extract path, plus the embedded dev pack incl. `config/schema-manifest.yaml`); `rustc 1.95.0` |
-| Pinned to | `jigc` **and** its `doc-code` probe sibling to **both** `~/.local/bin/` and `~/.cargo/bin/` (+ `target/release/`). `cargo install` placed `jigc` at `~/.cargo/bin/jigc` (byte-identical to the `target/release/jigc` it co-produced); both `jigc` and its `doc-code` sibling were copied into both bin dirs. **All sha256 identical** — `jigc` identical across both dirs + `target/release` (`cfd176a4…`), `doc-code` identical across both dirs + `target/release` (`b0a413a1…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
-| Fresh-build cross-check | The pinned `jigc` IS the output of this `cargo install` at `cf2b340` — byte-identical to the `target/release/jigc` it co-produced (same `cfd176a4…`). (Release `jigc` is **not** stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this install wrote, not a reproducibility claim.) |
+| HEAD commit | **`f71a255`** (`fix(cli): derive the schema-version stamp from each doctype's manifest version (M34 audit)` — the last of the four audit-fix commits; the milestone's final code HEAD). The Inc-4-T3 acceptance code HEAD was `cf2b340`; the audit fixes land on top. |
+| Built | `cargo build --release -p cli` at `f71a255` (the `doc-code` probe is the standalone excluded crate, unchanged across M34 — not rebuilt); `rustc 1.95.0` |
+| Pinned to | `jigc` re-pinned to **both** `~/.local/bin/` and `~/.cargo/bin/` (+ `target/release/`), its `doc-code` probe sibling left in place (unchanged). **All sha256 identical** — `jigc` identical across both dirs + `target/release` (`534e2144…`), `doc-code` identical across both dirs + `target/release` (`b0a413a1…`). `which jigc` → `~/.local/bin/jigc`, `which doc-code` → `~/.local/bin/doc-code` (a pinned dir). |
+| Fresh-build cross-check | The pinned `jigc` IS the exact `target/release/jigc` produced by this build at `f71a255`, copied byte-for-byte into both bin dirs (all three `534e2144…`). (Release `jigc` is **not** stripped, so a *separate* later rebuild yields a different sha — the pin is the bytes this build wrote, not a reproducibility claim.) |
 | Size | release `jigc` **13.41 MiB** (14 057 936 B), `doc-code` **8.10 MiB** (8 489 160 B). |
 | Invocation | `jigc` from `PATH`, `doc-code` resolved as the installed sibling (**no** `JIGC_DOC_CODE_PROBE` — the driver `unset`s it); `JIGC_PACK_DIR` → the snapshot-bearing `FilesystemPack` fixture (the prior-schema sourcing seam). |
 | Driver | [`evidence/structural-drive.sh`](evidence/structural-drive.sh) — a self-cleaning scratch git repo + isolated `$HOME` + fixture pack; logs in [`evidence/`](evidence/) (`structural-*`). |
