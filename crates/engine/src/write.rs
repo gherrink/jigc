@@ -2264,6 +2264,132 @@ pub fn add_item(
     }
 }
 
+/// `fixed-slot→repeatable-with-default` — the M34 net-new migration primitive.
+///
+/// Promote a section that is a **simple `<<slot>>`** under `old_schema` into the
+/// **repeatable** item-block it is under `new_schema`, carrying the old slot prose
+/// **verbatim** as the **default first item** (no data loss). This is the one
+/// structural transform with no existing write primitive: [`add_item`] assumes the
+/// section is *already* repeatable (it returns [`GenerateError::WrongShape`] otherwise),
+/// so it cannot perform the promotion itself (`design/corpus-migration.md` → The
+/// deterministic transform → "the one net-new primitive").
+///
+/// The promoted item is a **single-slot** item: the old prose becomes the bare-prose
+/// body of the new repeatable's single slot leaf, titled `title` (the `{#id}` anchor is
+/// minted from it via [`crate::slug`], exactly as [`add_item`] mints). The change is a
+/// **byte-stable splice**: only the target section's body region is rewritten (its slot
+/// prose replaced by the canonical first-item block via [`render_item`]), every other
+/// byte preserved — so `render(parse(out)) == out` holds over the proven splice
+/// machinery.
+///
+/// Errors (typed, never a panic): the target is not declared / not repeatable under
+/// `new_schema`, or its new item-template is not exactly single-slot (a multi-slot or
+/// slot-less target has no deterministic prose mapping — a separate classified change);
+/// the source section is not a simple slot under `old_schema`; the source does not
+/// conform to `old_schema`; or `title` slugs to empty.
+pub fn promote_slot_to_repeatable(
+    old_schema: &Schema,
+    new_schema: &Schema,
+    source: &str,
+    section_id: &str,
+    title: &str,
+) -> Result<String, GenerateError> {
+    // The target's NEW shape must be a single-slot repeatable (the promotion target).
+    let new_section = new_schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    let SectionBody::Repeatable { repeatable } = &new_section.body else {
+        return Err(GenerateError::WrongShape {
+            what: format!("section {section_id:?} is not repeatable in the new schema"),
+        });
+    };
+    // The old single prose maps deterministically only to a **single-slot** item; a
+    // multi-slot or slot-less target has no unambiguous home for it (a separate
+    // classified change, out of scope for this primitive).
+    if parse::ItemTemplate::from(repeatable).slot_ids.len() != 1 {
+        return Err(GenerateError::WrongShape {
+            what: format!(
+                "section {section_id:?} new item-template is not single-slot; no \
+                 deterministic prose mapping"
+            ),
+        });
+    }
+
+    // The target's OLD shape must be a simple slot — the thing being promoted.
+    let old_section = old_schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| GenerateError::UnknownSection {
+            id: section_id.to_string(),
+        })?;
+    if !matches!(old_section.body, SectionBody::Simple { .. }) {
+        return Err(GenerateError::WrongShape {
+            what: format!("section {section_id:?} is not a simple slot in the old schema"),
+        });
+    }
+
+    // Mint the default item's `{#id}` anchor from the title (total slugify; empty →
+    // reject, mirroring [`add_item`]'s mint-site guard against a malformed empty `{#}`).
+    let id = crate::slug::slugify(title);
+    if id.is_empty() {
+        return Err(GenerateError::UnslugableTitle {
+            title: title.to_string(),
+        });
+    }
+
+    // The old slot prose, verbatim — re-derived through the old schema (which the source
+    // conforms to), so a non-conformant source is a typed error, never a panic.
+    let prose = instance_from_source(old_schema, source)
+        .map_err(|_| GenerateError::WrongShape {
+            what: "source does not conform to the old schema".to_string(),
+        })?
+        .sections
+        .into_iter()
+        .find(|s| s.id == section_id)
+        .and_then(|s| s.slot);
+
+    // The canonical default first item carrying the old prose (single-slot bare-prose
+    // form). [`render_item`] is the one source of item bytes, so the result is byte-stable.
+    let item = render_item(&ItemContent {
+        id,
+        title: title.to_string(),
+        slot: prose,
+        slots: Vec::new(),
+        fields: Vec::new(),
+        items: Vec::new(),
+    });
+
+    // Replace the present section's body region (its old slot prose) with the first-item
+    // block, re-attaching the region's tail separator — the same byte-stable
+    // body-replacement [`add_item`] uses for a present-but-item-less section.
+    let present = present_body_sections(new_schema, source);
+    let blocks = parse::scan_blocks(source);
+    let region = section_region(&blocks, source, section_id, &present).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("section {section_id:?} region not locatable"),
+        }
+    })?;
+    // The canonical separator after the promoted item: a single blank line before a
+    // following `## ` (`\n\n`), or one terminating `\n` at EOF. Derived from whether a
+    // section follows — *not* re-attached from the region tail, because a **simple**
+    // empty-slot body carries one more trailing `\n` than the canonical repeatable form
+    // (`## H\n\n\n` vs `## H\n\n`), and that debris would survive into `out` (the empty
+    // case `add_item` never meets, since it only ever inserts into already-canonical
+    // repeatable bodies).
+    let separator = if region.end >= source.trim_end().len() {
+        "\n"
+    } else {
+        "\n\n"
+    };
+    let replacement = format!("\n{}{}", item.trim_end_matches('\n'), separator);
+    Ok(splice(source, region.start..region.end, &replacement))
+}
+
 /// `set-field` (header field **absent**): materialize the front-matter `key: value`
 /// line for `field` at its **schema-ordered position** inside the `---` fence (after
 /// the nearest preceding present header field, before the nearest following one), so
@@ -7866,5 +7992,260 @@ OAuth device-code flow.
             "the release's date bullet must sit in the release's OWN region, before its \
              nested #### Added; out:\n{out}",
         );
+    }
+}
+
+/// T2 (M34 Inc-2): the net-new `fixed-slot→repeatable-with-default` primitive
+/// ([`promote_slot_to_repeatable`]). Exercised **only** here (no existing test is
+/// touched). The two contract properties the done-criterion names: (a) the promoted
+/// output round-trips **byte-identical** (`render(parse(out)) == out`), and (b) the old
+/// slot prose is preserved **verbatim** as the default first item (no data loss).
+#[cfg(test)]
+mod promote_slot_to_repeatable_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// v1: `requirements` is a **simple slot**, sitting between two other slot sections
+    /// (so the splice is exercised on a NON-trailing section — a following `## ` boundary
+    /// to re-attach the separator past, not the EOF shortcut).
+    fn v1_schema() -> Schema {
+        crate::schema::load_schema(
+            b"\
+type: t
+sections:
+  - id: overview
+    slot: { hint: \"the overview\" }
+  - id: requirements
+    slot: { hint: \"the requirements prose\" }
+  - id: notes
+    slot: { hint: \"trailing notes\" }
+",
+        )
+        .expect("v1 schema loads")
+    }
+
+    /// v2: `requirements` is now a **single-slot repeatable** (`title` id-from heading +
+    /// one `statement` slot — the reconstructed M25 `prd.requirements` reshape). The two
+    /// neighbour sections are byte-identical to v1, so the only diff the splice may
+    /// introduce is in the `requirements` region.
+    fn v2_schema() -> Schema {
+        crate::schema::load_schema(
+            b"\
+type: t
+sections:
+  - id: overview
+    slot: { hint: \"the overview\" }
+  - id: requirements
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"one requirement\" } }
+  - id: notes
+    slot: { hint: \"trailing notes\" }
+",
+        )
+        .expect("v2 schema loads")
+    }
+
+    /// A canonical v1-shaped document whose `requirements` section carries `prose`.
+    /// Built through [`render`] so the input is exactly the byte-stable canonical form a
+    /// first-touch-canonicalized corpus doc has.
+    fn v1_doc(prose: &str) -> String {
+        let inst = Instance {
+            title: "Doc".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "overview".to_string(),
+                    slot: Some("An overview paragraph.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "requirements".to_string(),
+                    slot: Some(prose.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "notes".to_string(),
+                    slot: Some("Some trailing notes.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&v1_schema(), &inst)
+    }
+
+    /// Conformant, opaque slot prose: paragraphs with interior blank lines and prose
+    /// that *looks* structural but is not at this depth (a fenced `## not a heading`, a
+    /// `- x:` non-field bullet line, a `#### deeper` heading) — the stress that makes the
+    /// round-trip assertion meaningful rather than trivial.
+    fn prose() -> impl Strategy<Value = String> {
+        let para = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        let fragment = prop_oneof![
+            para,
+            Just("```\n## not a heading\n```".to_string()),
+            Just("- x: this is prose, not a field".to_string()),
+            Just("#### a deeper heading is allowed".to_string()),
+            "[a-zA-Z][a-zA-Z0-9 .,]{0,30}".prop_map(|s: String| format!("{s}\n\n\n{s}")),
+        ];
+        prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
+    }
+
+    /// A title that slugs to a non-empty `{#id}` anchor.
+    fn title() -> impl Strategy<Value = String> {
+        "[A-Z][a-z]{2,8}( [A-Z][a-z]{2,8}){0,2}"
+    }
+
+    proptest! {
+        /// (a) byte-stable round-trip + (b) verbatim no-data-loss, over arbitrary prose
+        /// and titles. The promoted doc must (a) satisfy `render(parse(out)) == out`
+        /// under the v2 schema, and (b) re-parse to a `requirements` section that is now
+        /// a single item whose slot prose is **identical** to the v1 slot prose and whose
+        /// title is the supplied one — and v1's section-level slot is gone.
+        #[test]
+        fn promotion_is_byte_stable_and_lossless(prose in prose(), title in title()) {
+            let v1 = v1_schema();
+            let v2 = v2_schema();
+            let src = v1_doc(&prose);
+
+            // The canonical v1 slot prose (the parser's verbatim slice) — the exact bytes
+            // the promotion must carry into the default first item.
+            let v1_inst = instance_from_source(&v1, &src).expect("v1 doc conforms");
+            let v1_slot = v1_inst
+                .sections
+                .iter()
+                .find(|s| s.id == "requirements")
+                .and_then(|s| s.slot.clone());
+
+            let out = promote_slot_to_repeatable(&v1, &v2, &src, "requirements", &title)
+                .expect("promotion succeeds");
+
+            // (a) Byte-stable round-trip under the NEW schema.
+            let out_inst = instance_from_source(&v2, &out).expect("promoted doc conforms to v2");
+            prop_assert_eq!(render(&v2, &out_inst), out.clone());
+
+            // (b) No data loss: requirements is now exactly one item carrying the v1 slot
+            // prose verbatim as its slot, titled as supplied; the section-level slot is gone.
+            let req = out_inst
+                .sections
+                .iter()
+                .find(|s| s.id == "requirements")
+                .expect("requirements section present");
+            prop_assert!(req.slot.is_none(), "section-level slot must be gone post-promotion");
+            prop_assert_eq!(req.items.len(), 1, "exactly one default item");
+            prop_assert_eq!(&req.items[0].title, title.trim());
+            prop_assert_eq!(req.items[0].slot.clone(), v1_slot);
+
+            // The neighbour sections are untouched (the splice is confined).
+            let untouched = |id: &str| {
+                let a = v1_inst.sections.iter().find(|s| s.id == id).unwrap();
+                let b = out_inst.sections.iter().find(|s| s.id == id).unwrap();
+                a.slot == b.slot
+            };
+            prop_assert!(untouched("overview"));
+            prop_assert!(untouched("notes"));
+        }
+    }
+
+    /// An **empty** old slot promotes to a slot-less default item (`### Title  {#id}`
+    /// with no body), still byte-stable and lossless — the boundary the proptest's
+    /// non-empty prose does not reach.
+    #[test]
+    fn empty_slot_promotes_to_slotless_default_item() {
+        let v1 = v1_schema();
+        let v2 = v2_schema();
+        let src = v1_doc("");
+
+        let out = promote_slot_to_repeatable(&v1, &v2, &src, "requirements", "First")
+            .expect("promotion succeeds");
+
+        let out_inst = instance_from_source(&v2, &out).expect("promoted doc conforms to v2");
+        assert_eq!(render(&v2, &out_inst), out, "byte-stable round-trip");
+
+        let req = out_inst
+            .sections
+            .iter()
+            .find(|s| s.id == "requirements")
+            .expect("requirements present");
+        assert_eq!(req.items.len(), 1);
+        assert_eq!(req.items[0].title, "First");
+        // A minted/empty slot canonicalizes to the slot-less item form (M26 fork C4).
+        assert!(req.items[0].slot.as_deref().unwrap_or("").trim().is_empty());
+    }
+
+    /// Promoting the **last** body section (no following `## `) exercises the EOF
+    /// separator branch — still byte-stable and lossless.
+    #[test]
+    fn promotion_of_trailing_section_is_byte_stable() {
+        let v1 = crate::schema::load_schema(
+            b"\
+type: t
+sections:
+  - id: overview
+    slot: { hint: \"the overview\" }
+  - id: requirements
+    slot: { hint: \"the requirements prose\" }
+",
+        )
+        .expect("v1 (trailing) loads");
+        let v2 = crate::schema::load_schema(
+            b"\
+type: t
+sections:
+  - id: overview
+    slot: { hint: \"the overview\" }
+  - id: requirements
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"one requirement\" } }
+",
+        )
+        .expect("v2 (trailing) loads");
+        let inst = Instance {
+            title: "Doc".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "overview".to_string(),
+                    slot: Some("An overview paragraph.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "requirements".to_string(),
+                    slot: Some("The single requirement prose.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        let src = render(&v1, &inst);
+
+        let out = promote_slot_to_repeatable(&v1, &v2, &src, "requirements", "First")
+            .expect("promotion succeeds");
+
+        let out_inst = instance_from_source(&v2, &out).expect("conforms to v2");
+        assert_eq!(render(&v2, &out_inst), out, "byte-stable round-trip at EOF");
+        let req = out_inst
+            .sections
+            .iter()
+            .find(|s| s.id == "requirements")
+            .expect("requirements present");
+        assert_eq!(req.items.len(), 1);
+        assert_eq!(
+            req.items[0].slot.as_deref(),
+            Some("The single requirement prose.")
+        );
+    }
+
+    /// A title with no slug-able content is rejected (no malformed empty `{#}` anchor),
+    /// mirroring [`add_item`]'s mint-site guard.
+    #[test]
+    fn unslugable_title_is_rejected() {
+        let v1 = v1_schema();
+        let v2 = v2_schema();
+        let src = v1_doc("some prose");
+        let err = promote_slot_to_repeatable(&v1, &v2, &src, "requirements", "   ")
+            .expect_err("blank title rejected");
+        assert!(matches!(err, GenerateError::UnslugableTitle { .. }));
     }
 }
