@@ -8,9 +8,9 @@
 //! deterministic transform / Acceptance flows).
 //!
 //! Disjoint from `jigc migrate` (foreign-doc *adoption*, LLM re-author) and `jigc upgrade`
-//! (config-delta reconciliation): this is a managed v0→v1 *structural* upgrade over N
-//! committed instances, **CLI-owned and deterministic** (the determinism boundary — no LLM
-//! in the structural path).
+//! (config-delta reconciliation): this is a managed *structural* schema-version upgrade (v0→v1
+//! and v1→v2) over N committed instances, **CLI-owned and deterministic** (the determinism
+//! boundary — no LLM in the structural path).
 //!
 //! # The live `add-field` dogfood
 //!
@@ -20,6 +20,17 @@
 //! real `added-field` migration target. This verb runs the real schema-diff classifier
 //! over the genuine corpus and applies the engine transform's `added-optional-field`
 //! branch — the live e2e, not synthetic coverage.
+//!
+//! # Prior-schema sourcing + the v1→v2 value-bump
+//!
+//! A **below-version** stamped doc (a real v1→v2 transition) cannot derive its prior shape
+//! from the current schema, so the verb sources `from` per committed doc by stamp from the
+//! versioned snapshot store (`schema-snapshots/<ty>.v<k>.yaml`, via
+//! [`crate::pack::load_prior_schema`]) — the engine diffs **two real declared schemas**, the
+//! determinism boundary in its strongest form. The stamp, present in both shapes, is
+//! **value-bumped** `k → current` ([`bump_and_regate`]) rather than added; a missing snapshot
+//! **blocks** the doc with a route (never a silent `already-current`, closing the Inc-3
+//! detector/verb divergence — `design/corpus-migration.md` → Prior-schema sourcing).
 //!
 //! # Per-doc transaction + stamp-flips-last
 //!
@@ -37,21 +48,23 @@ use crate::pack;
 use crate::render;
 use anyhow::{Context, Result};
 use engine::file_state::{FileStateRecord, hash_bytes};
+use engine::packsource::PackSource;
 use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
 use engine::transform::{CorpusDoc, CorpusMigration, DocOutcome, migrate_corpus};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-/// One doctype's v0→v1 migration job: its prior shape (`from`), its current shape (`to`,
-/// stamp-injected), and the doctype's current manifest schema-version (the value the stamp
-/// is filled with + the "already current" threshold).
+/// One doctype's migration job: its current shape (`to`, stamp-injected) and its current
+/// manifest schema-version (the value the stamp is filled/bumped to + the "already current"
+/// threshold). The **prior** shape (`from`) is resolved **per committed doc by stamp** in
+/// [`migrate_committed_corpus`] — stamp-absent (v0) docs derive it as `strip_stamp(to)`;
+/// below-version (v1→v2) docs source it from the versioned snapshot store via
+/// [`crate::pack::load_prior_schema`] — so it is not a per-doctype field.
 pub(crate) struct DoctypeMigration {
-    /// The doctype's id (for diagnostics).
+    /// The doctype's id (the snapshot-store key + diagnostics).
     pub ty: String,
-    /// The prior (v0) schema shape the committed corpus was authored against.
-    pub from: Schema,
-    /// The current (v1) schema shape, with the engine-injected schema-version stamp.
+    /// The current schema shape, with the engine-injected schema-version stamp.
     pub to: Schema,
     /// The doctype's current manifest schema-version (the stamp value + currency floor).
     pub version: u32,
@@ -89,8 +102,9 @@ pub fn run(cwd: &Path, format: Format) -> ExitCode {
 }
 
 /// Locate the repo + project layer, assemble the frozen persisted doctypes' migration jobs
-/// (v0 = the current shape minus the engine stamp; v1 = the stamp-injected shape; version =
-/// the doctype's manifest schema-version), and migrate the committed corpus.
+/// (each carrying its current stamp-injected shape `to` + its manifest schema-version; the
+/// prior `from` is resolved per committed doc by stamp inside [`migrate_committed_corpus`]),
+/// and migrate the committed corpus.
 fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
     let jigc_home = require_project_layer(cwd)?;
     let pack = pack::make_pack();
@@ -111,33 +125,38 @@ fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
         let (Some(_), Some(&version)) = (to.location.as_deref(), versions.get(&ty)) else {
             continue;
         };
-        let from = strip_stamp(&to);
-        doctypes.push(DoctypeMigration {
-            ty,
-            from,
-            to,
-            version,
-        });
+        doctypes.push(DoctypeMigration { ty, to, version });
     }
     // Deterministic doctype order (the committed walk + the fold both consume it in order).
     doctypes.sort_by(|a, b| a.ty.cmp(&b.ty));
 
     let jigc_root = jigc_home.join(".jigc");
-    migrate_committed_corpus(&jigc_home, &jigc_root, &doctypes)
+    migrate_committed_corpus(pack, &jigc_home, &jigc_root, &doctypes)
 }
 
 /// Migrate the committed corpus under `repo_root` for each [`DoctypeMigration`], per-doc
 /// gated and WIP-safe, re-baselining any rewritten doc that already carried a file-state
-/// hash. `jigc_root` is the `.jigc/` dir holding the file-state record.
+/// hash. `jigc_root` is the `.jigc/` dir holding the file-state record; `pack` is the
+/// snapshot store the below-version prior shapes are sourced from.
 ///
-/// For each candidate committed doc (one whose schema-version stamp is absent or below the
-/// doctype's current version) it computes the **per-doc** change list — the doctype's
-/// schema-diff (the live `added-optional-field` stamp + any prose-needing slot), filtered
-/// to the changes that doc still needs (a slot already authored is dropped, so an
-/// already-authored doc flips cleanly on a re-run). The engine fold applies them, gates each
-/// doc on conformance against the v1 schema, and commits only the clean ones; this writes
-/// the committed v2 bytes back to disk and flips the file-state baseline.
+/// The **prior shape (`from`) is resolved per committed doc by its schema-version stamp**
+/// (`design/corpus-migration.md` → Prior-schema sourcing):
+/// - **at-or-above** the doctype's current version → `already-current`, byte-untouched.
+/// - **stamp absent** (the v0 corpus state) → `from = strip_stamp(to)`, the unchanged
+///   `added-optional-field` stamp path (the live Inc-3 dogfood); the stamp is *added*.
+/// - **below-version** (`1 ≤ k < current`, a v1→v2 transition) → `from` = the versioned
+///   snapshot `schema-snapshots/<ty>.v<k>.yaml` via [`crate::pack::load_prior_schema`]; the
+///   structural diff is applied **and** the stamp is **value-bumped** `k → current` (it
+///   already exists, so this is a `set_field` splice, not an add-field). A **missing**
+///   snapshot **blocks** that doc with a route — never a silent `already-current` (closing
+///   the Inc-3 detector/verb divergence; [`DECISIONS.md`] → 2026-06-25 audit Finding 2).
+///
+/// Each doc's change list is the schema-diff filtered to what it still needs (a prose slot
+/// already authored is dropped, so it flips cleanly on a re-run). The engine fold applies
+/// them, gates each doc on conformance against the current schema, and commits only the
+/// clean ones; this writes the migrated bytes back to disk and flips the file-state baseline.
 pub(crate) fn migrate_committed_corpus(
+    pack: &dyn PackSource,
     repo_root: &Path,
     jigc_root: &Path,
     doctypes: &[DoctypeMigration],
@@ -157,35 +176,67 @@ pub(crate) fn migrate_committed_corpus(
             continue;
         };
         // The stamp's value comes from the doctype's manifest version: thread it in as the
-        // field `default` so the transform's `added-optional-field` branch (which has no
-        // value source for a bare `set`-derived field) places it deterministically.
-        let transform_to = with_stamp_default(&dt.to, dt.version);
-        let fixed = schema_diff(&dt.from, &transform_to);
+        // field `default` so the v0 add-field branch (which has no value source for a bare
+        // `set`-derived field) places it deterministically. Inert for the below-version
+        // path (the stamp is already present there — it is value-bumped, not added).
+        let to = with_stamp_default(&dt.to, dt.version);
         for slug in committed_slugs(repo_root, location) {
             let rel_key = format!("{location}{slug}.md");
             let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
                 continue; // read race: skip; the next run re-checks.
             };
             let source = String::from_utf8_lossy(&bytes).into_owned();
-            let stamp = read_stamp_from_source(&source);
-            if stamp.is_some_and(|s| s >= dt.version) {
-                report.already_current.push(rel_key);
-                continue;
+            match read_stamp_from_source(&source) {
+                // At or above the current version: already current, byte-untouched.
+                Some(s) if s >= dt.version => report.already_current.push(rel_key),
+                // A below-version stamp (a v1→v2 transition): source the prior shape from
+                // the versioned snapshot store and value-bump the stamp `k → current`. A
+                // missing snapshot blocks the doc — never a silent already-current (the
+                // Finding-2 fix: a doc the version-aware detector routes `migrate` is
+                // migrated by the verb).
+                Some(k) => match crate::pack::load_prior_schema(pack, &dt.ty, k) {
+                    Ok(from) => {
+                        let changes = per_doc_changes(&schema_diff(&from, &to), &source, false);
+                        // The stamp is value-bumped `k → current` **post-fold** (it already
+                        // exists, so it is a `set_field` value splice, not an add-field) — on
+                        // the gated v2 bytes, which are guaranteed to conform to `to` (the
+                        // committed source's own shape may be the prior `from`, so it cannot be
+                        // bumped directly; the gated v2 always can). `bump_to` carries the
+                        // target version into the post-fold pass.
+                        prepared.push(PreparedDoc {
+                            rel_key,
+                            source,
+                            from,
+                            to: to.clone(),
+                            changes,
+                            bump_to: Some(dt.version),
+                        });
+                    }
+                    Err(_) => {
+                        let route = missing_snapshot_route(&rel_key, &dt.ty, k);
+                        report.blocked.push((rel_key, route));
+                    }
+                },
+                // Stamp absent (the v0 corpus state): the unchanged add-field path (the stamp
+                // is *added* at the current value via its `default`, so no post-fold bump).
+                None => {
+                    let from = strip_stamp(&dt.to);
+                    let changes = per_doc_changes(&schema_diff(&from, &to), &source, true);
+                    if changes.is_empty() {
+                        // Nothing this doc needs (its shape already matches): leave it.
+                        report.already_current.push(rel_key);
+                        continue;
+                    }
+                    prepared.push(PreparedDoc {
+                        rel_key,
+                        source,
+                        from,
+                        to: to.clone(),
+                        changes,
+                        bump_to: None,
+                    });
+                }
             }
-            let changes = per_doc_changes(&fixed, &source, stamp.is_none());
-            if changes.is_empty() {
-                // Nothing this doc needs (e.g. a below-version stamp the add-field branch
-                // cannot value-bump): leave it, already at its shape.
-                report.already_current.push(rel_key);
-                continue;
-            }
-            prepared.push(PreparedDoc {
-                rel_key,
-                source,
-                from: dt.from.clone(),
-                to: transform_to.clone(),
-                changes,
-            });
         }
     }
     prepared.sort_by(|a, b| a.rel_key.cmp(&b.rel_key));
@@ -208,6 +259,14 @@ pub(crate) fn migrate_committed_corpus(
     for (i, outcome) in result.docs.iter().enumerate() {
         match outcome {
             DocOutcome::Migrated { id, v2 } => {
+                // A below-version doc value-bumps its schema-version stamp `k → current` on
+                // the gated v2 bytes, then re-gates (the bump is a byte-stable value splice
+                // that keeps the doc conformant — asserted, not assumed). A stamp-absent
+                // (v0) doc already carries the current stamp from the add-field branch.
+                let v2 = match prepared[i].bump_to {
+                    Some(version) => bump_and_regate(&prepared[i].to, v2, version)?,
+                    None => v2.clone(),
+                };
                 engine::state::persist(&repo_root.join(id), v2.as_bytes())
                     .with_context(|| format!("writing the migrated doc {id}"))?;
                 // Re-baseline an already-tracked doc so its rewritten bytes are not
@@ -250,6 +309,10 @@ struct PreparedDoc {
     from: Schema,
     to: Schema,
     changes: Vec<SchemaChange>,
+    /// `Some(version)` for a below-version doc whose schema-version stamp is value-bumped to
+    /// `version` post-fold (over the gated v2 bytes); `None` for a stamp-absent (v0) doc,
+    /// whose stamp is *added* at the current value by the add-field branch.
+    bump_to: Option<u32>,
 }
 
 /// The per-doc change list: the doctype's `fixed` schema-diff filtered to what this doc
@@ -308,6 +371,78 @@ fn with_stamp_default(schema: &Schema, version: u32) -> Schema {
         }
     }
     out
+}
+
+/// **Value-bump** a migrated doc's schema-version stamp to `version` and **re-gate** the
+/// result — the v1→v2 stamp transition (`design/corpus-migration.md` → the stamp value-bump),
+/// distinct from the v0→v1 add-field path (the field already exists, so `added-field` does not
+/// cover it). Called **post-fold** over the gated v2 bytes, which conform to `schema` (the
+/// committed source's own shape may still be the prior `from`, so it cannot be bumped
+/// directly; the gated v2 always can).
+///
+/// The bump is [`engine::write::set_field`] — a present-field value splice (byte-stable: it
+/// replaces only the value digits after `schema-version:`, every other byte intact). The
+/// re-gate asserts the bumped bytes still conform (they do — the stamp's *value* is not a
+/// conformance constraint), proving byte-stability + conformance rather than trusting reuse.
+/// A failure (a snapshot drift the deferred snapshot-hash gate would otherwise catch) fails
+/// the run **loudly** ([`DECISIONS.md`] → snapshot hashing deferred / fails loudly).
+fn bump_and_regate(schema: &Schema, v2: &str, version: u32) -> Result<String> {
+    let bumped = bump_stamp(schema, v2, version)?;
+    let doc = engine::parse::parse_sections(schema, &bumped)
+        .map_err(|e| anyhow::anyhow!("re-parsing the value-bumped doc: {e:?}"))?;
+    let findings = engine::validate::schema_conformance(schema, &bumped, &doc);
+    if !findings.is_empty() {
+        anyhow::bail!("the value-bumped doc no longer conforms: {findings:?}");
+    }
+    Ok(bumped)
+}
+
+/// Splice a present schema-version stamp's value to `version` via [`engine::write::set_field`]
+/// (a byte-stable value splice). `schema` is the shape the bumped `source` conforms to (its
+/// header carries the stamp field). An absent stamp section / a non-conforming source is an
+/// `Err` (loud, never a silent skip).
+fn bump_stamp(schema: &Schema, source: &str, version: u32) -> Result<String> {
+    let section = stamp_section_id(schema).ok_or_else(|| {
+        anyhow::anyhow!("the schema declares no schema-version stamp section to value-bump")
+    })?;
+    engine::write::set_field(
+        schema,
+        source,
+        &section,
+        SCHEMA_VERSION_FIELD,
+        &version.to_string(),
+    )
+    .map_err(|e| anyhow::anyhow!("value-bumping the schema-version stamp `{section}`: {e:?}"))
+}
+
+/// The id of the section carrying the schema-version stamp field — the existing header for a
+/// header-bearing doctype, the injected `meta` header for a header-less one. The [`set_field`]
+/// address for the value-bump.
+///
+/// [`set_field`]: engine::write::set_field
+fn stamp_section_id(schema: &Schema) -> Option<String> {
+    schema
+        .sections
+        .iter()
+        .find_map(|section| match &section.body {
+            SectionBody::Simple { fields, .. }
+                if fields.iter().any(|f| f.id == SCHEMA_VERSION_FIELD) =>
+            {
+                Some(section.id.clone())
+            }
+            _ => None,
+        })
+}
+
+/// The route for a below-version stamped doc whose prior-shape snapshot is **not shipped**:
+/// the migration cannot source the `from` it would diff against, so the doc is blocked (never
+/// a silent `already-current` — the detector routes it `migrate`). Ship the snapshot, re-run.
+fn missing_snapshot_route(rel_key: &str, ty: &str, stamp: u32) -> String {
+    format!(
+        "blocked — `{rel_key}` is stamped schema-version {stamp}, below current, but no prior-schema \
+         snapshot `schema-snapshots/{ty}.v{stamp}.yaml` is shipped to source the migration from; \
+         ship the snapshot, then re-run `jigc migrate-corpus`"
+    )
 }
 
 /// A clone of `schema` with the engine schema-version stamp field removed — the doctype's
@@ -427,15 +562,41 @@ mod tests {
         schema
     }
 
-    /// Build a [`DoctypeMigration`] from an explicit prior shape `from` + the stamp-injected
-    /// `to`, at `version`.
-    fn migration(from: Schema, to: Schema, version: u32) -> DoctypeMigration {
+    /// Build a [`DoctypeMigration`] from the stamp-injected current shape `to`, at `version`.
+    /// The prior shape is resolved per committed doc by stamp inside
+    /// [`migrate_committed_corpus`] (stamp-absent → `strip_stamp(to)`; below-version →
+    /// the snapshot store), so it is not a field here.
+    fn migration(to: Schema, version: u32) -> DoctypeMigration {
         DoctypeMigration {
             ty: to.ty.clone(),
-            from,
             to,
             version,
         }
+    }
+
+    /// Build a throwaway pack dir carrying one prior-schema snapshot
+    /// (`schema-snapshots/<ty>.v<version>.yaml`) + a freeze manifest declaring `<ty>` frozen,
+    /// so [`crate::pack::load_prior_schema`] resolves field-types **and** injects the
+    /// schema-version stamp into the snapshot identically to the current schema. Returns the
+    /// owning [`TempDir`] (the caller keeps it alive so the files outlive the pack).
+    fn snapshot_pack(ty: &str, version: u32, snapshot_yaml: &str) -> TempDir {
+        let dir = TempDir::new("snap-pack");
+        let snaps = dir.path().join("schema-snapshots");
+        fs::create_dir_all(&snaps).expect("mk schema-snapshots");
+        fs::write(snaps.join(format!("{ty}.v{version}.yaml")), snapshot_yaml).expect("write snap");
+        let cfg = dir.path().join("config");
+        fs::create_dir_all(&cfg).expect("mk config");
+        // Only the doctype name gates stamp injection; the manifest version/hash are not read
+        // on this path (the freeze gate does not run here), so they are placeholders.
+        fs::write(
+            cfg.join("schema-manifest.yaml"),
+            format!(
+                "doctypes:\n  - type: {ty}\n    schema-version: {version}\n    schema-hash: {}\n",
+                "0".repeat(64)
+            ),
+        )
+        .expect("write manifest");
+        dir
     }
 
     /// Write `content` to `repo_root/<rel_key>`, creating the location dir.
@@ -485,7 +646,6 @@ sections:
         let jigc_root = repo.path().join(".jigc");
 
         let to = v1_schema(note_v0_yaml());
-        let from = strip_stamp(&to);
 
         // A conformant v0 note authored through `render` over the **genuine** header-less
         // shape (the byte-stable form a real header-less committed doc has — `strip_stamp`
@@ -514,8 +674,11 @@ sections:
         );
         write_doc(repo.path(), "notes/a-note.md", &v0);
 
+        // The stamp-absent (v0) path derives `from = strip_stamp(to)` internally and never
+        // touches the snapshot store, so the pack is unused here.
+        let pack = crate::pack::EmbeddedPack::new();
         let report =
-            migrate_committed_corpus(repo.path(), &jigc_root, &[migration(from, to.clone(), 1)])
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 1)])
                 .expect("migration runs");
 
         assert_eq!(report.migrated, vec!["notes/a-note.md".to_string()]);
@@ -544,7 +707,6 @@ sections:
         let jigc_root = repo.path().join(".jigc");
 
         let to = v1_schema(note_v0_yaml());
-        let from = strip_stamp(&to);
 
         // A note already stamped at the current version (rendered through the v1 schema).
         let stamped = render(
@@ -575,7 +737,8 @@ sections:
         );
         write_doc(repo.path(), "notes/done-note.md", &stamped);
 
-        let report = migrate_committed_corpus(repo.path(), &jigc_root, &[migration(from, to, 1)])
+        let pack = crate::pack::EmbeddedPack::new();
+        let report = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 1)])
             .expect("migration runs");
 
         assert_eq!(
@@ -587,19 +750,22 @@ sections:
         assert_eq!(after, stamped, "an already-current doc is byte-untouched");
     }
 
-    /// The combined **stamp-flips-last** case over a synthetic doctype whose v0→v1 adds the
-    /// stamp **and** a new required trailing slot (`rationale`). A v0 doc that lacks the slot
-    /// migrates to a minted-empty slot that **fails the gate**, so the whole doc rolls back —
-    /// it stays byte-identical v0, **unstamped**, routed to the agent. Once the prose is
-    /// authored, the same doc migrates clean and the stamp **flips**.
-    #[test]
-    fn combined_change_stamp_flips_only_after_prose_authored() {
-        let repo = TempDir::new("flips-last");
-        let jigc_root = repo.path().join(".jigc");
+    /// The v1 prior shape of the `memo` doctype (a single `vision` slot) — the snapshot the
+    /// below-version path sources `from` from.
+    fn memo_v1_yaml() -> &'static str {
+        "\
+type: memo
+location: memos/
+id-from: title
+sections:
+  - id: vision
+    slot: { hint: \"v\" }
+"
+    }
 
-        // v1 adds a NEW required trailing `rationale` slot AND (via injection) the stamp.
-        let to = v1_schema(
-            b"\
+    /// The v2 current shape of the `memo` doctype (a new required trailing `rationale` slot).
+    fn memo_v2_yaml() -> &'static [u8] {
+        b"\
 type: memo
 location: memos/
 id-from: title
@@ -608,44 +774,56 @@ sections:
     slot: { hint: \"v\" }
   - id: rationale
     slot: { hint: \"why\" }
-",
-        );
-        // The genuine v0 prior shape: just `vision` (no rationale, no stamp).
-        let from = load_schema(
-            b"\
-type: memo
-location: memos/
-id-from: title
-sections:
-  - id: vision
-    slot: { hint: \"v\" }
-",
-        )
-        .expect("v0 memo loads");
-        // The intermediate shape an agent authors against (v1 minus the stamp): vision +
-        // the now-present rationale, used to render the authored doc.
-        let authored_shape = strip_stamp(&to);
+"
+    }
 
-        // --- phase 1: the v0 doc lacks rationale → migration blocks, doc stays v0 ---
-        let v0 = render(
+    /// The **stamp-flips-last** discipline on the below-version (v1→v2) snapshot path: a memo
+    /// whose v1→v2 adds a new required `rationale` slot, sourced `from` the versioned snapshot
+    /// store. The committed **v1-stamped** doc lacks the slot, so the migration mints it empty,
+    /// **fails the gate, and rolls back** — the doc stays byte-identical v1 (stamp `1`, **not**
+    /// value-bumped to `2`), routed to the agent. Once the prose is authored, the same doc
+    /// migrates clean and the stamp **flips** `1→2` — proof the value-bump lands only on a
+    /// clean gate (post-fold), never while prose is pending.
+    #[test]
+    fn below_version_prose_needing_stamp_flips_only_after_prose_authored() {
+        let repo = TempDir::new("flips-last");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("memo", 1, memo_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(memo_v2_yaml());
+        // The prior shape the verb sources from the snapshot store (vision + injected stamp)
+        // — the byte form a committed v1 memo is rendered against.
+        let from = crate::pack::load_prior_schema(&pack, "memo", 1).expect("the memo.v1 snapshot");
+
+        // --- phase 1: the v1 doc lacks rationale → migration blocks, doc stays v1 ---
+        let v1 = render(
             &from,
             &Instance {
                 title: "Cache Memo".to_string(),
-                sections: vec![SectionContent {
-                    id: "vision".to_string(),
-                    slot: Some("Move the cache.".to_string()),
-                    ..Default::default()
-                }],
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "vision".to_string(),
+                        slot: Some("Move the cache.".to_string()),
+                        ..Default::default()
+                    },
+                ],
             },
         );
-        write_doc(repo.path(), "memos/cache-memo.md", &v0);
+        write_doc(repo.path(), "memos/cache-memo.md", &v1);
 
-        let blocked_report = migrate_committed_corpus(
-            repo.path(),
-            &jigc_root,
-            &[migration(from.clone(), to.clone(), 1)],
-        )
-        .expect("migration runs");
+        let blocked_report =
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
+                .expect("migration runs");
 
         assert!(
             blocked_report.migrated.is_empty(),
@@ -666,21 +844,30 @@ sections:
             "the route is Framing-A author-then-re-run: {}",
             blocked_report.blocked[0].1
         );
-        // STAMP-FLIPS-LAST: the on-disk doc is byte-identical v0 — unstamped — because the
-        // whole scratch (stamp included) rolled back on the failed gate.
-        let still_v0 = fs::read_to_string(repo.path().join("memos/cache-memo.md")).expect("read");
-        assert_eq!(still_v0, v0, "the blocked doc is byte-identical v0");
+        // STAMP-FLIPS-LAST: the on-disk doc is byte-identical v1 — stamp NOT bumped to 2 —
+        // because the value-bump is post-fold and the doc never reached a clean gate, so
+        // nothing was written.
+        let still_v1 = fs::read_to_string(repo.path().join("memos/cache-memo.md")).expect("read");
+        assert_eq!(still_v1, v1, "the blocked doc is byte-identical v1");
         assert!(
-            !still_v0.contains("schema-version"),
-            "the stamp did NOT flip while the prose is pending; got:\n{still_v0}"
+            still_v1.contains("schema-version: 1") && !still_v1.contains("schema-version: 2"),
+            "the stamp did NOT flip while the prose is pending; got:\n{still_v1}"
         );
 
-        // --- phase 2: the agent authors the rationale slot → migration flips the stamp ---
+        // --- phase 2: the agent authors the rationale slot → migration flips the stamp 1→2 ---
         let authored = render(
-            &authored_shape,
+            &to,
             &Instance {
                 title: "Cache Memo".to_string(),
                 sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
                     SectionContent {
                         id: "vision".to_string(),
                         slot: Some("Move the cache.".to_string()),
@@ -697,7 +884,7 @@ sections:
         write_doc(repo.path(), "memos/cache-memo.md", &authored);
 
         let flipped_report =
-            migrate_committed_corpus(repo.path(), &jigc_root, &[migration(from, to.clone(), 1)])
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
                 .expect("re-migration runs");
 
         assert_eq!(
@@ -708,13 +895,203 @@ sections:
         assert!(flipped_report.blocked.is_empty(), "no longer blocked");
         let flipped = fs::read_to_string(repo.path().join("memos/cache-memo.md")).expect("read");
         assert!(
-            flipped.contains("schema-version: 1"),
-            "the stamp flips once the prose is authored and the doc gates clean; got:\n{flipped}"
+            flipped.contains("schema-version: 2"),
+            "the stamp flips 1→2 once the prose is authored and the doc gates clean; got:\n{flipped}"
         );
         assert!(
             flipped.contains("Move the cache.") && flipped.contains("Latency wins."),
             "the authored prose survives; got:\n{flipped}"
         );
         assert_conformant_and_stable(&to, &flipped);
+    }
+
+    /// The v1 prior shape of the `card` doctype: a single **fixed-slot** `body` section — the
+    /// reconstructed-shape analog of the M25 `prd.requirements` fixed-slot→repeatable reshape.
+    fn card_v1_yaml() -> &'static str {
+        "\
+type: card
+location: cards/
+id-from: title
+sections:
+  - id: body
+    slot: { hint: \"the card body\" }
+"
+    }
+
+    /// The v2 current shape of the `card` doctype: `body` promoted to a **repeatable**
+    /// item-block (the old slot prose becomes the default first item).
+    fn card_v2_yaml() -> &'static [u8] {
+        b"\
+type: card
+location: cards/
+id-from: title
+sections:
+  - id: body
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"one card\" } }
+"
+    }
+
+    /// The headline T2 case: a **below-version stamped** doc (stamp `1`, current `2`) migrates
+    /// through `migrate_committed_corpus` (the same core the verb runs) — `from` sourced from
+    /// the `schema-snapshots/card.v1.yaml` snapshot, the `fixed-slot→repeatable` structural
+    /// change applied, and the stamp **value-bumped** `1→2`. The result (a) round-trips
+    /// byte-stable + (b) conforms under the current schema ([`assert_conformant_and_stable`]),
+    /// (c) is **idempotent** on re-run (now stamp-2 ⇒ already-current, byte-untouched), and
+    /// (d) **detector/verb agree**: a below-version doc the version-aware detector routes
+    /// `migrate` (proven over the real binary in `tests/schema_conformance_routing.rs`) is
+    /// **migrated** by the verb, never reported `already-current` (DECISIONS → audit Finding 2).
+    #[test]
+    fn below_version_doc_migrates_via_snapshot_with_stamp_value_bump() {
+        let repo = TempDir::new("below-version");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("card", 1, card_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(card_v2_yaml());
+        // The fixed-slot prior shape (with the injected stamp) — the form a committed v1 card
+        // is rendered against, sourced from the snapshot store exactly as the verb sources it.
+        let from = crate::pack::load_prior_schema(&pack, "card", 1).expect("the card.v1 snapshot");
+
+        let v1 = render(
+            &from,
+            &Instance {
+                title: "First Card".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "body".to_string(),
+                        slot: Some("Wire the cache.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        assert!(
+            v1.contains("schema-version: 1"),
+            "the committed doc is stamped below current; got:\n{v1}"
+        );
+        write_doc(repo.path(), "cards/first-card.md", &v1);
+
+        let report =
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
+                .expect("migration runs");
+
+        // (d) detector/verb agree: a below-version doc is MIGRATED, never already-current.
+        assert_eq!(
+            report.migrated,
+            vec!["cards/first-card.md".to_string()],
+            "the below-version doc migrates: {report:?}"
+        );
+        assert!(
+            report.already_current.is_empty() && report.blocked.is_empty(),
+            "never already-current or blocked: {report:?}"
+        );
+
+        let migrated = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
+        // The stamp is value-bumped 1→2 (the v1→v2 transition).
+        assert!(
+            migrated.contains("schema-version: 2") && !migrated.contains("schema-version: 1"),
+            "the stamp is value-bumped 1→2; got:\n{migrated}"
+        );
+        // The structural change landed: the slot prose is preserved as the default item.
+        assert!(
+            migrated.contains("Wire the cache."),
+            "the slot prose survives as the default item; got:\n{migrated}"
+        );
+        // (a) round-trip byte-stable + (b) conformant under the current schema.
+        assert_conformant_and_stable(&to, &migrated);
+
+        // (c) idempotent: a re-run finds the now-stamp-2 doc already current, byte-untouched.
+        let rerun =
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
+                .expect("re-migration runs");
+        assert_eq!(
+            rerun.already_current,
+            vec!["cards/first-card.md".to_string()],
+            "the migrated doc is already-current on a re-run: {rerun:?}"
+        );
+        assert!(
+            rerun.migrated.is_empty(),
+            "nothing migrates twice: {rerun:?}"
+        );
+        let after = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
+        assert_eq!(after, migrated, "the re-run leaves the doc byte-untouched");
+    }
+
+    /// A below-version stamped doc whose prior-shape snapshot is **not shipped** is **blocked**
+    /// with a route naming the missing snapshot — never a silent `already-current` (the
+    /// detector routes it `migrate`, so the verb must surface it, not drop it).
+    #[test]
+    fn below_version_doc_with_a_missing_snapshot_is_blocked_with_a_route() {
+        let repo = TempDir::new("missing-snap");
+        let jigc_root = repo.path().join(".jigc");
+
+        // A pack with NO `schema-snapshots/` entry, so `load_prior_schema(card, 1)` errors.
+        let pack_dir = TempDir::new("empty-pack");
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(card_v2_yaml());
+        // The committed v1 doc is rendered against the in-memory fixed-slot shape (the pack
+        // ships no snapshot to source it from — that is the point of this case).
+        let from_shape = {
+            let mut s = load_schema(card_v1_yaml().as_bytes()).expect("v1 card loads");
+            inject_schema_version_stamp(&mut s);
+            s
+        };
+        let v1 = render(
+            &from_shape,
+            &Instance {
+                title: "First Card".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "body".to_string(),
+                        slot: Some("Wire the cache.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        write_doc(repo.path(), "cards/first-card.md", &v1);
+
+        let report = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 2)])
+            .expect("migration runs");
+
+        assert!(
+            report.migrated.is_empty() && report.already_current.is_empty(),
+            "a missing snapshot is neither migrated nor already-current: {report:?}"
+        );
+        assert_eq!(report.blocked.len(), 1, "the doc is blocked: {report:?}");
+        assert_eq!(report.blocked[0].0, "cards/first-card.md");
+        assert!(
+            report.blocked[0]
+                .1
+                .contains("schema-snapshots/card.v1.yaml")
+                && report.blocked[0].1.contains("re-run `jigc migrate-corpus`"),
+            "the route names the missing snapshot + the re-run: {}",
+            report.blocked[0].1
+        );
+        // The doc is left byte-untouched (never silently rewritten).
+        let after = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
+        assert_eq!(after, v1, "the blocked doc is byte-untouched");
     }
 }
