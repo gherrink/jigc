@@ -842,6 +842,40 @@ pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> Str
     }
 }
 
+/// Render a `jigc migrate-corpus` outcome to the surface `format` selects: `agent` /
+/// `human` emit a per-doc summary — one `migrated`/`already current` line per doc plus, for
+/// each blocked doc, its Framing-A route — followed by the routing footer; `json` emits the
+/// generic projection of the report (tooling-consumed, no footer). The verb writes the
+/// migrated docs; the CLI only formats the report the migration returns (the determinism
+/// boundary — the structural transform is CLI-owned, no LLM).
+pub fn corpus_migration(
+    format: Format,
+    report: &crate::migrate_corpus::CorpusMigrationReport,
+) -> String {
+    match format {
+        Format::Json => json(report),
+        Format::Agent | Format::Human => {
+            let mut out = format!(
+                "corpus migration: {} migrated, {} already current, {} blocked\n",
+                report.migrated.len(),
+                report.already_current.len(),
+                report.blocked.len(),
+            );
+            for path in &report.migrated {
+                out.push_str(&format!("  migrated   {path}\n"));
+            }
+            for path in &report.already_current {
+                out.push_str(&format!("  current    {path}\n"));
+            }
+            for (path, route) in &report.blocked {
+                out.push_str(&format!("  blocked    {path}\n    route: {route}\n"));
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
 /// Render a successful `jigc milestone <verb>` action to the surface `format`
 /// selects: `agent` / `human` emit the action summary line (e.g. `minted
 /// milestone:<id> …`) followed by the routing footer; `json` emits a generic

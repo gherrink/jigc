@@ -16,6 +16,7 @@ mod doc;
 mod ingest;
 mod locate;
 mod migrate;
+mod migrate_corpus;
 mod milestone;
 mod orient;
 mod pack;

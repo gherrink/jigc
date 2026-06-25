@@ -12,6 +12,7 @@ use crate::describe;
 use crate::doc::DocCommand;
 use crate::ingest;
 use crate::migrate;
+use crate::migrate_corpus;
 use crate::milestone::MilestoneCommand;
 use crate::orient;
 use crate::render;
@@ -162,6 +163,15 @@ pub enum Command {
         r#as: String,
     },
 
+    /// Migrate the committed managed corpus onto the current schema — `jigc
+    /// migrate-corpus` re-parses every committed doc of a frozen persisted doctype,
+    /// applies the deterministic v0→v1 transform (the schema-version stamp + any
+    /// structural splice) byte-stable, and writes each doc back only on a clean
+    /// conformance gate (the stamp flips last). A prose-needing change is routed to
+    /// the agent to author, then re-run. Detect-with `jigc validate`; this migrates.
+    /// Disjoint from `jigc migrate` (foreign adoption) and `jigc upgrade` (config).
+    MigrateCorpus,
+
     /// Drop a single managed doc from jigc's index and state — `jigc unmanage
     /// <path>` removes its edges and file-state baseline, leaving the file bytes on
     /// disk (the inverse of `ingest`'s adopt). Idempotent: a re-run is a clean no-op.
@@ -256,6 +266,7 @@ impl Cli {
             Command::Upgrade => run_upgrade(self.format),
             Command::Ingest => run_ingest(self.format),
             Command::Migrate { path, r#as } => run_migrate(self.format, &path, &r#as),
+            Command::MigrateCorpus => run_migrate_corpus(self.format),
             Command::Unmanage { path } => run_unmanage(self.format, &path),
             Command::Describe => run_describe(self.format),
             Command::Validate => run_validate_store(self.format),
@@ -471,6 +482,25 @@ fn run_migrate(format: Format, path: &str, doctype: &str) -> ExitCode {
         }
     };
     migrate::run(&cwd, path, doctype, format)
+}
+
+/// Run `jigc migrate-corpus` against the current working directory: locate the repo +
+/// project layer, build the frozen persisted doctypes' v0→v1 migration jobs from the pack,
+/// migrate the committed corpus (per-doc gated, byte-stable, the schema-version stamp
+/// flipped last), render the report through the selected `format`, and print it. A clean
+/// run exits 0 — even with docs routed to the agent to author prose (a blocked doc is an
+/// expected interim state of the detect→block→migrate loop, not a failure). A locator error
+/// (no repo / no project layer) routes to stderr and exits non-zero
+/// (`design/corpus-migration.md` → Acceptance flows; `design/worked-examples.md` → flow 35).
+fn run_migrate_corpus(format: Format) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    migrate_corpus::run(&cwd, format)
 }
 
 /// Run `jigc unmanage <rel_path>` against the current working directory: locate the
@@ -1064,6 +1094,20 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "migrate", "--as", "changelog"])
             .expect_err("`jigc migrate --as <doctype>` with no path must be rejected");
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn migrate_corpus_parses() {
+        let cli =
+            Cli::try_parse_from(["jigc", "migrate-corpus"]).expect("`jigc migrate-corpus` parses");
+        assert_eq!(cli.command, Command::MigrateCorpus);
+    }
+
+    #[test]
+    fn migrate_corpus_takes_no_positional() {
+        let err = Cli::try_parse_from(["jigc", "migrate-corpus", "extra"])
+            .expect_err("`jigc migrate-corpus` takes no positional argument");
+        assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 
     #[test]

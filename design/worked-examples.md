@@ -2230,3 +2230,38 @@ The M33 acceptance: **the frozen-v1 doctype set self-enforces.** A versioned/has
 2. **The unmutated copy composes clean.** A faithful dev-pack copy matches its shipped manifest, so the gate is inert and `start` exits 0 (`unmutated_pack_copy_composes_clean`) — the control that proves the gate isn't a blanket reject.
 3. **A manifest-less pack is unaffected.** The *same* drift composes clean once `schema-manifest.yaml` is dropped (`manifest_less_pack_is_unaffected`) — the omitting context: the freeze records what a pack *declares* frozen, and a pack that declares none is never gated.
 4. **The freeze is composition-independent.** The gate checks the manifest-owning pack's *own* shipped shapes in isolation, so a higher-precedence pack that shadows a frozen doctype with a divergent shape (the embedded methodology pack's own `commit`) does not perturb the dev pack's freeze — every methodology / multi-pack composition still composes clean.
+
+## 35. The corpus migrated — a stranded v0 corpus is detected, stamped, and re-validated clean (M34)
+
+The M34 acceptance: **a managed corpus at an old schema version is detected, migrated, and made conformant — the full detect→block→migrate loop, end-to-end, deterministic and CLI-owned.** Flow 34 froze the v1 shape and made an un-migrated schema change *blocked* at pack-load; M34 builds the **corpus-side** that lets a *blocked* change be *migrated* rather than only blocked. The one genuinely pending shape change post-freeze is the **schema-version stamp** itself: the engine injects an `added-optional-field` stamp declaration into every frozen persisted doctype, so a committed corpus authored before the stamp existed (a **v0 corpus**) is a real `added-field` migration target — the live dogfood, not synthetic coverage. `jigc migrate-corpus` runs the real schema-diff classifier over the genuine corpus and applies the engine transform's `added-optional-field` branch byte-stable, per-doc gated, **the stamp flipped last** ([corpus-migration.md](corpus-migration.md) → Acceptance flows + the stamp-flips-last rule; the determinism boundary: no LLM in the structural path). The verb is disjoint from `jigc migrate` (foreign-doc *adoption*, LLM re-author) and `jigc upgrade` (config-delta reconciliation). Notation illustrative; the loop below is the shape the acceptance test (`crates/cli/tests/corpus_migration.rs`) drives end-to-end through the built binary, with the header-less fence-introducing case + the combined stamp-flips-last case covered over the verb core (`crates/cli/src/migrate_corpus.rs`).
+
+### The walk — detect the v0 corpus, migrate it, re-validate clean
+
+```
+# a committed ADR authored before the schema-version stamp existed (the v0 corpus state):
+# docs/decisions/alpha-decision.md carries `status:` + `date:` in its header, NO `schema-version:`.
+
+# 1. DETECT — the store-scope sweep reports the stranded doc, routed `migrate` (report-only, exit 0):
+jigc validate
+#   schema-conformance.field-value-conformant — docs/decisions/alpha-decision.md …
+#     route: migrate — … carries no schema-version stamp; run the corpus migration …
+
+# 2. MIGRATE — the verb stamps the corpus byte-stable via the real added-optional-field transform:
+jigc migrate-corpus
+#   corpus migration: 1 migrated, 0 already current, 0 blocked
+#     migrated   docs/decisions/alpha-decision.md
+# the ADR now carries `schema-version: 1` spliced into its existing header; status/date + body unchanged.
+
+# 3. RE-VALIDATE — the corpus is conformant + stamped v1: no schema-conformance finding, exit 0:
+jigc validate
+#   (no schema-conformance findings, no migrate route)
+```
+
+The **stamp-flips-last** rule, on a combined change (the stamp **plus** a new required slot): the migration mints the empty slot and the per-doc conformance gate **fails**, so the whole doc rolls back — it stays byte-identical v0, **unstamped**, and is routed to the agent (Framing A) to author the prose. The schema-version stamp therefore never lands mid-migration; once the prose is authored and the doc gates clean, a re-run flips the stamp. An already-stamped (current) doc is skipped byte-untouched (the false-positive guard).
+
+### What it asserts (the M34 acceptance bar)
+
+1. **A v0 corpus is detected, then migrated, then re-validates clean.** The unstamped ADR is reported `route: migrate`; `jigc migrate-corpus` splices `schema-version: 1` into its header byte-stable (prior fields + body preserved); a re-validate surfaces no schema-conformance finding (`migrate_corpus_stamps_the_v0_dogfood_then_revalidates_clean`).
+2. **An already-current corpus is a clean no-op.** A doc stamped at the current version is left byte-identical — the migration migrates nothing (`migrate_corpus_is_a_no_op_on_an_already_current_corpus`; verb-core `already_current_doc_is_skipped_byte_untouched`).
+3. **The header-less case introduces the fence byte-stable.** A doctype that renders no front-matter gains a `---` block carrying the stamp, its body slots preserved (`header_less_doc_migration_introduces_the_fence_byte_stable`).
+4. **The stamp flips last.** A combined stamp + prose-needing change leaves the doc byte-identical v0 and unstamped until the prose is authored, then flips the stamp on a clean re-run (`combined_change_stamp_flips_only_after_prose_authored`) — the omitting context that proves the stamp never lands mid-migration.
