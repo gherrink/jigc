@@ -1,0 +1,20 @@
+# prd.v1 — the FIXED-SLOT prior shape of the `prd` doctype (the original M9 form,
+# before the M25 reshape to a repeatable `requirements` section). A full, real,
+# reviewable schema file in `schema-snapshots/` so `jigc migrate-corpus` diffs two
+# genuine declared schemas (the determinism boundary in its strongest form — never a
+# hand-written migration recipe). The verb sources `from` from this snapshot keyed on
+# each committed doc's schema-version stamp. See corpus-migration.md → Prior-schema
+# sourcing; worked-examples.md → flow 36.
+type: prd
+location: prds/
+id-from: title
+description: A product requirements document — the vision, the requirements, and the context for a piece of work, the first managed document a fresh project develops its idea into.
+usage: you are at the start of a new project and want to turn an idea into a shared statement of what to build and why, before any spec or code.
+
+sections:
+  - id: vision
+    slot: { hint: "The product vision in a sentence or two." }
+  - id: requirements
+    slot: { hint: "The requirements, each in a sentence or two." }
+  - id: context
+    slot: { hint: "Why it is needed and the constraints that shape it." }

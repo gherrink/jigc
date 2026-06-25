@@ -2265,3 +2265,40 @@ The **stamp-flips-last** rule, on a combined change (the stamp **plus** a new re
 2. **An already-current corpus is a clean no-op.** A doc stamped at the current version is left byte-identical — the migration migrates nothing (`migrate_corpus_is_a_no_op_on_an_already_current_corpus`; verb-core `already_current_doc_is_skipped_byte_untouched`).
 3. **The header-less case introduces the fence byte-stable.** A doctype that renders no front-matter gains a `---` block carrying the stamp, its body slots preserved (`header_less_doc_migration_introduces_the_fence_byte_stable`).
 4. **The stamp flips last.** A combined stamp + prose-needing change leaves the doc byte-identical v0 and unstamped until the prose is authored, then flips the stamp on a clean re-run (`combined_change_stamp_flips_only_after_prose_authored`) — the omitting context that proves the stamp never lands mid-migration.
+
+## 36. The corpus migrated, structurally — a v1→v2 fixed-slot→repeatable reshape sourced from the snapshot store (M34 Inc 4)
+
+Flow 35's dogfood was the v0→v1 **stamp** (an `added-optional-field` whose prior shape is derivable in-process, `from = strip_stamp(current)`). M34 Increment 4 makes the **structural** transform branches — built + unit-proven since Inc 2 but engine-substrate-only — reachable through the shipped `jigc migrate-corpus` verb, by giving it the one thing a genuine v1→v2 structural change needs and the current schema cannot supply: the **actual prior shape**. The pack stores prior shapes as **versioned snapshots** (`schema-snapshots/<type>.v<N>.yaml`, a dedicated pack resource kind), and the verb sources `from` per committed doc keyed on its schema-version stamp ([corpus-migration.md](corpus-migration.md) → Prior-schema sourcing). The headline is the **reconstructed M25 `prd.requirements` fixed-slot→repeatable reshape** (the riskiest net-new primitive), run end-to-end through the **compiled binary** over a `FilesystemPack` fixture (`JIGC_PACK_DIR`): the current `prd` at manifest version 2 (the repeatable shape) + `schema-snapshots/prd.v1.yaml` (the fixed-slot prior shape) + a committed corpus of v1-stamped fixed-slot prd docs. The migration diffs the two **real declared schemas**, applies the structural splice (the old slot prose preserved verbatim as the default first item), **value-bumps** the stamp `1→2` (a present-field `set_field` splice, distinct from the v0→v1 add), gates each doc on conformance, and writes it back byte-stable — **deterministic, CLI-owned, no LLM in the structural path**. Notation illustrative; the loop below is the shape the acceptance test (`crates/cli/tests/flow36_corpus_structural.rs`) drives through the built binary, with the below-version snapshot + value-bump cases also covered over the verb core (`crates/cli/src/migrate_corpus.rs`).
+
+### The walk — detect the below-version corpus, migrate it structurally, re-validate clean
+
+```
+# a committed v1 corpus: docs/prds/cache-prd.md carries `schema-version: 1` and the OLD
+# fixed-slot `## Requirements` prose, below the bumped manifest version (prd at v2).
+
+# 1. DETECT — the version-aware store sweep routes each below-version, non-conformant prd
+#    `migrate` (report-only, exit 0):
+jigc validate
+#   schema-conformance … — docs/prds/cache-prd.md …  route: migrate — …
+
+# 2. MIGRATE — the verb sources prd.v1 from the snapshot store, reshapes, value-bumps the stamp:
+jigc migrate-corpus
+#   corpus migration: 3 migrated, 0 already current, 0 blocked
+#     migrated   docs/prds/cache-prd.md
+# the requirements slot becomes a repeatable section; the old prose is its default first item;
+# the stamp is value-bumped `schema-version: 1` → `2`. vision/context prose unchanged.
+
+# 3. RE-VALIDATE — the migrated corpus is v2-conformant: no schema-conformance finding, exit 0:
+jigc validate
+#   (no schema-conformance findings, no migrate route)
+```
+
+A **widened-cardinality** secondary rides the same run: `adr.supersedes` `0..1`→`0..*` (snapshot `adr.v1.yaml` at the narrower card, the current `adr` at the wider). A committed v1 adr migrates **byte-identical-except-stamp** — the widening is a byte no-op (the existing value stays valid under the wider cardinality), so only the stamp value-bumps. **Detector and verb agree**: the docs the version-aware detector routes `migrate` are *migrated* by the verb, never reported `already-current` ([DECISIONS.md](../DECISIONS.md) → 2026-06-25 audit Finding 2). A below-version stamped doc whose prior-shape snapshot is **not shipped** is **blocked** with a route naming the missing snapshot (never a silent `already-current`).
+
+### What it asserts (the M34 Inc-4 acceptance bar)
+
+1. **A v1→v2 structural reshape migrates byte-stable through the real binary.** The fixed-slot `prd` is reshaped to the repeatable form with the old slot prose preserved as the default item, the stamp value-bumped `1→2`, v2-conformant (a re-validate finds no schema-conformance finding), and **idempotent** — a re-run is a byte-untouched no-op (`structural_v1_to_v2_migration_runs_through_the_real_binary`).
+2. **Deterministic across commit orders.** The same two-prd corpus committed in id-order and in **reverse** migrates to byte-identical output — the verb keys output on the path-sorted corpus, never on commit order (`structural_migration_is_byte_identical_across_commit_orders`; increment-workflow #7).
+3. **A widened-cardinality migration is byte-identical-except-stamp.** `adr.supersedes` `0..1`→`0..*` rewrites no instance bytes; only the stamp value-bumps (same test, the secondary doctype).
+4. **Detector and verb agree on the below-version case.** `jigc validate` routes the v1 prd docs `migrate`; `jigc migrate-corpus` migrates those same docs (never `already-current`) — the Finding-2 fix (same test; the missing-snapshot block + value-bump covered over the verb core in `migrate_corpus.rs`).
+5. **The Inc-3 v0→v1 stamp dogfood stays green** (`migrate_corpus_stamps_the_v0_dogfood_then_revalidates_clean`, flow 35) — the add-field path is unchanged by the snapshot-sourcing rework.

@@ -1,0 +1,28 @@
+# adr.v1 — the NARROWER-CARDINALITY prior shape of the `adr` doctype: `supersedes`
+# at `card: "0..1"` (a single superseded decision), the form before it widened to the
+# current `card: "0..*"`. The reconstructed `widened-cardinality` secondary migration
+# case: a committed v1 adr migrates byte-identical-except-stamp (the widening is a byte
+# no-op — the existing value stays valid under the wider cardinality — and the stamp is
+# value-bumped 1->2). A full, real, reviewable prior-schema snapshot, diffed against the
+# current shape exactly like prd.v1 above. See corpus-migration.md → Prior-schema
+# sourcing; worked-examples.md → flow 36.
+type: adr
+location: decisions/
+id-from: title
+description: A dated architectural decision record, capturing the context a choice was made in, the choice itself, and its consequences, with an optional link to the decision it supersedes.
+usage: a choice is worth preserving with its rationale, so a later reader can recover why the call was made or supersede it on the record.
+
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+      - { id: supersedes, type: ref, to: adr, card: "0..1", inverse: superseded-by }
+      - { id: cites-code, type: code-anchor }
+  - id: context
+    slot: { hint: "Why a decision was needed — the forces at play." }
+  - id: decision
+    slot: { hint: "What we decided, in a sentence or two." }
+  - id: consequences
+    slot: { hint: "Tradeoffs and follow-on effects." }
