@@ -19,12 +19,17 @@
 //! - **`widened-cardinality`** — an instance-byte **identity** transform: the existing
 //!   value stays valid under the widened cardinality, so the bytes are unchanged.
 //!
-//! The remaining two classified kinds are deferred per the branch-split
-//! ([DECISIONS.md](../../../DECISIONS.md) → 2026-06-25): `prose-needing` (the
-//! Framing-A escape hatch) lands in **T4**, and `added-optional-field` in **M34
-//! Inc-3** (proven live by the schema-version-stamp dogfood). The driver surfaces them
-//! as [`TransformError::Unsupported`] rather than silently skipping — an un-built
-//! branch must block, never drop a change.
+//! T4 adds the **Framing-A prose-routing branch** — a `prose-needing` change that is a
+//! new **required section slot**: the CLI mints the slot **empty** at its schema-ordered
+//! home (via [`crate::write::generate_section`]) and stops, so the reused conformance
+//! gate blocks on the empty slot until the agent authors the prose (the CLI never authors
+//! it — the determinism boundary).
+//!
+//! The remaining branches stay deferred: the `prose-needing` **field** sub-case (a new
+//! required *field*, not a slot — the transform mints slots, not fields) and
+//! `added-optional-field` (M34 Inc-3, proven live by the schema-version-stamp dogfood).
+//! The driver surfaces both as [`TransformError::Unsupported`] rather than silently
+//! skipping — an un-built branch must block, never drop a change.
 
 use crate::schema::Schema;
 use crate::schema_diff::SchemaChange;
@@ -36,10 +41,10 @@ pub enum TransformError {
     /// A structural splice primitive failed (an absent/non-conformant target, an
     /// unslug-able promotion title, …). Carries the underlying [`GenerateError`].
     Generate(GenerateError),
-    /// A classified change kind whose driver branch is **not built in this increment**
-    /// — `prose-needing` (T4) and `added-optional-field` (M34 Inc-3). Surfaced, never
-    /// silently skipped, so an un-built branch blocks the migration rather than
-    /// dropping a change.
+    /// A classified change kind whose driver branch is **not built** — the
+    /// `prose-needing` **field** sub-case (a new required field; T4 mints only slots) and
+    /// `added-optional-field` (M34 Inc-3). Surfaced, never silently skipped, so an
+    /// un-built branch blocks the migration rather than dropping a change.
     Unsupported {
         /// The classified kind's wire name.
         kind: &'static str,
@@ -81,7 +86,30 @@ pub fn transform(
                 // Instance-byte identity: the existing value is still valid under the
                 // widened cardinality, so no splice is needed.
             }
-            SchemaChange::ProseNeeding { section, .. } => {
+            SchemaChange::ProseNeeding {
+                section,
+                leaf: None,
+            } => {
+                // Framing A — the prose-routing branch (T4). A new **required section
+                // slot** has no deterministic default, so the CLI mints it **empty** at
+                // its schema-ordered home and stops: the reused conformance gate then
+                // blocks on the empty slot (`required-slot-present`) until the agent
+                // authors the prose. The CLI owns only placement; it never authors the
+                // prose — the determinism boundary (`corpus-migration.md` → Prose
+                // routing). The minted block is byte-stable by construction
+                // (`generate_section`), and `set_slot` fills it byte-stably once authored.
+                out = write::generate_section(new_schema, &out, section, Some(""), &[])?;
+            }
+            SchemaChange::ProseNeeding {
+                section,
+                leaf: Some(_),
+            } => {
+                // A new required **field** with no default is also prose-needing, but the
+                // transform's prose routing mints a **slot**, not a field
+                // (`corpus-migration.md` → Prose routing: "mints the empty slot"). No
+                // shipped or reconstructed migration needs the field sub-case, so its
+                // driver branch is unbuilt — surfaced, never silently dropped (an un-built
+                // branch must block the migration rather than drop the change).
                 return Err(TransformError::Unsupported {
                     kind: "prose-needing",
                     section: section.clone(),
@@ -365,21 +393,150 @@ sections:
         assert_eq!(again, out, "transform is deterministic");
     }
 
+    // ---- (c) the Framing-A prose-routing branch (a new required section slot) ----
+
+    /// v1: a `note` with a leading `vision` slot and a trailing `success` slot.
+    fn note_v1() -> Schema {
+        load_schema(
+            b"\
+type: note
+sections:
+  - id: vision
+    slot: { hint: \"the vision\" }
+  - id: success
+    slot: { hint: \"success criteria\" }
+",
+        )
+        .expect("note v1 loads")
+    }
+
+    /// v2: a **new required `rationale` slot** is introduced between the two — the
+    /// prose-needing change (no deterministic default, so the CLI cannot fill it).
+    fn note_v2() -> Schema {
+        load_schema(
+            b"\
+type: note
+sections:
+  - id: vision
+    slot: { hint: \"the vision\" }
+  - id: rationale
+    slot: { hint: \"why this decision\" }
+  - id: success
+    slot: { hint: \"success criteria\" }
+",
+        )
+        .expect("note v2 loads")
+    }
+
+    /// A canonical v0/v1-shaped note (built through [`render`] so the input is the exact
+    /// byte-stable form a first-touch-canonicalized corpus doc has).
+    fn note_v0_doc() -> String {
+        let inst = Instance {
+            title: "Checkout note".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "vision".to_string(),
+                    slot: Some("A frictionless checkout.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "success".to_string(),
+                    slot: Some("Cart abandonment drops 20%.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&note_v1(), &inst)
+    }
+
+    #[test]
+    fn prose_needing_required_slot_mints_empty_then_blocks_until_authored() {
+        let v1 = note_v1();
+        let v2 = note_v2();
+        let src = note_v0_doc();
+
+        // The real classifier emits the prose-needing change; the driver is exercised on
+        // the emitted classification, not a hand-built list.
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::ProseNeeding {
+                section: "rationale".to_string(),
+                leaf: None,
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("transform mints the empty slot");
+
+        // Framing A: the output carries the new required slot **empty**, and the reused
+        // conformance gate (`schema_conformance`) blocks on it — the only finding is the
+        // `required-slot-present` break on the minted slot (blocks until authored).
+        let doc = parse_sections(&v2, &out).expect("minted doc parses under v2");
+        let findings = schema_conformance(&v2, &out, &doc);
+        let codes: Vec<&str> = findings.iter().map(|f| f.code.as_str()).collect();
+        assert_eq!(
+            codes,
+            vec!["schema-conformance.required-slot-present"],
+            "the only block is the empty minted rationale slot; got {findings:?}"
+        );
+
+        // No-data-loss: the pre-existing vision/success slots survive verbatim.
+        let minted = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let slot_of = |inst: &Instance, id: &str| {
+            inst.sections
+                .iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.slot.clone())
+        };
+        assert_eq!(
+            slot_of(&minted, "vision").as_deref(),
+            Some("A frictionless checkout.")
+        );
+        assert_eq!(
+            slot_of(&minted, "success").as_deref(),
+            Some("Cart abandonment drops 20%.")
+        );
+
+        // Determinism: the same prose-needing diff over the same source mints identically.
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run mints");
+        assert_eq!(again, out, "prose-routing mint is deterministic");
+
+        // The agent authors the slot via `set_slot` — the CLI places the prose it is
+        // handed (the determinism boundary: the CLI never invents it).
+        let authored = crate::write::set_slot(
+            &v2,
+            &out,
+            "rationale",
+            "Single-click checkout: the fewest steps win.",
+        )
+        .expect("set_slot fills the minted slot");
+
+        // The **same** gate now passes clean, and the authored doc round-trips byte-stable.
+        assert_conforms(&v2, &authored);
+        assert_byte_stable(&v2, &authored);
+        let authored_inst = instance_from_source(&v2, &authored).expect("authored re-parse");
+        assert_eq!(
+            slot_of(&authored_inst, "rationale").as_deref(),
+            Some("Single-click checkout: the fewest steps win.")
+        );
+    }
+
     // ---- the deferred branches block, never silently drop ----
 
-    /// A `prose-needing` change (T4's branch) and an `added-optional-field` change
-    /// (M34 Inc-3's branch) are surfaced as [`TransformError::Unsupported`], not
-    /// silently skipped — an un-built branch must block the migration.
+    /// The **prose-needing field** sub-case (a new required *field*, not a slot — T4
+    /// mints only slots) and an `added-optional-field` change (M34 Inc-3's branch) are
+    /// surfaced as [`TransformError::Unsupported`], not silently skipped — an un-built
+    /// branch must block the migration.
     #[test]
     fn deferred_kinds_surface_as_unsupported() {
         let v1 = prd_v1();
         let (src, _) = prd_v0_doc();
-        let prose_needing = vec![SchemaChange::ProseNeeding {
+        let prose_needing_field = vec![SchemaChange::ProseNeeding {
             section: "vision".to_string(),
-            leaf: None,
+            leaf: Some("owner".to_string()),
         }];
         assert_eq!(
-            transform(&v1, &v1, &src, &prose_needing),
+            transform(&v1, &v1, &src, &prose_needing_field),
             Err(TransformError::Unsupported {
                 kind: "prose-needing",
                 section: "vision".to_string()
