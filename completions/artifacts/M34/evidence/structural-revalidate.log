@@ -1,0 +1,8 @@
+advisory · file-state.un-baselined — committed doc `docs/decisions/alpha-decision.md` is not yet baselined in the file-state record
+advisory · file-state.un-baselined — committed doc `docs/prds/cache-prd.md` is not yet baselined in the file-state record
+advisory · file-state.un-baselined — committed doc `docs/prds/queue-prd.md` is not yet baselined in the file-state record
+advisory · schema-completeness.inverse-cardinality — schema-completeness — `prd:cache-prd` has 0 inbound `derived-from` edge(s) (its `has-specs` inverse), below the inverse-card minimum of 1
+advisory · schema-completeness.inverse-cardinality — schema-completeness — `prd:queue-prd` has 0 inbound `derived-from` edge(s) (its `has-specs` inverse), below the inverse-card minimum of 1
+5 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0

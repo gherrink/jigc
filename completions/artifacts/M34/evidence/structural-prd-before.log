@@ -1,0 +1,18 @@
+--- prd (cache-prd) before migration ---
+---
+schema-version: 1
+---
+
+# Cache Prd
+
+## Vision
+
+A fast, predictable system.
+
+## Requirements
+
+The cache must answer in under a millisecond.
+
+## Context
+
+Latency budgets are tight and the team is small.

@@ -1,0 +1,11 @@
+corpus migration: 0 migrated, 3 already current, 0 blocked
+  current    docs/decisions/alpha-decision.md
+  current    docs/prds/cache-prd.md
+  current    docs/prds/queue-prd.md
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0
+cache-prd.md      sha256 before re-run: b0bec8d0bffe6dc1c83b332798f91cc3f9de6a696d15ec710719847a914b033a
+cache-prd.md      sha256 after  re-run: b0bec8d0bffe6dc1c83b332798f91cc3f9de6a696d15ec710719847a914b033a
+alpha-decision.md sha256 before re-run: e27589b86fc3f6ec5bd03d76a2fd944220a3aa8a1e86d8e46d12d1daba93a6db
+alpha-decision.md sha256 after  re-run: e27589b86fc3f6ec5bd03d76a2fd944220a3aa8a1e86d8e46d12d1daba93a6db
+BYTE-IDENTICAL: re-run is a no-op (idempotent)

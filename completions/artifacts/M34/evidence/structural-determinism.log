@@ -1,0 +1,7 @@
+--- determinism: id-order vs reverse commit order ---
+cache-prd id-order sha: b0bec8d0bffe6dc1c83b332798f91cc3f9de6a696d15ec710719847a914b033a
+cache-prd reverse  sha: b0bec8d0bffe6dc1c83b332798f91cc3f9de6a696d15ec710719847a914b033a
+queue-prd id-order sha: a2251b22b8d0fec1aafde1627eb51bcf3843ee02597ca9e460b91df39e45cc3a
+queue-prd reverse  sha: a2251b22b8d0fec1aafde1627eb51bcf3843ee02597ca9e460b91df39e45cc3a
+BYTE-IDENTICAL across commit orders (deterministic)
+GUARD: the two docs migrate to genuinely distinct content

@@ -1,0 +1,6 @@
+corpus migration: 3 migrated, 0 already current, 0 blocked
+  migrated   docs/decisions/alpha-decision.md
+  migrated   docs/prds/cache-prd.md
+  migrated   docs/prds/queue-prd.md
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0
