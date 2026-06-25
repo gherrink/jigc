@@ -28,6 +28,7 @@ pub mod override_default;
 pub mod parse;
 pub mod registry;
 pub mod schema;
+pub mod schema_diff;
 pub mod slug;
 pub mod state;
 pub mod store;
