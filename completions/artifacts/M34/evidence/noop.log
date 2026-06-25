@@ -1,0 +1,7 @@
+corpus migration: 0 migrated, 1 already current, 0 blocked
+  current    docs/decisions/beta-decision.md
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0
+beta-decision.md sha256 before: f2579425d122f6d1fc1d7556e3606786e4d31476ecf5916805979fe88a5d9fb6
+beta-decision.md sha256 after:  f2579425d122f6d1fc1d7556e3606786e4d31476ecf5916805979fe88a5d9fb6
+BYTE-IDENTICAL: current corpus left untouched

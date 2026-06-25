@@ -1,0 +1,6 @@
+advisory · file-state.un-baselined — committed doc `docs/decisions/alpha-decision.md` is not yet baselined in the file-state record
+blocking · schema-conformance.field-value-conformant — field `schema-version` is absent; the committed doc predates the schema-version stamp (below the current schema-version 1)
+  route: migrate — `docs/decisions/alpha-decision.md` carries no schema-version stamp; run the corpus migration to stamp and upgrade it to schema-version 1
+2 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0

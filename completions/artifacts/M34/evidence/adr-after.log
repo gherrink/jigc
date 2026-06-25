@@ -1,0 +1,20 @@
+--- ADR after migration ---
+---
+status: accepted
+date: 2026-06-25
+schema-version: 1
+---
+
+# Alpha decision
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+
+## Consequences
+
+A cold node loses its sessions.

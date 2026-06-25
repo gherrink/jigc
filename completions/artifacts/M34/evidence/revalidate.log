@@ -1,0 +1,4 @@
+advisory · file-state.un-baselined — committed doc `docs/decisions/alpha-decision.md` is not yet baselined in the file-state record
+1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0

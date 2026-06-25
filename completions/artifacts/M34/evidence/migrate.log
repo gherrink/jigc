@@ -1,0 +1,4 @@
+corpus migration: 1 migrated, 0 already current, 0 blocked
+  migrated   docs/decisions/alpha-decision.md
+— jigc · run `jigc start` for orientation; all writes through `jigc`.
+exit: 0
