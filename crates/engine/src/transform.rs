@@ -30,9 +30,62 @@
 //! `added-optional-field` (M34 Inc-3, proven live by the schema-version-stamp dogfood).
 //! The driver surfaces both as [`TransformError::Unsupported`] rather than silently
 //! skipping — an un-built branch must block, never drop a change.
+//!
+//! # The per-doc-gated corpus fold (M34 Inc-2 T5)
+//!
+//! [`migrate_corpus`] lifts the single-instance [`transform`] to an **N-doc corpus**
+//! while upholding the *writes-are-transactional* invariant (`CLAUDE.md`;
+//! `corpus-migration.md` → census *Migration atomicity / WIP-safety* row;
+//! `finalize.md` → the transactional boundary). The corpus is **heterogeneous**: each
+//! [`CorpusDoc`] carries its own schema pair + classified diff, mirroring the real
+//! corpus the M34 Inc-3 verb migrates (mixed doctypes, each with its own v1→v2 diff).
+//!
+//! **Per-doc transaction granularity.** The transaction unit is **one doc**, never the
+//! whole corpus. Each doc is migrated in a *scratch buffer* and gated on conformance:
+//!
+//! 1. **apply** — `transform` folds the doc's classified diff into scratch bytes;
+//! 2. **gate** — the scratch re-parses under the doc's v2 schema **and** carries **zero**
+//!    [`crate::validate::schema_conformance`] findings;
+//! 3. **commit** — only a clean gate records the doc as [`DocOutcome::Migrated`] (v2).
+//!    Anything else — a [`TransformError`] (an un-built branch), a parse failure, or a
+//!    non-empty gate (the `prose-needing` mint-empty leaves a `required-slot-present`
+//!    break that **blocks until the agent authors it**) — **rolls the scratch back**:
+//!    the doc stays [`DocOutcome::Untouched`], byte-identical v0, and the corpus run
+//!    **halts cleanly** at that doc. Docs after the halt are never touched.
+//!
+//! So an interrupted corpus (the Framing-A prose-authoring handoff) leaves the docs
+//! before the halt fully transformed-and-conformant (v2) and the doc-at-halt plus every
+//! doc after it byte-identical v0 — both halves **independently re-detectable** by the
+//! Inc-1 fifth-family detector (conformant-v2 → done; non-conformant-v0 → routed
+//! `migrate`). **No doc is ever left half-transformed**: a doc's bytes only ever change
+//! as one all-or-nothing commit.
+//!
+//! **The rollback inventory** (the M35-rename rollback-inventory discipline, pinned here
+//! per the charter at *the increment that builds the transform*). A per-doc commit, when
+//! the **M34 Inc-3 on-disk verb** consumes this model, touches exactly — and rolls back
+//! exactly — three things, **all keyed by the one doc**:
+//!
+//! - **path** — the doc's own file, rewritten in place (at most one path per doc; a
+//!   transform never spans files). *Rollback:* the scratch is discarded before any write,
+//!   so an un-committed doc leaves the on-disk file byte-identical v0 (zero residue).
+//! - **file-state** — the doc's [`crate::file_state::FileStateRecord`] entry, re-hashed
+//!   after the rewrite, **and** its schema-version stamp — which **flips last**, only
+//!   inside a clean commit (`corpus-migration.md` → the stamp-flips-last rule; the stamp
+//!   itself lands in Inc-3). *Rollback:* no re-hash, no stamp flip — the record still
+//!   reads the v0 hash + v0 stamp, so the detector re-routes the doc as `migrate`.
+//! - **index** — the edge-index entries the doc contributes (re-extracted from its v2
+//!   refs). *Rollback:* the working-overlay edges for the doc are dropped; the committed
+//!   index is untouched (the verb overlays per-doc, commits per-doc).
+//!
+//! Inc-2 builds the **in-memory** fold only (the scratch is a `String`; rollback is
+//! discarding it). The on-disk file/git write-back + the live stamp flip + the actual
+//! rollback **orchestration** land in the Inc-3 verb that consumes [`migrate_corpus`];
+//! this doc-comment is where their per-doc granularity + inventory are **pinned**.
 
+use crate::parse::parse_sections;
 use crate::schema::Schema;
 use crate::schema_diff::SchemaChange;
+use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError};
 
 /// A failure applying a classified diff to one instance.
@@ -124,6 +177,112 @@ pub fn transform(
         }
     }
     Ok(out)
+}
+
+/// One doc's migration job in a corpus batch — its bytes plus the schema pair and
+/// classified diff that carry it v1→v2. Heterogeneous by design: each doc owns its
+/// schema pair, mirroring the mixed-doctype corpus the Inc-3 verb migrates.
+pub struct CorpusDoc<'a> {
+    /// A stable identifier for the doc (its path stand-in — the rollback inventory + the
+    /// halt point are keyed by it; the Inc-3 verb supplies the real repo-relative path).
+    pub id: &'a str,
+    /// The schema the doc was authored against (its v1/v0 shape).
+    pub old_schema: &'a Schema,
+    /// The schema the doc is being carried onto (its v2 shape).
+    pub new_schema: &'a Schema,
+    /// The doc's current (v0-shaped) bytes.
+    pub source: &'a str,
+    /// The classified diff (from [`crate::schema_diff::schema_diff`]) for this doc's pair.
+    pub changes: &'a [SchemaChange],
+}
+
+/// The outcome of one doc's per-doc transaction — all-or-nothing (never half).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DocOutcome {
+    /// The doc transformed-and-conformant against its v2 schema. Carries the v2 bytes.
+    Migrated {
+        /// The doc's stable id.
+        id: String,
+        /// The committed v2 bytes (byte-stable, conformant).
+        v2: String,
+    },
+    /// The doc is **byte-identical v0**: either it triggered the halt (its transform was
+    /// blocked / non-conformant) or it sits **after** the halt point. Carries the
+    /// unchanged original bytes.
+    Untouched {
+        /// The doc's stable id.
+        id: String,
+        /// The original v0 bytes, unchanged.
+        v0: String,
+    },
+}
+
+/// The result of a per-doc-gated corpus migration: each doc's outcome (aligned to input
+/// order) plus the halt point, if any.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CorpusMigration {
+    /// Per-doc outcomes, in input order (the caller supplies a deterministic order — the
+    /// Inc-3 verb feeds docs path-sorted; the fold faithfully preserves whatever order it
+    /// is given, since the halt point is inherently positional).
+    pub docs: Vec<DocOutcome>,
+    /// The index of the doc that halted the run (a blocked / non-conformant doc), or
+    /// `None` if every doc migrated cleanly.
+    pub halted_at: Option<usize>,
+}
+
+/// Apply a transform across an **N-doc corpus**, per-doc gated and WIP-safe.
+///
+/// Each doc is migrated in a scratch buffer and committed **only** when its transform
+/// conforms to its v2 schema; the first doc that cannot commit (a [`TransformError`], a
+/// parse failure, or a non-empty conformance gate — e.g. the `prose-needing` mint-empty
+/// that blocks until authored) **halts the run cleanly**: that doc and every doc after it
+/// stay byte-identical v0. See the module doc-comment for the per-doc transaction
+/// granularity + the rollback inventory.
+pub fn migrate_corpus(docs: &[CorpusDoc<'_>]) -> CorpusMigration {
+    let mut out = Vec::with_capacity(docs.len());
+    let mut halted_at: Option<usize> = None;
+    for (i, doc) in docs.iter().enumerate() {
+        let migrated = if halted_at.is_some() {
+            // After the halt: never touched — byte-identical v0.
+            None
+        } else {
+            try_migrate_doc(doc)
+        };
+        match migrated {
+            Some(v2) => out.push(DocOutcome::Migrated {
+                id: doc.id.to_string(),
+                v2,
+            }),
+            None => {
+                if halted_at.is_none() {
+                    halted_at = Some(i);
+                }
+                out.push(DocOutcome::Untouched {
+                    id: doc.id.to_string(),
+                    v0: doc.source.to_string(),
+                });
+            }
+        }
+    }
+    CorpusMigration {
+        docs: out,
+        halted_at,
+    }
+}
+
+/// One doc's per-doc transaction: transform into a scratch buffer, then gate on
+/// conformance against the v2 schema. Returns the committed v2 bytes on a clean gate, or
+/// `None` (rollback — the doc stays v0) on any failure: a transform error, a parse
+/// failure under v2, or a non-empty conformance gate (the `prose-needing` mint-empty
+/// blocks here).
+fn try_migrate_doc(doc: &CorpusDoc<'_>) -> Option<String> {
+    let scratch = transform(doc.old_schema, doc.new_schema, doc.source, doc.changes).ok()?;
+    let parsed = parse_sections(doc.new_schema, &scratch).ok()?;
+    if schema_conformance(doc.new_schema, &scratch, &parsed).is_empty() {
+        Some(scratch)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -518,6 +677,190 @@ sections:
         assert_eq!(
             slot_of(&authored_inst, "rationale").as_deref(),
             Some("Single-click checkout: the fewest steps win.")
+        );
+    }
+
+    // ---- (d) the per-doc-gated corpus fold: atomicity / WIP-safety ----
+
+    /// `true` iff `source` independently re-detects as **conformant** against `schema`
+    /// (the Inc-1 fifth-family detector's predicate: a parse-level failure *or* any
+    /// conformance finding ⇒ non-conformant ⇒ routed `migrate`).
+    fn detect_conformant(schema: &Schema, source: &str) -> bool {
+        match parse_sections(schema, source) {
+            Ok(doc) => schema_conformance(schema, source, &doc).is_empty(),
+            Err(_) => false,
+        }
+    }
+
+    #[test]
+    fn corpus_halts_cleanly_at_the_prose_needing_doc_no_half_transform() {
+        let prd_v1 = prd_v1();
+        let prd_v2 = prd_v2();
+        let spec_v1 = spec_v1();
+        let spec_v2 = spec_v2();
+        let note_v1 = note_v1();
+        let note_v2 = note_v2();
+
+        // Heterogeneous corpus: each doc owns its schema pair + the real classifier's diff.
+        let prd_diff = schema_diff(&prd_v1, &prd_v2);
+        let spec_diff = schema_diff(&spec_v1, &spec_v2);
+        let note_diff = schema_diff(&note_v1, &note_v2);
+        // The note diff really is the prose-needing change that blocks (not assumed).
+        assert_eq!(
+            note_diff,
+            vec![SchemaChange::ProseNeeding {
+                section: "rationale".to_string(),
+                leaf: None,
+            }]
+        );
+
+        let (prd_a_src, _) = prd_v0_doc();
+        let spec_a_src = spec_v0_doc();
+        let note_a_src = note_v0_doc();
+        let (prd_b_src, _) = prd_v0_doc();
+
+        // N = 4; instance k = 2 (the note) is prose-needing (blocked). prd-b after it is a
+        // perfectly migratable structural doc — it must STILL be left untouched (the run
+        // halts at the first blocker; it does not skip-and-continue).
+        let corpus = [
+            CorpusDoc {
+                id: "prd-a",
+                old_schema: &prd_v1,
+                new_schema: &prd_v2,
+                source: &prd_a_src,
+                changes: &prd_diff,
+            },
+            CorpusDoc {
+                id: "spec-a",
+                old_schema: &spec_v1,
+                new_schema: &spec_v2,
+                source: &spec_a_src,
+                changes: &spec_diff,
+            },
+            CorpusDoc {
+                id: "note-a",
+                old_schema: &note_v1,
+                new_schema: &note_v2,
+                source: &note_a_src,
+                changes: &note_diff,
+            },
+            CorpusDoc {
+                id: "prd-b",
+                old_schema: &prd_v1,
+                new_schema: &prd_v2,
+                source: &prd_b_src,
+                changes: &prd_diff,
+            },
+        ];
+
+        let result = migrate_corpus(&corpus);
+
+        // The run halts at the prose-needing doc (k = 2).
+        assert_eq!(result.halted_at, Some(2));
+        assert_eq!(result.docs.len(), 4);
+
+        // Docs BEFORE k are fully transformed-and-conformant (v2): each is Migrated, its
+        // bytes conform under its v2 schema, round-trip byte-stable, and re-detect as
+        // conformant-v2 (so no doc is left half-transformed).
+        match &result.docs[0] {
+            DocOutcome::Migrated { id, v2 } => {
+                assert_eq!(id, "prd-a");
+                assert_conforms(&prd_v2, v2);
+                assert_byte_stable(&prd_v2, v2);
+                assert!(detect_conformant(&prd_v2, v2));
+                assert_ne!(v2, &prd_a_src, "prd-a actually changed (slot→repeatable)");
+            }
+            other => panic!("prd-a must be Migrated; got {other:?}"),
+        }
+        match &result.docs[1] {
+            DocOutcome::Migrated { id, v2 } => {
+                assert_eq!(id, "spec-a");
+                assert_conforms(&spec_v2, v2);
+                assert_byte_stable(&spec_v2, v2);
+                assert!(detect_conformant(&spec_v2, v2));
+                // widened-cardinality is a byte-identity transform, so the bytes match v0
+                // yet the doc is now conformant against v2 — it is genuinely "migrated".
+                assert_eq!(v2, &spec_a_src);
+            }
+            other => panic!("spec-a must be Migrated; got {other:?}"),
+        }
+
+        // Docs AT/AFTER k are byte-identical v0 (untouched) and re-detect as un-migrated
+        // (non-conformant against v2 ⇒ the detector routes them `migrate`).
+        match &result.docs[2] {
+            DocOutcome::Untouched { id, v0 } => {
+                assert_eq!(id, "note-a");
+                assert_eq!(v0, &note_a_src, "the blocked doc is byte-identical v0");
+                assert!(
+                    !detect_conformant(&note_v2, v0),
+                    "the blocked doc re-detects as un-migrated-v0"
+                );
+            }
+            other => panic!("note-a must be Untouched; got {other:?}"),
+        }
+        match &result.docs[3] {
+            DocOutcome::Untouched { id, v0 } => {
+                assert_eq!(id, "prd-b");
+                assert_eq!(
+                    v0, &prd_b_src,
+                    "a migratable doc AFTER the halt is still untouched v0"
+                );
+                // Atomicity proven by **bytes**: prd-b was independently migratable, yet
+                // it is byte-identical to its un-migrated form — it differs from what the
+                // transform WOULD have produced. (A fixed-slot→repeatable v0 happens to
+                // also satisfy the v2 repeatable shape, so conformance alone cannot flag
+                // it — exactly the Inc-2 limitation the Inc-3 schema-version stamp
+                // resolves; here the halt-and-stop atomicity rests on the byte-identity.)
+                let would_be = try_migrate_doc(&corpus[3]).expect("prd-b is migratable");
+                assert_ne!(v0, &would_be, "prd-b was left un-migrated, not transformed");
+                // It still re-detects cleanly under v2 (a definite verdict, never a
+                // half-parsed state) — the "independently re-detectable" property.
+                assert!(parse_sections(&prd_v2, v0).is_ok());
+            }
+            other => panic!("prd-b must be Untouched; got {other:?}"),
+        }
+
+        // Determinism: the same corpus folds to byte-identical outcomes.
+        let again = migrate_corpus(&corpus);
+        assert_eq!(again, result, "the corpus fold is deterministic");
+    }
+
+    #[test]
+    fn corpus_with_no_blocker_migrates_every_doc() {
+        let prd_v1 = prd_v1();
+        let prd_v2 = prd_v2();
+        let spec_v1 = spec_v1();
+        let spec_v2 = spec_v2();
+        let prd_diff = schema_diff(&prd_v1, &prd_v2);
+        let spec_diff = schema_diff(&spec_v1, &spec_v2);
+        let (prd_src, _) = prd_v0_doc();
+        let spec_src = spec_v0_doc();
+
+        let corpus = [
+            CorpusDoc {
+                id: "prd-a",
+                old_schema: &prd_v1,
+                new_schema: &prd_v2,
+                source: &prd_src,
+                changes: &prd_diff,
+            },
+            CorpusDoc {
+                id: "spec-a",
+                old_schema: &spec_v1,
+                new_schema: &spec_v2,
+                source: &spec_src,
+                changes: &spec_diff,
+            },
+        ];
+
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, None, "no blocker ⇒ no halt");
+        assert!(
+            result
+                .docs
+                .iter()
+                .all(|d| matches!(d, DocOutcome::Migrated { .. })),
+            "every doc migrates when none blocks"
         );
     }
 
