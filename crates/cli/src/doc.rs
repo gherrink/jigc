@@ -707,21 +707,12 @@ fn on_create_block_field(
     today: &str,
     migration: bool,
 ) -> Option<engine::field_block::Field> {
-    use engine::schema::{FieldType, SCHEMA_VERSION_SET};
+    use engine::schema::FieldType;
 
-    // The schema-version stamp (M34): a field carrying the schema-version deriver
-    // marker is filled with the current active schema version — the version analog of
-    // the `today_iso` clock deriver. Not migration-suppressed (unlike the date): a
-    // freshly-adopted foreign doc IS authored against the current version, so the
-    // stamp is genuine, never false history (`design/corpus-migration.md` → The
-    // schema-version stamp; the current-active-version deriver).
-    if field.set.as_deref() == Some(SCHEMA_VERSION_SET) {
-        return Some(engine::field_block::Field {
-            key: field.id.clone(),
-            value: Value::Scalar(current_schema_version().to_string()),
-        });
-    }
-
+    // The schema-version stamp (`set: schema-version`) is materialized one level up by
+    // [`on_create_doc_fields`] (it needs the doctype's manifest version, which the
+    // item/nested derivers that also call this helper never carry), so this shared
+    // leaf materializer handles only the `set: on-create` date + literal `default:`.
     let value = if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") {
         if migration {
             return None;
@@ -832,7 +823,22 @@ fn on_create_nested_item_fields(
 /// foreign ADR migrates with no date rather than fabricating the migration day as
 /// false decision history (`design/auto-migration.md` → Doc-level date-suppression).
 /// An explicit payload date still overwrites the (now-absent) stamp on the write path.
-fn on_create_doc_fields(schema: &Schema, migration: bool) -> Vec<engine::field_block::Field> {
+///
+/// `schema_version` is the value stamped into the doctype's `set: schema-version`
+/// header field (M34): the **caller** resolves it from the freeze manifest via
+/// [`stamp_schema_version`], so it is `schema`'s own doctype's current manifest
+/// version (uniformly 1 for the shipped frozen-v1 set). Unlike the date, it is
+/// **not** migration-suppressed — a freshly-adopted foreign doc IS authored against
+/// the current version, so the stamp is genuine, never false history
+/// (`design/corpus-migration.md` → The schema-version stamp). A doctype carrying no
+/// such field (it was not injected — the non-persisted/non-frozen case) ignores it.
+fn on_create_doc_fields(
+    schema: &Schema,
+    migration: bool,
+    schema_version: u32,
+) -> Vec<engine::field_block::Field> {
+    use engine::schema::SCHEMA_VERSION_SET;
+
     let today = today_iso();
     schema
         .sections
@@ -842,20 +848,35 @@ fn on_create_doc_fields(schema: &Schema, migration: bool) -> Vec<engine::field_b
             SectionBody::Repeatable { .. } => None,
         })
         .flatten()
-        .filter_map(|field| on_create_block_field(field, &today, migration))
+        .filter_map(|field| {
+            if field.set.as_deref() == Some(SCHEMA_VERSION_SET) {
+                return Some(engine::field_block::Field {
+                    key: field.id.clone(),
+                    value: Value::Scalar(schema_version.to_string()),
+                });
+            }
+            on_create_block_field(field, &today, migration)
+        })
         .collect()
 }
 
-/// The current active schema version — the CLI-side `set: schema-version` deriver
-/// (`engine::schema::SCHEMA_VERSION_SET`), the version analog of [`today_iso`]: it
-/// supplies the value stamped into a newly-created persisted doc's schema-version
-/// front-matter field. The frozen v1 doctype set is uniformly at schema-version 1, so
-/// the deriver yields 1 for every persisted doctype (its manifest schema-version —
-/// `design/corpus-migration.md` → The schema-version stamp). It becomes doctype-aware
-/// when a doctype first advances past v1 (a future versioned migration extends this);
-/// stamping 1 now is correct and durable — a v1 doc IS at v1, needing no later rewrite.
-fn current_schema_version() -> u32 {
-    1
+/// The schema-version value stamped into a newly-created persisted doc of `doctype` —
+/// the **manifest-aware** CLI-side `set: schema-version` deriver
+/// (`engine::schema::SCHEMA_VERSION_SET`), the version analog of [`today_iso`]. It reads
+/// `doctype`'s current schema-version from the pack's freeze manifest — the same
+/// authority the version-aware `migrate`/detector read
+/// ([`crate::pack::frozen_doctype_versions`]) — so a newly-created doc is stamped its
+/// doctype's *declared* version, never a constant. Falls back to 1 only when `doctype`
+/// is absent from the manifest (the unversioned / methodology case), matching the
+/// version map's best-effort shape. For the shipped frozen-v1 set every doctype resolves
+/// to 1, so the stamp is byte-identical to before; the lookup removes the v2-regime
+/// footgun where a manifest bump would otherwise still stamp 1
+/// (`design/corpus-migration.md` → The schema-version stamp).
+fn stamp_schema_version(pack: &dyn PackSource, doctype: &str) -> u32 {
+    crate::pack::frozen_doctype_versions(pack)
+        .get(doctype)
+        .copied()
+        .unwrap_or(1)
 }
 
 /// The current UTC date as an ISO `YYYY-MM-DD` string — the CLI-side `set: on-create`
@@ -904,9 +925,10 @@ fn run_create(
     // (clock-side CLI work) so the created instance carries them before render. In
     // migration mode the `set: on-create` date is suppressed (no fabricated history).
     let migration = task.is_migration()?;
+    let schema_version = stamp_schema_version(task.pack.as_ref(), type_name);
     let on_create = schemas
         .get(type_name)
-        .map(|s| on_create_doc_fields(s, migration))
+        .map(|s| on_create_doc_fields(s, migration, schema_version))
         .unwrap_or_default();
     let created = state::create_gated(
         &task.dir,
@@ -958,9 +980,10 @@ fn run_author(
     // for the per-leaf chain) suppresses the `set: on-create` date stamp in migration
     // mode (no fabricated history for a dateless foreign doc).
     let migration = task.is_migration()?;
+    let schema_version = stamp_schema_version(task.pack.as_ref(), doctype);
     let on_create = schemas
         .get(doctype)
-        .map(|s| on_create_doc_fields(s, migration))
+        .map(|s| on_create_doc_fields(s, migration, schema_version))
         .unwrap_or_default();
     // The create persists the empty doc through the gated path (gate + squatter seams).
     let created = state::create_gated(
@@ -2076,7 +2099,7 @@ sections:
             check: "symbol-exists".to_owned(),
         }];
         let adr = engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr loads");
-        let fields = on_create_doc_fields(&adr, false);
+        let fields = on_create_doc_fields(&adr, false, 1);
         // Exactly `status` (default: proposed) then `date` (set: on-create), in schema
         // field order — `supersedes`/`cites-code` carry neither, so they are omitted.
         assert_eq!(
@@ -2094,7 +2117,7 @@ sections:
         // nothing, so its rendered front-matter is byte-unchanged.
         let commit = load_schema(COMMIT_YAML).expect("commit loads");
         assert!(
-            on_create_doc_fields(&commit, false).is_empty(),
+            on_create_doc_fields(&commit, false, 1).is_empty(),
             "a header with no default/set field stamps nothing (inert)",
         );
     }
@@ -2119,7 +2142,7 @@ sections:
         let adr = engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr loads");
 
         // Migration mode drops the date stamp but KEEPS the `status: proposed` default.
-        let migrated = on_create_doc_fields(&adr, true);
+        let migrated = on_create_doc_fields(&adr, true, 1);
         assert_eq!(
             migrated.len(),
             1,
@@ -2136,7 +2159,7 @@ sections:
         );
 
         // Authoring mode (the regression witness) still stamps BOTH.
-        let authored = on_create_doc_fields(&adr, false);
+        let authored = on_create_doc_fields(&adr, false, 1);
         assert_eq!(authored.len(), 2, "authoring stamps status + the date");
         assert!(
             authored
@@ -2149,14 +2172,99 @@ sections:
         const SPEC_YAML: &[u8] = include_bytes!("../pack/schemas/spec.yaml");
         let spec = engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec loads");
         assert_eq!(
-            on_create_doc_fields(&spec, true),
-            on_create_doc_fields(&spec, false),
+            on_create_doc_fields(&spec, true, 1),
+            on_create_doc_fields(&spec, false, 1),
             "a doctype with no date field is flag-invariant",
         );
 
         // `commit` (no default/set header field) stays inert under both flags.
         let commit = load_schema(COMMIT_YAML).expect("commit loads");
-        assert!(on_create_doc_fields(&commit, true).is_empty());
-        assert!(on_create_doc_fields(&commit, false).is_empty());
+        assert!(on_create_doc_fields(&commit, true, 1).is_empty());
+        assert!(on_create_doc_fields(&commit, false, 1).is_empty());
+    }
+
+    /// The schema-version stamp (M34 audit) is derived from each doctype's **manifest**
+    /// version, not a constant: a newly-created doc of a doctype the freeze manifest
+    /// reports at version N is stamped `schema-version: N`. Drives the real create-path
+    /// seam — [`stamp_schema_version`] resolving from a fixture pack's manifest, then
+    /// [`on_create_doc_fields`] materializing that value into the injected stamp field.
+    /// A fixture manifest reporting `widget` at v2 stamps `2`; a doctype absent from the
+    /// manifest, and the shipped all-v1 set, both stamp `1` (shipped behaviour unchanged
+    /// — the regression witness). Fails against the prior hardcoded `1` deriver.
+    #[test]
+    fn newly_created_doc_is_stamped_its_manifest_schema_version() {
+        use engine::schema::SCHEMA_VERSION_FIELD;
+
+        // A throwaway fixture pack: a freeze manifest reporting `widget` at v2 (the hash
+        // is unread by the version map / stamp-injection — only `assert_schema_freeze`
+        // recomputes it, which this path does not call) + a persisted `widget` doctype
+        // so `load_pack_schema` injects the stamp into its header.
+        let root = TempRoot::new("schema-version-stamp");
+        std::fs::create_dir_all(root.0.join("config")).expect("config dir");
+        std::fs::create_dir_all(root.0.join("schemas")).expect("schemas dir");
+        std::fs::write(
+            root.0.join("config/schema-manifest.yaml"),
+            b"doctypes:\n  - type: widget\n    schema-version: 2\n    schema-hash: 0000000000000000000000000000000000000000000000000000000000000000\n",
+        )
+        .expect("write manifest");
+        std::fs::write(
+            root.0.join("schemas/widget.yaml"),
+            b"type: widget\nlocation: widgets/\nid-from: title\nsections:\n  - id: meta\n    header: true\n    fields: []\n  - id: body\n    slot: { hint: \"x\" }\n",
+        )
+        .expect("write widget schema");
+        let pack = crate::pack::FilesystemPack::new(root.0.clone());
+
+        // The deriver resolves `widget`'s declared version (2) from the manifest, and
+        // falls back to 1 for a doctype the manifest does not list.
+        assert_eq!(
+            stamp_schema_version(&pack, "widget"),
+            2,
+            "the stamp value is the doctype's manifest schema-version, not a constant",
+        );
+        assert_eq!(
+            stamp_schema_version(&pack, "absent"),
+            1,
+            "a doctype absent from the manifest falls back to 1",
+        );
+
+        // End-to-end: the injected stamp field is materialized with the resolved value.
+        let widget_bytes = pack
+            .read(PackResourceKind::Schemas, &ResourceId::from("widget"))
+            .expect("widget schema reads");
+        let widget = crate::pack::load_pack_schema(&pack, &widget_bytes).expect("widget loads");
+        let version = stamp_schema_version(&pack, "widget");
+        let fields = on_create_doc_fields(&widget, false, version);
+        let stamp = fields
+            .iter()
+            .find(|f| f.key == SCHEMA_VERSION_FIELD)
+            .expect("the persisted doctype carries an injected schema-version stamp");
+        assert_eq!(
+            stamp.value,
+            Value::Scalar("2".into()),
+            "a v2-manifest doctype is stamped schema-version 2",
+        );
+
+        // Regression witness: the shipped frozen-v1 pack still stamps 1 (byte-identical
+        // shipped behaviour) — every shipped doctype resolves to its manifest v1.
+        let shipped = make_pack();
+        assert_eq!(
+            stamp_schema_version(shipped.as_ref(), "adr"),
+            1,
+            "the shipped frozen-v1 `adr` still stamps 1",
+        );
+        let adr_bytes = shipped
+            .read(PackResourceKind::Schemas, &ResourceId::from("adr"))
+            .expect("shipped adr reads");
+        let adr = crate::pack::load_pack_schema(shipped.as_ref(), &adr_bytes).expect("adr loads");
+        let adr_stamp =
+            on_create_doc_fields(&adr, false, stamp_schema_version(shipped.as_ref(), "adr"))
+                .into_iter()
+                .find(|f| f.key == SCHEMA_VERSION_FIELD)
+                .expect("shipped adr carries the injected stamp");
+        assert_eq!(
+            adr_stamp.value,
+            Value::Scalar("1".into()),
+            "the shipped all-v1 set stamps 1 — shipped behaviour is unchanged",
+        );
     }
 }
