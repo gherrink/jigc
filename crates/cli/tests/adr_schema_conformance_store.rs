@@ -150,12 +150,15 @@ fn setup_repo(repo: &Path, home: &Path) {
 }
 
 /// A conformant `adr` body under the **pack** adr schema (status/date header + the three
-/// prose slots; **no `owner` field**). Its bytes never change across this test — only the
-/// resolved schema does.
+/// prose slots; **no `owner` field**). It carries `schema-version: 1` — the at-version stamp
+/// the on-create deriver writes, so a *fully conformant* committed doc is genuinely clean
+/// (an absent/below stamp is itself a surfaced version-mismatch break, M34 Inc-3). Its bytes
+/// never change across this test — only the resolved schema does.
 const ADR_BODY: &str = "\
 ---
 status: accepted
 date: 2026-06-25
+schema-version: 1
 ---
 
 # Cache sessions in memory

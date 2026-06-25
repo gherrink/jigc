@@ -551,12 +551,29 @@ fn schema_conformance_store(
             match parse_sections(schema, &source) {
                 Ok(doc) => {
                     let mut doc_findings = schema_conformance(schema, &source, &doc);
-                    route_schema_conformance(
-                        &mut doc_findings,
-                        read_schema_version_stamp(&doc),
-                        versions.get(ty).copied(),
-                        &rel_key,
-                    );
+                    let stamp = read_schema_version_stamp(&doc);
+                    let current = versions.get(ty).copied();
+                    // Version-mismatch is itself a surfaced break (M34 Inc-3): a committed
+                    // persisted doc of a *versioned* doctype whose stamp is absent (the v0
+                    // corpus state) or below the manifest `current` is non-conformant on its
+                    // schema-version field. `route_schema_conformance` only *labels* findings
+                    // that already exist, so an OTHERWISE-conformant below/absent doc — the
+                    // pure-stamp v0 corpus, the M34 dogfood's headline case — would be silent
+                    // (`schema_conformance` returns nothing → exit 0). Emit one
+                    // `schema-conformance.*` break for that doc so the detect-half is not blind
+                    // to its own dogfood; a doc that already carries structural breaks is **not**
+                    // double-reported (those keep their own findings and already route migrate).
+                    // The stamp stays author-exempt (`is_author_required` untouched) —
+                    // version-currency is a store-scope corpus rule, never an authoring
+                    // obligation, so task/finalize scope is unaffected (`design/validation.md` →
+                    // Version-mismatch is itself a surfaced break; DECISIONS 2026-06-25).
+                    if doc_findings.is_empty()
+                        && let Some(current) = current
+                        && stamp.is_none_or(|s| s < current)
+                    {
+                        doc_findings.push(version_mismatch_break(stamp, current));
+                    }
+                    route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
                     findings.extend(doc_findings);
                 }
                 Err(parse_findings) => findings.extend(parse_findings),
@@ -582,6 +599,29 @@ fn read_schema_version_stamp(doc: &Document) -> Option<u32> {
                 crate::field_block::Value::List(_) => None,
             })
     })
+}
+
+/// Build the **version-mismatch** `schema-conformance.*` break for an otherwise-conformant
+/// committed doc of a versioned doctype whose schema-version stamp is **absent** (the v0
+/// corpus state) or **below** its doctype's manifest `current` — the load-bearing M34 case a
+/// labeler-only path leaves silent (`design/validation.md` → Version-mismatch is itself a
+/// surfaced break; DECISIONS 2026-06-25). Reuses the existing `field-value-conformant` id over
+/// the stamp field (no new check id, no knob — the stamp's value, or its absence, is not the
+/// conformant current value); the caller's [`route_schema_conformance`] then labels it
+/// `migrate`. Carries `Severity::Blocking` like every conformance break, but *blocking* is a
+/// task/finalize verdict — under the store sweep it is reported, never a gate.
+fn version_mismatch_break(stamp: Option<u32>, current: u32) -> Finding {
+    let field = crate::schema::SCHEMA_VERSION_FIELD;
+    let message = match stamp {
+        None => format!(
+            "field `{field}` is absent; the committed doc predates the schema-version stamp \
+             (below the current schema-version {current})"
+        ),
+        Some(s) => format!(
+            "field `{field}` is schema-version {s}, below the current schema-version {current}"
+        ),
+    };
+    blocking_conformance("schema-conformance.field-value-conformant", message, None)
 }
 
 /// Label each `schema-conformance.*` finding over a non-conformant committed doc with its
@@ -4355,6 +4395,142 @@ sections:
             record.get("decisions/valid.md"),
             Some(hash_bytes(ADR_VALID.as_bytes()).as_str()),
             "the store sweep opens no record write",
+        );
+    }
+
+    /// The adr schema carrying the engine-injected schema-version stamp — the shape the
+    /// pack loader produces for a persisted frozen doctype. Without it a committed
+    /// `schema-version:` header line has no declared home and the parser would drop it, so a
+    /// version-stamp test must run against the injected schema, not the bare YAML.
+    fn stamped_schemas() -> BTreeMap<String, Schema> {
+        let mut m = schemas();
+        crate::schema::inject_schema_version_stamp(m.get_mut("adr").expect("adr schema present"));
+        m
+    }
+
+    /// A committed ADR conformant under the real adr schema, stamped `schema-version: 0`
+    /// (below the manifest version 1 — a known-old-version doc the transform can upgrade).
+    const ADR_STAMP_0: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: crates/engine/src/validate.rs#validate_task
+schema-version: 0
+---
+
+# Stamped-zero decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+
+    /// A committed ADR conformant under the real adr schema, stamped `schema-version: 1`
+    /// (at the manifest version — current, so it carries no version-mismatch break).
+    const ADR_STAMP_1: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: crates/engine/src/validate.rs#validate_task
+schema-version: 1
+---
+
+# Stamped-current decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+
+    /// (M34 Inc-3) **Version-mismatch is itself a surfaced break** — *emitted*, not only
+    /// routed. A committed persisted doc of a *versioned* doctype whose schema-version stamp
+    /// is **absent** (the v0 corpus state) or **below** the manifest `current` is
+    /// non-conformant on its stamp **even when otherwise structurally clean**, so the fifth
+    /// family EMITS one `schema-conformance.*` finding for it — the pure-stamp v0 dogfood a
+    /// labeler-only path leaves silent (`design/validation.md` → Version-mismatch is itself a
+    /// surfaced break; DECISIONS 2026-06-25). A doc stamped **at** `current` stays clean. The
+    /// emitted break routes `migrate`. Store-scope, report-only.
+    #[test]
+    fn store_sweep_emits_version_mismatch_break_for_below_or_absent_stamp() {
+        let schemas = stamped_schemas();
+        let versions: BTreeMap<String, u32> = [("adr".to_string(), 1u32)].into_iter().collect();
+
+        // Run the store sweep over a single committed, baselined ADR `body`, returning the
+        // `field-value-conformant` findings it surfaces over the schema-version stamp.
+        let version_findings = |tag: &str, body: &str| -> Vec<Finding> {
+            let repo = TempRoot::new(tag);
+            repo.commit("decisions", "doc", body);
+            // Baseline the doc so the hash-only file↔CLI-state family stays silent — the
+            // version break is the only schema-conformance signal under test.
+            let mut record = FileStateRecord::new();
+            record.record("decisions/doc.md", hash_bytes(body.as_bytes()));
+            let seen = RefCell::new(Vec::new());
+            let report = validate_store_families(
+                repo.path(),
+                &schemas,
+                &no_delta_resolved(),
+                &dangling_aware_invoker(&seen),
+                &[],
+                &EmptyStepSource,
+                &record,
+                &versions,
+            )
+            .expect("store sweep runs");
+            report
+                .findings
+                .into_iter()
+                .filter(|f| f.code == "schema-conformance.field-value-conformant")
+                .collect()
+        };
+
+        // (i) Stamp absent (the v0 corpus state), otherwise conformant ⇒ exactly one version
+        // break routed `migrate` — the headline pure-stamp case a labeler leaves silent.
+        let absent = version_findings("absent", ADR_VALID);
+        assert_eq!(
+            absent.len(),
+            1,
+            "an unstamped v0 doc must surface exactly one version break, got {absent:?}",
+        );
+        assert!(
+            absent[0]
+                .route
+                .as_deref()
+                .is_some_and(|r| r.starts_with("migrate")),
+            "the stamp-absent version break must route migrate, got {:?}",
+            absent[0].route,
+        );
+
+        // (ii) Stamp below current (0 < 1), otherwise conformant ⇒ one version break, migrate.
+        let below = version_findings("below", ADR_STAMP_0);
+        assert_eq!(
+            below.len(),
+            1,
+            "a below-version doc must surface exactly one version break, got {below:?}",
+        );
+        assert!(
+            below[0]
+                .route
+                .as_deref()
+                .is_some_and(|r| r.starts_with("migrate")),
+            "the below-version break must route migrate, got {:?}",
+            below[0].route,
+        );
+
+        // (iii) Stamp at current (1) ⇒ no version break (the false-positive guard).
+        let at = version_findings("at", ADR_STAMP_1);
+        assert!(
+            at.is_empty(),
+            "an at-version doc must surface NO version break, got {at:?}",
         );
     }
 
