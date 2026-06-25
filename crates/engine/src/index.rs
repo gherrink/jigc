@@ -678,7 +678,7 @@ fn inverse_card_min(inverse_card: &str) -> usize {
 /// The committed-doc slugs of a persisted type — the `.md` file stems under
 /// `<repo_root>/<location>`, **slug-sorted** (the deterministic enumeration order). A
 /// missing / unreadable location directory yields an empty list (no committed docs yet).
-fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
+pub(crate) fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
     let dir = repo_root.join(location);
     let Ok(entries) = std::fs::read_dir(&dir) else {
         return Vec::new();

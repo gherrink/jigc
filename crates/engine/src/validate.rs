@@ -469,7 +469,72 @@ pub fn validate_store_families(
     // → the mention-resolves check; `design/document-type-schema.md` → In-prose mentions).
     findings.extend(crate::index::mention_resolves_store(repo_root, schemas));
 
+    // The **fifth content family** (`validation.md` taxonomy → Store-scope schema-
+    // conformance; the M34 detect-half). Re-parse **every committed instance against the
+    // current resolved schema** and report each `schema-conformance.{required-slot-present,
+    // required-field-present, field-value-conformant}` break. Unlike the hash-only
+    // file↔CLI-state family (Family 3, above) this **re-parses**, so a doc made
+    // non-conformant by a *schema-shape change* with its **bytes unchanged** (the M34
+    // v1-corpus-under-v2-schema case) is detected rather than invisible. `ref-resolves` is
+    // not re-emitted here — that is the index-based Family 4 ([`ref_resolves_store`]),
+    // already at store scope (the four-check deliverable is 3-new + 1-existing). Report-only
+    // at store scope like every content family (`corpus-migration.md` → the detect-half).
+    findings.extend(schema_conformance_store(repo_root, schemas));
+
     Ok(ValidationReport::new(findings, resolved))
+}
+
+/// The **fifth content family** (`validation.md` → Store-scope schema-conformance — the
+/// fifth family; `corpus-migration.md` → the detect-half): re-parse **every committed
+/// instance against the current resolved schema** and report each `schema-conformance.*`
+/// presence/value break — closing the silent-drift hole a schema-shape change opens. A doc
+/// made non-conformant with its **bytes unchanged** is invisible to the hash-only
+/// file↔CLI-state family ([`crate::file_state::detect_committed_store`], which compares
+/// hashes, not structure), so it must be **re-parsed**, not re-hashed.
+///
+/// A **clean lift** of the pure task-scope [`conformance_for`] — no working area, no
+/// `FileStateRecord`, no edge index. It walks the committed store with the
+/// [`detect_committed_store`](crate::file_state::detect_committed_store) walk shape: per
+/// persisted (`location:`-bearing) schema, slug-sorted `.md`
+/// ([`committed_slugs`](crate::index::committed_slugs)), transient (location-less) types
+/// skipped — **not** the anchor-scoped `enumerate_committed_surface`, which under-walks. Per
+/// doc it synthesizes the `<type>:<slug>.md` filename + `<location>/<slug>.md` record key
+/// [`conformance_for`] expects, so parse-level findings surface too;
+/// `schema-conformance.unknown-type` can never fire here (the type comes from schema
+/// iteration, never a filename prefix).
+///
+/// `ref-resolves` is **not** re-emitted — it is the index-based Family 4
+/// ([`ref_resolves_store`](crate::index::ref_resolves_store)), already at store scope. So
+/// this family is the three per-instance presence/value checks; the four-check deliverable
+/// is 3-new + 1-existing, no scope dropped.
+///
+/// **Report-only at store scope** like every content family: the `schema-conformance.*`
+/// findings carry their intrinsic-blocking severity, but *blocking* is a finalize/task-scope
+/// verdict — under the read-only store sweep the same finding is *listed*, never a gate (the
+/// CLI exit keys only on `pack-probe-integrity.*`). Read-only by construction: the only I/O
+/// is reading the committed `.md` bytes.
+///
+/// Deterministic: `schemas` is a [`BTreeMap`] (type-sorted), the docs of each type enumerate
+/// slug-sorted, and per doc the checks run in section-document order.
+fn schema_conformance_store(repo_root: &Path, schemas: &BTreeMap<String, Schema>) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (ty, schema) in schemas {
+        let Some(location) = schema.location.as_deref() else {
+            continue; // a transient (location-less) type has no committed docs.
+        };
+        for slug in crate::index::committed_slugs(repo_root, location) {
+            let rel_key = format!("{location}{slug}.md");
+            let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
+                continue; // read race: skip; the next sweep re-checks.
+            };
+            // Mirror the pure task-scope call exactly (no BOM strip, `from_utf8_lossy`):
+            // a non-UTF-8 instance is the parser's concern, surfaced via `conformance_for`.
+            let source = String::from_utf8_lossy(&bytes);
+            let filename = format!("{ty}:{slug}.md");
+            findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
+        }
+    }
+    findings
 }
 
 /// Drive the `doc-code` subprocess probe over an already-enumerated committed-store anchor
@@ -4085,6 +4150,118 @@ A single in-memory node keeps session lookups sub-millisecond.
 A cold node loses its sessions; clients re-authenticate.
 "
         .to_string()
+    }
+
+    /// The [`schemas`] set with the `adr` doctype **shadowed** by a stricter schema that
+    /// adds a required `owner` header field — the engine-level analog of a project-layer
+    /// schema shadow. A committed ADR conformant under the un-shadowed schema is
+    /// non-conformant under this one **with its bytes unchanged** (the silent-drift case
+    /// the fifth content family detects, which the hash-only file↔CLI-state family cannot).
+    fn shadowed_schemas() -> BTreeMap<String, Schema> {
+        const ADR_SHADOW_YAML: &[u8] = b"\
+type: adr
+location: decisions/
+id-from: title
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+      - { id: supersedes, type: ref, to: adr, card: \"0..*\", inverse: superseded-by }
+      - { id: cites-code, type: code-anchor }
+      - { id: owner, type: string }
+  - id: context
+    slot: { hint: Forces. }
+  - id: decision
+    slot: { hint: What. }
+  - id: consequences
+    slot: { hint: Effects. }
+";
+        let mut m = schemas();
+        m.insert(
+            "adr".to_string(),
+            load_schema_with_types(ADR_SHADOW_YAML, &dev_pack_field_types())
+                .expect("adr shadow schema loads"),
+        );
+        m
+    }
+
+    /// The **fifth content family** (`validation.md` → Store-scope schema-conformance): a
+    /// committed doc made non-conformant by a *schema-shape change* with its **bytes
+    /// unchanged** is re-parsed against the current resolved schema and its break surfaced
+    /// at store scope — the silent-drift hole the hash-only file↔CLI-state family (Family 3)
+    /// cannot see. The shadow adds a required `owner` header field the committed ADR's
+    /// (unchanged) bytes never carried, so `schema-conformance.required-field-present`
+    /// surfaces; under the un-shadowed schema the same store is fully conformant and
+    /// surfaces none. The family is wired into [`validate_store_families`] only.
+    #[test]
+    fn validate_store_surfaces_schema_conformance_break_under_shadow() {
+        let repo = TempRoot::new("conformance-shadow");
+        // A committed ADR conformant under the real adr schema — its bytes never change.
+        repo.commit("decisions", "valid", ADR_VALID);
+
+        // Baseline the doc so the hash-only file↔CLI-state family stays silent: this proves
+        // the break is caught by RE-PARSE, not a hash mismatch (the bytes match baseline).
+        let mut record = FileStateRecord::new();
+        record.record("decisions/valid.md", hash_bytes(ADR_VALID.as_bytes()));
+
+        // (i) Under the un-shadowed schema the store is fully conformant — no break.
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+        )
+        .expect("store sweep runs over a conformant store");
+        assert!(
+            !report
+                .findings
+                .iter()
+                .any(|f| f.probe == "schema-conformance"),
+            "a fully conformant store surfaces no schema-conformance break: {:?}",
+            report.findings,
+        );
+
+        // (ii) The schema shadow adds a required `owner` header field the committed ADR's
+        // unchanged bytes do not carry → the silent-drift case the re-parse detects.
+        let report = validate_store_families(
+            repo.path(),
+            &shadowed_schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+        )
+        .expect("store sweep runs under the schema shadow");
+        let breaks: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.required-field-present")
+            .collect();
+        assert_eq!(
+            breaks.len(),
+            1,
+            "the re-parse must surface exactly one required-field-present break for the \
+             now-non-conformant committed ADR: {:?}",
+            report.findings,
+        );
+        assert!(
+            breaks[0].message.contains("owner") && breaks[0].message.contains("status"),
+            "the break must name the missing required `owner` field: {}",
+            breaks[0].message,
+        );
+        // Read-only at store scope: the file-state record is untouched (no re-baseline).
+        assert_eq!(
+            record.get("decisions/valid.md"),
+            Some(hash_bytes(ADR_VALID.as_bytes()).as_str()),
+            "the store sweep opens no record write",
+        );
     }
 
     /// (Test 4) A store with **no** `code-anchor` leaf never calls the invoker and writes
