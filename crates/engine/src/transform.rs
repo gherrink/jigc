@@ -25,11 +25,17 @@
 //! gate blocks on the empty slot until the agent authors the prose (the CLI never authors
 //! it — the determinism boundary).
 //!
-//! The remaining branches stay deferred: the `prose-needing` **field** sub-case (a new
-//! required *field*, not a slot — the transform mints slots, not fields) and
-//! `added-optional-field` (M34 Inc-3, proven live by the schema-version-stamp dogfood).
-//! The driver surfaces both as [`TransformError::Unsupported`] rather than silently
-//! skipping — an un-built branch must block, never drop a change.
+//! M34 Inc-3 T1 builds the **`added-optional-field` branch**: a defaulted field is
+//! spliced at its schema-ordered home — into an existing `---` header, or **introducing
+//! the fence** for a header-less doctype (the schema-version stamp's `prd`/`changelog`
+//! v0→v1 shape change). An `optional:` field with no default is a byte no-op (its
+//! absence conforms); a `set`-derived field with no default needs the caller-supplied
+//! value the T4 dogfood threads in (unbuilt here).
+//!
+//! Two branches stay deferred, surfaced as [`TransformError::Unsupported`] rather than
+//! silently skipped — an un-built branch must block, never drop a change: the
+//! `prose-needing` **field** sub-case (a new required *field*, not a slot — the transform
+//! mints slots, not fields) and the `set`-derived add-field value (M34 Inc-3 T4).
 //!
 //! # The per-doc-gated corpus fold (M34 Inc-2 T5)
 //!
@@ -82,8 +88,9 @@
 //! rollback **orchestration** land in the Inc-3 verb that consumes [`migrate_corpus`];
 //! this doc-comment is where their per-doc granularity + inventory are **pinned**.
 
+use crate::field_block::{Field, Value};
 use crate::parse::parse_sections;
-use crate::schema::Schema;
+use crate::schema::{Schema, SectionBody};
 use crate::schema_diff::SchemaChange;
 use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError};
@@ -96,7 +103,8 @@ pub enum TransformError {
     Generate(GenerateError),
     /// A classified change kind whose driver branch is **not built** — the
     /// `prose-needing` **field** sub-case (a new required field; T4 mints only slots) and
-    /// `added-optional-field` (M34 Inc-3). Surfaced, never silently skipped, so an
+    /// a `set`-derived `added-optional-field` with no static default (its value is the
+    /// deriver's, threaded in by M34 Inc-3 T4). Surfaced, never silently skipped, so an
     /// un-built branch blocks the migration rather than dropping a change.
     Unsupported {
         /// The classified kind's wire name.
@@ -168,15 +176,70 @@ pub fn transform(
                     section: section.clone(),
                 });
             }
-            SchemaChange::AddedOptionalField { section, .. } => {
-                return Err(TransformError::Unsupported {
-                    kind: "added-optional-field",
-                    section: section.clone(),
-                });
+            SchemaChange::AddedOptionalField { section, field } => {
+                out = apply_added_field(new_schema, &out, section, field)?;
             }
         }
     }
     Ok(out)
+}
+
+/// Splice an `added-optional-field` change: materialize the new field `field` of
+/// `section` at its schema-ordered home, carrying a **deterministic** value.
+///
+/// The value comes from the field's schema `default` (`corpus-migration.md` → the
+/// add-field branch). A header field is placed inside the `---` fence (introducing the
+/// fence for a header-less doctype) via [`write::insert_front_matter_field`]; a body
+/// field via [`write::insert_field`].
+///
+/// Two sub-cases carry **no** static default:
+/// - **`optional:` with no default** — its absence already conforms, so there is
+///   nothing deterministic to place: a byte **no-op** (the widened-cardinality sibling).
+/// - **a `set`-derived field with no default** (the schema-version stamp) — its value is
+///   caller-supplied by the deriver M34 Inc-3 T4 threads in; unbuilt here, so it is
+///   surfaced as [`TransformError::Unsupported`] rather than silently dropped.
+fn apply_added_field(
+    new_schema: &Schema,
+    source: &str,
+    section: &str,
+    field: &str,
+) -> Result<String, TransformError> {
+    let unsupported = || TransformError::Unsupported {
+        kind: "added-optional-field",
+        section: section.to_string(),
+    };
+    let sec = new_schema
+        .sections
+        .iter()
+        .find(|s| s.id == section)
+        .ok_or_else(unsupported)?;
+    let decl = match &sec.body {
+        SectionBody::Simple { fields, .. } => fields.iter().find(|f| f.id == field),
+        SectionBody::Repeatable { .. } => None,
+    }
+    .ok_or_else(unsupported)?;
+
+    let value = match &decl.default {
+        Some(default) => default.clone(),
+        // No deterministic value: an optional field's absence stays conformant (no-op);
+        // a `set`-derived field needs the caller-supplied value (T4).
+        None if decl.optional => return Ok(source.to_string()),
+        None => return Err(unsupported()),
+    };
+
+    let new_field = Field {
+        key: field.to_string(),
+        value: Value::Scalar(value),
+    };
+    if sec.header {
+        Ok(write::insert_front_matter_field(
+            new_schema, source, section, &new_field,
+        )?)
+    } else {
+        Ok(write::insert_field(
+            new_schema, source, section, &new_field,
+        )?)
+    }
 }
 
 /// One doc's migration job in a corpus batch — its bytes plus the schema pair and
@@ -864,12 +927,298 @@ sections:
         );
     }
 
+    // ---- (e) the added-optional-field branch: a defaulted header field, both shapes ----
+
+    /// Shape A — a doctype that **already carries** a `---` header (a `meta` header
+    /// with a `derived-from` ref, the spec shape M33 shipped). v1 has only the ref.
+    fn doca_v1() -> Schema {
+        load_schema(
+            b"\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: doca, card: \"0..1\" }
+  - id: body
+    slot: { hint: \"the body\" }
+",
+        )
+        .expect("doca v1 loads")
+    }
+
+    /// v2 adds a **defaulted** `schema-version` field after `derived-from` — the
+    /// stamp-shaped add-field whose value comes from the schema `default` (the
+    /// caller-supplied `set`-derived value is M34 Inc-3 T4's concern).
+    fn doca_v2() -> Schema {
+        load_schema(
+            b"\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: doca, card: \"0..1\" }
+      - { id: schema-version, type: string, default: \"1\" }
+  - id: body
+    slot: { hint: \"the body\" }
+",
+        )
+        .expect("doca v2 loads")
+    }
+
+    /// A canonical v0-shaped `doca` carrying a `derived-from` ref + body prose.
+    fn doca_v0_doc() -> String {
+        let inst = Instance {
+            title: "A doc".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![Field {
+                        key: "derived-from".to_string(),
+                        value: Value::Scalar("doca:other".to_string()),
+                    }],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "body".to_string(),
+                    slot: Some("The body prose, unchanged by the add-field.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&doca_v1(), &inst)
+    }
+
+    #[test]
+    fn added_field_into_an_existing_header_is_byte_stable_and_preserves_values() {
+        let v1 = doca_v1();
+        let v2 = doca_v2();
+        let src = doca_v0_doc();
+
+        // The real classifier emits the add-field; the driver is exercised on the
+        // emitted classification, not a hand-built list.
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedOptionalField {
+                section: "meta".to_string(),
+                field: "schema-version".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("add-field transform succeeds");
+
+        // (c) conforms against v2, (a) round-trips byte-identical.
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // (b) the new field is present with its default value, at its schema-ordered
+        // home (after `derived-from`); every prior field/slot value survives.
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let meta = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "meta")
+            .expect("meta present");
+        assert_eq!(
+            meta.fields
+                .iter()
+                .map(|f| f.key.as_str())
+                .collect::<Vec<_>>(),
+            vec!["derived-from", "schema-version"],
+            "the new field slots in at its schema-ordered position"
+        );
+        let field_val = |id: &str| {
+            meta.fields
+                .iter()
+                .find(|f| f.key == id)
+                .map(|f| f.value.clone())
+        };
+        assert_eq!(
+            field_val("schema-version"),
+            Some(Value::Scalar("1".to_string()))
+        );
+        assert_eq!(
+            field_val("derived-from"),
+            Some(Value::Scalar("doca:other".to_string())),
+            "the prior ref value survives"
+        );
+        let body = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "body")
+            .and_then(|s| s.slot.clone());
+        assert_eq!(
+            body.as_deref(),
+            Some("The body prose, unchanged by the add-field.")
+        );
+
+        // (d) determinism.
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run succeeds");
+        assert_eq!(again, out, "add-field transform is deterministic");
+    }
+
+    /// Shape B — a **header-less** doctype: v1 renders zero front-matter (the `prd` /
+    /// `changelog` shape), so the stamp **introduces a `---` block that never existed**.
+    fn docb_v1() -> Schema {
+        load_schema(
+            b"\
+type: docb
+sections:
+  - id: vision
+    slot: { hint: \"the vision\" }
+  - id: success
+    slot: { hint: \"success criteria\" }
+",
+        )
+        .expect("docb v1 loads")
+    }
+
+    /// v2 prepends a `meta` header carrying the defaulted `schema-version` field — a
+    /// real v0→v1 shape change that brings the `---` block into being.
+    fn docb_v2() -> Schema {
+        load_schema(
+            b"\
+type: docb
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: schema-version, type: string, default: \"1\" }
+  - id: vision
+    slot: { hint: \"the vision\" }
+  - id: success
+    slot: { hint: \"success criteria\" }
+",
+        )
+        .expect("docb v2 loads")
+    }
+
+    /// A canonical v0-shaped (header-less) `docb`.
+    fn docb_v0_doc() -> String {
+        let inst = Instance {
+            title: "B doc".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "vision".to_string(),
+                    slot: Some("A frictionless flow.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "success".to_string(),
+                    slot: Some("Abandonment drops 20%.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&docb_v1(), &inst)
+    }
+
+    #[test]
+    fn added_field_into_a_header_less_doc_introduces_the_fence_byte_stably() {
+        let v1 = docb_v1();
+        let v2 = docb_v2();
+        let src = docb_v0_doc();
+
+        // Precondition: the v0 doc carries no front-matter fence at all.
+        assert!(
+            !src.starts_with("---\n"),
+            "the v0 header-less doc has no `---` block"
+        );
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedOptionalField {
+                section: "meta".to_string(),
+                field: "schema-version".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("add-field transform succeeds");
+
+        // The `---` block is introduced, carrying the defaulted field.
+        assert!(
+            out.starts_with("---\nschema-version: 1\n---\n\n"),
+            "the fence is introduced ahead of the body; got {out:?}"
+        );
+
+        // (c) conforms against v2, (a) round-trips byte-identical.
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // (b) the body slots survive verbatim; the new field carries its default.
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let slot_of = |id: &str| {
+            inst.sections
+                .iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.slot.clone())
+        };
+        assert_eq!(slot_of("vision").as_deref(), Some("A frictionless flow."));
+        assert_eq!(
+            slot_of("success").as_deref(),
+            Some("Abandonment drops 20%.")
+        );
+        let stamp = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "meta")
+            .and_then(|s| s.fields.iter().find(|f| f.key == "schema-version"))
+            .map(|f| f.value.clone());
+        assert_eq!(stamp, Some(Value::Scalar("1".to_string())));
+
+        // (d) determinism.
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run succeeds");
+        assert_eq!(again, out, "fence-introducing add-field is deterministic");
+    }
+
+    /// An added field that is **`optional:` with no default** has no deterministic
+    /// value to place: its absence stays conformant, so the transform is a byte
+    /// **no-op** (the design table's "add optional field" with nothing to add — the
+    /// widened-cardinality sibling). It must not error, and must not invent a value.
+    #[test]
+    fn added_optional_field_with_no_default_is_a_byte_no_op() {
+        let v1 = doca_v1();
+        let v2 = load_schema(
+            b"\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: doca, card: \"0..1\" }
+      - { id: link, type: string, optional: true }
+  - id: body
+    slot: { hint: \"the body\" }
+",
+        )
+        .expect("doca v2-optional loads");
+        let src = doca_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedOptionalField {
+                section: "meta".to_string(),
+                field: "link".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("optional add-field is a no-op");
+        assert_eq!(out, src, "an optional field with no default adds no bytes");
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+    }
+
     // ---- the deferred branches block, never silently drop ----
 
     /// The **prose-needing field** sub-case (a new required *field*, not a slot — T4
-    /// mints only slots) and an `added-optional-field` change (M34 Inc-3's branch) are
-    /// surfaced as [`TransformError::Unsupported`], not silently skipped — an un-built
-    /// branch must block the migration.
+    /// mints only slots) is surfaced as [`TransformError::Unsupported`], not silently
+    /// skipped — an un-built branch must block the migration. The `added-optional-field`
+    /// branch is now built (M34 Inc-3 T1; see the e2e tests above), so it no longer
+    /// asserts Unsupported here.
     #[test]
     fn deferred_kinds_surface_as_unsupported() {
         let v1 = prd_v1();
@@ -882,17 +1231,6 @@ sections:
             transform(&v1, &v1, &src, &prose_needing_field),
             Err(TransformError::Unsupported {
                 kind: "prose-needing",
-                section: "vision".to_string()
-            })
-        );
-        let added = vec![SchemaChange::AddedOptionalField {
-            section: "vision".to_string(),
-            field: "owner".to_string(),
-        }];
-        assert_eq!(
-            transform(&v1, &v1, &src, &added),
-            Err(TransformError::Unsupported {
-                kind: "added-optional-field",
                 section: "vision".to_string()
             })
         );

@@ -2395,10 +2395,13 @@ pub fn promote_slot_to_repeatable(
 /// the nearest preceding present header field, before the nearest following one), so
 /// the present front-matter fields stay in schema order (`parsing.md` → Absent
 /// structural homes generate at their schema-ordered position). The optional ref the
-/// fillable form omits (`commit#header/implements`) is the driving case. A header
-/// field already present → [`GenerateError::AlreadyPresent`] (route to [`set_field`]);
-/// a section that is not the header, or a key the schema does not declare for it →
-/// [`GenerateError::WrongShape`] / [`GenerateError::UnknownSection`].
+/// fillable form omits (`commit#header/implements`) is the driving case. When the
+/// source carries **no `---` block at all** (a header-less doctype gaining a header in
+/// a migration — the schema-version stamp's `prd`/`changelog` case), the fence is
+/// **introduced** carrying this first field, byte-identical to [`render`]'s header
+/// emission. A header field already present → [`GenerateError::AlreadyPresent`] (route
+/// to [`set_field`]); a section that is not the header, or a key the schema does not
+/// declare for it → [`GenerateError::WrongShape`] / [`GenerateError::UnknownSection`].
 pub fn insert_front_matter_field(
     schema: &Schema,
     source: &str,
@@ -2430,10 +2433,22 @@ pub fn insert_front_matter_field(
     };
 
     // The front-matter content range (between the `---` fences) and the present keys
-    // in physical order, located from the same block parse the reader uses.
-    let content = front_matter_content(source).ok_or_else(|| GenerateError::WrongShape {
-        what: format!("section {section_id:?} has no front-matter block to insert into"),
-    })?;
+    // in physical order, located from the same block parse the reader uses. When the
+    // source carries **no `---` block at all** — a header-less doctype gaining a header
+    // in a corpus migration (the `prd`/`changelog` v0→v1 stamp case) — introduce the
+    // fence carrying this first field ahead of the body. The bytes are byte-identical to
+    // [`render`]'s header emission (`---\n<bare-fields>---\n\n`), so `render(parse(out))
+    // == out` holds; subsequent fields then take the present-block path below.
+    let content = match front_matter_content(source) {
+        Some(content) => content,
+        None => {
+            let block = format!(
+                "---\n{}---\n\n",
+                emit_bare_fields(std::slice::from_ref(field))
+            );
+            return Ok(format!("{block}{source}"));
+        }
+    };
     if field_value_in_lines(source, content.clone(), &field.key, false).is_some() {
         return Err(GenerateError::AlreadyPresent {
             what: format!("field {:?} in section {section_id:?}", field.key),
