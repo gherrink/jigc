@@ -178,16 +178,19 @@ fn canonical_dir(doctype: &str) -> &'static str {
 fn shipped_schema(pack: &Path, doctype: &str) -> engine::schema::Schema {
     let yaml = fs::read(pack.join("schemas").join(format!("{doctype}.yaml")))
         .unwrap_or_else(|e| panic!("read shipped {doctype} schema: {e}"));
-    if doctype == "prd" {
-        return engine::schema::load_schema(&yaml).expect("shipped prd schema loads");
-    }
-    let types = vec![engine::schema::PackTypeDecl {
-        name: "code-anchor".to_owned(),
-        adjudicator: "doc-code".to_owned(),
-        check: "symbol-exists".to_owned(),
-    }];
-    engine::schema::load_schema_with_types(&yaml, &types)
-        .unwrap_or_else(|e| panic!("shipped {doctype} schema loads: {e:?}"))
+    let mut schema = if doctype == "prd" {
+        engine::schema::load_schema(&yaml).expect("shipped prd schema loads")
+    } else {
+        let types = vec![engine::schema::PackTypeDecl {
+            name: "code-anchor".to_owned(),
+            adjudicator: "doc-code".to_owned(),
+            check: "symbol-exists".to_owned(),
+        }];
+        engine::schema::load_schema_with_types(&yaml, &types)
+            .unwrap_or_else(|e| panic!("shipped {doctype} schema loads: {e:?}"))
+    };
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The per-file migration task id for a repo-relative source `rel` — the production

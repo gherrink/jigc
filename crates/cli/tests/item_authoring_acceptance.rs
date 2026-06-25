@@ -138,7 +138,10 @@ fn spec_schema() -> engine::schema::Schema {
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
     }];
-    engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec.yaml loads")
+    let mut schema =
+        engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec.yaml loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// Mint a `criteria` item via `jigc doc add-item`, returning the **emitted**

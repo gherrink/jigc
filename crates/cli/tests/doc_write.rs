@@ -403,7 +403,10 @@ fn spec_schema() -> engine::schema::Schema {
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
     }];
-    engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec.yaml loads")
+    let mut schema =
+        engine::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec.yaml loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The staged `spec:<slug>` instance path in the task working area.
@@ -654,7 +657,9 @@ fn add_item_into_a_non_repeatable_section_blocks_with_a_routed_finding() {
 /// round-trip asserts against exactly the bytes the pack ships.
 fn changelog_schema() -> engine::schema::Schema {
     const CHANGELOG_YAML: &[u8] = include_bytes!("../pack/schemas/changelog.yaml");
-    engine::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads")
+    let mut schema = engine::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The staged `changelog:changelog` singleton instance in the task working area.

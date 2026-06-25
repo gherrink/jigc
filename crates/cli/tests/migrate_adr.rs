@@ -156,7 +156,10 @@ fn shipped_adr_schema(pack: &Path) -> engine::schema::Schema {
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
     }];
-    engine::schema::load_schema_with_types(&yaml, &types).expect("shipped adr schema loads")
+    let mut schema =
+        engine::schema::load_schema_with_types(&yaml, &types).expect("shipped adr schema loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The per-file migration task id — `migrate-adr-<slug(source-path)>`, path-folded so a

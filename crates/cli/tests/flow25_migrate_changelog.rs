@@ -145,7 +145,9 @@ fn staged_changelog(repo: &Path, task: &str) -> String {
 /// The shipped changelog schema, loaded for the re-read + round-trip assertions.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
     let yaml = fs::read(pack.join("schemas").join("changelog.yaml")).expect("read shipped schema");
-    engine::schema::load_schema(&yaml).expect("shipped changelog schema loads")
+    let mut schema = engine::schema::load_schema(&yaml).expect("shipped changelog schema loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty

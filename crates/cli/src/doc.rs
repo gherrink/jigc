@@ -707,7 +707,20 @@ fn on_create_block_field(
     today: &str,
     migration: bool,
 ) -> Option<engine::field_block::Field> {
-    use engine::schema::FieldType;
+    use engine::schema::{FieldType, SCHEMA_VERSION_SET};
+
+    // The schema-version stamp (M34): a field carrying the schema-version deriver
+    // marker is filled with the current active schema version — the version analog of
+    // the `today_iso` clock deriver. Not migration-suppressed (unlike the date): a
+    // freshly-adopted foreign doc IS authored against the current version, so the
+    // stamp is genuine, never false history (`design/corpus-migration.md` → The
+    // schema-version stamp; the current-active-version deriver).
+    if field.set.as_deref() == Some(SCHEMA_VERSION_SET) {
+        return Some(engine::field_block::Field {
+            key: field.id.clone(),
+            value: Value::Scalar(current_schema_version().to_string()),
+        });
+    }
 
     let value = if field.ty == FieldType::Date && field.set.as_deref() == Some("on-create") {
         if migration {
@@ -831,6 +844,18 @@ fn on_create_doc_fields(schema: &Schema, migration: bool) -> Vec<engine::field_b
         .flatten()
         .filter_map(|field| on_create_block_field(field, &today, migration))
         .collect()
+}
+
+/// The current active schema version — the CLI-side `set: schema-version` deriver
+/// (`engine::schema::SCHEMA_VERSION_SET`), the version analog of [`today_iso`]: it
+/// supplies the value stamped into a newly-created persisted doc's schema-version
+/// front-matter field. The frozen v1 doctype set is uniformly at schema-version 1, so
+/// the deriver yields 1 for every persisted doctype (its manifest schema-version —
+/// `design/corpus-migration.md` → The schema-version stamp). It becomes doctype-aware
+/// when a doctype first advances past v1 (a future versioned migration extends this);
+/// stamping 1 now is correct and durable — a v1 doc IS at v1, needing no later rewrite.
+fn current_schema_version() -> u32 {
+    1
 }
 
 /// The current UTC date as an ISO `YYYY-MM-DD` string — the CLI-side `set: on-create`

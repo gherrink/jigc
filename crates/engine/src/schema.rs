@@ -505,6 +505,90 @@ pub fn load_schema(bytes: &[u8]) -> Result<Schema, SchemaError> {
     load_schema_with_types(bytes, &[])
 }
 
+/// The id of the engine-declared per-doc **schema-version stamp** field — the
+/// front-matter leaf recording which schema version an instance was authored
+/// against (`design/corpus-migration.md` → The schema-version stamp). The field is
+/// **engine-declared** (shape only) and **pack-loader-injected** uniformly into
+/// every persisted frozen doctype, so the N doctype YAMLs are not hand-edited; its
+/// value is supplied at create time by the CLI's "current active schema version"
+/// deriver (the `status`/`date` model — in-schema field, engine/CLI-set value).
+pub const SCHEMA_VERSION_FIELD: &str = "schema-version";
+
+/// The `set:` deriver marker naming the [`SCHEMA_VERSION_FIELD`]'s value source —
+/// the CLI's "current active schema version" deriver fills it at create, the version
+/// analog of the `set: on-create` clock deriver for dates. A field carrying it is
+/// CLI-derived (never author-required) just like a `set: on-create` date.
+pub const SCHEMA_VERSION_SET: &str = "schema-version";
+
+/// The id of the header section [`inject_schema_version_stamp`] creates for a
+/// header-less doctype (`prd`/`changelog`) so the stamp has a front-matter home —
+/// matching the `meta` header the other persisted doctypes already carry.
+const STAMP_HEADER_SECTION: &str = "meta";
+
+/// The engine-declared schema-version stamp [`Field`] — its **shape only**
+/// (`type: int, set: schema-version`); the version VALUE is per-instance, supplied
+/// by the CLI deriver at create. Version-independent by design: the stamp's shape is
+/// identical across every schema version, so the doctype's `schema_hash` stays a
+/// pure fingerprint of the doctype's *own* shape, and a v→v+1 bump changes the hash
+/// only via the real shape change (never via the stamp).
+pub fn schema_version_stamp_field() -> Field {
+    Field {
+        id: SCHEMA_VERSION_FIELD.to_owned(),
+        ty: FieldType::Int,
+        of: None,
+        default: None,
+        set: Some(SCHEMA_VERSION_SET.to_owned()),
+        to: None,
+        card: None,
+        inverse: None,
+        inverse_card: None,
+        check: None,
+        optional: false,
+        title_names_symbol: false,
+    }
+}
+
+/// Inject the engine-declared [`schema_version_stamp_field`] into `schema`'s header
+/// section, **uniformly** — appended to the existing header's `fields` for a doctype
+/// that already declares one (`adr`/`spec`/`arch-doc`), or carried by a freshly
+/// created header section inserted **first** for a header-less doctype
+/// (`prd`/`changelog`, which thereby gain a `---` block; the header must be the
+/// document's first section — `parse.rs` → header-not-first). Idempotent: a schema
+/// that already carries a [`SCHEMA_VERSION_FIELD`] anywhere is left unchanged.
+///
+/// The caller (the CLI pack loader) decides *which* schemas are eligible (the frozen
+/// persisted set); this helper is the engine-declared placement, so the doctype
+/// YAMLs are never hand-edited (`design/corpus-migration.md` → The schema-version
+/// stamp: the engine injects the declaration uniformly).
+pub fn inject_schema_version_stamp(schema: &mut Schema) {
+    let already = schema.sections.iter().any(|s| match &s.body {
+        SectionBody::Simple { fields, .. } => fields.iter().any(|f| f.id == SCHEMA_VERSION_FIELD),
+        SectionBody::Repeatable { .. } => false,
+    });
+    if already {
+        return;
+    }
+    if let Some(header) = schema.sections.iter_mut().find(|s| s.header)
+        && let SectionBody::Simple { fields, .. } = &mut header.body
+    {
+        fields.push(schema_version_stamp_field());
+        return;
+    }
+    // No header section (a header-less doctype): create one, carrying the stamp, and
+    // insert it first so the front-matter `---` block renders at the top.
+    schema.sections.insert(
+        0,
+        Section {
+            id: STAMP_HEADER_SECTION.to_owned(),
+            header: true,
+            body: SectionBody::Simple {
+                slot: None,
+                fields: vec![schema_version_stamp_field()],
+            },
+        },
+    );
+}
+
 /// Parse a doc-type [`Schema`], resolving each field's type against the supplied
 /// **pack-declared** type set (the `(name, adjudicator-probe)` pairs the pack
 /// declares — the M10 extension axis).

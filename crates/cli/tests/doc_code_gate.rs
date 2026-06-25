@@ -518,7 +518,10 @@ fn adr_schema() -> engine::schema::Schema {
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
     }];
-    engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr.yaml loads")
+    let mut schema =
+        engine::schema::load_schema_with_types(ADR_YAML, &types).expect("adr.yaml loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// M22 inc-4 (engine work #4) — a freshly-created `adr` carries its schema-declared
@@ -551,11 +554,15 @@ fn created_adr_materializes_doc_level_status_and_date() {
         .join("adr:single-node-cache.md");
     let body = fs::read_to_string(&staged).expect("read staged ADR");
 
-    let expected_fm = format!("---\nstatus: proposed\ndate: {}\n---\n", today_iso());
+    let expected_fm = format!(
+        "---\nstatus: proposed\ndate: {}\nschema-version: 1\n---\n",
+        today_iso()
+    );
     assert!(
         body.starts_with(&expected_fm),
-        "created adr front-matter must be exactly status (default) then date (on-create) in \
-         schema order, no stray supersedes/cites-code line; expected prefix:\n{expected_fm}\ngot:\n{body}",
+        "created adr front-matter must be exactly status (default) then date (on-create) then the \
+         schema-version stamp in schema order, no stray supersedes/cites-code line; expected \
+         prefix:\n{expected_fm}\ngot:\n{body}",
     );
 
     // The materialized doc round-trips byte-stable through the engine.

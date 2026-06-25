@@ -43,7 +43,41 @@ pub fn pack_field_types(pack: &dyn PackSource) -> Result<Vec<PackTypeDecl>, Sche
 /// resolves with its bound adjudicator. The engine stays domain-empty; the CLI feeds
 /// the pack's declared set in here.
 pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, SchemaError> {
-    load_schema_with_types(bytes, &pack_field_types(pack)?)
+    let mut schema = load_schema_with_types(bytes, &pack_field_types(pack)?)?;
+    // The per-doc schema-version stamp (M34): inject the engine-declared stamp field
+    // into every **persisted** doctype the pack's freeze manifest declares frozen —
+    // the convergence point shared by the freeze gate, `ingest::load_schemas`, and
+    // `all_schemas`, so the stamp rides every CLI schema-load uniformly while the bare
+    // engine `load_schema` (and `arb_doc()` fuzz) stays stamp-free. Gated on the
+    // manifest's frozen set (the pack's own declaration, not an engine-baked list —
+    // the engine-empty invariant) AND `location.is_some()`, so the transient `commit`
+    // (in the manifest, no location) is excluded and a non-freeze pack (no manifest —
+    // the methodology pack) injects nothing (`design/corpus-migration.md` → The
+    // schema-version stamp).
+    if schema.location.is_some() && frozen_doctype_set(pack).contains(schema.ty.as_str()) {
+        engine::schema::inject_schema_version_stamp(&mut schema);
+    }
+    Ok(schema)
+}
+
+/// The set of doctype names the pack's freeze manifest declares frozen — the gate for
+/// schema-version-stamp injection ([`load_pack_schema`]). Read from the manifest-owning
+/// pack's `config/schema-manifest.yaml` ([`SCHEMA_MANIFEST_ID`], located via
+/// [`origin_pack`](PackSource::origin_pack)). An **absent** or **malformed** manifest
+/// is the empty set (no injection) — the field-types-absent precedent: only a pack that
+/// ships a valid freeze manifest stamps. The loud manifest authority is the freeze gate
+/// ([`assert_schema_freeze`]); this read stays best-effort so a non-freeze pack-load
+/// never errors here.
+fn frozen_doctype_set(pack: &dyn PackSource) -> std::collections::BTreeSet<String> {
+    let id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    let owner = pack.origin_pack(PackResourceKind::Config, &id);
+    let Ok(bytes) = owner.read(PackResourceKind::Config, &id) else {
+        return std::collections::BTreeSet::new();
+    };
+    let Ok(manifest) = serde_yaml_ng::from_slice::<engine::manifest::Manifest>(&bytes) else {
+        return std::collections::BTreeSet::new();
+    };
+    manifest.doctypes.into_iter().map(|e| e.ty).collect()
 }
 
 /// The `config/` resource id of a pack's frozen doctype-set manifest (the M33
@@ -1332,6 +1366,84 @@ mod tests {
             defaults.lines().any(|l| l.trim() == "pack-id: dev"),
             "the pack config must declare `pack-id: dev`; got:\n{defaults}",
         );
+    }
+
+    /// The per-doc **schema-version stamp** injection contract (M34): the shipped
+    /// loader ([`load_pack_schema`]) injects the engine-declared stamp field into
+    /// every **persisted frozen** doctype, and is **inert** for the contexts that
+    /// omit the target — the transient `commit` (in the manifest, no `location:`) and
+    /// any doctype the manifest does not freeze. Asserts the stamp's shape
+    /// (`int` + `set: schema-version`) and its front-matter home (the header section,
+    /// first, so `prd`/`changelog` gain a `---` block — `parse.rs` → header-first).
+    #[test]
+    fn load_pack_schema_stamps_persisted_frozen_doctypes_and_is_inert_elsewhere() {
+        use engine::schema::{FieldType, SCHEMA_VERSION_FIELD, SCHEMA_VERSION_SET, SectionBody};
+
+        let pack = EmbeddedPack::new();
+
+        // Every persisted frozen doctype carries the stamp in its (first) header.
+        for ty in ["adr", "spec", "prd", "arch-doc", "changelog"] {
+            let bytes = pack
+                .read(PackResourceKind::Schemas, &ResourceId::from(ty))
+                .expect("schema reads");
+            let schema = load_pack_schema(&pack, &bytes).expect("schema loads");
+
+            let header = &schema.sections[0];
+            assert!(
+                header.header,
+                "`{ty}` must carry a header section first (front-matter `---` block)",
+            );
+            let SectionBody::Simple { fields, .. } = &header.body else {
+                panic!("`{ty}` header is a simple field section");
+            };
+            let stamp = fields
+                .iter()
+                .find(|f| f.id == SCHEMA_VERSION_FIELD)
+                .unwrap_or_else(|| panic!("`{ty}` header carries the schema-version stamp"));
+            assert_eq!(stamp.ty, FieldType::Int, "the stamp is an int");
+            assert_eq!(
+                stamp.set.as_deref(),
+                Some(SCHEMA_VERSION_SET),
+                "the stamp carries the schema-version deriver marker",
+            );
+            assert!(
+                stamp.default.is_none(),
+                "the stamp shape is version-independent (no baked default)",
+            );
+        }
+
+        // Inert for the transient `commit` (in the manifest, but no `location:`): no
+        // stamp anywhere, byte-identical shape to a bare load.
+        let commit_bytes = pack
+            .read(PackResourceKind::Schemas, &ResourceId::from("commit"))
+            .expect("commit reads");
+        let commit = load_pack_schema(&pack, &commit_bytes).expect("commit loads");
+        assert!(
+            !has_schema_version_field(&commit),
+            "the transient `commit` (no location) must not gain a stamp",
+        );
+
+        // Inert for a persisted doctype the manifest does NOT freeze: a fixture `note`
+        // doctype with a `location:` loaded against the shipped pack (whose manifest
+        // lists only the six) gains no stamp — the omitting-context guard.
+        let note = b"type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"x\" }\n";
+        let note_schema = load_pack_schema(&pack, note).expect("note loads");
+        assert!(
+            !has_schema_version_field(&note_schema),
+            "a doctype absent from the freeze manifest must not gain a stamp",
+        );
+    }
+
+    /// Whether any section of `schema` declares a `schema-version` field — the
+    /// stamp-presence probe for the injection-contract test.
+    fn has_schema_version_field(schema: &Schema) -> bool {
+        use engine::schema::{SCHEMA_VERSION_FIELD, SectionBody};
+        schema.sections.iter().any(|s| match &s.body {
+            SectionBody::Simple { fields, .. } => {
+                fields.iter().any(|f| f.id == SCHEMA_VERSION_FIELD)
+            }
+            SectionBody::Repeatable { .. } => false,
+        })
     }
 
     /// The **build-time freeze gate** (the intrinsic-floor-assertion sibling —

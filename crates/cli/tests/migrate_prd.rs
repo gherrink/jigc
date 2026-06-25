@@ -151,7 +151,9 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// code-anchor that `spec.criteria` carries) and no date field, so it loads bare.
 fn shipped_prd_schema(pack: &Path) -> engine::schema::Schema {
     let yaml = fs::read(pack.join("schemas").join("prd.yaml")).expect("read shipped prd schema");
-    engine::schema::load_schema(&yaml).expect("shipped prd schema loads")
+    let mut schema = engine::schema::load_schema(&yaml).expect("shipped prd schema loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The per-file migration task id for a repo-relative source `rel` — the production

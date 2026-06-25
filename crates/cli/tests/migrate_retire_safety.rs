@@ -175,6 +175,10 @@ const FOREIGN: &str = "\
 /// when it skips the copy-in. The contrast against `FOREIGN` is the whole point: the
 /// in-location squatter seeds THIS, never the foreign body.
 const EMPTY: &str = "\
+---
+schema-version: 1
+---
+
 # changelog
 
 ## Unreleased Changes
@@ -437,7 +441,9 @@ fn migrate_records_a_canonical_source_path_for_redundant_spellings() {
 /// The shipped changelog schema, loaded for the round-trip byte-stability assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
     let yaml = fs::read(pack.join("schemas").join("changelog.yaml")).expect("read shipped schema");
-    engine::schema::load_schema(&yaml).expect("shipped changelog schema loads")
+    let mut schema = engine::schema::load_schema(&yaml).expect("shipped changelog schema loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// M24 inc-5 — the in-location squatter, end-to-end (the M23 e2e FAIL now passes;

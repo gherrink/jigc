@@ -244,8 +244,10 @@ fn shipped_schema(pack: &Path, doctype: &str) -> engine::schema::Schema {
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
     }];
-    engine::schema::load_schema_with_types(&yaml, &types)
-        .unwrap_or_else(|e| panic!("shipped {doctype} schema loads: {e:?}"))
+    let mut schema = engine::schema::load_schema_with_types(&yaml, &types)
+        .unwrap_or_else(|e| panic!("shipped {doctype} schema loads: {e:?}"));
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The per-file migration task id for a repo-relative source `rel` — the production

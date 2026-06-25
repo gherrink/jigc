@@ -153,7 +153,9 @@ fn staged_docs(repo: &Path, task: &str) -> Vec<String> {
 /// The shipped changelog schema, for the byte-stable round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
     let yaml = fs::read(pack.join("schemas").join("changelog.yaml")).expect("read shipped schema");
-    engine::schema::load_schema(&yaml).expect("shipped changelog schema loads")
+    let mut schema = engine::schema::load_schema(&yaml).expect("shipped changelog schema loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The multi-release DATED changelog payload. Document order: release `1.2.0` (with

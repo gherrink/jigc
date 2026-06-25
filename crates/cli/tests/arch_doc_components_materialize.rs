@@ -147,7 +147,10 @@ fn arch_doc_schema() -> engine::schema::Schema {
         adjudicator: "doc-code".to_owned(),
         check: "symbol-exists".to_owned(),
     }];
-    engine::schema::load_schema_with_types(ARCH_YAML, &types).expect("arch-doc.yaml loads")
+    let mut schema =
+        engine::schema::load_schema_with_types(ARCH_YAML, &types).expect("arch-doc.yaml loads");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// The byte offset of a `## <Heading>` line in `body`, or `None` if absent. Matches
