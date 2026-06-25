@@ -255,7 +255,6 @@ pub(crate) fn migrate_committed_corpus(
 
     let mut record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("loading the file-state record at {jigc_root:?}"))?;
-    let mut record_dirty = false;
     for (i, outcome) in result.docs.iter().enumerate() {
         match outcome {
             DocOutcome::Migrated { id, v2 } => {
@@ -272,10 +271,17 @@ pub(crate) fn migrate_committed_corpus(
                 // Re-baseline an already-tracked doc so its rewritten bytes are not
                 // mis-reported as out-of-band drift (the rollback inventory's file-state
                 // re-hash — `corpus-migration.md`). An un-baselined doc stays un-baselined
-                // (the migration adopts nothing it didn't already track).
+                // (the migration adopts nothing it didn't already track). The baseline is
+                // saved **per doc**, paired with this doc's byte write, so the on-disk
+                // baseline always matches the on-disk files: an abort mid-corpus leaves the
+                // already-migrated docs at v2 *and* baselined, the rest at v1 — both
+                // conformant-and-detectable (the per-doc-gated transaction granularity —
+                // `corpus-migration.md` → Migration atomicity / WIP-safety).
                 if record.get(id).is_some() {
                     record.record(id.clone(), hash_bytes(v2.as_bytes()));
-                    record_dirty = true;
+                    record.save(jigc_root).with_context(|| {
+                        format!("saving the file-state record at {jigc_root:?}")
+                    })?;
                 }
                 report.migrated.push(id.clone());
             }
@@ -288,11 +294,6 @@ pub(crate) fn migrate_committed_corpus(
                 report.blocked.push((id.clone(), route));
             }
         }
-    }
-    if record_dirty {
-        record
-            .save(jigc_root)
-            .with_context(|| format!("saving the file-state record at {jigc_root:?}"))?;
     }
 
     report.migrated.sort();
@@ -748,6 +749,84 @@ sections:
         assert!(report.migrated.is_empty(), "nothing to migrate");
         let after = fs::read_to_string(repo.path().join("notes/done-note.md")).expect("read");
         assert_eq!(after, stamped, "an already-current doc is byte-untouched");
+    }
+
+    /// Per-doc baseline atomicity (M34 audit, `corpus-migration.md` → Migration atomicity /
+    /// WIP-safety): the file write and its file-state baseline flip are **one per-doc unit**, so
+    /// the on-disk baseline always matches the on-disk files. When an I/O fault aborts the write
+    /// loop mid-corpus, the docs already written must already carry their refreshed baseline on
+    /// disk — otherwise a subsequent `file-state` detect over the committed store mis-reports
+    /// those correctly-migrated docs as out-of-band drift.
+    ///
+    /// Two tracked v0 notes: `a` sorts before `b`, so `a` persists first; `b`'s atomic write is
+    /// forced to fail (its temp-sibling `notes/b.md.tmp` is pre-occupied by a directory, so
+    /// [`engine::state::persist`]'s temp write errors), aborting the loop. After the abort `a` is
+    /// on disk migrated, and its on-disk baseline must already equal the hash of those bytes.
+    #[test]
+    fn written_docs_are_baselined_per_doc_even_when_a_later_write_aborts() {
+        let repo = TempDir::new("partial-abort");
+        let jigc_root = repo.path().join(".jigc");
+
+        let to = v1_schema(note_v0_yaml());
+        let v0_schema = load_schema(note_v0_yaml()).expect("v0 note loads");
+        let note = |title: &str| {
+            render(
+                &v0_schema,
+                &Instance {
+                    title: title.to_string(),
+                    sections: vec![
+                        SectionContent {
+                            id: "vision".to_string(),
+                            slot: Some("V.".to_string()),
+                            ..Default::default()
+                        },
+                        SectionContent {
+                            id: "success".to_string(),
+                            slot: Some("S.".to_string()),
+                            ..Default::default()
+                        },
+                    ],
+                },
+            )
+        };
+        let a0 = note("A Note");
+        let b0 = note("B Note");
+        write_doc(repo.path(), "notes/a.md", &a0);
+        write_doc(repo.path(), "notes/b.md", &b0);
+
+        // Both docs are already tracked in the file-state baseline (the migration re-baselines
+        // only docs it already tracks) at their v0 hashes.
+        let mut seed = FileStateRecord::new();
+        seed.record("notes/a.md".to_string(), hash_bytes(a0.as_bytes()));
+        seed.record("notes/b.md".to_string(), hash_bytes(b0.as_bytes()));
+        fs::create_dir_all(&jigc_root).expect("mk .jigc");
+        seed.save(&jigc_root).expect("seed the baseline");
+
+        // Force `b`'s atomic write to fail: occupy its temp-sibling path with a directory, so
+        // `persist` errors when it writes the temp file — the loop aborts after `a` is written.
+        fs::create_dir_all(repo.path().join("notes/b.md.tmp")).expect("occupy temp sibling");
+
+        let pack = crate::pack::EmbeddedPack::new();
+        let result = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 1)]);
+        assert!(
+            result.is_err(),
+            "the aborted write surfaces as an error: {result:?}"
+        );
+
+        // `a` was written to disk migrated; its on-disk baseline must already reflect those
+        // bytes (the per-doc commit), so a later `file-state` detect would NOT mis-report it.
+        let on_disk_a = fs::read(repo.path().join("notes/a.md")).expect("a was written");
+        assert_ne!(
+            on_disk_a,
+            a0.as_bytes(),
+            "a was actually migrated (not still v0)"
+        );
+        let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
+        assert_eq!(
+            record.get("notes/a.md"),
+            Some(hash_bytes(&on_disk_a).as_str()),
+            "the already-written doc `a` must be baselined to its on-disk bytes before the abort"
+        );
     }
 
     /// The v1 prior shape of the `memo` doctype (a single `vision` slot) — the snapshot the
