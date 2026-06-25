@@ -1,0 +1,8 @@
+# A minimal freeze manifest declaring `prd` frozen, so the field-type-resolving
+# loader injects the schema-version stamp into a loaded `prd` schema (the gate is
+# the manifest's frozen set). The freeze gate does NOT run on this T1 read path, so
+# the hash need not match the snapshot's real shape — only `prd` must be listed.
+doctypes:
+  - type: prd
+    schema-version: 1
+    schema-hash: 0000000000000000000000000000000000000000000000000000000000000000

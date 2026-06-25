@@ -60,6 +60,44 @@ pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, S
     Ok(schema)
 }
 
+/// Load a doctype's **prior-version schema shape** from the versioned snapshot store
+/// (`schema-snapshots/<ty>.v<version>.yaml`, the M34 [`PackResourceKind::SchemaSnapshots`]
+/// kind) — the *actual* declared schema at `version`, which a v1→v2 **structural**
+/// change cannot derive from the current shape. The verb sources `from` through this
+/// per committed doc by stamp, so the engine diffs **two real declared schemas**
+/// (the determinism boundary in its strongest form — never a hand-written recipe;
+/// `design/corpus-migration.md` → Prior-schema sourcing).
+///
+/// Parsed through [`load_pack_schema`] (not the bare engine loader) so the prior shape
+/// resolves the pack's field-types **and** gets the schema-version stamp injected
+/// **identically** to the current schema — the consequence that makes a v1→v2 diff
+/// emit only the structural change (the stamp present in both `from` and `to`, so its
+/// transition is a value-bump, not a spurious add-field; T2 handles the bump).
+///
+/// A **missing** snapshot is a **located** `Err` naming the resource (never a panic);
+/// the consumer (the T2 verb) turns it into a per-doc `blocked`-with-route rather than
+/// a silent `already-current`.
+///
+/// The producer half of a clean producer→consumer seam (like Inc-2's
+/// `promote_slot_to_repeatable`): its only non-test caller is the T2 verb, which wires
+/// it to production within this same increment, so the `allow(dead_code)` is shed at
+/// increment end.
+#[allow(dead_code)]
+pub fn load_prior_schema(pack: &dyn PackSource, ty: &str, version: u32) -> anyhow::Result<Schema> {
+    use anyhow::Context;
+
+    let id = ResourceId::from(format!("{ty}.v{version}"));
+    let bytes = pack
+        .read(PackResourceKind::SchemaSnapshots, &id)
+        .with_context(|| {
+            format!(
+                "no prior-schema snapshot `{ty}.v{version}` (schema-snapshots/{ty}.v{version}.yaml)"
+            )
+        })?;
+    load_pack_schema(pack, &bytes)
+        .with_context(|| format!("prior-schema snapshot `{ty}.v{version}` is malformed"))
+}
+
 /// The set of doctype names the pack's freeze manifest declares frozen — the gate for
 /// schema-version-stamp injection ([`load_pack_schema`]). Read from the manifest-owning
 /// pack's `config/schema-manifest.yaml` ([`SCHEMA_MANIFEST_ID`], located via
@@ -212,6 +250,7 @@ fn kind_dir(kind: PackResourceKind) -> &'static str {
         PackResourceKind::Workflows => "workflows",
         PackResourceKind::Steps => "steps",
         PackResourceKind::Config => "config",
+        PackResourceKind::SchemaSnapshots => "schema-snapshots",
     }
 }
 
@@ -704,6 +743,63 @@ pub(crate) fn intrinsic_knobs_yaml() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `load_prior_schema` reads a versioned snapshot
+    /// (`schema-snapshots/<ty>.v<N>.yaml`) through the field-type-resolving
+    /// [`load_pack_schema`], so the prior shape resolves pack field-types **and** gets
+    /// the schema-version stamp injected **identically** to a current schema — the
+    /// producer half of the T2 sourcing seam. The fixture's manifest declares `prd`
+    /// frozen, so the persisted prior shape is stamped (asserted present), and the
+    /// load is byte-for-byte equal to the same bytes run through `load_pack_schema`.
+    #[test]
+    fn load_prior_schema_reads_a_versioned_snapshot_through_load_pack_schema() {
+        let fixture =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prior-schema-prd");
+        let pack = FilesystemPack::new(fixture);
+
+        let prior = load_prior_schema(&pack, "prd", 1).expect("the prd.v1 snapshot loads");
+
+        // Identical to the same bytes run through `load_pack_schema` directly — one
+        // load path, so field-type resolution + stamp injection are byte-identical.
+        let bytes = pack
+            .read(
+                PackResourceKind::SchemaSnapshots,
+                &ResourceId::from("prd.v1"),
+            )
+            .expect("the prd.v1 snapshot reads back");
+        let direct = load_pack_schema(&pack, &bytes).expect("the snapshot bytes load");
+        assert_eq!(prior, direct);
+
+        // The prior shape is the real (fixed-slot) `prd`, with the stamp injected.
+        assert_eq!(prior.ty, "prd");
+        assert!(prior.location.is_some());
+        let has_stamp = prior.sections.iter().any(|s| match &s.body {
+            engine::schema::SectionBody::Simple { fields, .. } => fields
+                .iter()
+                .any(|f| f.id == engine::schema::SCHEMA_VERSION_FIELD),
+            engine::schema::SectionBody::Repeatable { .. } => false,
+        });
+        assert!(
+            has_stamp,
+            "the loaded prior schema must carry the injected schema-version stamp",
+        );
+    }
+
+    /// A missing snapshot (`prd.v9`) is a **located** error naming the requested
+    /// resource — never a panic (the hostile-input pass, increment-workflow #3).
+    #[test]
+    fn load_prior_schema_of_a_missing_snapshot_is_a_located_error() {
+        let fixture =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/prior-schema-prd");
+        let pack = FilesystemPack::new(fixture);
+
+        let err = load_prior_schema(&pack, "prd", 9).expect_err("a missing snapshot errors");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("prd.v9"),
+            "the error must locate the missing snapshot; got: {msg}",
+        );
+    }
 
     #[test]
     fn embedded_pack_lists_and_reads_the_shipped_workflows() {

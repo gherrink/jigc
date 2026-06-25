@@ -40,13 +40,22 @@ impl From<&str> for ResourceId {
 /// The kinds of resource a pack-default layer supplies.
 ///
 /// One variant per cascade resource family (module-layout.md → The dev pack's
-/// home: `schemas | workflows | steps | config`).
+/// home: `schemas | workflows | steps | config`), plus [`SchemaSnapshots`] — the
+/// M34 versioned prior-schema store, a kind apart from `schemas` (it lives outside
+/// `schemas/` so the freeze gate's by-doctype enumeration never collides on `type`;
+/// `design/corpus-migration.md` → Prior-schema sourcing).
+///
+/// [`SchemaSnapshots`]: PackResourceKind::SchemaSnapshots
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PackResourceKind {
     Schemas,
     Workflows,
     Steps,
     Config,
+    /// Versioned prior-schema snapshots — `schema-snapshots/<type>.v<N>.yaml`, each
+    /// a full reviewable schema file the M34 corpus-migration verb diffs against the
+    /// current shape. Keyed by the file stem `<type>.v<N>` as its [`ResourceId`].
+    SchemaSnapshots,
 }
 
 /// The `resolving_path` sentinel a pack with no on-disk root reports — the
@@ -212,11 +221,12 @@ pub trait PackSource: AsPackSource {
     /// [`provenance_entries`]: PackSource::provenance_entries
     fn content_hash(&self) -> String {
         // The fixed kind order — iteration must not depend on a `HashMap`'s order.
-        const KINDS: [PackResourceKind; 4] = [
+        const KINDS: [PackResourceKind; 5] = [
             PackResourceKind::Schemas,
             PackResourceKind::Workflows,
             PackResourceKind::Steps,
             PackResourceKind::Config,
+            PackResourceKind::SchemaSnapshots,
         ];
         let mut hashed = Vec::new();
         for kind in KINDS {
