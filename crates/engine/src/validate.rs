@@ -379,9 +379,12 @@ pub struct StoreWorkflow {
 ///
 /// The engine stays **domain-empty**: the caller (CLI) resolves the cascade and feeds in
 /// the schemas, the per-workflow definition bundles (id + bytes + origin catalog), the step
-/// source, and the loaded `FileStateRecord`. Severity is the engine-owned post-pass at
-/// [`ValidationReport::new`], keyed by `(probe, check)` identically to every other entry
-/// point (a no-delta `resolved` leaves every emitted severity untouched).
+/// source, the loaded `FileStateRecord`, and `versions` (the doctype → manifest
+/// schema-version map the CLI reads from the pack's freeze manifest — the fifth family's
+/// version-aware route keys on it; an empty map leaves every finding un-routed). Severity is
+/// the engine-owned post-pass at [`ValidationReport::new`], keyed by `(probe, check)`
+/// identically to every other entry point (a no-delta `resolved` leaves every emitted
+/// severity untouched).
 // The CLI threads each store target's distinct determinism-boundary inputs in (the engine
 // produces none of them): the committed-store root, the resolved schemas/cascade, the
 // shell-free doc-code seam, the per-workflow definition bundles + their step source, and
@@ -396,6 +399,7 @@ pub fn validate_store_families(
     workflows: &[StoreWorkflow],
     workflow_source: &dyn crate::compose::StepSource,
     record: &FileStateRecord,
+    versions: &BTreeMap<String, u32>,
 ) -> std::io::Result<ValidationReport> {
     let mut findings = Vec::new();
 
@@ -479,7 +483,12 @@ pub fn validate_store_families(
     // not re-emitted here — that is the index-based Family 4 ([`ref_resolves_store`]),
     // already at store scope (the four-check deliverable is 3-new + 1-existing). Report-only
     // at store scope like every content family (`corpus-migration.md` → the detect-half).
-    findings.extend(schema_conformance_store(repo_root, schemas));
+    // **Version-aware routing (M34)**: each non-conformant doc's findings are labelled with a
+    // `route` by the doc's schema-version stamp vs `versions[ty]` (the doctype's manifest
+    // version) — `below-version`/`stamp-absent ⇒ migrate`, `at-version ⇒ corrupt`
+    // (`validation.md` → Version-aware routing). Still report-only (exit 0); the route is a
+    // direction, the blocking counterpart is the transform-transaction migration gate.
+    findings.extend(schema_conformance_store(repo_root, schemas, versions));
 
     Ok(ValidationReport::new(findings, resolved))
 }
@@ -516,7 +525,11 @@ pub fn validate_store_families(
 ///
 /// Deterministic: `schemas` is a [`BTreeMap`] (type-sorted), the docs of each type enumerate
 /// slug-sorted, and per doc the checks run in section-document order.
-fn schema_conformance_store(repo_root: &Path, schemas: &BTreeMap<String, Schema>) -> Vec<Finding> {
+fn schema_conformance_store(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    versions: &BTreeMap<String, u32>,
+) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
         let Some(location) = schema.location.as_deref() else {
@@ -528,13 +541,88 @@ fn schema_conformance_store(repo_root: &Path, schemas: &BTreeMap<String, Schema>
                 continue; // read race: skip; the next sweep re-checks.
             };
             // Mirror the pure task-scope call exactly (no BOM strip, `from_utf8_lossy`):
-            // a non-UTF-8 instance is the parser's concern, surfaced via `conformance_for`.
+            // a non-UTF-8 instance is the parser's concern.
             let source = String::from_utf8_lossy(&bytes);
-            let filename = format!("{ty}:{slug}.md");
-            findings.extend(conformance_for(&filename, schemas, &rel_key, &source));
+            // Parse once so the version-aware route can read the doc's stamp from the same
+            // parse the conformance checks run over. Inlines the store half of
+            // `conformance_for`: the type comes from schema iteration, so `unknown-type`
+            // can never fire here; a parse failure surfaces its `conformance.*` findings
+            // directly (those are not the routed schema-conformance.* presence/value set).
+            match parse_sections(schema, &source) {
+                Ok(doc) => {
+                    let mut doc_findings = schema_conformance(schema, &source, &doc);
+                    route_schema_conformance(
+                        &mut doc_findings,
+                        read_schema_version_stamp(&doc),
+                        versions.get(ty).copied(),
+                        &rel_key,
+                    );
+                    findings.extend(doc_findings);
+                }
+                Err(parse_findings) => findings.extend(parse_findings),
+            }
         }
     }
     findings
+}
+
+/// Read a committed instance's per-doc **schema-version stamp** value (the
+/// engine-declared [`crate::schema::SCHEMA_VERSION_FIELD`] header leaf,
+/// `design/corpus-migration.md` → The schema-version stamp), if present and integer-valued.
+/// A stamp-absent doc (the v0 corpus state, before the stamp existed) yields `None` — which
+/// the routing treats as below-version (`migrate`).
+fn read_schema_version_stamp(doc: &Document) -> Option<u32> {
+    doc.sections.iter().find_map(|section| {
+        section
+            .fields
+            .iter()
+            .find(|f| f.key == crate::schema::SCHEMA_VERSION_FIELD)
+            .and_then(|f| match &f.value {
+                crate::field_block::Value::Scalar(v) => v.trim().parse::<u32>().ok(),
+                crate::field_block::Value::List(_) => None,
+            })
+    })
+}
+
+/// Label each `schema-conformance.*` finding over a non-conformant committed doc with its
+/// **version-aware route** (`design/validation.md` → Store-scope schema-conformance →
+/// Version-aware routing): a doc stamped **below** its doctype's `manifest` version — or
+/// carrying **no** stamp (the v0 corpus state) — routes `migrate` (a known-old-version doc
+/// the M34 transform can upgrade); one **at** the current version that still does not
+/// conform routes `corrupt` (human review, not a version bump). The classification leads the
+/// `route` string so it is both a human-readable repair direction and a stable machine token
+/// the agent reads; the engine never executes it (route is a direction, not a guarantee).
+///
+/// Routing applies only to a doctype the caller supplies a manifest version for (`current`
+/// is `Some`): a doctype outside the versioned/frozen set has no notion of "below version",
+/// so its findings stay un-routed (reported, never mislabeled). No new check id or knob — the
+/// route rides the existing finding (M33 store-family pattern).
+fn route_schema_conformance(
+    findings: &mut [Finding],
+    stamp: Option<u32>,
+    current: Option<u32>,
+    rel_key: &str,
+) {
+    let Some(current) = current else {
+        return; // an unversioned doctype has no migrate-vs-corrupt distinction.
+    };
+    let route = match stamp {
+        None => format!(
+            "migrate — `{rel_key}` carries no schema-version stamp; run the corpus migration \
+             to stamp and upgrade it to schema-version {current}"
+        ),
+        Some(s) if s < current => format!(
+            "migrate — `{rel_key}` is stamped schema-version {s}, below the current \
+             {current}; run the corpus migration to upgrade it"
+        ),
+        Some(_) => format!(
+            "corrupt — `{rel_key}` is at the current schema-version {current} but does not \
+             conform; review it by hand"
+        ),
+    };
+    for finding in findings {
+        finding.route = Some(route.clone());
+    }
 }
 
 /// Drive the `doc-code` subprocess probe over an already-enumerated committed-store anchor
@@ -3929,6 +4017,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &BTreeMap::new(),
         )
         .expect("three-family store sweep runs");
 
@@ -3976,6 +4065,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &BTreeMap::new(),
         )
         .expect("three-family store sweep runs with a crashing probe");
 
@@ -4061,6 +4151,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
         )
         .expect("store sweep runs");
 
@@ -4117,6 +4208,7 @@ Slightly higher write latency for resilience.
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
         )
         .expect("store sweep runs");
 
@@ -4216,6 +4308,7 @@ sections:
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
         )
         .expect("store sweep runs over a conformant store");
         assert!(
@@ -4237,6 +4330,7 @@ sections:
             &[],
             &EmptyStepSource,
             &record,
+            &BTreeMap::new(),
         )
         .expect("store sweep runs under the schema shadow");
         let breaks: Vec<&Finding> = report
@@ -4369,6 +4463,7 @@ Effects.
             &workflows,
             &source,
             &record,
+            &BTreeMap::new(),
         )
         .expect("per-workflow-catalog sweep runs");
         assert!(
@@ -4392,6 +4487,7 @@ Effects.
             &dangling,
             &source,
             &record,
+            &BTreeMap::new(),
         )
         .expect("dangling-ref sweep runs");
         assert!(
@@ -4748,5 +4844,73 @@ Effects.
         let changed = change_set(&["src/a.rs"]);
         assert!(changed.contains(anchor_file("src/a.rs#Foo")));
         assert!(!changed.contains(anchor_file("src/b.rs#Foo")));
+    }
+
+    /// One non-conformant doc's finding, for the routing unit (a `required-field-present`
+    /// break, route initially `None`).
+    fn one_break() -> Vec<Finding> {
+        vec![Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-field-present",
+            "required field `owner` is missing",
+            Some(Location::addressed("decisions/x.md", 1, 1)),
+            None,
+        )]
+    }
+
+    /// (T3, the done-criterion) Version-aware migrate-vs-corrupt routing: a stamp **below**
+    /// the manifest version OR **absent** routes `migrate`; a stamp **at** the version routes
+    /// `corrupt`. The route is the existing finding's `route` field — no new id.
+    #[test]
+    fn route_classifies_below_absent_migrate_and_at_corrupt() {
+        // stamp absent (the v0 corpus state) ⇒ migrate.
+        let mut f = one_break();
+        route_schema_conformance(&mut f, None, Some(1), "decisions/x.md");
+        assert!(
+            f[0].route.as_deref().unwrap().starts_with("migrate"),
+            "stamp-absent must route migrate, got {:?}",
+            f[0].route,
+        );
+
+        // stamp below the current version ⇒ migrate.
+        let mut f = one_break();
+        route_schema_conformance(&mut f, Some(0), Some(1), "decisions/x.md");
+        assert!(
+            f[0].route.as_deref().unwrap().starts_with("migrate"),
+            "below-version must route migrate, got {:?}",
+            f[0].route,
+        );
+
+        // stamp at the current version ⇒ corrupt.
+        let mut f = one_break();
+        route_schema_conformance(&mut f, Some(1), Some(1), "decisions/x.md");
+        assert!(
+            f[0].route.as_deref().unwrap().starts_with("corrupt"),
+            "at-version must route corrupt, got {:?}",
+            f[0].route,
+        );
+    }
+
+    /// (T3, the omitting-context inert path) A doctype the caller supplies **no** manifest
+    /// version for (`current = None`) has no migrate-vs-corrupt distinction, so its finding
+    /// stays **un-routed** — reported, never mislabeled, never an error. This is the scope
+    /// guard: version-aware routing fires only over the versioned/frozen set, and an empty
+    /// `versions` map (a non-freeze pack) leaves every finding inert.
+    #[test]
+    fn route_is_inert_when_no_manifest_version() {
+        let mut f = one_break();
+        route_schema_conformance(&mut f, None, None, "decisions/x.md");
+        assert_eq!(
+            f[0].route, None,
+            "an unversioned doctype must leave the finding un-routed",
+        );
+
+        // And a present stamp with no manifest version is equally inert (no false corrupt).
+        let mut f = one_break();
+        route_schema_conformance(&mut f, Some(7), None, "decisions/x.md");
+        assert_eq!(
+            f[0].route, None,
+            "a stamped doc whose doctype has no manifest version must stay un-routed",
+        );
     }
 }

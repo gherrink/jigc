@@ -80,6 +80,31 @@ fn frozen_doctype_set(pack: &dyn PackSource) -> std::collections::BTreeSet<Strin
     manifest.doctypes.into_iter().map(|e| e.ty).collect()
 }
 
+/// The pack's freeze-manifest `doctype → schema-version` map — the "current manifest
+/// version" the store-scope schema-conformance detector routes each non-conformant doc
+/// against (`design/validation.md` → Version-aware routing; `design/corpus-migration.md` →
+/// The schema-version stamp). Read from the manifest-owning pack via
+/// [`origin_pack`](PackSource::origin_pack), the same best-effort path as
+/// [`frozen_doctype_set`]: an absent or malformed manifest is the empty map, so a
+/// non-freeze pack routes nothing (every finding stays un-routed), never an error.
+pub(crate) fn frozen_doctype_versions(
+    pack: &dyn PackSource,
+) -> std::collections::BTreeMap<String, u32> {
+    let id = ResourceId::from(SCHEMA_MANIFEST_ID);
+    let owner = pack.origin_pack(PackResourceKind::Config, &id);
+    let Ok(bytes) = owner.read(PackResourceKind::Config, &id) else {
+        return std::collections::BTreeMap::new();
+    };
+    let Ok(manifest) = serde_yaml_ng::from_slice::<engine::manifest::Manifest>(&bytes) else {
+        return std::collections::BTreeMap::new();
+    };
+    manifest
+        .doctypes
+        .into_iter()
+        .map(|e| (e.ty, e.schema_version))
+        .collect()
+}
+
 /// The `config/` resource id of a pack's frozen doctype-set manifest (the M33
 /// freeze artifact). A pack that ships this file gets its declared doctype shapes
 /// checked against it at pack-load by [`assert_schema_freeze`]; a pack that omits

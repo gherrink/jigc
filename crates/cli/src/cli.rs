@@ -593,6 +593,13 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     let record = engine::file_state::FileStateRecord::load(&jigc_root)
         .with_context(|| format!("loading the file-state record at {jigc_root:?}"))?;
 
+    // The doctype → manifest schema-version map the fifth content family's version-aware
+    // route keys on (`design/validation.md` → Version-aware routing): a non-conformant
+    // committed doc stamped below its doctype's manifest version routes `migrate`, one at the
+    // version routes `corrupt`. Read from the pack's freeze manifest; a non-freeze pack
+    // yields the empty map (every finding un-routed).
+    let versions = crate::pack::frozen_doctype_versions(pack);
+
     engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
@@ -601,6 +608,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         &workflows,
         &workflow_source,
         &record,
+        &versions,
     )
     .with_context(|| format!("validating the committed store at {jigc_home:?}"))
 }
