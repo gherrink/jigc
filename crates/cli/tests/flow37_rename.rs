@@ -19,6 +19,16 @@
 //!   commit fail → the store is left **byte-identical to pre-rename** (old slug present,
 //!   new slug absent, referrers untouched, the index clean, no new commit). Proven by
 //!   driving the interrupted transaction, not asserted.
+//!
+//! The T3 up-front validation gate (collision blocks · no-op reslug → retitle-only ·
+//! mid-fan-out guard) rides the same committed store:
+//! - **collision (#3):** a rename onto a *different* existing slug blocks (exit != 0, the
+//!   collision message), the store untouched.
+//! - **no-op reslug → retitle-only:** a new title that slugs to the doc's *own* current
+//!   slug rewrites the H1 + commits once, with **no** `git mv` and **no** referrer edit.
+//! - **mid-fan-out guard (#4):** an active task working area **or** an in-flight milestone
+//!   blocks the rename (the marker present case); its absence is the happy path proceeding
+//!   (the marker-absent case — increment-workflow #5, the guard proven not inert).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -416,5 +426,195 @@ fn rename_rolls_back_byte_identical_on_precommit_failure() {
     assert!(
         doc_entries.is_empty(),
         "a rolled-back rename must leave no managed doc staged or modified; got:\n{status}",
+    );
+}
+
+/// Collision (#3): a rename whose new title slugs to a **different** existing doc's slug
+/// blocks (exit != 0, the collision message), leaving the store untouched — an identity
+/// refactor never silently suffixes onto a live doc.
+#[test]
+fn rename_onto_a_different_existing_slug_blocks() {
+    let repo = TempDir::new("collision");
+    seed_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    // "Keeper" slugs to `keeper`, the third adr's existing slug — a collision.
+    let out = jigc(
+        repo.path(),
+        &["rename", "adr:single-node-cache", "--to", "Keeper"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a rename onto a different existing slug must block; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("a different doc already exists"),
+        "the block must carry the collision message; stderr:\n{stderr}",
+    );
+
+    // The store is untouched: the target keeps its slug, the colliding doc is unchanged,
+    // no new commit landed.
+    let decisions = repo.path().join("docs/decisions");
+    assert!(
+        decisions.join("single-node-cache.md").is_file(),
+        "the blocked rename must leave the target at its old slug",
+    );
+    assert!(
+        fs::read_to_string(decisions.join("keeper.md"))
+            .unwrap()
+            .contains("# Keeper"),
+        "the colliding doc must be untouched",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a blocked rename must land no commit",
+    );
+}
+
+/// No-op reslug → retitle-only: a new title that slugs to the doc's **own** current slug
+/// (`single-node-cache`) rewrites the H1 + commits once, with **no** `git mv` and **no**
+/// referrer edit (identity unchanged, so nothing dangles).
+#[test]
+fn noop_reslug_degrades_to_a_retitle_only() {
+    let repo = TempDir::new("retitle");
+    seed_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    // "Single Node Cache" slugs to `single-node-cache` — the doc's own current slug.
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Single Node Cache",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "a no-op reslug must succeed as a retitle-only; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // No file move: the doc stays at its old slug; no new slug was minted.
+    let decisions = repo.path().join("docs/decisions");
+    assert!(
+        decisions.join("single-node-cache.md").is_file(),
+        "a retitle-only must not move the file",
+    );
+
+    // The H1 was rewritten to the new title.
+    let moved = fs::read_to_string(decisions.join("single-node-cache.md")).unwrap();
+    assert!(
+        moved.contains("# Single Node Cache") && !moved.contains("# Single node cache"),
+        "the H1 must be rewritten to the new title; got:\n{moved}",
+    );
+
+    // No referrer edit: both referrers still point at the unchanged slug.
+    let superseder = fs::read_to_string(decisions.join("revisit-caching.md")).unwrap();
+    assert!(
+        superseder.contains("supersedes: adr:single-node-cache"),
+        "a retitle-only must not edit referrers; got:\n{superseder}",
+    );
+    let arch = fs::read_to_string(repo.path().join("docs/architecture/cache-layer.md")).unwrap();
+    assert!(
+        arch.contains("cites: [adr:single-node-cache, adr:keeper]"),
+        "a retitle-only must not edit referrers; got:\n{arch}",
+    );
+
+    // Exactly one new commit.
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count + 1,
+        "a retitle-only must emit exactly one commit",
+    );
+}
+
+/// Mid-fan-out guard (#4): an active task working area blocks the rename. Pairs with the
+/// happy path (no marker → proceeds) to prove the guard is not inert (increment-workflow
+/// #5).
+#[test]
+fn mid_fan_out_active_task_blocks() {
+    let repo = TempDir::new("fanout-task");
+    seed_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    // An in-flight task working area — the by-task-id join key the rename would invalidate.
+    fs::create_dir_all(repo.path().join(".jigc/tasks/some-task")).expect("mk task area");
+
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Distributed cache",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a rename mid-fan-out (active task) must block; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("in flight"),
+        "the block must carry the mid-fan-out message; stderr:\n{stderr}",
+    );
+    assert!(
+        repo.path()
+            .join("docs/decisions/single-node-cache.md")
+            .is_file()
+            && !repo
+                .path()
+                .join("docs/decisions/distributed-cache.md")
+                .exists(),
+        "a blocked rename must leave the store untouched",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a blocked rename must land no commit",
+    );
+}
+
+/// Mid-fan-out guard (#4): an in-flight milestone blocks the rename, the second marker the
+/// coarse guard keys on (separate from the active-task case above).
+#[test]
+fn mid_fan_out_in_flight_milestone_blocks() {
+    let repo = TempDir::new("fanout-milestone");
+    seed_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    // An in-flight milestone dir — the second mid-fan-out marker.
+    fs::create_dir_all(repo.path().join(".jigc/milestones/some-milestone")).expect("mk milestone");
+
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Distributed cache",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a rename mid-fan-out (milestone) must block; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("in flight"),
+        "the block must carry the mid-fan-out message; stderr:\n{stderr}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a blocked rename must land no commit",
     );
 }

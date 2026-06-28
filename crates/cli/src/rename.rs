@@ -19,8 +19,12 @@
 //! [`ref_resolves_store`](engine::index::ref_resolves_store)), refusing the commit on any
 //! dangling ref; the user's git hooks run, never `--no-verify`.
 //!
-//! The up-front validation gate (collision / no-op reslug / mid-fan-out) is T3; the advisory
-//! prose/unmanaged-mention report is T5. This module is the transaction core.
+//! The up-front validation gate runs **before** the transaction (T3): a **collision** with a
+//! *different* committed doc blocks (an identity refactor never silently suffixes); a **no-op
+//! reslug** (the new title slugs to the doc's own current slug) degrades to a **retitle-only**
+//! (rewrite the H1 + commit, no `git mv`, no referrer repoint); and a **mid-fan-out** guard
+//! blocks whenever any task working area *or* milestone is in-flight ([DECISIONS.md] 2026-06-28,
+//! pins I2/I4). The advisory prose/unmanaged-mention report is T5.
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::collections::BTreeMap;
@@ -95,41 +99,65 @@ pub(crate) fn run(
         bail!("`--to {title:?}` slugs to nothing — pass an explicit `--slug`");
     }
     let new_rel = format!("{dir}/{new_slug}.md");
+    let new_abs = repo_root.join(&new_rel);
     let old_id = format!("{ty}:{old_slug}");
     let new_id = format!("{ty}:{new_slug}");
 
+    // The up-front validation gate (runs before any mutation):
+    // (a) **mid-fan-out guard** — a rename changes the by-task-id join's same-doc-clash key
+    //     and a task working area may hold an old-slug copy that would promote stale; block
+    //     whenever any task working area *or* milestone is in-flight (the coarse guard, I4).
+    if let Some(marker) = mid_fan_out_marker(&jigc_root) {
+        bail!(
+            "cannot rename while {marker} is in flight — finalize or discard it first \
+             (a rename changes the by-task-id join key)"
+        );
+    }
+    // (b) **no-op reslug** — when the new slug equals the doc's own current slug the identity
+    //     is unchanged, so the rename degrades to a retitle-only (rewrite H1 + commit, no
+    //     `git mv`, no referrer repoint — nothing dangles).
+    let is_retitle = new_slug == old_slug;
+    // (c) **collision** — a non-degenerate new slug must be free; a collision with a
+    //     *different* committed doc blocks (an identity refactor, never the join's suffix).
+    if !is_retitle && new_abs.is_file() {
+        bail!("cannot rename to `{new_id}` — a different doc already exists at {new_rel}");
+    }
+
     // Compute every referrer's old→new rewrite (grouped per source doc, so a doc that
     // references the target through more than one relation rewrites once over a running
-    // buffer). Sorted by `referrers_of`'s deterministic `(from, relation, to)` order.
-    let mut by_from: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for edge in index::referrers_of(&index, &old_id) {
-        by_from
-            .entry(edge.from.clone())
-            .or_default()
-            .push(edge.relation.clone());
-    }
+    // buffer). Sorted by `referrers_of`'s deterministic `(from, relation, to)` order. A
+    // retitle-only has no identity change, so it repoints nothing.
     let mut referrer_writes: Vec<ReferrerWrite> = Vec::new();
     let mut referrer_labels: Vec<String> = Vec::new();
-    for (from_id, relations) in &by_from {
-        let (fty, fslug) = parse_addr(from_id)?;
-        let fschema = schema_map
-            .get(&fty)
-            .ok_or_else(|| anyhow!("referrer `{from_id}` has an unknown doctype `{fty}`"))?;
-        let fdir = location_dir(&schema_map, &fty)?;
-        let frel = format!("{fdir}/{fslug}.md");
-        let fabs = repo_root.join(&frel);
-        let mut source = std::fs::read_to_string(&fabs)
-            .with_context(|| format!("could not read the referrer at {frel}"))?;
-        for relation in relations {
-            source = engine::write::repoint_ref(fschema, &source, relation, &old_id, &new_id)
-                .map_err(|e| anyhow!("could not repoint {from_id}#{relation}: {e:?}"))?;
-            referrer_labels.push(format!("{from_id}#{relation}"));
+    if !is_retitle {
+        let mut by_from: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for edge in index::referrers_of(&index, &old_id) {
+            by_from
+                .entry(edge.from.clone())
+                .or_default()
+                .push(edge.relation.clone());
         }
-        referrer_writes.push(ReferrerWrite {
-            rel: frel,
-            abs: fabs,
-            source,
-        });
+        for (from_id, relations) in &by_from {
+            let (fty, fslug) = parse_addr(from_id)?;
+            let fschema = schema_map
+                .get(&fty)
+                .ok_or_else(|| anyhow!("referrer `{from_id}` has an unknown doctype `{fty}`"))?;
+            let fdir = location_dir(&schema_map, &fty)?;
+            let frel = format!("{fdir}/{fslug}.md");
+            let fabs = repo_root.join(&frel);
+            let mut source = std::fs::read_to_string(&fabs)
+                .with_context(|| format!("could not read the referrer at {frel}"))?;
+            for relation in relations {
+                source = engine::write::repoint_ref(fschema, &source, relation, &old_id, &new_id)
+                    .map_err(|e| anyhow!("could not repoint {from_id}#{relation}: {e:?}"))?;
+                referrer_labels.push(format!("{from_id}#{relation}"));
+            }
+            referrer_writes.push(ReferrerWrite {
+                rel: frel,
+                abs: fabs,
+                source,
+            });
+        }
     }
 
     // The moved doc's new bytes — only the `# H1` line changes (the unified retitle).
@@ -213,8 +241,12 @@ fn apply_and_commit(
         std::fs::write(&write.abs, &write.source)
             .with_context(|| format!("could not write the repointed referrer at {}", write.rel))?;
     }
-    // 2. Move the doc (stages the rename), then rewrite its H1 at the new path.
-    git_run(repo_root, &["mv", old_rel, new_rel])?;
+    // 2. Move the doc (stages the rename) unless this is a retitle-only (the new slug
+    // equals the old, so old_rel == new_rel and there is no identity change to move), then
+    // rewrite its H1 at the (possibly unchanged) path.
+    if old_rel != new_rel {
+        git_run(repo_root, &["mv", old_rel, new_rel])?;
+    }
     std::fs::write(repo_root.join(new_rel), new_source)
         .with_context(|| format!("could not write the retitled doc at {new_rel}"))?;
     // 3. Stage the content changes (the move is staged; the H1 + referrer edits are not).
@@ -294,6 +326,34 @@ fn rollback_rename(
             let _ = std::fs::remove_file(fs_path);
         }
     }
+}
+
+/// The first in-flight fan-out marker, if any — a task working area
+/// (`<jigc>/tasks/<id>/`) or a milestone (`<jigc>/milestones/<id>/`), each labelled for the
+/// block message. A rename mid-fan-out would change the by-task-id join's same-doc-clash key
+/// and a working area may hold an old-slug copy that would promote stale, so the verb refuses
+/// the identity op while either is live (the coarse guard, [DECISIONS.md] 2026-06-28 pin I4).
+/// Both enumerations are sorted (the first id is deterministic), so the message is stable.
+fn mid_fan_out_marker(jigc_root: &Path) -> Option<String> {
+    if let Some(id) = engine::state::list_active_task_ids(jigc_root).first() {
+        return Some(format!("task `{id}`"));
+    }
+    first_dir_name(&jigc_root.join("milestones")).map(|id| format!("milestone `{id}`"))
+}
+
+/// The lexicographically-first sub-directory name under `dir`, or `None` when `dir` is
+/// absent or holds no sub-directory (a missing dir is not an error — no fan-out has run).
+fn first_dir_name(dir: &Path) -> Option<String> {
+    let mut names: Vec<String> = match std::fs::read_dir(dir) {
+        Ok(entries) => entries
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.path().is_dir())
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    names.sort();
+    names.into_iter().next()
 }
 
 /// Split a `<type>:<slug>` address into its parts. Rejects a missing `:` or an empty half.
