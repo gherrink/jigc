@@ -763,3 +763,126 @@ fn advisory_report_lists_prose_and_unmanaged_mentions_word_bounded() {
         "the source file must be left byte-untouched (advisory report, never a rewrite)",
     );
 }
+
+/// Baseline the file-state record for `entries` (managed-doc paths relative to `repo`),
+/// recording each at its current raw-byte hash under `.jigc/state/file-state.json` — the
+/// committed-store baseline the store sweep's recorded-but-missing rename detector reads.
+fn baseline_file_state(repo: &Path, entries: &[&str]) {
+    use engine::file_state::{FileStateRecord, hash_bytes};
+    let mut record = FileStateRecord::new();
+    for rel in entries {
+        let bytes = fs::read(repo.join(rel)).expect("read managed doc to baseline");
+        record.record(*rel, hash_bytes(&bytes));
+    }
+    record
+        .save(&repo.join(".jigc"))
+        .expect("save the file-state baseline");
+}
+
+/// The store's four managed docs at their resolved `docs/<location>/<slug>.md` paths.
+const MANAGED_DOCS: &[&str] = &[
+    "docs/decisions/single-node-cache.md",
+    "docs/decisions/revisit-caching.md",
+    "docs/decisions/keeper.md",
+    "docs/architecture/cache-layer.md",
+];
+
+/// Component B (T2) — the **store-scope rename finding is exit-flipping**: a committed store
+/// where a managed doc was bare-`git mv`d out-of-band (no `jigc rename`) makes
+/// `jigc validate --format json` **exit non-zero** with a `reconciliation.rename` finding
+/// present and `report_only: false` — the OOB rename is a structural-identity event this
+/// commit introduced, not pre-existing content rot, so it joins the `pack-probe-integrity.*`
+/// exit-flipping exception class (`validation.md` → Exit semantics, exception #2).
+#[test]
+fn store_scope_oob_rename_flips_exit_and_report_only() {
+    let repo = TempDir::new("oob-rename-exit");
+    seed_store(repo.path());
+    baseline_file_state(repo.path(), MANAGED_DOCS);
+
+    // A bare `git mv` of a managed doc, committed *without* `jigc rename`: the old slug's
+    // recorded path is now missing on disk, the moved file present with byte-identical
+    // content (the strong-signal case).
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "docs/decisions/single-node-cache.md",
+            "docs/decisions/distributed-cache.md",
+        ],
+    );
+    git(repo.path(), &["commit", "-q", "-m", "bare git mv"]);
+
+    let out = jigc(repo.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "an OOB rename must flip the store sweep exit non-zero; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("validate emits JSON");
+    let codes: Vec<&str> = value["findings"]
+        .as_array()
+        .expect("findings array")
+        .iter()
+        .filter_map(|f| f["code"].as_str())
+        .collect();
+    assert!(
+        codes.contains(&"reconciliation.rename"),
+        "the OOB rename must surface a reconciliation.rename finding; codes: {codes:?}",
+    );
+    assert_eq!(
+        value["report_only"],
+        serde_json::Value::Bool(false),
+        "the rename finding must mark the sweep not-report-only; json:\n{stdout}",
+    );
+}
+
+/// Component B (T2) — **content drift stays report-only / exit 0**: a committed store with
+/// only an out-of-band *content* edit (a `file-state.hash-matches` drift) — no rename —
+/// keeps `jigc validate --format json` at **exit 0** with `report_only: true`. The
+/// exit-flip is scoped to the rename structural-identity event; every other content finding
+/// stays the load-bearing read-only/never-gates stance (`validation.md` → Exit semantics).
+#[test]
+fn store_scope_content_drift_stays_report_only_exit_zero() {
+    let repo = TempDir::new("content-drift-exit");
+    seed_store(repo.path());
+    baseline_file_state(repo.path(), MANAGED_DOCS);
+
+    // An out-of-band *content* edit (not a move) of a managed doc: the path stays present,
+    // its on-disk bytes diverge from the recorded baseline → a `file-state.hash-matches`
+    // content drift, no rename.
+    let keeper = repo.path().join("docs/decisions/keeper.md");
+    let drifted = format!("{ADR_KEEPER}\nAn out-of-band paragraph.\n");
+    fs::write(&keeper, drifted).expect("oob-edit keeper");
+    git(repo.path(), &["commit", "-aq", "-m", "oob content edit"]);
+
+    let out = jigc(repo.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "content-only drift must keep the store sweep at exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("validate emits JSON");
+    let codes: Vec<&str> = value["findings"]
+        .as_array()
+        .expect("findings array")
+        .iter()
+        .filter_map(|f| f["code"].as_str())
+        .collect();
+    assert!(
+        codes.contains(&"file-state.hash-matches"),
+        "the content edit must surface a file-state.hash-matches drift; codes: {codes:?}",
+    );
+    assert!(
+        !codes.contains(&"reconciliation.rename"),
+        "a content edit (no move) must not surface a rename finding; codes: {codes:?}",
+    );
+    assert_eq!(
+        value["report_only"],
+        serde_json::Value::Bool(true),
+        "a content-only drift sweep stays report-only; json:\n{stdout}",
+    );
+}

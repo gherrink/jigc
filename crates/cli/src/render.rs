@@ -292,13 +292,21 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
 /// the per-finding severity token is left untouched (it is meaningful) and the exit-code
 /// contract is unchanged.
 pub fn validation_store(format: Format, report: &ValidationReport) -> String {
-    // The one exit-non-zero exception: a `pack-probe-integrity.*` meta-finding means the
-    // probe could not be trusted, so the sweep cannot claim a result (it is *not* report-
-    // only). Keyed on the probe id directly, mirroring `run_validate_store`'s exit rule.
+    // The two exit-non-zero exceptions (`validation.md` → Exit semantics): a
+    // `pack-probe-integrity.*` meta-finding (the probe could not be trusted, so the sweep
+    // cannot claim a result) and a `reconciliation.rename` finding (an out-of-band `git mv`,
+    // a structural-identity event this commit introduced). Either flips `report_only` false;
+    // the trailer distinguishes the two wordings. The exit decision is the shared
+    // [`validation_store_exit_flips`] both this renderer's `report_only` field and
+    // `run_validate_store`'s exit code key on, so all three stay truthful in lockstep.
     let probe_unreliable = report
         .findings
         .iter()
         .any(|f| f.probe == "pack-probe-integrity");
+    let oob_rename = report
+        .findings
+        .iter()
+        .any(|f| f.code == "reconciliation.rename");
     match format {
         Format::Json => {
             let mut value = serde_json::to_value(report).expect("validation report serializes");
@@ -309,13 +317,13 @@ pub fn validation_store(format: Format, report: &ValidationReport) -> String {
                 );
                 object.insert(
                     "report_only".to_string(),
-                    serde_json::Value::Bool(!probe_unreliable),
+                    serde_json::Value::Bool(!validation_store_exit_flips(report)),
                 );
             }
             json(&value)
         }
         Format::Agent | Format::Human => {
-            let trailer = store_trailer(report, probe_unreliable);
+            let trailer = store_trailer(report, probe_unreliable, oob_rename);
             validation_scoped(
                 format,
                 report,
@@ -326,16 +334,37 @@ pub fn validation_store(format: Format, report: &ValidationReport) -> String {
     }
 }
 
+/// Whether the store-scope sweep's exit flips non-zero — the **two exit-flipping
+/// exceptions** to the report-only stance (`validation.md` → Exit semantics): a
+/// `pack-probe-integrity.*` meta-finding (the probe could not be trusted) or a
+/// `reconciliation.rename` finding (an out-of-band `git mv` — a structural-identity event
+/// this commit introduced). The single source of truth shared by the dispatcher's exit
+/// code ([`crate::cli`]'s `run_validate_store`), the JSON `report_only` field, and the
+/// human/agent trailer, so all three stay truthful in lockstep.
+pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
+    report
+        .findings
+        .iter()
+        .any(|f| f.probe == "pack-probe-integrity" || f.code == "reconciliation.rename")
+}
+
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
-/// exit-0-with-`blocking`-findings is unambiguous. For content findings it states they are
-/// **report-only** at store scope (exit 0) and names where they actually gate; for the one
-/// `pack-probe-integrity.*` exception (`probe_unreliable`) it instead says the sweep could
-/// not complete and exits non-zero — keeping the two exit classes clearly distinguished.
-/// Ends with a newline so the caller appends the routing footer on its own line.
-fn store_trailer(report: &ValidationReport, probe_unreliable: bool) -> String {
+/// exit-0-with-`blocking`-findings is unambiguous. Three cases, matching the two
+/// exit-flipping exceptions (`validation.md` → Exit semantics): for the
+/// `pack-probe-integrity.*` exception (`probe_unreliable`) it says the sweep could not
+/// complete and exits non-zero; for a store-scope `reconciliation.rename` (`oob_rename`,
+/// M35) it says an out-of-band rename was detected and the sweep exits non-zero; otherwise
+/// the content findings are **report-only** at store scope (exit 0) and it names where they
+/// actually gate. Probe-unreliability dominates (it taints the whole result). Ends with a
+/// newline so the caller appends the routing footer on its own line.
+fn store_trailer(report: &ValidationReport, probe_unreliable: bool, oob_rename: bool) -> String {
     if probe_unreliable {
         "pack-probe-integrity finding(s) present — the sweep could not complete and exits \
          non-zero; the store result is not trustworthy.\n"
+            .to_string()
+    } else if oob_rename {
+        "out-of-band rename detected — a structural-identity change this commit introduced; \
+         the sweep exits non-zero (revert the `git mv` or adopt it via `jigc rename`).\n"
             .to_string()
     } else {
         let n = report.findings.len();
@@ -2381,6 +2410,33 @@ mod tests {
             "the probe-integrity trailer must not claim report-only: {agent}",
         );
         let json_out = validation_store(Format::Json, &probe);
+        let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
+        assert_eq!(value["report_only"], serde_json::Value::Bool(false));
+
+        // A store-scope OOB-rename finding (exit-flipping exception #2, M35) flips both
+        // surfaces just like probe-integrity: the trailer states the sweep exits non-zero
+        // and `report_only` goes false — an OOB `git mv` is a structural-identity event,
+        // not report-only content drift.
+        let rename = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                "reconciliation.rename",
+                "tracked managed doc adr:cache (decisions/cache.md) is missing",
+                Some(Location::addressed("decisions/cache.md", 1, 1)),
+                None,
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &rename);
+        assert!(
+            agent.contains("exits non-zero"),
+            "the rename trailer must announce the exits-non-zero contract: {agent}",
+        );
+        assert!(
+            !agent.contains("report-only at store scope"),
+            "the rename trailer must not claim report-only: {agent}",
+        );
+        let json_out = validation_store(Format::Json, &rename);
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["report_only"], serde_json::Value::Bool(false));
     }
