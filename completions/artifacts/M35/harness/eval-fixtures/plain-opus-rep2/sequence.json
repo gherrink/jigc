@@ -1,0 +1,14 @@
+{
+  "_note": "SEEDED CONTROL VIOLATION — the never-edited control edge dangled at edit 2 (control_ok false). The void-tripwire MUST fire and mark this cell + the study void.",
+  "arm": "plain", "model": "claude-opus-4-8", "n_edits": 3,
+  "final_dangling": 3, "commits_total": 3, "edits_with_drift": 3,
+  "control_violations": 1, "oracle_disagreements": 0,
+  "any_engaged": false, "renames_via_verb": 0,
+  "any_blocked": false, "any_no_verify": false,
+  "total_cost": 0.60, "dangling_curve": [1, 2, 3],
+  "timeline": [
+    {"edit": 1, "arm": "plain", "n_commits": 1, "n_dangling": 1, "edges_total": 6, "rename_engaged": false, "turns": 12, "cost": 0.20, "hook_blocked_seen": false, "control_ok": true, "oracle_agrees": true, "drift": true},
+    {"edit": 2, "arm": "plain", "n_commits": 1, "n_dangling": 2, "edges_total": 6, "rename_engaged": false, "turns": 12, "cost": 0.20, "hook_blocked_seen": false, "control_ok": false, "oracle_agrees": true, "drift": true},
+    {"edit": 3, "arm": "plain", "n_commits": 1, "n_dangling": 3, "edges_total": 6, "rename_engaged": false, "turns": 12, "cost": 0.20, "hook_blocked_seen": false, "control_ok": true, "oracle_agrees": true, "drift": true}
+  ]
+}

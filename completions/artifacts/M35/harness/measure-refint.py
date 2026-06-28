@@ -150,9 +150,13 @@ def jigc_ref_findings(repo: Path, jigc: str) -> int | None:
 
 def measure(repo: Path, jigc: str = DEFAULT_JIGC, use_jigc: bool = True) -> dict:
     a = walk_edges(repo)
+    et = a["edges_total"]
     rec = {
-        "edges_total": a["edges_total"],
+        "edges_total": et,
         "n_dangling": a["n_dangling"],
+        # completeness over STRUCTURED MANAGED REFS ONLY = fraction of forward edges that
+        # resolve. None for an edge-free store (vacuously complete is not a measured fact).
+        "completeness": round((et - a["n_dangling"]) / et, 4) if et else None,
         "dangling": [f"{e['from']}#{e['relation']} -> {e['to']}" for e in a["dangling"]],
     }
     jigc_n = jigc_ref_findings(repo, jigc) if use_jigc else None
@@ -224,6 +228,32 @@ def _selftest() -> int:
         # edges now: b2#supersedes->adr:a (dangle), arch#cites->adr:a (dangle),
         #            arch#cites->adr:b (dangle, b renamed)  = 3
         check(m["n_dangling"] == 3, f"rename compounds dangling to 3: {m}")
+
+    # completeness over STRUCTURED MANAGED REFS ONLY (the determinism boundary): the
+    # fraction of forward edges that resolve. The non-greppable-referrer case the M35
+    # study turns on — an arch-doc `cites` a renamed-away adr whose old slug the prompt
+    # withheld, so a plain/static agent cannot grep it. NOT repointed -> the edge dangles
+    # (incomplete); repointed in lockstep (what `jigc rename` does via the edge index) ->
+    # resolves (complete). A prose/unmanaged mention of the old slug is never an edge here,
+    # so it can never count as (in)completeness — the boundary, enforced by construction.
+    with tempfile.TemporaryDirectory() as d:
+        repo = Path(d)
+        # the rename landed: the target now lives at the NEW slug.
+        _write(repo / "docs/decisions/stateless-session-routing.md",
+               _adr("Stateless session routing"))
+        # not repointed: the arch-doc still cites the OLD (non-greppable) slug -> dangles.
+        _write(repo / "docs/architecture/session-management.md",
+               _archdoc("Session management", "adr:sticky-lb-affinity"))
+        m = measure(repo, use_jigc=False)
+        check(m["edges_total"] == 1, f"one structured managed ref: {m}")
+        check(m["n_dangling"] == 1, f"non-greppable referrer dangles when not repointed: {m}")
+        check(m["completeness"] == 0.0, f"completeness 0.0 when the one edge dangles: {m}")
+        # repointed: the arch-doc cites the NEW slug -> resolves, completeness restored.
+        _write(repo / "docs/architecture/session-management.md",
+               _archdoc("Session management", "adr:stateless-session-routing"))
+        m = measure(repo, use_jigc=False)
+        check(m["n_dangling"] == 0, f"non-greppable referrer resolves when repointed: {m}")
+        check(m["completeness"] == 1.0, f"completeness 1.0 when repointed: {m}")
 
     if fails:
         print(f"{fails} failure(s)")
