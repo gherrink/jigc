@@ -27,7 +27,7 @@
 //! pins I2/I4). The advisory prose/unmanaged-mention report is T5.
 
 use anyhow::{Context, Result, anyhow, bail};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use engine::file_state::{FileStateRecord, hash_bytes};
@@ -278,7 +278,9 @@ fn apply_and_commit(
     // mutated tree and refuse the commit if any cross-ref dangles (the rename must repoint
     // every referrer in lockstep). Reuses the store-scope `ref_resolves_store` backstop.
     let rebuilt = index::rebuild_committed(repo_root, schema_map, head);
-    let dangling = index::ref_resolves_store(&rebuilt, repo_root, schema_map);
+    // No scope-subtraction here: the verb repoints every referrer in lockstep, so a
+    // resolvable rename leaves zero dangling edges — any dangle is a real failure to refuse.
+    let dangling = index::ref_resolves_store(&rebuilt, repo_root, schema_map, &BTreeSet::new());
     if !dangling.is_empty() {
         bail!(
             "rename would leave {} dangling cross-reference(s) — refusing to commit",

@@ -486,6 +486,81 @@ pub fn detect_committed_store(
     findings
 }
 
+/// **Read-only store-scope rename detection** — the *recorded-but-missing* arm of
+/// [`reconcile_committed_store`] lifted into the read-only file↔CLI-state family
+/// ([`detect_committed_store`]'s sibling; `validation.md` → file↔CLI-state: recorded-but-
+/// missing rename detection added at M35; `reconciliation.md` → Out-of-band rename,
+/// Component A). It enumerates every recorded committed path **absent on disk** and runs the
+/// **pure, non-mutating** [`detect_rename`] over the untracked candidates, so a bare `git mv`
+/// committed without `jigc rename` is diagnosed as *a rename to adopt/revert* — including the
+/// **referrer-less** move no dangling-ref check can catch.
+///
+/// Returns the `reconciliation.rename` findings **and** the set of missing `<type>:<slug>`
+/// identities, so the caller can **scope-subtract** those identities' inbound edges from
+/// [`ref_resolves_store`](crate::index::ref_resolves_store) for the same sweep — the dedup
+/// that keeps one OOB event from emitting both a rename finding *and* N competing dangling-ref
+/// findings, while `jigc validate` still reports every *other* dangling ref (no short-circuit).
+///
+/// **Read-only by construction** — `record` is borrowed `&`: the `jigc rename` post-commit
+/// crash-window landing (a same-`location:` doc whose content *differs* from the recorded
+/// baseline, so it is no strong-signal `git mv` match) is **suppressed** (skipped, no finding)
+/// but **never** self-healed here, because that heal is a `record.forget` write — the mutating
+/// self-heal stays the task-scope [`reconcile_committed_store`]'s job. So the read-only twin
+/// never resurrects a deliberately-renamed-away doc via the weak-signal restore, and never
+/// mutates the record. The only I/O is reading the committed `.md` bytes (for the untracked
+/// candidates' hashes). Findings + identities aggregate in path-sorted order.
+pub fn detect_committed_store_renames(
+    record: &FileStateRecord,
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+    repo_root: &Path,
+) -> (Vec<Finding>, std::collections::BTreeSet<String>) {
+    let mut findings = Vec::new();
+    let mut renamed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+
+    // The recorded committed managed-doc paths (excludes staged working-area keys / code
+    // paths via `persisted_committed_path`), and which of them are now absent on disk
+    // ("missing" means absent from DISK — the 2026-06-12 amendment; present-but-unwalked is
+    // not missing).
+    let recorded: std::collections::BTreeSet<String> = record
+        .hashes
+        .keys()
+        .filter(|p| persisted_committed_path(p, schemas))
+        .cloned()
+        .collect();
+    let recorded_missing: Vec<String> = recorded
+        .iter()
+        .filter(|p| !repo_root.join(p).exists())
+        .cloned()
+        .collect();
+    if recorded_missing.is_empty() {
+        return (findings, renamed);
+    }
+
+    let untracked = untracked_committed(&recorded, schemas, repo_root);
+    let untracked_refs: Vec<(&str, String)> = untracked
+        .iter()
+        .map(|(p, h)| (p.as_str(), h.clone()))
+        .collect();
+    for path in recorded_missing {
+        let recorded_hash = record.get(&path).unwrap_or("").to_string();
+        // The post-commit crash-window landing is suppressed read-only — skip without
+        // `forget` (the heal is the mutating reconcile's job), so the weak-signal restore
+        // never resurrects a renamed-away doc. The strong signal (content-preserving bare
+        // `git mv`) and the genuine-deletion weak signal both still route below.
+        let strong = untracked_refs.iter().any(|(_, h)| *h == recorded_hash);
+        if !strong && rename_landing_present(&path, &untracked_refs, schemas) {
+            continue;
+        }
+        let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
+        let detected = detect_rename(&path, &from, &recorded_hash, &untracked_refs);
+        if !detected.is_empty() {
+            renamed.insert(from);
+            findings.extend(detected);
+        }
+    }
+    (findings, renamed)
+}
+
 /// The store-scope drift finding: the on-disk content no longer matches the
 /// recorded hash, surfaced read-only by [`detect_committed_store`]. Reuses the
 /// `file-state.hash-matches` check id (no new id / knob) but carries the

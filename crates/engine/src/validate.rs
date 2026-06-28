@@ -432,6 +432,19 @@ pub fn validate_store_families(
         record, schemas, repo_root,
     ));
 
+    // Family 3 (cont.) — recorded-but-missing OOB-rename detection (M35, Component A;
+    // `validation.md` → file↔CLI-state: recorded-but-missing rename detection). The
+    // read-only twin of `reconcile_committed_store`'s recorded-missing arm: it enumerates
+    // recorded paths absent on disk and runs the pure, non-mutating `detect_rename`, so a
+    // bare `git mv` committed without `jigc rename` is caught — including the referrer-less
+    // move no dangling-ref check can find. Fires **before** Family 4 (`ref-resolves`) and
+    // returns the renamed `<type>:<slug>` identities, whose inbound edges are then
+    // **scope-subtracted** from the ref-resolves walk below — so a moved-with-referrers doc
+    // surfaces one `reconciliation.rename` finding, never N competing dangling refs.
+    let (rename_findings, renamed_targets) =
+        crate::file_state::detect_committed_store_renames(record, schemas, repo_root);
+    findings.extend(rename_findings);
+
     // Family 4 — cross-doc forward-ref integrity (the store-wide analog of the task-scope
     // `ref-resolves` finalize gate): every committed forward edge's target must resolve in
     // the committed store. Closes the doc↔code-vs-ref-resolves store-sweep asymmetry so the
@@ -442,6 +455,7 @@ pub fn validate_store_families(
         &committed_index,
         repo_root,
         schemas,
+        &renamed_targets,
     ));
 
     // Family 5 — schema-completeness (inverse / minimum-cardinality): the completeness twin
@@ -4258,6 +4272,145 @@ Slightly higher write latency for resilience.
                 .iter()
                 .any(|f| f.code == "schema-conformance.ref-resolves"),
             "a resolvable cross-doc supersedes must not surface a ref-resolves finding: {:?}",
+            report.findings,
+        );
+    }
+
+    /// (T1, the done-criterion) An OOB `git mv` of a managed doc — the file moved on disk
+    /// while its `record` baseline + every referrer still key the **old** slug — surfaces
+    /// **exactly one** `reconciliation.rename` finding (the read-only store-scope rename
+    /// detector, firing in the file↔CLI-state family before `ref-resolves`) and **zero**
+    /// `ref-resolves` findings for that slug's inbound edge (the scope-subtraction dedup),
+    /// while a *separate* unrelated dangling ref is **still** reported (no short-circuit).
+    /// The `record` is byte-identical after the sweep (read-only proven).
+    ///
+    /// RED without the subtraction: the same OOB event would emit a `reconciliation.rename`
+    /// finding AND a competing `ref-resolves` dangle for the renamed slug's inbound edge.
+    #[test]
+    fn validate_store_oob_rename_subtracts_inbound_refs_keeps_unrelated_dangle() {
+        let repo = TempRoot::new("oob-rename");
+
+        // The target doc was committed at decisions/moved.md, then OOB `git mv`d to
+        // decisions/moved-renamed.md with its bytes preserved (the strong-signal case). Only
+        // the new path is on disk; decisions/moved.md is gone (moved away).
+        let moved_body = adr_superseding_target();
+        repo.commit("decisions", "moved-renamed", &moved_body);
+
+        // A referrer still pointing at the OLD slug → its inbound edge to `adr:moved`.
+        let referrer_body = adr_superseding("adr:moved");
+        repo.commit("decisions", "referrer", &referrer_body);
+
+        // A SEPARATE, unrelated dangling ref → `adr:ghost` is never committed.
+        let unrelated_body = adr_superseding("adr:ghost");
+        repo.commit("decisions", "unrelated", &unrelated_body);
+
+        // The record baselines the committed-at-entry paths — crucially decisions/moved.md
+        // (now missing on disk) at the moved doc's content hash, so the untracked
+        // decisions/moved-renamed.md is a strong-signal content match.
+        let mut record = FileStateRecord::new();
+        record.record("decisions/moved.md", hash_bytes(moved_body.as_bytes()));
+        record.record(
+            "decisions/referrer.md",
+            hash_bytes(referrer_body.as_bytes()),
+        );
+        record.record(
+            "decisions/unrelated.md",
+            hash_bytes(unrelated_body.as_bytes()),
+        );
+        let record_before = record.clone();
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+
+        // Exactly one rename finding (the OOB move), strong-signal naming both paths.
+        let renames: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "reconciliation.rename")
+            .collect();
+        assert_eq!(
+            renames.len(),
+            1,
+            "exactly one rename finding for the OOB move, got {:?}",
+            report.findings,
+        );
+        assert!(
+            renames[0].message.contains("decisions/moved.md")
+                && renames[0].message.contains("decisions/moved-renamed.md"),
+            "the strong-signal rename names both old and new paths: {}",
+            renames[0].message,
+        );
+
+        // Scope-subtraction: ZERO ref-resolves findings for the renamed slug's inbound edge.
+        let refs: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.ref-resolves")
+            .collect();
+        assert!(
+            !refs.iter().any(|f| f.message.contains("adr:moved")),
+            "the renamed slug's inbound edge must be subtracted (no competing dangle), got {:?}",
+            refs,
+        );
+
+        // No short-circuit: the unrelated dangling ref is STILL reported.
+        assert!(
+            refs.iter().any(|f| f.message.contains("adr:ghost")),
+            "an unrelated dangling ref must still be reported (report-all), got {:?}",
+            refs,
+        );
+
+        // Read-only proven: the record is byte-identical after the sweep.
+        assert_eq!(
+            record.hashes, record_before.hashes,
+            "the store-scope rename detector must not mutate the record",
+        );
+    }
+
+    /// (T1) The referrer-less case — an OOB `git mv` of a doc **no other doc references**
+    /// still surfaces the rename finding. This is the only detector that catches it: there
+    /// is no dangling ref for `ref-resolves` to find, so without the strong-signal rename
+    /// classifier the move would be entirely invisible to `jigc validate`.
+    #[test]
+    fn validate_store_detects_referrerless_oob_rename() {
+        let repo = TempRoot::new("oob-rename-referrerless");
+        let moved_body = adr_superseding_target();
+        repo.commit("decisions", "moved-renamed", &moved_body);
+
+        let mut record = FileStateRecord::new();
+        record.record("decisions/moved.md", hash_bytes(moved_body.as_bytes()));
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+
+        assert_eq!(
+            report
+                .findings
+                .iter()
+                .filter(|f| f.code == "reconciliation.rename")
+                .count(),
+            1,
+            "a referrer-less OOB rename still surfaces the rename finding: {:?}",
             report.findings,
         );
     }

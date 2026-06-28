@@ -411,13 +411,28 @@ pub fn ref_resolves(
 /// the store-sweep asymmetry (doc↔code swept store-wide since M18, `ref-resolves` only ever
 /// task-scoped) so the salience-independent pre-commit backstop reaches a dangling cross-doc
 /// ref in the committed store.
+///
+/// `exclude_targets` is the **scope-subtraction** set the store sweep threads in (M35,
+/// Component A; `validation.md` → file↔CLI-state: the scope-subtraction dedup): every
+/// `<type>:<slug>` identity the read-only rename detector
+/// ([`crate::file_state::detect_committed_store_renames`]) flagged as renamed/missing. An
+/// edge whose `to` is in this set is **skipped** — its dangle is the renamed slug's inbound
+/// edge, already diagnosed as one `reconciliation.rename` finding, so re-reporting it as N
+/// independent dangling refs would emit a competing diagnosis for one OOB event. Every
+/// *other* dangling edge is still reported (no short-circuit — `jigc validate` stays a
+/// report-all read command). An **empty** set leaves every edge in scope — byte-identical to
+/// the pre-M35 walk (the `jigc rename` verb's own pre-commit assertion passes empty).
 pub fn ref_resolves_store(
     committed: &EdgeIndex,
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
+    exclude_targets: &std::collections::BTreeSet<String>,
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for edge in &committed.edges {
+        if exclude_targets.contains(&edge.to) {
+            continue; // the renamed slug's inbound edge — subtracted, diagnosed as a rename.
+        }
         if !committed_reachable(&edge.to, repo_root, schemas) {
             findings.push(dangling(edge));
         }
