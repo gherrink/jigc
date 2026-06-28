@@ -1,0 +1,4 @@
+{"type":"system","subtype":"init","session_id":"fx-rn1"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"This decision is now about the origin-header check — I'll use the rename verb."},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"jigc rename adr:csrf-double-submit-cookie --to \"CSRF Origin Header Check\"","description":"rename the decision"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"renamed adr:csrf-double-submit-cookie -> adr:csrf-origin-header-check (2 referrers repointed) committed def4567"}]}}
+{"type":"result","subtype":"success","result":"Renamed via jigc rename — one command, referrers repointed.","num_turns":3,"total_cost_usd":0.31}

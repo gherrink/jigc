@@ -23,7 +23,7 @@ set -u
 STUDY="${STUDY:-$(cd "$(dirname "$0")/.." && pwd)}"
 H="${H:-$STUDY/harness}"
 PROMPTS="${PROMPTS:-$STUDY/prompts}"
-ANALYZE="${ANALYZE:-$HOME/lh-study/harness/analyze.py}"   # internalized into $H by Inc-3 T3
+ANALYZE="${ANALYZE:-$H/analyze.py}"   # in-repo (internalized by Inc-3 T3); rename-aware
 TPLROOT="${TPLROOT:-$HOME/lh-study}"
 IMAGE="${IMAGE:-lh-toolchain}"
 CLAUDE_BIN="${CLAUDE_BIN:-$(readlink -f ~/.local/bin/claude)}"
