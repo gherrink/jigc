@@ -1829,7 +1829,7 @@ fn git_dirty_paths(repo_root: &Path) -> Result<Vec<String>> {
 /// `--dry-run` manifest prediction can split the X (index → included) and Y (worktree →
 /// left-out) columns independently (M30 G3). A rename `R old -> new` splits to `old`
 /// (`D `, staged delete) + `new` (`A `, staged add) — the shape the staged index carries.
-fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
+pub(crate) fn git_status_entries(repo_root: &Path) -> Result<Vec<(String, String)>> {
     let out = Command::new("git")
         .args(["status", "--porcelain", "--untracked-files=all"])
         .current_dir(repo_root)

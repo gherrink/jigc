@@ -19,7 +19,9 @@
 //! [`ref_resolves_store`](engine::index::ref_resolves_store)), refusing the commit on any
 //! dangling ref; the user's git hooks run, never `--no-verify`.
 //!
-//! The up-front validation gate runs **before** the transaction (T3): a **collision** with a
+//! The up-front validation gate runs **before** the transaction (T3): a **dirty working tree**
+//! blocks (a rename commits in place with no pathspec, so any pre-existing tracked change would
+//! be swept into the one atomic rename commit — commit or stash first); a **collision** with a
 //! *different* committed doc blocks (an identity refactor never silently suffixes); a **no-op
 //! reslug** (the new title slugs to the doc's own current slug) degrades to a **retitle-only**
 //! (rewrite the H1 + commit, no `git mv`, no referrer repoint); and a **mid-fan-out** guard
@@ -37,7 +39,7 @@ use engine::slug::slugify;
 
 use crate::ingest::{load_schemas, require_project_layer};
 use crate::pack::make_pack;
-use crate::task::{git_capture, git_commit, git_head, git_run, path_at_head};
+use crate::task::{git_capture, git_commit, git_head, git_run, git_status_entries, path_at_head};
 
 /// The outcome of a rename: the old/new `<type>:<slug>` identities, the repo-relative
 /// paths the move spanned, the new title, and the repointed referrers (each
@@ -110,7 +112,28 @@ pub(crate) fn run(
     let new_id = format!("{ty}:{new_slug}");
 
     // The up-front validation gate (runs before any mutation):
-    // (a) **mid-fan-out guard** — a rename changes the by-task-id join's same-doc-clash key
+    // (a) **clean-tree precondition** — a rename is a deliberate standalone op that commits
+    //     in place with **no pathspec** (`git_commit` runs `git commit -F`, capturing the
+    //     whole index), so any pre-existing tracked change would be swept into the "one
+    //     atomic rename commit" (a staged change) or clobbered by the referrer rewrites (an
+    //     unstaged edit to a managed doc). Refuse up front whenever the working tree carries
+    //     any staged or unstaged **tracked** change, routing the user to commit or stash
+    //     first. Untracked files are not part of the commit (the verb stages only the moved
+    //     doc + its referrers, never `git add --all`), so they do not count — they are
+    //     filtered out (`??`). (write-commands.md → `jigc rename` step 2, "tree clean".)
+    let dirty: Vec<String> = git_status_entries(&repo_root)?
+        .into_iter()
+        .filter(|(code, _)| code != "??")
+        .map(|(_, path)| path)
+        .collect();
+    if !dirty.is_empty() {
+        bail!(
+            "cannot rename with a dirty working tree — commit or stash your changes first \
+             (a rename is a deliberate standalone op that commits in place): {}",
+            dirty.join(", ")
+        );
+    }
+    // (b) **mid-fan-out guard** — a rename changes the by-task-id join's same-doc-clash key
     //     and a task working area may hold an old-slug copy that would promote stale; block
     //     whenever any task working area *or* milestone is in-flight (the coarse guard, I4).
     if let Some(marker) = mid_fan_out_marker(&jigc_root) {
@@ -119,11 +142,11 @@ pub(crate) fn run(
              (a rename changes the by-task-id join key)"
         );
     }
-    // (b) **no-op reslug** — when the new slug equals the doc's own current slug the identity
+    // (c) **no-op reslug** — when the new slug equals the doc's own current slug the identity
     //     is unchanged, so the rename degrades to a retitle-only (rewrite H1 + commit, no
     //     `git mv`, no referrer repoint — nothing dangles).
     let is_retitle = new_slug == old_slug;
-    // (c) **collision** — a non-degenerate new slug must be free; a collision with a
+    // (d) **collision** — a non-degenerate new slug must be free; a collision with a
     //     *different* committed doc blocks (an identity refactor, never the join's suffix).
     if !is_retitle && new_abs.is_file() {
         bail!("cannot rename to `{new_id}` — a different doc already exists at {new_rel}");

@@ -764,6 +764,59 @@ fn advisory_report_lists_prose_and_unmanaged_mentions_word_bounded() {
     );
 }
 
+/// Clean-tree precondition: `jigc rename` is a deliberate standalone op that commits in
+/// place with **no pathspec** (the `git commit` captures the whole index), so it must refuse
+/// to run while the working tree carries unrelated tracked work — otherwise that work is
+/// swept into the "one atomic rename commit". With an unrelated `src.txt` staged before the
+/// rename, the verb **blocks** (exit != 0, a dirty-tree message), lands **no** commit, and
+/// leaves the store untouched (no move). Before the precondition existed the rename succeeded
+/// and swept `src.txt` into its commit — the RED that proves the bug.
+#[test]
+fn rename_blocks_on_a_dirty_working_tree() {
+    let repo = TempDir::new("dirty-tree");
+    seed_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    // An unrelated change staged before the rename — the work that must NOT be swept in.
+    fs::write(repo.path().join("src.txt"), "unrelated staged work\n").expect("write src.txt");
+    git(repo.path(), &["add", "src.txt"]);
+
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Distributed cache",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a rename with unrelated staged work must block; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("dirty working tree"),
+        "the block must carry the clean-tree message; stderr:\n{stderr}",
+    );
+
+    // No commit landed — the unrelated staged work was not swept into a rename commit.
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a blocked rename must land no commit (the staged work is not swept in)",
+    );
+
+    // The store is untouched: the target keeps its old slug, no new slug was minted.
+    let decisions = repo.path().join("docs/decisions");
+    assert!(
+        decisions.join("single-node-cache.md").is_file()
+            && !decisions.join("distributed-cache.md").exists(),
+        "a blocked rename must leave the store untouched",
+    );
+}
+
 /// An unrelated `adr` carrying a **pre-existing dangling** `supersedes` ref (its target
 /// `adr:ghost-that-does-not-exist` was never created). It has nothing to do with the rename
 /// target — it exists only to prove the verb's integrity gate does not block on inherited rot.
