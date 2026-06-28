@@ -136,6 +136,21 @@ impl EdgeIndex {
     }
 }
 
+/// Enumerate `target`'s **inverse edges** — every forward edge in `index` whose
+/// `to == target`, i.e. each persisted referrer that points at `target` across the
+/// three persisted ref-fields (`adr.supersedes`, `arch-doc.cites`, `spec.derived-from`).
+///
+/// This is the **named reverse-walk** the `jigc rename` repoint step drives
+/// ([write-commands.md](../../../design/write-commands.md) → `jigc rename`, step 3;
+/// [storage.md](../../../design/storage.md) → Edge index lifecycle): the forward index
+/// is the single source of truth, so the inverse is computed by *walking* it, never
+/// stored (the inverse-is-derived rule). Returned in the index's `(from, relation, to)`
+/// sort order (deterministic, since [`EdgeIndex::edges`] is kept sorted); a `target`
+/// with no inbound edge yields an empty `Vec`. Pure over the in-memory edge set — no I/O.
+pub fn referrers_of<'a>(index: &'a EdgeIndex, target: &str) -> Vec<&'a Edge> {
+    index.edges.iter().filter(|e| e.to == target).collect()
+}
+
 /// Invalidate the persisted committed edge index — the `finalize` post-commit step
 /// (lifecycle site 5, `storage.md` → Edge index lifecycle: "phase 7 invalidates the
 /// stamp; next read rebuilds against the new HEAD").
@@ -1867,5 +1882,81 @@ mod prop_tests {
             let back: EdgeIndex = serde_json::from_str(&bytes).expect("round-trips");
             prop_assert_eq!(back, index);
         }
+    }
+}
+
+#[cfg(test)]
+mod referrers_tests {
+    //! The **inverse-edge reverse-walk** ([`referrers_of`]) the `jigc rename` repoint
+    //! step drives — every forward edge whose `to == target`, across the three persisted
+    //! ref-fields, deterministic order, empty for a doc with no inbound edge.
+
+    use super::*;
+
+    fn edge(from: &str, relation: &str, to: &str) -> Edge {
+        Edge {
+            from: from.to_string(),
+            relation: relation.to_string(),
+            to: to.to_string(),
+        }
+    }
+
+    /// An index spanning all three persisted ref-fields: `adr:old` is referenced by an
+    /// `adr.supersedes` edge **and** an `arch-doc.cites` edge; `prd:old` by a
+    /// `spec.derived-from` edge; plus unrelated edges that must NOT match.
+    fn index() -> EdgeIndex {
+        let mut edges = vec![
+            edge("adr:b", "supersedes", "adr:old"),
+            edge("arch-doc:overview", "cites", "adr:old"),
+            edge("spec:auth-flow", "derived-from", "prd:old"),
+            // unrelated: a referrer of a different target, and a self-less doc.
+            edge("adr:c", "supersedes", "adr:other"),
+            edge("arch-doc:overview", "cites", "adr:unrelated"),
+        ];
+        edges.sort();
+        edges.dedup();
+        EdgeIndex {
+            stamp: "STAMP".to_string(),
+            edges,
+        }
+    }
+
+    /// `referrers_of` returns **exactly** the inbound edges of the target — across
+    /// the `supersedes` and `cites` ref-fields for `adr:old`, and the `derived-from`
+    /// ref-field for `prd:old` — in the index's `(from, relation, to)` sort order, and
+    /// nothing pointing elsewhere.
+    #[test]
+    fn referrers_of_returns_exactly_the_inbound_edges() {
+        let index = index();
+
+        let adr_old = referrers_of(&index, "adr:old");
+        assert_eq!(
+            adr_old,
+            vec![
+                &edge("adr:b", "supersedes", "adr:old"),
+                &edge("arch-doc:overview", "cites", "adr:old"),
+            ],
+            "both the supersedes and cites referrers, sorted, nothing else"
+        );
+
+        let prd_old = referrers_of(&index, "prd:old");
+        assert_eq!(
+            prd_old,
+            vec![&edge("spec:auth-flow", "derived-from", "prd:old")],
+            "the derived-from referrer (the third persisted ref-field)"
+        );
+    }
+
+    /// A target with no inbound edge — every doc with no referrer — yields an empty
+    /// `Vec` (the no-op rename case: nothing to repoint).
+    #[test]
+    fn referrers_of_is_empty_for_no_inbound() {
+        let index = index();
+        assert!(
+            referrers_of(&index, "adr:never-referenced").is_empty(),
+            "a doc with no inbound edge has no referrers"
+        );
+        // An empty index has no referrers for anything.
+        assert!(referrers_of(&EdgeIndex::default(), "adr:old").is_empty());
     }
 }

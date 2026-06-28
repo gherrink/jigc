@@ -48,6 +48,22 @@ pub enum Value {
     List(Vec<String>),
 }
 
+impl Value {
+    /// Render this value to its canonical on-disk bytes — the text after `key: ` in
+    /// the flat field grammar: a [`Value::Scalar`] verbatim, a [`Value::List`] as the
+    /// inline-flow `[a, b, c]` form (`", "`-separated). The **single source** of the
+    /// value byte form, shared by [`emit`] and the `rename` referrer-repoint
+    /// ([`crate::write::repoint_ref`]) so the two cannot drift — the canonical bytes
+    /// are defined in exactly one place (`DECISIONS.md` 2026-05-31 → Canonical byte
+    /// form).
+    pub fn render(&self) -> String {
+        match self {
+            Value::Scalar(s) => s.clone(),
+            Value::List(elems) => format!("[{}]", elems.join(", ")),
+        }
+    }
+}
+
 /// One parsed field: its `key` and its raw [`Value`], in the order it appeared.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Field {
@@ -154,14 +170,7 @@ pub fn emit(block: &FieldBlock) -> String {
     for field in &block.fields {
         out.push_str(&field.key);
         out.push_str(": ");
-        match &field.value {
-            Value::Scalar(s) => out.push_str(s),
-            Value::List(elems) => {
-                out.push('[');
-                out.push_str(&elems.join(", "));
-                out.push(']');
-            }
-        }
+        out.push_str(&field.value.render());
         out.push('\n');
     }
     out
@@ -255,6 +264,22 @@ empty-list: []
         status: accepted
         relates-to: [adr:a, adr:b]
         ");
+    }
+
+    /// [`Value::render`] is the single source of the value byte form: a scalar is
+    /// verbatim; an inline-flow list is `[a, b, c]` (`", "`-separated, order
+    /// preserved). This locks the bytes the `rename` referrer-repoint splices.
+    #[test]
+    fn value_render_is_canonical_bytes() {
+        assert_eq!(
+            Value::Scalar("prd:auth-flow".into()).render(),
+            "prd:auth-flow"
+        );
+        assert_eq!(
+            Value::List(vec!["adr:a".into(), "adr:b".into(), "adr:c".into()]).render(),
+            "[adr:a, adr:b, adr:c]"
+        );
+        assert_eq!(Value::List(Vec::new()).render(), "[]");
     }
 
     /// A field line with no `:` separator is a located conformance defect, not a

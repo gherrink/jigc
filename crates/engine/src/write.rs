@@ -984,6 +984,88 @@ pub fn set_field(
     Ok(splice(source, value_span, new_value))
 }
 
+/// `rename` referrer-repoint: rewrite the `ref`-typed field `relation` in `source`
+/// from `old` to `new`, leaving every other byte intact — the per-referrer half of
+/// the `jigc rename` transaction ([write-commands.md](../../../design/write-commands.md)
+/// → `jigc rename`, step 3).
+///
+/// Locates the schema section declaring the `ref` field `relation`, reads its current
+/// value, and swaps the single `old` occurrence for `new`:
+/// - a **scalar** ref (`derived-from: prd:old`) is replaced whole → `prd:new`;
+/// - a **list-valued** ref (`cites: [adr:a, adr:old, adr:c]`) is parsed, the one
+///   matching element swapped, and the **canonical whole-list re-emitted** via
+///   [`Value::render`](crate::field_block::Value::render) (`[adr:a, adr:new, adr:c]`,
+///   `", "`-separated) — siblings, order, and separator preserved byte-for-byte.
+///
+/// The new value bytes are spliced via [`set_field`], so the round-trip stays exact
+/// (`render(parse(out)) == out`). `relation` not declared as a `ref` on any section,
+/// the field absent, or `old` not among its value(s) → [`SpliceError::NotPresent`].
+pub fn repoint_ref(
+    schema: &Schema,
+    source: &str,
+    relation: &str,
+    old: &str,
+    new: &str,
+) -> Result<String, SpliceError> {
+    let section_id =
+        ref_field_section(schema, relation).ok_or_else(|| SpliceError::NotPresent {
+            what: format!("ref field {relation:?} in schema"),
+        })?;
+
+    // Read the field's current value to choose scalar-replace vs whole-list re-emit.
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    let field = section
+        .fields
+        .iter()
+        .find(|f| f.key == relation)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("field {relation:?} in section {section_id:?}"),
+        })?;
+
+    let new_value = match &field.value {
+        Value::Scalar(v) if v == old => Value::Scalar(new.to_string()),
+        Value::List(elems) if elems.iter().any(|e| e == old) => Value::List(
+            elems
+                .iter()
+                .map(|e| if e == old { new.to_string() } else { e.clone() })
+                .collect(),
+        ),
+        // The field is present but does not carry `old` — nothing to repoint here.
+        _ => {
+            return Err(SpliceError::NotPresent {
+                what: format!("value {old:?} in field {relation:?}"),
+            });
+        }
+    };
+
+    set_field(schema, source, &section_id, relation, &new_value.render())
+}
+
+/// The id of the schema section declaring `relation` as a `ref`-typed field on a
+/// **simple** (header / body) section — the section [`set_field`] addresses. The three
+/// persisted ref-fields all live on a header section (`adr.supersedes`, `arch-doc.cites`,
+/// `spec.derived-from`); a repeatable-item ref is not a `rename` repoint target in v1.
+/// `None` if no simple section declares `relation` as a `ref`.
+fn ref_field_section(schema: &Schema, relation: &str) -> Option<String> {
+    schema.sections.iter().find_map(|s| match &s.body {
+        SectionBody::Simple { fields, .. }
+            if fields
+                .iter()
+                .any(|f| f.id == relation && f.ty == crate::schema::FieldType::Ref) =>
+        {
+            Some(s.id.clone())
+        }
+        _ => None,
+    })
+}
+
 /// `remove-item` (item present): delete the whole block of the repeatable item
 /// `item_id` in `section_id` — its `### …{#id}` heading through the start of the
 /// next item / section boundary, including the trailing blank-line separator — so the
@@ -8262,5 +8344,171 @@ sections:
         let err = promote_slot_to_repeatable(&v1, &v2, &src, "requirements", "   ")
             .expect_err("blank title rejected");
         assert!(matches!(err, GenerateError::UnslugableTitle { .. }));
+    }
+}
+
+#[cfg(test)]
+mod repoint_ref_tests {
+    //! The `jigc rename` referrer-repoint primitive ([`repoint_ref`]): rewrite one
+    //! referrer's `ref` field old→new — a scalar replaced whole, a list-valued ref
+    //! re-emitting the **canonical whole-list** with siblings/order/`", "`-separator
+    //! preserved byte-for-byte, every other byte intact (`render(parse(out)) == out`).
+
+    use super::*;
+    use crate::parse::parse_sections;
+
+    const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+
+    fn spec_schema() -> Schema {
+        crate::schema::load_schema_with_types(SPEC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("spec.yaml loads")
+    }
+    fn arch_doc_schema() -> Schema {
+        crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("arch-doc.yaml loads")
+    }
+
+    /// A committed `spec` whose `meta.derived-from` is the **scalar** `ref → prd`. In
+    /// the frozen canonical byte form (every required section present so it round-trips).
+    const SPEC_SCALAR: &str = "\
+---
+derived-from: prd:old
+---
+
+# Auth flow
+
+## Goal
+
+Deliver the auth flow.
+
+## Context
+
+It is needed for login.
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+";
+
+    /// A committed `arch-doc` whose `meta.cites` is a **3-element list** `ref → adr`
+    /// (`card: 0..*`), with `adr:old` flanked by siblings — the byte-exact list-rewrite
+    /// fixture (acceptance #8). In the frozen canonical byte form (required sections
+    /// present so it round-trips).
+    const ARCH_DOC_LIST: &str = "\
+---
+cites: [adr:a, adr:old, adr:c]
+---
+
+# Payment subsystem
+
+## Overview
+
+The payment subsystem handles charges.
+
+## Components
+
+### The charger  {#charger}
+
+Captures and settles a charge.
+
+<!-- fields -->
+- implemented-by: crates/pay/src/charge.rs#capture
+";
+
+    /// Scalar repoint: `derived-from: prd:old` → `prd:new`, every other byte intact,
+    /// and the result round-trips byte-stable (`render(parse(out)) == out`).
+    #[test]
+    fn repoint_scalar_ref() {
+        let schema = spec_schema();
+        let out = repoint_ref(&schema, SPEC_SCALAR, "derived-from", "prd:old", "prd:new")
+            .expect("the derived-from ref carries prd:old");
+
+        // Only the one token changed — the whole doc is byte-identical otherwise.
+        assert_eq!(out, SPEC_SCALAR.replace("prd:old", "prd:new"));
+        assert!(out.contains("derived-from: prd:new"));
+        assert!(!out.contains("prd:old"));
+
+        // Round-trip: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed), out);
+    }
+
+    /// RED (acceptance #8): a real 3-element list `cites: [adr:a, adr:old, adr:c]`
+    /// rewrites to the EXACT bytes `[adr:a, adr:new, adr:c]` — siblings, order, and the
+    /// `", "` separator preserved. **Proven, not asserted**: the test executes the
+    /// emitted output (golden-pins the full bytes, re-parses to confirm the list value
+    /// and element order, and checks the doc is byte-identical save the one swap).
+    #[test]
+    fn repoint_list_ref_preserves_siblings_order_separator() {
+        let schema = arch_doc_schema();
+        let out = repoint_ref(&schema, ARCH_DOC_LIST, "cites", "adr:old", "adr:new")
+            .expect("the cites list carries adr:old");
+
+        // The full emitted bytes (serialization → golden).
+        insta::assert_snapshot!(out, @r"
+        ---
+        cites: [adr:a, adr:new, adr:c]
+        ---
+
+        # Payment subsystem
+
+        ## Overview
+
+        The payment subsystem handles charges.
+
+        ## Components
+
+        ### The charger  {#charger}
+
+        Captures and settles a charge.
+
+        <!-- fields -->
+        - implemented-by: crates/pay/src/charge.rs#capture
+        ");
+
+        // The one swapped token is the ONLY change — siblings/order/separator are
+        // byte-identical because the rest of the doc is byte-identical.
+        assert_eq!(out, ARCH_DOC_LIST.replace("adr:old", "adr:new"));
+
+        // Re-parse the EMITTED bytes: the list value + element order is exactly what we
+        // drove (not a hand-built equivalent).
+        let doc = parse_sections(&schema, &out).expect("result re-parses");
+        let meta = doc.sections.iter().find(|s| s.id == "meta").unwrap();
+        let cites = meta.fields.iter().find(|f| f.key == "cites").unwrap();
+        assert_eq!(
+            cites.value,
+            crate::field_block::Value::List(vec!["adr:a".into(), "adr:new".into(), "adr:c".into()]),
+            "the middle element swapped, siblings + order preserved"
+        );
+
+        // Round-trip: render(parse(out)) == out.
+        let reparsed = instance_from_source(&schema, &out).expect("result conforms");
+        assert_eq!(render(&schema, &reparsed), out);
+    }
+
+    /// An unknown relation, an absent field-value, or a value the field does not carry
+    /// each routes to [`SpliceError::NotPresent`] (never a silent no-op or a panic).
+    #[test]
+    fn repoint_absent_is_not_present() {
+        let schema = arch_doc_schema();
+        // `old` not among the list's elements.
+        assert!(matches!(
+            repoint_ref(&schema, ARCH_DOC_LIST, "cites", "adr:missing", "adr:new"),
+            Err(SpliceError::NotPresent { .. })
+        ));
+        // A relation not declared as a ref on the schema.
+        assert!(matches!(
+            repoint_ref(
+                &schema,
+                ARCH_DOC_LIST,
+                "not-a-relation",
+                "adr:old",
+                "adr:new"
+            ),
+            Err(SpliceError::NotPresent { .. })
+        ));
     }
 }
