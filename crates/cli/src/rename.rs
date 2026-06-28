@@ -457,14 +457,32 @@ fn location_dir(schema_map: &BTreeMap<String, Schema>, ty: &str) -> Result<Strin
 }
 
 /// Rewrite the document's `# H1` title to `new_title`, preserving every other byte. The
-/// H1 is the first ATX level-1 heading (`# `) outside a fenced code block (the document
-/// title the writer renders from `id-from`). Returns `None` if the doc has no H1.
+/// H1 is the first ATX level-1 heading (`# `) outside a fenced code block and outside the
+/// leading front-matter block (the document title the writer renders from `id-from`).
+/// Returns `None` if the doc has no H1.
 fn rewrite_h1(source: &str, new_title: &str) -> Option<String> {
     let mut out = String::with_capacity(source.len());
     let mut in_fence = false;
     let mut done = false;
+    // The leading `---`-fenced YAML front-matter block (if present) is metadata, not the
+    // document body — a human-authored `# ` YAML comment there must never be taken for the
+    // H1. Copy it through verbatim and only scan for the H1 past its closing fence. Mirrors
+    // the engine's metadata-block detection (`engine::parse::scan_blocks`, pulldown
+    // YAML-style metadata): the block opens only when `---` is the document's first line
+    // and closes on a `---`/`...` line.
+    let mut in_front_matter = source.starts_with("---\n") || source == "---";
+    let mut opening_fence = in_front_matter;
     for line in source.split_inclusive('\n') {
         let body = line.strip_suffix('\n').unwrap_or(line);
+        if in_front_matter {
+            if opening_fence {
+                opening_fence = false;
+            } else if body == "---" || body == "..." {
+                in_front_matter = false;
+            }
+            out.push_str(line);
+            continue;
+        }
         if !done {
             if body.starts_with("```") || body.starts_with("~~~") {
                 in_fence = !in_fence;
@@ -500,6 +518,20 @@ mod tests {
         let src = "```\n# not a heading\n```\n\n# Real title\n\n## Section\n";
         let out = rewrite_h1(src, "New").expect("the real H1 is found past the fence");
         assert_eq!(out, "```\n# not a heading\n```\n\n# New\n\n## Section\n");
+    }
+
+    #[test]
+    fn rewrite_h1_skips_a_front_matter_yaml_comment() {
+        // Humans edit managed docs through git (storage.md), so front matter can carry a
+        // `# `-prefixed YAML comment. That line is metadata — it must not be taken for the
+        // H1: the front matter stays byte-for-byte, and the real body H1 is the one rewritten.
+        let src = "---\nstatus: accepted\n# a human-added yaml comment\ndate: 2026-01-01\n---\n\n# Single node cache\n\n## Context\n\nProse.\n";
+        let out = rewrite_h1(src, "Distributed cache")
+            .expect("the body H1 is found past the front matter");
+        assert_eq!(
+            out,
+            "---\nstatus: accepted\n# a human-added yaml comment\ndate: 2026-01-01\n---\n\n# Distributed cache\n\n## Context\n\nProse.\n"
+        );
     }
 
     #[test]
