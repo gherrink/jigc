@@ -575,6 +575,10 @@ fn promoted_owner_artifact_does_not_poison_later_finalizes() {
         rendered.contains("reconciliation.rename") && rendered.contains(artifact),
         "the block is the weak-signal rename naming the deleted artifact; got:\n{rendered}",
     );
+    assert!(
+        rendered.contains("jigc delete") && !rendered.contains("jigc doc delete"),
+        "the store-sweep weak-signal route names the top-level `jigc delete`, not the stale `jigc doc delete`; got:\n{rendered}",
+    );
     let after: u32 = {
         let out = Command::new("git")
             .args(["rev-list", "--count", "HEAD"])

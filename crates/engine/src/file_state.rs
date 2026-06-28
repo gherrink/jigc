@@ -712,12 +712,13 @@ fn rename_landing_present(
 /// finding routed for human-side revert:
 ///
 /// - **Strong signal** — some untracked path carries the **same** `recorded_hash`: a
-///   suspected `git mv`. The finding names both paths and routes to
-///   `git mv <suspect> <tracked>` (revert the move). The first hash-matching
+///   suspected `git mv`. The finding names both paths and routes to the owned op first
+///   (`jigc rename <from> --to "<New Title>"`, which re-points every referrer
+///   atomically), revert (`git mv <suspect> <tracked>`) second. The first hash-matching
 ///   candidate in `untracked` order is named.
 /// - **Weak signal** — no untracked path matches: the file is simply gone. The
 ///   finding names the missing path and routes to **restore** it (or, post-MVP,
-///   confirm the deletion via `jigc doc delete`).
+///   confirm the deletion via `jigc delete`).
 ///
 /// **No auto-rewrite.** A path rename is an identity change; the MVP blocks and routes
 /// to revert, and **never** rewrites referrer refs or mutates the edge index
@@ -737,8 +738,10 @@ pub fn detect_rename(
 
 /// The blocking **strong-signal** rename finding (`reconciliation.md` → Rename
 /// detection → strong signal): the missing tracked doc and the content-matching
-/// suspect, routed to revert the suspected `git mv`. Referrer refs are untouched —
-/// the route hands the identity change back to the human.
+/// suspect, routed to **adopt the move as `jigc rename`** (the owned op that re-points
+/// every referrer atomically) or revert the suspected `git mv`. The detector itself
+/// leaves referrer refs untouched — it hands the identity change to the owned op or the
+/// human.
 fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
@@ -748,7 +751,7 @@ fn rename_strong_finding(path: &str, from: &str, suspect: &str) -> Finding {
         ),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "revert the move: `git mv {suspect} {path}` (post-MVP: `jigc doc rename` will re-key file-state and rewrite referrer refs)"
+            "adopt it as a CLI-owned rename (re-points every referrer atomically): `jigc rename {from} --to \"<New Title>\"`; or revert the move: `git mv {suspect} {path}`"
         )),
     )
 }
@@ -763,7 +766,7 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
         format!("tracked managed doc {from} ({path}) is missing"),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "restore {path} (post-MVP: `jigc doc delete {from}` to confirm deletion)"
+            "restore {path} (post-MVP: `jigc delete {from}` to confirm deletion)"
         )),
     )
 }
@@ -1286,6 +1289,10 @@ Referrers must point at the new decision.
             route.contains("git mv") && route.contains(MOVED) && route.contains(TRACKED),
             "the route directs a `git mv … revert` of the moved file back to the tracked path: {route:?}"
         );
+        assert!(
+            route.contains("jigc rename") && !route.contains("jigc doc rename"),
+            "the route advertises the now-shipped top-level `jigc rename` adopt op (not the stale `jigc doc rename` placeholder): {route:?}"
+        );
     }
 
     /// **Weak signal** — a tracked managed-doc path is missing and **no** untracked
@@ -1322,6 +1329,10 @@ Referrers must point at the new decision.
         assert!(
             route.contains("restore"),
             "the weak-signal route directs a restore of the missing file: {route:?}"
+        );
+        assert!(
+            route.contains("jigc delete") && !route.contains("jigc doc delete"),
+            "the weak-signal route names the top-level `jigc delete` op (not the stale `jigc doc delete` placeholder): {route:?}"
         );
     }
 
