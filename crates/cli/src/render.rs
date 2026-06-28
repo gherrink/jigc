@@ -842,6 +842,31 @@ pub fn unmanage(format: Format, report: &crate::unmanage::UnmanageReport) -> Str
     }
 }
 
+/// Render a `jigc rename` outcome to the surface `format` selects: `agent` / `human` emit
+/// the move summary (old→new identity + path, the count of repointed referrers, each
+/// listed), followed by the routing footer; `json` emits the generic projection (no
+/// footer). The verb owns the structural rewrite + commit; the CLI only formats the report.
+pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
+    match format {
+        Format::Json => json(report),
+        Format::Agent | Format::Human => {
+            let mut out = format!(
+                "renamed {} -> {} ({} -> {}), repointed {} referrer(s)\n",
+                report.from,
+                report.to,
+                report.old_path,
+                report.new_path,
+                report.referrers.len(),
+            );
+            for referrer in &report.referrers {
+                out.push_str(&format!("  repointed {referrer}\n"));
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
 /// Render a `jigc migrate-corpus` outcome to the surface `format` selects: `agent` /
 /// `human` emit a per-doc summary — one `migrated`/`already current` line per doc plus, for
 /// each blocked doc, its Framing-A route — followed by the routing footer; `json` emits the

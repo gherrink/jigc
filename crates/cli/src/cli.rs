@@ -15,6 +15,7 @@ use crate::migrate;
 use crate::migrate_corpus;
 use crate::milestone::MilestoneCommand;
 use crate::orient;
+use crate::rename;
 use crate::render;
 use crate::setup;
 use crate::start;
@@ -181,6 +182,26 @@ pub enum Command {
         path: String,
     },
 
+    /// Rename a managed doc — `jigc rename <old-slug> --to "<New Title>"` is the
+    /// CLI-owned identity refactor: it derives the new slug from the title, repoints
+    /// every persisted referrer old→new, rewrites the moved doc's H1, `git mv`s it, and
+    /// commits as one atomic transaction (rolling back cleanly on any failure). `--to` is
+    /// required; `--slug` (only valid alongside `--to`) overrides the derived slug.
+    Rename {
+        /// The `<type>:<slug>` address of the doc to rename (e.g.
+        /// `adr:single-node-cache`).
+        old_slug: String,
+
+        /// The new title — the moved doc's H1, and the slug source unless `--slug`
+        /// overrides. Required.
+        #[arg(long)]
+        to: String,
+
+        /// Override the derived slug (only valid alongside `--to`).
+        #[arg(long, requires = "to")]
+        slug: Option<String>,
+    },
+
     /// Print a prose tour of what's available — every workflow and doc-type with
     /// their descriptions, plus command-ref hints — reflecting the resolved
     /// cascade. The output is a human menu, not a stable API; don't parse it.
@@ -268,6 +289,9 @@ impl Cli {
             Command::Migrate { path, r#as } => run_migrate(self.format, &path, &r#as),
             Command::MigrateCorpus => run_migrate_corpus(self.format),
             Command::Unmanage { path } => run_unmanage(self.format, &path),
+            Command::Rename { old_slug, to, slug } => {
+                run_rename(self.format, &old_slug, &to, slug.as_deref())
+            }
             Command::Describe => run_describe(self.format),
             Command::Validate => run_validate_store(self.format),
         }
@@ -521,6 +545,33 @@ fn run_unmanage(format: Format, path: &str) -> ExitCode {
     match unmanage::run(&cwd, path) {
         Ok(report) => {
             println!("{}", render::unmanage(format, &report));
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("{}", render::operational_error(format, &err));
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Run `jigc rename <old-slug> --to "<New Title>"` (optional `--slug`) against the current
+/// working directory: locate the repo + project layer, repoint every persisted referrer
+/// old→new, rewrite the moved doc's H1, `git mv`, and commit as one atomic transaction —
+/// rendering the outcome through the selected `format`. A clean rename prints a summary on
+/// stdout and exits 0; a missing target, a malformed address, or a pre-commit failure (the
+/// transaction rolled back) surfaces on stderr (with its route) and exits non-zero
+/// (`design/write-commands.md` → `jigc rename`).
+fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> ExitCode {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    match rename::run(&cwd, old_slug, to, slug) {
+        Ok(report) => {
+            println!("{}", render::rename(format, &report));
             ExitCode::SUCCESS
         }
         Err(err) => {
@@ -1129,6 +1180,56 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "validate", "extra"])
             .expect_err("`jigc validate` takes no positional argument");
         assert_eq!(err.kind(), clap::error::ErrorKind::UnknownArgument);
+    }
+
+    #[test]
+    fn rename_parses_the_address_and_title() {
+        let cli = Cli::try_parse_from(["jigc", "rename", "adr:old-cache", "--to", "New cache"])
+            .expect("`jigc rename <addr> --to <title>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Rename {
+                old_slug: "adr:old-cache".to_string(),
+                to: "New cache".to_string(),
+                slug: None,
+            }
+        );
+    }
+
+    #[test]
+    fn rename_parses_the_explicit_slug_override() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "rename",
+            "adr:old-cache",
+            "--to",
+            "New cache",
+            "--slug",
+            "fast-cache",
+        ])
+        .expect("`jigc rename <addr> --to <title> --slug <slug>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Rename {
+                old_slug: "adr:old-cache".to_string(),
+                to: "New cache".to_string(),
+                slug: Some("fast-cache".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn rename_requires_the_to_flag() {
+        let err = Cli::try_parse_from(["jigc", "rename", "adr:old-cache"])
+            .expect_err("`jigc rename <addr>` with no `--to` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    #[test]
+    fn rename_requires_an_address() {
+        let err = Cli::try_parse_from(["jigc", "rename", "--to", "New cache"])
+            .expect_err("`jigc rename --to <title>` with no address must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

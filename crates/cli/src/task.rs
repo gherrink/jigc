@@ -1962,7 +1962,7 @@ pub(crate) fn git_head(repo_root: &Path) -> Result<String> {
 
 /// Run `git <args>` in `repo_root` for its side effect (e.g. `add`), bailing with
 /// git's stderr on a non-zero exit. Shells out to the user's `git`.
-fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
+pub(crate) fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
     let out = Command::new("git")
         .args(args)
         .current_dir(repo_root)
@@ -1991,7 +1991,7 @@ fn git_run(repo_root: &Path, args: &[&str]) -> Result<()> {
 /// capturing it is general (any non-blocking hook, not just jigc's backstop) and a
 /// no-hook commit yields empty. The bytes are merely captured here — placement/printing
 /// is the relay sites' job (M19 increment 2, T2/T3).
-fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
+pub(crate) fn git_commit(repo_root: &Path, message_file: &Path) -> Result<String> {
     let out = Command::new("git")
         .arg("commit")
         .arg("-F")
@@ -2427,7 +2427,7 @@ fn classify_landed_manifest(
 /// Whether `path` (repo-relative) exists at `HEAD` (`git cat-file -e HEAD:<path>`).
 /// Used by rollback to tell a newly promoted doc (no HEAD content — delete the copy)
 /// from an overwrite of an existing committed doc (`git restore` already reverted it).
-fn path_at_head(repo_root: &Path, path: &str) -> bool {
+pub(crate) fn path_at_head(repo_root: &Path, path: &str) -> bool {
     Command::new("git")
         .arg("cat-file")
         .arg("-e")
