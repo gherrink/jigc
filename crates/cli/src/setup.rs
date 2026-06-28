@@ -95,10 +95,49 @@ pub fn precommit_hook_body(jigc_path: &Path) -> String {
          if printf '%s' \"$report\" | grep -Eq '\"probe\"[[:space:]]*:[[:space:]]*\"doc-code\"'; then\n\
          \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
          fi\n\
+         {PRECOMMIT_RENAME_BLOCK}\
          \n\
          exit 0\n"
     )
 }
+
+/// The M35 Component B **OOB-rename backstop** spliced into [`precommit_hook_body`] (before
+/// its trailing `exit 0`) — the one part of the hook that **blocks** a commit
+/// (`design/validation.md` → The M19 pre-commit backstop; `design/reconciliation.md` →
+/// Rename detection, Component B). It is a literal `&str` (not a `format!` fragment) so its
+/// shell `${…}`/`awk {…}` braces stay verbatim — `format!` interpolates this value whole, so
+/// its braces are never re-parsed.
+///
+/// The store-scope sweep (already captured in `$report`) flags every recorded-but-missing
+/// managed doc as a `reconciliation.rename` finding whose **strong-signal route** names the
+/// pair as `git mv <new> <old>` (the revert direction). But a move landed in a **prior**
+/// commit must **not** block an unrelated later commit (the **masking trap**) — so the block
+/// fires **iff** BOTH the finding's old and new paths are in **this commit's** staged set
+/// (`git diff --cached --name-status --find-renames`, which carries both whether git records
+/// the move as one `R old new` line or as `D old` / `A new`). A rename hit **outside** the
+/// staged set warns and exits 0 (the guard). The decision keys on the finding **and** the
+/// staged set, never on `jigc validate`'s exit code (which is wrong-way-round and is, per
+/// M35, exit-flipped on this very finding — independent of this hook).
+const PRECOMMIT_RENAME_BLOCK: &str = "\n\
+# M35 — block this commit IFF it ITSELF stages an out-of-band managed-doc rename (a\n\
+# bare `git mv` committed without `jigc rename`). The sweep above flags every\n\
+# recorded-but-missing managed doc as a `reconciliation.rename` finding whose route\n\
+# names the pair as `git mv <new> <old>` (the revert direction). A move landed in a\n\
+# PRIOR commit must NOT block an unrelated later commit (the masking trap), so block\n\
+# ONLY when BOTH the old and new paths are staged in THIS commit. Keys on the finding\n\
+# plus the staged set, never on jigc's exit code.\n\
+moves=\"$(printf '%s' \"$report\" | grep -o 'git mv [^`]*')\"\n\
+if [ -n \"$moves\" ]; then\n\
+\t# Every path THIS commit stages, rename-aware: a staged `git mv` shows as `R old new`\n\
+\t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
+\tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n')\"\n\
+\t# Block iff some `git mv <new> <old>` route has BOTH its paths in the staged set.\n\
+\tif { printf '%s\\n' \"$staged\"; echo '---'; printf '%s\\n' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 4 && ($3 in S) && ($4 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+\t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
+\t\texit 1\n\
+\tfi\n\
+\techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
+fi\n";
 
 /// The sentinel that closes the jigc-managed block when it is **wrapped** around a
 /// pre-existing foreign `pre-commit` hook. A fresh (jigc-only) hook is exactly the
@@ -1155,6 +1194,29 @@ mod tests {
              # the `\"probe\": \"doc-code\"` finding, never on the pretty-printer's spacing.\n\
              if printf '%s' \"$report\" | grep -Eq '\"probe\"[[:space:]]*:[[:space:]]*\"doc-code\"'; then\n\
              \techo 'jigc: doc<->code drift detected in committed docs — run `jigc validate` for details (commit not blocked).' >&2\n\
+             fi\n\
+             \n\
+             # M35 — block this commit IFF it ITSELF stages an out-of-band managed-doc rename (a\n\
+             # bare `git mv` committed without `jigc rename`). The sweep above flags every\n\
+             # recorded-but-missing managed doc as a `reconciliation.rename` finding whose route\n\
+             # names the pair as `git mv <new> <old>` (the revert direction). A move landed in a\n\
+             # PRIOR commit must NOT block an unrelated later commit (the masking trap), so block\n\
+             # ONLY when BOTH the old and new paths are staged in THIS commit. Keys on the finding\n\
+             # plus the staged set, never on jigc's exit code.\n\
+             moves=\"$(printf '%s' \"$report\" | grep -o 'git mv [^`]*')\"\n\
+             if [ -n \"$moves\" ]; then\n\
+             \t# Every path THIS commit stages, rename-aware: a staged `git mv` shows as `R old new`\n\
+             \t# under --find-renames; a delete+add as `D old` / `A new`. One path per line.\n\
+             \tstaged=\"$(git diff --cached --name-status --find-renames 2>/dev/null | cut -f2- | tr '\\t' '\\n\
+             ')\"\n\
+             \t# Block iff some `git mv <new> <old>` route has BOTH its paths in the staged set.\n\
+             \tif { printf '%s\\n\
+             ' \"$staged\"; echo '---'; printf '%s\\n\
+             ' \"$moves\"; } | awk '$0 == \"---\" { seen = 1; next } seen == 0 { S[$0] = 1; next } NF >= 4 && ($3 in S) && ($4 in S) { hit = 1 } END { exit hit ? 0 : 1 }'; then\n\
+             \t\techo 'jigc: out-of-band managed-doc rename staged in this commit — a bare `git mv` bypasses jigc identity tracking; use `jigc rename` instead (commit blocked).' >&2\n\
+             \t\texit 1\n\
+             \tfi\n\
+             \techo 'jigc: an out-of-band managed-doc rename exists in the committed tree — run `jigc validate` for details (not staged in this commit; commit not blocked).' >&2\n\
              fi\n\
              \n\
              exit 0\n",

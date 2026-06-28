@@ -197,6 +197,195 @@ fn hook_path(repo: &Path) -> PathBuf {
 /// (the B2 contract's emitted text).
 const DRIFT_WARNING: &str = "doc<->code drift detected";
 
+/// The fragment the hook prints to stderr when it **blocks** a commit that itself stages
+/// an out-of-band managed-doc rename (M35 Component B, this commit's-move case).
+const RENAME_BLOCK: &str = "rename staged in this commit";
+
+/// The fragment the hook prints when an out-of-band rename exists in the tree but is NOT
+/// staged by this commit — warn-only, never blocks (the masking-trap guard).
+const RENAME_WARN: &str = "not staged in this commit";
+
+/// A standalone `adr` with NO `cites-code` anchor — a managed doc whose only possible
+/// store-sweep finding is the rename event under test (no doc↔code noise to disentangle).
+fn plain_adr(title: &str) -> String {
+    format!(
+        "---\n\
+         status: accepted\n\
+         date: 2026-06-13\n\
+         ---\n\
+         \n\
+         # {title}\n\
+         \n\
+         ## Context\n\
+         Forces.\n\
+         \n\
+         ## Decision\n\
+         Decided.\n\
+         \n\
+         ## Consequences\n\
+         Effects.\n"
+    )
+}
+
+/// Baseline the file-state record for `entries` (managed-doc paths relative to `repo`) at
+/// their current raw-byte hashes — the committed-store baseline the store sweep's
+/// recorded-but-missing rename detector reads (mirrors flow37's helper).
+fn baseline_file_state(repo: &Path, entries: &[&str]) {
+    use engine::file_state::{FileStateRecord, hash_bytes};
+    let mut record = FileStateRecord::new();
+    for rel in entries {
+        let bytes = fs::read(repo.join(rel)).expect("read managed doc to baseline");
+        record.record(*rel, hash_bytes(&bytes));
+    }
+    record
+        .save(&repo.join(".jigc"))
+        .expect("save the file-state baseline");
+}
+
+/// (g) The M35 headline: a commit that **itself** stages a bare `git mv` of a managed doc
+/// (without `jigc rename`) is **blocked** — `git commit` exits non-zero, the rename
+/// message is on stderr, and the move does not land. The store-scope sweep flags the
+/// recorded-but-missing doc as a `reconciliation.rename`; the hook intersects the
+/// finding's paths with THIS commit's staged set and blocks because both are staged.
+#[test]
+fn commit_blocks_on_this_commit_oob_rename() {
+    let repo = TempDir::new("oob-rename-block");
+    init_repo(repo.path());
+
+    // A single committed managed doc, baselined in the file-state record.
+    fs::create_dir_all(repo.path().join("docs/decisions")).expect("mk decisions");
+    fs::write(
+        repo.path().join("docs/decisions/old-cache.md"),
+        plain_adr("Old cache"),
+    )
+    .expect("write adr");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "seed managed doc"]);
+    mark_set_up(repo.path());
+    baseline_file_state(repo.path(), &["docs/decisions/old-cache.md"]);
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+
+    // Bare `git mv` of the managed doc, staged for THIS commit (no `jigc rename`).
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "docs/decisions/old-cache.md",
+            "docs/decisions/new-cache.md",
+        ],
+    );
+
+    let out = git_commit(repo.path(), "bare git mv of a managed doc");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    assert!(
+        !out.status.success(),
+        "a this-commit OOB rename must BLOCK the commit; output:\n{merged}",
+    );
+    assert!(
+        merged.contains(RENAME_BLOCK),
+        "the rename-block message must appear on stderr; output:\n{merged}",
+    );
+    // The move did not land — HEAD is still the seed commit (the blocked commit aborted).
+    let head = Command::new("git")
+        .args(["log", "--oneline", "-1"])
+        .current_dir(repo.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .expect("git log");
+    assert!(
+        !String::from_utf8_lossy(&head.stdout).contains("bare git mv of a managed doc"),
+        "the blocked commit must NOT have landed; log:\n{}",
+        String::from_utf8_lossy(&head.stdout),
+    );
+}
+
+/// (h) The masking-trap regression: an **unrelated** commit (staging some other file) made
+/// while a pre-existing OOB-moved managed doc already sits committed in the tree must NOT
+/// block (exit 0, warn only). The store sweep still flags the prior move as a
+/// `reconciliation.rename`, but its paths are NOT in THIS commit's staged set, so the hook
+/// warns and lets the commit through — the backstop fires only on the move's OWN commit,
+/// never on every later commit.
+#[test]
+fn commit_does_not_block_when_oob_rename_is_pre_existing() {
+    let repo = TempDir::new("oob-rename-masking");
+    init_repo(repo.path());
+
+    fs::create_dir_all(repo.path().join("docs/decisions")).expect("mk decisions");
+    fs::write(
+        repo.path().join("docs/decisions/old-cache.md"),
+        plain_adr("Old cache"),
+    )
+    .expect("write adr");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "seed managed doc"]);
+    mark_set_up(repo.path());
+    baseline_file_state(repo.path(), &["docs/decisions/old-cache.md"]);
+
+    // The bare `git mv` is committed in a PRIOR commit, before the hook is installed (the
+    // file-state record is never re-baselined, so the sweep keeps flagging it).
+    git(
+        repo.path(),
+        &[
+            "mv",
+            "docs/decisions/old-cache.md",
+            "docs/decisions/new-cache.md",
+        ],
+    );
+    git(repo.path(), &["commit", "-q", "-m", "prior bare git mv"]);
+
+    let setup = jigc(repo.path(), &["setup"]);
+    assert!(setup.status.success(), "`jigc setup` must succeed");
+
+    // An UNRELATED change staged for this commit — no managed-doc move here.
+    fs::write(repo.path().join("unrelated.txt"), "work\n").expect("write unrelated file");
+    git(repo.path(), &["add", "unrelated.txt"]);
+
+    let out = git_commit(repo.path(), "unrelated change");
+    let merged = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    assert!(
+        out.status.success(),
+        "a pre-existing OOB rename must NOT block an unrelated commit (masking trap); output:\n{merged}",
+    );
+    assert!(
+        !merged.contains(RENAME_BLOCK),
+        "an unrelated commit must not be blocked by a pre-existing rename; output:\n{merged}",
+    );
+    assert!(
+        merged.contains(RENAME_WARN),
+        "the pre-existing rename must still warn (not blocked); output:\n{merged}",
+    );
+    // The unrelated commit landed.
+    let head = Command::new("git")
+        .args(["log", "--oneline", "-1"])
+        .current_dir(repo.path())
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .output()
+        .expect("git log");
+    assert!(
+        String::from_utf8_lossy(&head.stdout).contains("unrelated change"),
+        "the unrelated commit must land (warn-only); log:\n{}",
+        String::from_utf8_lossy(&head.stdout),
+    );
+}
+
 /// (a) The headline: a committed store with a valid code-anchor whose cited symbol is
 /// then **renamed** → `git commit` SUCCEEDS (warn-only) AND the doc↔code drift warning
 /// appears in the commit output. The backstop fires automatically with no agent action.
