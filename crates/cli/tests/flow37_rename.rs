@@ -618,3 +618,148 @@ fn mid_fan_out_in_flight_milestone_blocks() {
         "a blocked rename must land no commit",
     );
 }
+
+/// An `arch-doc` that **cites** the target through a ref-field *and* mentions the old slug
+/// in its **slot prose** (the Overview line). The rename rewrites the structured `cites`
+/// ref but, by the determinism boundary, never the prose — it only *reports* it.
+const ARCH_DOC_WITH_PROSE: &str = "\
+---
+cites: [adr:single-node-cache, adr:keeper]
+schema-version: 1
+---
+
+# Cache layer
+
+## Overview
+
+The single-node-cache decision shapes this subsystem.
+
+## Components
+";
+
+/// An unmanaged `README.md`: line 3 mentions the old slug as a standalone token (reported),
+/// line 4 carries a `caches`-style near-match (`single-node-caches`) that the word-boundary
+/// matcher must NOT report.
+const README: &str = "\
+# Project
+
+See the single-node-cache ADR for the caching rationale.
+We considered single-node-caches but kept the singular form.
+";
+
+/// An unmanaged source file whose comment mentions the old slug (line 1, reported).
+const SRC_CACHE: &str = "\
+// single-node-cache: legacy module name kept for back-compat.
+pub fn cache() {}
+";
+
+/// Seed a store whose old slug additionally appears in an arch-doc's slot prose, a
+/// `README.md`, and a source comment — plus a `caches`-style near-match in the README.
+fn seed_store_with_prose(repo: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+
+    let decisions = repo.join("docs/decisions");
+    fs::create_dir_all(&decisions).expect("mk decisions");
+    fs::write(decisions.join("single-node-cache.md"), ADR_TARGET).expect("write target");
+    fs::write(decisions.join("keeper.md"), ADR_KEEPER).expect("write keeper");
+
+    let architecture = repo.join("docs/architecture");
+    fs::create_dir_all(&architecture).expect("mk architecture");
+    fs::write(architecture.join("cache-layer.md"), ARCH_DOC_WITH_PROSE).expect("write arch-doc");
+
+    fs::write(repo.join("README.md"), README).expect("write README");
+    let src = repo.join("src");
+    fs::create_dir_all(&src).expect("mk src");
+    fs::write(src.join("cache.rs"), SRC_CACHE).expect("write src");
+
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(repo.join(".jigc/config")).expect("create project layer");
+}
+
+/// Advisory prose/unmanaged-mention report (#2, the honest line): the old slug appears in an
+/// arch-doc's slot prose, a `README.md`, and a source comment — the rename **reports** all
+/// three in the verb output, **rewrites none** of them, the report **never** changes exit
+/// status, and a `caches`-style near-match is **not** reported. The word-boundary
+/// discrimination is *proven* (a naive substring scan would over-report the near-match,
+/// yielding 4 mentions, not 3) — not asserted.
+#[test]
+fn advisory_report_lists_prose_and_unmanaged_mentions_word_bounded() {
+    let repo = TempDir::new("advisory");
+    seed_store_with_prose(repo.path());
+
+    // Pre-rename bytes of every file the report must NOT rewrite.
+    let arch_path = repo.path().join("docs/architecture/cache-layer.md");
+    let readme_path = repo.path().join("README.md");
+    let src_path = repo.path().join("src/cache.rs");
+    let before_readme = fs::read(&readme_path).unwrap();
+    let before_src = fs::read(&src_path).unwrap();
+
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Distributed cache",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // Advisory: the prose report never changes exit status — the rename still exits 0.
+    assert!(
+        out.status.success(),
+        "the advisory report must not change the rename's exit status; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // All three mentions are listed in the verb output (path:line each).
+    assert!(
+        stdout.contains("docs/architecture/cache-layer.md:"),
+        "the arch-doc slot-prose mention must be reported; stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("README.md:3"),
+        "the README mention (line 3) must be reported; stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("src/cache.rs:1"),
+        "the source-comment mention (line 1) must be reported; stdout:\n{stdout}",
+    );
+
+    // Word-boundary discrimination: the README's `single-node-caches` near-match (line 4)
+    // is NOT reported. A naive substring scan would over-count to 4 mentions; the report
+    // states exactly 3, so the near-match is genuinely excluded (proven, not asserted).
+    assert!(
+        stdout.contains("3 prose/unmanaged mention"),
+        "exactly 3 mentions (the near-match excluded) must be reported; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("README.md:4"),
+        "the `single-node-caches` near-match (line 4) must NOT be reported; stdout:\n{stdout}",
+    );
+
+    // Rewrites none: the structured `cites` ref repointed, but the prose + unmanaged files
+    // are byte-untouched.
+    let arch = fs::read_to_string(&arch_path).unwrap();
+    assert!(
+        arch.contains("cites: [adr:distributed-cache, adr:keeper]"),
+        "the structured cites ref must still repoint old -> new; got:\n{arch}",
+    );
+    assert!(
+        arch.contains("The single-node-cache decision shapes this subsystem."),
+        "the arch-doc slot prose must be left untouched (reported, never rewritten); got:\n{arch}",
+    );
+    assert_eq!(
+        fs::read(&readme_path).unwrap(),
+        before_readme,
+        "the README must be left byte-untouched (advisory report, never a rewrite)",
+    );
+    assert_eq!(
+        fs::read(&src_path).unwrap(),
+        before_src,
+        "the source file must be left byte-untouched (advisory report, never a rewrite)",
+    );
+}

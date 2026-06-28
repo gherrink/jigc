@@ -37,7 +37,7 @@ use engine::slug::slugify;
 
 use crate::ingest::{load_schemas, require_project_layer};
 use crate::pack::make_pack;
-use crate::task::{git_commit, git_head, git_run, path_at_head};
+use crate::task::{git_capture, git_commit, git_head, git_run, path_at_head};
 
 /// The outcome of a rename: the old/new `<type>:<slug>` identities, the repo-relative
 /// paths the move spanned, the new title, and the repointed referrers (each
@@ -56,6 +56,12 @@ pub struct RenameReport {
     pub title: String,
     /// The persisted referrers repointed, each `<from>#<relation>`, sorted.
     pub referrers: Vec<String>,
+    /// **Advisory** old-slug occurrences in managed-doc prose + unmanaged tracked files
+    /// (each `<repo-rel-path>:<line>`, sorted) that the CLI **reports but never rewrites** —
+    /// the determinism boundary's honest line (it rewrites only structured ref-fields and
+    /// authors no prose). A word-boundary/token match, scoped to `git ls-files`. Never
+    /// changes the verb's exit status; empty for a retitle-only (the slug is unchanged).
+    pub prose_mentions: Vec<String>,
 }
 
 /// Run `jigc rename <old_addr> --to <title>` (optional `--slug`) against `cwd`: load the
@@ -203,6 +209,18 @@ pub(crate) fn run(
     // new HEAD (the finalize post-commit step; best-effort — the stale stamp self-heals).
     let _ = index::invalidate(&jigc_root);
 
+    // The advisory prose/unmanaged-mention report (the determinism boundary's honest line):
+    // scan the *post-rename* tracked worktree for surviving old-slug occurrences — the CLI
+    // has already rewritten every structured ref-field, so what remains is exactly the prose
+    // + unmanaged mentions it cannot author. A retitle-only leaves the slug unchanged, so it
+    // has nothing to report. Best-effort + advisory: it never blocks and never changes the
+    // exit status.
+    let prose_mentions = if is_retitle {
+        Vec::new()
+    } else {
+        scan_prose_mentions(&repo_root, &old_slug)
+    };
+
     referrer_labels.sort();
     Ok(RenameReport {
         from: old_id,
@@ -211,6 +229,7 @@ pub(crate) fn run(
         new_path: new_rel,
         title: title.to_string(),
         referrers: referrer_labels,
+        prose_mentions,
     })
 }
 
@@ -356,6 +375,62 @@ fn first_dir_name(dir: &Path) -> Option<String> {
     names.into_iter().next()
 }
 
+/// Scan every **tracked** worktree file for word-boundary occurrences of `needle` (the old
+/// slug), returning a sorted `<repo-rel-path>:<line>` label per hit. This is the determinism
+/// boundary's **advisory** report: the CLI has already rewritten every structured ref-field,
+/// so the surviving occurrences are exactly the managed-doc *prose* and *unmanaged* mentions
+/// it cannot author — reported, never rewritten. Scoped to `git ls-files` (tracked,
+/// `.gitignore`-respecting). Best-effort: an unreadable/binary file (or a `git` failure) is
+/// skipped, never an error — the report must never change the verb's exit status.
+fn scan_prose_mentions(repo_root: &Path, needle: &str) -> Vec<String> {
+    let Ok(listing) = git_capture(repo_root, &["ls-files"]) else {
+        return Vec::new();
+    };
+    let mut hits: Vec<String> = Vec::new();
+    for rel in listing.lines().filter(|l| !l.is_empty()) {
+        let Ok(content) = std::fs::read_to_string(repo_root.join(rel)) else {
+            continue;
+        };
+        for (i, line) in content.lines().enumerate() {
+            if line_has_token(line, needle) {
+                hits.push(format!("{rel}:{}", i + 1));
+            }
+        }
+    }
+    hits.sort();
+    hits
+}
+
+/// True iff `needle` occurs in `line` as a standalone slug **token** — bounded on both sides
+/// by a non-token byte (or the line edge). A token byte is ASCII-alphanumeric, `-`, or `_`
+/// (the slug alphabet plus the separators that would extend it), so the old slug `cache`
+/// matches `the cache layer` but never `caches` — the word-boundary discrimination the
+/// advisory report rests on.
+fn line_has_token(line: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let bytes = line.as_bytes();
+    let n = needle.len();
+    let mut start = 0;
+    while let Some(off) = line[start..].find(needle) {
+        let i = start + off;
+        let before_ok = i == 0 || !is_token_byte(bytes[i - 1]);
+        let end = i + n;
+        let after_ok = end >= bytes.len() || !is_token_byte(bytes[end]);
+        if before_ok && after_ok {
+            return true;
+        }
+        start = i + 1;
+    }
+    false
+}
+
+/// A byte that extends a slug token: ASCII-alphanumeric or a slug separator (`-`/`_`).
+fn is_token_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
+}
+
 /// Split a `<type>:<slug>` address into its parts. Rejects a missing `:` or an empty half.
 fn parse_addr(addr: &str) -> Result<(String, String)> {
     let (ty, slug) = addr
@@ -428,6 +503,29 @@ mod tests {
     #[test]
     fn rewrite_h1_none_without_an_h1() {
         assert!(rewrite_h1("## only an h2\n\nbody\n", "X").is_none());
+    }
+
+    #[test]
+    fn line_has_token_matches_a_standalone_slug_token() {
+        let slug = "single-node-cache";
+        // Bounded by spaces / line edges / punctuation → a real mention.
+        assert!(line_has_token("the single-node-cache decision", slug));
+        assert!(line_has_token("single-node-cache", slug));
+        assert!(line_has_token("// single-node-cache: legacy", slug));
+        assert!(line_has_token("[adr:single-node-cache]", slug));
+    }
+
+    #[test]
+    fn line_has_token_rejects_a_caches_style_near_match() {
+        let slug = "single-node-cache";
+        // A trailing alnum (`s`) or a separator (`-`/`_`) extends the token → not a mention.
+        assert!(!line_has_token(
+            "we considered single-node-caches instead",
+            slug
+        ));
+        assert!(!line_has_token("single-node-cache-v2 supersedes it", slug));
+        assert!(!line_has_token("pre-single-node-cache prefix", slug));
+        assert!(!line_has_token("single-node-cache_legacy", slug));
     }
 
     #[test]

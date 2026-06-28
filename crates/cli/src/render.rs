@@ -861,6 +861,17 @@ pub fn rename(format: Format, report: &crate::rename::RenameReport) -> String {
             for referrer in &report.referrers {
                 out.push_str(&format!("  repointed {referrer}\n"));
             }
+            if !report.prose_mentions.is_empty() {
+                out.push_str(&format!(
+                    "{} prose/unmanaged mention(s) of `{}` remain — advisory, not rewritten \
+                     (the CLI authors no prose; fix these by hand):\n",
+                    report.prose_mentions.len(),
+                    report.from,
+                ));
+                for mention in &report.prose_mentions {
+                    out.push_str(&format!("  {mention}\n"));
+                }
+            }
             out.push_str(ROUTING_FOOTER);
             out
         }

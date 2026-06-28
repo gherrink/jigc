@@ -2454,7 +2454,7 @@ fn git_show_file(repo_root: &Path, path: &str) -> Result<Vec<u8>> {
 }
 
 /// Run `git <args>` in `repo_root`, returning trimmed stdout, bailing on non-zero.
-fn git_capture(repo_root: &Path, args: &[&str]) -> Result<String> {
+pub(crate) fn git_capture(repo_root: &Path, args: &[&str]) -> Result<String> {
     let out = Command::new("git")
         .args(args)
         .current_dir(repo_root)
