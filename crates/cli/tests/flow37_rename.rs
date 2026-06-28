@@ -764,6 +764,109 @@ fn advisory_report_lists_prose_and_unmanaged_mentions_word_bounded() {
     );
 }
 
+/// An unrelated `adr` carrying a **pre-existing dangling** `supersedes` ref (its target
+/// `adr:ghost-that-does-not-exist` was never created). It has nothing to do with the rename
+/// target — it exists only to prove the verb's integrity gate does not block on inherited rot.
+const ADR_UNRELATED_DANGLER: &str = "\
+---
+status: accepted
+date: 2026-06-28
+supersedes: adr:ghost-that-does-not-exist
+schema-version: 1
+---
+
+# Unrelated dangler
+
+## Context
+
+This decision supersedes one that was never committed.
+
+## Decision
+
+Carry on regardless.
+
+## Consequences
+
+A dangling ref the store already carries.
+";
+
+/// Masking-trap guard (M18/M19): a `jigc rename` must **succeed** even when the committed
+/// store *already* carries an unrelated dangling cross-ref the rename did not cause. The
+/// verb's pre-commit integrity gate refuses only on a dangle the rename *introduces*, never
+/// on pre-existing rot (which stays a report-only `jigc validate` concern). Before the fix
+/// the gate walked the whole rebuilt store with an empty exclusion set and bailed on ANY
+/// dangle, so this rename rolled back — the RED that proves the bug. After the fix the rename
+/// commits, the renamed doc + its referrers resolve, and the pre-existing dangle is left
+/// **neither fixed nor blamed**.
+#[test]
+fn rename_succeeds_despite_unrelated_preexisting_dangle() {
+    let repo = TempDir::new("preexisting-dangle");
+    seed_store(repo.path());
+
+    // Add an unrelated doc whose `supersedes` points at a ghost target — a pre-existing
+    // dangle, committed before the rename runs.
+    let decisions = repo.path().join("docs/decisions");
+    let dangler = decisions.join("unrelated-dangler.md");
+    fs::write(&dangler, ADR_UNRELATED_DANGLER).expect("write unrelated dangler");
+    git(repo.path(), &["add", "."]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "add unrelated dangler"],
+    );
+    let before_dangler = fs::read(&dangler).unwrap();
+    let before_count = commit_count(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        &[
+            "rename",
+            "adr:single-node-cache",
+            "--to",
+            "Distributed cache",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // The rename SUCCEEDS — the unrelated pre-existing dangle must not block it.
+    assert!(
+        out.status.success(),
+        "a rename must not be blocked by a pre-existing dangle it did not cause; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // The move landed and its referrers repointed (the rename's own effect resolves).
+    assert!(
+        decisions.join("distributed-cache.md").is_file()
+            && !decisions.join("single-node-cache.md").exists(),
+        "the renamed doc must have moved to its new slug",
+    );
+    let superseder = fs::read_to_string(decisions.join("revisit-caching.md")).unwrap();
+    assert!(
+        superseder.contains("supersedes: adr:distributed-cache"),
+        "the referrer must repoint to the new slug; got:\n{superseder}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count + 1,
+        "the rename must emit exactly one commit",
+    );
+
+    // The pre-existing dangle is NEITHER fixed NOR blamed: the dangler file is byte-untouched
+    // and the ghost target is never named in the verb output (no misattribution).
+    assert_eq!(
+        fs::read(&dangler).unwrap(),
+        before_dangler,
+        "the pre-existing dangler must be left byte-untouched (not fixed by the rename)",
+    );
+    assert!(
+        !stdout.contains("ghost-that-does-not-exist")
+            && !stderr.contains("ghost-that-does-not-exist"),
+        "the pre-existing dangle must not be blamed on the rename; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
 /// Baseline the file-state record for `entries` (managed-doc paths relative to `repo`),
 /// recording each at its current raw-byte hash under `.jigc/state/file-state.json` — the
 /// committed-store baseline the store sweep's recorded-but-missing rename detector reads.

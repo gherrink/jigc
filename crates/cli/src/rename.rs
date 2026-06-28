@@ -255,6 +255,18 @@ fn apply_and_commit(
     new_source: &str,
     referrer_writes: &[ReferrerWrite],
 ) -> Result<()> {
+    // 0. Capture the **pre-rename** dangling-edge set off the committed store *before* any
+    // mutation (disk == HEAD here). The integrity gate (step 4) refuses only on a dangle the
+    // rename itself *introduces* — a pre-existing dangle unrelated to the move must pass
+    // through untouched (the M18/M19 masking-trap guard: a transaction is never blocked by
+    // drift it did not cause; pre-existing rot stays a report-only `jigc validate` concern).
+    let before = index::rebuild_committed(repo_root, schema_map, head);
+    let before_dangling: BTreeSet<(String, String, String)> =
+        index::dangling_edges(&before, repo_root, schema_map)
+            .into_iter()
+            .map(edge_key)
+            .collect();
+
     // 1. Write each referrer's repointed bytes.
     for write in referrer_writes {
         std::fs::write(&write.abs, &write.source)
@@ -275,16 +287,19 @@ fn apply_and_commit(
     }
 
     // 4. The verb's own pre-commit integrity assertion: rebuild the committed index off the
-    // mutated tree and refuse the commit if any cross-ref dangles (the rename must repoint
-    // every referrer in lockstep). Reuses the store-scope `ref_resolves_store` backstop.
+    // mutated tree and refuse the commit only on a dangle the rename *introduced* — an edge
+    // dangling *after* the move that was *not* dangling *before* it. Scoped by the before/after
+    // diff (step 0), so a pre-existing dangle unrelated to the rename never blocks the move
+    // and is never misattributed to it (the M18/M19 masking-trap guard). A resolvable rename
+    // repoints every referrer in lockstep, so it introduces zero new dangles.
     let rebuilt = index::rebuild_committed(repo_root, schema_map, head);
-    // No scope-subtraction here: the verb repoints every referrer in lockstep, so a
-    // resolvable rename leaves zero dangling edges — any dangle is a real failure to refuse.
-    let dangling = index::ref_resolves_store(&rebuilt, repo_root, schema_map, &BTreeSet::new());
-    if !dangling.is_empty() {
+    let after_dangling = index::dangling_edges(&rebuilt, repo_root, schema_map);
+    let introduced = introduced_dangles(&before_dangling, after_dangling);
+    if !introduced.is_empty() {
         bail!(
-            "rename would leave {} dangling cross-reference(s) — refusing to commit",
-            dangling.len()
+            "rename would introduce {} dangling cross-reference(s) — refusing to commit: {}",
+            introduced.len(),
+            introduced.join(", "),
         );
     }
 
@@ -433,6 +448,30 @@ fn is_token_byte(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
 }
 
+/// The order-independent identity of a forward edge — `(from, relation, to)` — for diffing
+/// the rename's before/after dangling-edge sets (step 0 vs step 4 of [`apply_and_commit`]).
+fn edge_key(edge: &index::Edge) -> (String, String, String) {
+    (edge.from.clone(), edge.relation.clone(), edge.to.clone())
+}
+
+/// The dangling cross-refs the rename **introduced** — every `after`-rename dangling edge
+/// whose `(from, relation, to)` identity was **not** already dangling `before` the rename.
+/// This is the M18/M19 masking-trap guard made precise: a pre-existing dangle (present in
+/// both sets) is excluded, so the verb's integrity gate refuses only on rot the move itself
+/// caused and never on drift it merely inherited (which stays a report-only `jigc validate`
+/// concern). Each returned label is `<from>#<relation> -> <to>` for an accurate block
+/// message that names only the newly-introduced edges.
+fn introduced_dangles<'a>(
+    before: &BTreeSet<(String, String, String)>,
+    after: impl IntoIterator<Item = &'a index::Edge>,
+) -> Vec<String> {
+    after
+        .into_iter()
+        .filter(|edge| !before.contains(&edge_key(edge)))
+        .map(|edge| format!("{}#{} -> {}", edge.from, edge.relation, edge.to))
+        .collect()
+}
+
 /// Split a `<type>:<slug>` address into its parts. Rejects a missing `:` or an empty half.
 fn parse_addr(addr: &str) -> Result<(String, String)> {
     let (ty, slug) = addr
@@ -560,6 +599,48 @@ mod tests {
         assert!(!line_has_token("single-node-cache-v2 supersedes it", slug));
         assert!(!line_has_token("pre-single-node-cache prefix", slug));
         assert!(!line_has_token("single-node-cache_legacy", slug));
+    }
+
+    fn edge(from: &str, relation: &str, to: &str) -> index::Edge {
+        index::Edge {
+            from: from.to_string(),
+            relation: relation.to_string(),
+            to: to.to_string(),
+        }
+    }
+
+    #[test]
+    fn introduced_dangles_excludes_a_preexisting_dangle() {
+        // The masking-trap guard: a dangle present *before* the rename (in `before`) is
+        // inherited rot, not caused by the move — it must NOT be flagged as introduced, so
+        // the rename is never blocked by drift it did not cause.
+        let preexisting = edge("adr:unrelated-dangler", "supersedes", "adr:ghost");
+        let before: BTreeSet<(String, String, String)> =
+            [edge_key(&preexisting)].into_iter().collect();
+        // After the rename the same pre-existing dangle is still present (untouched).
+        let after = vec![preexisting.clone()];
+        assert!(
+            introduced_dangles(&before, &after).is_empty(),
+            "a pre-existing dangle must not count as introduced by the rename",
+        );
+    }
+
+    #[test]
+    fn introduced_dangles_flags_a_newly_introduced_dangle() {
+        // The gate must still fire: a dangle that appears *only after* the rename (not in
+        // `before`) is one the move itself caused — it is flagged with an accurate label.
+        let preexisting = edge("adr:unrelated-dangler", "supersedes", "adr:ghost");
+        let before: BTreeSet<(String, String, String)> =
+            [edge_key(&preexisting)].into_iter().collect();
+        // The pre-existing dangle survives AND a new one appears (a referrer the move failed
+        // to repoint, say) — only the new one is reported.
+        let newly = edge("adr:missed-referrer", "supersedes", "adr:single-node-cache");
+        let after = vec![preexisting, newly];
+        assert_eq!(
+            introduced_dangles(&before, &after),
+            vec!["adr:missed-referrer#supersedes -> adr:single-node-cache".to_string()],
+            "a newly-introduced dangle must be flagged, naming only the new edge",
+        );
     }
 
     #[test]

@@ -428,16 +428,30 @@ pub fn ref_resolves_store(
     schemas: &BTreeMap<String, Schema>,
     exclude_targets: &std::collections::BTreeSet<String>,
 ) -> Vec<Finding> {
-    let mut findings = Vec::new();
-    for edge in &committed.edges {
-        if exclude_targets.contains(&edge.to) {
-            continue; // the renamed slug's inbound edge — subtracted, diagnosed as a rename.
-        }
-        if !committed_reachable(&edge.to, repo_root, schemas) {
-            findings.push(dangling(edge));
-        }
-    }
-    findings
+    dangling_edges(committed, repo_root, schemas)
+        .into_iter()
+        .filter(|edge| !exclude_targets.contains(&edge.to)) // subtracted: diagnosed as a rename.
+        .map(dangling)
+        .collect()
+}
+
+/// The dangling forward edges of a committed [`EdgeIndex`]: every edge whose `to` is not
+/// [`committed_reachable`] in `repo_root`. The edge-level primitive [`ref_resolves_store`]
+/// renders into `schema-conformance.ref-resolves` [`Finding`]s, exposed so a transaction
+/// can **diff** its before/after dangle sets and refuse only on a *newly-introduced* dangle
+/// (the `jigc rename` verb's pre-commit integrity gate — it must never block on pre-existing
+/// store rot it did not cause, the M18/M19 masking-trap guard). Returns the dangling edges
+/// in the index's `(from, relation, to)` order.
+pub fn dangling_edges<'a>(
+    committed: &'a EdgeIndex,
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+) -> Vec<&'a Edge> {
+    committed
+        .edges
+        .iter()
+        .filter(|edge| !committed_reachable(&edge.to, repo_root, schemas))
+        .collect()
 }
 
 /// The store-scope **`schema-completeness.inverse-cardinality`** check
