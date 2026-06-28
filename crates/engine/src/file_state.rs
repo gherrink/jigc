@@ -390,8 +390,26 @@ pub fn reconcile_committed_store(
             .map(|(p, h)| (p.as_str(), h.clone()))
             .collect();
         for path in recorded_missing {
-            let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
             let recorded_hash = record.get(&path).unwrap_or("").to_string();
+            // `jigc rename` post-commit crash-window self-heal (M35): the verb committed
+            // the move (the renamed doc tracked at its new path, every referrer already
+            // repointed) but crashed *before* re-baselining file-state, leaving the OLD
+            // path recorded-missing. When the landing is present in the committed tree — a
+            // new same-`location:` doc whose content differs from the recorded baseline
+            // (the H1 was rewritten, so it is NOT a strong-signal `git mv` match) — the
+            // committed tree is authoritative: drop the stale old key (the landing was
+            // baseline-adopted in the walk above, completing the old→new re-key) and emit
+            // no finding, never the weak-signal restore that would resurrect a
+            // deliberately-renamed-away doc (`reconciliation.md` → Rename detection,
+            // self-healing; `write-commands.md` → `jigc rename` step 5). The strong signal
+            // (content-preserving bare `git mv`) and the genuine-deletion weak signal
+            // (no landing) both still route through detect_rename below.
+            let strong = untracked_refs.iter().any(|(_, h)| *h == recorded_hash);
+            if !strong && rename_landing_present(&path, &untracked_refs, schemas) {
+                record.forget(&path);
+                continue;
+            }
+            let from = identity_of(&path, schemas).unwrap_or_else(|| path.clone());
             findings.extend(detect_rename(&path, &from, &recorded_hash, &untracked_refs));
         }
     }
@@ -578,6 +596,32 @@ fn untracked_committed(
     }
     out.sort();
     out
+}
+
+/// Whether a `jigc rename` **landing** is present in the committed tree for a
+/// recorded-but-missing old `path` — the signal that distinguishes the verb's
+/// post-commit crash window (a committed rename whose file-state re-baseline was
+/// interrupted) from a genuine deletion (`reconciliation.md` → Rename detection,
+/// self-healing; `write-commands.md` → `jigc rename` step 5).
+///
+/// True iff some `untracked` candidate (an on-disk `.md` carrying no recorded hash —
+/// the renamed doc's new path, baseline-adopted in the same sweep) lives under the old
+/// path's own `location:` (a rename preserves the doctype, so the landing shares the
+/// directory). A content-hash *match* is the strong-signal bare-`git mv` case the caller
+/// already excludes; here the landing's content differs (its H1 was rewritten).
+fn rename_landing_present(
+    path: &str,
+    untracked: &[(&str, String)],
+    schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
+) -> bool {
+    let Some(location) = schemas
+        .values()
+        .filter_map(|s| s.location.as_deref())
+        .find(|loc| path.starts_with(*loc))
+    else {
+        return false;
+    };
+    untracked.iter().any(|(p, _)| p.starts_with(location))
 }
 
 /// **Rename detection** — the separate classifier for a tracked managed-doc path
@@ -831,6 +875,28 @@ Slightly higher write latency for resilience.
 
     const ADR_B_PATH: &str = "decisions/distributed-cache.md";
     const ADR_B_FROM: &str = "adr:distributed-cache";
+
+    /// A referrer ADR that `supersedes` the (pre-rename) `adr:single-node-cache` —
+    /// the pre-repoint committed baseline. Its H1 slugs to `cache-strategy`, distinct
+    /// from the renamed doc's `distributed-cache`.
+    const ADR_REFERRER_BASE: &str = "\
+---
+status: accepted
+date: 2026-06-01
+supersedes: adr:single-node-cache
+---
+
+# Cache strategy revision
+
+## Context
+The single-node cache decision needs revisiting.
+
+## Decision
+Adopt the distributed cache instead.
+
+## Consequences
+Referrers must point at the new decision.
+";
 
     /// The DRIFTED+UNTOUCHED clean-reparse branch: a committed ADR with a recorded
     /// baseline hash, edited on disk to add a `supersedes`, reconciles to **absorb** —
@@ -1369,6 +1435,95 @@ Slightly higher write latency for resilience.
                 .as_deref()
                 .is_some_and(|r| r.contains("restore")),
             "no content-matching suspect exists, so the weak signal routes to restore: {rename:?}"
+        );
+    }
+
+    /// **Post-commit crash-window self-heal** (M35; `reconciliation.md` → Rename
+    /// detection, the transaction, self-healing; `write-commands.md` → `jigc rename`
+    /// step 5). A `jigc rename` that committed the move — the renamed doc is tracked at
+    /// its **new** path and every referrer is **already repointed** — but crashed
+    /// *before* re-baselining `file-state` leaves the record still keyed on the **OLD**
+    /// path. Driving that interrupted state through [`reconcile_committed_store`] must
+    /// **self-heal**: re-key the record old→new and emit **no** `reconciliation.rename`
+    /// finding. The committed tree is authoritative, so the verb's own interrupted
+    /// landing is never routed to the weak-signal "restore the old file" (which would
+    /// resurrect a deliberately-renamed-away doc). The heal is **idempotent** — a second
+    /// sweep is a clean no-op. RED obligation: the recovery is *driven* through the real
+    /// sweep, not asserted.
+    #[test]
+    fn rename_crash_window_self_heals_without_restore_finding() {
+        let schema = adr_schema();
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("adr".to_string(), schema);
+
+        let root = TempRoot::new("rename-crash");
+        let decisions = root.path().join("decisions");
+        std::fs::create_dir_all(&decisions).expect("mk decisions/");
+
+        // The committed tree AFTER the rename landed: the renamed doc lives at its NEW
+        // path with the rewritten H1 (content differs from the old recorded baseline, so
+        // it is NOT a strong-signal `git mv` content match), and the referrer's
+        // `supersedes` ref is already repointed to the new identity.
+        let old_path = "decisions/single-node-cache.md";
+        let new_path = "decisions/distributed-cache.md";
+        let renamed_landing = ADR_B_BASE; // H1 "Distributed session cache" → distributed-cache
+        std::fs::write(decisions.join("distributed-cache.md"), renamed_landing)
+            .expect("write the renamed (landed) doc");
+
+        let referrer_path = "decisions/cache-strategy.md";
+        let referrer_repointed = ADR_REFERRER_BASE.replace(
+            "supersedes: adr:single-node-cache",
+            "supersedes: adr:distributed-cache",
+        );
+        std::fs::write(decisions.join("cache-strategy.md"), &referrer_repointed)
+            .expect("write the repointed referrer");
+
+        // file-state STILL keyed on the OLD state (the crash interrupted the re-baseline):
+        // the OLD path is recorded (now absent on disk; its recorded hash is the
+        // pre-rename content, which does NOT match the landing) and the referrer carries
+        // its PRE-repoint hash (so it DRIFTs and absorbs in the walk).
+        let mut record = FileStateRecord::new();
+        record.record(
+            old_path,
+            hash_bytes(b"the pre-rename single-node-cache body\n"),
+        );
+        record.record(referrer_path, hash_bytes(ADR_REFERRER_BASE.as_bytes()));
+
+        let mut index = EdgeIndex::default();
+        let task = TempRoot::new("rename-crash-task");
+
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+
+        // (i) NO rename finding — neither the weak-signal restore nor a strong block.
+        assert!(
+            findings.iter().all(|f| f.code != "reconciliation.rename"),
+            "the crash-window landing self-heals; it never routes to rename/restore: {findings:?}"
+        );
+        // (ii) the record is re-keyed old→new: the stale OLD key is forgotten and the
+        // NEW landing is baselined to its on-disk content.
+        assert_eq!(
+            record.get(old_path),
+            None,
+            "the stale old-path key is forgotten (re-keyed old→new)"
+        );
+        assert_eq!(
+            record.get(new_path),
+            Some(hash_bytes(renamed_landing.as_bytes()).as_str()),
+            "the renamed doc's landing is baselined at its new path"
+        );
+
+        // (iii) idempotent: a second sweep is a clean no-op (no rename, record stable).
+        let record_after_first = record.clone();
+        let again =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+        assert!(
+            again.iter().all(|f| f.code != "reconciliation.rename"),
+            "the self-heal is idempotent — a second sweep emits no rename finding: {again:?}"
+        );
+        assert_eq!(
+            record, record_after_first,
+            "the second sweep does not further mutate the re-keyed record"
         );
     }
 
