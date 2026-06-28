@@ -1,7 +1,17 @@
 # CLI-owned rename — make the rename a structural operation, not a forbidden one
 
-**Status:** shaped; **direction decided** (user, 2026-06-24), **mechanism open** (a design pass
-owed before build). Scheduled as **M35**. Surfaced by the cross-doc forward-ref integrity study
+> **GRADUATED at M35 planning (2026-06-28) — this is the shaping doc, not the settled design.**
+> All eight mechanism opens are settled and the identity-model invariant is amended. The
+> **canonical record is [DECISIONS.md](../DECISIONS.md) → 2026-06-28 M35 planning**; the settled
+> surface is `jigc rename <old> --to "<New Title>"` (top-level, retitle+reslug+repoint unified —
+> *not* the `jigc doc rename … --to <new-slug>` sketched below), specced in
+> [write-commands.md](../design/write-commands.md) → `jigc rename`, with the OOB A+B backstop in
+> [reconciliation.md](../design/reconciliation.md)/[validation.md](../design/validation.md) and the
+> acceptance flow in [worked-examples.md](../design/worked-examples.md) → flow 37. Where this doc
+> and those disagree, those win. Kept for the *why* (the reframe, the cost-win thesis).
+
+**Status:** shaped; **direction decided** (user, 2026-06-24); **mechanism settled at M35 planning
+(2026-06-28)** — see the banner above. Scheduled as **M35**. Surfaced by the cross-doc forward-ref integrity study
 ([completions/artifacts/cross-doc-refint-study/VERDICT.md](../completions/artifacts/cross-doc-refint-study/VERDICT.md)),
 whose refutation exposed that jigc was enforcing the wrong *verb*. **Cross-reviewed by Codex
 (gpt-5.5, 2026-06-24)** before commit; its corrections are worked in inline (claim softened from

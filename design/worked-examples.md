@@ -2302,3 +2302,54 @@ A **widened-cardinality** secondary rides the same run: `adr.supersedes` `0..1`�
 3. **A widened-cardinality migration is byte-identical-except-stamp.** `adr.supersedes` `0..1`→`0..*` rewrites no instance bytes; only the stamp value-bumps (same test, the secondary doctype).
 4. **Detector and verb agree on the below-version case.** `jigc validate` routes the v1 prd docs `migrate`; `jigc migrate-corpus` migrates those same docs (never `already-current`) — the Finding-2 fix (same test; the missing-snapshot block + value-bump covered over the verb core in `migrate_corpus.rs`).
 5. **The Inc-3 v0→v1 stamp dogfood stays green** (`migrate_corpus_stamps_the_v0_dogfood_then_revalidates_clean`, flow 35) — the add-field path is unchanged by the snapshot-sourcing rework.
+
+## 37. The CLI-owned rename — one command re-slugs a decision and repoints every referrer atomically (M35)
+
+The cost-win differentiator's deterministic core, separate from its post-build cost+completeness study (canonical record: [DECISIONS.md](../DECISIONS.md) → 2026-06-28 M35 planning; the verb spec: [write-commands.md](write-commands.md) → `jigc rename`). A committed `adr` is renamed through one verb; the CLI walks the target's **inverse edges** and rewrites every persisted referrer's structured ref-field old→new, rewrites the moved doc's H1, `git mv`s, and commits — **one atomic transaction with its own rollback** ([write-commands.md](write-commands.md) → `jigc rename`). The store-wide rename detection is the **backstop** under it: a bare `git mv` committed *without* the verb is detected and **blocked** ([reconciliation.md](reconciliation.md) → Rename detection, the A+B decision). Notation illustrative; the loop below is the shape the acceptance test (`crates/cli/tests/flow37_rename.rs`) drives through the built binary.
+
+### The walk — rename the decision, every referrer follows; collisions and mid-fan-out and OOB moves all block
+
+```
+# a committed store: docs/decisions/single-node-cache.md (adr:single-node-cache),
+# superseded-by docs/decisions/distributed-cache.md (adr:distributed-cache#supersedes),
+# cited by docs/architecture/cache-layer.md (arch-doc:cache-layer#cites).
+
+# 1. RENAME — one call: re-slug from the new title, repoint both referrers, git mv, commit:
+jigc rename adr:single-node-cache --to "Local in-process cache"
+#   renamed adr:single-node-cache → adr:local-in-process-cache
+#     repointed  adr:distributed-cache#supersedes
+#     repointed  arch-doc:cache-layer#cites
+#     moved      docs/decisions/single-node-cache.md → docs/decisions/local-in-process-cache.md
+#     committed  rename adr:single-node-cache → adr:local-in-process-cache
+#   reported (not rewritten): "single-node-cache" mentioned in prose at
+#     docs/architecture/cache-layer.md (slot prose) · README.md · src/cache.rs (comment)
+
+# 2. RE-VALIDATE — no dangling refs; the store is clean (exit 0):
+jigc validate
+#   (no schema-conformance.ref-resolves findings)
+
+# 3. COLLISION — renaming onto an existing slug blocks (an identity refactor, never a silent suffix):
+jigc rename adr:distributed-cache --to "Local in-process cache"
+#   error: adr:local-in-process-cache already exists — choose a free slug (rename blocks on collision)
+
+# 4. MID-FAN-OUT — forbidden while a milestone is in-flight (coarse guard):
+jigc rename adr:distributed-cache --to "Distributed cache v2"
+#   error: a milestone (m:cache-overhaul) is in-flight — rename is forbidden mid-fan-out
+
+# 5. OOB BACKSTOP — a bare git mv, committed without the verb, is detected and BLOCKED at the hook:
+git mv docs/decisions/distributed-cache.md docs/decisions/dist-cache.md && git commit -am "rename"
+#   pre-commit: blocked — adr:distributed-cache appears renamed via a bare `git mv`
+#     adopt it:  jigc rename adr:distributed-cache --to "<New Title>"
+#     or revert: git mv docs/decisions/dist-cache.md docs/decisions/distributed-cache.md
+```
+
+### What it asserts (the M35 acceptance bar)
+
+1. **One command repoints every persisted referrer atomically.** `jigc rename` walks the inverse edges and rewrites `adr.supersedes` *and* `arch-doc.cites` (both list-valued — the one element is swapped, the canonical whole-list re-emitted) old→new, rewrites the H1, `git mv`s, and commits as **one** commit; a re-validate finds zero dangling refs. A renamed `prd` likewise repoints `spec.derived-from` (the third persisted ref-field). `git log --follow` survives the move.
+2. **The determinism boundary holds — prose/unmanaged mentions are reported, never rewritten.** Old-slug occurrences in managed-doc prose and unmanaged files (README, code) are *listed* for the agent; the CLI rewrites only structured ref-fields.
+3. **Collision on `--to` blocks** — renaming onto an existing committed slug is refused (an identity refactor of an existing doc, never the by-task-id join's silent suffix).
+4. **Forbidden mid-fan-out** — `jigc rename` blocks whenever any milestone is in-flight (the coarse milestone-dir guard), because a rename changes the by-task-id join's same-doc-clash key.
+5. **The transaction rolls back on partial failure** — a forced failure after the `git mv` (e.g. a rejecting git hook, or a referrer-rewrite error) restores every captured pre-image and reverses the `git mv`, leaving the store byte-identical to pre-rename — no half-moved slug, no dangling refs.
+6. **The OOB backstop blocks (A+B), scoped to *this commit's* moves.** A bare `git mv` of a managed doc, committed without `jigc rename`, is caught by the store-scope rename classifier (firing before `ref-resolves`, which is scope-subtracted so the move surfaces as **one** `reconciliation.rename`, not N dangling-ref findings) and **blocks the commit** via the pre-commit hook, routing to adopt-or-revert — including the referrer-less case no dangling-ref check would catch.
+7. **The hook does NOT block on pre-existing drift (no masking-trap regression).** An unrelated commit made while a *pre-existing* OOB-moved doc sits in the tree (its move not staged in this commit) **passes** — the hook intersects rename hits with this commit's staged `git diff --cached` R/D/A set and blocks only on a rename this commit makes (`flow37_rename.rs`: an unrelated commit with a prior unstaged OOB move does not block).
+8. **List-valued sibling integrity.** An `arch-doc` citing `[adr:a, adr:old, adr:c]`, on renaming `old→new`, yields exactly `[adr:a, adr:new, adr:c]` — siblings `a`/`c` byte-identical and order preserved (the whole-list re-emit swaps only the one element).

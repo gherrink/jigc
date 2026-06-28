@@ -83,24 +83,29 @@ Files-as-identity means a **path change is an identity change** ([storage.md](st
 
 So rename detection is a separate classifier, running at the same trigger points as the state machine ([Detection timing](#detection-timing)). Two signals, two outcomes:
 
-- **Strong signal — suspected rename.** A tracked path is missing **and** an untracked path has the **same content hash** as the last recorded hash for the missing one. The CLI surfaces a conformance error naming the detected rename and the resolution:
+- **Strong signal — suspected rename.** A tracked path is missing **and** an untracked path has the **same content hash** as the last recorded hash for the missing one. The CLI surfaces a **blocking** finding naming the detected rename and the resolution — routing to the owned op first, revert second:
   ```
   error: tracked managed doc adr:rate-limit (decisions/rate-limit.md) is missing
     hint: a file at decisions/gateway-rate-limit.md has the same content hash —
-          likely renamed via `git mv`.
-    resolution (MVP):
-      $ git mv decisions/gateway-rate-limit.md decisions/rate-limit.md
-    post-MVP: `jigc doc rename adr:rate-limit --to adr:gateway-rate-limit`
-              will re-key file-state and rewrite every referrer ref atomically
-              (see write-commands.md → post-MVP verbs).
+          likely renamed via a bare `git mv`.
+    resolution:
+      adopt it as a CLI-owned rename (re-points every referrer atomically):
+        $ jigc rename adr:rate-limit --to "Gateway rate limit"
+      or revert the out-of-band move:
+        $ git mv decisions/gateway-rate-limit.md decisions/rate-limit.md
   ```
-- **Weak signal — tracked path missing, no content-matching new file.** The tracked file is simply gone (deleted, accidentally removed). The CLI surfaces a conformance error: *"tracked managed doc adr:rate-limit (decisions/rate-limit.md) is missing — restore the file, or run `jigc doc delete adr:rate-limit` to confirm deletion (post-MVP)."* MVP routes to restore.
+- **Weak signal — tracked path missing, no content-matching new file.** The tracked file is simply gone (deleted, accidentally removed). The CLI surfaces a conformance error: *"tracked managed doc adr:rate-limit (decisions/rate-limit.md) is missing — restore the file, or run `jigc delete adr:rate-limit` to confirm deletion (post-MVP)."* Routes to restore.
 
-**MVP policy: block, route to revert. No auto-rewrite of refs.** A path rename is an identity change, and identity changes must be CLI-orchestrated (consistent with [VISION.md](../VISION.md) principle #2's "splits and merges are explicit CLI ops"). MVP doesn't ship `jigc doc rename` or `jigc doc delete`; the human reverts in git, or waits for the post-MVP op. Same shape as the rest of strict-MVP scope ([Auto-repair scope](#auto-repair-scope)): the conformance error names exactly what's missing; the human (or post-MVP CLI op) resolves it explicitly.
+**Policy: an out-of-band move is blocked and routed to the owned op; the CLI never auto-honors an untracked rename.** A path/slug rename is an identity change, and identity changes are CLI-orchestrated through **`jigc rename`** ([write-commands.md](write-commands.md) → `jigc rename`) — the prevention happy-path that re-keys `file-state` and repoints every referrer atomically. A bare `git mv` is the *out-of-band* case: detected and routed ("adopt as `jigc rename`" / revert), **never** silently absorbed and never auto-rewritten. Same shape as the rest of strict scope ([Auto-repair scope](#auto-repair-scope)): the finding names exactly what happened; the agent runs the owned op (or reverts). `jigc delete` (deletion confirmation) stays post-MVP.
 
 **Amended at M17 planning (2026-06-12) — "missing" means absent from disk, not absent from the walk.** The implementation inferred *missing* from a baselined path not appearing in the sweep's walked set — but the walk is a per-schema, non-recursive `<location>/*.md` glob, so a baselined path outside every walked location (the case that fired: a promoted **owner-artifact** under `completions/artifacts/<run>/`, baselined at its finalize) was declared missing on every subsequent sweep, false-blocking every later `finalize` in the repo via `reconciliation.rename`. The fix (the dogfood pre-fix set, [DECISIONS.md](../DECISIONS.md) 2026-06-12): before classifying a tracked path as missing, **check disk presence** — present-on-disk-but-outside-the-walk is *not* missing (no finding; content stays baselined as-is). Chosen over excluding `completions/artifacts/**` from the baseline, which would blind the sweep to a genuinely deleted artifact dangling behind a committed `completion-record`'s `owner-artifact` field. The strong/weak rename signals above are unchanged — they now simply fire only on genuine disk absence.
 
-**Post-MVP `jigc doc rename`** is a single atomic transaction (transactional like `finalize`): re-key the `file-state` hash · rewrite every referrer ref across the committed store · commit as one logical change ([write-commands.md](write-commands.md) → post-MVP verbs). Not designed in detail until a real use case demands more than the contract.
+**`jigc rename` is a single atomic transaction with its own rollback boundary — *not* `finalize`'s** (M35). `finalize` promotes a task working area by **copy** (rollback = delete the copy); `jigc rename` mutates **committed paths + file-state + the edge index directly**, so it owns a distinct transaction: capture pre-image bytes of the old path + every referrer to be rewritten → rewrite each referrer's ref-field → `git mv` → stage → run the user's git hooks (never `--no-verify`) → commit; on **any** failure restore all captured bytes and reverse the `git mv` → then re-baseline `file-state` (`forget(old)` + `record(new)` + re-record each rewritten referrer) and invalidate/rebuild the index. The migrate-corpus *no-rollback / idempotent-rerun* model is **rejected** for rename: rename is **not idempotent-safe** (its re-run keys on `<old>`, which the `git mv` already destroyed, so a half-done rename can't resume — it would leave the exact dangling-ref violation rename exists to prevent). Full spec: [write-commands.md](write-commands.md) → `jigc rename`.
+
+**Out-of-band rename — store-scope detection is the backstop, and it blocks (M35, the A+B decision).** `jigc rename` is the prevention; the store-wide sweep is the safety net under it for the case where an agent does a bare `git mv` and commits *without* the verb. Two parts:
+
+- **A — wire the strong rename classifier into store scope, firing first.** The strong signal (missing tracked path + content-hash match) is the *only* detector that catches a **referrer-less** OOB move (no dangling ref to find), and it carries the actionable "adopt as `jigc rename`" route. It runs in the store sweep **before** the store-wide `ref-resolves` family ([validation.md](validation.md) → forward-ref integrity), so a moved-with-referrers doc is diagnosed as *a rename to adopt/revert* rather than as N independent dangling refs — the two never emit competing diagnoses for one event.
+- **B — the OOB-rename finding is blocking / exit-flipping, and the pre-commit hook blocks the commit.** This is a narrow, deliberate amendment to the store-scope **report-only** stance and the **warn-only** pre-commit hook ([validation.md](validation.md) → Exit semantics; → Auto-firing the sweep). *Engaging that rationale (record-is-rebuttable):* the report-only/warn-only stance exists so the sweep never gates on **pre-existing, unrelated content rot** (the masking-trap — a commit blocked by drift it didn't cause). An OOB rename is **not** pre-existing content drift — it is a **structural-identity corruption introduced *by this commit***, so blocking it is *consistent with* that rationale, not a violation. It joins the `pack-probe-integrity.*` exit-flipping exception class (a trust/integrity event, not a tunable content opinion); general content `ref-resolves` stays report-only. The hook blocks only on the rename detected among the files **this commit** moves, never on pre-existing store drift, so the masking-trap guard is preserved.
 
 ## Detection timing
 
@@ -148,7 +153,7 @@ The rule: **the conformance error names exactly what's missing; the human fixes 
 - Conformance-block with precise error surfacing.
 - File-level conflict-block with explicit-discard resolution.
 - Hash re-baselining at the three named sites.
-- **Rename detection** — strong signal (path missing + content-hash match) and weak signal (path missing alone), routed to human-side revert per [Rename detection](#rename-detection).
+- **Rename detection** — strong signal (path missing + content-hash match) and weak signal (path missing alone), at task scope (blocking) and **store scope** (M35: blocking, firing before `ref-resolves`), routed to "adopt as `jigc rename`" / revert per [Rename detection](#rename-detection).
 
 **Post-MVP (deferred):**
 
@@ -156,7 +161,7 @@ The rule: **the conformance error names exactly what's missing; the human fixes 
 - **Section/leaf-level conflict granularity** — partial absorption when OOB-edit and task-touch don't overlap section-by-section. Pairs with three-way merge.
 - **Three-way merge for both-sides-changed conflicts** — currently deferred ([overrides.md](overrides.md); shared machinery with override-conflict resolution).
 - **`jigc import` for entirely new untracked files** — adopting a brand-new `.md` file authored outside the CLI ([implementation/parsing.md](../implementation/parsing.md) → "mint-on-import lands with the full import flow"). MVP imports only edits to *managed* docs the CLI already knows about.
-- **`jigc doc rename` / `jigc doc delete`** — the explicit CLI ops that re-key file-state and atomically rewrite every referrer ref across the store (rename) or confirm a deletion (delete). MVP detects OOB renames and deletions and routes the human to revert in git; the ops ship post-MVP ([write-commands.md](write-commands.md) → post-MVP verbs).
+- **`jigc delete`** — confirms a deletion (removes the file-state record, surfaces dangling referrer refs). MVP detects OOB deletions and routes to restore; the op ships post-MVP ([write-commands.md](write-commands.md) → `jigc delete`). *(`jigc rename` shipped at M35 — the [Rename detection](#rename-detection) backstop now routes to it; see [write-commands.md](write-commands.md) → `jigc rename`.)*
 
 ## What reconciliation does NOT do
 
@@ -164,7 +169,7 @@ The rule: **the conformance error names exactly what's missing; the human fixes 
 - **No three-way merge.** Both-sides-changed blocks, never auto-resolves.
 - **No file forbidding.** The CLI never tries to prevent edits — it detects and reconciles.
 - **No identity reconstruction.** A dropped `{#id}` blocks; the CLI doesn't guess the id from context, even when it could.
-- **No silent rename.** A path change is an identity change ([Rename detection](#rename-detection)); the CLI never auto-rewrites referrer refs to follow a renamed file. Post-MVP `jigc doc rename` does it on explicit confirmation.
+- **No silent rename.** A path change is an identity change ([Rename detection](#rename-detection)); the CLI never auto-rewrites referrer refs to follow a *bare* `git mv`. The owned op **`jigc rename`** (M35) does it as one explicit, atomic transaction; an out-of-band move is detected and **blocked** (store scope), routed to adopt-or-revert — never silently followed.
 - **No LLM call.** The classifier is deterministic — same `(file content + recorded hash + task working area + schema)` in → same classification out ([VISION.md](../VISION.md) principle #1).
 
 ## Open questions

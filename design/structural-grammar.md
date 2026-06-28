@@ -80,10 +80,10 @@ The `item` hop appears **iff** the unit is repeatable; the `leaf` hop appears if
 
 Runtime minting happens at **exactly two sites *in the managed-artifact family***: creating a container, and adding an item to a repeatable unit. This tightly scopes the only hard part (minting under concurrency). (The work-unit family — tasks, and planned milestone/increment — has its own mint sites; see [Work-units and runtime identity](#work-units-and-runtime-identity).)
 
-Minted IDs are **frozen content-slugs**:
+Minted IDs are **content-slugs**:
 
 - slugged from the designated id-source,
-- **minted once and frozen** at creation — the id outlives a later rename of its source,
+- **minted at creation and stable under reorder and ordinary retitle-without-reslug** — editing the id-source's displayed value (an item's `###` heading, a doc's H1) does *not* change the id; a deliberate **identity change** (re-slug) is allowed only through one explicit, atomic CLI op — `jigc rename` for managed docs ([write-commands.md](write-commands.md) → `jigc rename`; [VISION.md](../VISION.md) → Stable IDs) — never an untracked move, with every structured referrer repointed in lockstep. *(This managed-doc identity revision does **not** make workflow/step ids mutable — those are pack-definition filenames, out of scope.)*
 - never ordinal-looking (an ordinal is a position-smell; ids must not imply order),
 - under concurrency, colliding slugs get a **deterministic suffix** applied in task-id merge order, so ids stay stable and reproducible across a `fan-out`/`join` ([VISION.md](../VISION.md) → Parallelism).
 
