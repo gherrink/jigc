@@ -1,0 +1,1 @@
+Our CSRF approach changed: we now validate the request Origin header instead of a double-submit cookie. Rename the `csrf-double-submit-cookie` decision record to `csrf-origin-validation` and update its heading to match. Then commit the change.

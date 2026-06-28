@@ -1,0 +1,1 @@
+We're documenting that the pre-cluster Redis setup was a single node. Rename the `redis-session-cache` decision record to `redis-single-node-cache` and update its heading to match. Then commit the change.

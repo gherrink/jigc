@@ -1,0 +1,1 @@
+We've outgrown a single Redis deployment for sessions and now replicate session state across regions. Rename the `redis-cluster-sessions` decision record to `multi-region-sessions` and update its heading to match. Then commit the change.
