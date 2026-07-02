@@ -1,5 +1,29 @@
 # jigc — format-stability readiness assessment
 
+> ## ⚑ Re-adjudicated 2026-07-02 — the gates are MET; the answer is now **GO (as 1.0.0-rc.1)**
+>
+> The body below is the **historical 2026-06-21 assessment** — kept as the record of
+> the gate definition and the evidence state that produced "Not yet." Its three gates
+> have since been met and the verdict is superseded
+> ([DECISIONS.md](DECISIONS.md) → 2026-07-02 Go-live gate adjudication):
+>
+> - **G1 — schema/format freeze** ✓ shipped as **M33** (frozen-v1 declared, hash-asserted at pack load).
+> - **G2 — corpus-migration path** ✓ shipped as **M34** (`schema-version` stamp + `jigc migrate-corpus`, measured v1→v2 facts).
+> - **Value gate** ✓ **CLEARED (human verdict, 2026-07-02)** on the composite evidence this doc's
+>   own "owed next steps" named: the **long-horizon many-edit study** produced the first
+>   controlled jigc-beats-static result (drift 19% vs plain 88%, gate-arm 0%); the cross-doc
+>   study honestly tied and redirected the thesis to *owning* structural ops; and **M35's
+>   pre-registered cost study WON** — jigc strictly cheaper per rename than plain on all three
+>   models *and* ≥ static on completeness, with 100% verb engagement
+>   ([completions/artifacts/M35/VERDICT.md](completions/artifacts/M35/VERDICT.md)).
+>   The 2026-06-21 "leaning negative" reading was superseded by evidence this doc predicted
+>   would be decisive.
+>
+> **Go-live shape:** version **1.0.0-rc.1**; the two RC trials (greenfield + existing-project
+> adoption) run as **keeper corpora**, which fires the name trigger — the recorded
+> availability lookup ran clean 2026-07-02 (crates.io/npm/GitHub/web: no collision).
+> M36 (v1 hardening) ships the audit fixes + opt-in invocation logging before the trials.
+
 **Question:** are jigc's contract surfaces (CLI vocabulary, directory/storage,
 doctype schemas, workflow dialect, config/migration machinery) stable enough to
 point at a **productive project** — where, post-commitment, every format change
