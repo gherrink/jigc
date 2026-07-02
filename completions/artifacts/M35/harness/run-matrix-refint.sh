@@ -18,7 +18,9 @@ RUNS="${RUNS:-$HOME/lh-study/runs/refint-matrix-m35}"
 CONC="${CONC:-3}"
 REPS_S="${REPS_S:-3}"; REPS_O="${REPS_O:-2}"
 MODELS="${MODELS:-both}"   # both | sonnet | opus  (split the paid run for auth safety)
-SONNET=claude-sonnet-4-6; OPUS=claude-opus-4-8
+# Env-overridable (amendment 2026-07-02: the supplementary Sonnet-5 cell runs as
+# MODELS=sonnet SONNET=claude-sonnet-5 — the pre-registered verdict still rides the pinned ids).
+SONNET="${SONNET:-claude-sonnet-4-6}"; OPUS="${OPUS:-claude-opus-4-8}"
 mkdir -p "$RUNS"
 
 jobs=()

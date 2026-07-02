@@ -7,6 +7,20 @@ protocol below is fixed *before* the paid matrix runs; the build is certified ru
 is the settled M35 decision ([DECISIONS.md](../../../DECISIONS.md) → 2026-06-28 M35 planning,
 *Acceptance*). Deviations after this point are recorded as amendments with reasons.
 
+**Amendment 1 (2026-07-02, recorded before the paid matrix ran — human-decided).** Claude
+Sonnet 5 (`claude-sonnet-5`) was released between handoff and the run; the cross-doc study
+(and this harness's pinned ids) used Sonnet 4.x. Decision: **the pre-registered verdict rides
+the pinned matrix unchanged** (`claude-sonnet-4-6` + `claude-opus-4-8` — comparable with the
+cross-doc study's cost numbers), **plus a supplementary Sonnet-5 cell** (the full 3-arm set,
+same reps, `MODELS=sonnet SONNET=claude-sonnet-5`) as a **current-generation robustness
+check** — reported alongside the verdict, not replacing it. Rationale: Sonnet 5 is what
+agents run *now* and is the *harder* test (more literal instruction-following strengthens
+the static arm's one-liner; more agentic behavior may also raise verb engagement), so a
+cost-win that holds on both generations is robust, and a divergence is itself a finding.
+The win/void logic applies per model id unchanged; the same void-tripwires gate the
+supplementary cell. Harness delta: `run-matrix-refint.sh` model ids made env-overridable;
+`eval-sequence-refint.py` display label keeps the model version (both content-neutral).
+
 **What this study is — the first study designed for jigc to beat plain on *effort*.** The
 cross-doc forward-ref study
 ([VERDICT](../cross-doc-refint-study/VERDICT.md)) **refuted** the *detection* claim: a

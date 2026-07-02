@@ -109,8 +109,10 @@ def curve(seqs: list[dict], key: str, nedits: int) -> list:
 
 
 def _ml(model: str) -> str:
+    # Display label: strip the vendor prefix but keep the version — the matrix can carry
+    # more than one Sonnet generation (the 2026-07-02 Sonnet-5 supplementary cell).
     m = model or ""
-    return "sonnet" if "sonnet" in m else "opus" if "opus" in m else (m or "?")
+    return (m[len("claude-"):] if m.startswith("claude-") else m) or "?"
 
 
 def verdict(cells: dict) -> dict:
