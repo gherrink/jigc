@@ -692,6 +692,20 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         )
     })?;
 
+    // 4b. Merge the `deny` **safety floor** into the same settings file — the bounded
+    //     blocklist against catastrophic/exfil actions (destructive/exfil shell + secret-
+    //     file reads on both the `Read` and `Bash` surfaces), merged never clobbered, the
+    //     structure-aware twin of the allowlist merge (`design/assistant-adapter.md` → the
+    //     `deny` safety floor). Idempotent; a re-run is byte-stable; a profile with no
+    //     floor is inert.
+    adapter::inject_deny(repo_root, profile).map_err(|err| {
+        Finding::block(
+            "setup.inject-deny",
+            format!("cannot merge the deny safety floor into `{allowlist_file}`: {err}"),
+            format!("ensure `{allowlist_file}` is writable, then re-run `jigc setup`"),
+        )
+    })?;
+
     // 5. Install the assistant-neutral warn-only `pre-commit` hook (the auto-firing
     //    doc<->code backstop) into the repo's real hooks dir, pinned to the installing
     //    `jigc`'s own absolute path (the stale-binary hazard — `precommit_hook_body`).

@@ -101,17 +101,17 @@ fn configure_identity(root: &Path) {
 /// shipped profile. Returns the directory `JIGC_ADAPTERS_DIR` points at.
 fn adapters_dir_with_template(tag: &str, template: &str) -> TempDir {
     let dir = TempDir::new(tag);
-    let yaml = format!(
-        "assistant: claude-code\n\
-         inject:\n\
-        \x20 - reference: {{ file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }}\n\
-        \x20 - hook: {{ event: SessionStart, run: \"jigc start\" }}\n\
-         allowlist:\n\
-        \x20 file: .claude/settings.json\n\
-        \x20 permit: [\"jigc *\", \"git add *\"]\n\
-         spawn:\n\
-        \x20 template: {template:?}\n",
-    );
+    // Keep everything up to the `spawn:` block **verbatim** from the shipped profile
+    // (assistant / inject / allowlist — incl. the M36 `deny` safety floor) and swap in
+    // only the given spawn template. So a determinism copy stays byte-faithful to the
+    // embedded profile as the profile evolves, and only the template varies across the
+    // reject/accept cases.
+    let shipped = include_str!("../adapters/claude-code.yaml");
+    let head = shipped
+        .split_once("\nspawn:")
+        .map(|(h, _)| h)
+        .unwrap_or(shipped);
+    let yaml = format!("{head}\nspawn:\n  template: {template:?}\n");
     fs::write(dir.path().join("claude-code.yaml"), yaml).expect("write override profile");
     dir
 }

@@ -579,6 +579,69 @@ pub fn inject_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
     write_settings(&target, &settings)
 }
 
+/// Idempotently merge the profile's `deny` **safety floor** into the host project's
+/// assistant settings file (`<repo_root>/<profile.allowlist.file>`, e.g.
+/// `.claude/settings.json`) — the install-side twin of [`remove_deny`], the same
+/// structure-aware merge as [`inject_allowlist`].
+///
+/// `jigc setup`'s safety-floor step (`design/assistant-adapter.md` → the `deny`
+/// safety floor: "Merged, never clobbered — mirror `inject_allowlist`"). A
+/// **structure-aware** JSON merge, not a text splice: parse (or create) the settings
+/// object, ensure every floor pattern from the profile is present in the
+/// `permissions.deny` array, and write back pretty JSON. Idempotent by **structural
+/// presence** — a pattern already in the array is a no-op, so a re-run is
+/// byte-identical; every user `deny` entry, unrelated permissions, and unrelated
+/// top-level keys are preserved (a missing file is created with just the floor; a
+/// missing `permissions` object or `deny` array is created). A profile declaring **no**
+/// floor is a clean no-op — it never creates an empty `permissions.deny`.
+pub fn inject_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+    // A profile with no deny floor: nothing to merge, and never materialize an empty
+    // `permissions.deny` array (mirrors `remove_deny`'s empty-floor guard).
+    if profile.allowlist.deny.is_empty() {
+        return Ok(());
+    }
+    let target = repo_root.join(&profile.allowlist.file);
+
+    let mut settings = read_settings(&target)?;
+
+    // Navigate/create `permissions.deny`, then ensure each floor pattern is present.
+    let deny = settings
+        .as_object_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "settings root is not a JSON object",
+            )
+        })?
+        .entry("permissions")
+        .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "`permissions` is not a JSON object",
+            )
+        })?
+        .entry("deny")
+        .or_insert_with(|| serde_json::Value::Array(Vec::new()))
+        .as_array_mut()
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "`permissions.deny` is not a JSON array",
+            )
+        })?;
+
+    for pattern in &profile.allowlist.deny {
+        let present = deny.iter().any(|v| v.as_str() == Some(pattern.as_str()));
+        if !present {
+            deny.push(serde_json::Value::String(pattern.clone()));
+        }
+    }
+
+    write_settings(&target, &settings)
+}
+
 /// Idempotently **unwire** the bootstrap reference from the host project's
 /// always-loaded file (`<repo_root>/CLAUDE.md`) — the inverse of
 /// [`inject_reference`] for `jigc uninstall` (`design/project-setup.md` → Flow 2
@@ -1865,6 +1928,159 @@ mod tests {
           }
         }
         "#);
+    }
+
+    /// First deny-floor merge into a project with **no** `.claude/settings.json`
+    /// creates the file with a `permissions.deny` array holding every profile floor
+    /// pattern (in profile order, each exactly once); a second merge is byte-identical
+    /// (run twice ⇒ byte-identical). The created form is golden-locked — the exact
+    /// bytes `jigc setup` merges (`design/assistant-adapter.md` → the `deny` safety
+    /// floor: each secret `Read` deny pairs with a `Bash(cat …)` twin).
+    #[test]
+    fn deny_floor_added_then_idempotent() {
+        let dir = TempDir::new();
+        let settings = dir.path().join(".claude/settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+        assert!(
+            !profile.allowlist.deny.is_empty(),
+            "the shipped profile must carry a non-empty deny floor",
+        );
+
+        inject_deny(dir.path(), &profile).expect("first deny merge");
+        assert!(
+            settings.exists(),
+            "merge creates .claude/settings.json when absent",
+        );
+        let after_first = std::fs::read_to_string(&settings).expect("read after first");
+
+        // Every floor pattern is present exactly once.
+        let parsed: serde_json::Value = serde_json::from_str(&after_first).unwrap();
+        let deny = parsed["permissions"]["deny"].as_array().unwrap();
+        for p in &profile.allowlist.deny {
+            assert_eq!(
+                deny.iter()
+                    .filter(|x| x.as_str() == Some(p.as_str()))
+                    .count(),
+                1,
+                "the floor pattern `{p}` must appear exactly once, got:\n{after_first}",
+            );
+        }
+
+        inject_deny(dir.path(), &profile).expect("second deny merge");
+        let after_second = std::fs::read_to_string(&settings).expect("read after second");
+        assert_eq!(
+            after_first, after_second,
+            "deny merge is idempotent: a second run leaves the file byte-identical",
+        );
+
+        insta::assert_snapshot!(after_first, @r#"
+        {
+          "permissions": {
+            "deny": [
+              "Bash(rm -rf:*)",
+              "Bash(curl:*)",
+              "Bash(wget:*)",
+              "Bash(git push --force:*)",
+              "Read(./.env)",
+              "Bash(cat ./.env:*)",
+              "Read(./.env.*)",
+              "Bash(cat ./.env.*:*)",
+              "Read(./**/*.pem)",
+              "Bash(cat ./**/*.pem:*)",
+              "Read(./**/*.key)",
+              "Bash(cat ./**/*.key:*)",
+              "Read(./**/id_rsa*)",
+              "Bash(cat ./**/id_rsa*:*)",
+              "Read(./**/id_ed25519*)",
+              "Bash(cat ./**/id_ed25519*:*)",
+              "Read(./**/credentials)",
+              "Bash(cat ./**/credentials:*)",
+              "Read(./**/.npmrc)",
+              "Bash(cat ./**/.npmrc:*)"
+            ]
+          }
+        }
+        "#);
+    }
+
+    /// Merging the floor into a `.claude/settings.json` that already holds a **foreign**
+    /// `permissions.deny` entry (plus an unrelated top-level key and the allowlist)
+    /// preserves all of them — **merged, never clobbered**: every floor pattern is added
+    /// once, the foreign deny entry stays, and the unrelated key + allow list are
+    /// untouched. A re-run is byte-identical.
+    #[test]
+    fn deny_floor_preserves_existing_and_is_idempotent() {
+        let dir = TempDir::new();
+        let claude_dir = dir.path().join(".claude");
+        std::fs::create_dir_all(&claude_dir).expect("create .claude");
+        let settings = claude_dir.join("settings.json");
+        let profile = load_profile("claude-code").expect("the shipped profile loads");
+
+        // A settings file with an unrelated top-level key, an existing allow list, and a
+        // FOREIGN deny entry the human wrote.
+        let preexisting = r#"{
+  "model": "claude-sonnet-4",
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)"
+    ],
+    "deny": [
+      "Bash(shutdown:*)"
+    ]
+  }
+}
+"#;
+        std::fs::write(&settings, preexisting).expect("seed settings.json");
+
+        inject_deny(dir.path(), &profile).expect("merge the floor into existing settings");
+        let after = std::fs::read_to_string(&settings).expect("read after merge");
+        let parsed: serde_json::Value =
+            serde_json::from_str(&after).expect("settings stays valid JSON");
+
+        let deny = parsed["permissions"]["deny"].as_array().unwrap();
+        assert!(
+            deny.iter().any(|x| x == "Bash(shutdown:*)"),
+            "the foreign deny entry must survive (never clobbered), got:\n{after}",
+        );
+        for p in &profile.allowlist.deny {
+            assert!(
+                deny.iter().any(|x| x.as_str() == Some(p.as_str())),
+                "the floor pattern `{p}` must be merged in, got:\n{after}",
+            );
+        }
+        assert_eq!(
+            parsed["model"], "claude-sonnet-4",
+            "the unrelated top-level key must survive, got:\n{after}",
+        );
+        assert!(
+            parsed["permissions"]["allow"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|x| x == "Bash(ls:*)")),
+            "the unrelated allow list must survive, got:\n{after}",
+        );
+
+        // Idempotent: a second merge over the now-current file is byte-identical.
+        inject_deny(dir.path(), &profile).expect("second merge");
+        let after_second = std::fs::read_to_string(&settings).expect("read after second");
+        assert_eq!(after, after_second, "re-merge is byte-identical");
+    }
+
+    /// A profile with an **empty** deny floor is inert — [`inject_deny`] writes nothing
+    /// and never materializes an empty `permissions.deny` (the empty-floor guard, the
+    /// mirror of [`remove_deny`]'s). Covers the omitting context, not just the shipped
+    /// happy path.
+    #[test]
+    fn deny_floor_empty_is_inert() {
+        let dir = TempDir::new();
+        let settings = dir.path().join(".claude/settings.json");
+        let mut profile = load_profile("claude-code").expect("the shipped profile loads");
+        profile.allowlist.deny.clear();
+
+        inject_deny(dir.path(), &profile).expect("inject over an empty floor");
+        assert!(
+            !settings.exists(),
+            "an empty deny floor must not create a settings file / empty deny array",
+        );
     }
 
     /// First hook install into a project with **no** `.claude/settings.json`

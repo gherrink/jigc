@@ -259,6 +259,83 @@ fn scenario_1_setup_is_idempotent() {
     );
 }
 
+/// The profile deny-floor patterns, parsed from the shipped adapter profile so the
+/// e2e assertion tracks the source of truth (the shipped `claude-code.yaml`), not a
+/// hand-copied list that could drift from what `jigc setup` actually merges.
+fn floor_patterns() -> Vec<String> {
+    let yaml = include_str!("../adapters/claude-code.yaml");
+    let mut out = Vec::new();
+    let mut in_deny = false;
+    for line in yaml.lines() {
+        if line.trim_start().starts_with("deny:") {
+            in_deny = true;
+            continue;
+        }
+        if in_deny {
+            match line.trim_start().strip_prefix("- ") {
+                Some(entry) => out.push(entry.trim().trim_matches('"').to_string()),
+                None => break, // end of the indented deny list block
+            }
+        }
+    }
+    assert!(
+        !out.is_empty(),
+        "the shipped profile must carry a deny floor"
+    );
+    out
+}
+
+/// The `deny` safety floor is **merged, never clobbered** into a pre-existing
+/// `.claude/settings.json`: a foreign `permissions.deny` entry seeded before setup
+/// survives, every profile floor pattern lands, and a second setup is byte-identical
+/// (`design/assistant-adapter.md` → the `deny` safety floor — mirror `inject_allowlist`).
+#[test]
+fn scenario_1b_deny_floor_merges_never_clobbers() {
+    let repo = TempDir::new("deny-floor");
+    let home = TempDir::new("home");
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    git(repo.path(), &["config", "commit.gpgsign", "false"]);
+
+    // Pre-seed a FOREIGN `permissions.deny` entry before setup (the merge-never-clobber
+    // case): the human already denied something of their own.
+    fs::create_dir_all(repo.path().join(".claude")).expect("create .claude");
+    fs::write(
+        repo.path().join(".claude/settings.json"),
+        "{\n  \"permissions\": {\n    \"deny\": [\n      \"Bash(shutdown:*)\"\n    ]\n  }\n}\n",
+    )
+    .expect("seed foreign deny");
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert_ok(&out, "`jigc setup` over a pre-seeded foreign deny");
+
+    let settings =
+        fs::read_to_string(repo.path().join(".claude/settings.json")).expect("settings written");
+    // The foreign entry survives (never clobbered).
+    assert!(
+        settings.contains("\"Bash(shutdown:*)\""),
+        "the foreign deny entry must survive the merge; got:\n{settings}"
+    );
+    // Every profile floor pattern landed.
+    for p in floor_patterns() {
+        assert!(
+            settings.contains(&format!("\"{p}\"")),
+            "the floor pattern `{p}` must be merged into permissions.deny; got:\n{settings}"
+        );
+    }
+
+    // Second setup: byte-identical (the deny merge is an idempotent, byte-stable no-op).
+    let out2 = jigc(repo.path(), home.path(), &["setup"]);
+    assert_ok(&out2, "second `jigc setup`");
+    let settings2 =
+        fs::read_to_string(repo.path().join(".claude/settings.json")).expect("settings present");
+    assert_eq!(
+        settings, settings2,
+        "settings.json must be byte-identical after a re-run (deny merge is idempotent)"
+    );
+}
+
 // ───────────────────── scenario 2: orientation ─────────────────────
 
 #[test]
