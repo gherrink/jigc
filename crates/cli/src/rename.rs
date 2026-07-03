@@ -94,7 +94,9 @@ pub(crate) fn run(
     let old_rel = format!("{dir}/{old_slug}.md");
     let old_abs = repo_root.join(&old_rel);
     if !old_abs.is_file() {
-        bail!("no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})");
+        bail!(
+            "no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})\n  route: check the id — managed `{ty}` docs live under `{dir}/` (or run `jigc describe` for the doctype surface)"
+        );
     }
     let old_source = std::fs::read_to_string(&old_abs)
         .with_context(|| format!("could not read the doc to rename at {old_rel}"))?;

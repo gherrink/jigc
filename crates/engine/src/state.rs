@@ -682,7 +682,7 @@ pub fn create(
 ) -> Result<CreatedDoc, Finding> {
     // 1. Unknown doctype → reject before anything is minted or placed.
     let Some(schema) = schemas.get(type_name) else {
-        return Err(unknown_doctype_finding(type_name));
+        return Err(unknown_doctype_finding(type_name, schemas));
     };
 
     // 2. Mint the frozen content-slug. A `singleton` doctype fixes the slug to the
@@ -776,7 +776,7 @@ pub fn create_gated(
 ) -> Result<CreatedDoc, Finding> {
     // Step 3: unknown doctype rejects before the gate is consulted.
     if !schemas.contains_key(type_name) {
-        return Err(unknown_doctype_finding(type_name));
+        return Err(unknown_doctype_finding(type_name, schemas));
     }
     // Step 5: a known-but-disallowed doctype is gate-blocked.
     let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
@@ -833,16 +833,25 @@ fn migration_targets_canonical_destination(
         == crate::store::lexical_normalize(Path::new(&destination)))
 }
 
-/// The unknown-doctype block: a blocking finding naming the unrecognized type,
-/// routing the agent to list the known types (`write-commands.md` → The create-gate,
-/// step 3). Route-bearing per the settled block-payload shape.
-fn unknown_doctype_finding(type_name: &str) -> Finding {
+/// The unknown-doctype block: a blocking finding naming the unrecognized type, the
+/// **valid set** it should have picked from, and a route to the existing `jigc
+/// describe` surface (`write-commands.md` → The create-gate, step 3). Mirrors the
+/// proven-good `migrate --as <bad>` model — name the set, route to a real recovery,
+/// never a nonexistent micro-verb. Route-bearing per the settled block-payload shape.
+fn unknown_doctype_finding(
+    type_name: &str,
+    schemas: &std::collections::BTreeMap<String, Schema>,
+) -> Finding {
+    let set: Vec<&str> = schemas.keys().map(String::as_str).collect();
     Finding::graded(
         Severity::Blocking,
         "create.unknown-doctype",
-        format!("unknown doctype `{type_name}`"),
+        format!(
+            "unknown doctype `{type_name}`; known doctypes: [{}]",
+            set.join(", ")
+        ),
         None,
-        Some("list the available doctypes with `jigc doc types`".to_string()),
+        Some("run `jigc describe` to see the doctypes you can author".to_string()),
     )
 }
 

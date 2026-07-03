@@ -27,7 +27,7 @@ use crate::cli::Format;
 use crate::invocation_log::Outcome;
 use crate::render;
 use crate::start;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use engine::compose::ComposedWorkflow;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state;
@@ -157,9 +157,13 @@ fn migrate_in_repo(cwd: &Path, path: &str, doctype: &str) -> Result<ComposedWork
     // Read the foreign file's bytes (the source the seam carries). Resolve the path
     // against the repo root so a repo-relative `CHANGELOG.md` reaches the root file.
     let foreign_path = repo_root.join(path);
-    let foreign = std::fs::read_to_string(&foreign_path).with_context(|| {
-        format!(
-            "could not read the foreign `{doctype}` source at {}",
+    // A route-carrying error, not a `with_context` over the raw I/O error: the latter
+    // chains the `os error 2` tail into `{err:#}` — a dead end for the agent. Name the
+    // path and route back to the verb with a readable source (M36 Inc-4, errors-with-
+    // remediation).
+    let foreign = std::fs::read_to_string(&foreign_path).map_err(|_| {
+        anyhow!(
+            "could not read the foreign `{doctype}` source at {}\n  route: check the path, then re-run `jigc migrate <path> --as {doctype}` with a readable file",
             foreign_path.display()
         )
     })?;

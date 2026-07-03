@@ -17,7 +17,7 @@ use crate::cli::Format;
 use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
 use crate::render;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use engine::address::{Address, Fragment};
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::field_block::Value;
@@ -1341,8 +1341,11 @@ fn barrier_block(task_id: &str, address: &Address) -> Finding {
 /// error (the write verbs require the instance to already exist —
 /// `design/write-commands.md` → Instance provisioning).
 fn read_staged(path: &Path, addr: &str) -> Result<String> {
-    std::fs::read_to_string(path).with_context(|| {
-        format!(
+    // `map_err`, not `with_context`: the latter chains the raw I/O error's `os error 2`
+    // tail into `{err:#}` — a dead end. The absent-instance case is the expected reason
+    // this read fails, so surface the provision route alone (M36 Inc-4).
+    std::fs::read_to_string(path).map_err(|_| {
+        anyhow!(
             "no staged instance for `{addr}` — provision it first (`jigc start` / `jigc doc create`). \
              Note: `jigc doc create <type> --title \"X\"` derives the id from the title (`X` → slug), \
              not the task id — address writes at that title-derived id"
