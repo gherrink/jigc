@@ -32,8 +32,74 @@
 
 use crate::adapter::{self, AdapterProfile};
 use crate::locate;
-use engine::finding::Finding;
+use engine::finding::{Finding, Severity};
 use std::path::{Path, PathBuf};
+
+/// The committed **binary-provenance stamp** file, repo-relative (`design/storage.md` →
+/// Store provenance): a one-line record of which `jigc` build wrote/refreshed this store,
+/// so an adopter on a divergent binary is told via a `store-version.binary-mismatch`
+/// advisory (never a gate). It is **committed** — the cross-machine claim requires the
+/// record travel with the repo — and lives under `.jigc/`, deliberately NOT the gitignored
+/// `.jigc/state/` (which never reaches a clone) and NOT a `packs.yaml` field (a closed
+/// surface that rejects unknown keys).
+pub const VERSION_STAMP_PATH: &str = ".jigc/version";
+
+/// The stamp line's `key:` prefix — the one-line on-disk format is `jigc-version: <semver>`.
+const VERSION_STAMP_KEY: &str = "jigc-version:";
+
+/// The stamp body for the running build: `CARGO_PKG_VERSION` at write time
+/// (`design/storage.md` → the value is the engine's `CARGO_PKG_VERSION`; the whole
+/// workspace shares one version via `version.workspace = true`).
+fn version_stamp_body() -> String {
+    format!("{VERSION_STAMP_KEY} {}\n", env!("CARGO_PKG_VERSION"))
+}
+
+/// Write the binary-provenance stamp under `<repo_root>/.jigc/version` (creating `.jigc/`
+/// if absent). `jigc setup` writes it and store-writing ops (`finalize`) refresh it — a
+/// same-build refresh writes identical bytes, so it is a no-op in the commit.
+pub fn write_version_stamp(repo_root: &Path) -> std::io::Result<()> {
+    let path = repo_root.join(VERSION_STAMP_PATH);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, version_stamp_body())
+}
+
+/// Read the recorded stamp version from `<repo_root>/.jigc/version`, or `None` when the
+/// file is **absent** (a pre-M36 store — never false-flagged) or carries no parseable
+/// `jigc-version:` line.
+fn read_version_stamp(repo_root: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(repo_root.join(VERSION_STAMP_PATH)).ok()?;
+    text.lines()
+        .find_map(|line| line.trim().strip_prefix(VERSION_STAMP_KEY))
+        .map(|rest| rest.trim().to_string())
+        .filter(|version| !version.is_empty())
+}
+
+/// The store-scope `store-version.binary-mismatch` advisory for the store at `jigc_home`,
+/// or `None` when the recorded stamp **matches** the running build or is **absent** (a
+/// pre-M36 store — never false-flagged). Report-only + **un-keyed**: `(store-version,
+/// binary-mismatch)` is not a `CHECK_INVENTORY` row, so the severity post-pass leaves its
+/// advisory severity untouched and it never gates a transaction (`design/validation.md` →
+/// un-keyed findings; `design/storage.md` → Store provenance — the check). A version delta
+/// is a heads-up that two builds may resolve the cascade differently, not corruption.
+pub fn binary_mismatch_finding(jigc_home: &Path) -> Option<Finding> {
+    let recorded = read_version_stamp(jigc_home)?;
+    let running = env!("CARGO_PKG_VERSION");
+    if recorded == running {
+        return None;
+    }
+    Some(Finding::graded(
+        Severity::Advisory,
+        "store-version.binary-mismatch",
+        format!(
+            "store last written by jigc {recorded}; you are running {running} — \
+             align versions or re-run `jigc setup`"
+        ),
+        None,
+        None,
+    ))
+}
 
 /// The sentinel marker the generated `pre-commit` hook carries on its first body
 /// line — the idempotency handle the neutral install (T2) keys on to find, replace,
@@ -500,6 +566,19 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         )
     })?;
 
+    // 2c. Write the committed binary-provenance stamp (`design/storage.md` → Store
+    //     provenance): a one-line `.jigc/version` recording which `jigc` build wrote the
+    //     store, so an adopter on a divergent binary gets a `store-version.binary-mismatch`
+    //     advisory (never a gate). Committed via `install_tracked_paths` so it travels with
+    //     the repo; refreshed by store-writing ops (`finalize`).
+    write_version_stamp(repo_root).map_err(|err| {
+        Finding::block(
+            "setup.version-stamp",
+            format!("cannot write the binary-provenance stamp `{VERSION_STAMP_PATH}`: {err}"),
+            "ensure `.jigc/` is writable, then re-run `jigc setup`",
+        )
+    })?;
+
     // 3. Allowlist `jigc` so the agent runs it without friction.
     let allowlist_file = profile.allowlist.file.clone();
     adapter::inject_allowlist(repo_root, profile).map_err(|err| {
@@ -608,6 +687,7 @@ fn install_tracked_paths(line_file: &str, allowlist_file: &str) -> Vec<String> {
         allowlist_file.to_string(), // .claude/settings.json (allowlist + SessionStart hook)
         ".jigc/AGENT.md".to_string(),
         ".jigc/.gitignore".to_string(),
+        VERSION_STAMP_PATH.to_string(), // .jigc/version (the binary-provenance stamp)
         ".jigc/config/.gitkeep".to_string(),
         ".jigc/config/packs.yaml".to_string(),
     ]

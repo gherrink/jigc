@@ -1487,13 +1487,28 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
             pathspecs.push(spec.to_owned());
         }
     }
+    refresh_version_stamp(repo_root)?;
     pathspecs.extend(existing_pathspecs(
         repo_root,
-        &[".jigc/config", ".jigc/.gitignore"],
+        &[
+            ".jigc/config",
+            ".jigc/.gitignore",
+            crate::setup::VERSION_STAMP_PATH,
+        ],
     ));
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
     git_run(repo_root, &args)
+}
+
+/// Refresh the committed binary-provenance stamp (`.jigc/version`) to the running build —
+/// a store-writing op keeps the stamp current (`design/storage.md` → Store provenance:
+/// setup writes it, store-writing ops refresh it). A same-build refresh writes identical
+/// bytes (so `git add` stages nothing and the commit is unchanged); a newer build lands the
+/// bumped stamp alongside the work, exactly as the git-tracked config layer is (re)staged.
+fn refresh_version_stamp(repo_root: &Path) -> Result<()> {
+    crate::setup::write_version_stamp(repo_root)
+        .with_context(|| "refreshing the binary-provenance stamp `.jigc/version`")
 }
 
 /// The per-task non-migration stage (M30 G6, `DECISIONS.md` 2026-06-20). Honor the
@@ -1512,9 +1527,14 @@ fn stage_index_honoring(repo_root: &Path, plan: &engine::finalize::FinalizePlan)
     for promotion in &plan.promotions {
         pathspecs.push(promotion.destination.clone());
     }
+    refresh_version_stamp(repo_root)?;
     pathspecs.extend(existing_pathspecs(
         repo_root,
-        &[".jigc/config", ".jigc/.gitignore"],
+        &[
+            ".jigc/config",
+            ".jigc/.gitignore",
+            crate::setup::VERSION_STAMP_PATH,
+        ],
     ));
     // Nothing jigc-owned to add — the agent's existing index stands alone (a `git add --`
     // with no pathspec is an error, so guard it).

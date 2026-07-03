@@ -686,7 +686,7 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     // yields the empty map (every finding un-routed).
     let versions = crate::pack::frozen_doctype_versions(pack);
 
-    engine::validate::validate_store_families(
+    let mut report = engine::validate::validate_store_families(
         &jigc_home,
         &schemas,
         &resolved,
@@ -696,7 +696,20 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         &record,
         &versions,
     )
-    .with_context(|| format!("validating the committed store at {jigc_home:?}"))
+    .with_context(|| format!("validating the committed store at {jigc_home:?}"))?;
+
+    // Binary-provenance stamp advisory (M36, `design/storage.md` → Store provenance): a
+    // store stamped by a different `jigc` build than the one now reading it gets a
+    // report-only, **un-keyed** `store-version.binary-mismatch` advisory — a cross-machine
+    // heads-up that two builds may resolve the cascade differently, never a gate (its
+    // `(store-version, binary-mismatch)` handle is not a `CHECK_INVENTORY` row, and it does
+    // not match `validation_store_exit_flips`, so the exit stays 0). An absent stamp (a
+    // pre-M36 store) is never false-flagged. CLI-side because `.jigc/version` is a
+    // store-level fact the engine (empty by invariant) never reads.
+    if let Some(finding) = crate::setup::binary_mismatch_finding(&jigc_home) {
+        report.findings.push(finding);
+    }
+    Ok(report)
 }
 
 /// The store sweep's **probe pre-flight**: resolve the `doc-code` probe program (the
