@@ -2821,9 +2821,15 @@ fn render_generated_section(section: &Section, slot: Option<&str>, fields: &[Fie
     out.push('\n');
     out.push_str(slot.unwrap_or("").trim_end());
     append_field_group(&mut out, fields);
-    // Drop the single trailing `\n` `append_field_group` leaves so the block is bare;
-    // `insert_block` owns the surrounding blank lines.
-    while out.ends_with('\n') {
+    // Drop the **single** trailing `\n` `append_field_group` leaves so the block is bare
+    // and `insert_block` owns the surrounding blank lines. Exactly one — never a greedy
+    // strip: a section whose slot is **empty** (`slot: Some("")`, an added *optional*
+    // section's canonical form) renders `## Heading\n\n\n` (heading, blank, empty-prose
+    // terminator), and dropping more than the one terminator would collapse the blank
+    // line that `render_section`'s join preserves, leaving the spliced section
+    // byte-**un**stable against the canonical writer form. A filled/field-carrying block
+    // ends in exactly one `\n`, so `if` and the old greedy `while` are identical for it.
+    if out.ends_with('\n') {
         out.pop();
     }
     out

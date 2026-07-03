@@ -49,6 +49,19 @@ pub enum SchemaChange {
         field: String,
     },
 
+    /// A wholly-new **optional** slot section in `v2` — an added `## Heading` whose
+    /// body is a simple `slot: { optional: true }` (the adr `options` shape). The
+    /// driver mints the empty `## Heading` at its schema-ordered offset; an empty
+    /// optional slot conforms, so no prose is needed (unlike [`Self::ProseNeeding`]).
+    /// It is **not** a byte no-op: the v2 writer emits the heading unconditionally, so
+    /// a historical doc lacking it is non-canonical until the heading is spliced in
+    /// (`design/corpus-migration.md` → The deterministic transform, 2. added-optional-
+    /// section).
+    AddedOptionalSection {
+        /// The added optional slot section's id.
+        section: String,
+    },
+
     /// A section that was a simple `<<slot>>` becoming a repeatable item-block —
     /// the riskiest net-new transform (the old slot content becomes the default
     /// first item; `design/corpus-migration.md`). Only emitted when the old
@@ -135,17 +148,22 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
 /// Classify the leaves of a section that exists only in `v2` (every leaf is new).
 fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
     if let SectionBody::Simple { slot, fields } = new {
-        if let Some(s) = slot
-            && !s.optional
-        {
-            out.push(SchemaChange::ProseNeeding {
+        match slot {
+            // An added **optional** slot section is deterministically mintable (empty
+            // slot conforms) — the added-optional-section transform.
+            Some(s) if s.optional => out.push(SchemaChange::AddedOptionalSection {
+                section: id.to_owned(),
+            }),
+            // A new **required** slot needs prose (the slot is anonymous → `leaf: None`).
+            Some(_) => out.push(SchemaChange::ProseNeeding {
                 section: id.to_owned(),
                 leaf: None,
-            });
+            }),
+            None => {}
         }
         diff_fields(id, &[], fields, out);
     }
-    // A wholly-new repeatable section is not one of the four transform kinds.
+    // A wholly-new repeatable section is not one of the transform kinds.
 }
 
 /// Diff a simple section's field list: classify added fields and cardinality
@@ -318,6 +336,43 @@ sections:
             vec![SchemaChange::WidenedCardinality {
                 section: "meta".to_owned(),
                 field: "rel".to_owned(),
+            }]
+        );
+    }
+
+    /// `added-optional-section`: a wholly-new section whose body is an **optional**
+    /// slot classifies to exactly [`SchemaChange::AddedOptionalSection`] naming the
+    /// section — never `WidenedCardinality`, never the empty diff (the adr `options`
+    /// v1→v2 shape, synthetically). The neighbours are unchanged, so it is the *only*
+    /// change.
+    #[test]
+    fn added_optional_section_is_classified() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: consequences
+    slot: { hint: \"the consequences\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: options
+    slot: { hint: \"options considered\", optional: true }
+  - id: consequences
+    slot: { hint: \"the consequences\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::AddedOptionalSection {
+                section: "options".to_owned(),
             }]
         );
     }

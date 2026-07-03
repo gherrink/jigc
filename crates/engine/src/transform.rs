@@ -32,6 +32,13 @@
 //! absence conforms); a `set`-derived field with no default needs the caller-supplied
 //! value the T4 dogfood threads in (unbuilt here).
 //!
+//! M36 Inc-3 T1 builds the **`added-optional-section` branch**: a wholly-new *optional*
+//! slot section is minted **empty** at its schema-ordered home via [`crate::write::generate_section`]
+//! (the same block-insert the `prose-needing` slot arm uses), but an empty *optional* slot
+//! **conforms** — so this is the migration's final byte-stable form, not a mint-then-author
+//! handoff. The empty-slot section canonicalizes to exactly the v2 writer shape (proven by
+//! the byte-stability test).
+//!
 //! Two branches stay deferred, surfaced as [`TransformError::Unsupported`] rather than
 //! silently skipped — an un-built branch must block, never drop a change: the
 //! `prose-needing` **field** sub-case (a new required *field*, not a slot — the transform
@@ -146,6 +153,17 @@ pub fn transform(
             SchemaChange::WidenedCardinality { .. } => {
                 // Instance-byte identity: the existing value is still valid under the
                 // widened cardinality, so no splice is needed.
+            }
+            SchemaChange::AddedOptionalSection { section } => {
+                // Splice the empty `## Heading` slot-section at its schema-ordered home —
+                // the same block-insert path the required-slot `ProseNeeding` arm uses,
+                // but an **optional** empty slot *conforms* instead of blocking, so this
+                // is the migration's final form (not a mint-then-author handoff). The
+                // v2 writer emits the heading unconditionally, so a historical doc lacking
+                // it is non-canonical; the empty-slot section canonicalizes to exactly the
+                // v2 writer shape (byte-stable — `render(parse(out)) == out`; proven by the
+                // byte-stability test), leaving every prior section's bytes untouched.
+                out = write::generate_section(new_schema, &out, section, Some(""), &[])?;
             }
             SchemaChange::ProseNeeding {
                 section,
@@ -1210,6 +1228,140 @@ sections:
         assert_eq!(out, src, "an optional field with no default adds no bytes");
         assert_conforms(&v2, &out);
         assert_byte_stable(&v2, &out);
+    }
+
+    // ---- (f) the added-optional-section branch: an added `## Options` optional slot ----
+
+    /// v1: a `dec` doctype with `context` + `consequences` prose slots — the adr shape
+    /// before `options` (a leading + trailing slot, so the splice is on a *non-trailing*
+    /// section, the byte-fragile case).
+    fn dec_v1() -> Schema {
+        load_schema(
+            b"\
+type: dec
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: consequences
+    slot: { hint: \"the consequences\" }
+",
+        )
+        .expect("dec v1 loads")
+    }
+
+    /// v2: an **optional** `options` slot section is inserted between them — the
+    /// added-optional-section change (the real adr v1→v2 bump, synthetically).
+    fn dec_v2() -> Schema {
+        load_schema(
+            b"\
+type: dec
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: options
+    slot: { hint: \"options considered\", optional: true }
+  - id: consequences
+    slot: { hint: \"the consequences\" }
+",
+        )
+        .expect("dec v2 loads")
+    }
+
+    /// A canonical v0-shaped `dec` (context + consequences filled), built through
+    /// [`render`] so the input is the exact byte-stable form a first-touch-canonicalized
+    /// corpus doc has.
+    fn dec_v0_doc() -> String {
+        let inst = Instance {
+            title: "Rate-limit at the gateway".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "context".to_string(),
+                    slot: Some("Per-client limits were enforced ad hoc.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "consequences".to_string(),
+                    slot: Some("Each service drops its local limiter.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&dec_v1(), &inst)
+    }
+
+    #[test]
+    fn added_optional_section_canonicalizes_to_the_v2_writer_shape() {
+        let v1 = dec_v1();
+        let v2 = dec_v2();
+        let src = dec_v0_doc();
+
+        // The real classifier emits the change; the driver is exercised on the emitted
+        // classification, not a hand-built list.
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedOptionalSection {
+                section: "options".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("added-optional-section transform");
+
+        // The empty `## Options` heading is spliced in between the neighbours.
+        assert!(
+            out.contains("## Options"),
+            "the optional section heading is spliced in; got {out:?}"
+        );
+
+        // The byte-stability done-criterion: the transform output is **exactly** the v2
+        // writer's canonical shape — (a) `render(parse(out)) == out` under v2, and (c) it
+        // conforms (an empty *optional* slot exempts the absent prose). This is the
+        // load-bearing assertion the planner flagged: `generate_section(Some(""))` must
+        // equal what the writer emits for an empty optional slot.
+        assert_byte_stable(&v2, &out);
+        assert_conforms(&v2, &out);
+
+        // (b) every prior section value is byte-preserved verbatim; the minted section is
+        // an empty slot.
+        assert!(
+            out.contains("## Context\n\nPer-client limits were enforced ad hoc.\n"),
+            "the context block is byte-preserved; got {out:?}"
+        );
+        assert!(
+            out.contains("## Consequences\n\nEach service drops its local limiter.\n"),
+            "the consequences block is byte-preserved; got {out:?}"
+        );
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let slot_of = |id: &str| {
+            inst.sections
+                .iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.slot.clone())
+        };
+        assert_eq!(
+            slot_of("context").as_deref(),
+            Some("Per-client limits were enforced ad hoc.")
+        );
+        assert_eq!(
+            slot_of("consequences").as_deref(),
+            Some("Each service drops its local limiter.")
+        );
+        let options = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "options")
+            .expect("options section present");
+        assert!(
+            options.slot.as_deref().unwrap_or("").is_empty(),
+            "the minted optional slot is empty (conforms, no prose needed)"
+        );
+
+        // (d) determinism.
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run succeeds");
+        assert_eq!(
+            again, out,
+            "added-optional-section transform is deterministic"
+        );
     }
 
     // ---- the deferred branches block, never silently drop ----
