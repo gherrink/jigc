@@ -511,6 +511,95 @@ fn extract_doc_code_probe(bin_dir: &Path) -> std::io::Result<()> {
     make_executable(&dest)
 }
 
+/// The sentinel comment that heads the secrets-floor block in a root `.gitignore`
+/// ([`SECRETS_GITIGNORE_BLOCK`]) — the idempotency handle [`seed_secrets_gitignore`]
+/// keys on to leave an already-seeded file byte-untouched. Its presence anywhere in the
+/// file means the floor is already there.
+const SECRETS_GITIGNORE_SENTINEL: &str = "# jigc secrets floor — safe defaults; edit freely";
+
+/// The secrets-floor `.gitignore` block `jigc setup` seeds on the **fresh-repo path
+/// only** (`design/project-setup.md` → The secrets-floor `.gitignore`). The same secret
+/// set the adapter's `deny` floor blocks — one list, two enforcement points — rendered as
+/// gitignore patterns. Headed by [`SECRETS_GITIGNORE_SENTINEL`] and terminated by a
+/// newline so a create writes a clean, complete block.
+const SECRETS_GITIGNORE_BLOCK: &str = "\
+# jigc secrets floor — safe defaults; edit freely
+.env
+.env.*
+!.env.example        # keep a committed template
+*.pem
+*.key
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+credentials
+.npmrc
+";
+
+/// Whether `repo_root` is a **fresh** (zero-commit) git repo — the discriminator that
+/// gates the secrets-floor `.gitignore` seed to greenfield repos only
+/// (`design/project-setup.md` → The secrets-floor `.gitignore`: "seed iff the repo has
+/// zero commits"). **Conservative on every unclear signal:** not a git work tree, git
+/// unavailable, or an unreadable HEAD state → `false` (do not seed), so the floor is
+/// never dropped into an established or ambiguous repo (a missing floor is cheap; a
+/// wrongful seed is the scope breach we refuse).
+///
+/// Zero commits ⇔ HEAD does not resolve to an object (an unborn HEAD). This keys on
+/// `git rev-parse --verify --quiet HEAD` (exit 0 with a sha once the first commit exists,
+/// non-zero on an unborn HEAD) rather than the design's illustrative `rev-list --count
+/// HEAD == 0`: `rev-list --count HEAD` *errors* on the very unborn case we must seed, so
+/// it can't be read as "0". The work-tree check runs first so a `rev-parse --verify`
+/// failure is unambiguously "unborn HEAD," never "not a repo."
+fn is_fresh_repo(repo_root: &Path) -> bool {
+    match git_output(repo_root, ["rev-parse", "--is-inside-work-tree"]) {
+        Some(out) if out.status.success() => {}
+        _ => return false,
+    }
+    match git_output(repo_root, ["rev-parse", "--verify", "--quiet", "HEAD"]) {
+        Some(out) => !out.status.success(),
+        None => false,
+    }
+}
+
+/// Seed the secrets-floor root `.gitignore` on the **fresh-repo path only**
+/// ([`is_fresh_repo`]), merge-never-clobber (`design/project-setup.md` → The secrets-floor
+/// `.gitignore`). Returns `Ok(true)` when the repo is fresh and its root `.gitignore`
+/// now carries the floor (so [`commit_install`] tracks it), `Ok(false)` when the repo is
+/// established / the signal is unclear (a clean no-op — an existing project's `.gitignore`
+/// is never touched).
+///
+/// On the fresh path: absent → create with exactly [`SECRETS_GITIGNORE_BLOCK`]; present
+/// **without** the sentinel → append the block under it, preserving the human's lines
+/// verbatim; present **with** the sentinel → byte-stable no-op. So a re-run is
+/// byte-identical.
+fn seed_secrets_gitignore(repo_root: &Path) -> std::io::Result<bool> {
+    if !is_fresh_repo(repo_root) {
+        return Ok(false);
+    }
+    let path = repo_root.join(".gitignore");
+    match std::fs::read_to_string(&path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::write(&path, SECRETS_GITIGNORE_BLOCK)?;
+        }
+        Err(e) => return Err(e),
+        // Already carries the floor — leave every byte untouched (idempotent re-run).
+        Ok(existing) if existing.contains(SECRETS_GITIGNORE_SENTINEL) => {}
+        // A foreign `.gitignore`: keep its lines verbatim, append the floor under the
+        // sentinel, separated by exactly one blank line (byte-stable on re-run).
+        Ok(existing) => {
+            let mut out = existing;
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push('\n');
+            out.push_str(SECRETS_GITIGNORE_BLOCK);
+            std::fs::write(&path, out)?;
+        }
+    }
+    Ok(true)
+}
+
 /// The assistant whose embedded profile MVP `setup` installs. Single-assistant in
 /// the MVP (Claude Code); a `--assistant` selector is post-MVP
 /// (`design/assistant-adapter.md` → Generated, minimal, regenerated).
@@ -672,6 +761,19 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
         )
     })?;
 
+    // 2d. Seed the secrets-floor root `.gitignore` — **fresh-repo (zero-commit) path
+    //     only**, merge-never-clobber (`design/project-setup.md` → The secrets-floor
+    //     `.gitignore`). On an established repo (>=1 commit) or an unclear signal it is a
+    //     clean no-op, so an existing project's `.gitignore` is never touched. When it
+    //     seeds, the file is tracked in the install commit ([`install_tracked_paths`]).
+    let seeded_gitignore = seed_secrets_gitignore(repo_root).map_err(|err| {
+        Finding::block(
+            "setup.secrets-gitignore",
+            format!("cannot seed the secrets-floor root `.gitignore`: {err}"),
+            "ensure the repository root is writable, then re-run `jigc setup`",
+        )
+    })?;
+
     // 3. Allowlist `jigc` so the agent runs it without friction.
     let allowlist_file = profile.allowlist.file.clone();
     adapter::inject_allowlist(repo_root, profile).map_err(|err| {
@@ -760,19 +862,19 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
     //    leaves the install staged-but-uncommitted, so it fails loudly with an actionable
     //    finding rather than masquerading as a clean success (mirrors `finalize`'s
     //    identical git-identity failure).
-    let install_commit =
-        commit_install(repo_root, &line_file, &allowlist_file).map_err(|git_err| {
-            Finding::block(
-                "setup.install-commit",
-                format!(
-                    "the jigc install files were written and staged, but `git commit` was rejected \
+    let install_commit = commit_install(repo_root, &line_file, &allowlist_file, seeded_gitignore)
+        .map_err(|git_err| {
+        Finding::block(
+            "setup.install-commit",
+            format!(
+                "the jigc install files were written and staged, but `git commit` was rejected \
                  (no install commit was made):\n{git_err}"
-                ),
-                "tell git who you are — set `git config user.email \"you@example.com\"` and \
+            ),
+            "tell git who you are — set `git config user.email \"you@example.com\"` and \
              `git config user.name \"Your Name\"` — then re-run `jigc setup` to commit the \
              staged install files",
-            )
-        })?;
+        )
+    })?;
 
     Ok(SetupSummary {
         line_file,
@@ -788,8 +890,12 @@ fn install(repo_root: &Path, profile: &AdapterProfile) -> Result<SetupSummary, F
 /// (`tasks/`/`index/`/`state/`, gitignored by setup's own `.jigc/.gitignore`), the
 /// `.git/hooks/pre-commit` (outside the worktree, in git's control dir — never a tracked
 /// file), and the machine-global `doc-code` probe (beside the binary, not in the repo).
-fn install_tracked_paths(line_file: &str, allowlist_file: &str) -> Vec<String> {
-    vec![
+fn install_tracked_paths(
+    line_file: &str,
+    allowlist_file: &str,
+    seeded_gitignore: bool,
+) -> Vec<String> {
+    let mut paths = vec![
         line_file.to_string(),      // CLAUDE.md (the bootstrap reference host)
         allowlist_file.to_string(), // .claude/settings.json (allowlist + SessionStart hook)
         ".jigc/AGENT.md".to_string(),
@@ -797,7 +903,14 @@ fn install_tracked_paths(line_file: &str, allowlist_file: &str) -> Vec<String> {
         VERSION_STAMP_PATH.to_string(), // .jigc/version (the binary-provenance stamp)
         ".jigc/config/.gitkeep".to_string(),
         ".jigc/config/packs.yaml".to_string(),
-    ]
+    ];
+    // The root `.gitignore` is committed **only** when setup itself seeded it on the
+    // fresh-repo path — never an established repo's pre-existing `.gitignore` (which setup
+    // did not touch and must not sweep into its install commit).
+    if seeded_gitignore {
+        paths.push(".gitignore".to_string());
+    }
+    paths
 }
 
 /// Commit `jigc setup`'s own install files as a dedicated commit, so they don't land in
@@ -828,6 +941,7 @@ fn commit_install(
     repo_root: &Path,
     line_file: &str,
     allowlist_file: &str,
+    seeded_gitignore: bool,
 ) -> Result<InstallCommit, String> {
     // Require a git work tree — but DO mint on an **unborn HEAD** (a brand-new repo with
     // no commits). Setup owns committing its own install footprint regardless of HEAD
@@ -844,7 +958,7 @@ fn commit_install(
     }
 
     // Only the files setup itself wrote, and only those present + not gitignored.
-    let paths: Vec<String> = install_tracked_paths(line_file, allowlist_file)
+    let paths: Vec<String> = install_tracked_paths(line_file, allowlist_file, seeded_gitignore)
         .into_iter()
         .filter(|p| repo_root.join(p).exists())
         .filter(|p| !git_path_ignored(repo_root, p))
@@ -1559,6 +1673,192 @@ mod tests {
             head_before,
             git_str(dir.path(), &["rev-parse", "HEAD"]),
             "a second setup must make no new commit",
+        );
+    }
+
+    /// Give the repo at `dir` a committable identity + disabled signing, so the real
+    /// install path's `git commit` lands in CI / on a signing-enabled dev machine.
+    fn git_identity(dir: &Path) {
+        git(dir, &["config", "user.email", "t@t"]);
+        git(dir, &["config", "user.name", "t"]);
+        git(dir, &["config", "commit.gpgsign", "false"]);
+    }
+
+    /// A **fresh** (zero-commit) repo gets the secrets-floor `.gitignore` seeded with the
+    /// real secret set under the sentinel; the function reports it seeded.
+    #[test]
+    fn seed_secrets_gitignore_writes_floor_on_zero_commit_repo() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+
+        let seeded = seed_secrets_gitignore(dir.path()).expect("seed succeeds on a fresh repo");
+
+        assert!(
+            seeded,
+            "a zero-commit repo is fresh — the floor must be seeded"
+        );
+        let gi = dir.path().join(".gitignore");
+        let body = std::fs::read_to_string(&gi).expect("the floor `.gitignore` must be written");
+        assert!(
+            body.contains(SECRETS_GITIGNORE_SENTINEL),
+            "the seeded floor must carry the sentinel; got:\n{body}",
+        );
+        // Spot-check load-bearing secret patterns actually reach disk (not a tautology).
+        for pat in [
+            ".env",
+            ".env.*",
+            "!.env.example",
+            "*.pem",
+            "*.key",
+            "credentials",
+            ".npmrc",
+        ] {
+            assert!(
+                body.lines().any(|l| l.starts_with(pat)),
+                "the floor must ignore `{pat}`; got:\n{body}",
+            );
+        }
+    }
+
+    /// An **established** repo (>=1 commit) is left completely untouched — no seed.
+    #[test]
+    fn seed_secrets_gitignore_leaves_committed_repo_untouched() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        git_identity(dir.path());
+        std::fs::write(dir.path().join("README.md"), "hi\n").expect("seed README");
+        git(dir.path(), &["add", "README.md"]);
+        git(dir.path(), &["commit", "-q", "-m", "initial"]);
+
+        let seeded = seed_secrets_gitignore(dir.path()).expect("no-op succeeds");
+
+        assert!(!seeded, "a repo with >=1 commit is established — no seed");
+        assert!(
+            !dir.path().join(".gitignore").exists(),
+            "an established repo's root `.gitignore` must not be created",
+        );
+    }
+
+    /// A directory that is **not a git repo** yields no seed (conservative-on-unclear).
+    #[test]
+    fn seed_secrets_gitignore_no_seed_when_not_a_repo() {
+        let dir = TempDir::new();
+
+        let seeded = seed_secrets_gitignore(dir.path()).expect("no-op succeeds off a repo");
+
+        assert!(
+            !seeded,
+            "not a git repo — the signal is unclear, so no seed"
+        );
+        assert!(
+            !dir.path().join(".gitignore").exists(),
+            "a non-repo must never get a secrets floor dropped into it",
+        );
+    }
+
+    /// A fresh repo carrying a **foreign** root `.gitignore` keeps its lines verbatim and
+    /// gains only the sentinel floor block appended; a re-run is byte-stable.
+    #[test]
+    fn seed_secrets_gitignore_merges_foreign_gitignore_never_clobbers() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let foreign = "node_modules/\ntarget/\n";
+        std::fs::write(dir.path().join(".gitignore"), foreign).expect("seed foreign .gitignore");
+
+        let seeded = seed_secrets_gitignore(dir.path()).expect("merge succeeds");
+        assert!(
+            seeded,
+            "a fresh repo with a foreign `.gitignore` still gets the floor"
+        );
+
+        let merged = std::fs::read_to_string(dir.path().join(".gitignore")).expect("read merged");
+        assert!(
+            merged.starts_with(foreign),
+            "the human's foreign lines must be preserved verbatim at the top; got:\n{merged}",
+        );
+        assert!(
+            merged.contains(SECRETS_GITIGNORE_SENTINEL) && merged.contains(".env"),
+            "the floor must be appended under the sentinel; got:\n{merged}",
+        );
+
+        // Re-run: the sentinel is present, so it is a byte-stable no-op.
+        let seeded2 = seed_secrets_gitignore(dir.path()).expect("re-run succeeds");
+        assert!(seeded2, "the still-fresh re-run reports the floor present");
+        let after = std::fs::read_to_string(dir.path().join(".gitignore")).expect("read re-run");
+        assert_eq!(
+            after, merged,
+            "a re-run over a seeded floor must be byte-identical"
+        );
+    }
+
+    /// Create-from-absent then re-run is byte-stable (the absent-file path's idempotency).
+    #[test]
+    fn seed_secrets_gitignore_create_then_rerun_byte_stable() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+
+        seed_secrets_gitignore(dir.path()).expect("first seed");
+        let first = std::fs::read_to_string(dir.path().join(".gitignore")).expect("read first");
+        seed_secrets_gitignore(dir.path()).expect("second seed");
+        let second = std::fs::read_to_string(dir.path().join(".gitignore")).expect("read second");
+
+        assert_eq!(first, second, "a re-run must be byte-identical");
+        assert_eq!(
+            first, SECRETS_GITIGNORE_BLOCK,
+            "an absent-file seed writes exactly the floor block",
+        );
+    }
+
+    /// Real `install` on a **fresh** repo writes the secrets floor to root `.gitignore`
+    /// AND commits it in the dedicated install commit.
+    #[test]
+    fn install_seeds_and_commits_secrets_gitignore_on_fresh_repo() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        git_identity(dir.path());
+        let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
+
+        install(dir.path(), &profile).expect("install succeeds on a fresh repo");
+
+        let gi = dir.path().join(".gitignore");
+        let body = std::fs::read_to_string(&gi).expect("install must seed root .gitignore");
+        assert!(
+            body.contains(SECRETS_GITIGNORE_SENTINEL) && body.contains(".env"),
+            "install must write the secrets floor; got:\n{body}",
+        );
+        let committed = git_str(dir.path(), &["show", "--name-only", "--format=", "HEAD"]);
+        assert!(
+            committed.lines().any(|l| l == ".gitignore"),
+            "the seeded root `.gitignore` must be in the install commit; got:\n{committed}",
+        );
+    }
+
+    /// Real `install` on an **established** repo leaves a pre-existing foreign root
+    /// `.gitignore` byte-untouched and never sweeps it into the install commit.
+    #[test]
+    fn install_leaves_established_repo_gitignore_untouched_and_uncommitted() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        git_identity(dir.path());
+        std::fs::write(dir.path().join("README.md"), "hi\n").expect("seed README");
+        git(dir.path(), &["add", "README.md"]);
+        git(dir.path(), &["commit", "-q", "-m", "initial"]);
+        // A pre-existing foreign root `.gitignore` the user owns (unstaged working edit).
+        let foreign = "node_modules/\n";
+        std::fs::write(dir.path().join(".gitignore"), foreign).expect("seed foreign .gitignore");
+
+        let profile = adapter::load_profile("claude-code").expect("the shipped profile loads");
+        install(dir.path(), &profile).expect("install succeeds on an established repo");
+
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".gitignore")).expect("read foreign"),
+            foreign,
+            "an established repo's foreign `.gitignore` must be byte-untouched",
+        );
+        let committed = git_str(dir.path(), &["show", "--name-only", "--format=", "HEAD"]);
+        assert!(
+            !committed.lines().any(|l| l == ".gitignore"),
+            "the user's `.gitignore` must not be swept into the install commit; got:\n{committed}",
         );
     }
 
