@@ -717,8 +717,8 @@ fn rename_landing_present(
 ///   atomically), revert (`git mv <suspect> <tracked>`) second. The first hash-matching
 ///   candidate in `untracked` order is named.
 /// - **Weak signal** — no untracked path matches: the file is simply gone. The
-///   finding names the missing path and routes to **restore** it (or, post-MVP,
-///   confirm the deletion via `jigc delete`).
+///   finding names the missing path and routes to **restore** it (or confirm the
+///   deletion by dropping it from the index via `jigc unmanage`).
 ///
 /// **No auto-rewrite.** A path rename is an identity change; the MVP blocks and routes
 /// to revert, and **never** rewrites referrer refs or mutates the edge index
@@ -766,7 +766,7 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
         format!("tracked managed doc {from} ({path}) is missing"),
         Some(Location::addressed(path, 1, 1)),
         Some(format!(
-            "restore {path} (post-MVP: `jigc delete {from}` to confirm deletion)"
+            "restore {path}, or confirm the deletion by dropping it from the index: `jigc unmanage {path}`"
         )),
     )
 }
@@ -1343,8 +1343,8 @@ Referrers must point at the new decision.
             "the weak-signal route directs a restore of the missing file: {route:?}"
         );
         assert!(
-            route.contains("jigc delete") && !route.contains("jigc doc delete"),
-            "the weak-signal route names the top-level `jigc delete` op (not the stale `jigc doc delete` placeholder): {route:?}"
+            route.contains("jigc unmanage") && !route.contains("jigc delete"),
+            "the weak-signal route names the shipped top-level `jigc unmanage` op (not the nonexistent `jigc delete`): {route:?}"
         );
     }
 

@@ -576,8 +576,8 @@ fn promoted_owner_artifact_does_not_poison_later_finalizes() {
         "the block is the weak-signal rename naming the deleted artifact; got:\n{rendered}",
     );
     assert!(
-        rendered.contains("jigc delete") && !rendered.contains("jigc doc delete"),
-        "the store-sweep weak-signal route names the top-level `jigc delete`, not the stale `jigc doc delete`; got:\n{rendered}",
+        rendered.contains("jigc unmanage") && !rendered.contains("jigc delete"),
+        "the store-sweep weak-signal route names the shipped `jigc unmanage`, not the nonexistent `jigc delete`; got:\n{rendered}",
     );
     let after: u32 = {
         let out = Command::new("git")
