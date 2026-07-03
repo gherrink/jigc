@@ -561,7 +561,8 @@ fn schema_conformance_store(
             // parse the conformance checks run over. Inlines the store half of
             // `conformance_for`: the type comes from schema iteration, so `unknown-type`
             // can never fire here; a parse failure surfaces its `conformance.*` findings
-            // directly (those are not the routed schema-conformance.* presence/value set).
+            // directly — version-routed `migrate` when the doc is below-version (a structural
+            // v1→v2 change makes a historical doc non-canonical), else un-routed (Err arm).
             match parse_sections(schema, &source) {
                 Ok(doc) => {
                     let mut doc_findings = schema_conformance(schema, &source, &doc);
@@ -592,6 +593,31 @@ fn schema_conformance_store(
                     findings.extend(doc_findings);
                 }
                 Err(mut parse_findings) => {
+                    // A below-version doc of a *versioned* doctype can fail to PARSE under the
+                    // current schema: a structural v1→v2 change (the M36 adr `options` slot)
+                    // makes a historical 3-heading ADR non-canonical (`section-renamed`/
+                    // `section-missing`) *before* conformance runs. Route its parse-failure
+                    // findings `migrate` when its front-matter stamp is below (or absent under)
+                    // the manifest `current`, so the detector agrees with the verb — `jigc
+                    // migrate-corpus` sources the prior shape and upgrades it — rather than the
+                    // operator hitting a blocking-conformance dead-end with no repair direction
+                    // (`design/corpus-migration.md` → Acceptance flows: the adr v1→v2 flow; the
+                    // Finding-2 detector/verb agreement extended to the structural parse-failure
+                    // case). The stamp is read from the raw front matter (a full parse is
+                    // unavailable here). An at/above-version parse failure is genuine corruption
+                    // — left un-routed, exactly the labeler's `corrupt`-vs-`migrate` split.
+                    let stamp = schema_version_from_front_matter(&source);
+                    let current = versions.get(ty).copied();
+                    if let Some(current) = current
+                        && stamp.is_none_or(|s| s < current)
+                    {
+                        route_schema_conformance(
+                            &mut parse_findings,
+                            stamp,
+                            Some(current),
+                            &rel_key,
+                        );
+                    }
                     attribute_to_doc(&mut parse_findings, &rel_key);
                     findings.extend(parse_findings);
                 }
@@ -616,6 +642,22 @@ fn read_schema_version_stamp(doc: &Document) -> Option<u32> {
                 crate::field_block::Value::Scalar(v) => v.trim().parse::<u32>().ok(),
                 crate::field_block::Value::List(_) => None,
             })
+    })
+}
+
+/// Read the schema-version stamp from a committed doc's leading `---` front-matter block
+/// **without a full parse** — the parse-failure sibling of [`read_schema_version_stamp`]
+/// (which needs a parsed [`Document`]). A below-version doc of a structurally-changed
+/// doctype fails to parse under the current schema, so the version-aware route must source
+/// its stamp from the raw front matter. A doc with no leading fence, or no integer
+/// `schema-version:` line, yields `None` — the v0 corpus state the routing treats as
+/// below-version.
+fn schema_version_from_front_matter(source: &str) -> Option<u32> {
+    let body = source.strip_prefix("---\n")?;
+    let end = body.find("\n---")?;
+    body[..end].lines().find_map(|line| {
+        line.strip_prefix(&format!("{}:", crate::schema::SCHEMA_VERSION_FIELD))
+            .and_then(|v| v.trim().parse::<u32>().ok())
     })
 }
 
@@ -4672,6 +4714,115 @@ Decided.
 ## Consequences
 Effects.
 ";
+
+    /// A committed ADR stamped `schema-version: 0` in the **pre-`options` 3-heading form**
+    /// (`context`/`decision`/`consequences`, no `## Options`). Under the current (options-
+    /// bearing) adr schema it **fails to parse** — the parser matches body sections strictly
+    /// by index, so `decision` at the `options` offset trips `section-renamed`/`section-
+    /// missing`. The below-version structural case the M36 adr v1→v2 migration upgrades.
+    const ADR_STAMP_0_NO_OPTIONS: &str = "\
+---
+status: accepted
+date: 2026-05-23
+cites-code: crates/engine/src/validate.rs#validate_task
+schema-version: 0
+---
+
+# Pre-options decision
+
+## Context
+Forces.
+
+## Decision
+Decided.
+
+## Consequences
+Effects.
+";
+
+    /// (M36 Inc-3) A below-version doc that fails to **parse** under the current schema — a
+    /// structural v1→v2 change (the adr `options` slot) makes a historical 3-heading ADR
+    /// non-canonical (`section-renamed`/`section-missing`) *before* conformance runs — has
+    /// its parse-failure findings routed `migrate`, so `jigc validate` **agrees with**
+    /// `jigc migrate-corpus` (which sources the prior shape and upgrades it) instead of
+    /// surfacing a blocking-conformance dead-end with no repair direction
+    /// (`design/corpus-migration.md` → Acceptance flows: the adr v1→v2 flow; the Finding-2
+    /// detector/verb agreement extended to the structural parse-failure case). An
+    /// at/above-version parse failure is genuine corruption and stays un-routed.
+    #[test]
+    fn store_sweep_routes_below_version_parse_failures_migrate() {
+        let schemas = stamped_schemas(); // the real, options-bearing (v2) adr schema
+        let versions: BTreeMap<String, u32> = [("adr".to_string(), 2u32)].into_iter().collect();
+
+        let route_of = |tag: &str, body: &str| -> Vec<Finding> {
+            let repo = TempRoot::new(tag);
+            repo.commit("decisions", "doc", body);
+            let mut record = FileStateRecord::new();
+            record.record("decisions/doc.md", hash_bytes(body.as_bytes()));
+            let seen = RefCell::new(Vec::new());
+            validate_store_families(
+                repo.path(),
+                &schemas,
+                &no_delta_resolved(),
+                &dangling_aware_invoker(&seen),
+                &[],
+                &EmptyStepSource,
+                &record,
+                &versions,
+            )
+            .expect("store sweep runs")
+            .findings
+        };
+
+        // The pre-`options` v0 ADR fails to parse under v2 (section-renamed/missing); every
+        // surfaced conformance finding is routed `migrate` (the detector agrees with the verb).
+        let below = route_of("below", ADR_STAMP_0_NO_OPTIONS);
+        let structural: Vec<&Finding> = below
+            .iter()
+            .filter(|f| f.code.starts_with("conformance."))
+            .collect();
+        assert!(
+            !structural.is_empty(),
+            "the pre-options doc must fail to parse under v2 (structural findings), got {below:?}",
+        );
+        assert!(
+            structural
+                .iter()
+                .all(|f| f.route.as_deref().is_some_and(|r| r.starts_with("migrate"))),
+            "every parse-failure finding of a below-version doc routes migrate, got {structural:?}",
+        );
+
+        // Guard: an ADR stamped **at** the current version that still fails to parse is
+        // genuine corruption — its parse-failure findings stay UN-routed (not migrate).
+        let versions_v1: BTreeMap<String, u32> = [("adr".to_string(), 1u32)].into_iter().collect();
+        let repo = TempRoot::new("at-version-corrupt");
+        // Stamp this pre-options body at v1 == current, so it is at-version yet parse-failing.
+        let at_body = ADR_STAMP_0_NO_OPTIONS.replace("schema-version: 0", "schema-version: 1");
+        repo.commit("decisions", "doc", &at_body);
+        let mut record = FileStateRecord::new();
+        record.record("decisions/doc.md", hash_bytes(at_body.as_bytes()));
+        let seen = RefCell::new(Vec::new());
+        let at = validate_store_families(
+            repo.path(),
+            &schemas,
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &versions_v1,
+        )
+        .expect("store sweep runs")
+        .findings;
+        let at_structural: Vec<&Finding> = at
+            .iter()
+            .filter(|f| f.code.starts_with("conformance."))
+            .collect();
+        assert!(
+            !at_structural.is_empty() && at_structural.iter().all(|f| f.route.is_none()),
+            "an at-version parse failure is corruption, left un-routed, got {at_structural:?}",
+        );
+    }
 
     /// (M34 Inc-3) **Version-mismatch is itself a surfaced break** — *emitted*, not only
     /// routed. A committed persisted doc of a *versioned* doctype whose schema-version stamp

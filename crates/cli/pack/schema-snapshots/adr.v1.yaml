@@ -1,0 +1,37 @@
+# adr.v1 — the prior (pre-`options`) shape of the `adr` doctype: the `status`
+# header + the three prose slots `context`/`decision`/`consequences`, with
+# `supersedes` at `card: "0..*"`. This is the EXACT current adr shape captured
+# *before* the M36 `options` optional slot was added — NOT the reconstructed
+# `0..1` flow36 test fixture (which would spuriously classify a WidenedCardinality
+# change). Diffed against the current (v2) adr shape it classifies as exactly
+# `[AddedOptionalSection {options}]`, so `jigc migrate-corpus` splices the empty
+# `## Options` heading and value-bumps the stamp 1->2 — every prior slot value
+# byte-preserved.
+#
+# The embedded dev pack's FIRST-EVER `schema-snapshots/` entry: `load_prior_schema`
+# over the `EmbeddedPack` is exercised here for the first time (every prior
+# migration test sourced its prior shape from a `FilesystemPack`). A full, real,
+# reviewable prior-schema snapshot — the determinism boundary in its strongest form
+# (two genuine declared schemas diffed, never a hand-written migration recipe).
+# See corpus-migration.md → Prior-schema sourcing + Acceptance flows (the adr
+# v1->v2 flow); worked-examples.md.
+type: adr
+location: decisions/
+id-from: title
+description: A dated architectural decision record, capturing the context a choice was made in, the choice itself, and its consequences, with an optional link to the decision it supersedes.
+usage: a choice is worth preserving with its rationale, so a later reader can recover why the call was made or supersede it on the record.
+
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+      - { id: supersedes, type: ref, to: adr, card: "0..*", inverse: superseded-by }
+      - { id: cites-code, type: code-anchor }
+  - id: context
+    slot: { hint: "Why a decision was needed — the forces at play." }
+  - id: decision
+    slot: { hint: "What we decided, in a sentence or two." }
+  - id: consequences
+    slot: { hint: "Tradeoffs and follow-on effects." }
