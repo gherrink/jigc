@@ -24,6 +24,7 @@
 //! (the determinism boundary — the agent never fetches the file out-of-band).
 
 use crate::cli::Format;
+use crate::invocation_log::Outcome;
 use crate::render;
 use crate::start;
 use anyhow::{Context, Result, bail};
@@ -31,7 +32,6 @@ use engine::compose::ComposedWorkflow;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::state;
 use std::path::{Component, Path, PathBuf};
-use std::process::ExitCode;
 
 /// The working-area filename the staged foreign source bytes live at — the read-only
 /// source artifact the source seam surfaces. Plain bytes, read back verbatim (the same
@@ -44,15 +44,15 @@ pub(crate) const SOURCE_FILE: &str = "source";
 /// composed view through `format`, and print it. A clean run exits 0; an unknown
 /// doctype, a missing foreign file, a serial collision, or a blocking compose finding
 /// surfaces on stderr (with its route) and exits non-zero.
-pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> ExitCode {
+pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> Outcome {
     match migrate_in_repo(cwd, path, doctype) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }

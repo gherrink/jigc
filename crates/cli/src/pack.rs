@@ -1240,7 +1240,7 @@ mod tests {
         );
 
         let knobs = read_text(&pack, PackResourceKind::Config, "knobs");
-        insta::assert_snapshot!(knobs, @r###"
+        insta::assert_snapshot!(knobs, @r#"
         # pack/config/knobs.yaml — the closed, typed knob surface the cascade
         # resolves. One entry per settable key, reusing the document-type
         # `FieldType` vocabulary (`type` + optional `of`) so a `scalar-set` is
@@ -1285,6 +1285,17 @@ mod tests {
         finalize.fan-out.squash:
           type: bool
           default: "true"
+
+        # --- invocation-log — the opt-in in-repo invocation log (M36) ---
+        # When `true`, one JSONL record `{timestamp, argv, exit_code, duration_ms,
+        # finding_codes}` is appended per `jigc` invocation to the gitignored
+        # `.jigc/logs/invocations.jsonl` — a jigc-side friction/failure log so a real
+        # external-repo RC run yields analyzable in-repo data. Default OFF (safe for an
+        # adopter who didn't ask to be logged; the RC-trial protocol turns it on). A
+        # tunable knob (no floor). See measurement.md → The in-repo invocation log.
+        invocation-log:
+          type: bool
+          default: "false"
 
         # --- per-probe severity defaults (M4, retained — additive) ---
         validation.workflow-refs.severity:
@@ -1461,7 +1472,7 @@ mod tests {
           of: [blocking, warning, advisory]
           default: blocking
           floor: blocking
-        "###);
+        "#);
 
         // `pack-id` is a non-knob identity field — it lives in defaults.yaml,
         // never the knob surface (overrides.md → "pack-id is not a knob"). A

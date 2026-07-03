@@ -11,6 +11,7 @@ use crate::config::ConfigCommand;
 use crate::describe;
 use crate::doc::DocCommand;
 use crate::ingest;
+use crate::invocation_log::Outcome;
 use crate::migrate;
 use crate::migrate_corpus;
 use crate::milestone::MilestoneCommand;
@@ -25,7 +26,6 @@ use crate::upgrade;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 /// The `jigc` CLI — a context compiler for coding agents.
 #[derive(Debug, Parser, PartialEq, Eq)]
@@ -218,7 +218,7 @@ impl Cli {
     /// read-only orientation end-to-end; an `<intent>` mints a task and composes
     /// the cascade's default workflow (`design/write-commands.md` → Task
     /// origination).
-    pub fn dispatch(self) -> ExitCode {
+    pub fn dispatch(self) -> Outcome {
         match self.command {
             // `--explain` short-circuits the compose path: it renders the
             // task-independent resolution tree and mints nothing (clap forbids it
@@ -305,22 +305,22 @@ impl Cli {
 /// clean run exits 0; a locator error (no repo / no project layer) routes to stderr
 /// and exits non-zero (`design/introspection.md` → Command surface). Reads-only —
 /// it composes nothing and writes nothing.
-fn run_describe(format: Format) -> ExitCode {
+fn run_describe(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match describe::run(&cwd) {
         Ok(description) => {
             println!("{}", render::describe(format, &description));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -333,22 +333,22 @@ fn run_describe(format: Format) -> ExitCode {
 /// failure prints a blocking `setup.*` finding (with its route) on stderr and
 /// exits non-zero (`design/assistant-adapter.md` → Generated, minimal,
 /// regenerated; the block-payload envelope, `DECISIONS.md` 2026-05-31).
-fn run_setup(format: Format) -> ExitCode {
+fn run_setup(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match setup::run(&cwd) {
         Ok(summary) => {
             println!("{}", render::setup_success(format, &summary));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(finding) => {
             eprintln!("{}", render::setup_block(format, &finding));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -361,22 +361,22 @@ fn run_setup(format: Format) -> ExitCode {
 /// and exits 0; a write failure prints a blocking `uninstall.*` finding (with its
 /// route) on stderr and exits non-zero (`design/project-setup.md` → Flow 2 hardening →
 /// Teardown / cleanup (G5), bullet (b)).
-fn run_uninstall(format: Format) -> ExitCode {
+fn run_uninstall(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match setup::run_uninstall(&cwd) {
         Ok(summary) => {
             println!("{}", render::uninstall_success(format, &summary));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(finding) => {
             eprintln!("{}", render::setup_block(format, &finding));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -384,12 +384,12 @@ fn run_uninstall(format: Format) -> ExitCode {
 /// Dispatch a `jigc task <verb> <id>` lifecycle verb against the current working
 /// directory. The selected `--format` flows through to the finding renderer for
 /// `validate`; `diff` / `discard` produce plain output.
-fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
+fn run_task(format: Format, verb: TaskCommand) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     verb.dispatch(&cwd, format)
@@ -402,12 +402,12 @@ fn run_task(format: Format, verb: TaskCommand) -> ExitCode {
 /// finding surfaces on stderr (with its route, through the shared
 /// format-honoring operational-error funnel) and exits non-zero
 /// (`design/overrides.md` → Authoring deltas).
-fn run_config(format: Format, verb: ConfigCommand) -> ExitCode {
+fn run_config(format: Format, verb: ConfigCommand) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     verb.dispatch(&cwd, format)
@@ -418,12 +418,12 @@ fn run_config(format: Format, verb: ConfigCommand) -> ExitCode {
 /// sub-task pinned to the milestone's shared base and appends it. A blocking finding
 /// (serial collision, unknown milestone) surfaces on stderr with its route and
 /// exits non-zero (`design/write-commands.md` → Minting a milestone).
-fn run_milestone(format: Format, verb: MilestoneCommand) -> ExitCode {
+fn run_milestone(format: Format, verb: MilestoneCommand) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     verb.dispatch(&cwd, format)
@@ -438,26 +438,23 @@ fn run_milestone(format: Format, verb: MilestoneCommand) -> ExitCode {
 /// a clean cascade) prints on stdout; a locator error (no repo / no project layer)
 /// routes to stderr and exits non-zero (`design/overrides.md` → The `jigc upgrade`
 /// command, step 3: report through the standard renderer, blocking-by-default).
-fn run_upgrade(format: Format) -> ExitCode {
+fn run_upgrade(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match upgrade::upgrade_in_repo(&cwd) {
         Ok(report) => {
             println!("{}", render::validation(format, &report));
-            if report.has_blocking() {
-                ExitCode::FAILURE
-            } else {
-                ExitCode::SUCCESS
-            }
+            let code = if report.has_blocking() { 1 } else { 0 };
+            Outcome::with_findings(code, &report.findings)
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -469,22 +466,22 @@ fn run_upgrade(format: Format) -> ExitCode {
 /// render the triage report through the selected `format`. A clean scan exits 0; a
 /// locator error (no repo / no project layer) routes to stderr and exits non-zero
 /// (`design/project-setup.md` → Flow 2; `design/worked-examples.md` → flow 12).
-fn run_ingest(format: Format) -> ExitCode {
+fn run_ingest(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match ingest::run(&cwd) {
         Ok(report) => {
             println!("{}", render::ingest(format, &report));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -497,12 +494,12 @@ fn run_ingest(format: Format) -> ExitCode {
 /// foreign file, a serial collision, or a blocking compose finding surfaces on stderr
 /// (with its route) and exits non-zero (`design/auto-migration.md` → The `jigc migrate`
 /// verb / The source seam).
-fn run_migrate(format: Format, path: &str, doctype: &str) -> ExitCode {
+fn run_migrate(format: Format, path: &str, doctype: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     migrate::run(&cwd, path, doctype, format)
@@ -516,12 +513,12 @@ fn run_migrate(format: Format, path: &str, doctype: &str) -> ExitCode {
 /// expected interim state of the detect→block→migrate loop, not a failure). A locator error
 /// (no repo / no project layer) routes to stderr and exits non-zero
 /// (`design/corpus-migration.md` → Acceptance flows; `design/worked-examples.md` → flow 35).
-fn run_migrate_corpus(format: Format) -> ExitCode {
+fn run_migrate_corpus(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     migrate_corpus::run(&cwd, format)
@@ -534,22 +531,22 @@ fn run_migrate_corpus(format: Format) -> ExitCode {
 /// an idempotent no-op) exits 0; a locator error (no repo / no project layer) routes to
 /// stderr and exits non-zero (`design/project-setup.md` → Flow 2 hardening → Teardown /
 /// cleanup (G5)).
-fn run_unmanage(format: Format, path: &str) -> ExitCode {
+fn run_unmanage(format: Format, path: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match unmanage::run(&cwd, path) {
         Ok(report) => {
             println!("{}", render::unmanage(format, &report));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -561,22 +558,22 @@ fn run_unmanage(format: Format, path: &str) -> ExitCode {
 /// stdout and exits 0; a missing target, a malformed address, or a pre-commit failure (the
 /// transaction rolled back) surfaces on stderr (with its route) and exits non-zero
 /// (`design/write-commands.md` → `jigc rename`).
-fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> ExitCode {
+fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match rename::run(&cwd, old_slug, to, slug) {
         Ok(report) => {
             println!("{}", render::rename(format, &report));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -594,7 +591,7 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> E
 /// exits 0); but a `pack-probe-integrity.*` meta-finding (the probe didn't run, so the
 /// sweep can't claim a trustworthy result) **or** a `reconciliation.rename` finding (an
 /// out-of-band `git mv` — a structural-identity event this commit introduced, M35
-/// Component B) exits **non-zero** (`ExitCode::FAILURE`, *not* the task-gate
+/// Component B) exits **non-zero** (`Outcome::failure()`, *not* the task-gate
 /// `EXIT_VALIDATION_BLOCKED` — this is not a transaction gate). The decision is the shared
 /// [`render::validation_store_exit_flips`] (keyed on the probe id / check id **directly**,
 /// never on `report.has_blocking()`), so the exit code, the JSON `report_only` field, and
@@ -604,12 +601,12 @@ fn run_rename(format: Format, old_slug: &str, to: &str, slug: Option<&str>) -> E
 /// The probe **pre-flight** runs before the sweep: an unresolvable `doc-code` probe bails
 /// with one operational error here. A locator error (no repo / no project layer) likewise
 /// routes to stderr and exits non-zero.
-fn run_validate_store(format: Format) -> ExitCode {
+fn run_validate_store(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match validate_store_in_repo(&cwd) {
@@ -625,15 +622,16 @@ fn run_validate_store(format: Format) -> ExitCode {
             // Otherwise (content-only or clean) detect-and-report exits 0, even when a
             // content finding blocks. Keyed on the probe id / check id directly, mirrored by
             // [`render::validation_store`]'s `report_only` field + trailer.
-            if render::validation_store_exit_flips(&report) {
-                ExitCode::FAILURE
+            let code = if render::validation_store_exit_flips(&report) {
+                1
             } else {
-                ExitCode::SUCCESS
-            }
+                0
+            };
+            Outcome::with_findings(code, &report.findings)
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -749,12 +747,12 @@ fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
 /// staged buffer + the route on a block); a **blocking finding** renders through
 /// the global `--format` (a JSON envelope under `--format json`), so an agent on
 /// `--format json` gets a parseable block (`design/write-commands.md` → The verbs).
-fn run_doc(format: Format, verb: DocCommand) -> ExitCode {
+fn run_doc(format: Format, verb: DocCommand) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     verb.dispatch(&cwd, format)
@@ -765,22 +763,22 @@ fn run_doc(format: Format, verb: DocCommand) -> ExitCode {
 /// `format`, and print it — mapping success/failure to the process exit code. A
 /// blocking gate / minting finding surfaces on stderr (with its route) and exits
 /// non-zero; nothing is emitted past a block.
-fn run_compose(format: Format, intent: &str) -> ExitCode {
+fn run_compose(format: Format, intent: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match start::compose_in_repo(&cwd, intent) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -794,22 +792,22 @@ fn run_compose(format: Format, intent: &str) -> ExitCode {
 /// and exits 0; an unknown `<X>` or a blocking gate finding surfaces on stderr
 /// (with its route) and exits non-zero — nothing is emitted past a block, and an
 /// unknown id is rejected before any mint.
-fn run_compose_named(format: Format, intent: &str, workflow: &str) -> ExitCode {
+fn run_compose_named(format: Format, intent: &str, workflow: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match start::compose_named_in_repo(&cwd, intent, workflow) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -822,22 +820,22 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str) -> ExitCode {
 /// (`design/write-commands.md` → Task origination). Renders the composed view on
 /// success (exit 0); a rejection or blocking finding surfaces on stderr (with its
 /// route) and exits non-zero.
-fn run_compose_named_no_intent(format: Format, workflow: &str) -> ExitCode {
+fn run_compose_named_no_intent(format: Format, workflow: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match start::compose_named_no_intent_in_repo(&cwd, workflow) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -849,22 +847,22 @@ fn run_compose_named_no_intent(format: Format, workflow: &str) -> ExitCode {
 /// finding (an orphaned anchor, an unknown workflow) surfaces on stderr (with its
 /// route) and exits non-zero (`design/workflow-dialect.md` → `--explain` output
 /// contract; `design/worked-examples.md` → 3a).
-fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> ExitCode {
+fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match start::compose_explain_in_repo(&cwd, intent, workflow) {
         Ok((tree, pack_label)) => {
             println!("{}", render::explain(format, &tree, &pack_label));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -876,22 +874,22 @@ fn run_explain(format: Format, intent: Option<&str>, workflow: Option<&str>) -> 
 /// was minted (e.g. an in-task ADR) resolves in the composed view. A missing task
 /// or a blocking gate finding surfaces on stderr (with its route) and exits
 /// non-zero.
-fn run_resume(format: Format, id: &str) -> ExitCode {
+fn run_resume(format: Format, id: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match start::resume_in_repo(&cwd, id) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -904,22 +902,22 @@ fn run_resume(format: Format, id: &str) -> ExitCode {
 /// on stderr (with its route) and exits non-zero; an unknown sub-task or a
 /// blocking gate finding likewise surfaces on stderr and exits non-zero
 /// (`design/write-commands.md` → Sub-agent re-entry).
-fn run_reenter(format: Format, workflow: &str, task: &str) -> ExitCode {
+fn run_reenter(format: Format, workflow: &str, task: &str) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match start::reenter_in_repo(&cwd, workflow, task) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -927,22 +925,22 @@ fn run_reenter(format: Format, workflow: &str, task: &str) -> ExitCode {
 /// Run the bare-`start` orientation against the current working directory,
 /// render the structured result through the selected `format`, and print it —
 /// mapping success/failure to the process exit code.
-fn run_orient(format: Format) -> ExitCode {
+fn run_orient(format: Format) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
             eprintln!("cannot determine the current directory: {err}");
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match orient::orient(&cwd) {
         Ok(view) => {
             println!("{}", render::orientation(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }

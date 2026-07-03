@@ -266,6 +266,9 @@ mod tests {
             // finalize.fan-out.squash — the milestone commit-shaping knob (M8),
             // bool, default true (the M7 single-aggregate form).
             ("finalize.fan-out.squash", "true"),
+            // invocation-log — the opt-in in-repo invocation log (M36), bool,
+            // default false (OFF); tunable, no floor.
+            ("invocation-log", "false"),
             // commit-rendering (2, advisory-by-default convention checks).
             (
                 "validation.commit-rendering.line-limit-body.severity",

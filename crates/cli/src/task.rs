@@ -28,6 +28,7 @@
 //! determinism boundary unaffected — the engine carries the data, the CLI formats).
 
 use crate::cli::Format;
+use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
@@ -45,7 +46,7 @@ use engine::validate::validate_task;
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Command, Stdio};
 
 /// The validation-blocked exit code: a blocking-`ValidationReport` /
 /// `plan_finalize`-findings outcome — distinct from an operational error (1) and
@@ -116,7 +117,7 @@ impl TaskCommand {
     /// exit code. `validate` maps a blocking report to a non-zero exit (the gate
     /// preview); `diff` / `discard` exit 0 on success. An orchestration error
     /// surfaces on stderr with a non-zero exit.
-    pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
+    pub fn dispatch(self, cwd: &Path, format: Format) -> Outcome {
         let result = match self {
             TaskCommand::List => run_list(cwd, format),
             TaskCommand::Diff { id } => run_diff(cwd, &id),
@@ -132,10 +133,10 @@ impl TaskCommand {
             TaskCommand::Bind { role, addr, id } => run_bind(cwd, &role, &addr, &id),
         };
         match result {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(()) => Outcome::success(),
             Err(err) => {
                 eprintln!("{}", render::operational_error(format, &err));
-                ExitCode::FAILURE
+                Outcome::failure()
             }
         }
     }
@@ -221,12 +222,12 @@ fn run_diff(cwd: &Path, id: &str) -> Result<()> {
 /// `finalize`: validate previews what finalize blocks on) — a blocking report exits
 /// [`EXIT_VALIDATION_BLOCKED`], an operational error 1. The findings render
 /// through `crate::render::validation` in the selected format.
-fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
+fn run_validate(cwd: &Path, id: &str, format: Format) -> Outcome {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     // The post-sweep record is dropped: a standalone `validate` is a pure reader —
@@ -238,15 +239,16 @@ fn run_validate(cwd: &Path, id: &str, format: Format) -> ExitCode {
             if format != Format::Json {
                 println!();
             }
-            if report.has_blocking() {
-                ExitCode::from(EXIT_VALIDATION_BLOCKED)
+            let code = if report.has_blocking() {
+                EXIT_VALIDATION_BLOCKED
             } else {
-                ExitCode::SUCCESS
-            }
+                0
+            };
+            Outcome::with_findings(code, &report.findings)
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -299,19 +301,19 @@ const COMMIT_TYPE: &str = "commit";
 /// aborts non-zero with git's stderr surfaced and no working-area change. On a successful
 /// commit, run post-commit (advance the file-state hashes, remove the working area) —
 /// best-effort: a failure there is logged, not raised (the commit is already truth).
-fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool, dry_run: bool) -> ExitCode {
+fn run_finalize(cwd: &Path, id: &str, format: Format, approve: bool, dry_run: bool) -> Outcome {
     let task = match TaskArea::resolve(cwd, id) {
         Ok(task) => task,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     match task.finalize(id, format, approve, dry_run) {
-        Ok(code) => code,
+        Ok(outcome) => outcome,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -638,7 +640,7 @@ impl TaskArea {
     /// path and `task validate`. The exit code (0 vs 3) carries pass/block; the report
     /// carries the findings. The agent-text rendering stays a human-oriented diagnostic
     /// on stderr.
-    fn blocked(&self, findings: Vec<Finding>, format: Format) -> Result<ExitCode> {
+    fn blocked(&self, findings: Vec<Finding>, format: Format) -> Result<Outcome> {
         let report = engine::result::ValidationReport::new(findings, &self.severity_cascade()?);
         if format == Format::Json {
             print!("{}", render::validation(format, &report));
@@ -646,7 +648,10 @@ impl TaskArea {
             eprint!("{}", render::validation(format, &report));
             eprintln!();
         }
-        Ok(ExitCode::from(EXIT_VALIDATION_BLOCKED))
+        Ok(Outcome::with_findings(
+            EXIT_VALIDATION_BLOCKED,
+            &report.findings,
+        ))
     }
 
     /// Execute the `finalize` transaction (`design/finalize.md` → 5–7). Returns the
@@ -657,7 +662,7 @@ impl TaskArea {
     /// on a hook/git rejection (git's stderr surfaced, no envelope — not a validation
     /// outcome). An orchestration error (git unavailable, malformed pin) bubbles as
     /// `Err`.
-    fn finalize(&self, id: &str, format: Format, approve: bool, dry_run: bool) -> Result<ExitCode> {
+    fn finalize(&self, id: &str, format: Format, approve: bool, dry_run: bool) -> Result<Outcome> {
         let base = self.base()?;
         let head = git_head(&self.repo_root)?;
         let schemas = self.schemas()?;
@@ -796,7 +801,7 @@ impl TaskArea {
             if format != Format::Json {
                 println!();
             }
-            return Ok(ExitCode::SUCCESS);
+            return Ok(Outcome::success());
         }
 
         if is_migration && !approve {
@@ -820,7 +825,7 @@ impl TaskArea {
             if format != Format::Json {
                 println!();
             }
-            return Ok(ExitCode::from(EXIT_REVIEW_PENDING));
+            return Ok(Outcome::code(EXIT_REVIEW_PENDING));
         }
 
         // Phases 4–7: the shared transactional core — promote + stage + commit +
@@ -891,11 +896,13 @@ impl TaskArea {
                 // T2 — relay any non-blocking hook output the commit produced
                 // (`design/finalize.md` → 6. Commit, success-relay).
                 relay_hook_output(format, &hook_output);
-                Ok(ExitCode::SUCCESS)
+                // A landed commit still surfaces its preflight advisories in the log record
+                // (`design/measurement.md` → item 2: absorb evidence, never swallowed).
+                Ok(Outcome::with_findings(0, &report.findings))
             }
             Err(err) => {
                 eprintln!("{}", render::operational_error(format, &err));
-                Ok(ExitCode::FAILURE)
+                Ok(Outcome::failure())
             }
         }
     }
@@ -1210,7 +1217,7 @@ pub(crate) fn execute_finalize_plan(
     schemas: &BTreeMap<String, Schema>,
     format: Format,
     stage: StagePolicy,
-) -> Result<ExitCode> {
+) -> Result<Outcome> {
     // Map the landed/failed `Result` onto the historic `Ok(ExitCode)` contract the
     // per-task and `squash: true` milestone callers expect (a failure surfaces git's
     // stderr verbatim — through the shared operational-error funnel, so `--format
@@ -1233,11 +1240,11 @@ pub(crate) fn execute_finalize_plan(
         // `design/finalize.md` → 6. Commit, review B1).
         Ok(hook_output) => {
             relay_hook_output(format, &hook_output);
-            Ok(ExitCode::SUCCESS)
+            Ok(Outcome::success())
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            Ok(ExitCode::FAILURE)
+            Ok(Outcome::failure())
         }
     }
 }
@@ -1632,14 +1639,18 @@ fn rollback_promotions(
 /// Ensure `.jigc/.gitignore` ignores the transient subdirs so a `finalize` stage never
 /// commits the working area or the rebuildable caches (`design/storage.md` → repository
 /// layout: `.jigc/` is one home whose `config/` is committed while `tasks/`/`index/`/
-/// `state/`/`milestones/` are gitignored). Idempotent — (re)written only when absent or
-/// not already listing `milestones/` (so an adapter-written `.gitignore` predating the
-/// milestone area is amended once, matching `crate::milestone::ensure_jigc_gitignore`).
+/// `state/`/`milestones/`/`logs/` are gitignored). Idempotent — (re)written only when
+/// absent or not already listing both `milestones/` and `logs/` (so an adapter-written
+/// `.gitignore` predating the milestone area or the M36 invocation log is amended once,
+/// matching `crate::milestone::ensure_jigc_gitignore`).
 fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
-    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\n";
+    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nlogs/\n";
     let path = jigc_root.join(".gitignore");
     let needs_write = match std::fs::read_to_string(&path) {
-        Ok(existing) => !existing.lines().any(|l| l.trim() == "milestones/"),
+        Ok(existing) => {
+            let lines: Vec<&str> = existing.lines().map(str::trim).collect();
+            !lines.contains(&"milestones/") || !lines.contains(&"logs/")
+        }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
         Err(err) => return Err(err).with_context(|| format!("could not read {path:?}")),
     };

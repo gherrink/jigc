@@ -20,6 +20,7 @@
 //! `milestones/`.
 
 use crate::cli::Format;
+use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
 use crate::render;
 use crate::task::git_head;
@@ -36,7 +37,7 @@ use engine::schema::Schema;
 use engine::state::BasePin;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::Command;
 
 /// The default minting workflow for a milestone sub-task when `add-task` /
 /// `add-from-spec` are given no `--workflow <id>`. A sub-task is a `task` work-unit
@@ -136,7 +137,7 @@ impl MilestoneCommand {
     /// process exit code. Success prints a summary on stdout and exits 0; a blocking
     /// finding (serial collision, unknown milestone) surfaces on stderr with its
     /// route and exits non-zero (`design/write-commands.md` → Minting a milestone).
-    pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
+    pub fn dispatch(self, cwd: &Path, format: Format) -> Outcome {
         // The `join` verb reports a `JoinOutcome` (overlay + findings), not a one-line
         // summary, and a same-doc clash is a *blocking finding inside an Ok outcome*
         // (the merge ran, then routed the contention) — so it has its own dispatch arm.
@@ -175,11 +176,11 @@ impl MilestoneCommand {
         match result {
             Ok(summary) => {
                 println!("{}", render::milestone(format, &summary));
-                ExitCode::SUCCESS
+                Outcome::success()
             }
             Err(err) => {
                 eprintln!("{}", render::operational_error(format, &err));
-                ExitCode::FAILURE
+                Outcome::failure()
             }
         }
     }
@@ -501,15 +502,15 @@ fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
 /// stdout, and map it to the exit code. An unknown milestone (no area) or a blocking
 /// compose finding routes to stderr **before** any output and exits non-zero
 /// (`design/write-commands.md` → Executing the milestone).
-fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
+fn dispatch_execute(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     match run_execute(cwd, milestone_id) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -549,12 +550,12 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<engine::compose::Compos
 /// a same-doc clash, an isolation violation — its route also goes to stderr and the
 /// process exits non-zero. The verb **commits nothing** (Increment 4 wires the
 /// suffix-resolved overlay into finalize); a clash leaves the working tree untouched.
-fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
+fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     let outcome = match run_join(cwd, milestone_id) {
         Ok(outcome) => outcome,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            return ExitCode::FAILURE;
+            return Outcome::failure();
         }
     };
     // The merged-overlay summary always prints (the agent reads the suffix/rewrite
@@ -569,15 +570,20 @@ fn dispatch_join(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
         .filter(|f| f.severity == engine::finding::Severity::Blocking)
         .collect();
     if blocking.is_empty() {
-        ExitCode::SUCCESS
+        Outcome::success()
     } else {
+        let mut finding_codes = Vec::with_capacity(blocking.len());
         for finding in blocking {
             eprintln!("{}", finding.message);
             if let Some(route) = &finding.route {
                 eprintln!("  route: {route}");
             }
+            finding_codes.push(finding.code.clone());
         }
-        ExitCode::FAILURE
+        Outcome {
+            code: 1,
+            finding_codes,
+        }
     }
 }
 
@@ -614,12 +620,12 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
 /// same-doc clash, an unknown milestone) or an orchestration error routes to stderr and
 /// exits non-zero **before** any commit. A landed commit prints a summary and exits 0.
 /// `design/finalize.md` → `fan-out` finalize (single-commit form).
-fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode {
+fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Outcome {
     match run_milestone_finalize(cwd, format, milestone_id) {
         Ok(code) => code,
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
@@ -640,7 +646,7 @@ fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> ExitCode
 /// [`crate::task::execute_finalize_plan`] executor promotes, stages, and commits in **one**
 /// boundary, removing the milestone area on success. The engine performs no git; the CLI
 /// reads HEAD and locates `.jigc/`.
-fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Result<ExitCode> {
+fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Result<Outcome> {
     // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); HEAD + the
     // git commit/stage stay on the worktree `repo_root` (M31 Inc 2 / WF3). The promote
     // transaction (`try_execute_finalize_plan` / `execute_finalize_plan`) is kept on
@@ -722,7 +728,10 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
                 // The same outcome class as the task-finalize planner block: a
                 // `plan_*_finalize`-findings block is a validation outcome, exit 3
                 // (`design/measurement.md` → The capture substrate, item 2).
-                return Ok(ExitCode::from(crate::task::EXIT_VALIDATION_BLOCKED));
+                return Ok(Outcome::with_findings(
+                    crate::task::EXIT_VALIDATION_BLOCKED,
+                    &findings,
+                ));
             }
         };
 
@@ -784,7 +793,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
                 // Tear down the fan-out worktrees the provision verb laid down (the heavier
                 // A2 teardown — a non-blocking warning on a leaked worktree, never a block).
                 remove_worktrees(&repo_root, &jigc_home, &list);
-                Ok(ExitCode::SUCCESS)
+                Ok(Outcome::success())
             }
             // The chain was aborted (a per-sub-task or the aggregate hook rejection). The
             // chain built every commit in a dedicated worktree and never fast-forwarded main,
@@ -795,7 +804,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             Err(err) => {
                 remove_worktrees(&repo_root, &jigc_home, &list);
                 eprintln!("{}", render::operational_error(format, &err));
-                Ok(ExitCode::FAILURE)
+                Ok(Outcome::failure())
             }
         }
     } else {
@@ -820,7 +829,7 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         // On a landed commit, clean up the per-sub-task working areas too (the executor only
         // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves
         // the areas intact for retry.
-        if code == ExitCode::SUCCESS {
+        if code.code == 0 {
             cleanup_subtask_areas(&jigc_root, &list);
             // Tear down the fan-out worktrees on the landed default-path commit too (the
             // heavier A2 teardown — a non-blocking warning on a leaked worktree).
@@ -1004,16 +1013,20 @@ fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
 /// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including
 /// `milestones/` and the fan-out `worktrees/` (`design/storage.md` → repository layout;
 /// `DECISIONS.md` 2026-06-04 → `milestones/` gitignored like `tasks/`; `DECISIONS.md`
-/// 2026-06-21 → M31 Inc 3 adds `worktrees/`). Idempotent — the file is (re)written only
-/// when it is absent or does not already list **both** `milestones/` and `worktrees/`,
-/// so an adapter-written `.gitignore` (which predates either) is amended once.
+/// 2026-06-21 → M31 Inc 3 adds `worktrees/`; M36 adds `logs/`). Idempotent — the file is
+/// (re)written only when it is absent or does not already list **all** of `milestones/`,
+/// `worktrees/`, and `logs/`, so an adapter-written `.gitignore` (which predates any) is
+/// amended once. Carrying `logs/` in this ENTRIES set keeps a milestone rewrite from
+/// clobbering the M36 invocation-log ignore the setup gitignore already landed.
 fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
-    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\n";
+    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\n";
     let path = jigc_root.join(".gitignore");
     let needs_write = match std::fs::read_to_string(&path) {
         Ok(existing) => {
             let lines: Vec<&str> = existing.lines().map(str::trim).collect();
-            !lines.contains(&"milestones/") || !lines.contains(&"worktrees/")
+            !lines.contains(&"milestones/")
+                || !lines.contains(&"worktrees/")
+                || !lines.contains(&"logs/")
         }
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
         Err(err) => return Err(err).with_context(|| format!("could not read {path:?}")),

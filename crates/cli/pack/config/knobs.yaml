@@ -43,6 +43,17 @@ finalize.fan-out.squash:
   type: bool
   default: "true"
 
+# --- invocation-log — the opt-in in-repo invocation log (M36) ---
+# When `true`, one JSONL record `{timestamp, argv, exit_code, duration_ms,
+# finding_codes}` is appended per `jigc` invocation to the gitignored
+# `.jigc/logs/invocations.jsonl` — a jigc-side friction/failure log so a real
+# external-repo RC run yields analyzable in-repo data. Default OFF (safe for an
+# adopter who didn't ask to be logged; the RC-trial protocol turns it on). A
+# tunable knob (no floor). See measurement.md → The in-repo invocation log.
+invocation-log:
+  type: bool
+  default: "false"
+
 # --- per-probe severity defaults (M4, retained — additive) ---
 validation.workflow-refs.severity:
   type: enum

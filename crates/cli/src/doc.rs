@@ -14,6 +14,7 @@
 //! agent acts on next, surfaced per the settled block-payload envelope).
 
 use crate::cli::Format;
+use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
 use crate::render;
 use anyhow::{Context, Result, bail};
@@ -31,7 +32,6 @@ use engine::write::{
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::process::ExitCode;
 
 /// The `jigc doc <verb>` subcommand tree. Each verb addresses a managed doc in
 /// the active task's working area.
@@ -153,7 +153,7 @@ impl DocCommand {
     /// blocking [`Finding`] to a non-zero exit — rendered through `--format` (JSON
     /// envelope under `--format json`, the located message + route otherwise) — and
     /// an orchestration error to stderr through the shared operational-error funnel.
-    pub fn dispatch(self, cwd: &Path, format: Format) -> ExitCode {
+    pub fn dispatch(self, cwd: &Path, format: Format) -> Outcome {
         let result = match self {
             DocCommand::Create {
                 r#type,
@@ -181,7 +181,7 @@ impl DocCommand {
             } => run_author(cwd, &doctype, &from_file, task.as_deref()),
         };
         match result {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(()) => Outcome::success(),
             Err(DocFailure::Block(finding)) => {
                 // The write-time block is not an inventory check, so the severity
                 // post-pass is a no-op over it; a no-delta cascade keeps it byte-identical.
@@ -189,7 +189,7 @@ impl DocCommand {
                     Ok(resolved) => resolved,
                     Err(err) => {
                         eprintln!("{}", render::operational_error(format, &err));
-                        return ExitCode::FAILURE;
+                        return Outcome::failure();
                     }
                 };
                 let report = engine::result::ValidationReport::new(vec![finding], &resolved);
@@ -197,11 +197,11 @@ impl DocCommand {
                 if format != Format::Json {
                     eprintln!();
                 }
-                ExitCode::FAILURE
+                Outcome::with_findings(1, &report.findings)
             }
             Err(DocFailure::Orchestration(err)) => {
                 eprintln!("{}", render::operational_error(format, &err));
-                ExitCode::FAILURE
+                Outcome::failure()
             }
         }
     }

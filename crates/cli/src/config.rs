@@ -22,6 +22,7 @@
 //! whole-cascade consequences (cycles, orphaning) surface later at resolution
 //! through `workflow-refs`.
 
+use crate::invocation_log::Outcome;
 use crate::pack::make_pack;
 use anyhow::{Context, Result, bail};
 use engine::cascade::{
@@ -31,7 +32,6 @@ use engine::field_block::Value;
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 /// The `jigc config <verb>` subcommand tree — `set`, the structural-op verbs
 /// `insert-step` / `replace-step` / `remove-step`, the `fill` verb, and `fork`.
@@ -130,7 +130,7 @@ impl ConfigCommand {
     /// its route) through the shared operational-error funnel — `{"error": …}`
     /// under `--format json`, the plain `{err:#}` bytes otherwise — and exits
     /// non-zero; a clean write exits 0.
-    pub fn dispatch(self, cwd: &Path, format: crate::cli::Format) -> ExitCode {
+    pub fn dispatch(self, cwd: &Path, format: crate::cli::Format) -> Outcome {
         let result = match self {
             ConfigCommand::Set { key, value } => run_set(cwd, &key, &value),
             ConfigCommand::InsertStep {
@@ -145,10 +145,10 @@ impl ConfigCommand {
             ConfigCommand::Fork { target } => run_fork(cwd, &target),
         };
         match result {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(()) => Outcome::success(),
             Err(err) => {
                 eprintln!("{}", crate::render::operational_error(format, &err));
-                ExitCode::FAILURE
+                Outcome::failure()
             }
         }
     }

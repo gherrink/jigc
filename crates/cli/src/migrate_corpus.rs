@@ -44,6 +44,7 @@
 //! (Framing A); the agent authors it through the write verbs and re-runs the migration.
 
 use crate::cli::Format;
+use crate::invocation_log::Outcome;
 use crate::pack;
 use crate::render;
 use anyhow::{Context, Result};
@@ -53,7 +54,6 @@ use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
 use engine::transform::{CorpusDoc, CorpusMigration, DocOutcome, migrate_corpus};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
 
 /// One doctype's migration job: its current shape (`to`, stamp-injected) and its current
 /// manifest schema-version (the value the stamp is filled/bumped to + the "already current"
@@ -88,15 +88,15 @@ pub struct CorpusMigrationReport {
 /// corpus, render the report through `format`, and print it. A clean run (even with blocked
 /// docs routed to the agent) exits 0 — the migration writes; blocked docs are an expected
 /// interim state, not a failure. A locator error routes to stderr and exits non-zero.
-pub fn run(cwd: &Path, format: Format) -> ExitCode {
+pub fn run(cwd: &Path, format: Format) -> Outcome {
     match migrate_in_repo(cwd) {
         Ok(report) => {
             println!("{}", render::corpus_migration(format, &report));
-            ExitCode::SUCCESS
+            Outcome::success()
         }
         Err(err) => {
             eprintln!("{}", render::operational_error(format, &err));
-            ExitCode::FAILURE
+            Outcome::failure()
         }
     }
 }
