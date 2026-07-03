@@ -1,0 +1,37 @@
+name: CI
+
+# Internal-only: the four-command dev-workflow gate on every push and PR.
+# No external publish (M36 F4) — no crates.io / npm / release step.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: dev-workflow gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # rustup honors ./rust-toolchain.toml (channel 1.95.0 + rustfmt, clippy),
+      # so the pinned stable toolchain installs on first cargo invocation.
+      - name: Show toolchain
+        run: cargo --version && rustc --version
+
+      - name: cargo fmt --check
+        run: cargo fmt --check
+
+      - name: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo build
+        run: cargo build
+
+      # No artificial per-test timeout: the flow13 suites shell out to a nested
+      # `cargo build` for the doc-code probe (~30s), which must run to completion.
+      - name: cargo test
+        run: cargo test
