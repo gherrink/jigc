@@ -1910,3 +1910,18 @@ Cut 2026-07-03 via the [milestone-planning workflow](milestone-planning-workflow
 ### Status
 
 **Complete 2026-07-03.** Built + independently audited clean via `milestone-build` (5 increments, zero fix rounds during the build; milestone-completion audit = e2e 13/13 PASS + code-review 1 LOW, both audit findings auto-fixed `bad6000`/`7454b00`). Version **1.0.0-rc.1** shipped; gate green (1473 tests, 0 failed). The owed checkpoint-cannot-reach-fan-out verification is discharged (→ pack-authoring rule in [workflow-dialect.md](../design/workflow-dialect.md)). Full record: [DECISIONS.md](../DECISIONS.md) → 2026-07-03 M36 completion. **Next: the two RC trials** (greenfield + adoption) run in the driving session.
+
+## M37 · the design-altitude trio — `vision` + `idea` + `research` doctypes (methodology pack)
+
+**Created 2026-07-03** — the purpose map's first driver arrival ([doctype-map.md](doctype-map.md) → The purpose map; [DECISIONS.md](../DECISIONS.md) → 2026-07-03 M37 charter). **The driver:** the human's own working practice, about to be exercised by the greenfield RC trial — research feeds vision-forming, the vision is what later work compares against, and shaped-but-unscheduled directions park as ideas. Until now that altitude lived as unmanaged house convention (this repo's VISION.md / ideas/); M37 makes it a managed, composable surface for any project.
+
+**Scope shape:** expected **pack-only, zero engine change** (the changelog/M22 precedent minus the engine lifts — singleton, repeatable sections, optional slots, on-create dates, refs + inverse edges all exist). Three schemas + their driving workflows in the **methodology pack** (human call: vision-forming is how-you-work, not code-specific — and pack-local edges avoid the recorded unexercised cross-pack surface; bonus: methodology doctypes sit outside the frozen-v1 gate, so no version machinery is touched):
+
+- **`vision`** — singleton, living reference: thesis/invariants/open-questions surfaces + a **`grounded-in → research` ref (0..*, with inverse)** — the "what I compare against" anchor, as a plain edge (ref-resolves validated; the hash-pinned staleness semantics stay parked in [derived-doc-staleness](../ideas/derived-doc-staleness.md)).
+- **`idea`** — one per doc: shape prose + de-park trigger, minted by a lightweight `park-idea` workflow (the `decided-task` grain — parking must cost less than losing the thought).
+- **`research`** — append-only record: question/findings/sources surfaces, authored standalone or in the vision-forming flow.
+- **Driving workflows** — the earn-with-creator rule: a vision-forming workflow (research → author-vision, `allows-create: [vision, research]`) + `park-idea`; exact cut at planning.
+
+**Planning must settle (flagged, not settled here):** the vision-forming workflow's shape (one flow with research create-gate vs. two); `vision`'s location under docs-root vs. the root-`VISION.md` ecosystem idiom (the changelog precedent says managed-home-under-docs-root with a root render as the parked sink pattern — confirm it transfers); whether `vision —tracks→ idea` mechanizes the open-questions index or stays prose (lean: prose at v1); `idea` de-park trigger as slot vs. enum-status field; whether `park-idea` is router-selectable or off-router.
+
+**Proves:** the purpose map's earn-from-driver loop works end-to-end (survey → driver arrives → doctype ships with its creator), and the greenfield RC trial runs at the full altitude the human actually works at — execution *and* design. **Then:** rc.2, and the trials.
