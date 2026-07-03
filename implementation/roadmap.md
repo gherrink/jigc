@@ -1909,4 +1909,4 @@ Cut 2026-07-03 via the [milestone-planning workflow](milestone-planning-workflow
 
 ### Status
 
-Planned 2026-07-03; not yet built. Hand off to `milestone-build` (base = the planning-commit HEAD).
+**Complete 2026-07-03.** Built + independently audited clean via `milestone-build` (5 increments, zero fix rounds during the build; milestone-completion audit = e2e 13/13 PASS + code-review 1 LOW, both audit findings auto-fixed `bad6000`/`7454b00`). Version **1.0.0-rc.1** shipped; gate green (1473 tests, 0 failed). The owed checkpoint-cannot-reach-fan-out verification is discharged (→ pack-authoring rule in [workflow-dialect.md](../design/workflow-dialect.md)). Full record: [DECISIONS.md](../DECISIONS.md) → 2026-07-03 M36 completion. **Next: the two RC trials** (greenfield + adoption) run in the driving session.
