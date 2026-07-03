@@ -707,6 +707,33 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     if let Some(finding) = crate::setup::binary_mismatch_finding(&jigc_home) {
         report.findings.push(finding);
     }
+
+    // docs-root orphan advisory (M36, `design/validation.md` → Orphan detection): a
+    // committed `.md` stranded outside the resolved doctype roots after a `docs-root`
+    // re-point. The engine's file-state twin only sees docs it has a `FileStateRecord`
+    // for; this fills the coverage hole by enumerating `git ls-files` (committed truth
+    // that survives a fresh clone) matched on the location-directory basename — never a
+    // bare `.md` match (`README.md` stays unflagged). Report-only + **un-keyed**:
+    // `(file-state, orphaned-doc)` is not a `CHECK_INVENTORY` row and does not match
+    // `validation_store_exit_flips`, so the exit stays 0. CLI-side because the engine
+    // ships domain-empty and never shells to git for tracked status.
+    for rel in crate::orphan::orphaned_docs(&jigc_home, schemas.values()) {
+        report.findings.push(engine::finding::Finding::graded(
+            engine::finding::Severity::Advisory,
+            "file-state.orphaned-doc",
+            format!(
+                "committed doc `{rel}` sits outside the resolved doctype roots — a \
+                 `docs-root` change likely stranded it (it looks managed but resolves \
+                 under no doctype location)"
+            ),
+            Some(engine::finding::Location::addressed(rel, 1, 1)),
+            Some(
+                "move it under the current resolved root (re-point `docs-root` to cover \
+                 it) or drop it with `jigc unmanage`"
+                    .to_string(),
+            ),
+        ));
+    }
     Ok(report)
 }
 

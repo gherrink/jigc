@@ -201,8 +201,64 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
         )));
     }
 
+    // docs-root orphan warning (M36): re-pointing the managed-doc parent strands every
+    // committed doc under the *prior* resolved root. Warn (naming them) + route BEFORE the
+    // knob lands so the operator can move them or re-point back. This is `run_set`'s first
+    // read of the committed doc surface — a net-new store-access seam that resolves the
+    // *current* cascade and enumerates `git ls-files`, comparing the old resolved root
+    // against the new value (`design/storage.md` → docs-root; `design/validation.md` →
+    // Orphan detection). Best-effort: it never fails the write (the config still lands).
+    if key == "docs-root" {
+        warn_if_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
+    }
+
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
     write_scalar(&project_config, key, value)
+}
+
+/// Warn on stderr (never failing the write) when a `docs-root` re-point to `new_value`
+/// would strand committed docs under the prior resolved root. Resolves the *current*
+/// cascade (its `docs-root` is the old root) + its schemas, then delegates the enumeration
+/// to [`crate::orphan::docs_root_would_orphan`]. A resolution or store-access hiccup is
+/// swallowed — the warning is advisory and must never block a legitimate config edit.
+fn warn_if_docs_root_repoint_orphans(
+    pack: &dyn PackSource,
+    project_config: &Path,
+    new_value: &str,
+) {
+    let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
+        return;
+    };
+    let old_docs_root = resolved.scalar("docs-root").unwrap_or("").to_string();
+    let defs = crate::start::CascadeDefs::new(&resolved, project_config);
+    let Ok(old_schemas) = defs.all_schemas(pack) else {
+        return;
+    };
+    // `<repo>/.jigc/config` → the repo root the committed docs (and `git ls-files`) live at.
+    let Some(repo_root) = project_config.parent().and_then(Path::parent) else {
+        return;
+    };
+    let orphaned = crate::orphan::docs_root_would_orphan(
+        repo_root,
+        old_schemas.values(),
+        &old_docs_root,
+        new_value,
+    );
+    if orphaned.is_empty() {
+        return;
+    }
+    eprintln!(
+        "warning: re-pointing `docs-root` to `{new_value}` would orphan {} committed doc(s) \
+         under the prior root:",
+        orphaned.len()
+    );
+    for rel in &orphaned {
+        eprintln!("  - {rel}");
+    }
+    eprintln!(
+        "  route: move them under the new root (or re-point `docs-root` back), or drop each \
+         with `jigc unmanage`, then re-run"
+    );
 }
 
 /// `jigc config insert-step --workflow <id> (--after|--before) <step-id> <file>` —

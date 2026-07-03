@@ -20,6 +20,7 @@ mod migrate;
 mod migrate_corpus;
 mod milestone;
 mod orient;
+mod orphan;
 mod pack;
 mod rename;
 mod render;
