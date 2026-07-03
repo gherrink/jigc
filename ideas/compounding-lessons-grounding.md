@@ -13,3 +13,5 @@ Overlap flag: the *recording* half may be absorbed by the methodology pack's doc
 ## Trigger
 
 The methodology pack in real dogfood accumulates enough recurring lessons that manually threading them into prompts stops scaling.
+
+*Doctype mapped 2026-07-03: this idea is the driver that earns the `lesson` doctype — row in [doctype-map](../implementation/doctype-map.md) → The purpose map.*

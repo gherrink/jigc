@@ -71,3 +71,5 @@ separate weaker tier.
   "refreshed" in the record?
 - **Which pack ships the `research` doctype** (methodology? a new domain pack?), and what its
   schema needs beyond title + prose + citable sections.
+
+*Doctype mapped 2026-07-03: the pack-level `research`/provenance doctype half of this idea is indexed in [doctype-map](../implementation/doctype-map.md) → The purpose map.*

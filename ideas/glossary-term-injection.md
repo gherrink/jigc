@@ -13,3 +13,5 @@ Sits beside, not inside, [output-language-directives](output-language-directives
 ## Trigger
 
 A domain-heavy pack or a client-deliverable workflow lands where terminology consistency matters.
+
+*Doctype mapped 2026-07-03: this idea is the driver that earns the `glossary` doctype — row in [doctype-map](../implementation/doctype-map.md) → The purpose map.*

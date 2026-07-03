@@ -67,6 +67,27 @@ Settled at the doctype-expansion milestone's planning (2026-06-14): **build `cha
 | `release-notes` | **out** (fold into `changelog`) | duplicates `changelog`'s release prose unless a distinct-audience driver proves otherwise |
 | `README` | **out (charter-locked)** | bespoke front-page prose, no schema-able recurring structure, no composing workflow — the canonical "no schema to earn" |
 
+## The purpose map — the doc-purpose survey (2026-07-03, KB-informed)
+
+Extends the candidate table above from "files a project might want" to a **complete purpose survey**, so no doc-purpose is ever un-thought-of again — sourced from the human's project-structure KB (the sanctioned meta-file set + the three-class lifecycle: *append-only record / living reference / ephemeral*, plus jigc's fourth class, *generated*) crossed against jigc's shipped coverage ([DECISIONS.md](../DECISIONS.md) → 2026-07-03 The purpose map). The governing law is the table's own rule restated in the KB's terms: **no trigger, no file ≡ no driver, no doctype** — purposes are *mapped* here; a schema is built only when its driving workflow arrives.
+
+**Naming principle (binds every future doctype):** doc and doctype names follow **common ecosystem use** — the name an AI (and a newcomer) already knows from training distribution and convention, never a house invention. Names are the API agents discover by (KB `one-name-per-purpose`; research: training-distribution fluency). When two common names compete, pick the one with the cleaner ecosystem semantics — adjudicated case: **`runbook` over `PLAYBOOK`** ("playbook" pattern-matches to Ansible playbooks; "runbook" is the unambiguous ops-procedure term), superseding the KB's sanctioned name for jigc's purposes.
+
+**Already covered** (purpose → shipped doctype): decisions → `adr` (dev) + `decisions-log` (methodology) · roadmap → `roadmap` · plans/milestone results → `spec` + `completion-record` · architecture → `arch-doc` · changelog → `changelog` (root render parked in [ideas/root-changelog-render.md](../ideas/root-changelog-render.md)) · agent router + secrets `.gitignore` → **generated** by `jigc setup` (class 4 — never LLM-authored).
+
+**Mapped — map-only, driver named** (each earns its schema when its driver is built):
+
+| Purpose | Class | Driver that earns it | Pack home |
+|---|---|---|---|
+| `vision` — charter: thesis, invariants, open-questions index | living reference | a real project's design altitude asks for it (the greenfield RC trial is the first test); `prd` covers product intent, not invariants | dev |
+| `idea` — one shaped-but-unscheduled direction + de-park trigger | living reference (one per file) | a project parks its first shaped direction; kin to `deferral-ledger` (owed decisions ≠ shaped directions) | methodology |
+| `lesson` — dated log of what runs taught | append-only record | the parked [compounding-lessons-grounding](../ideas/compounding-lessons-grounding.md) read-path — doctype and consumer earn together | methodology |
+| `glossary` — domain terms, one fixed meaning each | living reference | the parked [glossary-term-injection](../ideas/glossary-term-injection.md) composition | dev |
+| `research` — provenance doc (what a doc was distilled from) | append-only record | already shaped inside [derived-doc-staleness](../ideas/derived-doc-staleness.md) — that idea owns it; this row is the pointer | dev |
+| `runbook` — ops procedures, symptom→fix | living reference | *(row above, unchanged — restated here only for the name adjudication)* | dev |
+
+**Deliberate outs** (recorded so the question doesn't reopen; each engages its why): **`handover`** — the KB's own charter-locked ruling: handover is session output, never a stored file; sanctioning it invites the stored-handover rot the ruling abolished. **`TODO`/backlog** — jigc's work-unit model (`milestone > increment > task`) + `roadmap` own the committed side; a scratch backlog has no authoring judgment and no composing workflow — stays a plain unmanaged file, by design (settled 2026-07-03). **Design part-docs** — long-form bespoke design prose; the *decisions* live in `adr`/`decisions-log`, the *current truth* in `arch-doc`; no recurring schema to earn (settled 2026-07-03). **Evidence dossier** (WHY-X) — bespoke advocacy prose. `README`/`LICENSE`/`SECURITY` etc. stay charter-locked out per the table above.
+
 ## Unsettled
 
 - **`changelog` driver — settled at the doctype-expansion milestone's planning (2026-06-14).** A standalone `record-change` workflow (off-router authoring spine) + a `single-task` `allows-create` fold-in, both dev-pack-local; schema earned there ([changelog.md](../design/changelog.md)). Edge-free (a changelog→commit edge fails — `commit` is transient). The milestone builds the four engine lifts the faithful shape earns.
