@@ -1280,6 +1280,11 @@ sections:
                     ..Default::default()
                 },
                 SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
                     id: "consequences".to_string(),
                     slot: Some("Each service drops its local limiter.".to_string()),
                     ..Default::default()

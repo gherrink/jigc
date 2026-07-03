@@ -375,6 +375,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps session lookups sub-millisecond and avoids a
 network hop; acceptable because sessions are cheap to reconstruct on a cold node.
@@ -559,6 +562,11 @@ mod prop_tests {
                     SectionContent {
                         id: "context".to_string(),
                         slot: Some(context.clone()),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "options".to_string(),
+                        slot: Some("Alternatives were weighed and rejected.".to_string()),
                         ..Default::default()
                     },
                     SectionContent {

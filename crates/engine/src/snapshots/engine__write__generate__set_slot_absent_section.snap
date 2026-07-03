@@ -13,6 +13,10 @@ date: 2026-05-23
 
 Per-client limits were enforced ad hoc.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Adopt a token bucket per client.

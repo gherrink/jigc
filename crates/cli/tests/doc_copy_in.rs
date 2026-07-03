@@ -101,7 +101,7 @@ fn run_doc(repo: &Path, home: &Path, args: &[&str], stdin: Option<&[u8]>) -> std
 
 /// The committed ADR body that gets copied in on first touch. Canonical form
 /// (`write::render` of an ADR), so a first-touch copy-in is byte-stable.
-const COMMITTED_ADR: &str = "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# Single-node cache\n\n## Context\n\nForces.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n";
+const COMMITTED_ADR: &str = "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# Single-node cache\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n";
 
 /// Initialize a git repo with one commit + the `.jigc/config/` project layer +
 /// a committed ADR at `docs/decisions/single-node-cache.md`.

@@ -126,7 +126,7 @@ fn expect_ok(out: &std::process::Output, what: &str) {
 /// sub-area edits (distinct slug per area, so no same-doc clash).
 fn adr_plain(title: &str) -> String {
     format!(
-        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+        "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
     )
 }
 

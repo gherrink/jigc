@@ -303,6 +303,10 @@ Deprecated
 
 The first product needed a relational datastore with familiar operations.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 We will use MySQL as the primary datastore.
@@ -344,6 +348,10 @@ Accepted
 ## Context
 
 We outgrew MySQL's operational story and want stronger consistency guarantees.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 

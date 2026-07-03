@@ -125,7 +125,7 @@ fn expect_ok(out: &std::process::Output, what: &str) {
 /// copy-in is byte-stable. Committed at `docs/decisions/<slug>.md`.
 fn committed_adr(title: &str) -> String {
     format!(
-        "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n"
+        "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nThe ORIGINAL committed decision prose.\n\n## Consequences\n\nNone.\n"
     )
 }
 

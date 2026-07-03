@@ -608,7 +608,7 @@ fn non_singleton_create_over_a_committed_slug_stays_mint_or_reject() {
     fs::write(
         repo.path().join("decisions").join("single-node-cache.md"),
         "---\nstatus: accepted\ndate: 2026-05-23\n---\n\n# Single-node cache\n\n\
-         ## Context\n\nForces.\n\n## Decision\n\nThe ORIGINAL committed decision.\n\n\
+         ## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nThe ORIGINAL committed decision.\n\n\
          ## Consequences\n\nNone.\n",
     )
     .expect("write committed adr");

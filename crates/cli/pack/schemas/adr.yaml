@@ -22,6 +22,8 @@ sections:
       - { id: cites-code, type: code-anchor }
   - id: context
     slot: { hint: "Why a decision was needed — the forces at play." }
+  - id: options
+    slot: { optional: true, hint: "Alternatives weighed and why they lost — omit when the call was obvious." }
   - id: decision
     slot: { hint: "What we decided, in a sentence or two." }
   - id: consequences

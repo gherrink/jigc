@@ -137,6 +137,10 @@ schema-version: 1
 
 Lookups must stay fast.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Cache on one node.
@@ -161,6 +165,10 @@ schema-version: 1
 
 The single node is a bottleneck.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Revisit the caching approach.
@@ -183,6 +191,10 @@ schema-version: 1
 ## Context
 
 Context.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 
@@ -833,6 +845,10 @@ schema-version: 1
 ## Context
 
 This decision supersedes one that was never committed.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 

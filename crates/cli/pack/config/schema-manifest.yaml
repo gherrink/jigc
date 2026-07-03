@@ -23,8 +23,8 @@ doctypes:
     schema-version: 1
     schema-hash: 4d5a657475ddb4338d99d152ed3fe546374b0db18cb7164131ed5060245f3071
   - type: adr
-    schema-version: 1
-    schema-hash: 31c47a818a3ca5fb3fc0b82cabe195226c5fd65fa3e1bd58328995e0e6e369f2
+    schema-version: 2
+    schema-hash: 18e0bd54954849dbe446c9441316c819faccb85b321d5ca909e56d15bea31405
   - type: spec
     schema-version: 1
     schema-hash: 48d3a0c0df8d8d8bea894ca7792f8b198236548bca7ab65004a0a67c31d7cb51

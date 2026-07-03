@@ -132,6 +132,37 @@ fn build_fixture_pack(pack_dir: &Path) {
     let snaps_dst = pack_dir.join("schema-snapshots");
     copy_dir_all(&snaps_src, &snaps_dst);
 
+    // Pin this fixture's **current** `adr` shape to the pre-M36 no-`options` `supersedes: 0..*`
+    // form. The real shipped adr is now v2-with-`options` (M36 inc-3), but flow36's synthetic
+    // scenario is the *widened-cardinality* secondary — a byte-inert `0..1 -> 0..*` migration —
+    // so its `adr` current shape must stay optionless to keep that migration byte-identical
+    // except the stamp bump. The real options-slot v1->v2 migration is proven by T3's own flow,
+    // over the embedded `adr.v1` snapshot; this test stays decoupled from it.
+    let adr_no_options = "\
+type: adr
+location: decisions/
+id-from: title
+description: A dated architectural decision record, capturing the context a choice was made in, the choice itself, and its consequences, with an optional link to the decision it supersedes.
+usage: a choice is worth preserving with its rationale, so a later reader can recover why the call was made or supersede it on the record.
+
+sections:
+  - id: status
+    header: true
+    fields:
+      - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
+      - { id: date, type: date, set: on-create }
+      - { id: supersedes, type: ref, to: adr, card: \"0..*\", inverse: superseded-by }
+      - { id: cites-code, type: code-anchor }
+  - id: context
+    slot: { hint: \"Why a decision was needed — the forces at play.\" }
+  - id: decision
+    slot: { hint: \"What we decided, in a sentence or two.\" }
+  - id: consequences
+    slot: { hint: \"Tradeoffs and follow-on effects.\" }
+";
+    fs::write(pack_dir.join("schemas").join("adr.yaml"), adr_no_options)
+        .expect("overlay the no-options adr schema into the fixture pack");
+
     // Bump `prd` and `adr` to manifest version 2 (every other doctype stays v1). Each
     // `- type: <name>` block is unique, so the targeted version-line replacement is
     // unambiguous; the real hashes are preserved (defensive — they are simply unread here).

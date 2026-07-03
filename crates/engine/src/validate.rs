@@ -3021,6 +3021,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps session lookups sub-millisecond.
 
@@ -3043,6 +3046,9 @@ supersedes: {to}
 
 ## Context
 A single node is a single point of failure.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Replicate the session cache across nodes.
@@ -3072,6 +3078,9 @@ date: 2026-05-24
 
 ## Context
 Routing must spread session load evenly.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 A round-robin router spreads session load across nodes.
@@ -3806,6 +3815,9 @@ cites-code: crates/engine/src/validate.rs#validate_task
 ## Context
 Forces.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Decided.
 
@@ -3826,6 +3838,9 @@ cites-code: crates/engine/src/validate.rs#vanished_symbol
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Decided.
@@ -4206,6 +4221,9 @@ supersedes: {to}
 ## Context
 A single node is a single point of failure.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Replicate the session cache across nodes.
 
@@ -4467,6 +4485,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps session lookups sub-millisecond.
 
@@ -4497,6 +4518,8 @@ sections:
       - { id: owner, type: string }
   - id: context
     slot: { hint: Forces. }
+  - id: options
+    slot: { optional: true, hint: Alternatives. }
   - id: decision
     slot: { hint: What. }
   - id: consequences
@@ -4615,6 +4638,9 @@ schema-version: 0
 ## Context
 Forces.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Decided.
 
@@ -4636,6 +4662,9 @@ schema-version: 1
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Decided.
@@ -4742,6 +4771,9 @@ date: 2026-05-23
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Decided.
@@ -4872,7 +4904,7 @@ Effects.
     fn adr_citing(anchor: &str) -> String {
         format!(
             "---\nstatus: accepted\ndate: 2026-05-23\ncites-code: {anchor}\n---\n\n\
-             # Cited decision\n\n## Context\nForces.\n\n## Decision\nDecided.\n\n\
+             # Cited decision\n\n## Context\nForces.\n\n## Options\nAlternatives were weighed and rejected.\n\n## Decision\nDecided.\n\n\
              ## Consequences\nEffects.\n"
         )
     }

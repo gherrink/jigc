@@ -192,6 +192,9 @@ fn adr_body(title: &str, context: &str, decision: &str) -> String {
          \n\
          {context}\n\
          \n\
+         ## Options\n\
+         Alternatives were weighed and rejected.\n\
+         \n\
          ## Decision\n\
          \n\
          {decision}\n\

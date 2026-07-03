@@ -1282,18 +1282,34 @@ sections:
         );
     }
 
-    /// (M22 inc-3 T1, done-criterion (iv)) The shipped `adr` schema loads
-    /// byte-identically after this additive flag lands: its serialized projection is
-    /// unchanged (no `optional` key leaks in), since `adr` declares no optional
-    /// slot/field. The skip-on-false guard, proven over the bytes that ship.
+    /// (M36 inc-3) The shipped `adr` schema declares the **optional** `options` slot
+    /// section — the v1→v2 shape change (`design/document-type-schema.md` → the options
+    /// slot + the optional-slot exemption). It sits after `context` and before `decision`,
+    /// and its slot is flagged `optional: true` (the first optional slot on a persisted
+    /// doctype). Proven over the bytes that ship.
     #[test]
-    fn shipped_adr_serializes_without_an_optional_key() {
+    fn shipped_adr_declares_the_optional_options_section() {
         let schema =
             load_schema_with_types(ADR_YAML, &dev_pack_field_types()).expect("adr.yaml loads");
-        let json = serde_json::to_string(&schema).expect("serializes");
+        let options = schema
+            .sections
+            .iter()
+            .find(|s| s.id == "options")
+            .expect("the shipped adr declares an `options` section");
+        let SectionBody::Simple { slot, .. } = &options.body else {
+            panic!("options is a simple slot section");
+        };
         assert!(
-            !json.contains("\"optional\""),
-            "the shipped adr gains no `optional` key (skip-on-false); got {json}",
+            slot.as_ref().expect("options carries a slot").optional,
+            "the shipped adr `options` slot is optional",
+        );
+        let ids: Vec<&str> = schema.sections.iter().map(|s| s.id.as_str()).collect();
+        let ctx = ids.iter().position(|&s| s == "context").expect("context");
+        let opt = ids.iter().position(|&s| s == "options").expect("options");
+        let dec = ids.iter().position(|&s| s == "decision").expect("decision");
+        assert!(
+            ctx < opt && opt < dec,
+            "the options section sits between context and decision: {ids:?}",
         );
     }
 

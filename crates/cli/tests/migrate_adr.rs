@@ -262,6 +262,10 @@ Accepted
 
 We need a relational database with strong consistency.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 We will use PostgreSQL as the primary datastore.
@@ -423,6 +427,10 @@ Rejected
 
 We considered a queue.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 We will not add one.
@@ -501,6 +509,10 @@ Deprecated
 ## Context
 
 The team is small.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 
@@ -723,6 +735,10 @@ Accepted
 ## Context
 
 We need a fast cache.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 

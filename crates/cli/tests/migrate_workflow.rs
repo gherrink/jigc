@@ -218,6 +218,9 @@ Accepted
 We need a relational store with strong consistency guarantees and mature tooling,
 superseding the earlier key-value sketch in ADR 0001.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 We will use PostgreSQL 15 as the primary data store for the service.
 

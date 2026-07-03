@@ -149,16 +149,17 @@ fn setup_repo(repo: &Path, home: &Path) {
     assert_ok(&out, "`jigc setup`");
 }
 
-/// A conformant `adr` body under the **pack** adr schema (status/date header + the three
-/// prose slots; **no `owner` field**). It carries `schema-version: 1` — the at-version stamp
-/// the on-create deriver writes, so a *fully conformant* committed doc is genuinely clean
-/// (an absent/below stamp is itself a surfaced version-mismatch break, M34 Inc-3). Its bytes
-/// never change across this test — only the resolved schema does.
+/// A conformant `adr` body under the **pack** adr schema (status/date header + the four
+/// prose slots incl. the M36 optional `## Options`; **no `owner` field**). It carries
+/// `schema-version: 2` — the at-version stamp under the adr v1→v2 options-slot bump, so a
+/// *fully conformant* committed doc is genuinely clean (an absent/below stamp is itself a
+/// surfaced version-mismatch break, M34 Inc-3). Its bytes never change across this test —
+/// only the resolved schema does.
 const ADR_BODY: &str = "\
 ---
 status: accepted
 date: 2026-06-25
-schema-version: 1
+schema-version: 2
 ---
 
 # Cache sessions in memory
@@ -166,6 +167,10 @@ schema-version: 1
 ## Context
 
 Session lookups must stay sub-millisecond.
+
+## Options
+
+A distributed cache was weighed and rejected on latency.
 
 ## Decision
 
@@ -208,6 +213,8 @@ sections:
       - { id: owner, type: string }
   - id: context
     slot: { hint: Forces. }
+  - id: options
+    slot: { optional: true, hint: Alternatives. }
   - id: decision
     slot: { hint: What. }
   - id: consequences

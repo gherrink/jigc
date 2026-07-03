@@ -190,6 +190,9 @@ fn adr(rel: &str, symbol: &str) -> String {
          ## Context\n\
          Forces.\n\
          \n\
+         ## Options\n\
+         Alternatives were weighed and rejected.\n\
+         \n\
          ## Decision\n\
          Decided.\n\
          \n\

@@ -17,6 +17,10 @@ Some context here.
 ## not a heading
 ```
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 - x: this looks like a field but has no sentinel, so it is prose

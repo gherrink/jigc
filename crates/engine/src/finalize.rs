@@ -939,6 +939,11 @@ mod tests {
                     ..Default::default()
                 },
                 SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
                     id: "decision".to_string(),
                     slot: Some("A single in-memory node keeps lookups fast.".to_string()),
                     ..Default::default()
@@ -1610,7 +1615,7 @@ mod tests {
                 ),
             ],
             {
-                "decisions/single-node-cache.md": "1bd77717762c2872ef9b2db8ccb6126552044ed761a90d74a8866f48f9d1c5f9",
+                "decisions/single-node-cache.md": "eb5e3b6151ba4edaa8b9e507c61628d029a6018975dd765bc15a949e9742dad1",
             },
         )
         "#

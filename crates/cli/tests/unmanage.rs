@@ -100,6 +100,9 @@ supersedes: adr:naive-throttle
 ## Context
 The gateway must shed load under burst traffic.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A token bucket per client keeps the gateway fair under burst.
 

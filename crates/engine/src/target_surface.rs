@@ -618,6 +618,9 @@ cites-code: crates/engine/src/validate.rs#validate_task
 ## Context
 Forces.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single node.
 
@@ -663,6 +666,9 @@ cites-code: crates/engine/src/store.rs#canonical_path
 ## Context
 Forces.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Decided.
 
@@ -681,6 +687,9 @@ date: 2026-05-23
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Decided.
@@ -704,6 +713,9 @@ cites-code: [crates/engine/src/a.rs#one, crates/engine/src/b.rs#two]
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Decided.
@@ -1045,6 +1057,9 @@ cites-code: crates/engine/src/gone.rs#vanished_symbol
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Decided.

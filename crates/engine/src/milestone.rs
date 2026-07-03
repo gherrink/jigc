@@ -1822,7 +1822,7 @@ Context without any acceptance criteria.
         )
         .expect("provision created doc");
         let zebra_dir = root.path().join("tasks").join("zebra-area");
-        let adr_source = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Zebra decision\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n";
+        let adr_source = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Zebra decision\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n";
         crate::state::copy_in(&zebra_dir, "adr", "zebra-decision", adr_source)
             .expect("copy in edited-from-base doc");
 
@@ -1989,7 +1989,7 @@ Context without any acceptance criteria.
     /// rewrite in lockstep with the slug suffix).
     fn adr_superseding(title: &str, to: &str) -> String {
         format!(
-            "---\nstatus: accepted\ndate: 2026-06-04\nsupersedes: {to}\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+            "---\nstatus: accepted\ndate: 2026-06-04\nsupersedes: {to}\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
         )
     }
 
@@ -2154,7 +2154,7 @@ Context without any acceptance criteria.
 
         let adr = |title: &str| {
             format!(
-                "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+                "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
             )
         };
 
@@ -2266,7 +2266,7 @@ Context without any acceptance criteria.
 
         let adr = |title: &str| {
             format!(
-                "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
+                "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# {title}\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n"
             )
         };
 
@@ -2697,7 +2697,7 @@ Context without any acceptance criteria.
 
         // --- Overlap 3: an `edited-from-base` clash. `evict-area` and `b-area` both
         // edit the same committed-at-base slug `adr:eviction-policy` → same-doc clash.
-        let edited_adr = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n";
+        let edited_adr = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n";
         stage_doc(
             &root.path().join("tasks").join("evict-area"),
             "adr",
@@ -3020,7 +3020,7 @@ Context without any acceptance criteria.
         add_task(root.path(), &milestone.id, "Purge area", "single-task").expect("purge adds");
         add_task(root.path(), &milestone.id, "Evict area", "single-task").expect("evict adds");
 
-        let adr = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n";
+        let adr = "---\nstatus: accepted\ndate: 2026-06-04\n---\n\n# Eviction policy\n\n## Context\n\nForces.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nDo the thing.\n\n## Consequences\n\nTradeoffs.\n";
         stage_doc(
             &root.path().join("tasks").join("evict-area"),
             "adr",

@@ -156,6 +156,10 @@ date: 2026-06-25
 
 Session lookups must stay sub-millisecond.
 
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
 ## Decision
 
 Keep sessions in a single in-memory node.
@@ -229,7 +233,7 @@ fn store_sweep_clean_on_current_stamped_doc() {
     let repo = TempDir::new("current");
     let home = TempDir::new("home");
     setup_repo(repo.path(), home.path());
-    commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(1));
+    commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(2));
 
     let out = jigc(repo.path(), home.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);

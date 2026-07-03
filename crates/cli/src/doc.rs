@@ -2244,13 +2244,19 @@ sections:
             "a v2-manifest doctype is stamped schema-version 2",
         );
 
-        // Regression witness: the shipped frozen-v1 pack still stamps 1 (byte-identical
-        // shipped behaviour) — every shipped doctype resolves to its manifest v1.
+        // Regression witness: a still-frozen-v1 shipped doctype (`spec`) stamps 1, while the
+        // M36-bumped `adr` now stamps its manifest v2 — every shipped doctype resolves to its
+        // own manifest version (`design/corpus-migration.md` → the adr v1→v2 flow).
         let shipped = make_pack();
         assert_eq!(
-            stamp_schema_version(shipped.as_ref(), "adr"),
+            stamp_schema_version(shipped.as_ref(), "spec"),
             1,
-            "the shipped frozen-v1 `adr` still stamps 1",
+            "the shipped frozen-v1 `spec` still stamps 1",
+        );
+        assert_eq!(
+            stamp_schema_version(shipped.as_ref(), "adr"),
+            2,
+            "the M36-bumped shipped `adr` stamps its manifest schema-version 2",
         );
         let adr_bytes = shipped
             .read(PackResourceKind::Schemas, &ResourceId::from("adr"))
@@ -2263,8 +2269,8 @@ sections:
                 .expect("shipped adr carries the injected stamp");
         assert_eq!(
             adr_stamp.value,
-            Value::Scalar("1".into()),
-            "the shipped all-v1 set stamps 1 — shipped behaviour is unchanged",
+            Value::Scalar("2".into()),
+            "the M36-bumped shipped `adr` materializes schema-version 2",
         );
     }
 }

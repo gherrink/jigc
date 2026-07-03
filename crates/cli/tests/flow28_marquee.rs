@@ -379,6 +379,10 @@ Accepted
 
 The build needed a deterministic compile pipeline.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 We will compose the pipeline from discrete stages.

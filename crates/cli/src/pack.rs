@@ -1627,8 +1627,10 @@ mod tests {
         let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
             .expect("config/schema-manifest.yaml parses as a freeze manifest");
 
-        // The v1 frozen set is exactly the six persisted dev-pack doctypes, each at
-        // schema-version 1 — six present, no extra, no missing.
+        // The frozen set is exactly the six persisted dev-pack doctypes — six present,
+        // no extra, no missing. Each is at schema-version 1 except `adr`, bumped to 2 by
+        // the M36 options-slot v1→v2 shape change (`design/corpus-migration.md` → the adr
+        // v1→v2 flow).
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -1637,9 +1639,10 @@ mod tests {
             "the freeze manifest must enumerate exactly the six frozen v1 doctypes",
         );
         for entry in &manifest.doctypes {
+            let expected = if entry.ty == "adr" { 2 } else { 1 };
             assert_eq!(
-                entry.schema_version, 1,
-                "doctype `{}` is frozen at schema-version 1",
+                entry.schema_version, expected,
+                "doctype `{}` is frozen at schema-version {expected}",
                 entry.ty,
             );
         }

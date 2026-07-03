@@ -2930,6 +2930,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps session lookups sub-millisecond and avoids a
 network hop; acceptable because sessions are cheap to reconstruct on a cold node.
@@ -2955,6 +2958,9 @@ date: 2026-05-30
 
 ## Context
 A single node is a single point of failure.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Replicate the session cache across nodes.

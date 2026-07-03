@@ -18,11 +18,21 @@ expression: "project(&doc, src)"
         ),
     ),
     (
+        "options",
+        Some(
+            (
+                186,
+                225,
+                "Alternatives were weighed and rejected.",
+            ),
+        ),
+    ),
+    (
         "decision",
         Some(
             (
-                187,
-                227,
+                239,
+                279,
                 "Centralize rate limiting at the gateway.",
             ),
         ),
@@ -31,8 +41,8 @@ expression: "project(&doc, src)"
         "consequences",
         Some(
             (
-                245,
-                282,
+                297,
+                334,
                 "Each service drops its local limiter.",
             ),
         ),

@@ -982,6 +982,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps session lookups sub-millisecond.
 
@@ -1001,6 +1004,9 @@ supersedes: adr:single-node-cache
 
 ## Context
 A single node is a single point of failure.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Replicate the session cache across nodes.
@@ -1214,6 +1220,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps session lookups sub-millisecond.
 
@@ -1235,6 +1244,9 @@ supersedes: {to}
 
 ## Context
 A single node is a single point of failure.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Replicate the session cache across nodes.
@@ -1869,6 +1881,11 @@ mod prop_tests {
                     SectionContent {
                         id: "context".to_string(),
                         slot: Some("forces".to_string()),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "options".to_string(),
+                        slot: Some("Alternatives were weighed and rejected.".to_string()),
                         ..Default::default()
                     },
                     SectionContent {

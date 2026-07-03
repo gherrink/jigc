@@ -387,6 +387,9 @@ date: 2026-05-23
 ## Context
 Session lookups must stay sub-millisecond.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 A single in-memory node keeps lookups fast and avoids a network hop.
 
@@ -479,6 +482,9 @@ supersedes: adr:single-node-cache
 ## Context
 A single node is a single point of failure.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Replicate the session cache across nodes.
 
@@ -561,6 +567,9 @@ date: 2026/13/01
 
 ## Context
 A single node is a single point of failure.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Replicate the session cache across nodes.

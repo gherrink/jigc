@@ -160,6 +160,10 @@ date: 2026-06-25
 
 Session lookups must stay sub-millisecond.
 
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
 ## Decision
 
 Keep sessions in a single in-memory node.
@@ -201,6 +205,8 @@ sections:
       - { id: owner, type: string }
   - id: context
     slot: { hint: Forces. }
+  - id: options
+    slot: { optional: true, hint: Alternatives. }
   - id: decision
     slot: { hint: What. }
   - id: consequences
@@ -217,8 +223,8 @@ fn count(haystack: &str, needle: &str) -> usize {
 }
 
 /// (routing) Under a schema shadow that adds a required field, three committed ADRs — one
-/// unstamped (v0), one stamped below the current version (0 < 1), one at the current version
-/// (1) — each surface a `required-field-present` break. The two below-current/absent docs
+/// unstamped (v0), one stamped below the current version (0 < 2), one at the current version
+/// (2) — each surface a `required-field-present` break. The two below-current/absent docs
 /// route `migrate`; the at-version doc routes `corrupt`. `jigc validate` still exits 0.
 #[test]
 fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
@@ -228,10 +234,10 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
 
     // stamp-absent (the v0 corpus state) ⇒ migrate.
     commit_adr(repo.path(), "alpha-decision", "Alpha decision", None);
-    // stamped below the current manifest version (0 < 1) ⇒ migrate.
+    // stamped below the current manifest version (0 < 2) ⇒ migrate.
     commit_adr(repo.path(), "beta-decision", "Beta decision", Some(0));
-    // stamped at the current manifest version (1) but non-conformant ⇒ corrupt.
-    commit_adr(repo.path(), "gamma-decision", "Gamma decision", Some(1));
+    // stamped at the current manifest version (2) but non-conformant ⇒ corrupt.
+    commit_adr(repo.path(), "gamma-decision", "Gamma decision", Some(2));
 
     shadow_adr_schema(repo.path());
 
@@ -265,7 +271,7 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     assert_eq!(
         count(&stdout, "route: corrupt"),
         1,
-        "the at-version (1) non-conformant ADR must route `corrupt`; stdout:\n{stdout}",
+        "the at-version (2) non-conformant ADR must route `corrupt`; stdout:\n{stdout}",
     );
 }
 
@@ -330,7 +336,7 @@ fn store_sweep_clean_and_unrouted_on_conformant_store() {
     let repo = TempDir::new("clean");
     let home = TempDir::new("home");
     setup_repo(repo.path(), home.path());
-    commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(1));
+    commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(2));
 
     let out = jigc(repo.path(), home.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);

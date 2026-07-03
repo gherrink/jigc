@@ -14,6 +14,10 @@ supersedes: adr:single-node-cache
 
 Per-client limits were enforced ad hoc.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Centralize rate limiting at the gateway.

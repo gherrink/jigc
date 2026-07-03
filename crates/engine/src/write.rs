@@ -481,6 +481,11 @@ mod canonical {
                     ..Default::default()
                 },
                 SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
                     id: "decision".to_string(),
                     slot: Some("Centralize rate limiting at the gateway.".to_string()),
                     ..Default::default()
@@ -584,6 +589,11 @@ sections:
                     ..Default::default()
                 },
                 SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
                     id: "decision".to_string(),
                     slot: Some("We centralize.".to_string()),
                     ..Default::default()
@@ -631,6 +641,11 @@ sections:
                 SectionContent {
                     id: "context".to_string(),
                     slot: Some("Forces at play.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
                     ..Default::default()
                 },
                 SectionContent {
@@ -3089,6 +3104,10 @@ date: 2026-05-23
 
 Per-client limits were enforced ad hoc.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Centralize rate limiting at the gateway.
@@ -3152,6 +3171,10 @@ date:  2026-05-23
 
 Forces.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 We decided.
@@ -3181,8 +3204,8 @@ Fine.
         )
         .expect("decision slot present");
         insta::assert_snapshot!("set_slot_decision", out);
-        // The decision prose line is line index 13.
-        assert_only_lines_differ(CANONICAL_ADR, &out, &[13]);
+        // The decision prose line is line index 17 (the `## Options` section shifted it down 4).
+        assert_only_lines_differ(CANONICAL_ADR, &out, &[17]);
         assert!(out.contains("Adopt a token bucket per client."));
         assert!(!out.contains("Centralize rate limiting"));
     }
@@ -3516,7 +3539,7 @@ mod splice_prop_tests {
     fn build_adr(status: &str, context: &str, decision: &str, consequences: &str) -> String {
         format!(
             "---\nstatus: {status}\ndate: 2026-05-23\n---\n\n# A decision\n\n\
-             ## Context\n\n{context}\n\n## Decision\n\n{decision}\n\n\
+             ## Context\n\n{context}\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\n{decision}\n\n\
              ## Consequences\n\n{consequences}\n"
         )
     }
@@ -3702,6 +3725,10 @@ date: 2026-05-23
 
 Per-client limits were enforced ad hoc.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Consequences
 
 Each service drops its local limiter.
@@ -3719,7 +3746,10 @@ Each service drops its local limiter.
         // The result is conformant and the sections are in schema document-order.
         let doc = parse_sections(&adr_schema(), &out).expect("generated result conforms");
         let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
-        assert_eq!(ids, ["status", "context", "decision", "consequences"]);
+        assert_eq!(
+            ids,
+            ["status", "context", "options", "decision", "consequences"]
+        );
     }
 
     /// Golden: a `set-slot` into an absent section that is the **last** in schema
@@ -3739,6 +3769,10 @@ date: 2026-05-23
 
 Forces at play.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 We centralize.
@@ -3754,7 +3788,10 @@ We centralize.
         insta::assert_snapshot!("set_slot_absent_trailing", out);
         let doc = parse_sections(&adr_schema(), &out).expect("conforms");
         let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
-        assert_eq!(ids, ["status", "context", "decision", "consequences"]);
+        assert_eq!(
+            ids,
+            ["status", "context", "options", "decision", "consequences"]
+        );
     }
 
     /// A section already present is **not** a generation — it routes to the surgical
@@ -3772,6 +3809,10 @@ date: 2026-05-23
 ## Context
 
 Forces.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 
@@ -5018,6 +5059,10 @@ date: 2026-05-23
 
 Per-client limits were enforced ad hoc.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Centralize rate limiting at the gateway.
@@ -5301,19 +5346,24 @@ date: 2026-05-23
 
 ## Context
 
+## Options
+
 ## Decision
 
 ## Consequences
 ";
-        // `context` is a non-terminal slot (Decision + Consequences follow it). The
-        // prose deliberately lacks a trailing newline.
+        // `context` is a non-terminal slot (Options + Decision + Consequences follow it).
+        // The prose deliberately lacks a trailing newline.
         let out = set_slot_validated(&adr_schema(), empty, "context", "Per-client limits.")
             .expect("filling an empty non-terminal slot must round-trip, trailing LF or not");
         // The buffer re-parses and the prose landed in `context`, not fused to the next
         // heading.
         let doc = parse::parse_sections(&adr_schema(), &out).expect("result re-parses");
         let ids: Vec<&str> = doc.sections.iter().map(|s| s.id.as_str()).collect();
-        assert_eq!(ids, ["status", "context", "decision", "consequences"]);
+        assert_eq!(
+            ids,
+            ["status", "context", "options", "decision", "consequences"]
+        );
         assert!(
             out.contains("\n## Decision\n"),
             "the `## Decision` heading must survive as a heading, not be glued to prose:\n{out}"
@@ -5437,6 +5487,8 @@ Centralize limiting at the gateway.
 
 ## Context
 
+## Options
+
 ## Decision
 
 ## Consequences
@@ -5525,6 +5577,10 @@ date: 2026-05-23
 
 Per-client limits were enforced ad hoc.
 
+## Options
+
+Alternatives were weighed and rejected.
+
 ## Decision
 
 Centralize rate limiting at the gateway.
@@ -5563,7 +5619,7 @@ Each service drops its local limiter.
             &schema,
             CANONICAL_ADR,
             "decision",
-            "Intro.\n\n## Decision\n\nMore.",
+            "Intro.\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\nMore.",
         )
         .expect_err("a `##` heading in slot prose ⇒ abort");
         assert_eq!(finding.severity, crate::finding::Severity::Blocking);
@@ -5629,7 +5685,7 @@ mod validate_after_prop_tests {
     fn build_adr(status: &str, context: &str, decision: &str, consequences: &str) -> String {
         format!(
             "---\nstatus: {status}\ndate: 2026-05-23\n---\n\n# A decision\n\n\
-             ## Context\n\n{context}\n\n## Decision\n\n{decision}\n\n\
+             ## Context\n\n{context}\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\n{decision}\n\n\
              ## Consequences\n\n{consequences}\n"
         )
     }
@@ -5700,14 +5756,15 @@ mod generate_prop_tests {
     }
 
     /// Build a conformant ADR containing exactly the body sections in `present` (a
-    /// subset of `[context, decision, consequences]`, kept in schema order), each with
-    /// a one-line opaque slot prose.
+    /// subset of `[context, options, decision, consequences]`, kept in schema order),
+    /// each with a one-line opaque slot prose.
     fn build_partial_adr(present: &[&str]) -> String {
         let mut out =
             String::from("---\nstatus: proposed\ndate: 2026-05-31\n---\n\n# A decision\n");
         for id in present {
             let heading = match *id {
                 "context" => "Context",
+                "options" => "Options",
                 "decision" => "Decision",
                 "consequences" => "Consequences",
                 _ => unreachable!(),
@@ -5724,11 +5781,11 @@ mod generate_prop_tests {
         /// schema order (so the generated `##` landed in its schema-ordered slot).
         #[test]
         fn generated_section_lands_in_schema_order(
-            mask in prop::collection::vec(any::<bool>(), 3..=3)
+            mask in prop::collection::vec(any::<bool>(), 4..=4)
                 .prop_filter("at least one absent", |m| !m.iter().all(|&b| b)),
-            target_pick in 0usize..3,
+            target_pick in 0usize..4,
         ) {
-            let body = ["context", "decision", "consequences"];
+            let body = ["context", "options", "decision", "consequences"];
             let present: Vec<&str> = body.iter().enumerate()
                 .filter(|(i, _)| mask[*i]).map(|(_, s)| *s).collect();
             // Pick a target among the *absent* sections.
@@ -5760,8 +5817,8 @@ mod generate_prop_tests {
                 got_in_source_order.iter().any(|s| s == target),
                 "target {target} present after generation"
             );
-            // The fully-generated case (all three now present) must also conform.
-            if got_in_source_order.len() == 3 {
+            // The fully-generated case (all four now present) must also conform.
+            if got_in_source_order.len() == 4 {
                 parse_sections(&schema, &out)
                     .map_err(|f| TestCaseError::fail(format!("complete doc must conform: {f:?}")))?;
             }
@@ -5979,7 +6036,7 @@ mod roundtrip {
             fm.push_str(&format!("supersedes: adr:{target}\n"));
         }
         format!(
-            "---\n{fm}---\n\n# {title}\n\n## Context\n\n{context}\n\n## Decision\n\n{decision}\n\n## Consequences\n\n{consequences}\n",
+            "---\n{fm}---\n\n# {title}\n\n## Context\n\n{context}\n\n## Options\n\nAlternatives were weighed and rejected.\n\n## Decision\n\n{decision}\n\n## Consequences\n\n{consequences}\n",
             context = context.trim_end(),
             decision = decision.trim_end(),
             consequences = consequences.trim_end(),
@@ -6026,6 +6083,11 @@ mod roundtrip {
                 SectionContent {
                     id: "context".to_string(),
                     slot: Some(context.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
                     ..Default::default()
                 },
             ],
@@ -6091,6 +6153,11 @@ mod roundtrip {
                 SectionContent {
                     id: "context".to_string(),
                     slot: Some(context.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "options".to_string(),
+                    slot: Some("Alternatives were weighed and rejected.".to_string()),
                     ..Default::default()
                 },
             ],
@@ -6612,6 +6679,10 @@ Some context here.
 ```
 ## not a heading
 ```
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 

@@ -151,6 +151,10 @@ date: 2026-06-25
 
 Session lookups must stay sub-millisecond.
 
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
 ## Decision
 
 Keep sessions in a single in-memory node.
@@ -231,8 +235,8 @@ fn migrate_corpus_stamps_the_v0_dogfood_then_revalidates_clean() {
     // into the existing header, the prior fields preserved.
     let after = fs::read_to_string(adr_path(repo.path(), "alpha-decision")).expect("read adr");
     assert!(
-        after.contains("schema-version: 1"),
-        "the migrated ADR carries the schema-version stamp; got:\n{after}",
+        after.contains("schema-version: 2"),
+        "the migrated ADR carries the current schema-version stamp; got:\n{after}",
     );
     assert!(
         after.contains("status: accepted") && after.contains("date: 2026-06-25"),
@@ -269,7 +273,7 @@ fn migrate_corpus_is_a_no_op_on_an_already_current_corpus() {
     let repo = TempDir::new("current");
     let home = TempDir::new("home");
     setup_repo(repo.path(), home.path());
-    commit_adr(repo.path(), "beta-decision", "Beta decision", Some(1));
+    commit_adr(repo.path(), "beta-decision", "Beta decision", Some(2));
 
     let before = fs::read_to_string(adr_path(repo.path(), "beta-decision")).expect("read adr");
 

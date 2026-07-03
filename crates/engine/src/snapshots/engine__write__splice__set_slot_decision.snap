@@ -1,5 +1,5 @@
 ---
-source: crates/engine/src/splice.rs
+source: crates/engine/src/write.rs
 expression: out
 ---
 ---
@@ -12,6 +12,10 @@ date: 2026-05-23
 ## Context
 
 Per-client limits were enforced ad hoc.
+
+## Options
+
+Alternatives were weighed and rejected.
 
 ## Decision
 

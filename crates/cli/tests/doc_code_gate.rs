@@ -555,7 +555,7 @@ fn created_adr_materializes_doc_level_status_and_date() {
     let body = fs::read_to_string(&staged).expect("read staged ADR");
 
     let expected_fm = format!(
-        "---\nstatus: proposed\ndate: {}\nschema-version: 1\n---\n",
+        "---\nstatus: proposed\ndate: {}\nschema-version: 2\n---\n",
         today_iso()
     );
     assert!(

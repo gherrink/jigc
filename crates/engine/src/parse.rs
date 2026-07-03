@@ -1306,6 +1306,9 @@ Per-client limits were enforced ad hoc.
 
 A trailing line.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Centralize rate limiting at the gateway.
 
@@ -1509,6 +1512,9 @@ date: 2026-05-23
 ## CONTEXT
 Per-client limits were enforced ad hoc.
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 Centralize rate limiting at the gateway.
 
@@ -1522,7 +1528,7 @@ Each service drops its local limiter.
             .map(|s| s.id.as_str())
             .filter(|id| *id != "status")
             .collect();
-        assert_eq!(body_ids, ["context", "decision", "consequences"]);
+        assert_eq!(body_ids, ["context", "options", "decision", "consequences"]);
     }
 }
 
@@ -1588,6 +1594,9 @@ supersedes: adr:single-node-cache
 
 ## Context
 Per-client limits were enforced ad hoc.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 Centralize rate limiting at the gateway.
@@ -1851,6 +1860,9 @@ Forces at play.
 
 <!-- fields -->
 
+## Options
+Alternatives were weighed and rejected.
+
 ## Decision
 We decided.
 
@@ -1884,6 +1896,9 @@ Forces at play.
 
 <!-- fields -->
 - nonsense: value
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 We decided.
@@ -1925,6 +1940,9 @@ stéu: oops
 
 ## Context
 Forces.
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 We decided.
@@ -2041,6 +2059,9 @@ Forces at play.
 
 - status: TBD
 - note: still prose
+
+## Options
+Alternatives were weighed and rejected.
 
 ## Decision
 We decided.
@@ -2411,7 +2432,7 @@ mod prop_tests {
             let schema = crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types()).expect("adr.yaml loads");
             let src = format!(
                 "---\nstatus: proposed\ndate: 2026-05-31\n---\n\n# Title\n\n\
-                 ## Context\n{context}\n\n## Decision\n{decision}\n\n## Consequences\n{consequences}\n"
+                 ## Context\n{context}\n\n## Options\nAlternatives were weighed and rejected.\n\n## Decision\n{decision}\n\n## Consequences\n{consequences}\n"
             );
             let doc = parse_sections(&schema, &src).expect("conformant ADR parses");
 

@@ -48,6 +48,13 @@ expression: json
       }
     },
     {
+      "id": "options",
+      "slot": {
+        "hint": "Alternatives weighed and why they lost — omit when the call was obvious.",
+        "optional": true
+      }
+    },
+    {
       "id": "decision",
       "slot": {
         "hint": "What we decided, in a sentence or two."
