@@ -6,9 +6,9 @@ task, and is the sole channel through which the agent reads and writes managed
 project documents. This walks the MVP loop on a real machine —
 **install → start → finalize**.
 
-> The product name is **held** as `jigc` — the placeholder used throughout,
-> pending a final keep-confirmation (`DECISIONS.md` 2026-05-31 → Product name).
-> The binary is the same name.
+> The name is **jigc** — pronounced "jig-see" — *a jig for coding agents*: the
+> jig holds the work and guides the tool so the cut lands true (settled
+> 2026-07-03, `DECISIONS.md` → The name is settled). The binary is the same name.
 
 ## Install
 

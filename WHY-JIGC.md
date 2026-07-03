@@ -6,6 +6,10 @@
 
 Take every *structural* operation away from the LLM and give it to a deterministic CLI; leave the LLM only the prose. ([VISION.md](VISION.md) — the determinism boundary.)
 
+## The name
+
+**jigc** — pronounced **"jig-see"** — is **a jig for coding agents**. In woodworking and machining, a jig is the device that holds the workpiece and guides the tool so the cut lands in exactly the right place, reproducibly, regardless of who wields the tool. That is the product: the CLI is the jig, the LLM is the tool — structure is held deterministically, the prose is the cut. A jig doesn't do the cutting, and it doesn't let the cut wander; it makes the *tool's* work land true. Second reading, equally sanctioned: **j**ust-**i**n-time **g**enerated **c**ontext — the CLI assembles exactly the context a task needs, when it needs it. (Settled 2026-07-03; availability verified clean on crates.io/npm/GitHub/web.)
+
 ## Measured results (jigc's own studies — controlled, but ours)
 
 - **The cost win (M35, pre-registered, 2026-07-02).** On the rename surface, jigc is *strictly cheaper than a plain agent* on all three models tested (Sonnet 4.6 $0.080 vs $0.125 · Sonnet 5 $0.129 vs $0.262 · Opus 4.8 $0.193 vs $0.266 per rename) **and ≥ static on completeness** (1.0 vs 0.875/1.0), at 3.5–4.6 turns/rename vs 8.3–14.4 manual. Verb engagement was 100% (64/64) — availability *did* induce usage. *Bounds:* directional not powered (2–3 reps/cell; ordering identical in every rep), synthetic seed. ([completions/artifacts/M35/VERDICT.md](completions/artifacts/M35/VERDICT.md))

@@ -1,6 +1,6 @@
 # VISION
 
-> Working name: TBD. The command is referred to throughout as `jigc` as a placeholder.
+> The name is **jigc** — pronounced "jig-see" (settled 2026-07-03, [DECISIONS.md](DECISIONS.md) → The name is settled). A **jig** holds the workpiece and guides the tool so the cut lands precisely, whoever wields the tool — the CLI is the jig, the LLM is the tool. Second reading: **j**ust-**i**n-time **g**enerated **c**ontext.
 
 ## Thesis
 
