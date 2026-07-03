@@ -199,6 +199,24 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         String::from_utf8_lossy(&out.stderr),
     );
 
+    // (0) Honesty of the teardown summary: it must enumerate EVERY artifact it
+    //     actually removed — not just the original three. This repo had a full setup,
+    //     so the SessionStart hook, the deny safety floor, and the pre-commit hook were
+    //     all present and removed; the summary must say so (M36 completion: the runtime
+    //     summary must match the real removal set, mirroring the design honesty fix).
+    let summary = String::from_utf8_lossy(&out.stdout);
+    for needle in [
+        "removed .jigc/",
+        "SessionStart hook",
+        "deny safety floor",
+        "pre-commit hook",
+    ] {
+        assert!(
+            summary.contains(needle),
+            "the uninstall summary must report `{needle}`; got:\n{summary}",
+        );
+    }
+
     // (i) .jigc/ is gone.
     assert!(
         !repo.path().join(".jigc").exists(),
@@ -303,4 +321,13 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "a second uninstall leaves the restored CLAUDE.md untouched",
     );
     assert!(probe.exists(), "a second uninstall leaves the probe intact");
+
+    // (v-b) The second uninstall removed nothing — its summary must NOT claim to have
+    //       torn down artifacts that were already absent ("don't claim to remove what
+    //       wasn't there"): a no-op reports a clean "nothing to remove" state.
+    let summary2 = String::from_utf8_lossy(&out2.stdout);
+    assert!(
+        !summary2.contains("removed .jigc/") && !summary2.contains("pre-commit hook"),
+        "a no-op uninstall must not claim removals it did not make; got:\n{summary2}",
+    );
 }

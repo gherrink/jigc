@@ -662,10 +662,14 @@ pub fn inject_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
 /// `@.jigc/AGENT.md` line under their own heading keeps their surrounding prose
 /// (only the bare import line + any jigc `## Project interface` block we recognize is
 /// removed; see the matching below).
-pub fn unwire_reference(repo_root: &Path) -> std::io::Result<()> {
+///
+/// Returns `Ok(true)` when a jigc-injected reference was actually removed (so `uninstall`
+/// reports it in the teardown summary), `Ok(false)` when there was nothing to unwire (an
+/// absent file, or a `CLAUDE.md` carrying no jigc section) — the honest no-op signal.
+pub fn unwire_reference(repo_root: &Path) -> std::io::Result<bool> {
     let target = repo_root.join("CLAUDE.md");
     let existing = match std::fs::read_to_string(&target) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e),
         Ok(existing) => existing,
     };
@@ -685,17 +689,18 @@ pub fn unwire_reference(repo_root: &Path) -> std::io::Result<()> {
     } else {
         // No jigc-injected section to remove: a clean no-op (idempotent — a second
         // `uninstall`, or a file that never carried our section, is untouched).
-        return Ok(());
+        return Ok(false);
     };
 
     if next.is_empty() {
         // setup created the file; remove it so uninstall leaves no jigc trace.
         match std::fs::remove_file(&target) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            other => other,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e),
+            Ok(()) => Ok(true),
         }
     } else {
-        std::fs::write(&target, next)
+        std::fs::write(&target, next).map(|()| true)
     }
 }
 
@@ -711,12 +716,15 @@ pub fn unwire_reference(repo_root: &Path) -> std::io::Result<()> {
 /// file valid JSON. **Idempotent + non-destructive:** an absent file, an absent
 /// `permissions`/`allow`, or an array that no longer carries the permit is a clean
 /// no-op (nothing is written, so a second `uninstall` is a no-op).
-pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+///
+/// Returns `Ok(true)` when a permit was actually dropped, `Ok(false)` on the no-op —
+/// the honest signal the teardown summary reports on.
+pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<bool> {
     let target = repo_root.join(&profile.allowlist.file);
 
     // Absent settings file: nothing to remove.
     if !target.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let mut settings = read_settings(&target)?;
 
@@ -728,7 +736,7 @@ pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
         .and_then(|perms| perms.get_mut("allow"))
         .and_then(|allow| allow.as_array_mut())
     else {
-        return Ok(());
+        return Ok(false);
     };
 
     let before = allow.len();
@@ -738,10 +746,10 @@ pub fn remove_allowlist(repo_root: &Path, profile: &AdapterProfile) -> std::io::
     });
     // No permit was present: leave the file byte-untouched (idempotent no-op).
     if allow.len() == before {
-        return Ok(());
+        return Ok(false);
     }
 
-    write_settings(&target, &settings)
+    write_settings(&target, &settings).map(|()| true)
 }
 
 /// Idempotently install the profile's session-event **hook** into the host
@@ -829,15 +837,18 @@ pub fn inject_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
 /// absent file, an absent `hooks`/`<event>`, or an event carrying no matching command
 /// is a clean no-op (nothing written, so a second `uninstall` is a no-op). A no-op for
 /// a profile that declares no hook.
-pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+///
+/// Returns `Ok(true)` when jigc's hook command was actually dropped, `Ok(false)` on the
+/// no-op — the honest signal the teardown summary reports on.
+pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<bool> {
     let Some(hook) = profile.hook() else {
-        return Ok(());
+        return Ok(false);
     };
     let target = repo_root.join(&profile.allowlist.file);
 
     // Absent settings file: nothing to remove.
     if !target.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let mut settings = read_settings(&target)?;
 
@@ -849,7 +860,7 @@ pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
         .and_then(|hooks| hooks.get_mut(&hook.event))
         .and_then(|arr| arr.as_array_mut())
     else {
-        return Ok(());
+        return Ok(false);
     };
 
     // Nothing to remove: no matcher under the event runs our command → byte-untouched.
@@ -864,7 +875,7 @@ pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
             })
     });
     if !present {
-        return Ok(());
+        return Ok(false);
     }
 
     // Drop our command from every matcher, then prune matchers emptied by that drop
@@ -881,7 +892,7 @@ pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
             .is_none_or(|inner| !inner.is_empty())
     });
 
-    write_settings(&target, &settings)
+    write_settings(&target, &settings).map(|()| true)
 }
 
 /// Idempotently **remove** the profile's `deny` safety floor from the host project's
@@ -895,15 +906,18 @@ pub fn remove_hook(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
 /// valid JSON. **Idempotent + non-destructive:** an empty profile deny set, an absent
 /// file, an absent `permissions`/`deny`, or an array carrying none of the floor
 /// patterns is a clean no-op (nothing written, so a second `uninstall` is a no-op).
-pub fn remove_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<()> {
+///
+/// Returns `Ok(true)` when a floor pattern was actually dropped, `Ok(false)` on the
+/// no-op — the honest signal the teardown summary reports on.
+pub fn remove_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Result<bool> {
     if profile.allowlist.deny.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let target = repo_root.join(&profile.allowlist.file);
 
     // Absent settings file: nothing to remove.
     if !target.exists() {
-        return Ok(());
+        return Ok(false);
     }
     let mut settings = read_settings(&target)?;
 
@@ -915,7 +929,7 @@ pub fn remove_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
         .and_then(|perms| perms.get_mut("deny"))
         .and_then(|deny| deny.as_array_mut())
     else {
-        return Ok(());
+        return Ok(false);
     };
 
     let before = deny.len();
@@ -925,10 +939,10 @@ pub fn remove_deny(repo_root: &Path, profile: &AdapterProfile) -> std::io::Resul
     });
     // No floor pattern was present: leave the file byte-untouched (idempotent no-op).
     if deny.len() == before {
-        return Ok(());
+        return Ok(false);
     }
 
-    write_settings(&target, &settings)
+    write_settings(&target, &settings).map(|()| true)
 }
 
 /// Read the assistant settings file as a JSON value, treating an absent file as

@@ -414,24 +414,29 @@ fn classify_precommit_for_teardown(content: &str) -> PrecommitTeardown {
 /// hook; a purely foreign hook is left untouched. **Idempotent + non-destructive:** an
 /// absent hook, or a foreign hook, is a clean no-op, so a second `uninstall` is a
 /// no-op. See [`classify_precommit_for_teardown`] for the exact detection.
-pub fn remove_precommit_hook(repo_root: &Path) -> std::io::Result<()> {
+///
+/// Returns `Ok(true)` when a jigc-managed hook was actually removed or unwrapped,
+/// `Ok(false)` on the no-op (absent or purely foreign hook) — the honest signal the
+/// teardown summary reports on.
+pub fn remove_precommit_hook(repo_root: &Path) -> std::io::Result<bool> {
     let hooks_dir = resolve_hooks_dir(repo_root)?;
     let hook = hooks_dir.join("pre-commit");
 
     let existing = match std::fs::read_to_string(&hook) {
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e),
         Ok(existing) => existing,
     };
 
     match classify_precommit_for_teardown(&existing) {
-        PrecommitTeardown::NotOurs => Ok(()),
+        PrecommitTeardown::NotOurs => Ok(false),
         PrecommitTeardown::RemoveFile => match std::fs::remove_file(&hook) {
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            other => other,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e),
+            Ok(()) => Ok(true),
         },
         // The file already exists and stays executable; `write` preserves its mode.
-        PrecommitTeardown::RestoreForeign(foreign) => std::fs::write(&hook, foreign),
+        PrecommitTeardown::RestoreForeign(foreign) => std::fs::write(&hook, foreign).map(|()| true),
     }
 }
 
@@ -1058,6 +1063,44 @@ pub struct UninstallSummary {
     pub line_file: String,
     /// The repo-root-relative settings file the allowlist permit was removed from.
     pub allowlist_file: String,
+    /// Which of the six repo-local artifacts were **actually** present and removed —
+    /// so the teardown summary reports the real removal set and never claims to have
+    /// removed an already-absent artifact (M36 completion honesty fix; the runtime
+    /// mirror of the `project-setup.md` G5 "exactly the enumerated set" correction).
+    pub removed: RemovedArtifacts,
+}
+
+/// The per-artifact removal ledger [`uninstall`] fills — one flag per repo-local
+/// `setup` artifact, `true` iff that artifact was present and this run removed it. An
+/// all-`false` ledger is an idempotent no-op teardown (a second `uninstall`).
+#[derive(Debug, Default)]
+pub struct RemovedArtifacts {
+    /// The `.jigc/` tree was present and removed.
+    pub jigc_dir: bool,
+    /// A jigc-injected bootstrap reference was unwired from the always-loaded file.
+    pub reference: bool,
+    /// The `jigc *` allowlist permit was dropped from the settings file.
+    pub allowlist: bool,
+    /// jigc's `SessionStart` hook command was dropped from the settings file.
+    pub hook: bool,
+    /// The `deny` safety floor was dropped from the settings file.
+    pub deny: bool,
+    /// The jigc-managed `pre-commit` hook was removed or unwrapped.
+    pub precommit: bool,
+}
+
+impl RemovedArtifacts {
+    /// Whether this teardown removed nothing — an idempotent no-op (every artifact was
+    /// already absent), so the summary reports a clean "nothing to remove" state rather
+    /// than claiming removals it did not make.
+    pub fn is_empty(&self) -> bool {
+        !(self.jigc_dir
+            || self.reference
+            || self.allowlist
+            || self.hook
+            || self.deny
+            || self.precommit)
+    }
 }
 
 /// Run `jigc uninstall` from `start`: locate the repo root and reverse the **complete**
@@ -1112,6 +1155,8 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
     // 1. Remove the whole `.jigc/` tree — the bootstrap `AGENT.md`, the cascade config
     //    layer, the compose marker, and the transient index/state working area, all at
     //    once. An already-absent tree is a clean no-op.
+    let mut removed = RemovedArtifacts::default();
+
     let jigc_dir = repo_root.join(".jigc");
     if jigc_dir.exists() {
         std::fs::remove_dir_all(&jigc_dir).map_err(|err| {
@@ -1121,6 +1166,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
                 "ensure `.jigc/` is writable, then re-run `jigc uninstall`",
             )
         })?;
+        removed.jigc_dir = true;
     }
 
     // 2. Unwire the `CLAUDE.md` bootstrap reference — strip jigc's appended
@@ -1129,7 +1175,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
         .reference()
         .map(|r| r.file.clone())
         .unwrap_or_else(|| "CLAUDE.md".to_string());
-    adapter::unwire_reference(repo_root).map_err(|err| {
+    removed.reference = adapter::unwire_reference(repo_root).map_err(|err| {
         Finding::block(
             "uninstall.unwire-reference",
             format!("cannot unwire the bootstrap reference from `{line_file}`: {err}"),
@@ -1140,7 +1186,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
     // 3. Remove the `jigc *` permit from the allowlist — leaving unrelated permits and
     //    keys intact and the file valid JSON.
     let allowlist_file = profile.allowlist.file.clone();
-    adapter::remove_allowlist(repo_root, profile).map_err(|err| {
+    removed.allowlist = adapter::remove_allowlist(repo_root, profile).map_err(|err| {
         Finding::block(
             "uninstall.remove-allowlist",
             format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
@@ -1151,7 +1197,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
     // 4. Remove the `SessionStart` hook from the same settings file — surgically, so a
     //    foreign hook sharing the `hooks` object survives (the M36 symmetry fix: both
     //    hooks must come out, or they fire against a removed install).
-    adapter::remove_hook(repo_root, profile).map_err(|err| {
+    removed.hook = adapter::remove_hook(repo_root, profile).map_err(|err| {
         Finding::block(
             "uninstall.remove-hook",
             format!("cannot remove the session hook from `{allowlist_file}`: {err}"),
@@ -1161,7 +1207,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
 
     // 5. Remove the `deny` safety floor from the same settings file — dropping only the
     //    profile's floor patterns, preserving any user `deny` entry.
-    adapter::remove_deny(repo_root, profile).map_err(|err| {
+    removed.deny = adapter::remove_deny(repo_root, profile).map_err(|err| {
         Finding::block(
             "uninstall.remove-deny",
             format!("cannot remove the deny safety floor from `{allowlist_file}`: {err}"),
@@ -1171,7 +1217,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
 
     // 6. Remove the `pre-commit` hook — a standalone jigc hook is deleted; a foreign
     //    hook setup wrapped is restored (only the jigc block is pruned).
-    remove_precommit_hook(repo_root).map_err(|err| {
+    removed.precommit = remove_precommit_hook(repo_root).map_err(|err| {
         Finding::block(
             "uninstall.remove-precommit",
             format!("cannot remove the `pre-commit` hook from the repo's hooks dir: {err}"),
@@ -1186,6 +1232,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
     Ok(UninstallSummary {
         line_file,
         allowlist_file,
+        removed,
     })
 }
 

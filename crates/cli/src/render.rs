@@ -697,26 +697,65 @@ pub fn setup_block(format: Format, finding: &Finding) -> String {
 
 /// Render a successful `jigc uninstall` teardown to the surface `format` selects
 /// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5)): `agent` /
-/// `human` emit a one-line-per-target summary of what was torn down, followed by the
-/// routing footer; `json` emits a generic object naming the two host targets, with no
-/// footer (tooling-consumed). The summary states the repo-local footprint was removed
-/// (the machine-global `doc-code` probe is left in place — B2).
+/// `human` emit one bullet per artifact **actually** removed — the real teardown set,
+/// so a no-op (a second `uninstall`, nothing present) reports a clean "nothing to
+/// remove" line rather than over-claiming — followed by the routing footer; `json`
+/// emits a generic object naming the two host targets plus the per-artifact `removed`
+/// flags, with no footer (tooling-consumed). The machine-global `doc-code` probe is
+/// left in place — B2.
 pub fn uninstall_success(format: Format, summary: &UninstallSummary) -> String {
+    let removed = &summary.removed;
     match format {
         Format::Json => json(&serde_json::json!({
             "uninstalled": true,
             "line_file": summary.line_file,
             "allowlist_file": summary.allowlist_file,
+            // The real removal set — one flag per repo-local artifact, honest about
+            // which were present vs already-absent (never over-claiming a no-op).
+            "removed": {
+                "jigc_dir": removed.jigc_dir,
+                "reference": removed.reference,
+                "allowlist": removed.allowlist,
+                "hook": removed.hook,
+                "deny": removed.deny,
+                "precommit": removed.precommit,
+            },
         })),
         Format::Agent | Format::Human => {
             let mut out = String::from("jigc uninstall — repo-local install removed\n\n");
-            out.push_str("  - removed .jigc/\n");
-            out.push_str("  - unwired bootstrap reference ← ");
-            out.push_str(&summary.line_file);
-            out.push('\n');
-            out.push_str("  - removed jigc allowlist ← ");
-            out.push_str(&summary.allowlist_file);
-            out.push('\n');
+            // One bullet per artifact **actually** removed — so the summary matches the
+            // real teardown and never claims to remove what wasn't there (M36 honesty
+            // fix). An all-absent teardown (a second `uninstall`) reports a clean no-op.
+            if removed.is_empty() {
+                out.push_str("  (nothing to remove — no repo-local jigc install was present)\n");
+            } else {
+                if removed.jigc_dir {
+                    out.push_str("  - removed .jigc/\n");
+                }
+                if removed.reference {
+                    out.push_str("  - unwired bootstrap reference ← ");
+                    out.push_str(&summary.line_file);
+                    out.push('\n');
+                }
+                if removed.allowlist {
+                    out.push_str("  - removed jigc allowlist permit ← ");
+                    out.push_str(&summary.allowlist_file);
+                    out.push('\n');
+                }
+                if removed.hook {
+                    out.push_str("  - removed SessionStart hook ← ");
+                    out.push_str(&summary.allowlist_file);
+                    out.push('\n');
+                }
+                if removed.deny {
+                    out.push_str("  - removed deny safety floor ← ");
+                    out.push_str(&summary.allowlist_file);
+                    out.push('\n');
+                }
+                if removed.precommit {
+                    out.push_str("  - removed pre-commit hook\n");
+                }
+            }
             out.push_str(ROUTING_FOOTER);
             out
         }
