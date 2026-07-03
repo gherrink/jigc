@@ -526,7 +526,8 @@ const SECRETS_GITIGNORE_BLOCK: &str = "\
 # jigc secrets floor — safe defaults; edit freely
 .env
 .env.*
-!.env.example        # keep a committed template
+# keep a committed template
+!.env.example
 *.pem
 *.key
 id_rsa
@@ -1718,6 +1719,30 @@ mod tests {
                 "the floor must ignore `{pat}`; got:\n{body}",
             );
         }
+    }
+
+    /// The seeded floor's `!.env.example` negation must **actually** un-ignore a
+    /// committed template — not merely appear as a line. gitignore has no inline
+    /// comments, so a trailing `# …` on the negation line would make git read the
+    /// whole `!.env.example  # …` string as the (literal) filename and never fire the
+    /// negation, leaving `.env.example` silently ignored by `.env.*`. Exercise git
+    /// itself (not string presence): after seeding, `.env.example` is NOT ignored while
+    /// `.env` still is.
+    #[test]
+    fn seed_secrets_gitignore_negation_actually_unignores_env_example() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+
+        seed_secrets_gitignore(dir.path()).expect("seed succeeds on a fresh repo");
+
+        assert!(
+            !git_path_ignored(dir.path(), ".env.example"),
+            "the seeded `!.env.example` negation must un-ignore a committed template",
+        );
+        assert!(
+            git_path_ignored(dir.path(), ".env"),
+            "the floor must still ignore a real `.env`",
+        );
     }
 
     /// An **established** repo (>=1 commit) is left completely untouched — no seed.
