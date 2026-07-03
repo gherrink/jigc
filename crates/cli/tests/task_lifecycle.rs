@@ -32,8 +32,8 @@ use std::process::{Command, Stdio};
 /// path, not only `start_compose`; review B2).
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
 advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
-blocking · schema-conformance.field-value-conformant — field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
-blocking · schema-conformance.required-slot-present — required slot in section `summary` is empty
+blocking · schema-conformance.field-value-conformant — `docs/commit:add-rate-limiter.md`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
+blocking · schema-conformance.required-slot-present — `docs/commit:add-rate-limiter.md`: required slot in section `summary` is empty
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

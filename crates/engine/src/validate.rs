@@ -588,9 +588,13 @@ fn schema_conformance_store(
                         doc_findings.push(version_mismatch_break(stamp, current));
                     }
                     route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
+                    attribute_to_doc(&mut doc_findings, &rel_key);
                     findings.extend(doc_findings);
                 }
-                Err(parse_findings) => findings.extend(parse_findings),
+                Err(mut parse_findings) => {
+                    attribute_to_doc(&mut parse_findings, &rel_key);
+                    findings.extend(parse_findings);
+                }
             }
         }
     }
@@ -1001,9 +1005,44 @@ fn conformance_for(
             None,
         )];
     };
-    match parse_sections(schema, source) {
+    let mut findings = match parse_sections(schema, source) {
         Ok(doc) => schema_conformance(schema, source, &doc),
         Err(parse_findings) => parse_findings,
+    };
+    attribute_to_doc(&mut findings, rel_key);
+    findings
+}
+
+/// Thread the owning doc's `rel_key` into every `schema-conformance` / `conformance.*`
+/// finding so each names the doc it came from — never a sibling's (`design/validation.md`
+/// → Findings: `target` is the address the finding concerns). The bare per-instance checks
+/// emit doc-less messages and fragment-only / absent addresses (`section/item/leaf` or
+/// `None`), so a multi-doc sweep produces indistinguishable findings; this post-pass
+/// attributes each in place:
+///
+/// - **message** — prefixed with `` `<rel_key>`:  `` so the rendered `severity · code —
+///   message` line an operator reads names the doc.
+/// - **`Location.address`** — the JSON `target` channel: a fragment-bearing address becomes
+///   `<rel_key>#<fragment>`; a fragment-less or location-less finding is addressed at the
+///   bare `<rel_key>`. **`line`/`col` are preserved** — attribution never moves the source
+///   coordinate the check raised.
+///
+/// The single helper both the task-scope [`conformance_for`] and the store-scope
+/// [`schema_conformance_store`] apply to their parse arms (reuse-proven — both callers hold
+/// `rel_key`). The task-scope `unknown-type` arm and the store `route`-labeler already carry
+/// `rel_key`, so they are left untouched.
+fn attribute_to_doc(findings: &mut [Finding], rel_key: &str) {
+    for finding in findings {
+        finding.message = format!("`{rel_key}`: {}", finding.message);
+        match &mut finding.location {
+            Some(location) => {
+                location.address = Some(match &location.address {
+                    Some(fragment) => format!("{rel_key}#{fragment}"),
+                    None => rel_key.to_string(),
+                });
+            }
+            None => finding.location = Some(Location::addressed(rel_key, 1, 1)),
+        }
     }
 }
 
@@ -5241,5 +5280,185 @@ Effects.
             f[0].route, None,
             "a stamped doc whose doctype has no manifest version must stay un-routed",
         );
+    }
+}
+
+#[cfg(test)]
+mod attribution_tests {
+    //! File-attribution (M36): every `schema-conformance` / `conformance.*` finding names
+    //! the doc it came from — at both the task-scope [`conformance_for`] and the store-scope
+    //! [`schema_conformance_store`] loci. The bare per-instance checks emit doc-less messages
+    //! and fragment-only / absent addresses, so a multi-doc sweep would otherwise produce
+    //! findings indistinguishable across sibling docs. The `line`/`col` the check raised is
+    //! preserved verbatim; only the `message` prefix and the `Location.address` gain `rel_key`.
+
+    use super::*;
+    use crate::parse::parse_sections;
+
+    /// A minimal persisted `note` doctype with one required body slot — the one lever a
+    /// fixture violates (an empty slot ⇒ `schema-conformance.required-slot-present`). Carries
+    /// a `location:` so the store-scope sweep walks it.
+    fn note_schema() -> Schema {
+        let yaml = b"\
+type: note
+location: notes/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: body
+    slot: { hint: \"The note body.\" }
+";
+        crate::schema::load_schema(yaml).expect("note schema loads")
+    }
+
+    fn schemas() -> BTreeMap<String, Schema> {
+        let mut m = BTreeMap::new();
+        m.insert("note".to_string(), note_schema());
+        m
+    }
+
+    /// A `note` instance whose required body slot is **empty** (heading present, no prose) —
+    /// the unfilled-slot case. `pad` shifts the slot's source line so the two sibling
+    /// fixtures raise findings at *different* coordinates, making line-preservation observable.
+    fn empty_slot_note(title: &str, pad: &str) -> String {
+        format!(
+            "\
+---
+title: {title}
+---
+{pad}
+# {title}
+
+## Body
+"
+        )
+    }
+
+    /// The single bare (un-attributed) finding the checks raise over one empty-slot note —
+    /// the baseline the attributed finding must match on `line`/`col` and (prefix-stripped)
+    /// `message`.
+    fn bare_finding(source: &str) -> Finding {
+        let schema = note_schema();
+        let doc = parse_sections(&schema, source).expect("fixture parses");
+        let mut findings = schema_conformance(&schema, source, &doc);
+        assert_eq!(
+            findings.len(),
+            1,
+            "the empty-slot fixture must raise exactly one bare finding: {findings:?}"
+        );
+        findings.pop().unwrap()
+    }
+
+    /// (task scope) Two docs, each an empty-slot note, run through [`conformance_for`]: each
+    /// finding's message AND `Location.address` name **its own** `rel_key` (never the
+    /// sibling's), with `line`/`col` byte-identical to the bare baseline.
+    #[test]
+    fn conformance_for_attributes_each_finding_to_its_own_doc() {
+        let schemas = schemas();
+        for (slug, pad) in [("alpha", ""), ("beta", "\n")] {
+            let source = empty_slot_note(slug, pad);
+            let filename = format!("note:{slug}.md");
+            let rel_key = format!("docs/note:{slug}.md");
+            let sibling = if slug == "alpha" { "beta" } else { "alpha" };
+
+            let bare = bare_finding(&source);
+            let bare_loc = bare.location.clone().expect("bare finding is located");
+
+            let findings = conformance_for(&filename, &schemas, &rel_key, &source);
+            assert_eq!(findings.len(), 1, "one finding for {slug}: {findings:?}");
+            let f = &findings[0];
+
+            assert_eq!(
+                f.message,
+                format!("`{rel_key}`: {}", bare.message),
+                "the message is prefixed with the owning doc",
+            );
+            assert!(
+                !f.message.contains(sibling),
+                "{slug}'s message must not name the sibling `{sibling}`: {}",
+                f.message,
+            );
+            let loc = f.location.as_ref().expect("attributed finding is located");
+            assert_eq!(
+                loc.address.as_deref(),
+                Some(rel_key.as_str()),
+                "the address names the owning doc (slot break carries no fragment)",
+            );
+            assert!(
+                !loc.address.as_deref().unwrap().contains(sibling),
+                "{slug}'s address must not name the sibling `{sibling}`",
+            );
+            assert_eq!(
+                (loc.line, loc.col),
+                (bare_loc.line, bare_loc.col),
+                "line/col are preserved verbatim (attribution never moves the coordinate)",
+            );
+        }
+    }
+
+    /// (store scope, the done-criterion) A committed store of **two** empty-slot notes: the
+    /// store sweep surfaces one break per doc, each attributed to its own `notes/<slug>.md`
+    /// — never the sibling's — with `line`/`col` unchanged. This is where the adoption
+    /// ingest→validate path names every finding's doc.
+    #[test]
+    fn schema_conformance_store_attributes_each_finding_to_its_own_doc() {
+        let root = std::env::temp_dir().join(format!(
+            "jigc-attribution-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos(),
+        ));
+        let notes = root.join("notes");
+        std::fs::create_dir_all(&notes).expect("mk notes/");
+        let alpha = empty_slot_note("alpha", "");
+        let beta = empty_slot_note("beta", "\n");
+        std::fs::write(notes.join("alpha.md"), &alpha).expect("commit alpha");
+        std::fs::write(notes.join("beta.md"), &beta).expect("commit beta");
+
+        let findings = schema_conformance_store(&root, &schemas(), &BTreeMap::new());
+        let _ = std::fs::remove_dir_all(&root);
+
+        let breaks: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.required-slot-present")
+            .collect();
+        assert_eq!(
+            breaks.len(),
+            2,
+            "one required-slot-present break per committed note: {findings:?}",
+        );
+
+        for (slug, source) in [("alpha", &alpha), ("beta", &beta)] {
+            let rel_key = format!("notes/{slug}.md");
+            let sibling_key = if slug == "alpha" { "beta" } else { "alpha" };
+            let bare_loc = bare_finding(source).location.expect("bare located");
+
+            let f = breaks
+                .iter()
+                .find(|f| f.message.contains(&rel_key))
+                .unwrap_or_else(|| panic!("no finding attributed to `{rel_key}`: {breaks:?}"));
+
+            assert!(
+                !f.message.contains(sibling_key),
+                "{slug}'s message must not name the sibling `{sibling_key}`: {}",
+                f.message,
+            );
+            let loc = f.location.as_ref().expect("attributed finding is located");
+            assert_eq!(
+                loc.address.as_deref(),
+                Some(rel_key.as_str()),
+                "the address names the owning doc",
+            );
+            assert_eq!(
+                (loc.line, loc.col),
+                (bare_loc.line, bare_loc.col),
+                "line/col preserved verbatim for {slug}",
+            );
+        }
     }
 }

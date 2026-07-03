@@ -269,6 +269,60 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     );
 }
 
+/// (file-attribution, M36) Two committed ADRs made non-conformant by the same schema shadow
+/// each surface one `required-field-present` break — and each **rendered finding line names
+/// its own doc address** (`decisions/<slug>.md`), never the sibling's. Pre-attribution the two
+/// message lines were byte-identical and named no doc at all, so the adoption ingest→validate
+/// path could not attribute a finding to its doc. The assertion isolates the `blocking · code —
+/// message` line (which the `route:` line — that already carries the doc — never matches), so the
+/// doc address must come from the *message* the engine attributed.
+#[test]
+fn store_sweep_attributes_each_conformance_finding_to_its_own_doc() {
+    let repo = TempDir::new("attribute");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), "alpha-decision", "Alpha decision", Some(1));
+    commit_adr(repo.path(), "beta-decision", "Beta decision", Some(1));
+    shadow_adr_schema(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "a schema-conformance break must not gate `jigc validate` (exit 0); \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // The `blocking · code — message` message lines (the route line, which already names the
+    // doc, does not contain the code, so it is filtered out): each must name its own doc.
+    let message_lines: Vec<&str> = stdout
+        .lines()
+        .filter(|l| l.contains("schema-conformance.required-field-present"))
+        .collect();
+    assert_eq!(
+        message_lines.len(),
+        2,
+        "one required-field-present message line per committed ADR; stdout:\n{stdout}",
+    );
+    let alpha = message_lines
+        .iter()
+        .find(|l| l.contains("alpha-decision.md"))
+        .unwrap_or_else(|| panic!("alpha's finding line must name its own doc; stdout:\n{stdout}"));
+    let beta = message_lines
+        .iter()
+        .find(|l| l.contains("beta-decision.md"))
+        .unwrap_or_else(|| panic!("beta's finding line must name its own doc; stdout:\n{stdout}"));
+    assert!(
+        !alpha.contains("beta-decision"),
+        "alpha's finding line must not name the sibling `beta`: {alpha}",
+    );
+    assert!(
+        !beta.contains("alpha-decision"),
+        "beta's finding line must not name the sibling `alpha`: {beta}",
+    );
+}
+
 /// (conformant) With **no** schema shadow the committed ADRs conform — no schema-conformance
 /// finding, no route line, exit 0. The false-positive guard for the routing path.
 #[test]
