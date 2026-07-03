@@ -342,6 +342,99 @@ fn strip_managed_block<'a>(content: &'a str, rendered: &str) -> std::borrow::Cow
     }
 }
 
+/// The teardown verdict for an existing `pre-commit` hook — what [`remove_precommit_hook`]
+/// does with the file it found.
+enum PrecommitTeardown {
+    /// No jigc block found (a purely foreign hook, or a foreign hook that merely
+    /// references the start sentinel) — leave the file untouched.
+    NotOurs,
+    /// The file was a standalone jigc hook (wholly ours) — remove it entirely.
+    RemoveFile,
+    /// A wrapped foreign hook — restore this foreign remainder to disk.
+    RestoreForeign(String),
+}
+
+/// Classify an existing `pre-commit` hook's `content` for teardown — the jigc-path-free
+/// inverse of [`install_precommit_hook`]'s splice (`uninstall` does not know which
+/// absolute `jigc` path the hook was installed with, so it keys on the sentinels'
+/// **structure**, never on a rendered-body byte match):
+///   - a **wrapped** block bracketed by BOTH [`PRECOMMIT_SENTINEL`] and
+///     [`PRECOMMIT_SENTINEL_END`] → cut inclusive of both markers and restore the
+///     foreign remainder verbatim (empty remainder → remove the file);
+///   - a **standalone** jigc hook — the rendered body's fixed prefix
+///     `#!/bin/sh\n{PRECOMMIT_SENTINEL}\n` (any installing-`jigc` path) → wholly ours,
+///     remove the file;
+///   - anything else — including a foreign hook that merely *contains* the start
+///     sentinel string but has no matching end marker and is not our standalone shape
+///     — is foreign and left untouched (mirrors [`strip_managed_block`]'s data-loss
+///     guard on the install side).
+fn classify_precommit_for_teardown(content: &str) -> PrecommitTeardown {
+    let Some(start) = content.find(PRECOMMIT_SENTINEL) else {
+        return PrecommitTeardown::NotOurs;
+    };
+    // Wrapped block: bracketed by both sentinels — cut it out, restore the foreign body.
+    if let Some(rel_end) = content[start..].find(PRECOMMIT_SENTINEL_END) {
+        // Back up to the beginning of the start-sentinel's line (keeps a preceding
+        // foreign shebang), and advance past the end-marker's own line.
+        let block_start = content[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
+        let abs_end = start + rel_end + PRECOMMIT_SENTINEL_END.len();
+        let after = content[abs_end..]
+            .find('\n')
+            .map(|i| &content[abs_end + i + 1..])
+            .unwrap_or("");
+        // Drop the single blank-line separator `install_precommit_hook` inserts between
+        // the jigc block's end marker and the foreign body, so the restore matches the
+        // foreign hook's normalized pre-wrap bytes.
+        let mut foreign = String::from(&content[..block_start]);
+        foreign.push_str(after.trim_start_matches('\n'));
+        if foreign.trim().is_empty() {
+            return PrecommitTeardown::RemoveFile;
+        }
+        return PrecommitTeardown::RestoreForeign(foreign);
+    }
+    // No end marker: ours only if the file is a standalone jigc hook — the rendered
+    // body's fixed prefix. A foreign hook that merely references the start sentinel
+    // elsewhere is preserved verbatim.
+    let standalone_prefix = format!("#!/bin/sh\n{PRECOMMIT_SENTINEL}\n");
+    if content.starts_with(&standalone_prefix) {
+        PrecommitTeardown::RemoveFile
+    } else {
+        PrecommitTeardown::NotOurs
+    }
+}
+
+/// Idempotently **remove** the jigc-managed `pre-commit` hook from the repo at
+/// `repo_root` — the inverse of [`install_precommit_hook`] for `jigc uninstall`
+/// (`design/project-setup.md` → Flow 2 hardening → Teardown, the M36 symmetry fix:
+/// "both hooks must come out"). Resolves the **real** hooks dir the same way install
+/// does (honoring `core.hooksPath` + worktrees).
+///
+/// A **standalone** jigc hook is removed entirely; a **wrapped** foreign hook has only
+/// the jigc block (bracketed by the start/end sentinels) pruned, restoring the foreign
+/// hook; a purely foreign hook is left untouched. **Idempotent + non-destructive:** an
+/// absent hook, or a foreign hook, is a clean no-op, so a second `uninstall` is a
+/// no-op. See [`classify_precommit_for_teardown`] for the exact detection.
+pub fn remove_precommit_hook(repo_root: &Path) -> std::io::Result<()> {
+    let hooks_dir = resolve_hooks_dir(repo_root)?;
+    let hook = hooks_dir.join("pre-commit");
+
+    let existing = match std::fs::read_to_string(&hook) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+        Ok(existing) => existing,
+    };
+
+    match classify_precommit_for_teardown(&existing) {
+        PrecommitTeardown::NotOurs => Ok(()),
+        PrecommitTeardown::RemoveFile => match std::fs::remove_file(&hook) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            other => other,
+        },
+        // The file already exists and stays executable; `write` preserves its mode.
+        PrecommitTeardown::RestoreForeign(foreign) => std::fs::write(&hook, foreign),
+    }
+}
+
 /// Resolve the repo's **real** hooks directory through git, honoring
 /// `core.hooksPath`, the worktree `.git`-is-a-file case, and the common hooks dir for
 /// linked worktrees. A single `git -C <repo_root> rev-parse --path-format=absolute
@@ -838,26 +931,30 @@ pub struct UninstallSummary {
     pub allowlist_file: String,
 }
 
-/// Run `jigc uninstall` from `start`: locate the repo root and reverse **exactly the
-/// enumerated repo-local** `setup`-created set — remove `.jigc/` (which subsumes the
-/// bootstrap `AGENT.md`, the cascade config layer, the `compose-embedded-methodology`
-/// marker, and the index/state working area), unwire the `CLAUDE.md`
-/// `## Project interface` section + its `@.jigc/AGENT.md` import line, and remove the
-/// `jigc *` permit from `.claude/settings.json`'s `permissions.allow`
-/// (`design/project-setup.md` → Flow 2 hardening → Teardown / cleanup (G5), bullet
-/// (b)).
+/// Run `jigc uninstall` from `start`: locate the repo root and reverse the **complete**
+/// repo-local `setup`-created set — remove `.jigc/` (which subsumes the bootstrap
+/// `AGENT.md`, the cascade config layer, the `compose-embedded-methodology` marker, and
+/// the index/state working area), unwire the `CLAUDE.md` `## Project interface` section
+/// and its `@.jigc/AGENT.md` import line, remove **all three** `.claude/settings.json`
+/// writes — the `jigc *` permit (`permissions.allow`), the `SessionStart` hook
+/// (`hooks.SessionStart`), and the `deny` safety floor (`permissions.deny`) — and prune
+/// the git `pre-commit` hook (the M36 symmetry fix: both hooks must come out, or they
+/// fire against a removed install; `design/project-setup.md` → Flow 2 hardening →
+/// Teardown / cleanup (G5), bullet (b)). Every settings removal is **surgical**: a
+/// foreign permit / hook / deny entry sharing the file survives.
 ///
 /// **Explicitly NOT** the machine-global `doc-code` probe sibling beside the `jigc`
 /// binary — it is shared across every jigc repo on the machine, so deleting it would
 /// break `jigc validate` for sibling repos (design-review B2). Machine-global removal
 /// is `cargo uninstall jigc` + manual probe removal, never this per-project verb.
 ///
-/// **Idempotent + non-destructive:** an already-absent `.jigc/`, a `CLAUDE.md` that no
-/// longer carries the section, and an `allow` array that no longer carries the permit
-/// are each a clean no-op, so a second `uninstall` exits 0 leaving the (restored) host
-/// files byte-untouched. `Ok(summary)` on a clean teardown; `Err(finding)` is a single
-/// blocking `uninstall.*` finding carrying a route — the dispatcher renders it and
-/// exits non-zero.
+/// **Idempotent + non-destructive:** each step is independently a clean no-op when its
+/// artifact is already absent — an already-removed `.jigc/`, a `CLAUDE.md` without the
+/// section, an `allow`/`deny` array or `hooks` object without the jigc entry, and an
+/// absent-or-foreign `pre-commit` hook — so a second `uninstall` exits 0 leaving the
+/// (restored) host files byte-untouched. `Ok(summary)` on a clean teardown;
+/// `Err(finding)` is a single blocking `uninstall.*` finding carrying a route — the
+/// dispatcher renders it and exits non-zero.
 pub fn run_uninstall(start: &Path) -> Result<UninstallSummary, Finding> {
     let ctx = locate::locate(start).map_err(|err| {
         Finding::block(
@@ -919,6 +1016,37 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
             "uninstall.remove-allowlist",
             format!("cannot remove the allowlist permit from `{allowlist_file}`: {err}"),
             format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
+        )
+    })?;
+
+    // 4. Remove the `SessionStart` hook from the same settings file — surgically, so a
+    //    foreign hook sharing the `hooks` object survives (the M36 symmetry fix: both
+    //    hooks must come out, or they fire against a removed install).
+    adapter::remove_hook(repo_root, profile).map_err(|err| {
+        Finding::block(
+            "uninstall.remove-hook",
+            format!("cannot remove the session hook from `{allowlist_file}`: {err}"),
+            format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
+        )
+    })?;
+
+    // 5. Remove the `deny` safety floor from the same settings file — dropping only the
+    //    profile's floor patterns, preserving any user `deny` entry.
+    adapter::remove_deny(repo_root, profile).map_err(|err| {
+        Finding::block(
+            "uninstall.remove-deny",
+            format!("cannot remove the deny safety floor from `{allowlist_file}`: {err}"),
+            format!("ensure `{allowlist_file}` is writable, then re-run `jigc uninstall`"),
+        )
+    })?;
+
+    // 6. Remove the `pre-commit` hook — a standalone jigc hook is deleted; a foreign
+    //    hook setup wrapped is restored (only the jigc block is pruned).
+    remove_precommit_hook(repo_root).map_err(|err| {
+        Finding::block(
+            "uninstall.remove-precommit",
+            format!("cannot remove the `pre-commit` hook from the repo's hooks dir: {err}"),
+            "ensure the repo's git hooks directory is writable, then re-run `jigc uninstall`",
         )
     })?;
 
@@ -1615,6 +1743,91 @@ mod tests {
         assert!(
             after.contains(PRECOMMIT_SENTINEL_END),
             "the foreign hook must be wrapped (gain the jigc block), not stripped to ours",
+        );
+    }
+
+    /// [`remove_precommit_hook`] removes a **standalone** jigc hook entirely (the
+    /// setup→uninstall round-trip for a repo that had no pre-existing hook), and a
+    /// second remove over the now-absent file is a clean no-op. The removal keys on the
+    /// sentinel structure, not the installing-`jigc` path, so it fires even though
+    /// `uninstall` does not know that path.
+    #[test]
+    fn remove_precommit_removes_standalone_jigc_hook_then_is_a_no_op() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+
+        install_precommit_hook(dir.path(), Path::new("/some/other/bin/jigc"))
+            .expect("install a standalone hook");
+        assert!(hook.exists(), "sanity: setup wrote the standalone hook");
+
+        remove_precommit_hook(dir.path()).expect("remove the standalone hook");
+        assert!(
+            !hook.exists(),
+            "a standalone jigc pre-commit hook must be removed entirely",
+        );
+
+        // Idempotent: a second remove over the absent file is a clean no-op.
+        remove_precommit_hook(dir.path()).expect("second remove is a no-op");
+        assert!(!hook.exists(), "the removed hook stays absent");
+    }
+
+    /// [`remove_precommit_hook`] over a **wrapped** foreign hook prunes only the jigc
+    /// block (bracketed by the start/end sentinels), restoring the foreign hook's real
+    /// work — the setup→uninstall round-trip for a repo whose pre-existing hook setup
+    /// wrapped. The RED obligation: a setup-wrapped foreign pre-commit hook is restored.
+    #[test]
+    fn remove_precommit_restores_wrapped_foreign_hook() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        let foreign = "#!/bin/sh\n# someone's hand-rolled hook\necho hello\nexit 0\n";
+        std::fs::write(&hook, foreign).expect("seed a foreign pre-commit");
+
+        // setup wraps the foreign hook (jigc block spliced in, foreign body preserved).
+        install_precommit_hook(dir.path(), Path::new("/abs/bin/jigc")).expect("install wraps");
+        let wrapped = std::fs::read_to_string(&hook).expect("wrapped hook present");
+        assert!(
+            wrapped.contains(PRECOMMIT_SENTINEL) && wrapped.contains(PRECOMMIT_SENTINEL_END),
+            "sanity: the wrapped hook carries both sentinels",
+        );
+
+        remove_precommit_hook(dir.path()).expect("remove the jigc block");
+        let after = std::fs::read_to_string(&hook).expect("foreign hook restored, not deleted");
+        assert!(
+            !after.contains(PRECOMMIT_SENTINEL) && !after.contains(PRECOMMIT_SENTINEL_END),
+            "the jigc block (both sentinels) must be gone; got:\n{after}",
+        );
+        assert_eq!(
+            after, foreign,
+            "the foreign hook must be restored to its pre-wrap bytes; got:\n{after}",
+        );
+
+        // Idempotent: a second remove over the now-foreign-only hook is byte-identical.
+        remove_precommit_hook(dir.path()).expect("second remove is a no-op");
+        assert_eq!(
+            std::fs::read_to_string(&hook).expect("hook present"),
+            foreign,
+            "a second remove leaves the restored foreign hook untouched",
+        );
+    }
+
+    /// [`remove_precommit_hook`] leaves a **purely foreign** hook (no jigc sentinel)
+    /// untouched — the never-installed case, and the data-loss guard mirror of
+    /// [`strip_managed_block`].
+    #[test]
+    fn remove_precommit_leaves_foreign_hook_untouched() {
+        let dir = TempDir::new();
+        git(dir.path(), &["init", "-q"]);
+        let hook = dir.path().join(".git/hooks/pre-commit");
+        let foreign = "#!/bin/sh\n# a foreign hook jigc never touched\necho work\nexit 0\n";
+        std::fs::write(&hook, foreign).expect("seed a foreign pre-commit");
+
+        remove_precommit_hook(dir.path()).expect("remove over a foreign hook");
+        assert_eq!(
+            std::fs::read_to_string(&hook).expect("hook present"),
+            foreign,
+            "a foreign hook must be left byte-untouched",
         );
     }
 

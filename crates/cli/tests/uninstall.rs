@@ -147,12 +147,19 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         The gateway owns rate limiting; do not duplicate it downstream.\n";
     fs::write(repo.path().join("CLAUDE.md"), seeded_claude).expect("seed CLAUDE.md");
 
-    // Seed a .claude/settings.json with an unrelated top-level key and an unrelated
-    // permit — uninstall must drop only the `jigc *` permit and keep these.
+    // Seed a .claude/settings.json with an unrelated top-level key, an unrelated
+    // permit, and a FOREIGN SessionStart hook — uninstall must drop only the `jigc *`
+    // permit and jigc's own SessionStart command, keeping everything else (surgical,
+    // not a clobber).
     fs::create_dir_all(repo.path().join(".claude")).expect("seed .claude dir");
     let seeded_settings = serde_json::json!({
         "model": "claude-sonnet-4",
         "permissions": { "allow": ["git status"] },
+        "hooks": {
+            "SessionStart": [
+                { "hooks": [ { "type": "command", "command": "my-own-tool --greet" } ] }
+            ]
+        },
     });
     fs::write(
         repo.path().join(".claude/settings.json"),
@@ -234,6 +241,35 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
     assert_eq!(
         settings["model"], "claude-sonnet-4",
         "an unrelated top-level key must survive uninstall; got:\n{settings_raw}",
+    );
+
+    // (iii-b) The SessionStart hook is torn down surgically: jigc's `jigc start`
+    //         command is gone, but the FOREIGN SessionStart hook survives.
+    let session = settings["hooks"]["SessionStart"]
+        .as_array()
+        .expect("SessionStart stays an array");
+    let has_command = |cmd: &str| {
+        session.iter().any(|matcher| {
+            matcher["hooks"]
+                .as_array()
+                .is_some_and(|inner| inner.iter().any(|c| c["command"].as_str() == Some(cmd)))
+        })
+    };
+    assert!(
+        !has_command("jigc start"),
+        "uninstall must drop jigc's SessionStart command; got:\n{settings_raw}",
+    );
+    assert!(
+        has_command("my-own-tool --greet"),
+        "the foreign SessionStart hook must survive uninstall; got:\n{settings_raw}",
+    );
+
+    // (iii-c) The jigc-managed pre-commit hook is torn down: this repo had no
+    //         pre-existing hook, so setup wrote a standalone jigc hook and uninstall
+    //         removes it entirely — no residue firing against a removed install.
+    assert!(
+        !repo.path().join(".git/hooks/pre-commit").exists(),
+        "uninstall must remove the standalone jigc pre-commit hook",
     );
 
     // (iv) The machine-global doc-code probe STILL exists, byte-identical (B2): a
