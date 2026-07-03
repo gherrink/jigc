@@ -51,6 +51,15 @@ Allowlist `jigc` in the assistant's permission/settings so the agent runs it wit
 
 *Honest boundary: this is enforcement by **ergonomics**, not by sandbox.* A non-compliant agent that decides to ignore the adapter and edit files directly bypasses us — there is no kernel-level block, and the architecture explicitly does not promise one ([VISION.md](../VISION.md) principle #3). The bet: frictionless `jigc` access + bootstrap *advertise+demonstrate* + "the CLI is the only path that knows the wiring" make compliance the cheaper path. Out-of-band edits, when they happen, are detected and reconciled via the engine-native `file-state` probe ([write-commands.md](write-commands.md) → Out-of-band reconciliation), not prevented.
 
+**The `deny` safety floor — a bounded blocklist, not workflow enforcement (M36).** Alongside the `permit` allowlist, the profile carries a small, **enumerable `deny` list** that the same install path merges into the settings file's `permissions.deny`. It is a **safety floor against catastrophic/exfil actions**, deliberately *orthogonal* to the managed-doc boundary: it does **not** police whether the agent writes docs through `jigc` (that stays the ergonomics bet above, never a hard block), and it is **not** the deferred `PreToolUse` managed-write enforcement hook ([Open questions](#open-questions); [VISION.md](../VISION.md) principle #3) — conflating the two would install a sandbox where the architecture promises none. The floor is fixed and small enough to state as the design:
+
+- **Destructive / exfil shell** — `Bash(rm -rf:*)`, `Bash(curl:*)`, `Bash(wget:*)`, `Bash(git push --force:*)`.
+- **Secret-file reads — each pattern denied on *both* surfaces.** A `Read`-tool deny (`Read(./.env)`, `Read(./.env.*)`, `Read(./**/*.pem)`, `Read(./**/id_rsa*)`, `Read(./**/*.key)`, the common credential files) blocks the `Read` tool — **but a `Read`-rule deny does not stop `cat .env`**: a shell read reaches the same bytes through Bash, which `Read` rules never see. So each secret pattern also carries a **Bash-command twin** scoped to that path (`Bash(cat ./.env:*)`, `Bash(cat ./.env.*:*)`, …) — the reason the list carries paired entries, not one per file. The twin is a **floor, not a seal** — `less`/`grep`/a Python `open()` still read the file — and that honest gap *is* the *ergonomics-not-sandbox* posture: the floor stops the obvious footgun, not a determined agent. (The secret **set** is the same one the fresh-repo `.gitignore` floor seeds — [project-setup.md](project-setup.md) → the secrets-floor `.gitignore` — one list, two enforcement points.)
+
+**Merged, never clobbered — mirror `inject_allowlist`.** Adding the floor to a `.claude/settings.json` that *already* carries a user `deny` array is the **same structure-aware merge** as the `permit` path ([Generated, minimal, regenerated](#generated-minimal-regenerated) idempotency; [project-setup.md](project-setup.md) → Idempotency & irreversibility): navigate/create `permissions.deny`, ensure each floor pattern is present (append-if-absent), preserve every user entry and unrelated key, write back — a re-run is a byte-stable no-op. It never replaces a user `deny`.
+
+**No self-collision.** The floor's `git push --force` / `rm -rf` denies target the *agent's* Bash tool; `jigc` itself shells `git add`/`git commit`/`mv` as a **binary it invokes directly** (never routed through the agent's denied Bash surface — [CLAUDE.md](../CLAUDE.md) "CLI orchestrates, git executes"), so `finalize`'s own commit is unaffected. The floor constrains the agent, not the CLI.
+
 ### 3. Bind the spawn mechanism
 
 The profile carries a **launch template**. The CLI renders its fan-out dispatch (`task_id` + entrypoint) *through* the template into the assistant's launch primitive — for Claude Code, a Task-tool invocation running `jigc workflow W --task <sub>`. The locked seam holds: **CLI owns the payload; the adapter owns the launch** — and the template is the *only* assistant-specific bit.
@@ -78,6 +87,13 @@ inject:
 allowlist:
   file: .claude/settings.json
   permit: ["jigc *"]
+  deny:                               # safety floor — merged into permissions.deny, never clobbered (see § Make jigc frictionless)
+    - "Bash(rm -rf:*)"
+    - "Bash(curl:*)"
+    - "Bash(wget:*)"
+    - "Bash(git push --force:*)"
+    - "Read(./.env)"                  # each secret pattern pairs a Read deny with a Bash twin (Bash(cat ./.env:*), …)
+    # …secret-file set + its Bash twins — full list in the prose above
 spawn:
   template: "Use your Task tool to run: `cd {{worktree}} && jigc workflow {{workflow}} --task {{task_id}}`"
 ```

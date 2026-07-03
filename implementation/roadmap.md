@@ -1843,3 +1843,70 @@ Then the [milestone-completion workflow](milestone-completion-workflow.md) audit
 4. **Setup artifacts, prose batch, CI** — the **minimal deny floor** in the generated `.claude/settings.json` (secret-file reads *with their Bash twins*, `curl*`/`wget*`, `rm -rf*`, force-push — safety floor, not workflow enforcement; decided 2026-07-02) + the **secrets-floor `.gitignore`** on the fresh-repo setup path; the **T1 prose batch** (verify-before-finalize in the implement steps · spec non-goals + named-files nudges in `author-spec` · the changelog create-gate advertised in implement prose · attribution-trailer instruction · the unmanaged-floor hint in project-setup · as-of-dated harness-mechanics claims in the adapter profile · the `when:`-line craft convention · "a line suffices" ADR hints · the exit-code contract stated in `AGENT.md` · the placement-rationale note in storage.md); the **doc staleness sweep** (QUICKSTART's "name settled" line, CLAUDE.md's methodology-pack path, VISION's M35-stale lines + the phantom "project planning" workflow disposition); **CI + a release pipeline** for this repo (the four-command gate on push/PR — the machine guarantee behind "the gate passes").
 
 **Proves:** the RC trials run on an instrumented, hardened, versioned binary — every failure identifiable (attribution + remediation + log), every audit-confirmed major closed, and the freeze's version-gate machinery exercised once for real before it ever binds an adopter. **Then:** the two RC trials (keeper corpora), their invocation-log analysis, and the 1.0.0 call.
+
+## Milestone 36 — v1 hardening (pre-RC): decomposition
+
+Cut 2026-07-03 via the [milestone-planning workflow](milestone-planning-workflow.md) (scope → 4 `capability-auditor` baselines exercising the real binary at HEAD `d9eb4d4` → 4-dimension gap pass → settle 5 forks with a `robust-advocate` brief on the central one → independent design review, 2 BLOCKING + 4 advisory **all baked** → gate-record → decompose). **The gap pass overturned the charter's Inc-3 assumption:** the adr `options` slot is *not* a byte-identical no-op — a prose slot is a section, the parser matches sections strictly by index, so inserting `## Options` strands every v1 ADR, forcing a real `AddedOptionalSection` corpus migration. That split the charter's Inc-3 (schema-v2 + remediation) into two increments (real engine work vs cosmetic fixes) — **five** increments, risk-first. Forks settled: [DECISIONS.md](../DECISIONS.md) → 2026-07-03 M36 planning (options→robust migration · CLI-native invocation log built · name held · release internal-only · docs-root orphan via git-ls-files). Design homes elaborated this cut: [corpus-migration.md](../design/corpus-migration.md) (`added-optional-section`), [document-type-schema.md](../design/document-type-schema.md) (the `options` slot), [measurement.md](../design/measurement.md) (the in-repo invocation log), [storage.md](../design/storage.md) (binary-provenance stamp + docs-root-orphan warning), [validation.md](../design/validation.md) (`file-state.orphaned-doc`), [assistant-adapter.md](../design/assistant-adapter.md) (deny floor), [project-setup.md](../design/project-setup.md) (secrets `.gitignore` + uninstall symmetry). **Status: planned, not yet built.**
+
+### Increment 1 — instrumentation & versioning
+
+**Deliverable:** a versioned, self-instrumenting binary — `1.0.0-rc.1` across the workspace + pack provenance, a committed binary-provenance stamp with an advisory mismatch check, and the opt-in CLI-native invocation log.
+
+**Grouped scope:**
+- Workspace `version` `0.0.0`→`1.0.0-rc.1` (`Cargo.toml`; propagates via `version.workspace = true`; pack provenance = `CARGO_PKG_VERSION` follows). No real-binary golden pins `0.0.0` (verified — the `"0.0.0"` literals are synthetic `PackDefaultLayer` test fixtures; `release_smoke`/`config_fork` use `env!`).
+- The **binary-provenance stamp** — a committed `.jigc/version` (NOT gitignored `.jigc/state/`; NOT a `packs.yaml` field — closed-surface rejection risk) + the **`store-version.binary-mismatch`** store-scope advisory (report-only, un-keyed, compares the recorded stamp to `CARGO_PKG_VERSION`) ([storage.md](../design/storage.md) → Store provenance).
+- The **invocation log** ([measurement.md](../design/measurement.md) → The in-repo invocation log): a `bool` `knobs.yaml` knob (default **OFF**) → append-only JSONL at `.jigc/logs/invocations.jsonl`; the `Outcome { code, finding_codes }` return-type refactor threaded through the ~20 `run_*` verbs (`std::process::ExitCode` is write-only), converted to `ExitCode` only at `main()`; a `main()` wrapper straddling `Cli::try_parse()` (captures clap exit-2 + timing; resolves the knob from the cascade independent of argv; no-ops outside a jigc repo); the JSONL writer + a full-timestamp clock helper; `.jigc/logs/` `create_dir_all` + gitignore (3 sites — `task.rs` `ENTRIES`, `adapter.rs`, + the `needs_write` re-key, the M31 sibling-site census). **RED obligation:** exit-code behaviour is unchanged by the refactor (the 0/1/2/3/4 vocabulary tests stay green).
+
+**Proves:** a real external-repo run yields analyzable in-repo instrumentation, and builds are version-distinguishable — the RC trials' evidence substrate. *(Enablement is the RC-trial protocol's job — the product ships opt-in.)*
+
+### Increment 2 — the confirmed majors
+
+**Deliverable:** the three audit-confirmed majors closed — every validation finding attributable to its doc, docs-root orphans detected, uninstall symmetric.
+
+**Grouped scope:**
+- **Validate file-attribution** — thread the owning-doc address (`rel_key`) into the `schema-conformance`/`conformance.*` findings (text prefix + the JSON `target` channel the wire contract already specs, [validation.md](../design/validation.md):37; preserve `line/col`), at both `conformance_for` call sites **and** the `parse_findings` Err arm (`validate.rs:1005`). Reuse-proven — both callers already hold `rel_key`.
+- **docs-root orphan detection** — the `git ls-files` detector keyed on the **location-directory basename** (not a bare `.md` match — that would flag `README.md`) → the **`file-state.orphaned-doc`** store-scope advisory + route; plus the `jigc config set docs-root` warning when a re-point would orphan committed docs (a net-new store-access seam in `run_set`) ([validation.md](../design/validation.md) → Orphan detection; [storage.md](../design/storage.md) → docs-root).
+- **Uninstall symmetry** — surgically remove the SessionStart hook (by `command == hook.run`), the pre-commit hook (by `PRECOMMIT_SENTINEL` bracket, restoring wrapped foreign hooks), and the deny floor on teardown; fix `project-setup.md` G5's false "exactly the enumerated set" claim; **preserve** the machine-global `doc-code` probe carve-out. **RED obligation:** a shared `settings.json` with a foreign SessionStart hook keeps it after uninstall (surgical, not clobber).
+
+**Proves:** the adoption trial's ingest→validate path names every finding's doc; a docs-root change never silently orphans; teardown leaves no firing residue.
+
+### Increment 3 — adr `options` slot via a real v1→v2 migration
+
+**Deliverable:** the adr `options` optional slot, shipped as the first live v1→v2 schema bump — the freeze machinery's first real *structural* corpus migration, exercised before any adopter exists.
+
+**Grouped scope:**
+- The **`AddedOptionalSection`** schema-diff kind (`schema_diff.rs` — today an added optional slot section classifies as `[]`) + the empty-heading-insert transform primitive, **reusing M34's already-shipped block-insert splice** (the `---` front-matter insert); `adr.yaml` gains the optional `options` slot after `context`; adr `schema-version` `1`→`2` + recomputed `schema-hash` in `config/schema-manifest.yaml`; ship the **embedded** `crates/cli/pack/schema-snapshots/adr.v1.yaml` (the exact current adr shape — `supersedes 0..*` — NOT the reconstructed `0..1` flow36 fixture). Parser **untouched** ([corpus-migration.md](../design/corpus-migration.md) → The deterministic transform).
+- **Acceptance (the first-ever embedded-snapshot migration):** a `schema_diff` unit test asserting `v1→v2 = [AddedOptionalSection]`; a byte-stability proptest row; and a flow driving the **real binary with no `JIGC_PACK_DIR`** over a fixture repo with a committed v1 ADR → `validate` routes `migrate` → `migrate-corpus` resolves the embedded `adr.v1` snapshot (`load_prior_schema` over the `EmbeddedPack`, never exercised before), splices `## Options`, re-gates clean, stamps `schema-version: 2`, every prior slot value byte-preserved. **RED obligation:** without the transform, a committed v1 ADR strands (the corpus-corruption the migration prevents). *(jigc's own `docs/decisions/` is NOT a migration target — no managed dev-pack ADR instances.)*
+
+**Proves:** the most common schema evolution (add an optional section) migrates cleanly and byte-preservingly through the shipped `jigc migrate-corpus` — the freeze's version-gate machinery run on a real change, closing the M34 `deliverable-reachable` lesson for the structural path.
+
+### Increment 4 — error remediation
+
+**Deliverable:** dead-end errors become self-correcting.
+
+**Grouped scope:**
+- **Errors-with-remediation** — `doc create`/`doc author` unknown-doctype name the valid set **and** route to the existing **`jigc describe`** (mirroring the proven-good `migrate --as <bad>` model), **not** a new `jigc doc types` micro-verb (foreclosed by the agent-native consolidated-verb constraint); `migrate` bad-path, `rename` bad-id, and `add-item` bad-address gain a route and drop the leaked `os error 2` tail.
+- **Reject empty `--title` on create** — `doc create <ty> --title ""` today mints a degenerate `adr:adr`; reject it (mirror `rename`'s slug-derivation guard).
+- **Reconciliation route** — `file_state.rs` `rename_weak_finding` route `jigc delete` (nonexistent) → **`jigc unmanage`**, dropping the stale "post-MVP" hedge; **update the two masking tests** asserting `contains("jigc delete")` (`file_state.rs:1334` + `file_state_soundness.rs:579`) in the same motion.
+
+**Proves:** an agent that fumbles a verb is routed to a real recovery, never a second error or a nonexistent verb.
+
+### Increment 5 — setup safety, prose, staleness, CI
+
+**Deliverable:** the setup artifacts carry a safety floor, the pack prose teaches the highest-value lines, the docs match reality, and CI guards the gate.
+
+**Grouped scope:**
+- The **minimal deny floor** in the generated `.claude/settings.json` — secret-file reads **with their Bash twins** (a `Read()` deny + a `Bash(cat …)` twin per pattern), `curl*`/`wget*`/`rm -rf*`/`git push --force*` — structure-aware **merged, never clobbered** (mirror `inject_allowlist`); + the **secrets-floor `.gitignore`** on the **fresh-repo path only** (discriminator `git rev-list --count HEAD == 0`; never touch an existing `.gitignore`) ([assistant-adapter.md](../design/assistant-adapter.md), [project-setup.md](../design/project-setup.md)).
+- The **T1 prose batch** — verify-before-finalize + the changelog create-gate in `implement.yaml`; per-criterion `add-item` + non-goals + named-files in `author-spec.yaml` (mirroring `author-migration-spec.yaml`); the attribution-trailer instruction; the unmanaged-floor hint; as-of-dated harness-mechanics claims in the adapter profile; the exit-code contract in `AGENT.md`; the `when:`-line craft convention; "a line suffices" ADR hints; the placement-rationale note in `storage.md`.
+- The **doc-staleness sweep** — QUICKSTART's "name settled" line (name is *held*, F3); CLAUDE.md's methodology-pack path (`packs/methodology/` at repo root) + its `.jigc/`-all-gitignored line (now mixed committed/gitignored, review A4); VISION's "always more expensive" line (refuted by M35), the "scheduled M35" rename line (shipped), and the phantom "project planning" workflow entry.
+- **CI** — the four-command gate (`cargo build` · `cargo test` · `cargo clippy --all-targets -- -D warnings` · `cargo fmt --check`) on push/PR via GitHub Actions, **internal-only** (no external publish — F4); accommodate the ~30s nested-`cargo build` in `flow13_contract_and_severity`.
+
+**Proves:** setup is safe to run in someone else's repo, the pack teaches verify-before-finalize, the docs match reality, and the gate runs on every push — the last hardening before the RC trials.
+
+### Owed (fold into the completion audit)
+- The 30-minute verification that **no `checkpoint` step can reach a fan-out-target workflow** (the sub-agent deadlock class) → record the result as a pack-authoring rule.
+- Post-build: rebuild + install the release binary (`cargo build --release && install -m755 target/release/jigc ~/.local/bin/jigc`); the two RC trials (greenfield + adoption) run **after** completion, in the driving session.
+
+### Status
+
+Planned 2026-07-03; not yet built. Hand off to `milestone-build` (base = the planning-commit HEAD).

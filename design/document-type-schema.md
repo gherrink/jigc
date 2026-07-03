@@ -158,14 +158,19 @@ sections:
     fields:
       - { id: status, type: enum, of: [proposed, accepted, superseded], default: proposed }
       - { id: date,   type: date, set: on-create }
-      - { id: supersedes, type: ref, to: adr, card: "0..1", inverse: superseded-by }
+      - { id: supersedes, type: ref, to: adr, card: "0..*", inverse: superseded-by }
+      - { id: cites-code, type: code-anchor }
   - id: context
     slot: { hint: "Why a decision was needed — the forces at play." }
+  - id: options
+    slot: { hint: "Alternatives weighed and why they lost — only when the choice needed weighing.", optional: true }
   - id: decision
     slot: { hint: "What we decided, in a sentence or two." }
   - id: consequences
     slot: { hint: "Tradeoffs and follow-on effects." }
 ```
+
+**An `optional: true` slot section is exempt from `required-slot-present`** — a conformant instance may leave its prose empty, and (unlike a required slot) an empty optional slot never blocks finalize. Its **heading is still rendered** (the canonical writer emits every schema section's `##` unconditionally; optionality governs prose, not heading presence), so an optional slot is still a *section* structurally. The adr `options` slot (M36, added after `context`) is the first optional slot on a persisted doctype; because adding it inserts a whole `## Options` section, shipping it is a real **v1→v2 schema bump** with an `AddedOptionalSection` corpus migration, not an in-place amendment ([corpus-migration.md](corpus-migration.md) → the transform). The `context`/`decision`/`consequences` slots stay **required** ([DECISIONS.md](../DECISIONS.md) → 2026-07-02 harvest — the ceremony targets a human reader; the trivial lane is the commit body).
 
 A repeatable section keeps its item-template inline:
 
