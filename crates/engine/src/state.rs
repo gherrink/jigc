@@ -685,9 +685,20 @@ pub fn create(
         return Err(unknown_doctype_finding(type_name, schemas));
     };
 
-    // 2. Mint the frozen content-slug. A `singleton` doctype fixes the slug to the
-    //    type id unconditionally (so a re-create targets the same `<location>/<ty>.md`,
-    //    review B-2); a non-singleton slugs the id-source (empty → type-name fallback).
+    // 2. A non-singleton create derives its stable id from the title; a title that
+    //    slugs to nothing would fall to `mint_id`'s type-name fallback and mint a
+    //    degenerate `<ty>:<ty>` (e.g. `adr:adr` from `--title ""`). Reject up front,
+    //    routing to a non-empty title — the engine-side mirror of `rename`'s
+    //    slug-derivation guard (`crates/cli/src/rename.rs`). Placed in the shared mint
+    //    so it covers both `doc create` and `doc author` (author → `create_gated` →
+    //    `create`). A `singleton` fixes its slug to the type id (no title to derive),
+    //    so it is untouched.
+    if !schema.singleton && crate::slug::slugify(id_source).is_empty() {
+        return Err(empty_title_finding(type_name));
+    }
+    // Mint the frozen content-slug. A `singleton` doctype fixes the slug to the type
+    // id unconditionally (so a re-create targets the same `<location>/<ty>.md`, review
+    // B-2); a non-singleton slugs the (now guaranteed non-empty-slugging) id-source.
     let slug = if schema.singleton {
         schema.ty.clone()
     } else {
@@ -867,6 +878,22 @@ fn instance_collision_finding(address: &str) -> Finding {
         Some(format!(
             "edit the existing `{address}` instead of re-creating it"
         )),
+    )
+}
+
+/// The empty-title block for a non-singleton `create` whose title slugs to nothing
+/// (`--title ""`, `--title "!!!"`): left unguarded it mints a degenerate `<ty>:<ty>`.
+/// Mirrors `rename`'s slug-derivation guard (`crates/cli/src/rename.rs`); routes to
+/// supply a non-empty `--title` (its slug becomes the doc id).
+fn empty_title_finding(type_name: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "create.empty-title",
+        format!(
+            "`jigc doc create {type_name}` needs a title that yields an id, but the given title is empty or slugs to nothing"
+        ),
+        None,
+        Some("re-run with a non-empty `--title` (its slug becomes the doc id)".to_string()),
     )
 }
 
@@ -1414,6 +1441,67 @@ sections:
             collide.route.is_some(),
             "a serial collision carries a route"
         );
+    }
+
+    /// (M36 inc-4 T2) A non-singleton `create` whose title slugs to nothing must be
+    /// rejected up front — left unguarded, `mint_id`'s type-name fallback would mint a
+    /// degenerate `<ty>:<ty>` (e.g. `adr:adr` from `--title ""`). This mirrors
+    /// `rename`'s slug-derivation guard (`crates/cli/src/rename.rs`). A title that
+    /// slugs empty a different way (`"!!!"`) rejects identically; a normal title and a
+    /// `singleton` (fixed type-id slug, no title to derive) stay green.
+    #[test]
+    fn create_rejects_a_title_that_slugs_to_nothing() {
+        let root = TempRoot::new("empty-title");
+        let task_dir = root.path().join("tasks").join("t");
+        let schemas = schemas(); // `commit` — a non-singleton.
+
+        for bad in ["", "!!!", "   "] {
+            let docs_before = std::fs::read_dir(task_dir.join("docs"))
+                .map(|it| it.count())
+                .unwrap_or(0);
+            let err = create(&task_dir, &schemas, "commit", bad, root.path(), &[])
+                .expect_err("a title that slugs to nothing rejects");
+            assert_eq!(err.severity, Severity::Blocking);
+            assert_eq!(err.code, "create.empty-title", "for title {bad:?}");
+            assert!(
+                err.route.is_some(),
+                "the empty-title block routes to a non-empty title: {err:?}"
+            );
+            let docs_after = std::fs::read_dir(task_dir.join("docs"))
+                .map(|it| it.count())
+                .unwrap_or(0);
+            assert_eq!(
+                docs_before, docs_after,
+                "an empty-title reject creates no instance (title {bad:?})"
+            );
+        }
+
+        // A normal title still mints.
+        let ok = create(&task_dir, &schemas, "commit", "Add cache", root.path(), &[])
+            .expect("a normal title still creates");
+        assert_eq!(ok.address, "commit:add-cache");
+
+        // A singleton with an empty id-source is untouched — its slug is the fixed
+        // type id, so there is no title to derive and nothing to reject.
+        let singleton_yaml = b"\
+type: changelog
+singleton: true
+location: ./
+sections: []
+";
+        let singleton = crate::schema::load_schema(singleton_yaml).expect("singleton loads");
+        let mut singleton_schemas = std::collections::BTreeMap::new();
+        singleton_schemas.insert("changelog".to_string(), singleton);
+        let sing = create(
+            &task_dir,
+            &singleton_schemas,
+            "changelog",
+            "",
+            root.path(),
+            &[],
+        )
+        .expect("a singleton create with an empty id-source stays green");
+        assert_eq!(sing.address, "changelog:changelog");
     }
 
     /// (M16 inc-2 T1) Fixed-slug minting for a `singleton` doctype. `create` on a
