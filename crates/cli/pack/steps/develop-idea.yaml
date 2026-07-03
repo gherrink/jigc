@@ -4,3 +4,8 @@ Develop the idea into a product direction. The idea is:
 Reason about the vision, the requirements it implies, and the context that
 shapes it — audience, constraints, and what is out of scope — before authoring
 the prd below.
+
+Author every managed document through `jigc` — it owns placement, structure, and
+cross-references. Files you write straight to disk are unmanaged: outside `jigc`'s
+tracking, validation, and commit — this is a convention, not a sandbox, so a
+hand-placed doc is simply invisible to the project.

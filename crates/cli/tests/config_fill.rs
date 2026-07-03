@@ -146,9 +146,28 @@ author a `body` to explain the motivation, only when they earn their place —
 jigc doc set-field commit:add-rate-limiter#scope --value <area> --task add-rate-limiter
 jigc doc set-slot commit:add-rate-limiter#body --from-file - --task add-rate-limiter
 
-If a decision is warranted, create an ADR and author its slots:
+When the work shares authorship — a co-author, or an agent that wrote it — record
+it in a commit trailer. Add one trailer item, then set its value on the address
+`add-item` prints:
+
+jigc doc add-item commit:add-rate-limiter#trailers --title Co-Authored-By --task add-rate-limiter
+jigc doc set-field commit:add-rate-limiter#trailers/<id>/value --value \"Name <email>\" --task add-rate-limiter
+
+If the change is user-facing — a feature, a fix, or a behaviour a user would
+notice — record it on the changelog, when the workflow you are running opens a
+changelog create-gate (bare `jigc start` lists the gates it grants):
+
+jigc doc create changelog --title Changelog --task add-rate-limiter
+
+If a decision is warranted, create an ADR and author its slots — a line per slot
+usually suffices; an ADR earns its keep by capturing the *why*, not by running
+long:
 
 Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
+
+Before you finalize, verify the change actually works: build it and run the
+tests, and confirm the behaviour you set out to produce. Finalize commits your
+staged work; it does not check that the work is correct.
 
 If your decision supersedes an earlier one, set `supersedes` on the ADR; the
 superseded decision then appears below for reference, so your consequences can

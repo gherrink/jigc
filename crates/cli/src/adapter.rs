@@ -451,14 +451,16 @@ impl std::error::Error for ProfileError {
     }
 }
 
-/// The managed bootstrap file's contents: the canonical routing sentence as the
-/// file body, with a trailing newline.
+/// The managed bootstrap file's contents: the canonical routing sentence, then
+/// the exit-code contract, each on its own line with a trailing newline.
 ///
 /// A pure function of the embedded contract — no filesystem. The file is wholly
 /// CLI-owned and rewritten in full each `setup`, so it needs no in-file
-/// idempotency markers; the body is just the sentence.
+/// idempotency markers. The routing sentence stays *routing, not content*
+/// (`design/bootstrap.md` → The sentence); the exit-code line beneath it is a
+/// *use-the-interface* fact — how to read `jigc`'s signals — not a routing rule.
 pub fn bootstrap_file() -> String {
-    format!("{BOOTSTRAP_SENTENCE}\n")
+    format!("{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_EXIT_CONTRACT}\n")
 }
 
 /// Write the managed bootstrap file (`<repo_root>/.jigc/AGENT.md`) with the
@@ -1008,6 +1010,15 @@ const BOOTSTRAP_IMPORT_LINE: &str = "@.jigc/AGENT.md";
 /// part of the sentence.
 const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.";
 
+/// The exit-code contract stated beneath the routing sentence in the managed
+/// bootstrap body (M36). `jigc` signals every outcome through the process exit
+/// code, so the agent must read it and stop on a non-zero rather than retry
+/// blindly; the validation-block code (`3`, [`crate::task::EXIT_VALIDATION_BLOCKED`])
+/// is named so a blocked finalize routes to fixing the findings. A
+/// *use-the-interface* fact, not routing content (`design/assistant-adapter.md`
+/// → the bootstrap body).
+const BOOTSTRAP_EXIT_CONTRACT: &str = "Read every command's exit code: `0` is success; non-zero means stop and read the output, do not retry blindly. A finalize blocked by validation exits `3` — fix the reported findings and re-run; `1` is an operational error, `2` a usage error, `4` a review still pending.";
+
 /// The env var that selects a directory adapter-profile source over the
 /// binary-embedded default. The adapter analogue of [`crate::pack`]'s
 /// `JIGC_PACK_DIR` (`DECISIONS.md` 2026-06-05 → the `JIGC_ADAPTERS_DIR` seam).
@@ -1211,6 +1222,9 @@ mod tests {
         let bytes = include_str!("../adapters/claude-code.yaml");
         insta::assert_snapshot!(bytes, @r###"
         assistant: claude-code
+        # Harness bindings below reflect Claude Code as of 2026-07 — the `SessionStart`
+        # hook event and the `.claude/settings.json` permissions schema are the harness's,
+        # not jigc's; revisit them if a later Claude Code release changes either.
         inject:
           - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }
           - hook: { event: SessionStart, run: "jigc start" }
@@ -1338,7 +1352,26 @@ mod tests {
     fn bootstrap_file_is_the_sentence_body() {
         insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
+
+        Read every command's exit code: `0` is success; non-zero means stop and read the output, do not retry blindly. A finalize blocked by validation exits `3` — fix the reported findings and re-run; `1` is an operational error, `2` a usage error, `4` a review still pending.
         "###);
+    }
+
+    /// The managed bootstrap body states the exit-code contract (M36): the agent
+    /// must read `jigc`'s exit codes and stop on non-zero, and the validation-block
+    /// code (`3`) is named so a blocked finalize is not retried blindly. Driven on
+    /// the emitted body itself — the bytes `setup` writes into `.jigc/AGENT.md`.
+    #[test]
+    fn bootstrap_file_states_the_exit_code_contract() {
+        let body = bootstrap_file();
+        assert!(
+            body.contains("exit code"),
+            "the bootstrap body must state the exit-code contract; got:\n{body}",
+        );
+        assert!(
+            body.contains("exits `3`"),
+            "the bootstrap body must name the validation-block exit code (3); got:\n{body}",
+        );
     }
 
     /// A throwaway directory that removes itself on drop — keeps the injection

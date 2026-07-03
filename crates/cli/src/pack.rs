@@ -1137,7 +1137,7 @@ mod tests {
     fn step_implement_body_is_canonical() {
         let pack = EmbeddedPack::new();
         let body = read_text(&pack, PackResourceKind::Steps, "implement");
-        insta::assert_snapshot!(body, @"
+        insta::assert_snapshot!(body, @r#"
         Implement the change directly in the working tree. `git add` your code edits
         before finalize — it commits only what you have staged. When done, set the
         required Conventional-Commits type — your editorial call on what this change
@@ -1153,12 +1153,31 @@ mod tests {
         jigc doc set-field commit:{{task.id}}#scope --value <area> --task {{task.id}}
         jigc doc set-slot commit:{{task.id}}#body --from-file - --task {{task.id}}
 
-        If a decision is warranted, create an ADR and author its slots:
+        When the work shares authorship — a co-author, or an agent that wrote it — record
+        it in a commit trailer. Add one trailer item, then set its value on the address
+        `add-item` prints:
+
+        jigc doc add-item commit:{{task.id}}#trailers --title Co-Authored-By --task {{task.id}}
+        jigc doc set-field commit:{{task.id}}#trailers/<id>/value --value "Name <email>" --task {{task.id}}
+
+        If the change is user-facing — a feature, a fix, or a behaviour a user would
+        notice — record it on the changelog, when the workflow you are running opens a
+        changelog create-gate (bare `jigc start` lists the gates it grants):
+
+        jigc doc create changelog --title Changelog --task {{task.id}}
+
+        If a decision is warranted, create an ADR and author its slots — a line per slot
+        usually suffices; an ADR earns its keep by capturing the *why*, not by running
+        long:
 
         {{ cli.create-adr }}
 
+        Before you finalize, verify the change actually works: build it and run the
+        tests, and confirm the behaviour you set out to produce. Finalize commits your
+        staged work; it does not check that the work is correct.
+
         {{fill: extra-guidance}}
-        ");
+        "#);
     }
 
     #[test]

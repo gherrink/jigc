@@ -1,4 +1,7 @@
 assistant: claude-code
+# Harness bindings below reflect Claude Code as of 2026-07 — the `SessionStart`
+# hook event and the `.claude/settings.json` permissions schema are the harness's,
+# not jigc's; revisit them if a later Claude Code release changes either.
 inject:
   - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }
   - hook: { event: SessionStart, run: "jigc start" }

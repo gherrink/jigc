@@ -255,6 +255,8 @@ Which workflow a task runs is **not** the composer's job (composition is substit
 
 So selection reuses the workflow machinery (no special selection logic), stays model-free, is cascade-overridable (a project can rewrite its routing advice, or set the default to a specific work-workflow — as the **MVP** does, defaulting to `single-task` until ≥2 work-workflows exist, see [CLAUDE.md](../CLAUDE.md) → MVP scope), and **never forces** — the worst case is the agent gets routing help. A workflow earns its place in the router by declaring its one-line `when` hint, so adding a workflow surfaces it automatically.
 
+**The `when:`-line craft convention.** The router lists every selectable workflow's `when` hint *side by side*, and the agent picks from that list alone — so the line's job is **disambiguation**, not description. Write it as a short situation phrase that reads naturally after *"reach for this when …"* and names **what makes this workflow the right pick against its neighbours** (`single-task` vs `quick-fix`: *"implement one scoped change end-to-end"* vs *"apply a small commit-only fix that touches no documented code and records no decision"* — the distinguishing conditions, not two restatements of "make a change"). Keep it lowercase and period-less (it interpolates mid-sentence), one line, and free of jigc-mechanics jargon; the `description`/`usage` prose (`describe`) carries the fuller story, the `when` line carries only the choice.
+
 ## `fan-out` / `join`
 
 The single bounded concurrency primitive, assembled from the locked concurrency invariant, the blackboard model, and the storage decisions.

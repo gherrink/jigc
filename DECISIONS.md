@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-03
+
+- **M36 Inc-5 T3 prose batch — homes chosen around two hard constraints.** The `exit-code contract` rides the `.jigc/AGENT.md` body as a *separate* line beneath the routing sentence (a `use-the-interface` fact, not routing content — keeps `bootstrap.md`'s routing-not-content discipline intact and the sentence verbatim). The `when:`-line craft convention is **doc-only** in `workflow-dialect.md` — `project-setup.yaml`'s `when:` line is locked into 5+ router goldens and its body is include-only (prose there is a blocking conformance error), so it was left untouched. The `unmanaged-floor hint` landed in `develop-idea.yaml` (project-setup's authoring step) for the same include-only reason. The changelog create-gate is advertised as **plain prose** (not a `{{cli.create-changelog}}` ref) so the shared `implement` step stays honest in the workflows that omit the gate (sub-task, implement-from-spec). No frozen-v1 schema touched — the freeze/manifest assertion is green.
+
 ## 2026-05-23
 
 - **Detail → part-docs, not folded into VISION** — one file, one purpose; cross-reference, don't duplicate.

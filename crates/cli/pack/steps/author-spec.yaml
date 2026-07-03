@@ -6,3 +6,14 @@ Create the spec, then author its slots:
 {{ cli.create-spec }}
 <<author: {{ task.spec#goal }}>>
 <<author: {{ task.spec#context }}>>
+
+State the non-goals too — what this change will explicitly NOT do bounds the work
+as sharply as what it will; fold them into the `context` slot. Name the concrete
+files or modules the change is expected to touch when they are already known, so
+a later reader orients without rediscovering them.
+
+Then add one criterion per thing the change must satisfy, each testably phrased.
+For each, mint the item and write its statement in prose:
+
+jigc doc add-item spec:<slug>#criteria --title "<criterion>" --task {{task.id}}
+jigc doc set-slot spec:<slug>#criteria/<id>/statement --from-file - --task {{task.id}}
