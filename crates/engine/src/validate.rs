@@ -769,15 +769,23 @@ fn store_doc_code(
 /// store-sweep snapshot — never under a managed `location:` (the task-less sweep has no
 /// working area to put it in). The caller writes it, drives the probe over it, and removes
 /// it before returning.
+///
+/// Uniqueness must hold even for **concurrent sweeps in one process**: `pid + nanos` alone
+/// collides when two threads sample the clock in the same nanosecond, and a collision lets
+/// one sweep's `remove_file` delete the other's snapshot mid-flight (a `NotFound` flake). A
+/// per-process monotonic sequence nonce closes that window regardless of clock resolution.
 fn store_scratch_path() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SCRATCH_SEQ: AtomicU64 = AtomicU64::new(0);
     let mut path = std::env::temp_dir();
     path.push(format!(
-        "jigc-{}-{}-{}",
+        "jigc-{}-{}-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
             .unwrap_or(0),
+        SCRATCH_SEQ.fetch_add(1, Ordering::Relaxed),
         STORE_SNAPSHOT_FILE,
     ));
     path
@@ -3777,6 +3785,42 @@ mod validate_store_tests {
     use crate::schema::{dev_pack_field_types, load_schema_with_types};
     use std::cell::RefCell;
     use std::path::PathBuf;
+
+    /// Regression: the store-sweep scratch path must be unique per call even under
+    /// concurrent sweeps in one process. Before the per-call sequence nonce,
+    /// [`store_scratch_path`] keyed uniqueness on `pid + nanos` only, so two threads that
+    /// sampled the clock in the same nanosecond produced the same path — and one sweep's
+    /// `remove_file` then deleted the other's snapshot mid-flight, surfacing as a `NotFound`
+    /// flake in the whole-suite gate. Generate many paths across threads; every one must be
+    /// distinct.
+    #[test]
+    fn store_scratch_path_is_unique_under_concurrency() {
+        use std::sync::{Arc, Mutex};
+        let all = Arc::new(Mutex::new(Vec::new()));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let all = Arc::clone(&all);
+            handles.push(std::thread::spawn(move || {
+                let mut local = Vec::with_capacity(5000);
+                for _ in 0..5000 {
+                    local.push(store_scratch_path());
+                }
+                all.lock().unwrap().extend(local);
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap();
+        }
+        let paths = all.lock().unwrap();
+        let unique: std::collections::HashSet<_> = paths.iter().collect();
+        assert_eq!(
+            unique.len(),
+            paths.len(),
+            "store_scratch_path collided under concurrent load: {} of {} paths were duplicates",
+            paths.len() - unique.len(),
+            paths.len(),
+        );
+    }
 
     /// A throwaway committed-store root that removes itself on drop.
     struct TempRoot(PathBuf);
