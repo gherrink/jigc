@@ -271,12 +271,28 @@ fn conformance_gate(
 /// gate guards exactly the managed-doc namespace, never the artifacts the sweep leaves
 /// baselined-as-is. Any path no persisted schema owns (code, configs) is likewise always
 /// recordable.
+///
+/// **Placement doctypes** (`location: None`, one instance at an exact literal
+/// `placement.file`) are owned by **exact-path equality** against that literal — matching the
+/// [`reconcile_committed_store`] placement arm — so a foreign non-conformant file squatting the
+/// managed literal path is conformance-gated (stays `UNKNOWN`, not baseline-adopted), while a
+/// sibling root `.md` the schema does not name is always recordable (a literal file is not a
+/// root glob; `storage.md` → Placement census: `committed_path_recordable`).
 pub fn committed_path_recordable(
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
     path: &str,
     bytes: &[u8],
 ) -> bool {
     let managed_doc = schemas.values().find_map(|s| {
+        // A placement doctype (`location: None`) owns its one instance at the exact literal
+        // `placement.file` — exact-path equality, matching the store sweep's placement arm,
+        // so a foreign non-conformant file squatting that literal path is conformance-gated
+        // (not always-recordable), while a sibling root `.md` is not this doctype's instance
+        // (a literal file is not a root glob; `storage.md` → Placement census:
+        // `committed_path_recordable`).
+        if let Some(placement) = &s.placement {
+            return (placement.file == path).then_some(s);
+        }
         let loc = s.location.as_deref()?;
         let slug = path.strip_prefix(loc)?.strip_suffix(".md")?;
         // The store walk is a non-recursive `<location>/*.md` glob: only a single-segment
@@ -1996,6 +2012,46 @@ sections: []
         assert!(
             untracked.iter().all(|(p, _)| p != "README.md"),
             "an undeclared sibling root .md is not an untracked candidate: {untracked:?}"
+        );
+    }
+
+    /// (M38 inc-2 T2) The finalize post-commit baseline-adopt gate
+    /// [`committed_path_recordable`] learns a **placement** doctype's exact-path ownership
+    /// (`design/storage.md` → Placement census: `committed_path_recordable`). Before this
+    /// arm the gate found a managed doc by `location:` prefix only, so a placement file
+    /// (`location: None`) matched nothing → `managed_doc = None` → **always recordable**,
+    /// wrongly baseline-adopting a foreign non-conformant `FOO.md`. With the exact-path
+    /// branch it mirrors the location arm's conformance gate:
+    ///
+    /// - (a) a **conformant** placement file at `FOO.md` is recordable;
+    /// - (b) a **non-conformant** one at the same literal path is **not** recordable — it
+    ///   stays `UNKNOWN` so the advisory re-fires every finalize until the human resolves it;
+    /// - (c) an **undeclared** sibling root `.md` (owned by no schema) is recordable — the
+    ///   unowned `None` arm is unchanged (a literal file is not a root glob).
+    #[test]
+    fn committed_path_recordable_learns_placement_exact_path() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("foo".to_string(), adr_placement_schema("FOO.md"));
+
+        // (a) a conformant placement file at its exact literal path is recordable.
+        assert!(
+            committed_path_recordable(&schemas, "FOO.md", ADR_B_BASE.as_bytes()),
+            "a conformant placement file at its literal path is recordable"
+        );
+
+        // (b) a non-conformant file at the same literal path is NOT recordable — it stays
+        // UNKNOWN (the routed-but-not-recorded re-fire), never silently baseline-adopted.
+        let broken = ADR_B_BASE.replace("## Decision", "## Decisionz");
+        assert!(
+            !committed_path_recordable(&schemas, "FOO.md", broken.as_bytes()),
+            "a non-conformant placement file at its literal path is NOT recordable"
+        );
+
+        // (c) an undeclared sibling root .md — owned by no schema — is recordable (the
+        // unowned None arm, unchanged; a placement literal is exact-path, not a root glob).
+        assert!(
+            committed_path_recordable(&schemas, "README.md", b"# readme\n\nnot managed\n"),
+            "an undeclared sibling root .md is always recordable (unowned)"
         );
     }
 
