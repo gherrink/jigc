@@ -173,11 +173,12 @@ pub fn invalidate(jigc_root: &Path) -> std::io::Result<()> {
 /// Walk the committed managed docs and emit the sorted forward edge set, stamped
 /// with `head` — the committed-rebuild (lifecycle site 1).
 ///
-/// For every schema in `schemas` that declares a persisted `location:`, the
-/// committed `<location>/<slug>.md` instances are parsed against the schema and each
-/// present **`ref` field** emits a forward `(from = <type>:<slug>, relation =
-/// <field-id>, to = <value>)` edge (a list-valued ref emits one edge per element).
-/// Edges are sorted by `(from, relation, to)`; the inverse is never stored.
+/// For every schema with committed instances — a located type's `<location>/<slug>.md`
+/// files, or a **placement** type's single literal `placement.file` (addressed by the
+/// fixed `<type>:<type>` singleton slug, [`committed_instances`]) — each instance is
+/// parsed against the schema and each present **`ref` field** emits a forward `(from =
+/// <type>:<slug>, relation = <field-id>, to = <value>)` edge (a list-valued ref emits one
+/// edge per element). Edges are sorted by `(from, relation, to)`; the inverse is never stored.
 ///
 /// `head` is the opaque stamp the index is tagged with (the caller's HEAD sha). A
 /// committed file that does not parse against its schema is **skipped** (its edges
@@ -191,32 +192,14 @@ pub fn rebuild_committed(
     let mut edges = Vec::new();
 
     for (ty, schema) in schemas {
-        let Some(location) = schema.location.as_deref() else {
-            continue; // a transient (location-less) type has no committed docs.
-        };
-        let dir = repo_root.join(location);
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue; // no committed docs of this type yet.
-        };
-
-        // The schema's `ref` field ids, by the section they live in.
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("md") {
-                continue;
-            }
-            let Some(slug) = path.file_stem().and_then(|s| s.to_str()) else {
-                continue;
-            };
+        for (from, path) in committed_instances(repo_root, ty, schema) {
             let Ok(mut source) = std::fs::read_to_string(&path) else {
-                continue;
+                continue; // no committed doc at this path yet.
             };
             crate::parse::strip_leading_bom(&mut source);
             let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
                 continue; // unparseable committed file: skip; not the index's gate.
             };
-
-            let from = format!("{ty}:{slug}");
             edges.extend(doc_edges(schema, &doc, &from));
         }
     }
@@ -471,7 +454,7 @@ pub fn dangling_edges<'a>(
 /// `validation.schema-completeness.inverse-cardinality.severity`).
 ///
 /// Deterministic by construction: `schemas` is a [`BTreeMap`] (type-sorted), sections walk
-/// in schema order, and the target docs are enumerated slug-sorted ([`committed_slugs`]).
+/// in schema order, and the target docs are enumerated slug-sorted ([`committed_instances`]).
 pub fn inverse_cardinality_store(
     committed: &EdgeIndex,
     repo_root: &Path,
@@ -501,11 +484,10 @@ pub fn inverse_cardinality_store(
                 let Some(target_schema) = schemas.get(target_ty) else {
                     continue; // unknown target type: no committed docs to enumerate.
                 };
-                let Some(location) = target_schema.location.as_deref() else {
-                    continue; // a transient (location-less) target type has no committed docs.
-                };
-                for slug in committed_slugs(repo_root, location) {
-                    let identity = format!("{target_ty}:{slug}");
+                // Enumerate the target type's committed instances — a located type's
+                // `<location>/*.md` or a placement type's single literal file (a placement
+                // doctype can be a ref target with an inverse-card obligation too).
+                for (identity, _path) in committed_instances(repo_root, target_ty, target_schema) {
                     let count = committed
                         .edges
                         .iter()
@@ -555,26 +537,9 @@ pub fn mention_resolves_store(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
-        let Some(location) = schema.location.as_deref() else {
-            continue; // a transient (location-less) type has no committed docs.
-        };
-        let dir = repo_root.join(location);
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue; // no committed docs of this type yet.
-        };
-        // Enumerate `(slug, path)` slug-sorted — the deterministic walk order.
-        let mut docs: Vec<(String, PathBuf)> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
-            .filter_map(|p| {
-                p.file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| (s.to_owned(), p.clone()))
-            })
-            .collect();
-        docs.sort();
-        for (slug, path) in docs {
+        // Committed instances slug-sorted — a located type's `<location>/*.md` or a
+        // placement type's single literal file (its prose slots carry managed mentions too).
+        for (from, path) in committed_instances(repo_root, ty, schema) {
             let Ok(mut source) = std::fs::read_to_string(&path) else {
                 continue; // read race: skip; the next sweep re-checks.
             };
@@ -582,7 +547,6 @@ pub fn mention_resolves_store(
             let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
                 continue; // unparseable committed file: skip — not this check's gate.
             };
-            let from = format!("{ty}:{slug}");
             for span in slot_spans(&doc) {
                 for mention in scan_mentions(span.slice(&source), schemas) {
                     if !committed_reachable(&mention, repo_root, schemas) {
@@ -717,6 +681,50 @@ fn inverse_card_min(inverse_card: &str) -> usize {
         .unwrap_or(inverse_card)
         .trim();
     head.parse().unwrap_or(0)
+}
+
+/// The committed instances of a doctype as `(from_identity, path)` pairs, **slug-sorted**
+/// (the deterministic enumeration order) — the index-side placement census enumerator, the
+/// sibling of [`crate::store::canonical_path`] / [`crate::file_state`]'s placement arms
+/// ([storage.md](../../../design/storage.md) → Placement census).
+///
+/// A **located** doctype yields one entry per `<repo_root>/<location>/<slug>.md`, identity
+/// `<type>:<slug>`. A **placement** doctype ([storage.md](../../../design/storage.md) →
+/// Placement) yields its single committed instance at the literal `placement.file`
+/// (repo-root-relative), addressed by the fixed singleton slug (= type id), identity
+/// `<type>:<type>` — but only when that file is present on disk (an absent placement
+/// singleton has no committed doc, matching the located-dir glob which lists only existing
+/// files). A transient (location-less, non-placement) type yields none.
+fn committed_instances(repo_root: &Path, ty: &str, schema: &Schema) -> Vec<(String, PathBuf)> {
+    // A placement doctype's one instance lives at its literal repo-root-relative file,
+    // addressed by the fixed `<type>:<type>` singleton slug — never a `<location>/*.md` glob.
+    if let Some(placement) = &schema.placement {
+        let path = repo_root.join(&placement.file);
+        return if path.exists() {
+            vec![(format!("{ty}:{ty}"), path)]
+        } else {
+            Vec::new() // an absent placement singleton has no committed doc.
+        };
+    }
+    let Some(location) = schema.location.as_deref() else {
+        return Vec::new(); // a transient (location-less) type has no committed docs.
+    };
+    let dir = repo_root.join(location);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new(); // no committed docs of this type yet.
+    };
+    let mut out: Vec<(String, PathBuf)> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|x| x.to_str()) == Some("md"))
+        .filter_map(|p| {
+            p.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|slug| (format!("{ty}:{slug}"), p.clone()))
+        })
+        .collect();
+    out.sort();
+    out
 }
 
 /// The committed-doc slugs of a persisted type — the `.md` file stems under
@@ -1061,6 +1069,55 @@ Slightly higher write latency for resilience.
           ]
         }
         "#);
+    }
+
+    /// REGRESSION (M38 placement census): a **placement** doctype's committed instance
+    /// lives at its literal `placement.file` (repo-root-relative), addressed by the fixed
+    /// singleton slug (= type id) — so `rebuild_committed` must extract its forward edges
+    /// from that literal file, not skip it for lacking a `location:`. Pre-fix, the
+    /// `location.as_deref() else continue` guard dropped it, so `vision`'s `grounded-in`
+    /// edge went unindexed and `jigc rename` repointed nothing on it.
+    #[test]
+    fn rebuild_extracts_placement_doctype_edges() {
+        let root = TempRoot::new("placement-edges");
+        // An ADR schema re-homed as a placement doctype at the repo-root literal FOO.md:
+        // one committed instance, no `location:`, identity is the fixed `<type>:<type>`.
+        let mut schema =
+            crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+                .expect("adr.yaml loads");
+        schema.location = None;
+        schema.placement = Some(crate::schema::Placement {
+            file: "FOO.md".to_string(),
+        });
+        let mut schemas = BTreeMap::new();
+        schemas.insert("adr".to_string(), schema);
+
+        // The committed placement instance carries a `supersedes` ref (mirrors vision's
+        // `grounded-in`): a placement doctype's edge must be indexed exactly as a located
+        // doctype's.
+        std::fs::write(root.path().join("FOO.md"), ADR_B).expect("write placement doc");
+
+        let index = rebuild_committed(root.path(), &schemas, "HEADSHA");
+        assert_eq!(
+            index.edges,
+            vec![Edge {
+                from: "adr:adr".to_string(),
+                relation: "supersedes".to_string(),
+                to: "adr:single-node-cache".to_string(),
+            }],
+            "the placement doc's forward edge is extracted from its literal file",
+        );
+
+        // The rename repoint drives `referrers_of` over this index — it must now find the
+        // placement doc as a referrer of the target (pre-fix: dropped → repoints nothing).
+        let referrers = referrers_of(&index, "adr:single-node-cache");
+        assert_eq!(
+            referrers.len(),
+            1,
+            "the placement doc is a referrer of the target"
+        );
+        assert_eq!(referrers[0].from, "adr:adr");
+        assert_eq!(referrers[0].relation, "supersedes");
     }
 
     /// A stale stamp triggers a rebuild on load; a matching stamp loads the persisted
