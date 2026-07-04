@@ -82,6 +82,27 @@ pub struct Promotion {
     pub destination: String,
 }
 
+/// One doctype-level **root render** (`design/design-altitude-doctypes.md` → §4 The vision
+/// surface → Root render; `ideas/root-changelog-render.md`): after the managed doc is
+/// promoted, the CLI writes its canonical bytes to [`target`] — a repo-relative *literal*
+/// path (e.g. `VISION.md`) the doctype schema declared via `root-render:`. The root file is
+/// a **deterministic regenerated artifact** of the managed doc (which stays source of
+/// truth), not a managed doc itself — so it is deliberately absent from
+/// [`FinalizePlan::hash_updates`] / `file-state`.
+///
+/// [`source`]: RootRender::source
+/// [`target`]: RootRender::target
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RootRender {
+    /// The staged managed-doc instance whose canonical bytes the render copies — the
+    /// SAME bytes [`Promotion::source`] promotes, so the root file is byte-identical to
+    /// the promoted managed doc (promote is a byte-stable copy).
+    pub source: PathBuf,
+    /// The repo-relative root path the render writes (a `root-render:` literal, e.g.
+    /// `VISION.md`).
+    pub target: String,
+}
+
 /// The ordered `finalize` plan the engine hands the CLI to execute — the result of
 /// a clean preflight + validate + empty-diff guard + render + promote.
 ///
@@ -118,6 +139,14 @@ pub struct FinalizePlan {
     /// `source-path` ([`crate::state::read_source_path`]); **empty** on every
     /// non-migration task (the milestone sibling never sets it).
     pub retirements: Vec<PathBuf>,
+    /// The **root-render set** (`design/design-altitude-doctypes.md` → §4 The vision
+    /// surface → Root render): for every promoted managed doc whose doctype declares
+    /// `root-render: <path>`, a [`RootRender`] the CLI writes (byte-faithful to the
+    /// promoted doc) to its repo-root literal, staged into the same commit. **Empty**
+    /// on every task whose promoted doctypes declare no `root-render:` (inert). The
+    /// non-destructive first-write guard ([`plan_root_renders`]) has already blocked any
+    /// foreign-file clobber before the plan is produced, so the CLI write owns its output.
+    pub renders: Vec<RootRender>,
 }
 
 impl FinalizePlan {
@@ -128,6 +157,7 @@ impl FinalizePlan {
         promotions: Vec<Promotion>,
         hash_updates: BTreeMap<String, String>,
         retirements: Vec<PathBuf>,
+        renders: Vec<RootRender>,
     ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
@@ -135,6 +165,7 @@ impl FinalizePlan {
             promotions,
             hash_updates,
             retirements,
+            renders,
         }
     }
 }
@@ -234,11 +265,19 @@ pub fn plan_finalize(
     // squatter the managed write rewrites in place is not a distinct original to retire.
     let retirements = plan_retirements(task_dir, &promote.promotions)?;
 
+    // The root-render set + non-destructive first-write guard
+    // (`design/design-altitude-doctypes.md` → §4 Root render): a promoted doctype declaring
+    // `root-render:` names a repo-root render target; a foreign target over an absent
+    // managed doc blocks before any plan is produced (no silent data loss). Inert on every
+    // task whose promoted doctypes declare no `root-render:`.
+    let renders = plan_root_renders(repo_root, &promote.promotions, schemas)?;
+
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
         promote.hash_updates,
         retirements,
+        renders,
     ))
 }
 
@@ -388,6 +427,84 @@ fn clobber_finding(destination: &str) -> Finding {
     )
 }
 
+/// The finalize **root-render** set + **non-destructive first-write guard**
+/// (`design/design-altitude-doctypes.md` → §4 The vision surface → Root render;
+/// `ideas/root-changelog-render.md`; `design/storage.md` → no silent data loss, a hard
+/// invariant). For every staged promotion whose doctype schema declares
+/// `root-render: <path>`, name a [`RootRender`] that writes the promoted canonical bytes to
+/// that repo-root literal.
+///
+/// **Non-destructive on first write.** The managed doc's presence is the "jigc owns this
+/// render" signal. When the managed doc is **absent**
+/// (`!repo_root.join(destination).is_file()` — a first render, e.g. the first `form-vision`)
+/// **and** the root target is **present** (`repo_root.join(target).is_file()` — a
+/// hand-authored file), rendering would clobber a foreign file, so the planner **blocks**
+/// (`finalize.root-render-foreign`) rather than overwrite it. Once jigc manages the doc
+/// (managed present), the root file is jigc's own regenerated output and is overwritten
+/// freely; the greenfield case (neither present) just writes. (`repo_root` is the
+/// committed doc-store base the CLI feeds in — the same base [`plan_clobber_guard`] probes;
+/// outside a git worktree it is the worktree root the render writes to.)
+///
+/// `<type>` is recovered from each promotion's source file stem exactly as
+/// [`plan_clobber_guard`] does, and looked up in `schemas` for its `root-render:` knob. A
+/// promotion whose doctype declares no `root-render:` contributes nothing (inert on every
+/// non-render doctype). Blocks are collected across all promotions (the clobber-guard
+/// precedent), so no plan is produced on any foreign-first-write.
+fn plan_root_renders(
+    repo_root: &Path,
+    promotions: &[Promotion],
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<Vec<RootRender>, Vec<Finding>> {
+    let mut renders = Vec::new();
+    let mut blocks = Vec::new();
+    for promotion in promotions {
+        let Some(stem) = promotion.source.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some((ty, _)) = stem.split_once(':') else {
+            continue;
+        };
+        let Some(target) = schemas.get(ty).and_then(|s| s.root_render.as_deref()) else {
+            continue; // this doctype declares no root-render — inert.
+        };
+        let managed_absent = !repo_root.join(&promotion.destination).is_file();
+        let target_present = repo_root.join(target).is_file();
+        if managed_absent && target_present {
+            blocks.push(root_render_foreign_finding(target, &promotion.destination));
+            continue;
+        }
+        renders.push(RootRender {
+            source: promotion.source.clone(),
+            target: target.to_string(),
+        });
+    }
+    if blocks.is_empty() {
+        Ok(renders)
+    } else {
+        Err(blocks)
+    }
+}
+
+/// A blocking finding (`design/design-altitude-doctypes.md` → §4 Root render; the
+/// no-silent-data-loss invariant) when a `root-render:` target already exists that jigc did
+/// not generate (its managed doc is not yet present) — rendering would overwrite a foreign
+/// file. Names both the foreign target and the managed doc that must exist first.
+fn root_render_foreign_finding(target: &str, destination: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.root-render-foreign",
+        format!(
+            "a `{target}` exists that jigc did not generate, and the managed doc \
+             `{destination}` is not yet present — rendering it would overwrite the foreign file"
+        ),
+        None,
+        Some(format!(
+            "adopt its content into the managed doc or remove `{target}`, then re-run \
+             `jigc task finalize`"
+        )),
+    )
+}
+
 /// A blocking finding for an I/O failure loading the task's provenance manifest while
 /// planning the clobber guard (the manifest is written at stage time, so a read fault is a
 /// real fault — the promote/source-path I/O precedent).
@@ -518,11 +635,14 @@ pub fn plan_milestone_finalize(
     // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
     // promote + phase 7 hashes are the SHARED sweep over the materialized `docs/`.
     let promote = plan_promotions(staging_dir, schemas)?;
-    // A milestone boundary retires nothing — retire is migration-only (a per-task verb).
+    // A milestone boundary retires nothing — retire is migration-only (a per-task verb) —
+    // and renders no root (root-render rides the single-task form-vision path, never the
+    // fan-out boundary).
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
         promote.hash_updates,
+        Vec::new(),
         Vec::new(),
     ))
 }
@@ -862,6 +982,43 @@ mod tests {
         m.insert("adr".to_string(), adr_schema());
         m.insert("changelog".to_string(), changelog_schema());
         m
+    }
+
+    /// A throwaway **root-render** doctype (`note`, persisted to `notes/`, declaring
+    /// `root-render: NOTE.md`) — the fixture the M37 inc-2 root-render planner arm drives.
+    /// A single prose slot keeps a staged instance trivially conformant.
+    fn note_schema() -> Schema {
+        const NOTE_YAML: &[u8] = b"\
+type: note
+location: notes/
+root-render: NOTE.md
+id-from: title
+sections:
+  - id: body
+    slot: { hint: the note body }
+";
+        crate::schema::load_schema(NOTE_YAML).expect("note.yaml loads")
+    }
+
+    /// Stage a filled `note:<slug>` doc (one body slot) in `task_dir` — a persisted managed
+    /// doc the promote phase carries to `notes/<slug>.md` and the root render mirrors to
+    /// `NOTE.md`. Returns the staged bytes (the byte-stable source the render must match).
+    fn stage_filled_note(task_dir: &Path, slug: &str) -> Vec<u8> {
+        use crate::write::SectionContent;
+
+        let schema = note_schema();
+        let instance = write::Instance {
+            title: slug.to_string(),
+            sections: vec![SectionContent {
+                id: "body".to_string(),
+                slot: Some("A durable note worth rendering to the repo root.".to_string()),
+                ..Default::default()
+            }],
+        };
+        let bytes = write::render(&schema, &instance);
+        let path = state::instance_path(task_dir, &schema.ty, slug);
+        state::persist(&path, bytes.as_bytes()).expect("persist staged note");
+        bytes.into_bytes()
     }
 
     fn base() -> BasePin {
@@ -1273,6 +1430,110 @@ mod tests {
             plan.retirements,
             vec![PathBuf::from("CHANGELOG.md")],
             "a distinct foreign original still retires (the T2 root-file case)",
+        );
+    }
+
+    /// (M37 inc-2 T2) The **root-render** planner arm + non-destructive first-write guard
+    /// (`design/design-altitude-doctypes.md` → §4 Root render). A promoted doctype declaring
+    /// `root-render: NOTE.md` names a [`RootRender`] to that repo-root literal, sourced from
+    /// the staged managed doc (byte-faithful to the promoted copy). Three arms:
+    ///
+    /// - **greenfield** (no root target, managed doc absent) → the plan carries the render
+    ///   set (just write);
+    /// - **foreign first write** (a root `NOTE.md` exists that jigc did not generate + the
+    ///   managed doc is not yet committed) → **blocks** `finalize.root-render-foreign`, no
+    ///   plan (no silent data loss);
+    /// - **jigc-owned** (the managed doc IS committed) → renders freely, overwriting its own
+    ///   prior output even though the root target is present (the guard is gated on
+    ///   managed-*absence*, so this proves it is not a permanent block).
+    #[test]
+    fn finalize_plan_renders_a_root_target_and_blocks_a_foreign_first_write() {
+        let root = TempRoot::new("root-render");
+        let task_dir = root.path().join("tasks").join("write-a-note");
+        let commit = stage_filled_commit(&task_dir, "write-a-note");
+        stage_filled_note(&task_dir, "my-note");
+        let mut schemas = BTreeMap::new();
+        schemas.insert("commit".to_string(), commit_schema());
+        schemas.insert("note".to_string(), note_schema());
+        let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
+
+        let finalize = |schemas: &BTreeMap<String, Schema>| {
+            plan_finalize(
+                &task_dir,
+                root.path(),
+                &base(),
+                &base().sha,
+                &clean,
+                true,
+                &commit,
+                "write-a-note",
+                schemas,
+            )
+        };
+
+        // Greenfield: neither the managed doc nor the root target exists → the plan carries
+        // the render, sourced from the staged note (byte-faithful to the promoted copy).
+        let plan = finalize(&schemas).expect("a greenfield root-render yields a plan");
+        assert_eq!(plan.renders.len(), 1, "exactly the one root render");
+        assert_eq!(plan.renders[0].target, "NOTE.md");
+        assert_eq!(
+            plan.renders[0].source,
+            task_dir.join("docs").join("note:my-note.md"),
+            "the render is sourced from the staged managed doc (byte-stable)",
+        );
+        // The render target is NOT a promoted managed doc — it never enters hash_updates.
+        assert!(
+            !plan.hash_updates.keys().any(|k| k.contains("NOTE.md")),
+            "the regenerated root artifact is never a file-state managed doc: {:?}",
+            plan.hash_updates,
+        );
+
+        // Foreign first write: a hand-authored root `NOTE.md` exists but the managed doc is
+        // not yet committed → block, no plan (no silent data loss).
+        state::persist(&root.path().join("NOTE.md"), b"hand-authored, not jigc's\n")
+            .expect("write a foreign root NOTE.md");
+        let findings = finalize(&schemas).expect_err("a foreign first write must block");
+        assert_eq!(findings.len(), 1, "exactly one foreign-first-write block");
+        assert_eq!(findings[0].code, "finalize.root-render-foreign");
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert!(
+            findings[0].message.contains("NOTE.md")
+                && findings[0].message.contains("notes/my-note.md"),
+            "the block names the foreign target and the absent managed doc: {:?}",
+            findings[0].message,
+        );
+        assert!(
+            findings[0].route.is_some(),
+            "the block carries the adopt-or-remove route",
+        );
+
+        // jigc-owned: once the managed doc is committed, the root file is jigc's own
+        // regenerated output — overwritten freely even though the (now stale) root target
+        // is still present. The guard is gated on managed-*absence*, so no block.
+        state::persist(
+            &root.path().join("notes").join("my-note.md"),
+            b"# my-note\n\nthe committed managed doc\n",
+        )
+        .expect("commit the managed doc jigc now owns");
+        let plan = finalize(&schemas).expect("a jigc-owned render overwrites freely");
+        assert_eq!(
+            plan.renders.len(),
+            1,
+            "the managed doc is present, so the render fires (no foreign block)",
+        );
+        assert_eq!(plan.renders[0].target, "NOTE.md");
+
+        // Omitting context: a doctype with NO `root-render:` renders nothing. Re-key the
+        // note schema without the knob and confirm the plan's render set is empty (inert).
+        let mut plain_schemas = schemas.clone();
+        let mut plain_note = note_schema();
+        plain_note.root_render = None;
+        plain_schemas.insert("note".to_string(), plain_note);
+        let plan = finalize(&plain_schemas).expect("a plan without any root-render doctype");
+        assert!(
+            plan.renders.is_empty(),
+            "a promoted doctype declaring no `root-render:` renders nothing (inert): {:?}",
+            plan.renders,
         );
     }
 
