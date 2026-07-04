@@ -57,6 +57,8 @@ For `DRIFTED + UNTOUCHED`, the CLI re-parses the file against its type's schema 
 
   Resolution is human-side: fix the file, or revert the edit. The CLI never auto-repairs in the MVP (see [Auto-repair scope](#auto-repair-scope)).
 
+**Root / placement docs reconcile identically (M38).** A **placement** doctype ([storage.md](storage.md) → Placement) is managed at a literal home — a repo-root file (`VISION.md`, `CHANGELOG.md`) or a direct `docs/roadmap.md` — with `location: None`. Its instance is keyed at that **exact literal path** (fixed slug = type id), and the sweep visits it there, so an out-of-band edit to a managed root file runs the *same* state machine as any managed doc: a conformant edit **absorbs**, a non-conformant one **conformance-blocks / routes** (`needs-reconcile`). Ownership is **exact-path equality against `placement.file`** — every *other* root `.md` (`README.md`, `CLAUDE.md`) is outside the store and untouched (a literal home is not a dir-glob). The M38 sweep learned this placement branch (previously the `location: None` loop skipped placement docs, silently missing their drift; [DECISIONS.md](../DECISIONS.md) → 2026-07-04 M38 Increment 2).
+
 ### Conflict — block at file level
 
 For `DRIFTED + TOUCHED`, both sides have moved: the on-disk file changed since the last recorded hash, **and** the task's working area has staged writes to the same doc. The MVP blocks at file granularity:

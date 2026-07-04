@@ -2357,7 +2357,7 @@ git mv docs/decisions/distributed-cache.md docs/decisions/dist-cache.md && git c
 
 ## 38. Vision-forming from research + park-idea — the design-altitude doctypes at the RC-trial composition (M37)
 
-The M37 arc: three methodology-pack **design-altitude** doctypes (`research` · `vision` · `idea`) drive the *how-you-work* level of authoring — research is gathered, a `vision` is formed from it and compared-against, and a shaped-but-unscheduled `idea` is parked. The done-picture is walked here under the **`[dev ▸ methodology]`** composition — the RC-trial's actual on-ramp, not methodology-alone. The three schemas, the two additive engine knobs (`display-title:`/`root-render:`), the driving workflows, and the six acceptance arms are the design of record in [design-altitude-doctypes.md](design-altitude-doctypes.md) (§§2–4, §7) and are not restated here; the exact verb sequence is driven against the real binary by the `crates/cli/tests/flow*.rs` M37 suite (`flow_do_research`, `flow_form_vision`, `flow_park_idea`, and the consolidated §7 suite). Notation illustrative.
+The M37 arc: three methodology-pack **design-altitude** doctypes (`research` · `vision` · `idea`) drive the *how-you-work* level of authoring — research is gathered, a `vision` is formed from it and compared-against, and a shaped-but-unscheduled `idea` is parked. The done-picture is walked here under the **`[dev ▸ methodology]`** composition — the RC-trial's actual on-ramp, not methodology-alone. The three schemas, the two additive engine knobs M37 shipped (`display-title:` and its render-to-root knob — **retired at M38**, `vision` now *managed directly* at root `VISION.md` via the `placement:` model, [storage.md](storage.md) → Placement; the corrected end-to-end layout is walked in flow 39), the driving workflows, and the six acceptance arms are the design of record in [design-altitude-doctypes.md](design-altitude-doctypes.md) (§§2–4, §7) and are not restated here; the exact verb sequence is driven against the real binary by the `crates/cli/tests/flow*.rs` M37 suite (`flow_do_research`, `flow_form_vision`, `flow_park_idea`, and the consolidated §7 suite). Notation illustrative.
 
 `vision —grounded-in→ research` is the **methodology pack's first internal managed ref** ([design-altitude-doctypes.md](design-altitude-doctypes.md) → §1): intra-pack and doc-level, so it points *inside* the composed schema universe and honors — does not reopen — the M16 "methodology composes alone" bound. `form-vision` is a **re-entry flow** in the exact shape of the superseding worked example ([flow 5](#5-superseding-decision--context-slice--edge-integrity)): the edge-walk slice resolves at *compose* time, so the vision must be created and grounded *before* the author step reads it, or the read is a vacuous green.
 
@@ -2389,9 +2389,8 @@ $ jigc doc set-slot vision:vision#invariants     --from-file -
 $ jigc doc set-slot vision:vision#open-questions --from-file -
 $ jigc task finalize <t2>
 > validate: clean                              # BOTH grounded-in targets resolve — no ref-resolves block
-> promote:  vision/vision.md                   # H1 reads `# Vision` (display-title knob), not `# vision`
-> render:   VISION.md                          # root render — byte-identical to the managed doc (root-render knob)
-> commit:   one commit, the managed doc + the root render + the code
+> promote:  VISION.md                          # managed directly at root (placement knob, M38); H1 `# Vision` (display-title), not `# vision`
+> commit:   one commit, the managed root doc + the code
 
 # ARM 3 — park a shaped idea; park-idea is router-selectable (discoverable), not off-menu.
 $ jigc start --workflow park-idea "a public pack platform, someday"   # selectable: true — appears in the menu
@@ -2421,7 +2420,81 @@ $ jigc task finalize <t2>     # first form-vision finalize, foreign root file pr
 
 1. **The two-task committed-read spine holds under `[dev ▸ methodology]`.** `do-research` commits a `research` doc (on-create `date` stamped) so `form-vision` reads it committed — the superseding-flow shape, now at the design-altitude level in a methodology composition (the `grounded-in` edge-walk's first real driver).
 2. **The multi-valued anchor + the findings-echo both resolve.** A `vision` grounded in **both** research docs finalizes clean (every element `ref-resolves`-validated, no block), and the re-composed `form-vision` guidance actually *reads* the **first** grounding research's `findings` prose into itself — the edge-walk slice, not merely "resolved" (closing the vacuous-green gap); the second's findings do not appear (first-bound content-echo).
-3. **The two engine knobs land.** The managed `vision/vision.md` H1 reads `# Vision` (the `display-title:` knob narrows the singleton `title = slug` branch), and a root `VISION.md` is rendered + committed **byte-faithful** to the managed doc (the `root-render:` regenerated-artifact knob) — `describe` lists all three doctypes + three workflows.
+3. **The two engine knobs land.** The managed root `VISION.md` H1 reads `# Vision` (the `display-title:` knob narrows the singleton `title = slug` branch), and the doc is *managed directly at repo-root* — one file, proper reconciliation — via the `placement:` knob (M38 retired M37's render-to-root mechanism, [storage.md](storage.md) → Placement) — `describe` lists all three doctypes + three workflows.
 4. **Parking is a first-class, discoverable move.** `park-idea` mints an `idea` (description + `trigger`) and finalizes to `ideas/<slug>.md`, and it is **router-selectable** — it appears in the selection surface, so a shaped mid-work direction is kept without leaving the loop.
 5. **The dangling arm blocks per-element.** A `grounded-in` with one non-existent target blocks at finalize on `ref-resolves` — the resolvable sibling does not rescue it (no commit).
-6. **The freeze stays green and the root render is non-destructive.** The additive `display-title:`/`root-render:` schema keys serialize-skip when absent, so no frozen dev-pack doctype's `schema-hash` changes and the pack-load freeze assertion stays green ([design-altitude-doctypes.md](design-altitude-doctypes.md) → §4); and in an existing project whose root `VISION.md` is hand-authored (no managed vision yet), the first `form-vision` finalize **blocks and routes** rather than overwriting — the greenfield and existing-project on-ramps, the RC trials' two entry points.
+6. **The freeze stays green and the managed root file is non-destructive.** The additive `display-title:`/`placement:` schema keys serialize-skip when absent, so no frozen dev-pack doctype's `schema-hash` changes and the pack-load freeze assertion stays green ([design-altitude-doctypes.md](design-altitude-doctypes.md) → §4, superseded by M38's placement model); and in an existing project whose root `VISION.md` is hand-authored (no managed vision yet), the first `form-vision` finalize **blocks and routes** (the inherited `plan_clobber_guard`) rather than overwriting — the greenfield and existing-project on-ramps, the RC trials' two entry points.
+
+## 39. The placement convention end-to-end — root `VISION.md` + root `CHANGELOG.md` under `[dev ▸ methodology]` (M38)
+
+The **placement convention** ([storage.md](storage.md) → Placement) kills the one-file-in-a-folder shortcut (`docs/vision/vision.md`, `docs/changelog/changelog.md`): a singleton + ecosystem-idiomatic doctype is **managed directly** at its literal repo-root home, a singleton + internal doctype at a direct `docs/*.md` file. This flow walks the whole convention **end-to-end** in a *single* repo, composed the way an RC trial actually composes — the on-disk **methodology** pack listed in `packs.yaml` over the embedded **dev** base (`[dev ▸ methodology]`) — so the two placement doctypes that live at the repo root (`vision`, methodology; `changelog`, dev) coexist in one tree beside a `docs/*.md` methodology singleton (`roadmap`) and the sibling root non-doctype files (`README.md`, `CLAUDE.md`) an agent must *not* sweep in. The engine model (the `placement: { file: … }` key, exact-path identity, the census sites), the freeze-gated `changelog` v1→v2 relocation, and the retirement of M37's render-to-root mechanism are the design of record in [storage.md](storage.md) (→ Placement) and [corpus-migration.md](corpus-migration.md) (→ Relocation) and are not restated here; the exact verb sequence is driven verbatim against the real binary by `crates/cli/tests/flow39_placement_layout.rs`. Notation illustrative.
+
+This is the RC-trial layout: the flagship `vision` and the `CHANGELOG` live **where an agent and a human look for them** (repo root), managed with proper reconciliation — not a `docs/`-buried source plus a generated mirror. No prior flow put both root singletons in one repo; this is the composite that proves the convention holds at the composed surface.
+
+### The walk — three managed docs, three homes, one `[dev ▸ methodology]` repo
+
+```text
+# A real git repo with `.jigc/config/packs.yaml` naming the on-disk methodology pack over the
+# embedded dev base ([dev ▸ methodology]); two sibling root files already committed, unmanaged.
+$ cat README.md CLAUDE.md          # `# Readme` / `# Claude` — plain root markdown, no doctype
+
+# ── vision → the literal root `VISION.md` (a methodology placement doctype). ──
+$ jigc start --workflow form-vision "form the project vision"
+$ jigc doc create vision --title Vision --task form-the-project-vision   # → vision:vision (fixed slug)
+$ jigc doc set-slot vision:vision#thesis         --from-file -
+$ jigc doc set-slot vision:vision#invariants     --from-file -
+$ jigc doc set-slot vision:vision#open-questions --from-file -
+$ jigc task finalize form-the-project-vision
+> promote: VISION.md               # managed directly at root (placement); H1 `# Vision` (display-title)
+#   NO docs/vision/vision.md one-file-folder mirror — one file, at the literal home.
+
+# ── changelog → the literal root `CHANGELOG.md` (a dev placement doctype, frozen v2). ──
+$ jigc start --workflow record-change "cut the first release"
+$ jigc doc create changelog --title Changelog                           # → changelog:changelog (fixed slug)
+$ jigc doc add-item changelog:changelog#releases --title "1.0.0"        # emitted address drives downstream
+$ jigc doc add-item <release>/changes --title added
+$ jigc doc set-slot  <group>/notes --from-file -                        # "- OAuth device-code flow"
+$ jigc task finalize cut-the-first-release
+> promote: CHANGELOG.md            # managed directly at root (placement, schema-version 2); H1 `# Changelog`
+#   NO docs/changelog/changelog.md one-file-folder mirror.
+
+# ── roadmap → a direct `docs/roadmap.md` file (an internal methodology singleton). ──
+$ jigc start --workflow planning "plan the first milestone"
+$ jigc doc create roadmap --title Roadmap --task plan-the-first-milestone
+$ jigc doc add-item roadmap:roadmap#milestones --title M-One --task plan-the-first-milestone
+$ jigc doc set-slot <item>/proves        --from-file -
+$ jigc doc set-slot <item>/decomposition --from-file -
+$ jigc task finalize plan-the-first-milestone
+> promote: docs/roadmap.md         # the docs/*.md placement layer — NO docs/roadmap/roadmap.md mirror
+
+# ── The census owns exactly the three literal homes; siblings stay unmanaged. ──
+$ jigc ingest
+> VISION.md          adopted
+> CHANGELOG.md       adopted
+> docs/roadmap.md    adopted
+> README.md          unmanaged     # a literal placement home owns ONE path — not a dir-glob sweep
+> CLAUDE.md          unmanaged
+```
+
+### The reds — an OOB nonconformant edit to each root home is detected + routed
+
+```text
+# A human drops a required section heading in each managed root file, out of band, and commits.
+$ sed -i 's/## Thesis/## Thesisz/'     VISION.md      # nonconformant edit
+$ sed -i 's/## Releases/## Releasesz/' CHANGELOG.md   # nonconformant edit
+$ git add VISION.md CHANGELOG.md && git commit -m "human edits the root docs out of band"
+
+$ jigc ingest
+> VISION.md          needs-reconcile   # a managed root file's OOB drift is detected + routed, like any managed doc
+> CHANGELOG.md       needs-reconcile
+> README.md          unmanaged         # the re-route does NOT sweep an unrelated sibling root .md into management
+> CLAUDE.md          unmanaged
+```
+
+### What it asserts (the placement-convention acceptance bar — flow39_placement_layout.rs)
+
+1. **The root singletons land at their literal homes.** `vision` is managed at the literal root `VISION.md` (H1 `# Vision`, display-title) and `changelog` at the literal root `CHANGELOG.md` (H1 `# Changelog`, schema-version 2) — each carrying its authored prose, and **neither** leaves a `docs/<x>/<x>.md` one-file-folder mirror (asserted absent at HEAD).
+2. **The `docs/*.md` layer holds.** A methodology singleton (`roadmap`) is managed at the direct file `docs/roadmap.md` (no `docs/roadmap/roadmap.md` mirror) — the internal-singleton placement home, composition-invariant (the literal path is the home, `docs-root` never re-prepended).
+3. **The two root placement doctypes coexist under one composition.** Both land in the *same* `[dev ▸ methodology]` repo (methodology `vision` + dev `changelog`), no collision — the RC-trial layout the greenfield trial runs on.
+4. **Exact-path ownership — a literal home is not a glob.** `jigc ingest` reports the three managed docs `adopted` and the sibling root `README.md`/`CLAUDE.md` `unmanaged`: a placement home owns exactly its one declared `file:`, so a neighboring root `.md` is never vacuumed into management (rebutting the M16 B-1 dir-glob objection).
+5. **A managed root file reconciles like any managed doc.** An out-of-band nonconformant edit to **each** root home (`VISION.md`, `CHANGELOG.md`) is detected + routed `needs-reconcile` by the census, while the unmanaged siblings stay untouched — the placement branch the M38 reconciliation sweep learned (Inc 2).

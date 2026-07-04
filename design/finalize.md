@@ -51,6 +51,7 @@ This phase has **no disk side effects** — it returns a string. A missing requi
 For each managed doc instance in the task's working area (`.jigc/tasks/<task-id>/*.md`):
 
 - **Copy** (not move) the file from the working area to its canonical path. The path comes from the doc type's `location:` field ([document-type-schema.md](document-type-schema.md) → On-disk definition format): an ADR lands in `decisions/`, a SPEC in `specs/`, and so on.
+- **Placement doctypes promote to their literal home (M38).** A doctype declaring `placement: { file: … }` has `location: None`, so it promotes to its exact `placement.file` — a repo-root literal (`VISION.md`, `CHANGELOG.md`) or a direct `docs/roadmap.md` — never `<location>/<slug>.md` ([storage.md](storage.md) → Placement). `plan_promotions` computes this branch on both the single-task and fan-out-join paths. This is how M37's vision-render mechanism is **retired**: the `vision` is *promoted (managed) at root* `VISION.md` — one file, proper reconciliation — not regenerated as a mirror of a docs-buried source.
 - The commit doc (`commit:<task-id>`) is **not** promoted — its sink is the git message rendered in phase 3, not a repo file ([write-commands.md](write-commands.md) → Instance provisioning).
 
 Promotion is **copy, not move**, so rollback (if a later phase fails) is removal of the copies — not a complex undo. The working area stays intact until phase 7.
