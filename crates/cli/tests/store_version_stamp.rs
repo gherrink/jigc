@@ -50,7 +50,7 @@ impl Drop for TempDir {
 
 /// The running build's version — the value `jigc setup` stamps and `jigc validate`
 /// compares against. The test crate is part of the `cli` crate's build, so this is the
-/// workspace version (`1.0.0-rc.1`).
+/// workspace version (`1.0.0-rc.2`).
 const RUNNING_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Build the pack's `doc-code` probe once (process-wide) and return its binary path, so the
