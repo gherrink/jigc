@@ -1,8 +1,8 @@
 # vision — the methodology pack's singleton living reference (M37 inc-3 / T2;
-# design/design-altitude-doctypes.md §1/§2/§4). The project's charter: its thesis,
-# the invariants it holds, and its open questions — grounded in the research it was
-# formed from. A SINGLETON (fixed slug = the type id, always `vision/vision.md`), so
-# `form-vision` re-`create` deterministically targets the same committed file.
+# design/design-altitude-doctypes.md §1/§2; design/storage.md → Placement). The
+# project's charter: its thesis, the invariants it holds, and its open questions —
+# grounded in the research it was formed from. A SINGLETON (fixed slug = the type id),
+# so `form-vision` re-`create` deterministically targets the same committed file.
 #
 # `grounded-in` is the methodology pack's FIRST internal managed ref
 # (`vision —grounded-in→ research`, both methodology, doc-level): a `0..*` ref, so a
@@ -12,18 +12,19 @@
 #
 # Two doctype knobs beyond the singletons before it (both freeze-exempt additive keys):
 #   - `display-title: Vision` — the H1 reads `# Vision`, not `# vision` (§4).
-#   - `root-render: VISION.md` — finalize regenerates a repo-root `VISION.md` from the
-#     managed doc (which stays source of truth); the literal uppercase path is the
-#     idiomatic filename slugs cannot reach (§4).
+#   - `placement: { file: VISION.md }` — the vision is MANAGED DIRECTLY at the repo-root
+#     literal `VISION.md` (one file, OOB-reconciled — not a mirror), the idiomatic
+#     uppercase path a lowercase slug cannot reach. A placement doctype sets no
+#     `location`; docs-root never applies (design/storage.md → Placement). This retires
+#     M37's root-render mirror (design-altitude-doctypes.md §4 superseded by M38).
 # `invariants`/`open-questions` are prose slots, not repeatable sections (§2): no M37
 # consumer reads an individual invariant/question, and methodology is freeze-exempt.
-# See design/design-altitude-doctypes.md → The three schemas / The vision surface.
+# See design/design-altitude-doctypes.md → The three schemas; design/storage.md → Placement.
 type: vision
-location: vision/
+placement: { file: VISION.md }
 singleton: true
 id-from: title
 display-title: Vision
-root-render: VISION.md
 description: The project's charter — its thesis, the invariants it holds, and its open questions — grounded in the research it was formed from.
 usage: the project's direction is worth a durable, managed anchor that later work compares against, formed from and traceable to the research behind it.
 

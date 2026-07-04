@@ -74,24 +74,6 @@ pub struct Schema {
     )]
     pub display_title: Option<String>,
 
-    /// Optional doctype-level **repo-root render target**: a repo-relative path the
-    /// CLI writes the managed doc's canonical bytes to at finalize (after promotion),
-    /// committing it with the task (e.g. `vision` declares `root-render: VISION.md`, so
-    /// the root `VISION.md` is a deterministic regenerated artifact of the managed
-    /// `docs/vision/vision.md` — which stays source of truth). The path is a **literal**,
-    /// not a slug, so the idiomatic uppercase filename is reachable. Non-destructive on
-    /// first write: managed-doc-absent + target-present → finalize blocks and routes (no
-    /// silent data loss). Absent → no render. Skip-on-absent (mirrors `location` /
-    /// `id-from` / `display-title`): a schema omitting it serializes **nothing**, so no
-    /// frozen doctype's `schema-hash` changes — the freeze-safe additive-key pattern
-    /// (`design/design-altitude-doctypes.md` → §4 The vision surface; §7 arm 5).
-    #[serde(
-        rename = "root-render",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub root_render: Option<String>,
-
     /// Optional doctype-level **literal-file placement**: the managed doc lives at
     /// one exact `placement.file` repo-root-relative path (case-preserved, bypassing
     /// the lowercase slug), *not* at `<docs-root>/<location>/<slug>.md`. A placement
@@ -100,7 +82,7 @@ pub struct Schema {
     /// `VISION.md` / `CHANGELOG.md` or a direct `docs/roadmap.md` is reachable exactly
     /// as written and `docs-root` never applies (the home is composition-invariant).
     /// Absent → today's folder behavior. Skip-on-absent (mirrors `location` /
-    /// `id-from` / `display-title` / `root-render`): a schema omitting it serializes
+    /// `id-from` / `display-title`): a schema omitting it serializes
     /// **nothing**, so no frozen doctype's `schema-hash` changes — the freeze-safe
     /// additive-key pattern (`design/storage.md` → Placement — direct-file and
     /// root-located homes).
@@ -1316,59 +1298,6 @@ sections: []
         );
     }
 
-    /// (M37 inc-2 T1) The doctype-level `root-render:` knob serde-roundtrips: a
-    /// fixture schema declaring `root-render: VISION.md` parses
-    /// `root_render == Some("VISION.md")`, **re-serializes** the key, and survives a
-    /// load→serialize→reload cycle. A schema that **omits** it serializes to JSON
-    /// with **no** `root-render` key — so its `schema_hash` (`blake3` over that JSON)
-    /// is byte-identical to the pre-field value, the freeze-safe additive-key proof
-    /// (`design/design-altitude-doctypes.md` → §4 The vision surface; §7 arm 5): the
-    /// field's mere existence on the struct changes no frozen doctype's hash. (b)
-    /// proven, not assumed — the real frozen six are covered by the pack-load freeze
-    /// regressions (`pack.rs` + `crates/cli/tests/freeze_enforcement.rs`).
-    #[test]
-    fn root_render_serde_roundtrips_and_is_skipped_when_absent() {
-        let with_root_render = b"\
-type: vision
-root-render: VISION.md
-sections: []
-";
-        let schema = load_schema(with_root_render).expect("root-render schema loads");
-        assert_eq!(
-            schema.root_render.as_deref(),
-            Some("VISION.md"),
-            "the root-render knob parses its path string",
-        );
-
-        // Re-serializes the key, and a reload preserves it (roundtrip).
-        let json = serde_json::to_string(&schema).expect("serializes");
-        assert!(
-            json.contains("\"root-render\":\"VISION.md\""),
-            "the root-render knob re-serializes under its on-disk name; got {json}",
-        );
-        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
-        assert_eq!(reloaded, schema, "root-render survives a serde roundtrip");
-
-        // A schema omitting it defaults to None and serializes nothing for it — the
-        // skip-on-absent additive guard. No `root-render` in the JSON means the bytes
-        // `schema_hash` digests are identical to the pre-field value, so no frozen
-        // doctype's hash moves (the §7-arm-5 freeze-safety claim, proven).
-        let without = b"\
-type: commit
-sections: []
-";
-        let plain = load_schema(without).expect("no-root-render schema loads");
-        assert!(
-            plain.root_render.is_none(),
-            "an omitted root-render defaults to None",
-        );
-        let plain_json = serde_json::to_string(&plain).expect("serializes");
-        assert!(
-            !plain_json.contains("root-render"),
-            "an absent root-render serializes nothing (skip-on-absent); got {plain_json}",
-        );
-    }
-
     /// (M38 inc-1 T1) The doctype-level `placement:` key serde-roundtrips: a fixture
     /// schema declaring `placement: { file: FOO.md }` parses
     /// `placement == Some(Placement { file: "FOO.md" })` (case-preserved literal),
@@ -1376,7 +1305,7 @@ sections: []
     /// schema that **omits** it serializes to JSON with **no** `placement` key — so
     /// its `schema_hash` (`blake3` over that JSON, `manifest.rs`) is byte-identical to
     /// the pre-field value, the freeze-safe additive-key proof (mirrors
-    /// `display-title` / `root-render`): the field's mere existence on the struct
+    /// `display-title`): the field's mere existence on the struct
     /// changes no frozen doctype's hash. (b) proven, not assumed — the real frozen six
     /// are covered by the pack-load freeze regressions (`pack.rs` +
     /// `crates/cli/tests/freeze_enforcement.rs`). See `design/storage.md` → Placement.

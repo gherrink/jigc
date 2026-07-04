@@ -14,24 +14,26 @@
 //!      edge-walk slice `{{@task.vision.grounded-in#findings}}` is EMPTY before re-compose
 //!      and CONTAINS the FIRST research's findings prose after `jigc start --task <id>`
 //!      (closing the vacuous-green gap); both `grounded-in` targets resolve at finalize;
-//!      the managed `vision/vision.md` H1 reads `# Vision` (display-title knob); the root
-//!      `VISION.md` is rendered byte-faithful (root render); `describe` lists all three
-//!      doctypes + all three workflows.
+//!      the vision is managed directly at the repo-root literal `VISION.md` (placement knob)
+//!      with H1 `# Vision` (display-title knob); `describe` lists all three doctypes + all
+//!      three workflows.
 //!   3. `park-idea` → one committed `ideas/<slug>.md`; `park-idea` on the router surface.
 //!   4. A dangling `grounded-in` element **blocks** finalize PER-ELEMENT (`ref-resolves`),
 //!      no commit.
 //!   5. The pack-load **freeze** gate stays green — the additive `display-title:` /
-//!      `root-render:` keys (serialize-skipped when absent) perturb no frozen dev-pack
+//!      `placement:` keys (serialize-skipped when absent) perturb no frozen dev-pack
 //!      doctype hash.
 //!   6. A pre-existing FOREIGN root `VISION.md` (no managed vision yet) **blocks** the first
-//!      `form-vision` finalize via `finalize.root-render-foreign` (no silent data loss), the
-//!      file untouched, no commit; once removed, finalize proceeds and the render owns it.
+//!      `form-vision` finalize via the inherited `finalize.promote-clobber` (no silent data
+//!      loss), the file untouched, no commit; once removed, finalize proceeds and the managed
+//!      vision owns it.
 //!
 //! Everything is asserted on the EMITTED bytes of the real binary (`CARGO_BIN_EXE_jigc`)
 //! over the `[dev ▸ methodology]` composition. The methodology pack ships no `docs-root`
-//! knob, so its doctypes land flat at their `location:` — research at `research/`, ideas at
-//! `ideas/`, the managed vision at `vision/vision.md`, the root render at `VISION.md`. No
-//! external test crates.
+//! knob, so its multi-instance doctypes land flat at their `location:` — research at
+//! `research/`, ideas at `ideas/` — while the `vision` singleton declares
+//! `placement: { file: VISION.md }` and is managed directly at the repo-root literal
+//! `VISION.md`. No external test crates.
 
 use std::fs;
 use std::io::Write;
@@ -421,9 +423,10 @@ fn done_picture_research_to_vision_to_park_idea() {
         "form-vision finalize lands exactly ONE commit"
     );
 
-    // The managed vision doc: H1 reads `# Vision` (display-title knob), carries the thesis,
-    // and records BOTH grounded-in targets (the multi-valued anchor).
-    let managed = committed(repo.path(), "vision/vision.md");
+    // The vision is MANAGED DIRECTLY at the repo-root literal `VISION.md` (placement knob):
+    // H1 reads `# Vision` (display-title knob), carries the thesis, and records BOTH
+    // grounded-in targets (the multi-valued anchor).
+    let managed = committed(repo.path(), "VISION.md");
     assert!(
         managed.lines().any(|l| l.trim() == "# Vision"),
         "the managed vision doc's H1 reads `# Vision` (display-title knob); got:\n{managed}",
@@ -436,12 +439,16 @@ fn done_picture_research_to_vision_to_park_idea() {
         managed.contains(&research_a) && managed.contains(&research_b),
         "the committed vision records BOTH grounded-in targets; got:\n{managed}",
     );
-
-    // The root render owns `VISION.md`, byte-identical to the promoted managed doc.
-    let root = committed(repo.path(), "VISION.md");
-    assert_eq!(
-        root, managed,
-        "the root-render VISION.md must be byte-identical to the managed vision doc",
+    // No one-file-folder mirror: the vision lives ONLY at the literal `VISION.md`.
+    let show = Command::new("git")
+        .args(["show", "HEAD:vision/vision.md"])
+        .current_dir(repo.path())
+        .output()
+        .expect("git show");
+    assert!(
+        !show.status.success(),
+        "the vision must NOT be promoted to `vision/vision.md` — placement homes it at \
+         the literal `VISION.md` alone",
     );
 
     // ── Arm 3: park-idea → one committed `ideas/<slug>.md`. ──
@@ -662,7 +669,7 @@ fn dangling_grounded_in_blocks_finalize_per_element() {
 }
 
 /// **Arm 5 — the pack-load freeze gate stays green under the new schema knobs.** The
-/// shipped `vision` schema declares the additive `display-title:` / `root-render:` keys;
+/// shipped `vision` schema declares the additive `display-title:` / `placement:` keys;
 /// under `[dev ▸ methodology]` a `jigc start` compose runs `assert_schema_freeze` against
 /// the dev pack's `schema-manifest.yaml`. If the additive `Option` fields serialized when
 /// absent, every frozen dev-pack doctype's `schema-hash` would move and the gate would fire
@@ -680,8 +687,8 @@ fn freeze_stays_green_under_the_new_schema_knobs() {
         fs::read_to_string(methodology_pack_tree().join("schemas").join("vision.yaml"))
             .expect("read the shipped vision.yaml");
     assert!(
-        vision_schema.contains("display-title:") && vision_schema.contains("root-render:"),
-        "the shipped vision schema declares the additive display-title/root-render keys; got:\n{vision_schema}",
+        vision_schema.contains("display-title:") && vision_schema.contains("placement:"),
+        "the shipped vision schema declares the additive display-title/placement keys; got:\n{vision_schema}",
     );
 
     // A real compose over `[dev ▸ methodology]` fires the pack-load freeze gate against the
@@ -699,17 +706,20 @@ fn freeze_stays_green_under_the_new_schema_knobs() {
     let rendered = streams(&out);
     assert!(
         !rendered.contains("schema-hash mismatch"),
-        "the additive display-title/root-render keys must perturb NO frozen dev-pack doctype hash \
+        "the additive display-title/placement keys must perturb NO frozen dev-pack doctype hash \
          (no schema-hash mismatch); got:\n{rendered}",
     );
 }
 
 /// **Arm 6 — a pre-existing FOREIGN root `VISION.md` blocks the first form-vision finalize,
 /// then proceeds once removed** (the no-silent-data-loss invariant over the REAL `vision`
-/// doctype + `VISION.md` render — the existing-project RC on-ramp). With no managed vision
-/// yet and a hand-authored root `VISION.md`, finalize blocks via `finalize.root-render-foreign`
-/// (exit 3), leaves the foreign file untouched, and creates no commit; after the file is
-/// removed, finalize proceeds and the render owns the root file byte-identically.
+/// doctype managed directly at root `VISION.md` — the existing-project RC on-ramp). The
+/// vision is minted Created while `VISION.md` is absent; a human then hand-authors a foreign
+/// `VISION.md` at the managed literal path before finalize. Promoting the Created doc would
+/// overwrite it, so the **inherited `plan_clobber_guard`** blocks with `finalize.promote-clobber`
+/// (zero bespoke root-render guard — `design/storage.md` → Placement: the no-silent-data-loss
+/// guard is inherited, not rebuilt). The foreign file is left untouched and no commit lands;
+/// after it is removed, finalize proceeds and the managed vision owns `VISION.md`.
 #[test]
 fn preexisting_foreign_root_vision_blocks_then_proceeds() {
     let repo = TempDir::new("foreign-root");
@@ -717,7 +727,7 @@ fn preexisting_foreign_root_vision_blocks_then_proceeds() {
     init_repo(repo.path());
 
     // form-vision, no research: `grounded-in` is `0..*`, so an unset anchor is valid — the
-    // root-render foreign guard is the only lever under test.
+    // foreign-file clobber guard is the only lever under test.
     assert_ok(
         &jigc(
             repo.path(),
@@ -733,6 +743,7 @@ fn preexisting_foreign_root_vision_blocks_then_proceeds() {
         "`jigc start --workflow form-vision`",
     );
     let task = "form-the-project-vision";
+    // Mint the vision while the literal `VISION.md` is EMPTY → `Provenance::Created`.
     let create = jigc(
         repo.path(),
         home.path(),
@@ -766,24 +777,42 @@ fn preexisting_foreign_root_vision_blocks_then_proceeds() {
     );
     fill_commit(repo.path(), home.path(), task);
 
-    // A hand-authored root VISION.md that jigc did NOT generate (the existing-project on-ramp).
+    // A hand-authored root VISION.md that jigc did NOT generate (the existing-project on-ramp),
+    // dropped at the managed literal path AFTER the Created mint.
     const FOREIGN: &[u8] = b"# Vision\n\nhand-authored by a human, not jigc.\n";
     fs::write(repo.path().join("VISION.md"), FOREIGN).expect("write the foreign root file");
 
     let before = head_count(repo.path());
-    let out = jigc(repo.path(), home.path(), &["task", "finalize", task], None);
-    assert_eq!(
-        out.status.code(),
-        Some(3),
-        "a foreign root VISION.md with no managed vision must block finalize (exit 3); stdout:\n{}\nstderr:\n{}",
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", task, "--format", "json"],
+        None,
+    );
+    assert!(
+        !out.status.success(),
+        "a foreign VISION.md at the managed literal path must block finalize; stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("finalize.root-render-foreign") && stderr.contains("VISION.md"),
-        "the block must name the root-render-foreign code + the foreign target; got:\n{stderr}",
-    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("the report envelope must parse ({e}); got:\n{stdout}"));
+    let findings = value["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope carries a `findings` array; got:\n{stdout}"));
+    let clobber = findings
+        .iter()
+        .find(|f| {
+            f["code"] == "finalize.promote-clobber"
+                && f["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("VISION.md"))
+        })
+        .unwrap_or_else(|| {
+            panic!("the foreign VISION.md must block at the inherited finalize.promote-clobber; got:\n{findings:#?}")
+        });
+    assert_eq!(clobber["severity"], "blocking");
 
     // No silent data loss: the foreign file is untouched, and no commit was created.
     let after_bytes =
@@ -795,30 +824,19 @@ fn preexisting_foreign_root_vision_blocks_then_proceeds() {
     assert_eq!(
         head_count(repo.path()),
         before,
-        "a root-render-foreign block must create no commit"
-    );
-    // The managed vision was NOT promoted (the transaction aborted before promote).
-    let show = Command::new("git")
-        .args(["show", "HEAD:vision/vision.md"])
-        .current_dir(repo.path())
-        .output()
-        .expect("git show");
-    assert!(
-        !show.status.success(),
-        "a blocked finalize promotes nothing"
+        "a clobber block must create no commit"
     );
 
-    // Recovery: remove the foreign file, re-run — the render now owns the root file and lands.
+    // Recovery: remove the foreign file, re-run — the managed vision now owns `VISION.md`.
     fs::remove_file(repo.path().join("VISION.md")).expect("remove the foreign root file");
     assert_ok(
         &jigc(repo.path(), home.path(), &["task", "finalize", task], None),
         "`jigc task finalize` after removing the foreign root file",
     );
-    let managed = committed(repo.path(), "vision/vision.md");
-    let rendered =
-        fs::read_to_string(repo.path().join("VISION.md")).expect("read the rendered VISION.md");
-    assert_eq!(
-        rendered, managed,
-        "after recovery the render owns the root file, byte-identical to the managed vision doc",
+    let managed = committed(repo.path(), "VISION.md");
+    assert!(
+        managed.contains("A context compiler for coding agents."),
+        "after recovery the managed vision owns `VISION.md`, carrying the authored thesis; \
+         got:\n{managed}",
     );
 }

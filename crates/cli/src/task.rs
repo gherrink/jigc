@@ -35,7 +35,7 @@ use anyhow::{Context, Result, bail};
 use engine::address::Address;
 use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::file_state::{self, FileStateRecord};
-use engine::finalize::{Promotion, RepinDecision, RootRender, decide_base_repin, plan_finalize};
+use engine::finalize::{Promotion, RepinDecision, decide_base_repin, plan_finalize};
 use engine::finding::Finding;
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
 use engine::probe::{ProbeRequest, ProbeRun, ProbeRunStatus};
@@ -724,11 +724,18 @@ impl TaskArea {
                 || !git_untracked(&self.repo_root)?.trim().is_empty()
         } else {
             let staged_code = !git_capture(&self.repo_root, &["diff", "--cached"])?.is_empty();
+            // A staged doc counts toward the diff exactly when it will PROMOTE — mirroring
+            // `plan_promotions`' promotability: a `location:` doctype OR a **placement**
+            // doctype (`design/storage.md` → Placement, `location: None`). Testing only
+            // `location` here would drop a placement singleton (e.g. the `vision` managed at
+            // root `VISION.md`) through the transient arm, tripping the empty-commit guard on
+            // a doc-only task whose sole diff IS that promotion. The transient commit doc
+            // (neither location nor placement) is still excluded.
             let staged_promotable = self.staged_docs()?.iter().any(|(name, _)| {
                 name.strip_suffix(".md")
                     .and_then(|stem| stem.split_once(':'))
                     .and_then(|(ty, _)| schemas.get(ty))
-                    .is_some_and(|schema| schema.location.is_some())
+                    .is_some_and(|schema| schema.location.is_some() || schema.placement.is_some())
             });
             let config_pending = !git_capture(
                 &self.repo_root,
@@ -1301,12 +1308,6 @@ pub(crate) fn try_execute_finalize_plan(
         // commit closure so `git add --all` stages the deletion into the same commit as
         // the promoted doc. Empty (inert) on every non-migration finalize.
         retired = retire(repo_root, &plan.retirements)?;
-        // Root render (`design/design-altitude-doctypes.md` → §4 Root render): write each
-        // promoted doctype's declared root target from its canonical bytes, staged into the
-        // same commit as the promotion. Runs after promote so the canonical bytes exist; the
-        // engine's first-write guard already blocked any foreign-file clobber. Empty (inert)
-        // on every non-render task.
-        render_roots(repo_root, &plan.renders)?;
         // The transient `.jigc/` subdirs are gitignored via `.jigc/.gitignore` — the
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
@@ -1360,13 +1361,7 @@ pub(crate) fn try_execute_finalize_plan(
             // HEAD content for the promoted paths and delete the promoted copies, and
             // restore each retired foreign original (review B1) — so an approved-but-failed
             // commit never leaves the foreign file deleted with no commit; no commit landed.
-            rollback_promotions(
-                repo_root,
-                &plan.promotions,
-                &plan.renders,
-                &plan.retirements,
-                &retired,
-            );
+            rollback_promotions(repo_root, &plan.promotions, &plan.retirements, &retired);
             return Ok(Err(err));
         }
     };
@@ -1430,33 +1425,6 @@ fn promote(repo_root: &Path, promotions: &[Promotion]) -> Result<()> {
             format!(
                 "could not promote {:?} to {dest:?}",
                 promotion.source.display()
-            )
-        })?;
-    }
-    Ok(())
-}
-
-/// The root-render step (`design/design-altitude-doctypes.md` → §4 The vision surface →
-/// Root render; `ideas/root-changelog-render.md`). After promote, copy each render's
-/// canonical bytes — the SAME staged source promote copied, so the root file is
-/// byte-identical to the promoted managed doc — to its repo-root literal
-/// (`<repo_root>/<target>`). Creates the target's parent dir when absent. The root file is a
-/// **regenerated artifact**, not a managed doc, so it is deliberately NOT recorded in
-/// `hash_updates` / `file-state` (edit the managed doc, not the render). The engine's
-/// first-write guard already blocked a foreign-file clobber, so this write owns its output.
-/// Empty (inert) on every non-render task; runs inside the commit closure so
-/// [`stage_index_honoring`] stages it into the same commit.
-fn render_roots(repo_root: &Path, renders: &[RootRender]) -> Result<()> {
-    for render in renders {
-        let target = repo_root.join(&render.target);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("could not create {parent:?} to render into"))?;
-        }
-        std::fs::copy(&render.source, &target).with_context(|| {
-            format!(
-                "could not render {:?} to the root target {target:?}",
-                render.source.display()
             )
         })?;
     }
@@ -1573,11 +1541,6 @@ fn stage_index_honoring(repo_root: &Path, plan: &engine::finalize::FinalizePlan)
     for promotion in &plan.promotions {
         pathspecs.push(promotion.destination.clone());
     }
-    // The root-render targets ride the same commit as the promotions that regenerate them
-    // (`design/design-altitude-doctypes.md` → §4 Root render). Empty on every non-render task.
-    for render in &plan.renders {
-        pathspecs.push(render.target.clone());
-    }
     refresh_version_stamp(repo_root)?;
     pathspecs.extend(existing_pathspecs(
         repo_root,
@@ -1639,7 +1602,6 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 fn rollback_promotions(
     repo_root: &Path,
     promotions: &[Promotion],
-    renders: &[RootRender],
     retirements: &[PathBuf],
     retired: &[(PathBuf, Vec<u8>)],
 ) {
@@ -1664,19 +1626,6 @@ fn rollback_promotions(
                 }
                 parent = dir.parent();
             }
-        }
-    }
-    // Root renders (`design/design-altitude-doctypes.md` → §4 Root render): the render write
-    // was staged into the failed commit, so restore HEAD's content for each target and, for a
-    // greenfield render with no HEAD content, remove the freshly written file — mirroring the
-    // promotion rollback so an approved-but-failed commit leaves the root target as-if-untouched.
-    for render in renders {
-        let _ = git_run(
-            repo_root,
-            &["restore", "--staged", "--worktree", &render.target],
-        );
-        if !path_at_head(repo_root, &render.target) {
-            let _ = std::fs::remove_file(repo_root.join(&render.target));
         }
     }
     for retirement in retirements {

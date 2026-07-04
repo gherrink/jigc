@@ -25,7 +25,7 @@
 //!
 //! No external test crates: the binary path comes from `CARGO_BIN_EXE_jigc`, the temp
 //! repo is a real `git init`, the throwaway placement doctypes ride a listed fixture pack
-//! (the `finalize_root_render.rs` precedent), and a self-cleaning `TempDir` keeps the
+//! (the listed-fixture-pack precedent), and a self-cleaning `TempDir` keeps the
 //! test off the developer's repo. The base pack is the binary-embedded dev pack (its
 //! `commit` doctype loads); the fixture pack unions the two placement doctypes + their
 //! host/read workflows on top.

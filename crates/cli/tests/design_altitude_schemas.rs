@@ -190,7 +190,7 @@ fn describe_narrates_research_and_idea_under_dev_methodology() {
 // §1/§2/§4):
 //   (a) `vision` COMPOSES under `[dev ▸ methodology]` (narrated by the real
 //       `describe`) AND its schema declares the singleton + `display-title:
-//       Vision` + `root-render: VISION.md` knobs, the thesis/invariants/
+//       Vision` + `placement: { file: VISION.md }` knobs, the thesis/invariants/
 //       open-questions slots, and the `grounded-in` ref (to `research`, `0..*`,
 //       inverse `grounds`).
 //   (b) the `grounded-in` `ref-resolves` gate PASSES when the target is a
@@ -198,7 +198,7 @@ fn describe_narrates_research_and_idea_under_dev_methodology() {
 //       driven through the REAL binary over the Shape-2 committed-target flow
 //       (`do-research`/`form-vision` land in Inc-4, so a workflow-only fixture
 //       pack supplies the create-gates; the `dogfood_record_schema.rs` /
-//       `finalize_root_render.rs` precedent).
+//       `placement_acceptance.rs` precedent).
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The shipped `vision` schema's exact bytes from the methodology pack tree.
@@ -476,7 +476,7 @@ fn author_vision_grounded_in(repo: &Path, home: &Path, targets: &str) -> &'stati
 
 /// (a) `vision` composes under `[dev ▸ methodology]` (narrated by the real
 /// `describe`), and its shipped schema declares the singleton + `display-title` +
-/// `root-render` knobs, the three prose slots, and the `grounded-in → research`
+/// `placement` knobs, the three prose slots, and the `grounded-in → research`
 /// ref. The knobs/slots/ref are read from the loaded model (the `describe`
 /// projection carries only the woven prose); the `describe` run proves the schema
 /// LOADED and COMPOSED under the union (a parse failure would `bail`).
@@ -513,16 +513,19 @@ fn vision_composes_and_declares_its_knobs_slots_and_grounded_in_ref() {
     let schema = load_schema(&vision_schema_bytes()).expect("vision.yaml loads engine-native");
     assert_eq!(schema.ty, "vision");
     assert!(schema.singleton, "vision is a singleton");
-    assert_eq!(schema.location.as_deref(), Some("vision/"));
+    assert_eq!(
+        schema.location, None,
+        "a placement doctype sets no `location` — the home is the literal `placement.file`",
+    );
     assert_eq!(
         schema.display_title.as_deref(),
         Some("Vision"),
         "the display-title knob makes the H1 read `# Vision`",
     );
     assert_eq!(
-        schema.root_render.as_deref(),
+        schema.placement.as_ref().map(|p| p.file.as_str()),
         Some("VISION.md"),
-        "the root-render knob regenerates the repo-root VISION.md",
+        "the placement knob homes the managed vision directly at the repo-root VISION.md",
     );
 
     // The `meta` header carries the `grounded-in → research` ref (0..*, inverse grounds)

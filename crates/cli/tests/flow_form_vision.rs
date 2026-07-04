@@ -20,10 +20,11 @@
 //!
 //! Everything is asserted on the EMITTED bytes of the real binary (`CARGO_BIN_EXE_jigc`)
 //! over the `[dev ▸ methodology]` composition (methodology pack listed in `packs.yaml`
-//! over the embedded dev base — the RC-trial on-ramp). The methodology pack ships no
-//! `docs-root` knob (its whole `knobs.yaml` shadows the dev base's default), so its
-//! doctypes land flat at their `location:` — the managed vision at `vision/vision.md`,
-//! the root render at `VISION.md`. No external test crates.
+//! over the embedded dev base — the RC-trial on-ramp). The `vision` doctype declares
+//! `placement: { file: VISION.md }` (no `location`, docs-root never applies), so the
+//! managed vision is homed DIRECTLY at the repo-root literal `VISION.md` — one file,
+//! OOB-reconciled, not a `docs/vision/vision.md` source mirrored to root. No external
+//! test crates.
 
 use std::fs;
 use std::io::Write;
@@ -243,8 +244,9 @@ fn commit_research(repo: &Path, home: &Path, intent: &str, title: &str, findings
 /// re-composed (the edge-walk slice actually read the committed research). The second
 /// research's findings never appear (walk_edge returns the FIRST target — the first-bound
 /// content-echo, §3 constraint 2). Finalize resolves BOTH grounded-in targets (no block),
-/// lands exactly one commit, the managed `docs/vision/vision.md` H1 reads `# Vision`
-/// (display-title knob), and the root `VISION.md` is rendered byte-faithful (root render).
+/// lands exactly one commit, the vision is managed directly at the repo-root literal
+/// `VISION.md` (placement knob) with H1 `# Vision` (display-title knob), and an OOB edit to
+/// it is detected + routed (managed, not a mirror).
 #[test]
 fn form_vision_reentry_reads_grounding_research_and_finalizes() {
     let repo = TempDir::new("spine");
@@ -391,11 +393,11 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
         "form-vision finalize lands exactly ONE commit"
     );
 
-    // The managed vision doc is promoted at its `location:` (`vision/vision.md` — the
-    // methodology pack ships no `docs-root` knob, so its doctypes land flat, like
-    // `research/`/`ideas/`) and its H1 reads `# Vision` (the display-title knob), NOT
-    // `# vision`.
-    let managed = committed(repo.path(), "vision/vision.md");
+    // The vision is MANAGED DIRECTLY at the repo-root literal `VISION.md` (the placement
+    // knob: `placement: { file: VISION.md }`, no `location`, docs-root never applies) — one
+    // file, not a `docs/vision/vision.md` source mirrored to root. Its H1 reads `# Vision`
+    // (the display-title knob), NOT `# vision`.
+    let managed = committed(repo.path(), "VISION.md");
     assert!(
         managed.lines().any(|l| l.trim() == "# Vision"),
         "the managed vision doc's H1 reads `# Vision` (display-title knob); got:\n{managed}",
@@ -410,11 +412,85 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
          got:\n{managed}",
     );
 
-    // The root render owns `VISION.md`, byte-identical to the promoted managed doc.
-    let root = committed(repo.path(), "VISION.md");
+    // No one-file-folder mirror: the vision lives ONLY at the literal `VISION.md`, never at
+    // a `vision/vision.md` / `docs/vision/vision.md` `<location>/<slug>.md` home.
+    for stale in ["vision/vision.md", "docs/vision/vision.md"] {
+        let show = Command::new("git")
+            .args(["show", &format!("HEAD:{stale}")])
+            .current_dir(repo.path())
+            .output()
+            .expect("git show");
+        assert!(
+            !show.status.success(),
+            "the vision must NOT be promoted to `{stale}` — placement homes it at the literal \
+             `VISION.md` alone",
+        );
+    }
+
+    // VISION.md IS the managed doc (not a byte-mirror of a docs/-buried source): an
+    // out-of-band human edit to it is DETECTED + ROUTED by the reconcile/validate sweep —
+    // the "managed, not a mirror" promise. Drift it nonconformantly (rename a required
+    // section heading) through git, then a later task's store-scope validate blocks on it.
+    let drifted = managed.replace("## Thesis", "## Thesisz");
+    assert_ne!(
+        drifted, managed,
+        "the OOB edit must actually change the heading"
+    );
+    fs::write(repo.path().join("VISION.md"), &drifted).expect("write the OOB-edited VISION.md");
+    git(repo.path(), &["add", "VISION.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "human edits VISION.md out of band"],
+    );
+
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "form-vision", "reconcile the store"],
+            None,
+        ),
+        "`jigc start` (reconcile pass)",
+    );
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "task",
+            "validate",
+            "reconcile-the-store",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 validate stdout");
+    let value: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("the report envelope must parse ({e}); got:\n{stdout}"));
+    let findings = value["findings"]
+        .as_array()
+        .unwrap_or_else(|| panic!("the envelope carries a `findings` array; got:\n{stdout}"));
+    let block = findings
+        .iter()
+        .find(|f| {
+            f["code"] == "reconciliation.conformance-block"
+                && f["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("VISION.md"))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "the OOB edit to the managed VISION.md must be detected + routed \
+                 (managed, not a mirror); got:\n{findings:#?}"
+            )
+        });
     assert_eq!(
-        root, managed,
-        "the root-render VISION.md must be byte-identical to the managed vision doc",
+        block["severity"], "blocking",
+        "a recorded-then-drifted managed VISION.md conformance-blocks: {block:#?}",
+    );
+    assert!(
+        block["route"].is_string(),
+        "the conformance-block carries a route to a human: {block:#?}",
     );
 }
 
