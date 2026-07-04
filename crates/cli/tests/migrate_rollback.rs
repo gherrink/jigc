@@ -141,7 +141,7 @@ fn ok(out: std::process::Output, what: &str) {
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// The single-release foreign file (the cold/empty spike input).
 const FOREIGN: &str = "\
@@ -153,19 +153,19 @@ const FOREIGN: &str = "\
 ";
 
 /// Drive the full migrate + author spine to a conformant staged migration task over a
-/// **committed** foreign `CHANGELOG.md`, plus a conformant commit doc.
+/// **committed** foreign `HISTORY.md`, plus a conformant commit doc.
 fn committed_staged_migration(repo: &Path, home: &Path, pack: &Path) {
     staged_migration(repo, home, pack, true);
 }
 
-/// Drive the migrate + author spine over a foreign `CHANGELOG.md`. When `track_foreign`
+/// Drive the migrate + author spine over a foreign `HISTORY.md`. When `track_foreign`
 /// the foreign is committed first (the design's "foreign committed first" assumption);
 /// otherwise it is left **untracked** — the review-F3 case where `git restore` cannot
 /// recover it on a rolled-back commit.
 fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) {
-    fs::write(repo.join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
+    fs::write(repo.join("HISTORY.md"), FOREIGN).expect("write foreign HISTORY.md");
     if track_foreign {
-        git(repo, &["add", "CHANGELOG.md"]);
+        git(repo, &["add", "HISTORY.md"]);
         git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
     }
 
@@ -175,7 +175,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
             repo,
             home,
             pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
         ),
         "jigc migrate",
     );
@@ -338,7 +338,7 @@ fn staged_migration(repo: &Path, home: &Path, pack: &Path, track_foreign: bool) 
                 "--task",
                 TASK,
             ],
-            b"Migrate the foreign CHANGELOG.md into managed shape.\n",
+            b"Migrate the foreign HISTORY.md into managed shape.\n",
         ),
         "set-slot commit body",
     );
@@ -403,7 +403,7 @@ fn approved_migration_commit_rejection_rolls_back_retire() {
 
     // The B1 contract: the foreign original is restored BYTE-INTACT — never left
     // deleted-with-no-commit.
-    let restored = repo.path().join("CHANGELOG.md");
+    let restored = repo.path().join("HISTORY.md");
     assert!(
         restored.exists(),
         "the foreign original must be restored on a rolled-back commit",
@@ -414,9 +414,9 @@ fn approved_migration_commit_rejection_rolls_back_retire() {
         "the foreign original must be restored byte-intact",
     );
     // And its restoration reaches the index too (the staged deletion is undone), so the
-    // worktree is clean of any pending CHANGELOG.md change.
+    // worktree is clean of any pending HISTORY.md change.
     assert!(
-        !git(repo.path(), &["status", "--porcelain", "CHANGELOG.md"]).contains("CHANGELOG.md"),
+        !git(repo.path(), &["status", "--porcelain", "HISTORY.md"]).contains("HISTORY.md"),
         "the foreign original's staged deletion must be rolled back (index + worktree)",
     );
 
@@ -438,13 +438,13 @@ fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
-    // The foreign CHANGELOG.md is staged for migration but never committed — untracked.
+    // The foreign HISTORY.md is staged for migration but never committed — untracked.
     staged_migration(repo.path(), home.path(), &pack, false);
 
     // Sanity: the foreign is genuinely untracked at HEAD (the precondition under test).
     assert!(
-        git(repo.path(), &["status", "--porcelain", "CHANGELOG.md"]).starts_with("??"),
-        "the foreign CHANGELOG.md must be untracked for this case",
+        git(repo.path(), &["status", "--porcelain", "HISTORY.md"]).starts_with("??"),
+        "the foreign HISTORY.md must be untracked for this case",
     );
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
 
@@ -471,7 +471,7 @@ fn approved_migration_commit_rejection_restores_an_untracked_foreign() {
 
     // The F3 contract: the untracked foreign original is restored BYTE-INTACT — never
     // permanently lost just because it was never committed.
-    let restored = repo.path().join("CHANGELOG.md");
+    let restored = repo.path().join("HISTORY.md");
     assert!(
         restored.exists(),
         "the untracked foreign original must be restored on a rolled-back commit",

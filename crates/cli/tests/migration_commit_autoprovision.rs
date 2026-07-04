@@ -131,7 +131,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 }
 
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>`.
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// The foreign Keep-a-Changelog file (committed, so its retire lands a tracked deletion).
 const FOREIGN: &str = "\
@@ -167,8 +167,8 @@ fn migration_finalizes_with_autoprovisioned_commit_doc() {
     init_repo(repo.path());
 
     // Track the foreign original so its retirement lands as a real deletion.
-    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
-    git(repo.path(), &["add", "CHANGELOG.md"]);
+    fs::write(repo.path().join("HISTORY.md"), FOREIGN).expect("write foreign HISTORY.md");
+    git(repo.path(), &["add", "HISTORY.md"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "track foreign changelog"],
@@ -183,7 +183,7 @@ fn migration_finalizes_with_autoprovisioned_commit_doc() {
             repo.path(),
             home.path(),
             &pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
         "jigc migrate",
@@ -246,7 +246,7 @@ fn migration_finalizes_with_autoprovisioned_commit_doc() {
     // — asserted on the emitted bytes (`git log`), never a reconstructed equivalent.
     let subject = git(repo.path(), &["log", "-1", "--format=%s"]);
     assert_eq!(
-        subject, "docs(changelog): adopt CHANGELOG.md as a managed changelog",
+        subject, "docs(changelog): adopt HISTORY.md as a managed changelog",
         "the auto-provisioned migration commit lands the formulaic subject",
     );
     // The body is present (the templated `body` slot).

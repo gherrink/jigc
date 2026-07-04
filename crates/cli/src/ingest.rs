@@ -228,7 +228,13 @@ fn wrong_location_finding(rel_path: &str, conformant: Option<&Schema>) -> Findin
     let (ty, location) = match conformant {
         Some(schema) => (
             schema.ty.as_str(),
-            schema.location.as_deref().unwrap_or("its location dir"),
+            // A placement doctype names its literal home; else its `location:` dir.
+            schema
+                .placement
+                .as_ref()
+                .map(|p| p.file.as_str())
+                .or(schema.location.as_deref())
+                .unwrap_or("its location dir"),
         ),
         None => ("(unknown)", "its location dir"),
     };
@@ -245,11 +251,16 @@ fn wrong_location_finding(rel_path: &str, conformant: Option<&Schema>) -> Findin
     )
 }
 
-/// Whether `rel_path` sits directly under `schema`'s declared `location:` dir — the
-/// command-layer mirror of the engine's location discriminator, used to split the two
-/// `needs-reconcile` shapes for finding re-derivation. A transient (location-less)
-/// schema is never a home.
+/// Whether `rel_path` sits at `schema`'s canonical home — under its declared
+/// `location:` dir, or exactly at its literal `placement.file` (a placement doctype's
+/// single home; `design/storage.md` → Placement) — the command-layer mirror of the
+/// engine's home discriminator, used to split the two `needs-reconcile` shapes for
+/// finding re-derivation. A transient (neither location nor placement) schema is never
+/// a home.
 fn under_location(rel_path: &str, schema: &Schema) -> bool {
+    if let Some(placement) = &schema.placement {
+        return rel_path == placement.file;
+    }
     let Some(location) = schema.location.as_deref() else {
         return false;
     };

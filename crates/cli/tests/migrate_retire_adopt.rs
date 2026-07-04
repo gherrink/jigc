@@ -3,8 +3,8 @@
 //!
 //! On a **migration task** ([auto-migration.md](../../../design/auto-migration.md) →
 //! Retire-the-foreign-original / Adopt), `jigc task finalize <id> --approve` executes
-//! the transaction all-or-nothing: write `docs/changelog/changelog.md` (byte-stable),
-//! **retire the foreign original** (here a committed root `CHANGELOG.md`, so the
+//! the transaction all-or-nothing: write `CHANGELOG.md` (byte-stable),
+//! **retire the foreign original** (here a committed root `HISTORY.md`, so the
 //! deletion stages into the same commit), `git` commit, and adopt. The proof:
 //!   - the canonical doc lands byte-stable (`render(parse(x)) == x`) + is committed;
 //!   - the foreign original is **gone** from disk and the commit carries its deletion;
@@ -134,7 +134,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// The shipped changelog schema, loaded for the round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
@@ -178,7 +178,7 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
     );
     set_slot(
         &format!("commit:{task}#body"),
-        b"Migrate the foreign CHANGELOG.md into managed shape.\n",
+        b"Migrate the foreign HISTORY.md into managed shape.\n",
     );
 }
 
@@ -188,9 +188,9 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
 fn committed_staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str) {
     // Track the foreign original FIRST: the retire-then-`git add --all` must surface a
     // real deletion in the finalize commit (the realistic flow-25 scenario — a
-    // pre-existing committed `CHANGELOG.md`).
-    fs::write(repo.join("CHANGELOG.md"), foreign).expect("write foreign CHANGELOG.md");
-    git(repo, &["add", "CHANGELOG.md"]);
+    // pre-existing committed `HISTORY.md`).
+    fs::write(repo.join("HISTORY.md"), foreign).expect("write foreign HISTORY.md");
+    git(repo, &["add", "HISTORY.md"]);
     git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
 
     ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
@@ -199,7 +199,7 @@ fn committed_staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &s
             repo,
             home,
             pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
         "jigc migrate",
@@ -318,7 +318,7 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
         .parse()
         .unwrap();
     assert!(
-        repo.path().join("CHANGELOG.md").exists(),
+        repo.path().join("HISTORY.md").exists(),
         "the foreign original is on disk before --approve"
     );
 
@@ -348,11 +348,7 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
 
     // The canonical managed doc is committed + on disk, and round-trips BYTE-STABLE
     // (`render(parse(x)) == x`) — the contract the adopt path leans on.
-    let canonical = repo
-        .path()
-        .join("docs")
-        .join("changelog")
-        .join("changelog.md");
+    let canonical = repo.path().join("CHANGELOG.md");
     let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
     let schema = shipped_changelog_schema(&pack);
     let parsed = engine::write::instance_from_source(&schema, &committed)
@@ -363,27 +359,23 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
         "the committed changelog is byte-stable across parse -> render:\n{committed}",
     );
     assert!(
-        git(
-            repo.path(),
-            &["cat-file", "-t", "HEAD:docs/changelog/changelog.md"]
-        )
-        .contains("blob"),
+        git(repo.path(), &["cat-file", "-t", "HEAD:CHANGELOG.md"]).contains("blob"),
         "the canonical changelog is committed in HEAD"
     );
 
     // The foreign original is GONE from disk (the first byte-destructive write)...
     assert!(
-        !repo.path().join("CHANGELOG.md").exists(),
+        !repo.path().join("HISTORY.md").exists(),
         "the approved migration retires the foreign original from disk"
     );
     // ...and the SAME commit carries its deletion (it was a tracked file).
     let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        name_status.contains("D\tCHANGELOG.md"),
+        name_status.contains("D\tHISTORY.md"),
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tdocs/changelog/changelog.md"),
+        name_status.contains("A\tCHANGELOG.md"),
         "the SAME commit carries the added managed doc:\n{name_status}"
     );
 
@@ -395,7 +387,7 @@ fn migration_finalize_approve_writes_retires_and_adopts() {
     );
     let row = ingest
         .lines()
-        .find(|l| l.contains("docs/changelog/changelog.md"))
+        .find(|l| l.contains("CHANGELOG.md"))
         .unwrap_or_else(|| panic!("ingest must report the managed changelog:\n{ingest}"));
     assert!(
         row.contains("adoptable") && row.contains("adopted"),

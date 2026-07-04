@@ -140,7 +140,7 @@ fn staged_changelog(repo: &Path, task: &str) -> String {
 }
 
 /// The migration task id — `jigc migrate` mints a per-file `migrate-<doctype>-<slug(path)>`.
-const MIGRATE_TASK: &str = "migrate-changelog-changelog";
+const MIGRATE_TASK: &str = "migrate-changelog-history";
 
 /// A dateless foreign Keep-a-Changelog file — the common case (no `- YYYY-MM-DD`).
 const DATELESS_FOREIGN: &str = "\
@@ -151,19 +151,19 @@ const DATELESS_FOREIGN: &str = "\
 - First public release.
 ";
 
-/// Run `jigc migrate CHANGELOG.md --as changelog` over a dateless foreign file, minting
-/// the off-router `migrate-changelog-changelog` task (recording the `source-path` = migration mode).
+/// Run `jigc migrate HISTORY.md --as changelog` over a dateless foreign file, minting
+/// the off-router `migrate-changelog-history` task (recording the `source-path` = migration mode).
 fn start_migration(repo: &Path, home: &Path, pack: &Path) {
-    fs::write(repo.join("CHANGELOG.md"), DATELESS_FOREIGN).expect("write foreign CHANGELOG.md");
+    fs::write(repo.join("HISTORY.md"), DATELESS_FOREIGN).expect("write foreign HISTORY.md");
     ok_stdout(
         run_jigc(
             repo,
             home,
             pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
-        "jigc migrate CHANGELOG.md --as changelog",
+        "jigc migrate HISTORY.md --as changelog",
     );
 }
 
@@ -321,13 +321,8 @@ fn migration_dateless_release_omits_date_and_finalizes_clean() {
     );
 
     // The COMMITTED canonical changelog carries no `date:` line for the release.
-    let committed = fs::read_to_string(
-        repo.path()
-            .join("docs")
-            .join("changelog")
-            .join("changelog.md"),
-    )
-    .expect("the canonical changelog is on disk after finalize");
+    let committed = fs::read_to_string(repo.path().join("CHANGELOG.md"))
+        .expect("the canonical changelog is on disk after finalize");
     assert!(
         !committed.contains("- date:") && !committed.contains("\ndate:"),
         "the committed dateless migration release carries no `date:` line:\n{committed}",
@@ -369,7 +364,7 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
     );
     set_slot(
         &format!("commit:{task}#body"),
-        b"Migrate the foreign CHANGELOG.md into managed shape.\n",
+        b"Migrate the foreign HISTORY.md into managed shape.\n",
     );
 }
 

@@ -405,8 +405,8 @@ fn migration_dry_run_predicts_the_narrowed_set_not_user_wip() {
 ### Added
 - First public release.
 ";
-    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign");
-    git(repo.path(), &["add", "CHANGELOG.md"]);
+    fs::write(repo.path().join("HISTORY.md"), FOREIGN).expect("write foreign");
+    git(repo.path(), &["add", "HISTORY.md"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "track foreign changelog"],
@@ -416,10 +416,10 @@ fn migration_dry_run_predicts_the_narrowed_set_not_user_wip() {
     ok_stdout(
         repo.path(),
         home.path(),
-        &["migrate", "CHANGELOG.md", "--as", "changelog"],
+        &["migrate", "HISTORY.md", "--as", "changelog"],
         "jigc migrate",
     );
-    let task = "migrate-changelog-changelog";
+    let task = "migrate-changelog-history";
 
     // An unrelated untracked stray — it must NOT enter the narrowed migration prediction.
     fs::write(repo.path().join("scratch.txt"), "private WIP\n").expect("write scratch.txt");
@@ -465,11 +465,11 @@ sections:
     );
 
     assert!(
-        stdout.contains("promoted docs/changelog/changelog.md"),
+        stdout.contains("promoted CHANGELOG.md"),
         "the migration manifest lists the promoted canonical doc; stdout:\n{stdout}",
     );
     assert!(
-        stdout.contains("deleted CHANGELOG.md"),
+        stdout.contains("deleted HISTORY.md"),
         "the migration manifest lists the retired foreign deletion; stdout:\n{stdout}",
     );
     assert!(

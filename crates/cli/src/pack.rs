@@ -50,11 +50,14 @@ pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, S
     // `all_schemas`, so the stamp rides every CLI schema-load uniformly while the bare
     // engine `load_schema` (and `arb_doc()` fuzz) stays stamp-free. Gated on the
     // manifest's frozen set (the pack's own declaration, not an engine-baked list —
-    // the engine-empty invariant) AND `location.is_some()`, so the transient `commit`
-    // (in the manifest, no location) is excluded and a non-freeze pack (no manifest —
-    // the methodology pack) injects nothing (`design/corpus-migration.md` → The
-    // schema-version stamp).
-    if schema.location.is_some() && frozen_doctype_set(pack).contains(schema.ty.as_str()) {
+    // the engine-empty invariant) AND *persisted* — a `location:` folder home OR a
+    // literal `placement:` home (the M38 changelog root-`CHANGELOG.md` form). So the
+    // transient `commit` (in the manifest, neither location nor placement) is excluded
+    // and a non-freeze pack (no manifest — the methodology pack) injects nothing
+    // (`design/corpus-migration.md` → The schema-version stamp).
+    if (schema.location.is_some() || schema.placement.is_some())
+        && frozen_doctype_set(pack).contains(schema.ty.as_str())
+    {
         engine::schema::inject_schema_version_stamp(&mut schema);
     }
     Ok(schema)
@@ -957,7 +960,8 @@ mod tests {
     }
 
     /// The shipped `changelog` doctype is the M22 doctype-expansion deliverable: a
-    /// `singleton: true` Keep-a-Changelog doc at `location: changelog/`, edge-free,
+    /// `singleton: true` Keep-a-Changelog doc at the literal root `CHANGELOG.md`
+    /// (`placement`, `display-title: Changelog`, relocated there at schema v2), edge-free,
     /// with a multi-word `unreleased-changes` section (single-level repeatable
     /// change-groups) and a two-level `releases` section (each release nests a
     /// repeatable `changes` of change-groups — the `Leaf::Repeatable` target), plus
@@ -970,9 +974,13 @@ mod tests {
         let body = read_text(&pack, PackResourceKind::Schemas, "changelog");
         insta::assert_snapshot!(body, @r#"
         # changelog — the doctype-expansion (M22) project doctype: a Keep-a-Changelog
-        # singleton maintained over time. A running SINGLETON (fixed slug = the type id,
-        # always `changelog/changelog.md`), so a re-`create` deterministically targets the
-        # same committed file — the premise idempotent warm-append rests on. Edge-free
+        # singleton maintained over time. A running SINGLETON that lives at the literal
+        # root `CHANGELOG.md` (a `placement` doctype — the canonical KaC home, bypassing
+        # docs-root and the slug; design/storage.md → Placement), so a re-`create`
+        # deterministically targets the same committed file — the premise idempotent
+        # warm-append rests on. Its H1 is fixed to `# Changelog` via `display-title`
+        # (not the lowercase slug). Relocated here from the folder home `changelog/` at
+        # schema v2 (design/corpus-migration.md → the v1→v2 relocation). Edge-free
         # (no managed relation): entries cross-reference in prose, not a managed ref (the
         # `commit` target is transient, and a per-entry repeatable edge is deferred —
         # design/changelog.md → Relations).
@@ -998,7 +1006,8 @@ mod tests {
         # Engine-native types only (no pack field-types declared).
         # See design/changelog.md → The `changelog` doctype.
         type: changelog
-        location: changelog/
+        placement: { file: CHANGELOG.md }
+        display-title: Changelog
         singleton: true
         id-from: title
         description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.
@@ -1648,8 +1657,9 @@ mod tests {
 
         // The frozen set is exactly the six persisted dev-pack doctypes — six present,
         // no extra, no missing. Each is at schema-version 1 except `adr`, bumped to 2 by
-        // the M36 options-slot v1→v2 shape change (`design/corpus-migration.md` → the adr
-        // v1→v2 flow).
+        // the M36 options-slot v1→v2 shape change, and `changelog`, bumped to 2 by the
+        // M38 v1→v2 root-`CHANGELOG.md` relocation (`design/corpus-migration.md` → the adr
+        // v1→v2 flow, the changelog v1→v2 relocation).
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -1658,7 +1668,11 @@ mod tests {
             "the freeze manifest must enumerate exactly the six frozen v1 doctypes",
         );
         for entry in &manifest.doctypes {
-            let expected = if entry.ty == "adr" { 2 } else { 1 };
+            let expected = if entry.ty == "adr" || entry.ty == "changelog" {
+                2
+            } else {
+                1
+            };
             assert_eq!(
                 entry.schema_version, expected,
                 "doctype `{}` is frozen at schema-version {expected}",

@@ -156,11 +156,16 @@ pub fn classify(rel_path: &str, source: &str, schemas: &[Schema]) -> Verdict {
     }
 }
 
-/// Whether `rel_path` sits directly under `schema`'s declared `location:` dir.
-///
-/// `location:` is matched as a `dir/` path prefix (`Schema.location`, normalized of
-/// its trailing slash); a transient (location-less) schema is never a home.
+/// Whether `rel_path` sits at `schema`'s **canonical home** — under its declared
+/// `location:` dir, **or** exactly at its literal `placement.file` (a placement
+/// doctype's single repo-root-relative home, bypassing docs-root and the slug;
+/// `design/storage.md` → Placement). `location:` is matched as a `dir/` path prefix
+/// (normalized of its trailing slash). A transient schema (neither `location` nor
+/// `placement`) is never a home.
 fn under_location(rel_path: &str, schema: &Schema) -> bool {
+    if let Some(placement) = &schema.placement {
+        return rel_path == placement.file;
+    }
     let Some(location) = schema.location.as_deref() else {
         return false;
     };
@@ -462,6 +467,47 @@ A few thoughts that are not an ADR at all.
         );
         assert_eq!(off_home, Verdict::NeedsReconcile);
         assert_ne!(at_home, off_home);
+    }
+
+    /// (M38 inc-5) A **placement** doctype's canonical home is its literal
+    /// `placement.file`, not a `location:` dir: a conformant instance sitting exactly at
+    /// that path is `Adoptable` (so a promoted/committed placement changelog ingests as
+    /// adopted, never mis-flagged wrong-location), while the *same* conformant bytes at
+    /// any other path are `NeedsReconcile` — the omitting-context guard (a placement doc
+    /// off its literal home is not silently adopted). Regression: without the placement
+    /// branch in `under_location` the at-home instance falls to `NeedsReconcile`.
+    #[test]
+    fn placement_doctype_is_adoptable_only_at_its_literal_home() {
+        let schema = crate::schema::load_schema(
+            b"type: log\nplacement: { file: CHANGELOG.md }\nsections:\n  - id: body\n    slot: { hint: \"the log\" }\n",
+        )
+        .expect("placement schema loads");
+        // Render a guaranteed-conformant instance (rather than hand-writing bytes).
+        let conformant = crate::write::render(
+            &schema,
+            &crate::write::Instance {
+                title: "log".to_string(),
+                sections: vec![crate::write::SectionContent {
+                    id: "body".to_string(),
+                    slot: Some("released 1.0.".to_string()),
+                    ..Default::default()
+                }],
+            },
+        );
+        let schemas = [schema];
+
+        assert_eq!(
+            classify("CHANGELOG.md", &conformant, &schemas),
+            Verdict::Adoptable {
+                ty: "log".to_string()
+            },
+            "a conformant placement doc at its literal home is adoptable",
+        );
+        assert_eq!(
+            classify("docs/CHANGELOG.md", &conformant, &schemas),
+            Verdict::NeedsReconcile,
+            "the same bytes off the literal home are needs-reconcile (never silently adopted)",
+        );
     }
 
     use crate::file_state::{FileStateRecord, hash_bytes};

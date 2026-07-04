@@ -6,12 +6,12 @@
 //! → flow 25; [auto-migration.md](../../../design/auto-migration.md) → Acceptance). It
 //! consolidates the whole transform arm into one binary walk plus the two reds, none
 //! of which the Inc 1–3 slice tests cover through the full migrate→author→finalize path:
-//!   1. the **consolidated walk** — `jigc migrate CHANGELOG.md --as changelog` over a
+//!   1. the **consolidated walk** — `jigc migrate HISTORY.md --as changelog` over a
 //!      real multi-release foreign file, the author spine (create / add-item / set-field
 //!      historical date / set-slot), then `finalize` WITHOUT `--approve` blocks (exit
 //!      `EXIT_REVIEW_PENDING` = 4, renders the fidelity diff, no commit, foreign
 //!      byte-intact, nothing adopted), then `finalize --approve` writes
-//!      `docs/changelog/changelog.md` byte-stable, retires the foreign original (gone), lands
+//!      `CHANGELOG.md` byte-stable, retires the foreign original (gone), lands
 //!      exactly ONE commit carrying the added doc + the deletion, and a follow-up
 //!      `jigc ingest` reports it adopted;
 //!   2. **RED 1** — a `Performance` change-group is rejected **at the `add-item` write
@@ -144,7 +144,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// The shipped changelog schema, loaded for the byte-stable round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
@@ -250,7 +250,7 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path) {
         home,
         pack,
         &format!("commit:{TASK}#body"),
-        b"Migrate the foreign CHANGELOG.md into managed shape.\n",
+        b"Migrate the foreign HISTORY.md into managed shape.\n",
     );
 }
 
@@ -260,9 +260,9 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path) {
 /// emitted address of the `1.2.0` release (RED 1 hangs its `Performance` group off it).
 fn drive_conformant_migration(repo: &Path, home: &Path, pack: &Path) -> String {
     // Track the foreign original FIRST — the realistic flow-25 scenario (a pre-existing
-    // committed `CHANGELOG.md`), so `--approve`'s retire surfaces a real deletion.
-    fs::write(repo.join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
-    git(repo, &["add", "CHANGELOG.md"]);
+    // committed `HISTORY.md`), so `--approve`'s retire surfaces a real deletion.
+    fs::write(repo.join("HISTORY.md"), FOREIGN).expect("write foreign HISTORY.md");
+    git(repo, &["add", "HISTORY.md"]);
     git(repo, &["commit", "-q", "-m", "track foreign changelog"]);
 
     ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
@@ -274,10 +274,10 @@ fn drive_conformant_migration(repo: &Path, home: &Path, pack: &Path) -> String {
             repo,
             home,
             pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
-        "jigc migrate CHANGELOG.md --as changelog",
+        "jigc migrate HISTORY.md --as changelog",
     );
     assert!(
         composed.contains(FOREIGN.trim_end()),
@@ -366,7 +366,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
     let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .parse()
         .unwrap();
-    let foreign_before = fs::read(repo.path().join("CHANGELOG.md")).expect("read foreign before");
+    let foreign_before = fs::read(repo.path().join("HISTORY.md")).expect("read foreign before");
 
     let gated = run_jigc(
         repo.path(),
@@ -393,7 +393,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
         "the fidelity diff surfaces the foreign source bytes; got:\n{diff}"
     );
     assert!(
-        diff.contains("docs/changelog/changelog.md"),
+        diff.contains("CHANGELOG.md"),
         "the fidelity diff names the canonical rewrite destination; got:\n{diff}"
     );
     assert!(
@@ -408,16 +408,11 @@ fn flow25_migrate_review_approve_adopt_walk() {
     );
     assert_eq!(
         foreign_before,
-        fs::read(repo.path().join("CHANGELOG.md")).expect("read foreign after block"),
+        fs::read(repo.path().join("HISTORY.md")).expect("read foreign after block"),
         "a blocked review leaves the foreign original byte-intact"
     );
     assert!(
-        !repo
-            .path()
-            .join("docs")
-            .join("changelog")
-            .join("changelog.md")
-            .exists(),
+        !repo.path().join("CHANGELOG.md").exists(),
         "a blocked review adopts nothing (no canonical doc on disk)"
     );
 
@@ -447,11 +442,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
     );
 
     // The canonical managed doc is on disk + committed + round-trips BYTE-STABLE.
-    let canonical = repo
-        .path()
-        .join("docs")
-        .join("changelog")
-        .join("changelog.md");
+    let canonical = repo.path().join("CHANGELOG.md");
     let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
     let schema = shipped_changelog_schema(&pack);
     let parsed = engine::write::instance_from_source(&schema, &committed)
@@ -467,26 +458,22 @@ fn flow25_migrate_review_approve_adopt_walk() {
         "both historical release dates survive the migration:\n{committed}",
     );
     assert!(
-        git(
-            repo.path(),
-            &["cat-file", "-t", "HEAD:docs/changelog/changelog.md"]
-        )
-        .contains("blob"),
+        git(repo.path(), &["cat-file", "-t", "HEAD:CHANGELOG.md"]).contains("blob"),
         "the canonical changelog is committed in HEAD"
     );
 
     // The foreign original is GONE, and the SAME commit carries its deletion + the add.
     assert!(
-        !repo.path().join("CHANGELOG.md").exists(),
+        !repo.path().join("HISTORY.md").exists(),
         "the approved migration retires the foreign original from disk"
     );
     let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        name_status.contains("D\tCHANGELOG.md"),
+        name_status.contains("D\tHISTORY.md"),
         "the finalize commit carries the foreign deletion:\n{name_status}"
     );
     assert!(
-        name_status.contains("A\tdocs/changelog/changelog.md"),
+        name_status.contains("A\tCHANGELOG.md"),
         "the SAME commit carries the added managed doc:\n{name_status}"
     );
 
@@ -497,7 +484,7 @@ fn flow25_migrate_review_approve_adopt_walk() {
     );
     let row = ingest
         .lines()
-        .find(|l| l.contains("docs/changelog/changelog.md"))
+        .find(|l| l.contains("CHANGELOG.md"))
         .unwrap_or_else(|| panic!("ingest reports the managed changelog:\n{ingest}"));
     assert!(
         row.contains("adoptable") && row.contains("adopted"),
@@ -608,16 +595,11 @@ fn flow25_red1_performance_group_blocks_at_enum_conformance() {
         "the enum block creates no commit"
     );
     assert!(
-        repo.path().join("CHANGELOG.md").exists(),
+        repo.path().join("HISTORY.md").exists(),
         "the enum block retires nothing (foreign original on disk)"
     );
     assert!(
-        !repo
-            .path()
-            .join("docs")
-            .join("changelog")
-            .join("changelog.md")
-            .exists(),
+        !repo.path().join("CHANGELOG.md").exists(),
         "the enum block adopts nothing (no canonical doc on disk)"
     );
 }
@@ -634,7 +616,7 @@ fn flow25_red2_block_without_approve_is_byte_and_index_safe() {
 
     drive_conformant_migration(repo.path(), home.path(), &pack);
 
-    let foreign_before = fs::read(repo.path().join("CHANGELOG.md")).expect("read foreign before");
+    let foreign_before = fs::read(repo.path().join("HISTORY.md")).expect("read foreign before");
     let edges_before = committed_edges(repo.path());
 
     let out = run_jigc(
@@ -655,7 +637,7 @@ fn flow25_red2_block_without_approve_is_byte_and_index_safe() {
     // Byte-safe: the foreign original is untouched.
     assert_eq!(
         foreign_before,
-        fs::read(repo.path().join("CHANGELOG.md")).expect("read foreign after"),
+        fs::read(repo.path().join("HISTORY.md")).expect("read foreign after"),
         "a blocked review leaves the foreign original byte-intact"
     );
     // State-safe: no migration edge leaked into the committed index (the staged doc is

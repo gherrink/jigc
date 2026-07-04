@@ -1782,7 +1782,8 @@ sections:
     /// fixture is the byte-identity reference (a managed mention-free,
     /// engine-native-types-only schema, so the bare loader resolves it).
     const INLINE_CHANGELOG: &str = r#"type: changelog
-location: changelog/
+placement: { file: CHANGELOG.md }
+display-title: Changelog
 singleton: true
 id-from: title
 description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.

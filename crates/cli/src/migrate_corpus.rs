@@ -1444,4 +1444,142 @@ sections:
             "no premature re-key to the target home"
         );
     }
+
+    // ---- (h) the REAL shipped changelog v1→v2 relocation over the EMBEDDED pack ----
+
+    /// (M38 inc-5 T1, done-criterion) The **shipped** `changelog` doctype's v1→v2 shape
+    /// change, classified over the embedded dev pack: the prior-version snapshot
+    /// (`schema-snapshots/changelog.v1.yaml`, folder home `changelog/`, slug H1) diffed
+    /// against the current shipped schema (`placement: CHANGELOG.md` + `display-title:
+    /// Changelog`) classifies to **exactly** `[Relocated {changelog/ → CHANGELOG.md},
+    /// DisplayTitleChanged {Changelog}]`. Both shapes load through [`crate::pack::load_pack_schema`]
+    /// so the stamp rides both identically (a value-bump, not a spurious field-add) and the
+    /// two KaC sections are byte-identical — the sole diffs are the doctype-level relocation
+    /// and H1 re-title. This is the classifier driving the real relocation, not a synthetic
+    /// `log` stand-in.
+    #[test]
+    fn embedded_changelog_v1_to_v2_classifies_exactly_relocated_and_display_title() {
+        use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+        use engine::schema_diff::{SchemaChange, schema_diff};
+
+        let pack = crate::pack::EmbeddedPack::new();
+        let bytes = pack
+            .read(PackResourceKind::Schemas, &ResourceId::from("changelog"))
+            .expect("the embedded pack ships the changelog schema");
+        let current =
+            crate::pack::load_pack_schema(&pack, &bytes).expect("current changelog loads");
+        let prior = crate::pack::load_prior_schema(&pack, "changelog", 1)
+            .expect("the shipped changelog.v1 snapshot loads");
+
+        let diff = schema_diff(&prior, &current);
+        assert_eq!(
+            diff,
+            vec![
+                SchemaChange::Relocated {
+                    from: "changelog/".to_string(),
+                    to: "CHANGELOG.md".to_string(),
+                },
+                SchemaChange::DisplayTitleChanged {
+                    to: "Changelog".to_string(),
+                },
+            ],
+            "the shipped changelog v1→v2 diff is exactly the relocation + the H1 re-title",
+        );
+    }
+
+    /// (M38 inc-5 T1, done-criterion) A committed **v1-stamped** shipped `changelog`
+    /// instance at the prior folder home (`changelog/changelog.md`, the docs-root-resolved
+    /// `docs/changelog/changelog.md` old canonical) with a lowercase `# changelog` H1
+    /// **relocates** to the literal root `CHANGELOG.md` through `migrate_committed_corpus`
+    /// over the **embedded** pack (the same core the verb runs): byte-faithful — the H1
+    /// fixed to `# Changelog`, the stamp value-bumped `1→2`, the two KaC section headers
+    /// preserved; the old-home source removed; the file-state re-keyed. jigc's own repo has
+    /// no managed changelog instance, so the proof rides this fixture.
+    #[test]
+    fn embedded_changelog_relocates_committed_doc_to_root_byte_faithful() {
+        use engine::packsource::{PackResourceKind, PackSource, ResourceId};
+        use engine::schema::SCHEMA_VERSION_FIELD;
+
+        let repo = TempDir::new("changelog-relocate");
+        let jigc_root = repo.path().join(".jigc");
+        let pack = crate::pack::EmbeddedPack::new();
+
+        let bytes = pack
+            .read(PackResourceKind::Schemas, &ResourceId::from("changelog"))
+            .expect("the embedded pack ships the changelog schema");
+        let to = crate::pack::load_pack_schema(&pack, &bytes).expect("current changelog loads");
+        let from = crate::pack::load_prior_schema(&pack, "changelog", 1)
+            .expect("the shipped changelog.v1 snapshot loads");
+
+        // A committed v1-stamped changelog at the OLD folder home, lowercase-slug H1 + the
+        // two empty KaC section headers — the byte form a real pre-relocation instance has.
+        let v1 = render(
+            &from,
+            &Instance {
+                title: "changelog".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "unreleased-changes".to_string(),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "releases".to_string(),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        assert!(
+            v1.starts_with("---\nschema-version: 1\n---\n\n# changelog\n"),
+            "the committed doc is v1-stamped with a lowercase H1; got:\n{v1}"
+        );
+        write_doc(repo.path(), "changelog/changelog.md", &v1);
+
+        let mut seed = FileStateRecord::new();
+        seed.record(
+            "changelog/changelog.md".to_string(),
+            hash_bytes(v1.as_bytes()),
+        );
+        fs::create_dir_all(&jigc_root).expect("mk .jigc");
+        seed.save(&jigc_root).expect("seed the baseline");
+
+        let report =
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
+                .expect("migration runs");
+
+        assert_eq!(
+            report.migrated,
+            vec!["CHANGELOG.md".to_string()],
+            "the shipped changelog relocates to its root placement home: {report:?}"
+        );
+        assert!(
+            !repo.path().join("changelog/changelog.md").exists(),
+            "the old-home source is removed after the move"
+        );
+        let moved = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("relocated home");
+        assert!(
+            moved.starts_with("---\nschema-version: 2\n---\n\n# Changelog\n"),
+            "the stamp value-bumps 1→2 and the H1 is fixed to `# Changelog`; got:\n{moved}"
+        );
+        assert_conformant_and_stable(&to, &moved);
+
+        let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
+        assert_eq!(
+            record.get("CHANGELOG.md"),
+            Some(hash_bytes(moved.as_bytes()).as_str()),
+            "the target home is baselined at the migrated bytes"
+        );
+        assert!(
+            record.get("changelog/changelog.md").is_none(),
+            "the old-home key is dropped (re-keyed, not orphaned)"
+        );
+    }
 }

@@ -132,7 +132,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// Fill every author-required field/slot of the provisioned commit doc for `task` so a
 /// `finalize` over it validates clean.
@@ -169,7 +169,7 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
     );
     set_slot(
         &format!("commit:{task}#body"),
-        b"Migrate the foreign CHANGELOG.md into managed shape.\n",
+        b"Migrate the foreign HISTORY.md into managed shape.\n",
     );
 }
 
@@ -179,13 +179,13 @@ fn make_commit_conformant(repo: &Path, home: &Path, pack: &Path, task: &str) {
 /// is the dropped-release case the fidelity summary surfaces.
 fn staged_migration(repo: &Path, home: &Path, pack: &Path, foreign: &str, release_titles: &[&str]) {
     ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
-    fs::write(repo.join("CHANGELOG.md"), foreign).expect("write foreign CHANGELOG.md");
+    fs::write(repo.join("HISTORY.md"), foreign).expect("write foreign HISTORY.md");
     ok_stdout(
         run_jigc(
             repo,
             home,
             pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
         "jigc migrate",
@@ -303,7 +303,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
 
     let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
     let log_before = git(repo.path(), &["rev-list", "--count", "HEAD"]);
-    let foreign_before = fs::read(repo.path().join("CHANGELOG.md")).expect("read foreign before");
+    let foreign_before = fs::read(repo.path().join("HISTORY.md")).expect("read foreign before");
 
     let out = run_jigc(
         repo.path(),
@@ -337,7 +337,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         "the fidelity diff must surface the foreign source bytes; got:\n{rendered}"
     );
     assert!(
-        rendered.contains("docs/changelog/changelog.md"),
+        rendered.contains("CHANGELOG.md"),
         "the fidelity diff must surface the canonical rewrite (its destination); got:\n{rendered}"
     );
     assert!(
@@ -345,7 +345,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         "the block must tell the human how to approve; got:\n{rendered}"
     );
 
-    // Nothing committed: HEAD unchanged, no new commit, no `docs/changelog/changelog.md` in HEAD.
+    // Nothing committed: HEAD unchanged, no new commit, no `CHANGELOG.md` in HEAD.
     assert_eq!(
         head_before,
         git(repo.path(), &["rev-parse", "HEAD"]),
@@ -357,7 +357,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         "a blocked review must create no commit"
     );
     let show = Command::new("git")
-        .args(["show", "HEAD:docs/changelog/changelog.md"])
+        .args(["show", "HEAD:CHANGELOG.md"])
         .current_dir(repo.path())
         .output()
         .expect("run git show");
@@ -369,7 +369,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
     // The foreign original is byte-intact (rejection is byte-safe).
     assert_eq!(
         foreign_before,
-        fs::read(repo.path().join("CHANGELOG.md")).expect("read foreign after"),
+        fs::read(repo.path().join("HISTORY.md")).expect("read foreign after"),
         "a blocked review must leave the foreign original untouched"
     );
 
@@ -382,7 +382,7 @@ fn migration_finalize_without_approve_blocks_and_commits_nothing() {
         .join("file-state.json");
     if let Ok(json) = fs::read_to_string(&record) {
         assert!(
-            !json.contains("docs/changelog/changelog.md"),
+            !json.contains("CHANGELOG.md"),
             "a blocked review must not adopt (no file-state baseline for the canonical doc); \
              got:\n{json}"
         );

@@ -176,10 +176,10 @@ const FOREIGN: &str = "\
 /// in-location squatter seeds THIS, never the foreign body.
 const EMPTY: &str = "\
 ---
-schema-version: 1
+schema-version: 2
 ---
 
-# changelog
+# Changelog
 
 ## Unreleased Changes
 
@@ -446,21 +446,21 @@ fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
     schema
 }
 
-/// M24 inc-5 — the in-location squatter, end-to-end (the M23 e2e FAIL now passes;
-/// [auto-migration.md](../../../design/auto-migration.md) → Path-collision guard /
-/// Hardening #8, worked-examples flow 26 #8). A NON-conformant changelog committed
-/// already AT the canonical managed path (`docs/changelog/changelog.md`) migrates end-to-end:
-///   - `doc create` over the occupied canonical path seeds the working area **BLANK** —
-///     the empty template, NOT the foreign squatter body. This targets the precise M23
-///     failure point: the idempotent-create copy-in (the M16 clobber-fix) read the
-///     foreign bytes in as the edit base, so the author sequence built onto
-///     non-conformant bytes and finalize blocked on a Frankenstein doc;
+/// M24 inc-5 / M38 — an OFF-canonical old-home source, end-to-end
+/// ([auto-migration.md](../../../design/auto-migration.md) → Path-collision guard /
+/// Hardening #8, worked-examples flow 26 #8). A NON-conformant changelog committed at the
+/// changelog's OLD folder home (`docs/changelog/changelog.md`, now off-canonical since the
+/// doctype relocated to root `CHANGELOG.md`) migrates end-to-end:
+///   - `doc create` seeds the working area **BLANK** — the empty template, NOT the foreign
+///     source body (nothing squats the root canonical home). This still guards the precise
+///     M23 failure point: the idempotent-create copy-in reading foreign bytes in as the
+///     edit base would build a Frankenstein doc;
 ///   - the author sequence builds a conformant release onto the clean skeleton;
-///   - `finalize --approve` rewrites the canonical doc **in place** (the retire is
-///     SKIPPED — the `source-path == promote-destination` guard), byte-stable, and the
-///     committed doc is the authored doc, not a foreign/authored merge.
+///   - `finalize --approve` PROMOTES root `CHANGELOG.md` (Added) and RETIRES the
+///     off-canonical original (Deleted) — `source-path != promote-destination`, so the
+///     in-place exclusion does not fire — byte-stable, the committed doc the authored doc.
 #[test]
-fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
+fn off_canonical_docs_changelog_source_seeds_blank_promotes_root_and_retires() {
     let repo = TempDir::new("squatter-e2e");
     let home = TempDir::new("home");
     let pack = dev_pack();
@@ -632,11 +632,7 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
 
     // The canonical doc holds the AUTHORED doc (no Frankenstein) and round-trips
     // byte-stable.
-    let canonical = repo
-        .path()
-        .join("docs")
-        .join("changelog")
-        .join("changelog.md");
+    let canonical = repo.path().join("CHANGELOG.md");
     let committed = fs::read_to_string(&canonical).expect("the canonical changelog is on disk");
     assert_eq!(
         committed, authored,
@@ -651,14 +647,15 @@ fn in_location_squatter_seeds_blank_authors_and_finalizes_byte_stable() {
         "the committed changelog is byte-stable across parse -> render:\n{committed}",
     );
 
-    // The retire is SKIPPED — the file is rewritten in place (Modified), never deleted.
+    // Off-canonical source: root `CHANGELOG.md` is PROMOTED (Added) and the old
+    // folder-home original is RETIRED (Deleted) — source-path != promote-destination.
     let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        name_status.contains("M\tdocs/changelog/changelog.md"),
-        "the squatter is rewritten in place (Modified), not retired:\n{name_status}",
+        name_status.contains("A\tCHANGELOG.md"),
+        "the off-canonical migration promotes the canonical root doc (Added):\n{name_status}",
     );
     assert!(
-        !name_status.contains("D\tdocs/changelog/changelog.md"),
-        "the in-location squatter retire must be SKIPPED — no deletion of the just-written doc:\n{name_status}",
+        name_status.contains("D\tdocs/changelog/changelog.md"),
+        "the off-canonical original is retired (Deleted):\n{name_status}",
     );
 }

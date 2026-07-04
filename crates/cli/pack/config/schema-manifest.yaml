@@ -35,5 +35,5 @@ doctypes:
     schema-version: 1
     schema-hash: b26689b227d0ad24b14d2cc796608e639c5648f5b59b1ef38685190bef9dc227
   - type: changelog
-    schema-version: 1
-    schema-hash: 863affb3ef1a5d4b99c3fca7fe8294eb7c137d428de0e9fcc79584b85baf336e
+    schema-version: 2
+    schema-hash: 0204772fa1ceb0d1d70294acb1937a5aa851f1f79d2a2a493dcaec97dfdbb4c8

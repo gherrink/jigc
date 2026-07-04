@@ -1,7 +1,11 @@
 # changelog — the doctype-expansion (M22) project doctype: a Keep-a-Changelog
-# singleton maintained over time. A running SINGLETON (fixed slug = the type id,
-# always `changelog/changelog.md`), so a re-`create` deterministically targets the
-# same committed file — the premise idempotent warm-append rests on. Edge-free
+# singleton maintained over time. A running SINGLETON that lives at the literal
+# root `CHANGELOG.md` (a `placement` doctype — the canonical KaC home, bypassing
+# docs-root and the slug; design/storage.md → Placement), so a re-`create`
+# deterministically targets the same committed file — the premise idempotent
+# warm-append rests on. Its H1 is fixed to `# Changelog` via `display-title`
+# (not the lowercase slug). Relocated here from the folder home `changelog/` at
+# schema v2 (design/corpus-migration.md → the v1→v2 relocation). Edge-free
 # (no managed relation): entries cross-reference in prose, not a managed ref (the
 # `commit` target is transient, and a per-entry repeatable edge is deferred —
 # design/changelog.md → Relations).
@@ -27,7 +31,8 @@
 # Engine-native types only (no pack field-types declared).
 # See design/changelog.md → The `changelog` doctype.
 type: changelog
-location: changelog/
+placement: { file: CHANGELOG.md }
+display-title: Changelog
 singleton: true
 id-from: title
 description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.

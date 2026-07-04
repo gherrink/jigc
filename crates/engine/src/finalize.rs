@@ -1492,7 +1492,8 @@ sections:
         let root = TempRoot::new("clobber-in-place");
         let task_dir = root.path().join("tasks").join("migrate-in-place");
         let schema = stage_filled_commit(&task_dir, "migrate-in-place");
-        // A staged singleton instance (fixed slug = type id) → `changelog/changelog.md`.
+        // A staged singleton instance (fixed slug = type id) → the literal root
+        // `CHANGELOG.md` (changelog is a `placement` doctype at schema v2).
         state::persist(
             &state::instance_path(&task_dir, "changelog", "changelog"),
             b"# Changelog\n\nblank-seeded then authored in place\n",
@@ -1502,13 +1503,13 @@ sections:
             .expect("record created provenance (blank-seeded squatter)");
         // The committed file at the canonical destination IS the foreign original.
         state::persist(
-            &root.path().join("changelog").join("changelog.md"),
+            &root.path().join("CHANGELOG.md"),
             b"non-conformant foreign squatter at the canonical path\n",
         )
         .expect("commit the foreign squatter at the destination");
         let clean = ValidationReport::new(Vec::new(), &no_delta_resolved());
 
-        for source_path in ["changelog/changelog.md", "./changelog/changelog.md"] {
+        for source_path in ["CHANGELOG.md", "./CHANGELOG.md"] {
             state::persist(&task_dir.join("source-path"), source_path.as_bytes())
                 .expect("record the in-place migration source path");
             let plan = plan_finalize(
@@ -1524,7 +1525,7 @@ sections:
             )
             .unwrap_or_else(|_| panic!("the in-place rewrite `{source_path}` must not clobber"));
             assert_eq!(
-                plan.promotions[0].destination, "changelog/changelog.md",
+                plan.promotions[0].destination, "CHANGELOG.md",
                 "the singleton squatter is rewritten in place (source-path `{source_path}`)",
             );
         }

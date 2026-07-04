@@ -4,11 +4,11 @@
 //! This is the increment's headline proof ([auto-migration.md](../../../design/auto-migration.md)
 //! → Acceptance — worked-examples flow 25, the staged-only portion). It drives the
 //! whole T1–T3 spine through the real `jigc` binary:
-//!   - `jigc migrate <foreign CHANGELOG.md> --as changelog` mints the off-router task
+//!   - `jigc migrate <foreign HISTORY.md> --as changelog` mints the off-router task
 //!     and composes the shipped `migrate-changelog` workflow with the **foreign content
 //!     present** in the emitted view (the source seam — `{{ source }}` — resolves);
 //!   - driving the author spine (`doc create` / `add-item` / `set-field` / `set-slot`)
-//!     against the minted task produces a staged `docs/changelog/changelog.md` that
+//!     against the minted task produces a staged changelog that
 //!     **round-trips byte-stable**: `render(&schema, &instance_from_source(&schema,
 //!     staged)) == staged` (the idiom reused from `changelog_cold_create.rs`);
 //!   - the release `date` is authored from the foreign file's **historical** date,
@@ -151,25 +151,27 @@ fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
 }
 
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
-/// intent slugs the `migrate-` id-source fallback), so a `--as changelog` migration
-/// always lands at `migrate-changelog-changelog`, keeping the bare `changelog` namespace free
-/// (`auto-migration.md` -> Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+/// intent slugs the `migrate-` id-source fallback). The foreign source is an OFF-canonical
+/// `HISTORY.md` (post-M38, root `CHANGELOG.md` is the changelog's managed canonical home,
+/// so a foreign file there adopts in place — a separate proof; a foreign changelog at any
+/// other path migrates + promotes to the canonical root), so the task lands at
+/// `migrate-changelog-history` (`auto-migration.md` -> Hardening #9).
+const TASK: &str = "migrate-changelog-history";
 
-/// `jigc migrate CHANGELOG.md --as changelog`: write the foreign file, run the verb,
+/// `jigc migrate HISTORY.md --as changelog`: write the foreign file, run the verb,
 /// and return the composed view's stdout — asserting it surfaced the foreign content
 /// through the source seam (`{{ source }}`, T1's pinned spelling).
 fn migrate(repo: &Path, home: &Path, pack: &Path, foreign: &str) -> String {
-    fs::write(repo.join("CHANGELOG.md"), foreign).expect("write foreign CHANGELOG.md");
+    fs::write(repo.join("HISTORY.md"), foreign).expect("write foreign HISTORY.md");
     let stdout = ok_stdout(
         run_jigc(
             repo,
             home,
             pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
-        "jigc migrate CHANGELOG.md --as changelog",
+        "jigc migrate HISTORY.md --as changelog",
     );
     // The seam resolved: the composed view carries the foreign content verbatim (the
     // `{{ source }}` read-only context placeholder, syntactically distinct from a

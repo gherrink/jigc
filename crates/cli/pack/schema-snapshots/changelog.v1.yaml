@@ -1,0 +1,48 @@
+# changelog.v1 — the prior (pre-relocation) shape of the `changelog` doctype: a
+# folder-home singleton at `location: changelog/` with the lowercase-slug H1 (no
+# `display-title`) and the two KaC sections verbatim. This is the EXACT current
+# changelog shape captured *before* the M38 v1→v2 relocation — the pre-move
+# `location:`/no-`placement:`/no-`display-title:` form a real committed
+# `docs/changelog/changelog.md` had. Diffed against the current (v2) changelog
+# shape it classifies as exactly `[Relocated {changelog/ → CHANGELOG.md},
+# DisplayTitleChanged {Changelog}]`, so `jigc migrate-corpus` moves the doc to
+# the literal root `CHANGELOG.md`, fixes its H1 to `# Changelog`, value-bumps the
+# stamp 1→2, and byte-preserves every slot value.
+#
+# The `adr.v1.yaml` precedent (the embedded pack's `load_prior_schema` sourcing):
+# a full, real, reviewable prior-schema snapshot — the determinism boundary in
+# its strongest form (two genuine declared schemas diffed, never a hand-written
+# migration recipe). See corpus-migration.md → Prior-schema sourcing + the v1→v2
+# relocation; design/changelog.md.
+type: changelog
+location: changelog/
+singleton: true
+id-from: title
+description: A Keep-a-Changelog singleton — staged unreleased changes plus the cut releases, each grouped by category, maintained over the life of the project.
+usage: a user-facing change lands and the project keeps a human-readable record of what changed, staged now and cut into versioned releases over time.
+
+# The genuinely-shared change-group block (`category` enum + `notes` slot),
+# included at both the staging area and each cut release.
+fragments:
+  change-group:
+    - { id: category, type: enum, of: [added, changed, deprecated, removed, fixed, security] }
+    - { id: notes, slot: { hint: "One bullet per change in this category." } }
+
+sections:
+  - id: unreleased-changes
+    repeatable:
+      id-from: category
+      block:
+        - include: change-group
+  - id: releases
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: date, type: date, set: on-create }
+        - { id: link, type: string, optional: true }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - include: change-group

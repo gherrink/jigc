@@ -20,9 +20,10 @@
 //!     slug-cased `…/category` address), before anything is staged or committed;
 //!   - **RED — `remove-item` (#1)** — a mis-authored NESTED change-group is retracted
 //!     byte-stable, the sibling group + parent release surviving;
-//!   - **RED — the in-location squatter (#8)** — `jigc migrate docs/changelog/changelog.md`
-//!     (source path == canonical destination) seeds the working area BLANK then authors
-//!     end-to-end through the batch, finalize rewriting in place (Modified, NOT retired);
+//!   - **RED — an off-canonical foreign source (#8)** — `jigc migrate docs/changelog/changelog.md`
+//!     (the changelog's OLD folder home, now off-canonical post-M38) seeds the working area
+//!     BLANK then authors end-to-end through the batch, finalize promoting root `CHANGELOG.md`
+//!     (Added) and retiring the off-canonical original (Deleted);
 //!   - **RED — the structural release-delta summary (#5)** — a batch that drops a source
 //!     release surfaces the dropped version at the review gate, labeled fuzzy/advisory.
 //!
@@ -150,7 +151,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 /// The off-router migration task id — `jigc migrate` mints a per-file `migrate-<doctype>-<slug(path)>` (the empty
 /// intent slugs the `migrate-` id-source fallback), keeping the bare `changelog`
 /// namespace free (`auto-migration.md` → Hardening #9).
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// The shipped changelog schema, loaded for the byte-stable round-trip assertion.
 fn shipped_changelog_schema(pack: &Path) -> engine::schema::Schema {
@@ -249,7 +250,7 @@ fn assert_byte_stable(pack: &Path, staged: &str) {
 
 /// Write + **commit** the foreign original at `source_path` (so its retirement lands as a
 /// tracked deletion), then `setup` and `jigc migrate <source_path> --as changelog`,
-/// minting the off-router `migrate-changelog-changelog` task. Returns the composed migrate stdout.
+/// minting the off-router `migrate-changelog-history` task. Returns the composed migrate stdout.
 fn setup_and_migrate(
     repo: &Path,
     home: &Path,
@@ -316,7 +317,7 @@ fn flow26_full_batch_migration_walk() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", FOREIGN);
+    setup_and_migrate(repo.path(), home.path(), &pack, "HISTORY.md", FOREIGN);
     author_via_batch(repo.path(), home.path(), &pack, TASK, HAPPY_PAYLOAD);
 
     // The batch-authored staged doc round-trips byte-stable, carries all three versions
@@ -367,7 +368,7 @@ fn flow26_full_batch_migration_walk() {
         "the fidelity diff surfaces the foreign source bytes; got:\n{diff}"
     );
     assert!(
-        diff.contains("docs/changelog/changelog.md"),
+        diff.contains("CHANGELOG.md"),
         "the fidelity diff names the canonical rewrite destination; got:\n{diff}"
     );
     assert!(
@@ -405,13 +406,8 @@ fn flow26_full_batch_migration_walk() {
 
     // The committed canonical doc is byte-stable and matches the staged bytes (the batch
     // body landed verbatim) — and still carries no date line.
-    let committed = fs::read_to_string(
-        repo.path()
-            .join("docs")
-            .join("changelog")
-            .join("changelog.md"),
-    )
-    .expect("the canonical changelog is on disk after finalize");
+    let committed = fs::read_to_string(repo.path().join("CHANGELOG.md"))
+        .expect("the canonical changelog is on disk after finalize");
     assert_eq!(
         committed, staged,
         "the committed canonical doc equals the batch-authored staged bytes",
@@ -427,7 +423,7 @@ fn flow26_full_batch_migration_walk() {
     // EMITTED bytes (`git log`), never a reconstructed equivalent.
     let subject = git(repo.path(), &["log", "-1", "--format=%s"]);
     assert_eq!(
-        subject, "docs(changelog): adopt CHANGELOG.md as a managed changelog",
+        subject, "docs(changelog): adopt HISTORY.md as a managed changelog",
         "the auto-provisioned migration commit lands the formulaic subject",
     );
     assert!(
@@ -437,16 +433,16 @@ fn flow26_full_batch_migration_walk() {
         "the auto-provisioned commit carries a non-empty body",
     );
 
-    // The landed commit holds ONLY the migration set: A docs/changelog/changelog.md, D
-    // CHANGELOG.md — NOT the jigc config layer (setup committed that on its own, M26) and
+    // The landed commit holds ONLY the migration set: A CHANGELOG.md, D
+    // HISTORY.md — NOT the jigc config layer (setup committed that on its own, M26) and
     // NOT the unrelated WIP.
     let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        delta.lines().any(|l| l == "A\tdocs/changelog/changelog.md"),
+        delta.lines().any(|l| l == "A\tCHANGELOG.md"),
         "the commit promotes the canonical doc:\n{delta}",
     );
     assert!(
-        delta.lines().any(|l| l == "D\tCHANGELOG.md"),
+        delta.lines().any(|l| l == "D\tHISTORY.md"),
         "the SAME commit retires the foreign original:\n{delta}",
     );
     // The jigc-tracked config layer + `.gitignore` are committed by `setup` itself (M26),
@@ -482,7 +478,7 @@ fn flow26_full_batch_migration_walk() {
     );
     let row = ingest
         .lines()
-        .find(|l| l.contains("docs/changelog/changelog.md"))
+        .find(|l| l.contains("CHANGELOG.md"))
         .unwrap_or_else(|| panic!("ingest reports the managed changelog:\n{ingest}"));
     assert!(
         row.contains("adopted") && !row.contains("needs-reconcile") && !row.contains("unmanaged"),
@@ -501,7 +497,7 @@ fn flow26_red_write_time_enum_block_at_add_item() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", FOREIGN);
+    setup_and_migrate(repo.path(), home.path(), &pack, "HISTORY.md", FOREIGN);
     ok_stdout(
         run_jigc(
             repo.path(),
@@ -606,12 +602,7 @@ fn flow26_red_write_time_enum_block_at_add_item() {
         "the enum block leaves HEAD unchanged"
     );
     assert!(
-        !repo
-            .path()
-            .join("docs")
-            .join("changelog")
-            .join("changelog.md")
-            .exists(),
+        !repo.path().join("CHANGELOG.md").exists(),
         "the enum block adopts nothing (no canonical doc on disk)"
     );
 }
@@ -626,7 +617,7 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", FOREIGN);
+    setup_and_migrate(repo.path(), home.path(), &pack, "HISTORY.md", FOREIGN);
     author_via_batch(repo.path(), home.path(), &pack, TASK, HAPPY_PAYLOAD);
 
     // 1.2.0 carries `changed` + `fixed`; retract the `changed` group.
@@ -661,23 +652,26 @@ fn flow26_red_remove_item_retracts_nested_change_group_byte_stable() {
     assert_byte_stable(&pack, &staged);
 }
 
-/// RED — the in-location squatter (#8). `jigc migrate docs/changelog/changelog.md` (source ==
-/// canonical destination) seeds the working area BLANK (never the foreign squatter body),
-/// authors end-to-end through the batch, and finalize rewrites the canonical doc IN PLACE
-/// (Modified, NOT retired), byte-stable.
+/// RED — an OFF-canonical foreign source (#8, post-M38). `jigc migrate
+/// docs/changelog/changelog.md` — the changelog's OLD folder home, now off-canonical
+/// since the doctype relocated to root `CHANGELOG.md` — seeds the working area BLANK
+/// (nothing squats the root canonical home), authors end-to-end through the batch, and
+/// finalize PROMOTES root `CHANGELOG.md` (Added) + RETIRES the off-canonical original
+/// (Deleted), byte-stable. (The AT-canonical adopt-in-place case — a foreign file already
+/// sitting at root `CHANGELOG.md` — is T2's own proof.)
 #[test]
-fn flow26_red_in_location_squatter_seeds_blank_and_authors_via_batch() {
+fn flow26_off_canonical_docs_changelog_source_promotes_root_and_retires() {
     let repo = TempDir::new("squatter");
     let home = TempDir::new("home");
     let pack = dev_pack();
     init_repo(repo.path());
 
-    // A NON-conformant changelog squatting AT the canonical managed path. The per-file
-    // migration id folds the (extension-stripped, separator-folded) source path into the
-    // slug, so this `docs/changelog/changelog.md` source mints a distinct task id from the
-    // root-`CHANGELOG.md` tests above.
+    // A NON-conformant changelog at the OLD folder home (`docs/changelog/changelog.md`),
+    // now off-canonical. The per-file migration id folds the (extension-stripped,
+    // separator-folded) source path into the slug, so this source mints a distinct task id
+    // from the root-`HISTORY.md` tests above.
     const SQUATTER_TASK: &str = "migrate-changelog-docs-changelog-changelog";
-    const SQUATTER: &str = "# Whatever\n\nnon-conformant prior content at the canonical path\n";
+    const SQUATTER: &str = "# Whatever\n\nnon-conformant prior content at the old folder home\n";
     setup_and_migrate(
         repo.path(),
         home.path(),
@@ -686,8 +680,8 @@ fn flow26_red_in_location_squatter_seeds_blank_and_authors_via_batch() {
         SQUATTER,
     );
 
-    // The batch authors over the occupied canonical path: the working area must seed
-    // BLANK (the empty template), never the foreign squatter bytes (the M23 failure point).
+    // The batch authors the canonical root home: the working area seeds BLANK (nothing
+    // squats root `CHANGELOG.md`), never the off-canonical source bytes.
     const SQUATTER_PAYLOAD: &str = r#"title: Changelog
 sections:
   - id: releases
@@ -711,7 +705,7 @@ sections:
     let staged = staged_changelog(repo.path(), SQUATTER_TASK);
     assert!(
         !staged.contains("non-conformant prior content"),
-        "the squatter body must NOT be copied in as the edit base (no Frankenstein doc):\n{staged}",
+        "the off-canonical source body must NOT be copied in as the edit base (no Frankenstein doc):\n{staged}",
     );
     assert!(
         staged.contains("### 1.0.0") && staged.contains("First public release."),
@@ -728,38 +722,34 @@ sections:
     );
     assert!(
         out.status.success(),
-        "finalize --approve on the in-location squatter lands clean (exit 0); stdout:\n{}\nstderr:\n{}",
+        "finalize --approve on the off-canonical migration lands clean (exit 0); stdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // The squatter is rewritten IN PLACE (Modified), not retired (no deletion of the
-    // just-written doc) — the source-path == promote-destination guard.
+    // Off-canonical source: the canonical root `CHANGELOG.md` is PROMOTED (Added) and the
+    // old folder-home original is RETIRED (Deleted) — source-path != promote-destination,
+    // so the in-place exclusion does NOT fire.
     let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
-        delta.lines().any(|l| l == "M\tdocs/changelog/changelog.md"),
-        "the in-location squatter is rewritten in place (Modified):\n{delta}",
+        delta.lines().any(|l| l == "A\tCHANGELOG.md"),
+        "the off-canonical migration promotes the canonical root doc (Added):\n{delta}",
     );
     assert!(
-        !delta.lines().any(|l| l == "D\tdocs/changelog/changelog.md"),
-        "the in-location squatter retire is SKIPPED — no deletion of the just-written doc:\n{delta}",
+        delta.lines().any(|l| l == "D\tdocs/changelog/changelog.md"),
+        "the off-canonical original is retired (Deleted):\n{delta}",
     );
 
     // The committed doc is the authored doc (byte-stable, no Frankenstein).
-    let committed = fs::read_to_string(
-        repo.path()
-            .join("docs")
-            .join("changelog")
-            .join("changelog.md"),
-    )
-    .expect("the canonical changelog is on disk after finalize");
+    let committed = fs::read_to_string(repo.path().join("CHANGELOG.md"))
+        .expect("the canonical changelog is on disk after finalize");
     assert_eq!(
         committed, staged,
         "the committed doc equals the authored doc"
     );
     assert!(
         !committed.contains("non-conformant prior content"),
-        "the committed doc carries none of the squatter body:\n{committed}",
+        "the committed doc carries none of the off-canonical source body:\n{committed}",
     );
 }
 
@@ -773,7 +763,7 @@ fn flow26_red_review_gate_shows_structural_release_delta_summary() {
     let pack = dev_pack();
     init_repo(repo.path());
 
-    setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", FOREIGN);
+    setup_and_migrate(repo.path(), home.path(), &pack, "HISTORY.md", FOREIGN);
 
     // Author only 1.2.0 + 1.1.0 from the one batch — drop the source's 1.0.0.
     const DROPPED_PAYLOAD: &str = r#"title: Changelog

@@ -129,7 +129,7 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
 }
 
 /// The off-router migration task id — `migrate` mints a per-file `migrate-<doctype>-<slug(path)>`.
-const TASK: &str = "migrate-changelog-changelog";
+const TASK: &str = "migrate-changelog-history";
 
 /// The foreign Keep-a-Changelog file (committed, so its retire lands a tracked deletion).
 const FOREIGN: &str = "\
@@ -165,8 +165,8 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
     init_repo(repo.path());
 
     // Track the foreign original so its retirement lands as a real (staged) deletion.
-    fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
-    git(repo.path(), &["add", "CHANGELOG.md"]);
+    fs::write(repo.path().join("HISTORY.md"), FOREIGN).expect("write foreign HISTORY.md");
+    git(repo.path(), &["add", "HISTORY.md"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "track foreign changelog"],
@@ -193,7 +193,7 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
             repo.path(),
             home.path(),
             &pack,
-            &["migrate", "CHANGELOG.md", "--as", "changelog"],
+            &["migrate", "HISTORY.md", "--as", "changelog"],
             None,
         ),
         "jigc migrate",
@@ -243,8 +243,8 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
     let tree = git(repo.path(), &["ls-tree", "-r", "--name-only", "HEAD"]);
     let tree_paths: Vec<&str> = tree.lines().collect();
     assert!(
-        tree_paths.contains(&"docs/changelog/changelog.md"),
-        "the migration commit promotes `docs/changelog/changelog.md`; tree:\n{tree}",
+        tree_paths.contains(&"CHANGELOG.md"),
+        "the migration commit promotes `CHANGELOG.md`; tree:\n{tree}",
     );
     assert!(
         tree_paths.iter().any(|p| p.starts_with(".jigc/config/")),
@@ -258,14 +258,14 @@ fn migration_finalize_stages_only_its_own_changes_not_user_wip() {
     // It STAGES the retire deletion of the foreign original: gone from the tree, and the
     // commit's own delta records it as a deletion (`D`).
     assert!(
-        !tree_paths.contains(&"CHANGELOG.md"),
-        "the migration commit retires the foreign `CHANGELOG.md` (absent from the tree); tree:\n{tree}",
+        !tree_paths.contains(&"HISTORY.md"),
+        "the migration commit retires the foreign `HISTORY.md` (absent from the tree); tree:\n{tree}",
     );
     let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
     assert!(
         delta
             .lines()
-            .any(|l| l.starts_with('D') && l.ends_with("CHANGELOG.md")),
+            .any(|l| l.starts_with('D') && l.ends_with("HISTORY.md")),
         "the migration commit's delta records the foreign original as a deletion; delta:\n{delta}",
     );
 
