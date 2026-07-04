@@ -761,10 +761,12 @@ struct PromotePlan {
 }
 
 /// Phase 4 + the phase-7 hash set: walk `<task_dir>/docs/*.md`, and for every staged
-/// instance whose type declares a `location:`, name a [`Promotion`] to its canonical
-/// `<location>/<slug>.md` plus the blake3 of its staged bytes. Promotions are returned
-/// in canonical-destination order (sorted, deterministic). The commit doc and any
-/// unknown/transient type contribute nothing.
+/// instance whose type declares a persisted home, name a [`Promotion`] to its canonical
+/// destination plus the blake3 of its staged bytes. A `location:` doctype promotes to
+/// `<location>/<slug>.md`; a **placement** doctype (`design/storage.md` → Placement)
+/// promotes to its one literal `placement.file` repo-root-relative path (case-preserved,
+/// no docs-root, no slug). Promotions are returned in canonical-destination order (sorted,
+/// deterministic). The commit doc and any unknown/transient type contribute nothing.
 ///
 /// A staged file lives at `<task_dir>/docs/<type>:<slug>.md`; its filename stem is the
 /// `<type>:<slug>` address. An I/O failure reading the docs dir or a staged file is a
@@ -803,17 +805,24 @@ fn plan_promotions(
         let Some((ty, slug)) = stem.split_once(':') else {
             continue; // not a `<type>:<slug>` instance — skip.
         };
-        // A type with no `location:` is transient (the commit doc) — never promoted.
         let Some(schema) = schemas.get(ty) else {
             continue;
         };
-        let Some(location) = schema.location.as_deref() else {
+        // Resolve the canonical destination: a **placement** doctype
+        // (`design/storage.md` → Placement) lands at its one literal `placement.file`
+        // repo-root-relative path (case-preserved, no docs-root, no slug); a `location:`
+        // doctype lands at `<location>/<slug>.md`; a type with neither is transient (the
+        // commit doc) and is never promoted.
+        let destination = if let Some(placement) = &schema.placement {
+            placement.file.clone()
+        } else if let Some(location) = schema.location.as_deref() {
+            format!("{}/{slug}.md", location.trim_end_matches('/'))
+        } else {
             continue;
         };
 
         let bytes =
             std::fs::read(&source).map_err(|err| vec![promote_io_finding(&source, &err)])?;
-        let destination = format!("{}/{slug}.md", location.trim_end_matches('/'));
         hash_updates.insert(destination.clone(), hash_bytes(&bytes));
         promotions.push(Promotion {
             source,
@@ -1084,6 +1093,44 @@ sections:
         let bytes = write::render(&schema, &instance);
         let path = state::instance_path(task_dir, &schema.ty, slug);
         state::persist(&path, bytes.as_bytes()).expect("persist staged note");
+        bytes.into_bytes()
+    }
+
+    /// A throwaway **placement** doctype (M38 inc-1): a singleton whose one instance
+    /// lives at the literal repo-root-relative `file` — **no `location`**, docs-root
+    /// never applies. A single prose slot keeps a staged instance trivially conformant.
+    fn placement_schema(ty: &str, file: &str) -> Schema {
+        let yaml = format!(
+            "\
+type: {ty}
+placement: {{ file: {file} }}
+singleton: true
+sections:
+  - id: body
+    slot: {{ hint: the placement body }}
+"
+        );
+        crate::schema::load_schema(yaml.as_bytes()).expect("placement schema loads")
+    }
+
+    /// Stage a filled placement instance (one body slot) at `<task_dir>/docs/<ty>:<slug>.md`
+    /// — a persisted managed doc the promote phase carries to its literal `placement.file`.
+    /// The slug is the singleton's fixed slug (= type id). Returns the staged bytes (the
+    /// byte-stable source the hash is taken over).
+    fn stage_filled_placement(task_dir: &Path, schema: &Schema, slug: &str) -> Vec<u8> {
+        use crate::write::SectionContent;
+
+        let instance = write::Instance {
+            title: slug.to_string(),
+            sections: vec![SectionContent {
+                id: "body".to_string(),
+                slot: Some("A placement singleton at its literal home.".to_string()),
+                ..Default::default()
+            }],
+        };
+        let bytes = write::render(schema, &instance);
+        let path = state::instance_path(task_dir, &schema.ty, slug);
+        state::persist(&path, bytes.as_bytes()).expect("persist staged placement");
         bytes.into_bytes()
     }
 
@@ -1946,6 +1993,102 @@ sections:
             },
         )
         "#
+        );
+    }
+
+    /// (M38 inc-1 T2) `plan_promotions` carries a staged **placement** doctype to its
+    /// literal `placement.file` — case-preserved, bypassing docs-root and the
+    /// `<location>/<slug>.md` join — for both a root `FOO.md` and a `docs/bar.md`. The
+    /// destination is the literal file and it keys the `hash_updates` entry to the
+    /// blake3 of the staged bytes (same Promotion/hash shape as a `location:` doctype).
+    /// (`design/storage.md` → Placement — census site `plan_promotions`.)
+    #[test]
+    fn plan_promotions_places_a_placement_doctype_at_its_literal_file() {
+        let root = TempRoot::new("placement-promote");
+        let task_dir = root.path().join("tasks").join("author-pages");
+
+        // Two placement doctypes: a root `FOO.md` and a direct `docs/bar.md`.
+        let root_schema = placement_schema("foo", "FOO.md");
+        let docs_schema = placement_schema("bar", "docs/bar.md");
+        let foo_bytes = stage_filled_placement(&task_dir, &root_schema, &root_schema.ty);
+        let bar_bytes = stage_filled_placement(&task_dir, &docs_schema, &docs_schema.ty);
+
+        let mut with_placement: BTreeMap<String, Schema> = BTreeMap::new();
+        with_placement.insert(root_schema.ty.clone(), root_schema.clone());
+        with_placement.insert(docs_schema.ty.clone(), docs_schema.clone());
+
+        let plan = plan_promotions(&task_dir, &with_placement).expect("placement promote plan");
+
+        // Destinations are the literal `placement.file` paths, case-preserved, no docs-root
+        // prefix; sorted by destination (`FOO.md` < `docs/bar.md` — uppercase sorts first).
+        let dests: Vec<&str> = plan
+            .promotions
+            .iter()
+            .map(|p| p.destination.as_str())
+            .collect();
+        assert_eq!(dests, vec!["FOO.md", "docs/bar.md"]);
+
+        // Each literal destination keys the blake3 of its staged bytes (byte-stable copy).
+        assert_eq!(
+            plan.hash_updates.len(),
+            2,
+            "two placement docs -> two hashes"
+        );
+        assert_eq!(
+            plan.hash_updates.get("FOO.md"),
+            Some(&hash_bytes(&foo_bytes)),
+            "the hash is over the staged FOO.md bytes",
+        );
+        assert_eq!(
+            plan.hash_updates.get("docs/bar.md"),
+            Some(&hash_bytes(&bar_bytes)),
+            "the hash is over the staged docs/bar.md bytes",
+        );
+        // The source is the staged instance under the working area.
+        assert_eq!(
+            plan.promotions[0].source,
+            task_dir.join("docs").join("foo:foo.md"),
+        );
+    }
+
+    /// (M38 inc-1 T2) A **placement** doctype rides the milestone-join promote path —
+    /// the shared `plan_promotions` (finalize.rs:637) inherits the literal-file branch,
+    /// and `reject_root_render_promotions` does **not** block it (placement carries no
+    /// `root-render:`, so it is not a root render). The join produces a plan promoting
+    /// the instance to its literal `placement.file`.
+    #[test]
+    fn milestone_finalize_promotes_a_placement_doctype_not_blocked_as_root_render() {
+        let root = TempRoot::new("milestone-placement");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("page-rework")
+            .join("merged");
+        let schema = placement_schema("foo", "FOO.md");
+        let bytes = stage_filled_placement(&staging, &schema, &schema.ty);
+
+        let mut with_placement = schemas();
+        with_placement.insert(schema.ty.clone(), schema.clone());
+
+        let plan = plan_milestone_finalize(
+            &staging,
+            &base(),
+            &base().sha,
+            "Finalize milestone page-rework (1 sub-task)\n".to_string(),
+            true,
+            &with_placement,
+        )
+        .expect("a placement doctype rides the milestone join (placement != root-render)");
+
+        assert_eq!(plan.promotions.len(), 1, "exactly the one placement doc");
+        assert_eq!(
+            plan.promotions[0].destination, "FOO.md",
+            "promoted to its literal placement.file, not blocked as a root render",
+        );
+        assert_eq!(
+            plan.hash_updates.get("FOO.md"),
+            Some(&hash_bytes(&bytes)),
+            "the join path keys the literal destination to the staged bytes' hash",
         );
     }
 

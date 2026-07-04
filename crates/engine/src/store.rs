@@ -35,12 +35,18 @@ use crate::parse::{self, Document, ParsedSection};
 use crate::schema::Schema;
 
 /// The canonical on-disk path a committed `<type>:<slug>` instance lives at, when
-/// its schema declares a persisted `location:`.
+/// its schema declares a persisted home.
 ///
 /// `<repo_root>/<location>/<slug>.md` — identity is the path ([storage.md](../../../design/storage.md)).
-/// A type with **no `location:`** (a transient sink type) has no committed path, so
-/// this returns `None`.
+/// A **placement** doctype (`design/storage.md` → Placement) instead lives at its one
+/// literal `placement.file` repo-root-relative path (case-preserved, bypassing docs-root
+/// and the slug), so this returns `<repo_root>/<placement.file>` regardless of `slug`. A
+/// type with **neither** (a transient sink type) has no committed path, so this returns
+/// `None`.
 pub fn canonical_path(repo_root: &Path, schema: &Schema, slug: &str) -> Option<PathBuf> {
+    if let Some(placement) = &schema.placement {
+        return Some(repo_root.join(&placement.file));
+    }
     let location = schema.location.as_deref()?;
     Some(repo_root.join(location).join(format!("{slug}.md")))
 }
@@ -282,6 +288,43 @@ mod tests {
         assert_eq!(
             lexical_normalize(Path::new("changelog/../changelog/changelog.md")),
             PathBuf::from("changelog/changelog.md"),
+        );
+    }
+
+    /// (M38 inc-1 T2) `canonical_path` resolves a **placement** doctype to its literal
+    /// `placement.file` repo-root-relative path — case-preserved, bypassing docs-root
+    /// and the `<location>/<slug>.md` join — so a root `FOO.md` and a `docs/bar.md` are
+    /// each reachable exactly as written (store-readable). The passed slug is ignored:
+    /// a placement singleton's home is the literal file, not a slug-derived path.
+    /// (`design/storage.md` → Placement — census site `canonical_path`.)
+    #[test]
+    fn canonical_path_resolves_a_placement_doctype_to_its_literal_file() {
+        let root_home = crate::schema::load_schema(
+            b"\
+type: foo
+placement: { file: FOO.md }
+sections: []
+",
+        )
+        .expect("root-placement schema loads");
+        assert_eq!(
+            canonical_path(Path::new("/repo"), &root_home, "foo"),
+            Some(PathBuf::from("/repo/FOO.md")),
+            "a root placement resolves to the case-preserved literal, bypassing docs-root",
+        );
+
+        let under_docs = crate::schema::load_schema(
+            b"\
+type: bar
+placement: { file: docs/bar.md }
+sections: []
+",
+        )
+        .expect("docs-placement schema loads");
+        assert_eq!(
+            canonical_path(Path::new("/repo"), &under_docs, "bar"),
+            Some(PathBuf::from("/repo/docs/bar.md")),
+            "a direct file under docs/ resolves exactly as written (the docs/ is in the literal)",
         );
     }
 
