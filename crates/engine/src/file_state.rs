@@ -609,10 +609,14 @@ fn persisted_committed_path(
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
 ) -> bool {
     !path.contains(':')
-        && schemas
+        && (schemas
             .values()
             .filter_map(|s| s.location.as_deref())
             .any(|loc| path.starts_with(loc) && path.ends_with(".md"))
+            || schemas
+                .values()
+                .filter_map(|s| s.placement.as_ref())
+                .any(|p| p.file == path))
 }
 
 /// The `<type>:<slug>` identity for a committed record path (`decisions/x.md` → its
@@ -622,6 +626,14 @@ fn identity_of(
     schemas: &std::collections::BTreeMap<String, crate::schema::Schema>,
 ) -> Option<String> {
     for (ty, schema) in schemas {
+        // A placement doctype (`location: None`) owns its one literal `placement.file`
+        // by exact-path equality; its slug is fixed = the type id (`storage.md` →
+        // Placement census: identity stays explicit, never filename-derived).
+        if let Some(placement) = &schema.placement
+            && placement.file == path
+        {
+            return Some(format!("{ty}:{ty}"));
+        }
         let Some(location) = schema.location.as_deref() else {
             continue;
         };
@@ -1725,6 +1737,87 @@ Referrers must point at the new decision.
         assert_eq!(
             record, record_before,
             "detect_committed_store must not mutate the record (no absorb, no re-baseline)"
+        );
+    }
+
+    /// (M38 inc-1 T3) The two path↔identity sites recognize a **placement** doctype's
+    /// committed path by **exact-path equality** against `placement.file` (`design/storage.md`
+    /// → Placement — census sites `identity_of`, `persisted_committed_path`):
+    ///
+    /// - [`identity_of`] maps the literal file to `<type>:<type>` — the fixed slug **is** the
+    ///   type id (a placement singleton carries no title-derived slug), for both a root
+    ///   `FOO.md` and a `docs/bar.md`;
+    /// - [`persisted_committed_path`] returns `true` for either literal (a placement doc is a
+    ///   committed managed doc, so the store sweep / rename detection must own it);
+    /// - a **sibling non-declared** root path (`README.md`) is **unowned** by both (a literal
+    ///   file is not a dir-glob — every other root `.md` stays unmanaged);
+    /// - **regression**: the existing `location:`-keyed behavior is byte-unchanged — a
+    ///   `decisions/x.md` still maps to `adr:x` and is still a persisted committed path.
+    #[test]
+    fn placement_doctype_path_is_owned_by_exact_file_equality() {
+        let foo = crate::schema::load_schema(
+            b"\
+type: foo
+placement: { file: FOO.md }
+sections: []
+",
+        )
+        .expect("root-placement schema loads");
+        let bar = crate::schema::load_schema(
+            b"\
+type: bar
+placement: { file: docs/bar.md }
+sections: []
+",
+        )
+        .expect("docs-placement schema loads");
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("foo".to_string(), foo);
+        schemas.insert("bar".to_string(), bar);
+        schemas.insert("adr".to_string(), adr_schema());
+
+        // identity_of: literal file → <type>:<type> (fixed slug = type id).
+        assert_eq!(
+            identity_of("FOO.md", &schemas).as_deref(),
+            Some("foo:foo"),
+            "a root placement file's identity is <type>:<type>, not filename-derived",
+        );
+        assert_eq!(
+            identity_of("docs/bar.md", &schemas).as_deref(),
+            Some("bar:bar"),
+            "a docs/ placement file's identity is <type>:<type>, exact-path matched",
+        );
+
+        // persisted_committed_path: a placement literal is a committed managed doc.
+        assert!(
+            persisted_committed_path("FOO.md", &schemas),
+            "a root placement literal is a persisted committed path",
+        );
+        assert!(
+            persisted_committed_path("docs/bar.md", &schemas),
+            "a docs/ placement literal is a persisted committed path",
+        );
+
+        // A sibling non-declared root path is unowned by both — a literal is not a glob.
+        assert_eq!(
+            identity_of("README.md", &schemas),
+            None,
+            "an undeclared sibling root .md is not owned by any placement doctype",
+        );
+        assert!(
+            !persisted_committed_path("README.md", &schemas),
+            "an undeclared sibling root .md is not a persisted committed path",
+        );
+
+        // Regression: the existing location-keyed behavior is byte-unchanged.
+        assert_eq!(
+            identity_of("decisions/x.md", &schemas).as_deref(),
+            Some("adr:x"),
+            "a location-keyed doc still maps to <type>:<slug> unchanged",
+        );
+        assert!(
+            persisted_committed_path("decisions/x.md", &schemas),
+            "a location-keyed committed doc is still a persisted committed path",
         );
     }
 
