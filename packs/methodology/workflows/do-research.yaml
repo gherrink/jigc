@@ -1,0 +1,11 @@
+---
+when: you need to investigate or gather evidence before forming a vision or making a decision
+description: Investigate one question and record what it found — author a standalone research doc (question, findings, sources) and land it as one commit, so a later vision or decision can rest on committed evidence.
+usage: a question needs evidence gathered and recorded before a vision or decision rests on it, and you want that investigation carried through the binary to one committed research record.
+creates-task: true
+selectable: true
+allows-create:
+  - { type: research, as: record }
+---
+{{ include: step:author-research }}
+{{ include: step:finalize }}

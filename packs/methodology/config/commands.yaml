@@ -120,3 +120,21 @@ commands:
       - "--task"
       - { from: "task.id" }
     hint: "Create the per-run dogfood-record fresh in the current task."
+
+  # The do-research workflow's create-fresh command-ref (M37 inc-4 / T1). `research`
+  # is `id-from: title` (one-per-doc, NOT a singleton) — `create` mints
+  # `research/<slug>.md` fresh from the agent's title (the create-adr mint), so
+  # `--title` carries the agent-supplied question, never a fixed literal. The
+  # per-slot `set-slot` authoring lives in the author step as literal guidance (the
+  # create-fresh slug is runtime-minted).
+  - id: create-research
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "research"
+      - "--title"
+      - { agent: title, hint: "the question this investigation answers — its title mints the create-fresh slug" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "Create the per-investigation research record fresh in the current task."

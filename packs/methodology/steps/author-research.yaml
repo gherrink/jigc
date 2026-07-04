@@ -1,0 +1,11 @@
+Record the investigation on a fresh research doc. Create it — the slug is minted
+from the title you give (the question this investigation answers):
+
+{{ cli.create-research }}
+
+Author the three prose slots — the question it set out to answer, what the evidence
+showed, and where that evidence came from. The `date` is CLI-set on create:
+
+jigc doc set-slot research:<slug>#question --from-file - --task {{task.id}}
+jigc doc set-slot research:<slug>#findings --from-file - --task {{task.id}}
+jigc doc set-slot research:<slug>#sources --from-file - --task {{task.id}}
