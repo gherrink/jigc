@@ -211,6 +211,7 @@ mod tests {
             id_from: None,
             description: description.map(str::to_owned),
             usage: usage.map(str::to_owned),
+            display_title: None,
             singleton: false,
             sections: Vec::new(),
         }

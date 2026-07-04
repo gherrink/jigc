@@ -58,6 +58,22 @@ pub struct Schema {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<String>,
 
+    /// Optional doctype-level **display text for the H1**, orthogonal to
+    /// `id-from` (display-only, never an id-source — the name avoids colliding
+    /// with the `id-from: title` token). When present, it overrides a singleton's
+    /// H1 display text (e.g. `vision` declares `display-title: Vision`, so the
+    /// managed doc reads `# Vision`, not `# vision`); absent leaves today's
+    /// behavior (H1 = id-source / slug). Skip-on-absent (mirrors `location` /
+    /// `id-from`): a schema omitting it serializes **nothing**, so no frozen
+    /// doctype's `schema-hash` changes — the freeze-safe additive-key pattern
+    /// (`design/design-altitude-doctypes.md` → §4 The vision surface; §7 arm 5).
+    #[serde(
+        rename = "display-title",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub display_title: Option<String>,
+
     /// `true` for a **singleton** doctype: a running doc with a **fixed slug = the
     /// type id** (e.g. `roadmap/roadmap.md`), *not* an `id-from: title` slug. A
     /// re-`create` then deterministically targets the same committed file — the
@@ -1196,6 +1212,58 @@ sections: []
         assert!(
             !plain_json.contains("singleton"),
             "a false singleton flag serializes nothing (skip-on-false); got {plain_json}",
+        );
+    }
+
+    /// (M37 inc-1 T1) The doctype-level `display-title:` knob serde-roundtrips: a
+    /// fixture schema declaring `display-title: Vision` parses
+    /// `display_title == Some("Vision")`, **re-serializes** the key, and survives a
+    /// load→serialize→reload cycle. A schema that **omits** it serializes to JSON
+    /// with **no** `display-title` key — so its `schema_hash` (`blake3` over that
+    /// JSON) is byte-identical to the pre-field value, the freeze-safe additive-key
+    /// proof (`design/design-altitude-doctypes.md` → §4; §7 arm 5): the field's mere
+    /// existence on the struct changes no frozen doctype's hash. (b) proven, not
+    /// assumed — the real frozen six are covered by the pack-load freeze regressions.
+    #[test]
+    fn display_title_serde_roundtrips_and_is_skipped_when_absent() {
+        let with_display_title = b"\
+type: vision
+display-title: Vision
+sections: []
+";
+        let schema = load_schema(with_display_title).expect("display-title schema loads");
+        assert_eq!(
+            schema.display_title.as_deref(),
+            Some("Vision"),
+            "the display-title knob parses its string",
+        );
+
+        // Re-serializes the key, and a reload preserves it (roundtrip).
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            json.contains("\"display-title\":\"Vision\""),
+            "the display-title knob re-serializes under its on-disk name; got {json}",
+        );
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(reloaded, schema, "display-title survives a serde roundtrip");
+
+        // A schema omitting it defaults to None and serializes nothing for it — the
+        // skip-on-absent additive guard. No `display-title` in the JSON means the
+        // bytes `schema_hash` digests are identical to the pre-field value, so no
+        // frozen doctype's hash moves (the §7-arm-5 freeze-safety claim, proven).
+        let without = b"\
+type: commit
+sections: []
+";
+        let plain = load_schema(without).expect("no-display-title schema loads");
+        assert!(
+            plain.display_title.is_none(),
+            "an omitted display-title defaults to None",
+        );
+        let plain_json = serde_json::to_string(&plain).expect("serializes");
+        assert!(
+            !plain_json.contains("display-title"),
+            "an absent display-title serializes nothing (skip-on-absent); got {plain_json}",
         );
     }
 
