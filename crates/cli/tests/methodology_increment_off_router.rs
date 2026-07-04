@@ -251,10 +251,11 @@ fn bare_start_over_methodology_lists_dev_task_only_never_increment() {
         .collect();
     assert_eq!(
         ids,
-        vec!["dev-task", "do-research"],
-        "the selectable catalog must be exactly [dev-task, do-research] — the two selectable \
-         work-workflows (`do-research` is `selectable: true` by design, M37 §3); `increment` \
-         must not leak in (M8 catalog-leak class); got:\n{json_out}",
+        vec!["dev-task", "do-research", "park-idea"],
+        "the selectable catalog must be exactly [dev-task, do-research, park-idea] — the three \
+         selectable work-workflows (`do-research` + `park-idea` are `selectable: true` by \
+         design, M37 §3; parking must be discoverable, fork 5); `increment` must not leak in \
+         (M8 catalog-leak class); got:\n{json_out}",
     );
     // T3 (planning): the explicit planning-named negative over the same JSON bytes —
     // `ids == [dev-task]` already excludes it by construction, but the named guard

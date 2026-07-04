@@ -1,0 +1,11 @@
+Park the shaped direction on a fresh idea doc. Create it — the slug is minted from
+the title you give (a short name for the direction):
+
+{{ cli.create-idea }}
+
+Set the `trigger` — the condition that would bring this idea back into scope — then
+author the one `description` slot (the direction, and why it might be worth doing).
+The `date` is CLI-set on create:
+
+jigc doc set-field idea:<slug>#trigger --value "<what would resurface it>" --task {{task.id}}
+jigc doc set-slot idea:<slug>#description --from-file - --task {{task.id}}

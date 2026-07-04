@@ -1,0 +1,11 @@
+---
+when: a shaped-but-unscheduled idea occurs mid-work and is worth keeping
+description: Park one shaped-but-unscheduled direction — author a standalone idea doc (the direction and the trigger that would bring it back) and land it as one commit, so a mid-work thought has a durable home cheaper than losing it.
+usage: a direction is worth keeping but not worth scheduling now, and you want it carried through the binary to one committed idea record with the trigger that would revisit it.
+creates-task: true
+selectable: true
+allows-create:
+  - { type: idea, as: idea }
+---
+{{ include: step:author-idea }}
+{{ include: step:finalize }}

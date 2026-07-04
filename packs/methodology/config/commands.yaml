@@ -138,3 +138,21 @@ commands:
       - "--task"
       - { from: "task.id" }
     hint: "Create the per-investigation research record fresh in the current task."
+
+  # The park-idea workflow's create-fresh command-ref (M37 inc-4 / T2). `idea` is
+  # `id-from: title` (one-per-doc, NOT a singleton) — `create` mints `ideas/<slug>.md`
+  # fresh from the agent's title (the create-adr mint), so `--title` carries the
+  # agent-supplied direction name, never a fixed literal. The per-field `set-field`
+  # (trigger) + per-slot `set-slot` (description) authoring lives in the author step as
+  # literal guidance (the create-fresh slug is runtime-minted).
+  - id: create-idea
+    command: jigc
+    args:
+      - "doc"
+      - "create"
+      - "idea"
+      - "--title"
+      - { agent: title, hint: "a short name for the shaped direction — its title mints the create-fresh slug" }
+      - "--task"
+      - { from: "task.id" }
+    hint: "Park the shaped direction as a fresh idea doc in the current task."
