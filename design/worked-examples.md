@@ -19,6 +19,7 @@ The flows:
 13. [Three-arm comparison](#22-three-arm-comparison--the-pre-registered-thesis-protocol-m17-sessions-pending) — the M17 thesis comparison protocol: pre-registration first, three twins from one baseline (jigc · control · static-methodology), one matched intent, a rubric'd judgment naming ≥1 non-seeded observation — authored protocol; the sessions themselves are the P1 phase, not yet run *(flow 22)*
 14. [Compose-both-at-setup](#23-compose-both-at-setup--the-new-project-methodology-default-m21) — the M21 new-project default: `jigc setup` writes the marker, the embedded `[dev ▸ methodology]` pair composes **dev-highest**, and roadmap/`planning` work out of the box — the same mechanism as flow 17 with the opposite precedence *(flow 23)*
 15. [Changelog authoring](#24-changelog-authoring--cold-create--warm-append-a-multi-level-singleton-doctype-expansion) — the doctype-expansion arc: a new project authors a managed `changelog` singleton with a **nested** repeatable (release → change-group), cold-created then warm-appended a new release byte-stable, exercising the four engine lifts *(flow 24)*
+16. [Vision-forming from research + park-idea](#38-vision-forming-from-research--park-idea--the-design-altitude-doctypes-at-the-rc-trial-composition-m37) — the M37 design-altitude arc: two `research` docs ground a `vision` singleton across a re-compose, the multi-valued `grounded-in` anchor + edge-walk findings-echo resolve, the display-title H1 and byte-faithful root `VISION.md` render, a shaped `idea` parks router-selectable, and the dangling / freeze / pre-existing-root arms hold — all under `[dev ▸ methodology]` *(flow 38)*
 
 ## 1. Spec-less single-task with optional ADR create
 
@@ -2353,3 +2354,74 @@ git mv docs/decisions/distributed-cache.md docs/decisions/dist-cache.md && git c
 6. **The OOB backstop blocks (A+B), scoped to *this commit's* moves.** A bare `git mv` of a managed doc, committed without `jigc rename`, is caught by the store-scope rename classifier (firing before `ref-resolves`, which is scope-subtracted so the move surfaces as **one** `reconciliation.rename`, not N dangling-ref findings) and **blocks the commit** via the pre-commit hook, routing to adopt-or-revert — including the referrer-less case no dangling-ref check would catch.
 7. **The hook does NOT block on pre-existing drift (no masking-trap regression).** An unrelated commit made while a *pre-existing* OOB-moved doc sits in the tree (its move not staged in this commit) **passes** — the hook intersects rename hits with this commit's staged `git diff --cached` R/D/A set and blocks only on a rename this commit makes (`flow37_rename.rs`: an unrelated commit with a prior unstaged OOB move does not block).
 8. **List-valued sibling integrity.** An `arch-doc` citing `[adr:a, adr:old, adr:c]`, on renaming `old→new`, yields exactly `[adr:a, adr:new, adr:c]` — siblings `a`/`c` byte-identical and order preserved (the whole-list re-emit swaps only the one element).
+
+## 38. Vision-forming from research + park-idea — the design-altitude doctypes at the RC-trial composition (M37)
+
+The M37 arc: three methodology-pack **design-altitude** doctypes (`research` · `vision` · `idea`) drive the *how-you-work* level of authoring — research is gathered, a `vision` is formed from it and compared-against, and a shaped-but-unscheduled `idea` is parked. The done-picture is walked here under the **`[dev ▸ methodology]`** composition — the RC-trial's actual on-ramp, not methodology-alone. The three schemas, the two additive engine knobs (`display-title:`/`root-render:`), the driving workflows, and the six acceptance arms are the design of record in [design-altitude-doctypes.md](design-altitude-doctypes.md) (§§2–4, §7) and are not restated here; the exact verb sequence is driven against the real binary by the `crates/cli/tests/flow*.rs` M37 suite (`flow_do_research`, `flow_form_vision`, `flow_park_idea`, and the consolidated §7 suite). Notation illustrative.
+
+`vision —grounded-in→ research` is the **methodology pack's first internal managed ref** ([design-altitude-doctypes.md](design-altitude-doctypes.md) → §1): intra-pack and doc-level, so it points *inside* the composed schema universe and honors — does not reopen — the M16 "methodology composes alone" bound. `form-vision` is a **re-entry flow** in the exact shape of the superseding worked example ([flow 5](#5-superseding-decision--context-slice--edge-integrity)): the edge-walk slice resolves at *compose* time, so the vision must be created and grounded *before* the author step reads it, or the read is a vacuous green.
+
+### The walk — research ×2, then form the vision across a re-compose, then park an idea
+
+```text
+$ jigc setup                                                # [dev ▸ methodology] composed dev-highest (flow 23)
+
+# ARM 1 — two research docs, each its own task, each committed (the grounding targets).
+$ jigc start --workflow do-research "benchmark the cache"   # off no-router menu / by name; mints a task
+$ jigc doc create research --title "Cache benchmark" --task <t1>   # create-gate grants research
+$ jigc doc set-slot research:cache-benchmark#question  --from-file -
+$ jigc doc set-slot research:cache-benchmark#findings   --from-file -   # "Redis wins at p99 …"
+$ jigc doc set-slot research:cache-benchmark#sources    --from-file -
+$ jigc task finalize <t1>
+> promote: research/cache-benchmark.md        # on-create `date` stamped; committed grounding target
+# … a second do-research task commits research/session-store-survey.md the same way.
+
+# ARM 2 — form the vision from BOTH research, across a REQUIRED re-compose.
+$ jigc start --workflow form-vision "form the project vision"     # first compose: grounded-in unset →
+#   the edge-walk slice {{@task.vision.grounded-in#findings}} resolves EMPTY (no findings echoed yet).
+$ jigc doc create vision --title Vision --task <t2>              # → vision:vision (singleton fixed slug)
+$ jigc doc set-field vision:vision#meta/grounded-in --value "[research:cache-benchmark, research:session-store-survey]"
+$ jigc start --task <t2>                                         # RE-COMPOSE: the slice now reads the
+#   FIRST grounding research's `findings` into the guidance (walk_edge returns the first target only —
+#   the second's findings do NOT appear; the multi-valued anchor lives in the stored refs, not the echo).
+$ jigc doc set-slot vision:vision#thesis         --from-file -
+$ jigc doc set-slot vision:vision#invariants     --from-file -
+$ jigc doc set-slot vision:vision#open-questions --from-file -
+$ jigc task finalize <t2>
+> validate: clean                              # BOTH grounded-in targets resolve — no ref-resolves block
+> promote:  vision/vision.md                   # H1 reads `# Vision` (display-title knob), not `# vision`
+> render:   VISION.md                          # root render — byte-identical to the managed doc (root-render knob)
+> commit:   one commit, the managed doc + the root render + the code
+
+# ARM 3 — park a shaped idea; park-idea is router-selectable (discoverable), not off-menu.
+$ jigc start --workflow park-idea "a public pack platform, someday"   # selectable: true — appears in the menu
+$ jigc doc create idea --title "Public pack platform" --task <t3>
+$ jigc doc set-field idea:public-pack-platform#meta/trigger --value "an external domain earns a stabilized pack API"
+$ jigc doc set-slot  idea:public-pack-platform#description --from-file -
+$ jigc task finalize <t3>
+> promote: ideas/public-pack-platform.md
+```
+
+### The reds — each fires on real input, not a fixture
+
+```text
+# ARM 4 — DANGLING: a grounded-in pointing at a non-existent research BLOCKS at finalize (per-element):
+$ jigc doc set-field vision:vision#meta/grounded-in --value "[research:cache-benchmark, research:does-not-exist]"
+$ jigc task finalize <t2>
+> BLOCK schema-conformance.ref-resolves @ vision:vision#meta/grounded-in → research:does-not-exist
+#   the resolvable sibling does not rescue the dangling one — non-zero exit, NO commit.
+
+# ARM 6 — PRE-EXISTING ROOT (no silent data loss): a hand-authored root VISION.md, no managed vision yet →
+$ jigc task finalize <t2>     # first form-vision finalize, foreign root file present
+> BLOCK: a VISION.md exists that jigc did not generate — adopt its content into the vision doc or remove it, then re-run
+#   the render never overwrites the foreign file; once removed/adopted, finalize proceeds and owns the root file.
+```
+
+### What it asserts (the M37 acceptance bar — the six §7 arms)
+
+1. **The two-task committed-read spine holds under `[dev ▸ methodology]`.** `do-research` commits a `research` doc (on-create `date` stamped) so `form-vision` reads it committed — the superseding-flow shape, now at the design-altitude level in a methodology composition (the `grounded-in` edge-walk's first real driver).
+2. **The multi-valued anchor + the findings-echo both resolve.** A `vision` grounded in **both** research docs finalizes clean (every element `ref-resolves`-validated, no block), and the re-composed `form-vision` guidance actually *reads* the **first** grounding research's `findings` prose into itself — the edge-walk slice, not merely "resolved" (closing the vacuous-green gap); the second's findings do not appear (first-bound content-echo).
+3. **The two engine knobs land.** The managed `vision/vision.md` H1 reads `# Vision` (the `display-title:` knob narrows the singleton `title = slug` branch), and a root `VISION.md` is rendered + committed **byte-faithful** to the managed doc (the `root-render:` regenerated-artifact knob) — `describe` lists all three doctypes + three workflows.
+4. **Parking is a first-class, discoverable move.** `park-idea` mints an `idea` (description + `trigger`) and finalizes to `ideas/<slug>.md`, and it is **router-selectable** — it appears in the selection surface, so a shaped mid-work direction is kept without leaving the loop.
+5. **The dangling arm blocks per-element.** A `grounded-in` with one non-existent target blocks at finalize on `ref-resolves` — the resolvable sibling does not rescue it (no commit).
+6. **The freeze stays green and the root render is non-destructive.** The additive `display-title:`/`root-render:` schema keys serialize-skip when absent, so no frozen dev-pack doctype's `schema-hash` changes and the pack-load freeze assertion stays green ([design-altitude-doctypes.md](design-altitude-doctypes.md) → §4); and in an existing project whose root `VISION.md` is hand-authored (no managed vision yet), the first `form-vision` finalize **blocks and routes** rather than overwriting — the greenfield and existing-project on-ramps, the RC trials' two entry points.
