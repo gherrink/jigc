@@ -1,6 +1,8 @@
 # Root CHANGELOG.md render — the managed changelog's platform-legible sink
 
-**Status: parked 2026-07-02, unscheduled.** From the KB/research comparison (the one genuine KB↔jigc placement contradiction, adjudicated in [DECISIONS.md](../DECISIONS.md) → 2026-07-02 harvest record). Indexed from [VISION.md](../VISION.md) → Open questions.
+**Status: SUPERSEDED by M38 (2026-07-04) — resolved as *managed-at-root*, not render.** This idea proposed a root `CHANGELOG.md` as a *rendered mirror* and "consciously rejected the schema-move variant (a T2 version-bump for a contested preference)." M38's placement convention overturns that rebasing: placement is no longer one contested preference but a **whole convention applied uniformly**, so the changelog is *managed directly* at root `CHANGELOG.md` via a real `v1→v2` **relocation migration** — the schema-move the idea rejected, now the driver's own act ([DECISIONS.md](../DECISIONS.md) → 2026-07-04 M38 planned; [storage.md](../design/storage.md) → Placement; [corpus-migration.md](../design/corpus-migration.md) → Relocation). The **bump-computation-from-commit-tokens** facet (below) is the one part that stays parked (no driver). Original framing kept below for the record.
+
+**(Historical) Status: parked 2026-07-02, unscheduled.** From the KB/research comparison (the one genuine KB↔jigc placement contradiction, adjudicated in [DECISIONS.md](../DECISIONS.md) → 2026-07-02 harvest record). Indexed from [VISION.md](../VISION.md) → Open questions.
 
 ## The shape
 

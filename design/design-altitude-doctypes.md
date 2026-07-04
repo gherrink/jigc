@@ -192,6 +192,8 @@ two-task committed-target shape the superseding worked example already proves; t
 
 ## 4. The vision surface — the engine + CLI work (fork 2, full robust)
 
+> **⚠ Superseded by M38 (2026-07-04).** This section designed the vision's root legibility as a **`root-render` mirror** (managed source at `docs/vision/vision.md`, a regenerated `VISION.md` artifact at root). M38 **retires `root-render`** and makes the vision *managed directly at root `VISION.md`* — one file, proper reconciliation, no mirror — via the placement convention ([storage.md](storage.md) → Placement; [DECISIONS.md](../DECISIONS.md) → 2026-07-04 M38 planned). The `display-title: Vision` knob (§2) survives; the `root-render:` knob, the finalize render, and the bespoke foreign-file guard below are all retired (the general `plan_clobber_guard` inherits the no-data-loss role). Read this section as historical rationale for *why* the vision belongs at root — the *mechanism* is now placement, not render.
+
 Two capabilities, both verified absent today (a singleton's H1 is hardcoded to its lowercase
 type-id in `state.rs`; there is no declarative render-to-file knob — the `commit` git-message
 sink is bespoke `render_commit_message`). Both are **additive schema-format keys used only by
