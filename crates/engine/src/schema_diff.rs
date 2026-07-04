@@ -82,6 +82,33 @@ pub enum SchemaChange {
         /// The leaf id for a required field; `None` for a section's own slot.
         leaf: Option<String>,
     },
+
+    /// A **doctype-level home change**: the committed instances' resolved home moved
+    /// (`design/storage.md` → Placement; `design/corpus-migration.md` → Relocation). A
+    /// **file move, not a content edit** — the bytes are byte-identical at the new home,
+    /// so the transform fold is a content no-op (the [`Self::WidenedCardinality`]
+    /// sibling); the CLI migrate-corpus arm performs the git-free `fs::rename`. `from` /
+    /// `to` are the two schemas' declared homes (`placement.file` else `location`),
+    /// auto-derived from the [`Schema`] values alone — engine-pure, no cascade/docs-root
+    /// (the determinism boundary: no hand-written move recipe). Classified **outside**
+    /// the per-section loop, because `location` / `placement` are `Schema`-level fields
+    /// the section-diff never inspects (a pure relocation would otherwise diff to `[]`).
+    Relocated {
+        /// The v1 home (its declared `placement.file` else `location`).
+        from: String,
+        /// The v2 home (its declared `placement.file` else `location`).
+        to: String,
+    },
+
+    /// A **doctype-level `display-title` add/change**: the doc's `# H1` line is rewritten
+    /// to the new display text (`# changelog` → `# Changelog`; `design/corpus-migration.md`
+    /// → Relocation). A one-line H1 splice, byte-stable otherwise. Classified **outside**
+    /// the per-section loop, because `display-title` is a `Schema`-level field the
+    /// section-diff never inspects.
+    DisplayTitleChanged {
+        /// The new H1 display text.
+        to: String,
+    },
 }
 
 /// Classify every supported change from `v1` to `v2` into a deterministic,
@@ -90,6 +117,23 @@ pub enum SchemaChange {
 /// property of the [`Schema`] model), so the same pair always diffs identically.
 pub fn schema_diff(v1: &Schema, v2: &Schema) -> Vec<SchemaChange> {
     let mut out = Vec::new();
+
+    // Doctype-level changes first, classified **outside** the per-section loop —
+    // `location` / `placement` / `display-title` are `Schema`-level fields the
+    // section-diff never inspects, so a pure relocation or display-title change would
+    // otherwise diff to `[]` and silently no-op (`design/corpus-migration.md` → 1.
+    // Schema-diff: the two M38 doctype-level kinds).
+    if let (Some(from), Some(to)) = (resolved_home(v1), resolved_home(v2))
+        && from != to
+    {
+        out.push(SchemaChange::Relocated { from, to });
+    }
+    if let Some(to) = &v2.display_title
+        && v1.display_title.as_deref() != Some(to.as_str())
+    {
+        out.push(SchemaChange::DisplayTitleChanged { to: to.clone() });
+    }
+
     let old_sections: HashMap<&str, &SectionBody> = v1
         .sections
         .iter()
@@ -103,6 +147,20 @@ pub fn schema_diff(v1: &Schema, v2: &Schema) -> Vec<SchemaChange> {
         }
     }
     out
+}
+
+/// A doctype's declared home: its `placement.file` literal (a placement doctype) else
+/// its `location` directory. `None` for a transient doctype with neither (e.g. `commit`,
+/// whose sink is the git message). Engine-pure — the raw schema-declared home, with **no**
+/// `docs-root` resolution (that is the CLI's concern; the determinism boundary keeps the
+/// engine domain-empty). Representation (dir vs full path) is executor latitude the
+/// migrate-corpus move-arm resolves.
+fn resolved_home(schema: &Schema) -> Option<String> {
+    schema
+        .placement
+        .as_ref()
+        .map(|p| p.file.clone())
+        .or_else(|| schema.location.clone())
 }
 
 /// Diff a section present in both schemas.
@@ -479,5 +537,129 @@ sections:
                 leaf: Some("owner".to_owned()),
             }]
         );
+    }
+
+    // ---- the two M38 doctype-level kinds (classified outside the per-section loop) ----
+
+    /// `relocated`: a **pure home change** (v1 `location:` → v2 `placement:`) with
+    /// identical sections classifies to **exactly** `[Relocated{from,to}]`, **not** the
+    /// empty diff — proof the doctype-level fields are diffed *outside* the per-section
+    /// loop (which never inspects `location`/`placement`), so a relocation cannot
+    /// silently no-op. `from`/`to` are the schemas' declared homes, engine-pure.
+    #[test]
+    fn relocated_pure_home_change_classifies_to_exactly_relocated() {
+        let v1 = load(
+            b"\
+type: changelog
+location: changelog/
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: changelog
+placement: { file: CHANGELOG.md }
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::Relocated {
+                from: "changelog/".to_owned(),
+                to: "CHANGELOG.md".to_owned(),
+            }]
+        );
+    }
+
+    /// `display-title-changed`: a `display-title:` add (sections + home unchanged)
+    /// classifies to **exactly** `[DisplayTitleChanged{to}]` naming the new H1 text.
+    #[test]
+    fn display_title_add_classifies_to_exactly_display_title_changed() {
+        let v1 = load(
+            b"\
+type: changelog
+location: changelog/
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: changelog
+location: changelog/
+display-title: Changelog
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::DisplayTitleChanged {
+                to: "Changelog".to_owned(),
+            }]
+        );
+    }
+
+    /// A combined `location:` → `placement:` **and** `display-title:` add classifies to
+    /// **both** doctype-level kinds, in the fixed doctype-level order (relocation, then
+    /// the H1 re-title) — the real `changelog` v1→v2 relocation, synthetically.
+    #[test]
+    fn combined_relocation_and_display_title_add_classifies_both_kinds() {
+        let v1 = load(
+            b"\
+type: changelog
+location: changelog/
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: changelog
+placement: { file: CHANGELOG.md }
+display-title: Changelog
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![
+                SchemaChange::Relocated {
+                    from: "changelog/".to_owned(),
+                    to: "CHANGELOG.md".to_owned(),
+                },
+                SchemaChange::DisplayTitleChanged {
+                    to: "Changelog".to_owned(),
+                },
+            ]
+        );
+    }
+
+    /// The classifier **diffs**, never emits on mere presence: a schema carrying both a
+    /// `location:` and a `display-title:`, diffed against itself, yields the empty diff
+    /// (neither doctype-level kind fires when nothing changed) — the inert-when-unchanged
+    /// guard for the omitting context.
+    #[test]
+    fn unchanged_home_and_display_title_emit_no_doctype_level_change() {
+        let s = load(
+            b"\
+type: changelog
+location: changelog/
+display-title: Changelog
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        );
+        assert_eq!(schema_diff(&s, &s), vec![]);
     }
 }

@@ -964,6 +964,42 @@ pub fn set_slot(
     Ok(splice(source, region, &replacement))
 }
 
+/// `set-title` (H1 present): rewrite the document's `# H1` line to `# {title}`, leaving
+/// every other byte intact — the sole splice the `display-title-changed` transform kind
+/// needs (`design/corpus-migration.md` → Relocation: display-title-changed rewrites only
+/// the H1; `# changelog` → `# Changelog`).
+///
+/// Locates the first `# ` (H1) heading via the block parse and replaces its **whole line**
+/// with the canonical `# {title}` form (`title` trimmed, mirroring [`render`]'s
+/// `# {title}` emission). Re-rendering the H1 line — rather than a bare text-span splice
+/// inside the heading — is the byte-stable path (the [`set_slot`] re-render-the-region
+/// discipline), so `render(parse(out)) == out` holds. An absent H1 →
+/// [`SpliceError::NotPresent`].
+pub fn set_title(source: &str, title: &str) -> Result<String, SpliceError> {
+    let blocks = parse::scan_blocks(source);
+    let h1 = blocks
+        .iter()
+        .find_map(|b| match b {
+            Block::Heading {
+                level: HeadingLevel::H1,
+                range,
+                ..
+            } => Some(range.start),
+            _ => None,
+        })
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: "H1 title".to_string(),
+        })?;
+    // The H1 sits at a line start in canonical form; replace from there to end-of-line
+    // (exclusive of the `\n`) with the canonical `# {title}` render, so the surrounding
+    // blank line and every other byte are untouched.
+    let line_end = source[h1..]
+        .find('\n')
+        .map(|n| h1 + n)
+        .unwrap_or(source.len());
+    Ok(splice(source, h1..line_end, &format!("# {}", title.trim())))
+}
+
 /// `set-field` (field present): replace the **value** bytes of `field_key` in
 /// `section_id` with `new_value`, leaving the key, the `:`, the leading space, and
 /// every other byte intact. Locates the field's physical line via the block parse

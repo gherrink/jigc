@@ -100,7 +100,7 @@ use crate::parse::parse_sections;
 use crate::schema::{Schema, SectionBody};
 use crate::schema_diff::SchemaChange;
 use crate::validate::schema_conformance;
-use crate::write::{self, GenerateError};
+use crate::write::{self, GenerateError, SpliceError};
 
 /// A failure applying a classified diff to one instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -108,6 +108,9 @@ pub enum TransformError {
     /// A structural splice primitive failed (an absent/non-conformant target, an
     /// unslug-able promotion title, …). Carries the underlying [`GenerateError`].
     Generate(GenerateError),
+    /// A surgical-splice primitive failed — the `display-title-changed` H1 rewrite over a
+    /// doc with no locatable `# H1`. Carries the underlying [`SpliceError`].
+    Splice(SpliceError),
     /// A classified change kind whose driver branch is **not built** — the
     /// `prose-needing` **field** sub-case (a new required field; T4 mints only slots) and
     /// a `set`-derived `added-optional-field` with no static default (its value is the
@@ -124,6 +127,12 @@ pub enum TransformError {
 impl From<GenerateError> for TransformError {
     fn from(err: GenerateError) -> Self {
         TransformError::Generate(err)
+    }
+}
+
+impl From<SpliceError> for TransformError {
+    fn from(err: SpliceError) -> Self {
+        TransformError::Splice(err)
     }
 }
 
@@ -196,6 +205,22 @@ pub fn transform(
             }
             SchemaChange::AddedOptionalField { section, field } => {
                 out = apply_added_field(new_schema, &out, section, field)?;
+            }
+            SchemaChange::Relocated { .. } => {
+                // A file move, not a content edit: the instance bytes are byte-identical
+                // at the new home, so the in-content fold is a **no-op** (the
+                // widened-cardinality sibling). The git-free `fs::rename` + file-state
+                // re-key are the CLI migrate-corpus move-arm's concern (T2), applied
+                // outside this per-doc content transform (`corpus-migration.md` →
+                // Relocation).
+            }
+            SchemaChange::DisplayTitleChanged { to } => {
+                // Rewrite the `# H1` line to the new display text (`# changelog` →
+                // `# Changelog`), byte-stable otherwise — every other byte preserved
+                // (`corpus-migration.md` → Relocation: display-title-changed rewrites
+                // only the H1). The CLI owns structure; the H1 text is deterministic
+                // (the schema-declared display title), never authored.
+                out = write::set_title(&out, to)?;
             }
         }
     }
@@ -1367,6 +1392,199 @@ sections:
             again, out,
             "added-optional-section transform is deterministic"
         );
+    }
+
+    // ---- (g) the two M38 doctype-level kinds: relocation + display-title H1 rewrite ----
+
+    /// v1: a `log` doctype at an old folder home (`location: changelog/`) with a
+    /// lowercase H1 (the slug).
+    fn log_v1() -> Schema {
+        load_schema(
+            b"\
+type: log
+location: changelog/
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        )
+        .expect("log v1 loads")
+    }
+
+    /// v2: relocated to a literal root home (`placement: CHANGELOG.md`) **and** given a
+    /// `display-title: Changelog` (so `# changelog` → `# Changelog`) — the real changelog
+    /// v1→v2 relocation, synthetically.
+    fn log_v2() -> Schema {
+        load_schema(
+            b"\
+type: log
+placement: { file: CHANGELOG.md }
+display-title: Changelog
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        )
+        .expect("log v2 loads")
+    }
+
+    /// v2 differing from v1 **only** in `display-title` (same home, same sections) — to
+    /// isolate the display-title-changed kind.
+    fn log_v2_retitle_only() -> Schema {
+        load_schema(
+            b"\
+type: log
+location: changelog/
+display-title: Changelog
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        )
+        .expect("log v2-retitle loads")
+    }
+
+    /// v2 differing from v1 **only** in home (`location:` → `placement:`, no
+    /// display-title) — to isolate the relocated kind.
+    fn log_v2_relocate_only() -> Schema {
+        load_schema(
+            b"\
+type: log
+placement: { file: CHANGELOG.md }
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+",
+        )
+        .expect("log v2-relocate loads")
+    }
+
+    /// A canonical v0-shaped `log` with a lowercase (`# changelog`) H1, built through
+    /// [`render`] so the input is the exact byte-stable form a first-touch-canonicalized
+    /// corpus doc has.
+    fn log_v0_doc() -> String {
+        let inst = Instance {
+            title: "changelog".to_string(),
+            sections: vec![SectionContent {
+                id: "body".to_string(),
+                slot: Some("Released 1.0 with the new limiter.".to_string()),
+                ..Default::default()
+            }],
+        };
+        render(&log_v1(), &inst)
+    }
+
+    #[test]
+    fn display_title_changed_rewrites_only_the_h1() {
+        let v1 = log_v1();
+        let v2 = log_v2_retitle_only();
+        let src = log_v0_doc();
+        assert!(
+            src.starts_with("# changelog\n"),
+            "the v0 H1 is the lowercase slug; got {src:?}"
+        );
+
+        // The real classifier emits the display-title change; the driver is exercised on
+        // the emitted classification, not a hand-built list.
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::DisplayTitleChanged {
+                to: "Changelog".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("display-title transform");
+
+        // ONLY the H1 line is rewritten: the output is byte-identical to the source save
+        // the single `# changelog` → `# Changelog` flip (every other byte preserved).
+        assert_eq!(
+            out,
+            src.replacen("# changelog", "# Changelog", 1),
+            "only the H1 line changes; every other byte is preserved"
+        );
+        assert!(out.starts_with("# Changelog\n"));
+
+        // (a) round-trips byte-identical under v2, (c) conforms.
+        assert_byte_stable(&v2, &out);
+        assert_conforms(&v2, &out);
+
+        // (d) determinism: the same diff over the same source rewrites identically.
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run");
+        assert_eq!(again, out, "display-title rewrite is deterministic");
+    }
+
+    #[test]
+    fn relocated_only_folds_byte_identical_a_content_no_op() {
+        let v1 = log_v1();
+        let v2 = log_v2_relocate_only();
+        let src = log_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::Relocated {
+                from: "changelog/".to_string(),
+                to: "CHANGELOG.md".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("relocated transform");
+
+        // A file move, not a content edit: the instance bytes are byte-identical (the
+        // widened-cardinality sibling). The fs::rename + file-state re-key are T2's arm.
+        assert_eq!(out, src, "relocated folds byte-identical (content no-op)");
+        assert_byte_stable(&v2, &out);
+
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run");
+        assert_eq!(again, out, "relocated fold is deterministic");
+    }
+
+    /// The reconstructed changelog reshape end-to-end: a synthetic committed doctype at
+    /// an old home with a lowercase H1 migrates to a new literal home + fixed H1,
+    /// byte-faithful. The relocation is a content no-op; the sole content change is the
+    /// H1 re-title, so the transform output equals the source with only `# changelog` →
+    /// `# Changelog`. (The file move + stamp bump are T2's migrate-corpus move-arm.)
+    #[test]
+    fn combined_relocation_and_display_title_replays_the_changelog_reshape() {
+        let v1 = log_v1();
+        let v2 = log_v2();
+        let src = log_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![
+                SchemaChange::Relocated {
+                    from: "changelog/".to_string(),
+                    to: "CHANGELOG.md".to_string(),
+                },
+                SchemaChange::DisplayTitleChanged {
+                    to: "Changelog".to_string(),
+                },
+            ]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("combined transform");
+
+        // Byte-faithful: only the H1 line moved to its fixed display form; the body slot
+        // prose is preserved verbatim.
+        assert_eq!(
+            out,
+            src.replacen("# changelog", "# Changelog", 1),
+            "the relocation is a content no-op; only the H1 is re-titled"
+        );
+        assert!(out.starts_with("# Changelog\n"));
+        assert!(
+            out.contains("Released 1.0 with the new limiter."),
+            "the body prose is byte-preserved; got {out:?}"
+        );
+
+        assert_byte_stable(&v2, &out);
+        assert_conforms(&v2, &out);
+
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run");
+        assert_eq!(again, out, "the combined fold is deterministic");
     }
 
     // ---- the deferred branches block, never silently drop ----
