@@ -1,0 +1,31 @@
+# research — the methodology pack's one-per-doc, append-only investigation record
+# (M37 inc-3 / T1; design/design-altitude-doctypes.md §2). The evidence a vision or
+# design is formed from. NOT a singleton: `grounded-in` (the vision→research ref, T2)
+# is `0..*`, meaningful only if there are MANY research docs — a singleton would
+# collapse the anchor to `0..1`. So it mints fresh per document (`id-from: title`,
+# `location: research/`), the methodology pack's first one-per-doc persisted doctype.
+# It MUST carry a real `location:` or every `grounded-in` edge would dangle at
+# finalize (a location-less target is always unreachable).
+#
+# The `meta` header (header: true) carries the `date` (CLI-derived on create); the
+# three prose slots are question / findings / sources. Section ids are single words.
+# Ref-free leaf — engine-native types only, no managed ref (the vision→research ref
+# is declared on `vision`, T2). Freeze-exempt (the methodology pack ships no
+# schema-manifest.yaml). See design/design-altitude-doctypes.md → The three schemas.
+type: research
+location: research/
+id-from: title
+description: One investigation and what it found — the evidence a vision or design is formed from.
+usage: a question needs evidence gathered and recorded before a vision or decision rests on it, and that record should stay addressable by what it grounds.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: date, type: date, set: on-create }
+  - id: question
+    slot: { hint: "The question this research set out to answer." }
+  - id: findings
+    slot: { hint: "What was found — the evidence and what it shows." }
+  - id: sources
+    slot: { hint: "Where the evidence came from — links, references, prior art." }

@@ -1,0 +1,27 @@
+# idea — the methodology pack's one-per-doc parked shaped direction (M37 inc-3 / T1;
+# design/design-altitude-doctypes.md §2). A shaped-but-unscheduled direction with the
+# trigger that would bring it back. Coexists with `deferral-ledger.kind=I` (unchanged):
+# the ledger holds owed *decisions*, `idea` holds shaped *directions* — two distinct
+# homes. Mints fresh per document (`id-from: title`, `location: ideas/`).
+#
+# The `meta` header (header: true) carries `trigger` (the de-park condition — a plain
+# string naming what would resurface it, the `deferral-ledger.trigger` shape, NOT a new
+# enum-status axis) and the `date` (CLI-derived on create). The one prose slot is the
+# `description` (the ecosystem-plain term, not the house term "shape"). Section ids are
+# single words. Ref-free leaf — engine-native types only, no managed ref. Freeze-exempt
+# (the methodology pack ships no schema-manifest.yaml). See design/
+# design-altitude-doctypes.md → The three schemas.
+type: idea
+location: ideas/
+id-from: title
+description: One shaped-but-unscheduled direction, with the trigger that would bring it back.
+usage: a direction is worth keeping but not worth scheduling now, so it needs a durable home cheaper than losing the thought and a note of when to revisit it.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: trigger, type: string }
+      - { id: date, type: date, set: on-create }
+  - id: description
+    slot: { hint: "The shaped direction — what it is and why it might be worth doing." }
