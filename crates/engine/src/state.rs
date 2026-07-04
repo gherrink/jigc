@@ -708,11 +708,16 @@ pub fn create(
     // `use-mysql` slug), so the committed artifact reads as a title, not a filename
     // (M26 shakedown fix; `design/write-commands.md` → the H1 renders the title, the id
     // is `slugify(title)`). The stable id stays the `slug` above — `slugify(title)`
-    // re-derives it, so address/filename are untouched. Two cases keep the H1 == slug:
-    // a `singleton` (whose H1 is its fixed type id, never a free title) and an id-source
-    // that slugs empty (the type-name fallback fired — there is no human title to show,
-    // so the slug stands in, preserving the prior bytes).
-    let title = if schema.singleton || crate::slug::slugify(id_source).is_empty() {
+    // re-derives it, so address/filename are untouched. A `singleton` has no free title,
+    // so its H1 is the fixed type id (= slug) **unless** the schema declares a
+    // `display-title:` knob, which overrides the display text only (never the id/slug):
+    // `vision` declares `display-title: Vision`, so its H1 reads `# Vision`, not
+    // `# vision` (M37 inc-1; `design/design-altitude-doctypes.md` → §4). An id-source
+    // that slugs empty keeps H1 == slug — the type-name fallback fired, so there is no
+    // human title to show and the slug stands in, preserving the prior bytes.
+    let title = if schema.singleton {
+        schema.display_title.clone().unwrap_or_else(|| slug.clone())
+    } else if crate::slug::slugify(id_source).is_empty() {
         slug.clone()
     } else {
         id_source.to_string()
@@ -1560,6 +1565,80 @@ sections: []
         assert_eq!(
             non_singleton.address, "commit:add-rate-limiter",
             "a non-singleton still slugs the id_source",
+        );
+    }
+
+    /// (M37 inc-1 T2) The `display-title` knob overrides a singleton's H1 display
+    /// text. A throwaway singleton declaring `display-title: Vision`, once created,
+    /// renders its H1 as `# Vision` (not `# <type-id>`) — the flagship-idiomatic H1.
+    /// A singleton WITHOUT the field (the shipped-`changelog` shape) still renders
+    /// `# <type-id>`, so the absent key leaves today's behavior. Drives the emitted
+    /// artifact: the created `.md` on disk, reading its H1 line verbatim. Design:
+    /// `design/design-altitude-doctypes.md` → §4 The vision surface.
+    #[test]
+    fn singleton_display_title_overrides_h1_absent_leaves_type_id() {
+        let root = TempRoot::new("display-title-h1");
+        // The single-`#` H1 line of a rendered doc body (`# X`, never `## X`).
+        let h1_line = |body: &str| -> String {
+            body.lines()
+                .find(|l| l.starts_with("# "))
+                .expect("rendered body has an H1")
+                .to_string()
+        };
+
+        // A singleton declaring `display-title: Vision` → H1 reads `# Vision`,
+        // regardless of the (ignored) id-source a singleton fixes to its type id.
+        let with_title = b"\
+type: vision
+singleton: true
+display-title: Vision
+location: vision/
+sections: []
+";
+        let schema = crate::schema::load_schema(with_title).expect("vision singleton loads");
+        let mut vision_schemas = std::collections::BTreeMap::new();
+        vision_schemas.insert("vision".to_string(), schema);
+        let created = create(
+            &root.path().join("tasks").join("v"),
+            &vision_schemas,
+            "vision",
+            "some ignored id-source",
+            root.path(),
+            &[],
+        )
+        .expect("vision singleton create succeeds");
+        let body = std::fs::read_to_string(&created.path).expect("read created vision");
+        assert_eq!(
+            h1_line(&body),
+            "# Vision",
+            "the display-title knob drives the singleton H1: {body:?}"
+        );
+
+        // A singleton WITHOUT `display-title` (the shipped-`changelog` shape) still
+        // renders `# <type-id>` — the absent key leaves today's behavior untouched.
+        let without_title = b"\
+type: changelog
+singleton: true
+location: changelog/
+sections: []
+";
+        let schema = crate::schema::load_schema(without_title).expect("changelog singleton loads");
+        let mut changelog_schemas = std::collections::BTreeMap::new();
+        changelog_schemas.insert("changelog".to_string(), schema);
+        let created = create(
+            &root.path().join("tasks").join("c"),
+            &changelog_schemas,
+            "changelog",
+            "some ignored id-source",
+            root.path(),
+            &[],
+        )
+        .expect("changelog singleton create succeeds");
+        let body = std::fs::read_to_string(&created.path).expect("read created changelog");
+        assert_eq!(
+            h1_line(&body),
+            "# changelog",
+            "a singleton with no display-title keeps the type-id H1: {body:?}"
         );
     }
 
