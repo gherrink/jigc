@@ -172,7 +172,12 @@ pub(crate) fn migrate_committed_corpus(
     // halts at the first blocker — is deterministic.
     let mut prepared: Vec<PreparedDoc> = Vec::new();
     for dt in doctypes {
-        let Some(location) = dt.to.location.as_deref() else {
+        // Resolve the FROM home to walk (where the committed instances actually sit) and,
+        // for a doctype **relocated** to a single-file placement home, the literal TO path
+        // each instance moves to. The corpus walk keys on the **from** home, never the
+        // (dir-less) placement `to` home, so a relocated doctype's instances at the old
+        // location are still found (`design/corpus-migration.md` → Relocation).
+        let Some((walk_home, relocate_to)) = resolve_migration_homes(pack, dt) else {
             continue;
         };
         // The stamp's value comes from the doctype's manifest version: thread it in as the
@@ -180,8 +185,11 @@ pub(crate) fn migrate_committed_corpus(
         // `set`-derived field) places it deterministically. Inert for the below-version
         // path (the stamp is already present there — it is value-bumped, not added).
         let to = with_stamp_default(&dt.to, dt.version);
-        for slug in committed_slugs(repo_root, location) {
-            let rel_key = format!("{location}{slug}.md");
+        for slug in committed_slugs(repo_root, &walk_home) {
+            let rel_key = format!("{walk_home}{slug}.md");
+            // The destination: the placement `to` for a relocated doctype, else the doc's
+            // own home (an in-place migration, `target_key == rel_key`).
+            let target_key = relocate_to.clone().unwrap_or_else(|| rel_key.clone());
             let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
                 continue; // read race: skip; the next run re-checks.
             };
@@ -205,6 +213,7 @@ pub(crate) fn migrate_committed_corpus(
                         // target version into the post-fold pass.
                         prepared.push(PreparedDoc {
                             rel_key,
+                            target_key,
                             source,
                             from,
                             to: to.clone(),
@@ -229,6 +238,7 @@ pub(crate) fn migrate_committed_corpus(
                     }
                     prepared.push(PreparedDoc {
                         rel_key,
+                        target_key,
                         source,
                         from,
                         to: to.clone(),
@@ -262,28 +272,51 @@ pub(crate) fn migrate_committed_corpus(
                 // the gated v2 bytes, then re-gates (the bump is a byte-stable value splice
                 // that keeps the doc conformant — asserted, not assumed). A stamp-absent
                 // (v0) doc already carries the current stamp from the add-field branch.
-                let v2 = match prepared[i].bump_to {
-                    Some(version) => bump_and_regate(&prepared[i].to, v2, version)?,
+                let prep = &prepared[i];
+                let v2 = match prep.bump_to {
+                    Some(version) => bump_and_regate(&prep.to, v2, version)?,
                     None => v2.clone(),
                 };
-                engine::state::persist(&repo_root.join(id), v2.as_bytes())
-                    .with_context(|| format!("writing the migrated doc {id}"))?;
-                // Re-baseline an already-tracked doc so its rewritten bytes are not
-                // mis-reported as out-of-band drift (the rollback inventory's file-state
-                // re-hash — `corpus-migration.md`). An un-baselined doc stays un-baselined
-                // (the migration adopts nothing it didn't already track). The baseline is
-                // saved **per doc**, paired with this doc's byte write, so the on-disk
-                // baseline always matches the on-disk files: an abort mid-corpus leaves the
-                // already-migrated docs at v2 *and* baselined, the rest at v1 — both
-                // conformant-and-detectable (the per-doc-gated transaction granularity —
-                // `corpus-migration.md` → Migration atomicity / WIP-safety).
-                if record.get(id).is_some() {
+                // A **relocated** doctype's destination differs from its source home; an
+                // in-place migration writes back to the same key (`target_key == rel_key`).
+                let target = &prep.target_key;
+                let moved = target != id;
+
+                // WRITE-BEFORE-REMOVE (`corpus-migration.md` → Relocation: write-to-`to`
+                // precedes remove-`from`, so an abort between strands neither copy). The
+                // gated v2 bytes land at the destination **first** — a fault here leaves the
+                // source at `id` untouched on disk (never zero copies). Only once `to`
+                // exists is the old-home source removed and the file-state re-keyed, one
+                // atomic per-doc unit.
+                engine::state::persist(&repo_root.join(target), v2.as_bytes())
+                    .with_context(|| format!("writing the migrated doc {target}"))?;
+                if moved {
+                    std::fs::remove_file(repo_root.join(id))
+                        .with_context(|| format!("removing the relocated source {id}"))?;
+                }
+
+                // Re-baseline / re-key the file-state, paired **per doc** with this doc's
+                // write so the on-disk baseline always matches the on-disk files (the
+                // per-doc-gated transaction granularity — `corpus-migration.md` → Migration
+                // atomicity / WIP-safety; `reconciliation.md` → the file-state re-key). A
+                // **moved**, tracked doc drops its old-home key and re-registers at the
+                // destination `from → to`, so the instance re-registers and none is orphaned;
+                // an in-place tracked doc re-hashes at its key; an untracked doc adopts
+                // nothing (the migration tracks nothing it didn't already track).
+                if moved {
+                    if record.forget(id) {
+                        record.record(target.clone(), hash_bytes(v2.as_bytes()));
+                        record.save(jigc_root).with_context(|| {
+                            format!("saving the file-state record at {jigc_root:?}")
+                        })?;
+                    }
+                } else if record.get(id).is_some() {
                     record.record(id.clone(), hash_bytes(v2.as_bytes()));
                     record.save(jigc_root).with_context(|| {
                         format!("saving the file-state record at {jigc_root:?}")
                     })?;
                 }
-                report.migrated.push(id.clone());
+                report.migrated.push(target.clone());
             }
             DocOutcome::Untouched { id, .. } => {
                 let route = if result.halted_at == Some(i) {
@@ -305,7 +338,13 @@ pub(crate) fn migrate_committed_corpus(
 /// One prepared migration job, owning its source + schema pair + per-doc change list (the
 /// fold borrows them).
 struct PreparedDoc {
+    /// The doc's **source** home — where the committed instance sits (the fold's id, the
+    /// bytes read, and the file removed after a relocation move).
     rel_key: String,
+    /// The doc's **destination** home. Equal to `rel_key` for an in-place migration; the
+    /// literal placement `to` for a relocated doctype (the file the gated v2 bytes are
+    /// written to; a move iff `target_key != rel_key`).
+    target_key: String,
     source: String,
     from: Schema,
     to: Schema,
@@ -476,6 +515,33 @@ fn deferred_route(rel_key: &str) -> String {
     format!(
         "deferred — `{rel_key}` will migrate once the blocker above is resolved; re-run `jigc migrate-corpus`"
     )
+}
+
+/// Resolve, for one doctype migration job, the **from** home the corpus walk enumerates
+/// (where the committed instances actually sit) and — for a doctype **relocated** to a
+/// single-file placement home — the literal **to** path each instance moves to
+/// (`design/corpus-migration.md` → Relocation: the walk keys on the from home). `None` when
+/// the doctype has no walkable home (a relocated doctype whose prior-location snapshot is
+/// missing).
+///
+/// - A doctype whose **current** shape still declares a `location:` directory migrates
+///   **in place** — walk that directory, no move (`relocate_to = None`).
+/// - A doctype whose current shape is a single-file `placement:` (no `location:`) has
+///   **relocated**: its committed instances still sit at the **prior** version's `location:`
+///   home, sourced from the versioned snapshot at `version - 1` via
+///   [`crate::pack::load_prior_schema`]. The walk enumerates that old directory; each instance
+///   moves to the placement `file`. A missing / location-less prior snapshot yields `None`.
+fn resolve_migration_homes(
+    pack: &dyn PackSource,
+    dt: &DoctypeMigration,
+) -> Option<(String, Option<String>)> {
+    if let Some(location) = &dt.to.location {
+        return Some((location.clone(), None));
+    }
+    let placement = dt.to.placement.as_ref()?;
+    let prior = crate::pack::load_prior_schema(pack, &dt.ty, dt.version.checked_sub(1)?).ok()?;
+    let from_home = prior.location?;
+    Some((from_home, Some(placement.file.clone())))
 }
 
 /// The committed-doc slugs of a persisted type — the `.md` file stems under
@@ -1172,5 +1238,210 @@ sections:
         // The doc is left byte-untouched (never silently rewritten).
         let after = fs::read_to_string(repo.path().join("cards/first-card.md")).expect("read");
         assert_eq!(after, v1, "the blocked doc is byte-untouched");
+    }
+
+    /// The v1 prior shape of the `log` doctype: a folder-location home (`changelog/`) with a
+    /// single `body` slot — the reconstructed pre-relocation changelog. The snapshot the
+    /// relocation walk sources both the old home *and* the schema-diff `from` from.
+    fn log_v1_yaml() -> &'static str {
+        "\
+type: log
+location: changelog/
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+"
+    }
+
+    /// The v2 current shape of the `log` doctype: **relocated** to a single literal
+    /// `placement:` home (`CHANGELOG.md`, no `location:`) and given a `display-title:
+    /// Changelog` (so `# changelog` → `# Changelog`) — the reconstructed changelog v1→v2
+    /// relocation.
+    fn log_v2_yaml() -> &'static [u8] {
+        b"\
+type: log
+placement: { file: CHANGELOG.md }
+display-title: Changelog
+sections:
+  - id: body
+    slot: { hint: \"the log\" }
+"
+    }
+
+    /// Render a committed **v1-stamped** `log` at its old folder home against `from` (the
+    /// snapshot shape, stamp injected): a lowercase `# changelog` H1 + the body slot. The
+    /// byte form a real pre-relocation committed changelog has.
+    fn log_v1_doc(from: &Schema) -> String {
+        render(
+            from,
+            &Instance {
+                title: "changelog".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "body".to_string(),
+                        slot: Some("Released 1.0 with the new limiter.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        )
+    }
+
+    /// The headline T2 relocation case through `migrate_committed_corpus` (the same core the
+    /// verb runs): a committed **v1-stamped** `log` sits at its old folder home
+    /// (`changelog/changelog.md`) with a lowercase `# changelog` H1. Its v2 shape is
+    /// **relocated** to the literal `CHANGELOG.md` placement home + display-title `Changelog`.
+    /// The move-arm (a) walks the **`from`** home (the walk keys on the old location, not the
+    /// empty placement `to`), finds the doc, and moves it; (b) writes the gated v2 bytes to
+    /// `CHANGELOG.md` byte-faithful — the H1 fixed to `# Changelog`, the stamp value-bumped
+    /// `1→2`, the body preserved; (c) **removes** the old `changelog/changelog.md`; and (d)
+    /// **re-keys** the file-state baseline `from → to` (the old-home key dropped, the target
+    /// re-registered at the migrated hash — no orphan).
+    #[test]
+    fn relocated_doc_moves_to_placement_home_byte_faithful_with_rekey() {
+        let repo = TempDir::new("relocate");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("log", 1, log_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(log_v2_yaml());
+        let from = crate::pack::load_prior_schema(&pack, "log", 1).expect("the log.v1 snapshot");
+
+        let v1 = log_v1_doc(&from);
+        assert!(
+            v1.starts_with("---\nschema-version: 1\n---\n\n# changelog\n"),
+            "the committed doc is stamped v1 with a lowercase H1; got:\n{v1}"
+        );
+        write_doc(repo.path(), "changelog/changelog.md", &v1);
+
+        // The doc is tracked at its old home (the migration re-keys only what it tracks).
+        let mut seed = FileStateRecord::new();
+        seed.record(
+            "changelog/changelog.md".to_string(),
+            hash_bytes(v1.as_bytes()),
+        );
+        fs::create_dir_all(&jigc_root).expect("mk .jigc");
+        seed.save(&jigc_root).expect("seed the baseline");
+
+        let report =
+            migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to.clone(), 2)])
+                .expect("migration runs");
+
+        // (a) the walk found+moved the doc at the from home; the report names the new home.
+        assert_eq!(
+            report.migrated,
+            vec!["CHANGELOG.md".to_string()],
+            "the relocated doc migrates to its placement home: {report:?}"
+        );
+        assert!(
+            report.blocked.is_empty() && report.already_current.is_empty(),
+            "never blocked or already-current: {report:?}"
+        );
+
+        // (c) the old-home source file is removed.
+        assert!(
+            !repo.path().join("changelog/changelog.md").exists(),
+            "the old-home source is removed after the move"
+        );
+        // (b) the doc lives at the placement home, byte-faithful: H1 fixed, stamp bumped 1→2,
+        //     body preserved.
+        let moved = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("relocated home");
+        assert!(
+            moved.starts_with("---\nschema-version: 2\n---\n\n# Changelog\n"),
+            "the stamp value-bumps 1→2 and the H1 is fixed to `# Changelog`; got:\n{moved}"
+        );
+        assert!(
+            moved.contains("Released 1.0 with the new limiter."),
+            "the body prose survives the move; got:\n{moved}"
+        );
+        assert_conformant_and_stable(&to, &moved);
+
+        // (d) the file-state is re-keyed from → to: the target carries the migrated hash and
+        //     the old-home key is dropped (no orphaned baseline entry).
+        let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
+        assert_eq!(
+            record.get("CHANGELOG.md"),
+            Some(hash_bytes(moved.as_bytes()).as_str()),
+            "the target home is baselined at the migrated bytes"
+        );
+        assert!(
+            record.get("changelog/changelog.md").is_none(),
+            "the old-home key is dropped (re-keyed, not orphaned)"
+        );
+    }
+
+    /// Relocation-safety census row — **write-before-remove / abort-strands-neither**
+    /// (`design/corpus-migration.md` → Relocation: write-to-`to` precedes remove-`from`, so an
+    /// abort between strands neither copy). The move writes the gated v2 bytes to the target
+    /// home **first**, then removes the old-home source. When the write to `to` is forced to
+    /// fail (its atomic temp-sibling `CHANGELOG.md.tmp` is pre-occupied by a directory, so
+    /// [`engine::state::persist`] errors before the rename), the old-home source is **never
+    /// removed** — the doc still exists at `from` (never zero copies). Under the *wrong*
+    /// (remove-first) ordering the source would already be gone **and** the write failed → the
+    /// doc lost entirely; this test fails there, so it pins the ordering. The move never
+    /// completed, so the file-state baseline is **not** prematurely re-keyed.
+    #[test]
+    fn relocation_abort_at_the_write_strands_neither_copy() {
+        let repo = TempDir::new("relocate-abort");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("log", 1, log_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(log_v2_yaml());
+        let from = crate::pack::load_prior_schema(&pack, "log", 1).expect("the log.v1 snapshot");
+        let v1 = log_v1_doc(&from);
+        write_doc(repo.path(), "changelog/changelog.md", &v1);
+
+        let mut seed = FileStateRecord::new();
+        seed.record(
+            "changelog/changelog.md".to_string(),
+            hash_bytes(v1.as_bytes()),
+        );
+        fs::create_dir_all(&jigc_root).expect("mk .jigc");
+        seed.save(&jigc_root).expect("seed the baseline");
+
+        // Force the write to the TO home to fail: occupy its atomic temp-sibling
+        // `CHANGELOG.md.tmp` with a directory, so `persist` errors before the rename — the
+        // move aborts AT the write, BEFORE the source removal (write-before-remove).
+        fs::create_dir_all(repo.path().join("CHANGELOG.md.tmp")).expect("occupy temp sibling");
+
+        let result = migrate_committed_corpus(&pack, repo.path(), &jigc_root, &[migration(to, 2)]);
+        assert!(
+            result.is_err(),
+            "the aborted write surfaces as an error: {result:?}"
+        );
+
+        // WRITE-BEFORE-REMOVE: the failed write to `to` means the source at `from` was NEVER
+        // removed — the doc survives at its old home (never zero copies; nothing stranded).
+        assert!(
+            repo.path().join("changelog/changelog.md").exists(),
+            "the from copy survives the aborted write (never zero copies)"
+        );
+        // The write failed before the rename, so the target home was not created.
+        assert!(
+            !repo.path().join("CHANGELOG.md").exists(),
+            "the aborted write left no partial target"
+        );
+        // The move never completed, so the baseline is intact — no premature re-key.
+        let record = FileStateRecord::load(&jigc_root).expect("reload baseline");
+        assert_eq!(
+            record.get("changelog/changelog.md"),
+            Some(hash_bytes(v1.as_bytes()).as_str()),
+            "the from-home baseline is intact (re-key not applied on abort)"
+        );
+        assert!(
+            record.get("CHANGELOG.md").is_none(),
+            "no premature re-key to the target home"
+        );
     }
 }
