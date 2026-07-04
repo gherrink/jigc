@@ -370,20 +370,22 @@ fn plan_clobber_guard(
 
 /// A blocking finding (review S1, `design/auto-migration.md` → Honest bounds → the
 /// data-loss clobber guard) when a create-provenance doc's canonical promote destination
-/// already holds a committed managed doc — promoting would silently overwrite it
-/// (irreversible data loss). Names the destination it refused to clobber.
+/// already holds a file — a committed managed doc that would collide, or a hand-authored /
+/// foreign file (e.g. an existing `VISION.md` at a placement home) — promoting would silently
+/// overwrite it (irreversible data loss). Names the destination it refused to clobber.
 fn clobber_finding(destination: &str) -> Finding {
     Finding::graded(
         Severity::Blocking,
         "finalize.promote-clobber",
         format!(
-            "promoting this task's doc to `{destination}` would overwrite a committed \
-             managed doc already there — refusing to clobber it"
+            "promoting this task's doc to `{destination}` would overwrite a file already \
+             there — refusing to clobber it"
         ),
         None,
         Some(format!(
-            "another committed doc already occupies `{destination}`; retitle this one so it \
-             slugs differently, or resolve the collision, then re-run `jigc task finalize`"
+            "a file already occupies `{destination}`: if it is a hand-authored/foreign file, \
+             remove or adopt it; if it is another managed doc, retitle this one so it slugs \
+             differently or resolve the collision; then re-run `jigc task finalize`"
         )),
     )
 }
