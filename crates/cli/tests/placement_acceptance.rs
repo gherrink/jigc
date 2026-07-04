@@ -29,6 +29,12 @@
 //! test off the developer's repo. The base pack is the binary-embedded dev pack (its
 //! `commit` doctype loads); the fixture pack unions the two placement doctypes + their
 //! host/read workflows on top.
+//!
+//! **Increment 2 / T4** (below the round-trip test) reuses the same harness to prove
+//! placement **reconciliation + ownership** end-to-end: an OOB edit to a committed
+//! placement doc's literal `FOO.md` is detected + routed while sibling root `.md` are not
+//! swept as instances, and a hand-authored foreign file at the managed literal path blocks
+//! the first `finalize` at the inherited `finalize.promote-clobber` guard.
 
 use std::fs;
 use std::io::Write;
@@ -433,5 +439,304 @@ fn placement_singletons_round_trip_to_their_literal_homes() {
         !composed.contains("{{ @task.rootpage#body }}")
             && !composed.contains("{{ @task.docspage#body }}"),
         "the placement refs must be resolved, not emitted verbatim; got:\n{composed}",
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────
+// M38 Increment 2 / T4 — **placement reconciliation + ownership** through the real binary
+// (`design/storage.md` → Placement census; `design/reconciliation.md`; `design/finalize.md`).
+// The increment's whole Proves end-to-end over the same throwaway `foo { file: FOO.md }`
+// singleton the Inc-1 harness above mints — honestly verifying, not trusting, that Inc-2's
+// engine/CLI census sites teach the sweep + the clobber guard the exact-path ownership of a
+// placement doctype's one literal `placement.file`.
+// ─────────────────────────────────────────────────────────────────────────────────────
+
+/// Parse the `findings` array of a `--format json` report envelope (the store-scope
+/// `task validate` / finalize envelope shape, `store_sweep_acceptance.rs` precedent).
+fn findings_json(out: &std::process::Output) -> Vec<serde_json::Value> {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let value: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("the report envelope must parse ({e}); got:\n{stdout}"));
+    value["findings"]
+        .as_array()
+        .cloned()
+        .unwrap_or_else(|| panic!("the envelope carries a `findings` array; got:\n{stdout}"))
+}
+
+/// Whether any finding's message mentions `needle` (the raw path a swept instance is keyed
+/// on) — the discriminator for "was this file swept as an instance?".
+fn any_message_mentions(findings: &[serde_json::Value], needle: &str) -> bool {
+    findings
+        .iter()
+        .any(|f| f["message"].as_str().is_some_and(|m| m.contains(needle)))
+}
+
+/// The keys of the persisted `file-state` record (`.jigc/state/file-state.json` → `hashes`)
+/// — the baseline-adopt manifest, used to prove a sibling root `.md` is **not** adopted.
+fn file_state_keys(repo: &Path) -> Vec<String> {
+    let record_path = repo.join(".jigc").join("state").join("file-state.json");
+    let record = fs::read_to_string(&record_path)
+        .expect("the landed finalize persisted the file-state record");
+    let value: serde_json::Value = serde_json::from_str(&record).expect("file-state.json parses");
+    value["hashes"]
+        .as_object()
+        .expect("the record carries a `hashes` map")
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// Author the `foo` placement singleton (body = `FOO_BODY`) and `finalize` it, so a
+/// committed, **file-state-recorded** `FOO.md` exists at the repo-root literal home. Shared
+/// setup for the OOB-drift arm below.
+fn author_and_finalize_foo(repo: &Path, home: &Path) {
+    let start = run_jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "author-pages",
+            "author the root page",
+        ],
+        None,
+    );
+    assert_ok(&start, "`jigc start --workflow author-pages`");
+    let task = "author-the-root-page";
+    let create = run_jigc(
+        repo,
+        home,
+        &["doc", "create", "foo", "--title", "Root Page"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create foo`");
+    set_slot(
+        repo,
+        home,
+        "foo:foo#body",
+        format!("{FOO_BODY}\n").as_bytes(),
+    );
+    set_field(repo, home, &format!("commit:{task}#type"), "docs");
+    set_slot(
+        repo,
+        home,
+        &format!("commit:{task}#summary"),
+        b"author the root page\n",
+    );
+    let finalize = run_jigc(repo, home, &["task", "finalize", task], None);
+    assert_ok(&finalize, "`jigc task finalize` (author the root page)");
+    // Sanity: the committed FOO.md is baseline-recorded (the drift arm needs the baseline).
+    assert!(
+        file_state_keys(repo).iter().any(|k| k == "FOO.md"),
+        "finalize must baseline-record the promoted placement doc at its literal `FOO.md`",
+    );
+}
+
+/// (M38 inc-2 T4 — arms (a) + (b)) An **out-of-band edit to a committed placement doc's
+/// literal `FOO.md` is detected + routed** by the reconcile/validate sweep — AND a sibling
+/// root `README.md`/`CLAUDE.md` is **not** swept as an instance. Both live in ONE test so
+/// the pair is atomic: arm (a) proves the placement sweep arm ran and visited the root
+/// literal (else the drift is silently clean — the pre-Inc-1 `location: None` skip); arm (b)
+/// proves it did **not** glob the root dir (exact-path ownership, not a dir-glob). A green
+/// (b) alone would pass vacuously if the sweep never ran, so the FOO.md-detected +
+/// siblings-untouched conjunction is the non-vacuous exact-path proof
+/// (`design/storage.md` → Placement census: `reconcile_committed_store`; ownership is
+/// "exact-path equality against `placement.file`, every other root `.md` stays unmanaged").
+#[test]
+fn placement_oob_edit_detected_and_sibling_root_md_not_swept() {
+    let (repo, home, _pack) = init_repo();
+    let repo = repo.path();
+    let home = home.path();
+
+    // A committed, recorded placement doc at the literal `FOO.md`.
+    author_and_finalize_foo(repo, home);
+
+    // A sibling root `.md` the schema declares nothing about — the exact-path ownership
+    // subject: a literal `placement.file` is not a root dir-glob, so this must stay
+    // unmanaged. (`README.md` is already committed by `init_repo`; add a `CLAUDE.md` too.)
+    fs::write(
+        repo.join("CLAUDE.md"),
+        "# project rules\n\nnot a managed doc\n",
+    )
+    .expect("write CLAUDE.md sibling");
+    git(repo, &["add", "CLAUDE.md"]);
+    git(repo, &["commit", "-q", "-m", "add CLAUDE.md sibling"]);
+
+    // The **out-of-band** edit: a human rewrites the committed `FOO.md` through git,
+    // nonconformantly (renamed required section heading), outside the CLI.
+    let on_disk = fs::read_to_string(repo.join("FOO.md")).expect("read committed FOO.md");
+    let drifted = on_disk.replace("## Body", "## Bodyz");
+    assert_ne!(
+        drifted, on_disk,
+        "the OOB edit must actually change the heading"
+    );
+    fs::write(repo.join("FOO.md"), &drifted).expect("write the OOB-edited FOO.md");
+    git(repo, &["add", "FOO.md"]);
+    git(
+        repo,
+        &["commit", "-q", "-m", "human edits FOO.md out of band"],
+    );
+
+    // A later task's store-scope sweep reconciles the committed store. `task validate`
+    // exits blocking on the recorded-then-drifted nonconformant edit, so capture the
+    // envelope regardless of exit and read its findings.
+    let vstart = run_jigc(
+        repo,
+        home,
+        &["start", "--workflow", "author-pages", "reconcile the store"],
+        None,
+    );
+    assert_ok(&vstart, "`jigc start` (reconcile pass)");
+    let out = run_jigc(
+        repo,
+        home,
+        &[
+            "task",
+            "validate",
+            "reconcile-the-store",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    let findings = findings_json(&out);
+
+    // (a) the OOB edit to the managed placement file is **detected + routed** — a blocking
+    // `reconciliation.conformance-block` naming the literal `FOO.md`, carrying a route
+    // (not silently clean, the "managed, not a mirror" promise).
+    let block = findings
+        .iter()
+        .find(|f| {
+            f["code"] == "reconciliation.conformance-block"
+                && f["message"].as_str().is_some_and(|m| m.contains("FOO.md"))
+        })
+        .unwrap_or_else(|| {
+            panic!("the placement doc's OOB drift must be detected + routed; got:\n{findings:#?}")
+        });
+    assert_eq!(
+        block["severity"], "blocking",
+        "a recorded-then-drifted placement doc conformance-blocks: {block:#?}",
+    );
+    assert_eq!(
+        block["location"]["address"], "FOO.md",
+        "the block is keyed on the literal placement path: {block:#?}",
+    );
+    assert!(
+        block["route"].is_string(),
+        "the conformance-block carries a route to a human: {block:#?}",
+    );
+
+    // (b) a sibling root `.md` (`README.md`, `CLAUDE.md`) is **not** swept as an instance —
+    // no finding names it (the sweep visited the literal `FOO.md`, never globbed the root).
+    assert!(
+        !any_message_mentions(&findings, "README.md")
+            && !any_message_mentions(&findings, "CLAUDE.md"),
+        "an undeclared sibling root .md must not be swept as a placement instance; got:\n{findings:#?}",
+    );
+    // …and it is not baseline-adopted into the record (a literal file is not a root glob).
+    let keys = file_state_keys(repo);
+    assert!(
+        !keys.iter().any(|k| k == "README.md") && !keys.iter().any(|k| k == "CLAUDE.md"),
+        "a sibling root .md must not be baseline-adopted as an instance; record keys: {keys:?}",
+    );
+}
+
+/// (M38 inc-2 T4 — arm (c)) A **hand-authored foreign file at the managed literal path
+/// blocks the first `finalize` with `finalize.promote-clobber`** — the inherited
+/// `plan_clobber_guard`, *zero new guard code* (`design/storage.md` → Placement: "the
+/// no-silent-data-loss guard is inherited, not rebuilt … the general `plan_clobber_guard`
+/// already blocks any create-promote whose destination file already exists"; `finalize.md`).
+///
+/// The guard is gated to `Provenance::Created`, so the placement doc must be **minted fresh**
+/// — the agent `doc create`s it while the literal path is empty (Created), then a human drops
+/// a foreign `FOO.md` at that path out-of-band before `finalize`. Promoting the Created doc
+/// would overwrite the foreign file → the inherited guard refuses. (A foreign file present at
+/// `doc create` time is instead *copied in* for editing — `EditedFromBase`, the reconciliation
+/// adoption path — a distinct, also-routed door; this arm exercises the create-promote clobber
+/// the increment names.) Proves the guard fires with no new code, commits nothing, and leaves
+/// the foreign bytes intact.
+#[test]
+fn foreign_file_at_placement_path_blocks_finalize_with_clobber_guard() {
+    let (repo, home, _pack) = init_repo();
+    let repo = repo.path();
+    let home = home.path();
+
+    let start = run_jigc(
+        repo,
+        home,
+        &[
+            "start",
+            "--workflow",
+            "author-pages",
+            "author the root page",
+        ],
+        None,
+    );
+    assert_ok(&start, "`jigc start --workflow author-pages`");
+    let task = "author-the-root-page";
+
+    // Mint the placement doc while the literal path is **empty** → `Provenance::Created`.
+    let create = run_jigc(
+        repo,
+        home,
+        &["doc", "create", "foo", "--title", "Root Page"],
+        None,
+    );
+    assert_ok(&create, "`jigc doc create foo`");
+    set_slot(
+        repo,
+        home,
+        "foo:foo#body",
+        format!("{FOO_BODY}\n").as_bytes(),
+    );
+    set_field(repo, home, &format!("commit:{task}#type"), "docs");
+    set_slot(
+        repo,
+        home,
+        &format!("commit:{task}#summary"),
+        b"author the root page\n",
+    );
+
+    // A human hand-authors a foreign `FOO.md` at the managed literal path, out-of-band,
+    // before finalize — the destination the Created doc would promote to now holds a file.
+    const FOREIGN: &str = "# Foreign\n\nHand-authored directly, not through jigc.\n";
+    fs::write(repo.join("FOO.md"), FOREIGN).expect("hand-author the foreign FOO.md");
+
+    let commits_before: u32 = git(repo, &["rev-list", "--count", "HEAD"]).parse().unwrap();
+    let out = run_jigc(
+        repo,
+        home,
+        &["task", "finalize", task, "--format", "json"],
+        None,
+    );
+    // The finalize must NOT succeed — it blocks on the clobber guard.
+    assert!(
+        !out.status.success(),
+        "finalize must block on the foreign-file clobber; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let findings = findings_json(&out);
+    let clobber = findings
+        .iter()
+        .find(|f| {
+            f["code"] == "finalize.promote-clobber"
+                && f["message"].as_str().is_some_and(|m| m.contains("FOO.md"))
+        })
+        .unwrap_or_else(|| {
+            panic!("the foreign FOO.md must block first finalize at finalize.promote-clobber; got:\n{findings:#?}")
+        });
+    assert_eq!(clobber["severity"], "blocking");
+
+    // Nothing committed past the pre-finalize HEAD, and the foreign bytes are byte-intact.
+    let commits_after: u32 = git(repo, &["rev-list", "--count", "HEAD"]).parse().unwrap();
+    assert_eq!(
+        commits_after, commits_before,
+        "the refused clobber commits nothing",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join("FOO.md")).expect("read FOO.md"),
+        FOREIGN,
+        "the refused clobber leaves the foreign file byte-intact",
     );
 }
