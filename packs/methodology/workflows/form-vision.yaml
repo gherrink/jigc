@@ -1,0 +1,11 @@
+---
+when: you're forming or revising the project's vision from research
+description: Form or revise the project's vision from committed research — create the vision singleton, ground it in the research it rests on, and author its thesis, invariants, and open questions, then land it as one commit. A re-entry flow — set `grounded-in`, re-compose, then author against the grounding research now in view.
+usage: the project's direction is worth a durable, managed anchor that later work compares against, and you want it formed from and traceable to the committed research behind it.
+creates-task: true
+selectable: true
+allows-create:
+  - { type: vision, as: vision }
+---
+{{ include: step:author-vision }}
+{{ include: step:finalize }}

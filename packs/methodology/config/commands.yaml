@@ -156,3 +156,16 @@ commands:
       - "--task"
       - { from: "task.id" }
     hint: "Park the shaped direction as a fresh idea doc in the current task."
+
+  # The form-vision workflow's idempotent-create command-ref (M37 inc-4 / T3). The
+  # `vision` doctype is a SINGLETON (the create-roadmap/create-log shape) — `create`
+  # fixes the slug to the type id regardless of `--title`, so the title is a fixed
+  # literal (ignored on mint; the H1 comes from the `display-title: Vision` knob, never
+  # this title). `create` on the already-committed singleton copies-in for warm-append
+  # (the idempotent-create mechanism), so `form-vision` re-entry safely targets the same
+  # `vision/vision.md`. The `set-field grounded-in` + per-slot authoring lives in the
+  # author step as literal guidance.
+  - id: create-vision
+    command: jigc
+    args: ["doc", "create", "vision", "--title", "Vision", "--task", { from: "task.id" }]
+    hint: "Create-or-update the running vision singleton in the current task."

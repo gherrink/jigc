@@ -1,0 +1,27 @@
+Form the project vision on the `vision` singleton. Create it — the slug is fixed
+(`vision`), and its H1 reads `# Vision` regardless of the title:
+
+{{ cli.create-vision }}
+
+Ground the vision in the committed research it rests on. Set `grounded-in` to the
+research this vision is formed from — pass ALL of it in ONE call as an inline list
+(the multi-value path). Every element is recorded and resolved at finalize:
+
+jigc doc set-field vision:vision#meta/grounded-in --value "[research:<slug>, …]" --task {{task.id}}
+
+Now RE-COMPOSE so the grounding research comes into view — the findings below
+resolve only after `grounded-in` is set:
+
+jigc start --task {{task.id}}
+
+The first grounding research's findings appear here for reference (nothing appears
+until you set `grounded-in` and re-compose; all bound research is recorded in
+`grounded-in`, not only the one shown):
+{{ @task.vision.grounded-in#findings }}
+
+Author the three prose slots — the core claim, the invariants it holds, and the
+questions it leaves open:
+
+jigc doc set-slot vision:vision#thesis --from-file - --task {{task.id}}
+jigc doc set-slot vision:vision#invariants --from-file - --task {{task.id}}
+jigc doc set-slot vision:vision#open-questions --from-file - --task {{task.id}}
