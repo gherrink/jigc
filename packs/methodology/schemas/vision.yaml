@@ -1,0 +1,40 @@
+# vision — the methodology pack's singleton living reference (M37 inc-3 / T2;
+# design/design-altitude-doctypes.md §1/§2/§4). The project's charter: its thesis,
+# the invariants it holds, and its open questions — grounded in the research it was
+# formed from. A SINGLETON (fixed slug = the type id, always `vision/vision.md`), so
+# `form-vision` re-`create` deterministically targets the same committed file.
+#
+# `grounded-in` is the methodology pack's FIRST internal managed ref
+# (`vision —grounded-in→ research`, both methodology, doc-level): a `0..*` ref, so a
+# vision may be grounded in several research docs, every element `ref-resolves`-validated
+# and the `grounds` inverse derivable. It points INSIDE the composed schema universe
+# (intra-pack), honoring — not reopening — the M16 "methodology composes alone" bound.
+#
+# Two doctype knobs beyond the singletons before it (both freeze-exempt additive keys):
+#   - `display-title: Vision` — the H1 reads `# Vision`, not `# vision` (§4).
+#   - `root-render: VISION.md` — finalize regenerates a repo-root `VISION.md` from the
+#     managed doc (which stays source of truth); the literal uppercase path is the
+#     idiomatic filename slugs cannot reach (§4).
+# `invariants`/`open-questions` are prose slots, not repeatable sections (§2): no M37
+# consumer reads an individual invariant/question, and methodology is freeze-exempt.
+# See design/design-altitude-doctypes.md → The three schemas / The vision surface.
+type: vision
+location: vision/
+singleton: true
+id-from: title
+display-title: Vision
+root-render: VISION.md
+description: The project's charter — its thesis, the invariants it holds, and its open questions — grounded in the research it was formed from.
+usage: the project's direction is worth a durable, managed anchor that later work compares against, formed from and traceable to the research behind it.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: grounded-in, type: ref, to: research, card: "0..*", inverse: grounds }
+  - id: thesis
+    slot: { hint: "The core claim — what this project is and the one idea it descends from." }
+  - id: invariants
+    slot: { hint: "What must stay true — the boundaries and commitments no change may violate." }
+  - id: open-questions
+    slot: { hint: "What is deliberately unsettled — the directions still open." }
