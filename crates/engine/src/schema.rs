@@ -92,6 +92,21 @@ pub struct Schema {
     )]
     pub root_render: Option<String>,
 
+    /// Optional doctype-level **literal-file placement**: the managed doc lives at
+    /// one exact `placement.file` repo-root-relative path (case-preserved, bypassing
+    /// the lowercase slug), *not* at `<docs-root>/<location>/<slug>.md`. A placement
+    /// doctype therefore sets **no `location`** (`location: None`, like transient
+    /// `commit`) and carries its fixed slug (= type id) independently, so a root
+    /// `VISION.md` / `CHANGELOG.md` or a direct `docs/roadmap.md` is reachable exactly
+    /// as written and `docs-root` never applies (the home is composition-invariant).
+    /// Absent → today's folder behavior. Skip-on-absent (mirrors `location` /
+    /// `id-from` / `display-title` / `root-render`): a schema omitting it serializes
+    /// **nothing**, so no frozen doctype's `schema-hash` changes — the freeze-safe
+    /// additive-key pattern (`design/storage.md` → Placement — direct-file and
+    /// root-located homes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placement: Option<Placement>,
+
     /// `true` for a **singleton** doctype: a running doc with a **fixed slug = the
     /// type id** (e.g. `roadmap/roadmap.md`), *not* an `id-from: title` slug. A
     /// re-`create` then deterministically targets the same committed file — the
@@ -103,6 +118,22 @@ pub struct Schema {
 
     /// The document's sections, in document order.
     pub sections: Vec<Section>,
+}
+
+/// A doctype's **literal-file placement**: the one exact repo-root-relative path
+/// its single managed instance lives at.
+///
+/// The `file` path is a **literal** (case-preserved, bypassing the lowercase
+/// `[a-z0-9-]` slug), so `VISION.md` / `CHANGELOG.md` / `docs/roadmap.md` are each
+/// reachable exactly as written — the `docs/` prefix (or its absence) is encoded
+/// in the literal, so there is **no `root:` flag** and `docs-root` never applies.
+/// A doctype carrying `placement` sets no `location` (`design/storage.md` →
+/// Placement — direct-file and root-located homes).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Placement {
+    /// The repo-root-relative literal path this doctype's one instance lives at.
+    pub file: String,
 }
 
 /// One section of a document: a heading the CLI owns, carrying leaves.
@@ -1335,6 +1366,74 @@ sections: []
         assert!(
             !plain_json.contains("root-render"),
             "an absent root-render serializes nothing (skip-on-absent); got {plain_json}",
+        );
+    }
+
+    /// (M38 inc-1 T1) The doctype-level `placement:` key serde-roundtrips: a fixture
+    /// schema declaring `placement: { file: FOO.md }` parses
+    /// `placement == Some(Placement { file: "FOO.md" })` (case-preserved literal),
+    /// **re-serializes** the key, and survives a load→serialize→reload cycle. A
+    /// schema that **omits** it serializes to JSON with **no** `placement` key — so
+    /// its `schema_hash` (`blake3` over that JSON, `manifest.rs`) is byte-identical to
+    /// the pre-field value, the freeze-safe additive-key proof (mirrors
+    /// `display-title` / `root-render`): the field's mere existence on the struct
+    /// changes no frozen doctype's hash. (b) proven, not assumed — the real frozen six
+    /// are covered by the pack-load freeze regressions (`pack.rs` +
+    /// `crates/cli/tests/freeze_enforcement.rs`). See `design/storage.md` → Placement.
+    #[test]
+    fn placement_serde_roundtrips_and_is_skipped_when_absent() {
+        let with_placement = b"\
+type: foo
+placement: { file: FOO.md }
+sections: []
+";
+        let schema = load_schema(with_placement).expect("placement schema loads");
+        assert_eq!(
+            schema.placement,
+            Some(Placement {
+                file: "FOO.md".to_owned()
+            }),
+            "the placement key parses its case-preserved literal file path",
+        );
+
+        // Re-serializes the key, and a reload preserves it (roundtrip).
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            json.contains("\"placement\":{\"file\":\"FOO.md\"}"),
+            "the placement key re-serializes under its on-disk shape; got {json}",
+        );
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(reloaded, schema, "placement survives a serde roundtrip");
+
+        // A schema omitting it defaults to None and serializes nothing for it — the
+        // skip-on-absent additive guard. No `placement` in the JSON means the bytes
+        // `schema_hash` digests are identical to the pre-field value, so no frozen
+        // doctype's hash moves (the freeze-safety claim, proven).
+        let without = b"\
+type: commit
+sections: []
+";
+        let plain = load_schema(without).expect("no-placement schema loads");
+        assert!(
+            plain.placement.is_none(),
+            "an omitted placement defaults to None",
+        );
+        let plain_json = serde_json::to_string(&plain).expect("serializes");
+        assert!(
+            !plain_json.contains("placement"),
+            "an absent placement serializes nothing (skip-on-absent); got {plain_json}",
+        );
+
+        // `deny_unknown_fields`: a placement carrying a stray `root:` flag (the
+        // rebutted `{file, root}` sketch) is rejected loudly, never silently absorbed.
+        let with_root = b"\
+type: foo
+placement: { file: FOO.md, root: true }
+sections: []
+";
+        assert!(
+            load_schema(with_root).is_err(),
+            "a placement with an unknown `root` key must fail to load",
         );
     }
 
