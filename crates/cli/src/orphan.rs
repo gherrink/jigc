@@ -128,12 +128,102 @@ pub(crate) fn docs_root_would_orphan<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn adr_schema(location: &str) -> Schema {
         let yaml = format!(
             "type: adr\nlocation: {location}\nid-from: title\nsections:\n  - id: body\n    slot: {{ hint: x }}\n"
         );
         engine::schema::load_schema(yaml.as_bytes()).expect("adr schema loads")
+    }
+
+    fn placement_schema(ty: &str, file: &str) -> Schema {
+        let yaml = format!("type: {ty}\nplacement: {{ file: {file} }}\nsections: []\n");
+        engine::schema::load_schema(yaml.as_bytes()).expect("placement schema loads")
+    }
+
+    /// A throwaway git repo that removes itself on drop (the project's no-tempfile pattern).
+    struct TempRepo(PathBuf);
+
+    impl TempRepo {
+        fn new() -> Self {
+            let mut path = std::env::temp_dir();
+            path.push(format!(
+                "jigc-orphan-unit-{}-{:?}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+            ));
+            std::fs::create_dir_all(&path).expect("create temp repo");
+            let repo = TempRepo(path);
+            repo.git(&["init", "-q"]);
+            repo.git(&["config", "user.email", "t@t"]);
+            repo.git(&["config", "user.name", "t"]);
+            repo
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+
+        fn git(&self, args: &[&str]) {
+            let out = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&self.0)
+                .args(args)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_SYSTEM", "/dev/null")
+                .output()
+                .expect("run git");
+            assert!(
+                out.status.success(),
+                "git {args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr),
+            );
+        }
+
+        fn commit_file(&self, rel: &str, body: &str) {
+            let abs = self.0.join(rel);
+            if let Some(parent) = abs.parent() {
+                std::fs::create_dir_all(parent).expect("create parent dir");
+            }
+            std::fs::write(&abs, body).expect("write file");
+            self.git(&["add", "--", rel]);
+            self.git(&["commit", "-q", "-m", "add"]);
+        }
+    }
+
+    impl Drop for TempRepo {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    /// (M38 inc-2 T3) Characterization — orphan detection keys on the immediate-parent
+    /// **directory basename** matching a doctype's `location:` basename, so a **placement**
+    /// doctype's root literal (`VISION.md`) is **never mis-orphaned**: a root file has no
+    /// parent dir to match, and a placement doctype carries no `location` basename to match
+    /// against (`design/storage.md` → Placement — census verification `orphan`). A sibling
+    /// root `.md` (`README.md`) is likewise **not** the placement doctype's instance. A live
+    /// `decisions/live.md` under its current root proves the sweep actually enumerates and
+    /// stays quiet only where it should.
+    #[test]
+    fn placement_root_file_and_sibling_root_md_are_never_orphaned() {
+        let repo = TempRepo::new();
+        repo.commit_file("VISION.md", "# Vision\n");
+        repo.commit_file("README.md", "# Readme\n");
+        repo.commit_file("decisions/live.md", "# A decision\n");
+
+        let schemas = vec![
+            placement_schema("vision", "VISION.md"),
+            adr_schema("decisions/"),
+        ];
+        assert!(
+            orphaned_docs(repo.path(), &schemas).is_empty(),
+            "a placement root file, a sibling root .md, and a live decision are none orphaned",
+        );
     }
 
     #[test]

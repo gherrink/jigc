@@ -90,12 +90,11 @@ pub(crate) fn run(
 
     // Resolve the target's identity + on-disk path.
     let (ty, old_slug) = parse_addr(old_addr)?;
-    let dir = location_dir(&schema_map, &ty)?;
-    let old_rel = format!("{dir}/{old_slug}.md");
+    let old_rel = doc_path(&schema_map, &ty, &old_slug)?;
     let old_abs = repo_root.join(&old_rel);
     if !old_abs.is_file() {
         bail!(
-            "no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})\n  route: check the id — managed `{ty}` docs live under `{dir}/` (or run `jigc describe` for the doctype surface)"
+            "no managed doc `{ty}:{old_slug}` to rename (expected at {old_rel})\n  route: check the id (or run `jigc describe` for the doctype surface)"
         );
     }
     let old_source = std::fs::read_to_string(&old_abs)
@@ -108,7 +107,7 @@ pub(crate) fn run(
     if new_slug.is_empty() {
         bail!("`--to {title:?}` slugs to nothing — pass an explicit `--slug`");
     }
-    let new_rel = format!("{dir}/{new_slug}.md");
+    let new_rel = doc_path(&schema_map, &ty, &new_slug)?;
     let new_abs = repo_root.join(&new_rel);
     let old_id = format!("{ty}:{old_slug}");
     let new_id = format!("{ty}:{new_slug}");
@@ -173,8 +172,7 @@ pub(crate) fn run(
             let fschema = schema_map
                 .get(&fty)
                 .ok_or_else(|| anyhow!("referrer `{from_id}` has an unknown doctype `{fty}`"))?;
-            let fdir = location_dir(&schema_map, &fty)?;
-            let frel = format!("{fdir}/{fslug}.md");
+            let frel = doc_path(&schema_map, &fty, &fslug)?;
             let fabs = repo_root.join(&frel);
             let mut source = std::fs::read_to_string(&fabs)
                 .with_context(|| format!("could not read the referrer at {frel}"))?;
@@ -508,16 +506,24 @@ fn parse_addr(addr: &str) -> Result<(String, String)> {
     Ok((ty.to_string(), slug.to_string()))
 }
 
-/// The cascade-resolved on-disk directory (docs-root prefixed, trailing slash trimmed)
-/// for `ty`. Errors on an unknown doctype or a transient (location-less) one.
-fn location_dir(schema_map: &BTreeMap<String, Schema>, ty: &str) -> Result<String> {
+/// The on-disk repo-relative path for the `<ty>:<slug>` doc. A **placement** doctype
+/// lives at its literal `placement.file` (the slug is fixed = type id, so it is ignored),
+/// making a placement doc reachable as a rename target *and* repointable as a referrer of
+/// a renamed doc (`design/storage.md` → Placement — census site `rename`). A
+/// `location:`-bearing doctype resolves to `<location>/<slug>.md` (docs-root prefixed,
+/// trailing slash trimmed) — unchanged. Errors on an unknown or transient (neither
+/// `location` nor `placement`) doctype.
+fn doc_path(schema_map: &BTreeMap<String, Schema>, ty: &str, slug: &str) -> Result<String> {
     let schema = schema_map
         .get(ty)
         .ok_or_else(|| anyhow!("unknown doctype `{ty}`"))?;
+    if let Some(placement) = &schema.placement {
+        return Ok(placement.file.clone());
+    }
     let location = schema.location.as_deref().ok_or_else(|| {
         anyhow!("`{ty}` is a transient doctype — it has no persisted file to rename")
     })?;
-    Ok(location.trim_end_matches('/').to_string())
+    Ok(format!("{}/{slug}.md", location.trim_end_matches('/')))
 }
 
 /// Rewrite the document's `# H1` title to `new_title`, preserving every other byte. The
@@ -674,5 +680,41 @@ mod tests {
         assert!(parse_addr("noslug").is_err());
         assert!(parse_addr(":slug").is_err());
         assert!(parse_addr("adr:").is_err());
+    }
+
+    fn schema_map(yamls: &[&str]) -> BTreeMap<String, Schema> {
+        yamls
+            .iter()
+            .map(|y| {
+                let s = engine::schema::load_schema(y.as_bytes()).expect("schema loads");
+                (s.ty.clone(), s)
+            })
+            .collect()
+    }
+
+    /// (M38 inc-2 T3) `doc_path` resolves a **placement** doctype's on-disk path to its
+    /// literal `placement.file` (the slug is fixed = type id), so a placement doc that
+    /// references a renamed doc repoints at its real home — never the `{dir}/{slug}.md`
+    /// composition that a location doctype uses (`design/storage.md` → Placement — census
+    /// site `rename`). A `location:`-bearing doctype is unchanged: `<location>/<slug>.md`.
+    #[test]
+    fn doc_path_resolves_a_placement_literal_and_leaves_location_docs_unchanged() {
+        let map = schema_map(&[
+            "type: foo\nplacement: { file: FOO.md }\nsections: []\n",
+            "type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: x }\n",
+        ]);
+
+        // A placement doctype resolves to its literal file, ignoring the passed slug.
+        assert_eq!(
+            doc_path(&map, "foo", "foo").expect("placement path resolves"),
+            "FOO.md",
+            "a placement doctype's path is its literal placement.file",
+        );
+        // A location doctype is byte-unchanged: `<location>/<slug>.md`.
+        assert_eq!(
+            doc_path(&map, "adr", "single-node-cache").expect("location path resolves"),
+            "decisions/single-node-cache.md",
+            "a location doctype still resolves to <location>/<slug>.md",
+        );
     }
 }

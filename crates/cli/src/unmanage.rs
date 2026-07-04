@@ -88,11 +88,18 @@ pub(crate) fn run(cwd: &Path, rel_path: &str) -> Result<UnmanageReport> {
     })
 }
 
-/// The `<type>:<slug>` identity for a managed-doc path — the persisted schema whose
-/// `location:` dir the path sits directly under, joined with the filename stem (the
-/// classify location-match, mirrored from the engine). `None` when no schema owns the
-/// path's location.
+/// The `<type>:<slug>` identity for a managed-doc path — either the persisted schema
+/// whose `location:` dir the path sits directly under (joined with the filename stem,
+/// the classify location-match mirrored from the engine) or a **placement** schema whose
+/// literal `placement.file` the path equals exactly (`<type>:<type>`). `None` when no
+/// schema owns the path.
 fn identity_of(rel_path: &str, schemas: &[Schema]) -> Option<String> {
+    // A placement doctype owns its one literal `placement.file` by exact-path equality;
+    // its slug is fixed = the type id (never filename-derived), so the identity is
+    // `<type>:<type>` (`design/storage.md` → Placement — census site `unmanage`).
+    if let Some(schema) = schemas.iter().find(|s| is_placement_file(rel_path, s)) {
+        return Some(format!("{}:{}", schema.ty, schema.ty));
+    }
     let schema = schemas.iter().find(|s| under_location(rel_path, s))?;
     let slug = rel_path.rsplit('/').next().unwrap_or(rel_path);
     let slug = slug.strip_suffix(".md").unwrap_or(slug);
@@ -108,4 +115,67 @@ fn under_location(rel_path: &str, schema: &Schema) -> bool {
     };
     let dir = location.trim_end_matches('/');
     !dir.is_empty() && rel_path.starts_with(&format!("{dir}/"))
+}
+
+/// Whether `rel_path` is `schema`'s **placement** literal — the one exact
+/// repo-root-relative `placement.file` a placement doctype's single instance lives at.
+/// Exact-path equality, never a dir-glob: `VISION.md` is the managed vision, every other
+/// root `.md` (`README.md`, `CLAUDE.md`) stays unmanaged (`design/storage.md` → Placement
+/// — census site `unmanage`). A non-placement schema is never a placement home.
+fn is_placement_file(rel_path: &str, schema: &Schema) -> bool {
+    schema
+        .placement
+        .as_ref()
+        .is_some_and(|p| p.file == rel_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn placement_schema(ty: &str, file: &str) -> Schema {
+        let yaml = format!("type: {ty}\nplacement: {{ file: {file} }}\nsections: []\n");
+        engine::schema::load_schema(yaml.as_bytes()).expect("placement schema loads")
+    }
+
+    fn adr_schema() -> Schema {
+        let yaml = "type: adr\nlocation: decisions/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: x }\n";
+        engine::schema::load_schema(yaml.as_bytes()).expect("adr schema loads")
+    }
+
+    /// (M38 inc-2 T3) `unmanage::identity_of` recognizes a **placement** doctype's one
+    /// literal `placement.file` by **exact-path equality**, mapping it to `<type>:<type>`
+    /// (the fixed slug **is** the type id — a placement singleton carries no title-derived
+    /// slug), for both a root `FOO.md` and a `docs/bar.md`. A sibling non-declared root
+    /// `.md` (`README.md`) stays **unowned** (a literal is not a dir-glob). Regression:
+    /// the `location:`-keyed path still maps to `<type>:<slug>` unchanged.
+    #[test]
+    fn identity_of_owns_a_placement_file_by_exact_path() {
+        let schemas = vec![
+            placement_schema("foo", "FOO.md"),
+            placement_schema("bar", "docs/bar.md"),
+            adr_schema(),
+        ];
+
+        assert_eq!(
+            identity_of("FOO.md", &schemas).as_deref(),
+            Some("foo:foo"),
+            "a root placement file's identity is <type>:<type>, not filename-derived",
+        );
+        assert_eq!(
+            identity_of("docs/bar.md", &schemas).as_deref(),
+            Some("bar:bar"),
+            "a docs/ placement file's identity is <type>:<type>, exact-path matched",
+        );
+        assert_eq!(
+            identity_of("README.md", &schemas),
+            None,
+            "an undeclared sibling root .md is owned by no placement doctype",
+        );
+        assert_eq!(
+            identity_of("decisions/x.md", &schemas).as_deref(),
+            Some("adr:x"),
+            "a location-keyed doc still maps to <type>:<slug> unchanged",
+        );
+    }
 }
