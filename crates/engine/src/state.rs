@@ -826,15 +826,29 @@ pub fn create_gated(
 ///
 /// The discriminator is the **source-path match, never singleton-ness**: a non-migration
 /// task has no `source-path` → `false` (the M16 clobber-fix copy-in stays intact for every
-/// non-migration caller), and an off-canonical migration (e.g. a root `CHANGELOG.md` while
-/// the canonical singleton lives at `changelog/changelog.md`) → `false` (still copies in).
-/// A location-less (transient) type has no canonical destination → `false`.
+/// non-migration caller), and an off-canonical migration (e.g. a foreign `HISTORY.md` while
+/// the canonical singleton lives at root `CHANGELOG.md`) → `false` (still copies in).
+///
+/// The canonical destination is the schema's **`placement.file`** literal when it declares
+/// one (post-M38 `changelog` homes at root `CHANGELOG.md`, no `location`), else
+/// `<location>/<slug>.md`. A type with **neither** (a transient sink type) has no canonical
+/// destination → `false`.
 fn migration_targets_canonical_destination(
     task_dir: &Path,
     schema: &Schema,
     slug: &str,
 ) -> std::io::Result<bool> {
-    let Some(location) = schema.location.as_deref() else {
+    // The canonical destination is the **placement** literal when the schema declares one
+    // (post-M38 `changelog` → root `CHANGELOG.md`), else `<location>/<slug>.md`; a type with
+    // neither is transient and has no canonical home. This mirrors [`crate::store::canonical_path`]
+    // but stays repo-relative (the recorded `source-path` and the retire-side
+    // `promotions[].destination` are both repo-relative — review C1: create- and retire-side
+    // guards must compare the same destination form).
+    let destination = if let Some(placement) = &schema.placement {
+        placement.file.clone()
+    } else if let Some(location) = schema.location.as_deref() {
+        format!("{}/{slug}.md", location.trim_end_matches('/'))
+    } else {
         return Ok(false);
     };
     let Some(source) = read_source_path(task_dir)? else {
@@ -844,7 +858,6 @@ fn migration_targets_canonical_destination(
     if source.is_empty() {
         return Ok(false);
     }
-    let destination = format!("{}/{slug}.md", location.trim_end_matches('/'));
     Ok(crate::store::lexical_normalize(Path::new(source))
         == crate::store::lexical_normalize(Path::new(&destination)))
 }
@@ -1663,6 +1676,23 @@ sections:
         m
     }
 
+    /// A fixture **placement** singleton schema — `changelog`'s post-M38 shape: no
+    /// `location`, its single instance homed at the literal root `CHANGELOG.md`
+    /// (`design/storage.md` → Placement). The in-location-squatter discriminator must
+    /// derive the canonical destination from `placement.file`, not the (absent)
+    /// `location`.
+    fn placement_singleton_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+singleton: true
+placement: { file: CHANGELOG.md }
+sections:
+  - id: overview
+    slot: {}
+";
+        crate::schema::load_schema(yaml).expect("placement singleton schema loads")
+    }
+
     /// (M16 inc-2 T2 — cold) `create` of a `singleton` with **no committed instance**
     /// mints the empty template and round-trips byte-stable (`render(parse(.)) == .`).
     /// With no `<repo_root>/roadmap/roadmap.md` on disk, the copy-in branch is inert and
@@ -2162,6 +2192,68 @@ sections:
                 .get("roadmap:roadmap"),
             Some(Provenance::Created),
             "the squatter seed-blank records `created`, not `edited-from-base`",
+        );
+    }
+
+    /// (M38 inc-5 T2 — placement squatter) The in-location squatter guard must fire for a
+    /// **placement** singleton too. Post-M38 `changelog` carries no `location` — its home is
+    /// the literal `placement.file` (root `CHANGELOG.md`), so a migration task whose recorded
+    /// `source-path` is that same literal file IS the in-location squatter: `create` must seed
+    /// the working area **blank**, never copy the non-conformant foreign body in. RED before
+    /// the fix — [`migration_targets_canonical_destination`] derived the destination from
+    /// `schema.location` alone and early-returned `false` for a location-less placement schema,
+    /// so the copy-in branch read the foreign body in as the edit base (the M24-fixed
+    /// Frankenstein failure, re-opened by the changelog root-relocation). See
+    /// `design/auto-migration.md` → Path-collision guard.
+    #[test]
+    fn placement_migration_squatter_create_seeds_blank_not_the_committed_body() {
+        let root = TempRoot::new("placement-squatter-seed-blank");
+        let task_dir = root
+            .path()
+            .join("tasks")
+            .join("migrate-changelog-changelog");
+        let schema = placement_singleton_schema();
+        let mut schemas = std::collections::BTreeMap::new();
+        schemas.insert("changelog".to_string(), schema.clone());
+
+        // A non-conformant foreign file committed AT the placement canonical destination
+        // (root `CHANGELOG.md`), NOT under a `<location>/` folder.
+        let squatter = "# Whatever\n\nnon-conformant prior content\n";
+        let committed_path = crate::store::canonical_path(root.path(), &schema, "changelog")
+            .expect("placement has a canonical path");
+        if let Some(parent) = committed_path.parent() {
+            std::fs::create_dir_all(parent).expect("mk parent");
+        }
+        std::fs::write(&committed_path, squatter).expect("commit the squatter");
+
+        // A MIGRATION task whose source-path IS the placement canonical destination.
+        persist(&task_dir.join(SOURCE_PATH_FILE), b"CHANGELOG.md")
+            .expect("record the in-location source path");
+
+        let created = create(&task_dir, &schemas, "changelog", "M38", root.path(), &[])
+            .expect("placement squatter migration create succeeds");
+        assert_eq!(created.address, "changelog:changelog");
+
+        // Seeded BLANK — the empty template, never the committed foreign body.
+        let staged = std::fs::read_to_string(&created.path).expect("read staged");
+        assert_eq!(
+            staged,
+            write::render(&schema, &empty_instance(&schema, "changelog")),
+            "a placement migration squatter seeds the empty template, never the foreign body",
+        );
+        assert_ne!(
+            staged,
+            write::first_touch_canonicalize(squatter),
+            "the non-conformant committed foreign body is NOT copied in",
+        );
+
+        // Provenance is `created` (a fresh mint), not `edited-from-base`.
+        assert_eq!(
+            ProvenanceRecord::load(&task_dir)
+                .expect("provenance loads")
+                .get("changelog:changelog"),
+            Some(Provenance::Created),
+            "the placement squatter seed-blank records `created`, not `edited-from-base`",
         );
     }
 

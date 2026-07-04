@@ -753,6 +753,98 @@ sections:
     );
 }
 
+/// RED — the AT-canonical adopt-in-place case (#8 / M38 T2). A foreign root `CHANGELOG.md`
+/// already sits at the changelog's canonical **placement** home (post-M38 the doctype homes
+/// at root `CHANGELOG.md`, no folder). `jigc migrate CHANGELOG.md` records a `source-path`
+/// == the promote destination, so it IS the in-location squatter: create seeds the working
+/// area BLANK (never the foreign body), the batch authors end-to-end, and finalize ADOPTS
+/// IN PLACE — the committed doc round-trips byte-stable and git name-status shows
+/// `M CHANGELOG.md` (Modified), NEVER `D` (the retire is skipped — source == destination —
+/// so the migration never self-deletes the doc it just wrote). RED before T2's create-side
+/// placement fix: the copy-in branch read the foreign body in as the edit base (a
+/// Frankenstein doc), because the create-side squatter discriminator derived its destination
+/// from the (now-absent) `location` and missed the `placement.file` home.
+#[test]
+fn flow26_at_canonical_root_changelog_adopts_in_place() {
+    let repo = TempDir::new("in-place");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+
+    // The foreign root `CHANGELOG.md` IS the canonical placement destination, so the
+    // per-file migration id folds the source stem into `migrate-changelog-changelog`.
+    const AT_CANONICAL_TASK: &str = "migrate-changelog-changelog";
+    const SQUATTER: &str =
+        "# Whatever\n\nnon-conformant foreign changelog sitting at the canonical root\n";
+    setup_and_migrate(repo.path(), home.path(), &pack, "CHANGELOG.md", SQUATTER);
+
+    const PAYLOAD: &str = r#"title: Changelog
+sections:
+  - id: releases
+    items:
+      - title: 1.0.0
+        sections:
+          - id: changes
+            items:
+              - title: Added
+                set:
+                  notes: "<<- First public release.>>"
+"#;
+    author_via_batch(repo.path(), home.path(), &pack, AT_CANONICAL_TASK, PAYLOAD);
+
+    // Create seeded BLANK: the foreign body was never copied in as the edit base.
+    let staged = staged_changelog(repo.path(), AT_CANONICAL_TASK);
+    assert!(
+        !staged.contains("non-conformant foreign changelog"),
+        "the AT-canonical foreign body must NOT be copied in as the edit base (no Frankenstein doc):\n{staged}",
+    );
+    assert!(
+        staged.contains("### 1.0.0") && staged.contains("First public release."),
+        "the batch authors onto the clean blank skeleton:\n{staged}",
+    );
+    assert_byte_stable(&pack, &staged);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", AT_CANONICAL_TASK, "--approve"],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "finalize --approve on the AT-canonical migration lands clean (exit 0); stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // Adopt IN PLACE: the canonical root `CHANGELOG.md` is MODIFIED (rewritten from the
+    // foreign body to the managed doc), NEVER Deleted — the retire is skipped because
+    // source-path == promote-destination (the in-location squatter exclusion), so the
+    // migration never self-deletes the doc it just wrote.
+    let delta = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
+    assert!(
+        delta.lines().any(|l| l == "M\tCHANGELOG.md"),
+        "the AT-canonical migration modifies the canonical root doc in place (Modified):\n{delta}",
+    );
+    assert!(
+        !delta.lines().any(|l| l == "D\tCHANGELOG.md"),
+        "the in-location squatter is NEVER self-deleted (no `D CHANGELOG.md`):\n{delta}",
+    );
+
+    // The committed doc is the authored doc, byte-stable, carrying none of the foreign body.
+    let committed = fs::read_to_string(repo.path().join("CHANGELOG.md"))
+        .expect("the canonical changelog is on disk after finalize");
+    assert_eq!(
+        committed, staged,
+        "the committed doc equals the authored doc"
+    );
+    assert!(
+        !committed.contains("non-conformant foreign changelog"),
+        "the committed doc carries none of the foreign source body:\n{committed}",
+    );
+}
+
 /// RED — the structural release-delta summary (#5). A batch that authors fewer releases
 /// than the source carries surfaces the dropped version at the review gate, labeled
 /// fuzzy/advisory — feeding nothing structural (the gate still exits 4).
