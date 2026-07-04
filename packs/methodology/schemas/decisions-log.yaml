@@ -1,8 +1,10 @@
 # decisions-log — the methodology pack's running log of decisions made (M16
-# inc-4 / T1). A running SINGLETON (fixed slug = the type id, always
-# `decisions-log/decisions-log.md`), so a re-`create` deterministically targets
-# the same committed file — the premise the planning workflow's idempotent-create
-# rests on. One repeatable `entries` section; each entry records the `date` the
+# inc-4 / T1). A running SINGLETON (fixed slug = the type id), managed directly at
+# the repo-root literal `docs/decisions-log.md` via `placement` (design/storage.md
+# → Placement; M38 retired the old `location: decisions-log/` folder home), so a
+# re-`create` deterministically targets the same committed file — the premise the
+# planning workflow's idempotent-create rests on. One repeatable `entries` section;
+# each entry records the `date` the
 # call was made (CLI-derived on create) and a `why` prose slot for its rationale.
 # Driven by planning · Settle and completion · triage.
 #
@@ -11,7 +13,7 @@
 # cross-reference in prose; the methodology pack composes alone). Engine-native
 # types only. See design/methodology-docs.md → The four doctypes.
 type: decisions-log
-location: decisions-log/
+placement: { file: docs/decisions-log.md }
 singleton: true
 id-from: title
 description: The running log of decisions made — each with the date it was settled and the reasoning behind it.

@@ -3,10 +3,11 @@
 //! `jigc` binary AND asserted at their EXACT new shape (`design/methodology-docs.md`
 //! → The four doctypes).
 //!
-//! These are pure pack data — zero `crates/*/src` change. The singleton flag +
-//! own-`location:` mechanism was proven by the `runlog` FIXTURE (inc-2 T3); this
-//! file proves the three REAL shipped YAML files, so the assertions exercise the
-//! exact shapes the planning workflow authors, not a fixture stand-in.
+//! These are pure pack data — zero `crates/*/src` change. The singleton flag was
+//! proven by the `runlog` FIXTURE (inc-2 T3); this file proves the three REAL
+//! shipped YAML files, so the assertions exercise the exact shapes the planning
+//! workflow authors, not a fixture stand-in. (M38: the three relocated from their
+//! own `location:` subdirs to literal `docs/*.md` `placement` homes.)
 //!
 //! Two layers of proof:
 //!
@@ -19,9 +20,9 @@
 //!   (b) **The exact new shape.** Each shipped YAML's bytes are loaded through the
 //!       engine's public `load_schema` (engine-native types only — the same loader
 //!       the binary runs, fed no pack field-types, which the methodology pack does
-//!       not declare). Each carries `singleton: true`, its OWN `location:` subdir,
-//!       the single repeatable section, and the declared leaves (the `kind` enum
-//!       members, the `date` `set: on-create` fields).
+//!       not declare). Each carries `singleton: true`, its OWN literal
+//!       `placement.file` home, the single repeatable section, and the declared
+//!       leaves (the `kind` enum members, the `date` `set: on-create` fields).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -195,9 +196,13 @@ fn roadmap_schema_is_a_singleton_with_a_milestones_repeatable_and_two_slots() {
     assert_eq!(schema.ty, "roadmap");
     assert!(schema.singleton, "roadmap is a running singleton");
     assert_eq!(
-        schema.location.as_deref(),
-        Some("roadmap/"),
-        "roadmap gets its OWN location subdir",
+        schema.location, None,
+        "a placement doctype sets no `location` — the home is the literal `placement.file`",
+    );
+    assert_eq!(
+        schema.placement.as_ref().map(|p| p.file.as_str()),
+        Some("docs/roadmap.md"),
+        "roadmap is managed directly at the repo-root literal `docs/roadmap.md`",
     );
 
     let (id_from, block) = repeatable_block(&schema, "milestones");
@@ -228,9 +233,13 @@ fn deferral_ledger_schema_is_a_singleton_with_a_kind_enum_and_an_on_create_date(
     assert_eq!(schema.ty, "deferral-ledger");
     assert!(schema.singleton, "deferral-ledger is a running singleton");
     assert_eq!(
-        schema.location.as_deref(),
-        Some("ledger/"),
-        "deferral-ledger gets its OWN location subdir",
+        schema.location, None,
+        "a placement doctype sets no `location` — the home is the literal `placement.file`",
+    );
+    assert_eq!(
+        schema.placement.as_ref().map(|p| p.file.as_str()),
+        Some("docs/deferral-ledger.md"),
+        "deferral-ledger is managed directly at the repo-root literal `docs/deferral-ledger.md`",
     );
 
     let (id_from, block) = repeatable_block(&schema, "entries");
@@ -274,9 +283,13 @@ fn decisions_log_schema_is_a_singleton_with_an_on_create_date_and_a_why_slot() {
     assert_eq!(schema.ty, "decisions-log");
     assert!(schema.singleton, "decisions-log is a running singleton");
     assert_eq!(
-        schema.location.as_deref(),
-        Some("decisions-log/"),
-        "decisions-log gets its OWN location subdir",
+        schema.location, None,
+        "a placement doctype sets no `location` — the home is the literal `placement.file`",
+    );
+    assert_eq!(
+        schema.placement.as_ref().map(|p| p.file.as_str()),
+        Some("docs/decisions-log.md"),
+        "decisions-log is managed directly at the repo-root literal `docs/decisions-log.md`",
     );
 
     let (id_from, block) = repeatable_block(&schema, "entries");
@@ -299,30 +312,32 @@ fn decisions_log_schema_is_a_singleton_with_an_on_create_date_and_a_why_slot() {
 }
 
 #[test]
-fn the_three_singletons_each_own_a_distinct_location_subdir() {
-    // Review finding B-1: each persisted doctype gets its OWN location subdir, never
-    // a shared root — three doctypes sharing one location breaks `identity_of`
-    // (first-prefix-wins) and would vacuum root markdown into the reconciliation
-    // sweep. The three locations must be pairwise-distinct (and none is the root).
-    let locations: Vec<String> = ["roadmap.yaml", "deferral-ledger.yaml", "decisions-log.yaml"]
+fn the_three_singletons_each_own_a_distinct_placement_file() {
+    // Review finding B-1, carried to placement (M38): each persisted singleton owns
+    // its OWN exact home, never a shared one — under placement the home is the literal
+    // `placement.file`, and exact-path ownership (M38 inc-1/2) keys identity on that
+    // literal path. The three placement files must be pairwise-distinct.
+    let files: Vec<String> = ["roadmap.yaml", "deferral-ledger.yaml", "decisions-log.yaml"]
         .into_iter()
         .map(|file| {
-            load_schema(&methodology_schema_bytes(file))
-                .unwrap_or_else(|e| panic!("{file} loads: {e}"))
-                .location
-                .unwrap_or_else(|| panic!("{file} declares a location"))
+            let schema = load_schema(&methodology_schema_bytes(file))
+                .unwrap_or_else(|e| panic!("{file} loads: {e}"));
+            assert!(
+                schema.location.is_none(),
+                "{file} is a placement doctype — it sets no `location`",
+            );
+            schema
+                .placement
+                .unwrap_or_else(|| panic!("{file} declares a placement"))
+                .file
         })
         .collect();
-    for loc in &locations {
-        assert_ne!(loc, "./", "no running doctype shares the root location");
-        assert_ne!(loc, ".", "no running doctype shares the root location");
-    }
-    let mut sorted = locations.clone();
+    let mut sorted = files.clone();
     sorted.sort();
     sorted.dedup();
     assert_eq!(
         sorted.len(),
-        locations.len(),
-        "the three running doctypes own pairwise-distinct location subdirs; got: {locations:?}",
+        files.len(),
+        "the three running singletons own pairwise-distinct placement files; got: {files:?}",
     );
 }

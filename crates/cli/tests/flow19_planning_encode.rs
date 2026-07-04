@@ -22,8 +22,8 @@
 //! The five done-criteria:
 //!   (1) **run 1 cold-create** — `jigc start --workflow planning` → idempotent-create
 //!       the three singletons → author → `finalize` promotes
-//!       `roadmap/roadmap.md`, `ledger/deferral-ledger.md`,
-//!       `decisions-log/decisions-log.md` byte-stable;
+//!       `docs/roadmap.md`, `docs/deferral-ledger.md`,
+//!       `docs/decisions-log.md` byte-stable;
 //!   (2) **run 2 warm-append** — a second milestone copies the committed singletons in
 //!       (prior milestone preserved, provenance `edited-from-base`), `add-item`
 //!       appends, finalize re-promotes byte-stable with BOTH milestones present;
@@ -428,23 +428,23 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
     // The three singletons are promoted to their canonical paths, each byte-stable vs
     // its staged source.
     assert_eq!(
-        committed(repo.path(), "roadmap/roadmap.md"),
+        committed(repo.path(), "docs/roadmap.md"),
         roadmap_cold,
         "the cold-promoted roadmap is byte-stable (committed == staged)",
     );
     assert_eq!(
-        committed(repo.path(), "ledger/deferral-ledger.md"),
+        committed(repo.path(), "docs/deferral-ledger.md"),
         ledger_cold,
         "the cold-promoted deferral-ledger is byte-stable",
     );
     assert_eq!(
-        committed(repo.path(), "decisions-log/decisions-log.md"),
+        committed(repo.path(), "docs/decisions-log.md"),
         log_cold,
         "the cold-promoted decisions-log is byte-stable",
     );
     // BOTH slots of the roadmap milestone entry survived finalize (the two-slot
     // repeatable-item case Increment 1b unblocked).
-    let roadmap_committed = committed(repo.path(), "roadmap/roadmap.md");
+    let roadmap_committed = committed(repo.path(), "docs/roadmap.md");
     assert!(
         roadmap_committed.contains("M-Alpha proves the cold create.")
             && roadmap_committed.contains("Inc 1: the alpha increment, as prose."),
@@ -521,34 +521,34 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
 
     // Re-promoted byte-stable, each singleton carrying BOTH milestone runs' content.
     assert_eq!(
-        committed(repo.path(), "roadmap/roadmap.md"),
+        committed(repo.path(), "docs/roadmap.md"),
         roadmap_warm,
         "the warm-re-promoted roadmap is byte-stable (committed == staged)",
     );
     assert_eq!(
-        committed(repo.path(), "ledger/deferral-ledger.md"),
+        committed(repo.path(), "docs/deferral-ledger.md"),
         ledger_warm,
         "the warm-re-promoted deferral-ledger is byte-stable",
     );
     assert_eq!(
-        committed(repo.path(), "decisions-log/decisions-log.md"),
+        committed(repo.path(), "docs/decisions-log.md"),
         log_warm,
         "the warm-re-promoted decisions-log is byte-stable",
     );
 
-    let roadmap_final = committed(repo.path(), "roadmap/roadmap.md");
+    let roadmap_final = committed(repo.path(), "docs/roadmap.md");
     assert!(
         roadmap_final.contains("M-Alpha proves the cold create.")
             && roadmap_final.contains("M-Beta proves the warm append."),
         "the warm-re-promoted roadmap carries BOTH milestone entries; got:\n{roadmap_final}",
     );
-    let ledger_final = committed(repo.path(), "ledger/deferral-ledger.md");
+    let ledger_final = committed(repo.path(), "docs/deferral-ledger.md");
     assert!(
         ledger_final.contains("The alpha cleanup is owed to M-Beta.")
             && ledger_final.contains("The beta idea is parked for M-Gamma."),
         "the warm-re-promoted ledger carries BOTH entries; got:\n{ledger_final}",
     );
-    let log_final = committed(repo.path(), "decisions-log/decisions-log.md");
+    let log_final = committed(repo.path(), "docs/decisions-log.md");
     assert!(
         log_final.contains("Because the alpha shape is simplest.")
             && log_final.contains("Because the beta shape composes."),
@@ -693,7 +693,7 @@ fn flow19_planning_is_absent_from_the_router_catalog() {
 #[test]
 fn flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize() {
     // (5) The warm-drift red. The cold finalize records the committed baseline FIRST;
-    // the committed roadmap/roadmap.md is then drifted OUT-OF-BAND (a human edit + raw
+    // the committed docs/roadmap.md is then drifted OUT-OF-BAND (a human edit + raw
     // git commit advances HEAD + the on-disk bytes but does NOT touch the recorded
     // file-state baseline, so it diverges → DRIFTED). A second planning task copies-in +
     // edits the roadmap (TOUCHED). finalize-preflight's `reconcile_committed_store` sees
@@ -725,7 +725,7 @@ fn flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize(
     // OOB drift: a human hand-edits the committed roadmap and raw-commits it. Drift
     // BEFORE the warm task starts so the warm task's base == this drifted HEAD (no
     // `finalize.base-mismatch`, which would pre-empt the reconcile gate).
-    let committed_path = repo.path().join("roadmap").join("roadmap.md");
+    let committed_path = repo.path().join("docs").join("roadmap.md");
     let on_disk = fs::read_to_string(&committed_path).expect("read committed roadmap on disk");
     fs::write(
         &committed_path,
@@ -735,7 +735,7 @@ fn flow19_warm_append_over_an_oob_drifted_singleton_conflict_blocks_at_finalize(
         ),
     )
     .expect("apply OOB drift");
-    git(repo.path(), &["add", "roadmap/roadmap.md"]);
+    git(repo.path(), &["add", "docs/roadmap.md"]);
     git(
         repo.path(),
         &["commit", "-q", "-m", "oob: hand-edit the roadmap"],

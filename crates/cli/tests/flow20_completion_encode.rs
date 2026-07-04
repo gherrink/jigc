@@ -37,7 +37,7 @@
 //!       and the owner-artifact + the promoted completion-record commit together (the
 //!       same-transaction promotion);
 //!   (d) **the decisions-log is appended by this half** — the triage decision rides into
-//!       the promoted `decisions-log/decisions-log.md` (the both-halves driver);
+//!       the promoted `docs/decisions-log.md` (the both-halves driver);
 //!   (e) **the audit verdict is an AUTHORED `meta/verdict` field, never an engine
 //!       opinion** — finalize lands a `red` verdict exactly as readily as a `green` one
 //!       (the engine records the agent's verdict; it does not certify it — the
@@ -550,13 +550,13 @@ fn flow20_the_gate_passes_on_a_staged_artifact_and_the_decisions_log_is_appended
         "the completion-record is promoted in the same commit; got:\n{committed_files}",
     );
     assert!(
-        committed_files.contains("decisions-log/decisions-log.md"),
+        committed_files.contains("docs/decisions-log.md"),
         "the decisions-log is appended + promoted in the same commit (the both-halves \
          driver); got:\n{committed_files}",
     );
 
     // (d) The triage decision's reasoning rides into the promoted decisions-log.
-    let log = committed(repo.path(), "decisions-log/decisions-log.md");
+    let log = committed(repo.path(), "docs/decisions-log.md");
     assert!(
         log.contains("Because the finding was bounded and confirmed."),
         "the triage decision is appended to the promoted decisions-log; got:\n{log}",
@@ -686,7 +686,7 @@ fn split_emitted(line: &str) -> Vec<String> {
 ///      fresh-mint default state the M16 exemption let finalize silently void;
 ///   3. a fix commit moves HEAD on history DISJOINT from the task's work (a path
 ///      touching neither the dirty working tree nor the promote destinations
-///      `completions/m16.md` / `decisions-log/decisions-log.md` /
+///      `completions/m16.md` / `docs/decisions-log.md` /
 ///      `completions/artifacts/...`);
 ///   4. finalize with `owner-artifact` unset exits 3 and surfaces
 ///      `schema-conformance.required-field-present` naming the field — the omission

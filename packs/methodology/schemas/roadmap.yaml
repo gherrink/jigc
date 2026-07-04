@@ -1,6 +1,8 @@
 # roadmap — the methodology pack's running milestone spine (M16 inc-4 / T1). A
-# running SINGLETON (fixed slug = the type id, always `roadmap/roadmap.md`), so a
-# re-`create` deterministically targets the same committed file — the premise the
+# running SINGLETON (fixed slug = the type id), managed directly at the repo-root
+# literal `docs/roadmap.md` via `placement` (design/storage.md → Placement; M38
+# retired the old `location: roadmap/` folder home), so a re-`create`
+# deterministically targets the same committed file — the premise the
 # planning workflow's idempotent-create rests on. One repeatable `milestones`
 # section; each entry carries a `proves` slot + a `decomposition` slot that holds
 # the per-increment breakdown as PROSE — the deferred one-level bound (structured
@@ -12,7 +14,7 @@
 # See design/methodology-docs.md → The four doctypes (singleton/own-location;
 # the one-level decomposition-slot bound; no managed per-entry ref).
 type: roadmap
-location: roadmap/
+placement: { file: docs/roadmap.md }
 singleton: true
 id-from: title
 description: The running milestone spine — each milestone with what it proves and the prose decomposition of its increments.

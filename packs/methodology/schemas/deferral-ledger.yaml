@@ -1,8 +1,10 @@
 # deferral-ledger — the methodology pack's running record of owed-and-when work
-# (M16 inc-4 / T1). A running SINGLETON (fixed slug = the type id, always
-# `ledger/deferral-ledger.md`), so a re-`create` deterministically targets the
-# same committed file — the premise the planning workflow's idempotent-create
-# rests on. One repeatable `entries` section; each entry pairs a `kind` (a
+# (M16 inc-4 / T1). A running SINGLETON (fixed slug = the type id), managed
+# directly at the repo-root literal `docs/deferral-ledger.md` via `placement`
+# (design/storage.md → Placement; M38 retired the old `location: ledger/` folder
+# home), so a re-`create` deterministically targets the same committed file — the
+# premise the planning workflow's idempotent-create rests on. One repeatable
+# `entries` section; each entry pairs a `kind` (a
 # decision `D` deferred vs an idea `I` parked) with the `trigger` milestone that
 # resurfaces it, the `date` it was logged (CLI-derived on create), and a `body`
 # prose slot for the deferral itself.
@@ -14,7 +16,7 @@
 # around it. Engine-native types only. See design/methodology-docs.md → The four
 # doctypes; Relations (none managed, by deliberate bound).
 type: deferral-ledger
-location: ledger/
+placement: { file: docs/deferral-ledger.md }
 singleton: true
 id-from: title
 description: The running ledger of deferred decisions and parked ideas, each keyed to the milestone trigger that resurfaces it.
