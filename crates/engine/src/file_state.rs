@@ -333,6 +333,31 @@ pub fn reconcile_committed_store(
     let mut seen_on_disk: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
     for (ty, schema) in schemas {
+        // A placement doctype (`location: None`) owns its one instance at the exact literal
+        // `placement.file` — visit it by that path, never a dir-glob, so an OOB edit to a
+        // root `FOO.md`/`CHANGELOG.md` is detected + routed instead of silently skipped by
+        // the `location: None` `continue` below (`storage.md` → Placement census:
+        // `reconcile_committed_store`). Its record key is `placement.file`; its identity is
+        // the fixed `<type>:<type>` slug (the singleton carries no title-derived slug). A
+        // missing file is left out of `seen_on_disk`, so the recorded-but-absent arm below
+        // routes it through rename detection exactly as a location-keyed doc.
+        if let Some(placement) = &schema.placement {
+            if let Ok(bytes) = std::fs::read(repo_root.join(&placement.file)) {
+                seen_on_disk.insert(placement.file.clone());
+                let from = format!("{ty}:{ty}");
+                let task_touched = task_dir.join("docs").join(format!("{from}.md")).exists();
+                findings.extend(reconcile_committed(
+                    record,
+                    index,
+                    schema,
+                    &placement.file,
+                    &from,
+                    &bytes,
+                    task_touched,
+                ));
+            }
+            continue; // a placement doctype has no location dir to glob.
+        }
         let Some(location) = schema.location.as_deref() else {
             continue; // a transient (location-less) type has no committed docs.
         };
@@ -657,6 +682,18 @@ fn untracked_committed(
 ) -> Vec<(String, String)> {
     let mut out = Vec::new();
     for schema in schemas.values() {
+        // A placement doctype's one on-disk instance is a candidate too: an untracked
+        // (no recorded hash) `placement.file` present on disk is a rename candidate,
+        // enumerated by exact literal path — never a root dir-glob, so a sibling root
+        // `README.md` is not swept in (`storage.md` → Placement census: `untracked_committed`).
+        if let Some(placement) = &schema.placement {
+            if !recorded_at_entry.contains(&placement.file)
+                && let Ok(bytes) = std::fs::read(repo_root.join(&placement.file))
+            {
+                out.push((placement.file.clone(), hash_bytes(&bytes)));
+            }
+            continue;
+        }
         let Some(location) = schema.location.as_deref() else {
             continue;
         };
@@ -1818,6 +1855,147 @@ sections: []
         assert!(
             persisted_committed_path("decisions/x.md", &schemas),
             "a location-keyed committed doc is still a persisted committed path",
+        );
+    }
+
+    /// A placement fixture: an ADR schema re-homed as a literal-file placement doctype
+    /// (`location: None`, `placement.file = file`) — so its committed instance lives at
+    /// one exact path, exactly the shape a real `VISION.md`/`CHANGELOG.md` singleton uses.
+    fn adr_placement_schema(file: &str) -> Schema {
+        let mut schema = adr_schema();
+        schema.location = None;
+        schema.placement = Some(crate::schema::Placement {
+            file: file.to_string(),
+        });
+        schema
+    }
+
+    /// (M38 inc-2 T1) A **placement** doctype's committed instance is swept by
+    /// [`reconcile_committed_store`] at its exact literal `placement.file` — closing the
+    /// headline gap where the `location: None` `continue` skipped it and an OOB edit went
+    /// silently undetected (`design/storage.md` → Placement census: `reconcile_committed_store`).
+    ///
+    /// - a recorded placement doc whose on-disk `FOO.md` **drifted** (here nonconformantly)
+    ///   is **detected + routed**: a blocking `reconciliation.conformance-block` naming the
+    ///   literal file, carrying a route;
+    /// - a sibling root `README.md` — declared by no schema — is **not** swept as an instance
+    ///   (a literal file is not a dir-glob): no finding names it, and it is not baseline-adopted.
+    #[test]
+    fn placement_doc_oob_drift_is_detected_and_sibling_not_swept() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("foo".to_string(), adr_placement_schema("FOO.md"));
+
+        let root = TempRoot::new("placement-drift");
+        // The managed placement instance drifted out-of-band, nonconformantly (a renamed
+        // heading) — recorded baseline is the pre-edit conformant content.
+        let broken = ADR_B_BASE.replace("## Decision", "## Decisionz");
+        std::fs::write(root.path().join("FOO.md"), &broken).expect("write drifted FOO.md");
+        // A sibling root .md declared by nothing — must stay unmanaged.
+        std::fs::write(root.path().join("README.md"), "# readme\n\nnot managed\n")
+            .expect("write README.md sibling");
+
+        let mut record = FileStateRecord::new();
+        record.record("FOO.md", hash_bytes(ADR_B_BASE.as_bytes()));
+
+        let mut index = EdgeIndex::default();
+        let task = TempRoot::new("placement-drift-task");
+
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+
+        // (a) the OOB edit to the managed placement file is detected + routed.
+        let block = findings
+            .iter()
+            .find(|f| f.code == "reconciliation.conformance-block")
+            .expect("the placement doc's OOB drift is detected (not silently skipped)");
+        assert_eq!(block.severity, Severity::Blocking);
+        assert!(
+            block.message.contains("FOO.md"),
+            "the block names the drifted placement file: {block:?}"
+        );
+        assert!(block.route.is_some(), "the block carries a route");
+
+        // (c) the sibling root README.md is not swept as an instance.
+        assert!(
+            findings.iter().all(|f| !f.message.contains("README.md")),
+            "an undeclared sibling root .md is not swept: {findings:?}"
+        );
+        assert_eq!(
+            record.get("README.md"),
+            None,
+            "the sibling is not baseline-adopted (a literal file is not a dir-glob)"
+        );
+    }
+
+    /// (M38 inc-2 T1) A recorded **placement** doc gone **missing** on disk routes through
+    /// the existing rename arm — Inc-1 taught `identity_of`/`persisted_committed_path` the
+    /// literal path, so a missing `FOO.md` with no content-matching candidate is the
+    /// weak-signal `reconciliation.rename` routed to restore (`design/reconciliation.md` →
+    /// Rename detection → weak signal). Guards that the new placement sweep arm does not
+    /// shadow the recorded-but-missing routing.
+    #[test]
+    fn placement_doc_missing_routes_through_rename_arm() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("foo".to_string(), adr_placement_schema("FOO.md"));
+
+        let root = TempRoot::new("placement-missing");
+        // FOO.md is recorded but absent on disk (deleted out of band).
+        let mut record = FileStateRecord::new();
+        record.record("FOO.md", hash_bytes(ADR_B_BASE.as_bytes()));
+
+        let mut index = EdgeIndex::default();
+        let task = TempRoot::new("placement-missing-task");
+
+        let findings =
+            reconcile_committed_store(&mut record, &mut index, &schemas, root.path(), task.path());
+
+        let rename = findings
+            .iter()
+            .find(|f| f.code == "reconciliation.rename")
+            .expect("a missing recorded placement doc routes to rename detection");
+        assert_eq!(rename.severity, Severity::Blocking);
+        assert!(
+            rename.message.contains("FOO.md") && rename.message.contains("missing"),
+            "the rename names the missing placement path: {rename:?}"
+        );
+        assert!(
+            rename
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("restore")),
+            "no content-matching suspect exists, so the weak signal routes to restore: {rename:?}"
+        );
+    }
+
+    /// (M38 inc-2 T1) [`untracked_committed`] enumerates an **untracked** on-disk placement
+    /// file (no recorded hash) as a rename candidate — the location-dir-only scan is taught
+    /// the literal `placement.file` (`design/storage.md` → Placement census: `untracked_committed`).
+    /// A sibling root `README.md` declared by nothing is **not** a candidate (exact-path, not a
+    /// root glob).
+    #[test]
+    fn untracked_committed_includes_an_untracked_placement_file() {
+        let mut schemas: BTreeMap<String, Schema> = BTreeMap::new();
+        schemas.insert("foo".to_string(), adr_placement_schema("FOO.md"));
+
+        let root = TempRoot::new("placement-untracked");
+        let foo_bytes = ADR_B_BASE.as_bytes();
+        std::fs::write(root.path().join("FOO.md"), foo_bytes).expect("write untracked FOO.md");
+        std::fs::write(root.path().join("README.md"), "# readme\n")
+            .expect("write README.md sibling");
+
+        // Nothing recorded → FOO.md is an untracked candidate.
+        let recorded: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let untracked = untracked_committed(&recorded, &schemas, root.path());
+
+        assert!(
+            untracked
+                .iter()
+                .any(|(p, h)| p == "FOO.md" && h == &hash_bytes(foo_bytes)),
+            "the untracked placement file is a candidate with its raw-byte hash: {untracked:?}"
+        );
+        assert!(
+            untracked.iter().all(|(p, _)| p != "README.md"),
+            "an undeclared sibling root .md is not an untracked candidate: {untracked:?}"
         );
     }
 
