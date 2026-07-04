@@ -68,6 +68,12 @@ pub(crate) struct DoctypeMigration {
     pub to: Schema,
     /// The doctype's current manifest schema-version (the stamp value + currency floor).
     pub version: u32,
+    /// The resolved `docs-root` prefix (`""` for a flat layout). Applied to the **relocation
+    /// walk-home** only: a relocated doctype's committed instances sit under this prefix at
+    /// the prior `location:` home, but the prior *snapshot* stores that location raw, so
+    /// [`resolve_migration_homes`] re-applies the prefix. The in-place `to.location` is
+    /// already docs-root-resolved (via `all_schemas`), so this is inert there.
+    pub docs_root: String,
 }
 
 /// The outcome of a corpus migration run, rendered by [`render::corpus_migration`].
@@ -117,15 +123,32 @@ fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
     // persisted set) and supplies each stamp's value — the same authority the version-aware
     // detector routes against (`design/validation.md` → Version-aware routing).
     let versions = pack::frozen_doctype_versions(pack);
+    // The resolved docs-root prefix — re-applied to a relocated doctype's prior (snapshot,
+    // raw) `location:` walk-home so the committed instances under `docs-root` are found.
+    let docs_root = crate::start::docs_root_prefix(&resolved).to_string();
 
     let mut doctypes = Vec::new();
     for (ty, to) in schemas {
         // Only the frozen persisted doctypes carry the stamp + a migration target; a
-        // transient (location-less) or non-frozen doctype migrates nothing.
-        let (Some(_), Some(&version)) = (to.location.as_deref(), versions.get(&ty)) else {
+        // transient doctype (neither `location:` nor `placement:` — e.g. `commit`) or a
+        // non-frozen one migrates nothing. **Persisted** is `location OR placement` — a
+        // relocated doctype (M38 changelog: `placement: CHANGELOG.md`, `location: None`)
+        // must reach the job list so its instances relocate (the sibling `pack.rs`
+        // stamp-inject gate uses the same `location.is_some() || placement.is_some()`
+        // idiom; `design/storage.md` → Placement). `resolve_migration_homes` then walks
+        // the prior `location:` home and moves each instance to the placement `file`.
+        let Some(&version) = versions.get(&ty) else {
             continue;
         };
-        doctypes.push(DoctypeMigration { ty, to, version });
+        if to.location.is_none() && to.placement.is_none() {
+            continue;
+        }
+        doctypes.push(DoctypeMigration {
+            ty,
+            to,
+            version,
+            docs_root: docs_root.clone(),
+        });
     }
     // Deterministic doctype order (the committed walk + the fold both consume it in order).
     doctypes.sort_by(|a, b| a.ty.cmp(&b.ty));
@@ -540,7 +563,16 @@ fn resolve_migration_homes(
     }
     let placement = dt.to.placement.as_ref()?;
     let prior = crate::pack::load_prior_schema(pack, &dt.ty, dt.version.checked_sub(1)?).ok()?;
-    let from_home = prior.location?;
+    let raw_home = prior.location?;
+    // The prior snapshot stores its `location:` **raw** (docs-root-free), but the committed
+    // instances sit under the resolved `docs-root` prefix — re-apply it (the in-place branch
+    // above returns an already-resolved `to.location`, so this is the sole re-application
+    // site; `crate::start::docs_root_prefix`).
+    let from_home = if dt.docs_root.is_empty() {
+        raw_home
+    } else {
+        format!("{}/{raw_home}", dt.docs_root)
+    };
     Some((from_home, Some(placement.file.clone())))
 }
 
@@ -638,6 +670,10 @@ mod tests {
             ty: to.ty.clone(),
             to,
             version,
+            // The core tests seed at the flat repo-root home (no docs-root); the docs-root
+            // re-application on the relocation walk-home is covered end-to-end by the
+            // `corpus_migration` binary test.
+            docs_root: String::new(),
         }
     }
 

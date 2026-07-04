@@ -266,6 +266,77 @@ fn migrate_corpus_stamps_the_v0_dogfood_then_revalidates_clean() {
     );
 }
 
+/// A conformant **v1** (pre-relocation) `changelog` at the OLD folder home — the byte form
+/// a real committed `docs/changelog/changelog.md` had before the M38 v1→v2 relocation: the
+/// `location: changelog/` folder home under `docs-root`, a lowercase-slug `# changelog` H1
+/// (no `display-title`), the `schema-version: 1` stamp, and the two empty KaC sections.
+fn commit_v1_changelog(repo: &Path) {
+    let body = "\
+---
+schema-version: 1
+---
+
+# changelog
+
+## Unreleased Changes
+
+## Releases
+";
+    let dir = repo.join("docs").join("changelog");
+    fs::create_dir_all(&dir).expect("mk docs/changelog/");
+    fs::write(dir.join("changelog.md"), body).expect("write v1 changelog");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "seed v1 changelog"]);
+}
+
+/// **Regression (M38 completion audit, HIGH):** the `migrate-corpus` verb must relocate a
+/// committed **v1** `changelog` to its root `CHANGELOG.md` **placement** home through the
+/// real binary. The doctype ships `placement: { file: CHANGELOG.md }` with `location: None`,
+/// so the pre-fix `migrate_in_repo` job-list gate (`location.as_deref()` = `Some`) dropped
+/// it — the relocation move-arm was never reached and a real project's stranded v1 changelog
+/// migrated NOTHING, a permanent stuck state (the version detector kept flagging it). This
+/// drives the **shipped binary** end-to-end (no `migrate_committed_corpus` shortcut), so it
+/// fails on the gate defect and passes once the gate admits the placement doctype.
+#[test]
+fn migrate_corpus_relocates_the_v1_changelog_to_root_placement_home() {
+    let repo = TempDir::new("changelog-relocate");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    // A committed v1 changelog at the pre-relocation folder home (`docs/changelog/`).
+    commit_v1_changelog(repo.path());
+    assert!(
+        repo.path().join("docs/changelog/changelog.md").exists(),
+        "precondition: the v1 changelog sits at its old folder home",
+    );
+
+    // MIGRATE — the real verb must relocate it to root `CHANGELOG.md`, exit 0.
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let migrate_out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(&migrate, "`jigc migrate-corpus`");
+    assert_eq!(
+        count(&migrate_out, "CHANGELOG.md"),
+        1,
+        "the relocated changelog is named in the report; stdout:\n{migrate_out}",
+    );
+
+    // The doc moved to the literal root placement home, byte-faithful: H1 fixed to
+    // `# Changelog` (display-title), stamp value-bumped 1→2, KaC sections preserved.
+    assert!(
+        !repo.path().join("docs/changelog/changelog.md").exists(),
+        "the old folder home is emptied after the relocation move; stdout:\n{migrate_out}",
+    );
+    let moved = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md");
+    assert!(
+        moved.starts_with("---\nschema-version: 2\n---\n\n# Changelog\n"),
+        "the relocated changelog is v2-stamped with the `# Changelog` H1; got:\n{moved}",
+    );
+    assert!(
+        moved.contains("## Unreleased Changes") && moved.contains("## Releases"),
+        "the relocation preserves the two KaC sections; got:\n{moved}",
+    );
+}
+
 /// The false-positive guard: a corpus already stamped at the current version is a clean
 /// no-op — `jigc migrate-corpus` migrates nothing and reports the doc already current.
 #[test]

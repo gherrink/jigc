@@ -2516,9 +2516,8 @@ pub(crate) fn apply_docs_root<'a>(
     resolved: &cascade::Resolved,
     schemas: impl IntoIterator<Item = &'a mut Schema>,
 ) {
-    let raw = resolved.scalar("docs-root").unwrap_or("");
-    let root = raw.trim_matches('/');
-    if root.is_empty() || root == "." {
+    let root = docs_root_prefix(resolved);
+    if root.is_empty() {
         return; // flat repo-root layout — no prefix.
     }
     for schema in schemas {
@@ -2526,6 +2525,17 @@ pub(crate) fn apply_docs_root<'a>(
             schema.location = Some(format!("{root}/{location}"));
         }
     }
+}
+
+/// The resolved `docs-root` prefix, normalized: trailing/leading slashes stripped and the
+/// flat forms (`""` / `.` / absent) canonicalized to `""`. The **single** normalization
+/// point shared by [`apply_docs_root`] (the schema-load surfaces) and the `migrate-corpus`
+/// relocation walk-home (a relocated doctype's committed instances still sit under this
+/// prefix at the prior `location:` home, but the prior *snapshot* stores that location raw,
+/// so the walk must re-apply the prefix — `crate::migrate_corpus::resolve_migration_homes`).
+pub(crate) fn docs_root_prefix(resolved: &cascade::Resolved) -> &str {
+    let root = resolved.scalar("docs-root").unwrap_or("").trim_matches('/');
+    if root == "." { "" } else { root }
 }
 
 pub(crate) struct CascadeDefs<'a> {
