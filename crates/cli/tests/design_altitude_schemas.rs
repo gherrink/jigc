@@ -651,3 +651,134 @@ fn grounded_in_ref_resolves_blocks_per_element_on_a_dangling_target() {
         .unwrap();
     assert_eq!(before, after, "a blocked finalize creates no commit");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// T3 — the methodology `commit` fix (GF5). Under methodology-ALONE
+// (`JIGC_PACK_DIR=<methodology>`, NO `packs.yaml`, so the dev `commit` never
+// shadows the methodology one), a `dev-task` finalize whose commit leaves the
+// `scope` FIELD and the `body` SLOT EMPTY must land clean — the observable proof
+// that BOTH carry `optional: true` (`design/design-altitude-doctypes.md` §5).
+//
+// This is a genuine red→green driven through the REAL shipped methodology
+// `commit` schema: before the two flags, `scope`/`body` were author-required and
+// finalize HARD-BLOCKED an empty scope/body (the M26 finalize-wall the dev pack
+// already removed). Asserting the finalize LANDS (not a schema-flag read) makes
+// the emitted finalize-gate outcome the contract — a regression re-adding the
+// wall goes red here. The `dogfood_record_schema.rs` methodology-alone precedent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Run `jigc <args>` methodology-ALONE (`JIGC_PACK_DIR=<methodology>`, no
+/// `packs.yaml` so the dev `commit` never shadows the methodology one),
+/// optionally piping `stdin` (the `set-slot --from-file -` path).
+fn run_alone(
+    repo: &Path,
+    home: &Path,
+    args: &[&str],
+    stdin: Option<&[u8]>,
+) -> std::process::Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_jigc"));
+    command
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", methodology_pack_tree())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if stdin.is_some() {
+        command.stdin(Stdio::piped());
+    }
+    let mut child = command.spawn().expect("spawn the jigc binary");
+    if let Some(bytes) = stdin {
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(bytes)
+            .expect("write stdin");
+    }
+    child.wait_with_output().expect("wait for jigc")
+}
+
+/// GF5: the methodology `commit` finalizes with an EMPTY `scope` field + `body`
+/// slot — both are `optional: true`. Mint a `dev-task`, stage one code change,
+/// fill ONLY the required `type`/`summary` levers, and finalize: it lands exactly
+/// one commit. Before the fix the missing `scope`/`body` block finalize.
+#[test]
+fn methodology_commit_finalizes_with_empty_scope_and_body() {
+    let repo = TempDir::new("commit-optional");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Mint a task via the methodology default-workflow (`dev-task`, creates-task:
+    // true — provisions the methodology `commit` as the finalize sink, no other doc).
+    assert_ok(
+        &run_alone(
+            repo.path(),
+            home.path(),
+            &["start", "unblock the empty commit"],
+            None,
+        ),
+        "`JIGC_PACK_DIR=<methodology> jigc start` (dev-task)",
+    );
+    let task = "unblock-the-empty-commit";
+
+    // A real staged code change — finalize stages only the task's change-set and
+    // blocks on an empty one, so the empty scope/body must be the ONLY lever left.
+    fs::write(repo.path().join("change.txt"), "the task's one change\n")
+        .expect("write code change");
+    git(repo.path(), &["add", "change.txt"]);
+
+    // Fill ONLY the required levers: `type` (enum field) + `summary` (slot).
+    // Deliberately leave the `scope` field AND the `body` slot EMPTY — the two
+    // levers GF5 makes optional.
+    assert_ok(
+        &run_alone(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{task}#type"),
+                "--value",
+                "chore",
+            ],
+            None,
+        ),
+        "set commit type",
+    );
+    assert_ok(
+        &run_alone(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{task}#summary"),
+                "--from-file",
+                "-",
+            ],
+            Some(b"unblock the empty commit\n"),
+        ),
+        "set commit summary",
+    );
+
+    // With `scope` + `body` empty, finalize MUST land clean now (both optional).
+    let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    let fin = run_alone(repo.path(), home.path(), &["task", "finalize", task], None);
+    assert_ok(
+        &fin,
+        "finalize with an EMPTY scope + body must land clean — GF5 makes both `optional: true`; \
+         before the fix the methodology commit hard-blocks the empty scope/body (the M26 \
+         finalize-wall)",
+    );
+    let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    assert_eq!(
+        after,
+        before + 1,
+        "the empty-scope/body finalize lands exactly one commit",
+    );
+}

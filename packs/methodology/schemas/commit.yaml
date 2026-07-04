@@ -16,11 +16,11 @@ sections:
     header: true
     fields:
       - { id: type, type: enum, of: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert] }
-      - { id: scope, type: string }
+      - { id: scope, type: string, optional: true }
   - id: summary
     slot: { hint: "The subject line — what changed, imperative mood, <=50 chars." }
   - id: body
-    slot: { hint: "Why this change — the motivation and any notable context." }
+    slot: { hint: "Why this change — the motivation and any notable context.", optional: true }
   - id: trailers
     repeatable:
       id-from: key
