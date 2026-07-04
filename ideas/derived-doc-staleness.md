@@ -3,6 +3,16 @@
 **Status:** idea; parked (2026-07-02); unscheduled — explicitly **post-v1 / post-go-live**. Not
 a gap in the spine; a candidate for the doctype-expansion track once a concrete driver earns it.
 
+**Consumer framing superseded by M37 (2026-07-04).** The `adr`/`spec`/`prd`-consumer framing
+throughout this doc (§The idea #1, §Motivating scenarios, §Constraints #1) is **superseded by the
+narrowed M37 scope**: M37 shipped the `research` doctype in the **methodology pack** with a plain
+`vision —grounded-in→ research` `ref` edge only ([design-altitude-doctypes.md](../design/design-altitude-doctypes.md);
+[doctype-map.md](../implementation/doctype-map.md) → The relations (edges)). The frozen-v1 dev-pack
+consumers (`adr`/`spec`/`prd`) are **not** what shipped — so the §Constraints #1 "touches frozen-v1
+doctypes → version-gate" cost does **not** apply to the M37 build. The **hash-pinned staleness mechanic
+itself (the expensive half, #2) stays parked here, trigger unchanged** — M37 built neither `derived-from`
+nor the pinned-hash probe.
+
 ## The idea
 
 Two separable pieces, deliberately parked as a pair so a future milestone can earn them
