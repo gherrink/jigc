@@ -635,9 +635,16 @@ pub fn plan_milestone_finalize(
     // No commit-doc render — the synthesized message is substituted for phase 3. Phase 4
     // promote + phase 7 hashes are the SHARED sweep over the materialized `docs/`.
     let promote = plan_promotions(staging_dir, schemas)?;
-    // A milestone boundary retires nothing — retire is migration-only (a per-task verb) —
-    // and renders no root (root-render rides the single-task form-vision path, never the
-    // fan-out boundary).
+    // A milestone boundary retires nothing — retire is migration-only (a per-task verb).
+    // Root render is single-task-only by design (`design/design-altitude-doctypes.md` → §4:
+    // root render rides the single-task authoring path, never the fan-out boundary), so a
+    // milestone renders no root and `renders` stays empty. But the join path cannot honor a
+    // `root-render:` doctype's render — it has no [`plan_root_renders`] arm — so if one is
+    // ever promoted here, falling through to an empty renders set would silently DROP its
+    // root artifact AND bypass the non-destructive foreign-file guard. Rather than fail
+    // silently, block loudly (the finding-envelope precedent). Inert on every promoted
+    // doctype that declares no `root-render:` (every shipped case).
+    reject_root_render_promotions(&promote.promotions, schemas)?;
     Ok(FinalizePlan::new(
         message,
         promote.promotions,
@@ -645,6 +652,65 @@ pub fn plan_milestone_finalize(
         Vec::new(),
         Vec::new(),
     ))
+}
+
+/// Guard the milestone join against a `root-render:` doctype it cannot honor
+/// (`design/design-altitude-doctypes.md` → §4: root render rides the single-task authoring
+/// path only, never the fan-out boundary). The single-task path renders roots through
+/// [`plan_root_renders`] — which both writes the root artifact and runs the non-destructive
+/// foreign-file guard — but [`plan_milestone_finalize`] has no such arm, so a promoted
+/// `root-render:` doctype would fall through to an empty renders set, **silently** dropping
+/// its root artifact and bypassing that guard. This makes that case **loud**: any promoted
+/// doctype declaring `root-render:` is a blocking [`Finding`] (`finalize.milestone-root-render`),
+/// naming the offending type and routing it to the single-task path. Inert on every promoted
+/// doctype that declares no `root-render:` (every shipped case — an ADR carries none), so a
+/// milestone with no such doctype produces its plan unchanged with an empty renders set.
+///
+/// `<type>` is recovered from each promotion's source file stem exactly as
+/// [`plan_root_renders`] does, and looked up in `schemas` for its `root-render:` knob. Blocks
+/// are collected across all promotions (the clobber-guard precedent), so no plan is produced
+/// on any offending promotion.
+fn reject_root_render_promotions(
+    promotions: &[Promotion],
+    schemas: &BTreeMap<String, Schema>,
+) -> Result<(), Vec<Finding>> {
+    let mut blocks = Vec::new();
+    for promotion in promotions {
+        let Some(stem) = promotion.source.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some((ty, _)) = stem.split_once(':') else {
+            continue;
+        };
+        if schemas.get(ty).is_some_and(|s| s.root_render.is_some()) {
+            blocks.push(milestone_root_render_finding(ty));
+        }
+    }
+    if blocks.is_empty() {
+        Ok(())
+    } else {
+        Err(blocks)
+    }
+}
+
+/// A blocking finding (`design/design-altitude-doctypes.md` → §4: root render is
+/// single-task-only) when a `root-render:` doctype is promoted through a milestone join —
+/// the join path cannot render its root artifact, so the promotion is refused rather than
+/// completed with the root artifact silently dropped.
+fn milestone_root_render_finding(ty: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "finalize.milestone-root-render",
+        format!(
+            "root-render doctype `{ty}` promoted through a milestone join is not supported — \
+             root render rides the single-task authoring path only, never the fan-out boundary"
+        ),
+        None,
+        Some(format!(
+            "author `{ty}` docs through the single-task finalize path (not a `fan-out`/`join`), \
+             so its `root-render:` artifact is written by the single-task render arm"
+        )),
+    )
 }
 
 /// Render the **per-sub-task** authored commit messages for the `squash: false`
@@ -2067,6 +2133,82 @@ sections:
             plan.hash_updates.get("decisions/cache-strategy.md"),
             Some(&hash_bytes(&adr_bytes)),
             "the hash is over the materialized body bytes (the shared phase-7 set)",
+        );
+    }
+
+    /// The **milestone join has no root-render support by design**
+    /// (`design/design-altitude-doctypes.md` → §4: root render rides the single-task
+    /// authoring path only, never the fan-out boundary). If a `root-render:` doctype is ever
+    /// promoted through a milestone join, the single-task path's [`plan_root_renders`] (which
+    /// would write the root artifact AND run the non-destructive foreign-file guard) never
+    /// runs — so rather than silently drop the root artifact and bypass that guard, the
+    /// planner must **block loudly**. This is the latent-hole regression guard: for M37's
+    /// shipped content only `vision` declares `root-render:` and it is authored solely by the
+    /// single-task `form-vision` workflow, so this case is unreachable today — the test forces
+    /// it with a throwaway `note` root-render doctype and asserts the loud block.
+    #[test]
+    fn milestone_finalize_blocks_a_promoted_root_render_doctype() {
+        let root = TempRoot::new("milestone-root-render");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("vision-rework")
+            .join("merged");
+        // A promoted doctype that declares `root-render: NOTE.md` — the single-task path
+        // would render it; the join path must NOT silently drop it.
+        stage_filled_note(&staging, "durable");
+
+        let mut with_note = schemas();
+        with_note.insert("note".to_string(), note_schema());
+
+        let findings = plan_milestone_finalize(
+            &staging,
+            &base(),
+            &base().sha,
+            "Finalize milestone vision-rework (1 sub-task)\n".to_string(),
+            true,
+            &with_note,
+        )
+        .expect_err(
+            "a milestone join promoting a `root-render:` doctype must BLOCK, never silently \
+             drop its root artifact and bypass the non-destructive foreign-file guard",
+        );
+        assert_eq!(findings.len(), 1, "exactly the one root-render block");
+        assert_eq!(findings[0].code, "finalize.milestone-root-render");
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert!(
+            findings[0].message.contains("note"),
+            "the finding names the offending doctype: {}",
+            findings[0].message,
+        );
+    }
+
+    /// A milestone join promoting **no** `root-render:` doctype (every shipped case — an ADR
+    /// carries no `root-render:`) is unchanged: the plan is produced with an empty renders set
+    /// (a milestone renders no root), no finding.
+    #[test]
+    fn milestone_finalize_without_a_root_render_doctype_is_unchanged() {
+        let root = TempRoot::new("milestone-no-root-render");
+        let staging = root
+            .path()
+            .join("milestones")
+            .join("cache-rework")
+            .join("merged");
+        stage_filled_adr(&staging, "cache-strategy");
+
+        let plan = plan_milestone_finalize(
+            &staging,
+            &base(),
+            &base().sha,
+            "Finalize milestone cache-rework (1 sub-task)\n".to_string(),
+            true,
+            &schemas(),
+        )
+        .expect("a milestone with no root-render doctype yields a plan");
+        assert!(
+            plan.renders.is_empty(),
+            "a milestone renders no root artifact (renders stays empty): {:?}",
+            plan.renders,
         );
     }
 
