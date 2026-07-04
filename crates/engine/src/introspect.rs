@@ -212,6 +212,7 @@ mod tests {
             description: description.map(str::to_owned),
             usage: usage.map(str::to_owned),
             display_title: None,
+            root_render: None,
             singleton: false,
             sections: Vec::new(),
         }

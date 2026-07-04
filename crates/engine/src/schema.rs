@@ -74,6 +74,24 @@ pub struct Schema {
     )]
     pub display_title: Option<String>,
 
+    /// Optional doctype-level **repo-root render target**: a repo-relative path the
+    /// CLI writes the managed doc's canonical bytes to at finalize (after promotion),
+    /// committing it with the task (e.g. `vision` declares `root-render: VISION.md`, so
+    /// the root `VISION.md` is a deterministic regenerated artifact of the managed
+    /// `docs/vision/vision.md` — which stays source of truth). The path is a **literal**,
+    /// not a slug, so the idiomatic uppercase filename is reachable. Non-destructive on
+    /// first write: managed-doc-absent + target-present → finalize blocks and routes (no
+    /// silent data loss). Absent → no render. Skip-on-absent (mirrors `location` /
+    /// `id-from` / `display-title`): a schema omitting it serializes **nothing**, so no
+    /// frozen doctype's `schema-hash` changes — the freeze-safe additive-key pattern
+    /// (`design/design-altitude-doctypes.md` → §4 The vision surface; §7 arm 5).
+    #[serde(
+        rename = "root-render",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub root_render: Option<String>,
+
     /// `true` for a **singleton** doctype: a running doc with a **fixed slug = the
     /// type id** (e.g. `roadmap/roadmap.md`), *not* an `id-from: title` slug. A
     /// re-`create` then deterministically targets the same committed file — the
@@ -1264,6 +1282,59 @@ sections: []
         assert!(
             !plain_json.contains("display-title"),
             "an absent display-title serializes nothing (skip-on-absent); got {plain_json}",
+        );
+    }
+
+    /// (M37 inc-2 T1) The doctype-level `root-render:` knob serde-roundtrips: a
+    /// fixture schema declaring `root-render: VISION.md` parses
+    /// `root_render == Some("VISION.md")`, **re-serializes** the key, and survives a
+    /// load→serialize→reload cycle. A schema that **omits** it serializes to JSON
+    /// with **no** `root-render` key — so its `schema_hash` (`blake3` over that JSON)
+    /// is byte-identical to the pre-field value, the freeze-safe additive-key proof
+    /// (`design/design-altitude-doctypes.md` → §4 The vision surface; §7 arm 5): the
+    /// field's mere existence on the struct changes no frozen doctype's hash. (b)
+    /// proven, not assumed — the real frozen six are covered by the pack-load freeze
+    /// regressions (`pack.rs` + `crates/cli/tests/freeze_enforcement.rs`).
+    #[test]
+    fn root_render_serde_roundtrips_and_is_skipped_when_absent() {
+        let with_root_render = b"\
+type: vision
+root-render: VISION.md
+sections: []
+";
+        let schema = load_schema(with_root_render).expect("root-render schema loads");
+        assert_eq!(
+            schema.root_render.as_deref(),
+            Some("VISION.md"),
+            "the root-render knob parses its path string",
+        );
+
+        // Re-serializes the key, and a reload preserves it (roundtrip).
+        let json = serde_json::to_string(&schema).expect("serializes");
+        assert!(
+            json.contains("\"root-render\":\"VISION.md\""),
+            "the root-render knob re-serializes under its on-disk name; got {json}",
+        );
+        let reloaded: Schema = serde_json::from_str(&json).expect("reloads");
+        assert_eq!(reloaded, schema, "root-render survives a serde roundtrip");
+
+        // A schema omitting it defaults to None and serializes nothing for it — the
+        // skip-on-absent additive guard. No `root-render` in the JSON means the bytes
+        // `schema_hash` digests are identical to the pre-field value, so no frozen
+        // doctype's hash moves (the §7-arm-5 freeze-safety claim, proven).
+        let without = b"\
+type: commit
+sections: []
+";
+        let plain = load_schema(without).expect("no-root-render schema loads");
+        assert!(
+            plain.root_render.is_none(),
+            "an omitted root-render defaults to None",
+        );
+        let plain_json = serde_json::to_string(&plain).expect("serializes");
+        assert!(
+            !plain_json.contains("root-render"),
+            "an absent root-render serializes nothing (skip-on-absent); got {plain_json}",
         );
     }
 
