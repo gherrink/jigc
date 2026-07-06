@@ -7,8 +7,8 @@
 - **Repo:** `~/ideas/project-kb` — fresh project, human-driven from `jigc setup` onward (keeper corpus, kept in place).
 - **Binary:** jigc **1.0.0-rc.2** (installed release build; store stamp `jigc-version: 1.0.0-rc.2`).
 - **Composition:** dev pack ▸ embedded methodology (`compose-embedded-methodology: true`) — the full M37/M38 design altitude was exercised (`do-research` → `form-vision` with `grounded-in`, `park-idea`), plus the M38 placement layout.
-- **Invocation log:** ON — 72 records; snapshot at [invocations.jsonl](invocations.jsonl) (source: `<repo>/.jigc/logs/invocations.jsonl`).
-- **Analysis:** owed — runs with the adoption trial's log in the RC invocation-log analysis before the 1.0.0 call.
+- **Invocation log:** ON — 82 records (snapshot refreshed 2026-07-06 after the 8th task; source: `<repo>/.jigc/logs/invocations.jsonl`); snapshot at [invocations.jsonl](invocations.jsonl).
+- **Analysis:** greenfield half done 2026-07-06 (§ Invocation-log analysis below); the adoption trial's half still owed before the 1.0.0 call.
 
 ## Feedback (verbatim, captured 2026-07-06)
 
@@ -44,6 +44,23 @@
 - `form-vision` task should include research.
 - Consider pulling files out of `.jigc` into the project (e.g. milestones) so others can pick up the work — team-readiness.
 - The agent called many commands in one row producing mass output — optimize to prevent unwanted/unrequired data leaking into context.
+
+## Invocation-log analysis (greenfield half, 2026-07-06)
+
+**Headline: the loop held.** 82 invocations across ~25h drove **8 tasks to 8 finalize-rendered commits** with **one** non-zero exit in the whole run — `write.slot-heading-depth`, fixed on the **first** retry via the exact finding code (zero blind retries; the output contract worked). Per-call CLI overhead was negligible (`duration_ms` ≤ 1 throughout). **Zero drive-arounds detected:** cross-checked against the repo's git side — every doc commit is a finalize commit, the working tree is clean, and no out-of-band edit landed. The core bet (adapter-enforced path of least resistance) held for a full greenfield run.
+
+**Confirmations, keyed to the triaged findings:**
+
+- **F1 (doc read surface) has a live witness:** task `[50]` — *"revise the vision: ground it in the two new research docs"* — re-authored `vision:vision` slots with no interface read path for the committed content; it worked only because the content was in session memory. The strongest pre-1.0 candidate, now with log evidence.
+- **F4 (sticky task): `--task` on 64/82 calls (78%)** — the tax quantified.
+- **F5 (advisory noise): 16 `baseline-adopt` advisories = exactly 2 per finalize**, mechanical — fixed (route-less advisories now say "no action needed").
+- **Two-step routing: 8/10 `start` calls used `--workflow` directly** — the direct form is already the de-facto path; the intent-only redundancy is real but low-urgency (folded into [state-aware-compose](../../../ideas/state-aware-compose.md)).
+- **Verb mix: 58/82 are leaf writes** (`set-slot`/`set-field`) — the `doc author --from` batch channel went unused by these workflows; possible ergonomics later, not urgent.
+- **A6 (team-readiness), measured concretely:** `.jigc/.gitignore` hides `tasks/`, `milestones/`, `index/`, `state/`, `logs/`. The 16 baseline-adopts prove `file-state`/`index` are *re-derived* on first encounter (a state-less clone recovers) — the genuinely-lost-on-clone set is **work-unit state (tasks/milestones)**.
+
+**Instrumentation gap found:** the record schema (`timestamp`/`argv`/`exit_code`/`duration_ms`/`finding_codes`) captures no **output size**, so A7 (mass output) cannot be quantified from this log. Before the adoption trial: add stdout/stderr byte counts to the invocation record, so the second analysis can measure output volume per call (this is also the data source [composed-context-token-budget](../../../ideas/composed-context-token-budget.md) → invocation-output face names).
+
+**Honest bounds:** the log sees only what went through jigc — the git cross-check covers committed OOB *edits*, but direct *reads* are invisible to both (the trial feedback says the rule was honored from memory, not that it was enforceable). Single user, greenfield, methodology-altitude-heavy (research/vision/idea; no code tasks). The adoption trial covers the other half.
 
 ## Triage disposition (running — updated as items route)
 
