@@ -60,5 +60,5 @@
 | F2 | Compose not state-aware (checklist done/pending; fold in two-step-routing redundancy) | idea | pending |
 | F3 | Slug minting truncates mid-word; no `--slug` override | idea | pending |
 | F4 | Sticky active-task context (`jigc task use`) | idea | pending |
-| F5 | Advisory noise (baseline-adopt with no action cue) | fix (output wording) | pending |
+| F5 | Advisory noise (baseline-adopt with no action cue) | fix (output wording) | **done 2026-07-06** — every route-less advisory now renders `(no action needed)` |
 | F6 | `--from-file -` heredoc: works, keep stable | no action (positive signal) | closed |

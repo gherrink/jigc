@@ -31,7 +31,7 @@ use std::process::{Command, Stdio};
 /// assignment — the M6 post-pass: the byte-identical golden must cover the validate
 /// path, not only `start_compose`; review B2).
 const NO_DELTA_BROKEN_VALIDATE_GOLDEN: &str = "\
-advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`   (no action needed)
 blocking · schema-conformance.field-value-conformant — `docs/commit:add-rate-limiter.md`: field `type` in section `header`: \"\" is not a member of enum \"type\" (allowed: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert)
 blocking · schema-conformance.required-slot-present — `docs/commit:add-rate-limiter.md`: required slot in section `summary` is empty
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
@@ -41,7 +41,7 @@ blocking · schema-conformance.required-slot-present — `docs/commit:add-rate-l
 /// byte for byte — the clean (exit-0) companion to `NO_DELTA_BROKEN_VALIDATE_GOLDEN`.
 /// The post-pass must perturb neither the blocking nor the clean validate render.
 const NO_DELTA_CLEAN_VALIDATE_GOLDEN: &str = "\
-advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`
+advisory · file-state.baseline-adopt — baseline adopted: `docs/commit:add-rate-limiter.md`   (no action needed)
 — jigc · run `jigc start` for orientation; all writes through `jigc`.
 ";
 

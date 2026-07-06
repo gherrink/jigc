@@ -617,13 +617,19 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
 /// One agent-text finding line: `<severity> · <code> — <message>`, plus an indented
 /// `route:` line when the finding carries a repair direction (the settled
 /// block-payload envelope — a hard block is a blocking finding carrying a route).
+/// A route-less **advisory** is purely informational, and says so — the agent must
+/// never be left inferring whether output wants something from it.
 fn finding_line(finding: &Finding) -> String {
     let severity = match finding.severity {
         Severity::Blocking => "blocking",
         Severity::Warning => "warning",
         Severity::Advisory => "advisory",
     };
-    let mut line = format!("{severity} · {} — {}\n", finding.code, finding.message);
+    let mut line = format!("{severity} · {} — {}", finding.code, finding.message);
+    if finding.route.is_none() && matches!(finding.severity, Severity::Advisory) {
+        line.push_str("   (no action needed)");
+    }
+    line.push('\n');
     if let Some(route) = &finding.route {
         line.push_str("  route: ");
         line.push_str(route);
@@ -1863,6 +1869,53 @@ mod tests {
             "the warning finding must carry its indented `route:` line; got:\n{agent}",
         );
         assert!(agent.ends_with(ROUTING_FOOTER), "got:\n{agent}");
+    }
+
+    /// A route-less advisory says so explicitly (RC greenfield trial F5: an advisory
+    /// the agent can't act on must carry a "no action needed" clause — otherwise it
+    /// reads as an open question). A *routed* advisory and a route-less *blocking*
+    /// finding stay unchanged: the route IS the action cue for the former, and a
+    /// blocking finding is always actionable.
+    #[test]
+    fn routeless_advisory_carries_the_no_action_cue() {
+        use engine::finding::{Finding, Severity};
+
+        let routeless = Finding::graded(
+            Severity::Advisory,
+            "file-state.baseline-adopt",
+            "baseline adopted: `docs/x.md`",
+            None,
+            None,
+        );
+        assert_eq!(
+            finding_line(&routeless),
+            "advisory · file-state.baseline-adopt — baseline adopted: `docs/x.md`   (no action needed)\n",
+            "a route-less advisory must end with the no-action cue",
+        );
+
+        let routed = Finding::graded(
+            Severity::Advisory,
+            "reconciliation.orphaned-docs",
+            "file outside the resolved roots",
+            None,
+            Some("ingest or move the file".to_string()),
+        );
+        assert!(
+            !finding_line(&routed).contains("no action needed"),
+            "a routed advisory's route is its action cue — no suffix",
+        );
+
+        let blocking = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.required-slot-present",
+            "required slot is empty",
+            None,
+            None,
+        );
+        assert!(
+            !finding_line(&blocking).contains("no action needed"),
+            "a blocking finding is always actionable — no suffix",
+        );
     }
 
     /// The `jigc milestone join` summary names every merged doc (id-sorted, with
