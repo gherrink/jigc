@@ -46,7 +46,7 @@ It does these things:
 - writes the managed bootstrap file `.jigc/AGENT.md` and adds a bare
   `@.jigc/AGENT.md` import to `CLAUDE.md` (the static floor that tells the agent
   `jigc` is its interface to the project — a plain import line, no marker fence);
-- allowlists `jigc *` in `.claude/settings.json` and adds a `SessionStart` hook
+- allowlists `Bash(jigc:*)` in `.claude/settings.json` and adds a `SessionStart` hook
   that runs `jigc start` (so each session opens with orientation), so the agent
   can call the CLI without a permission prompt;
 - extracts the embedded `doc-code` probe beside the installed `jigc` (so the

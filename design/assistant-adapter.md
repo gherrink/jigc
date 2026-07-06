@@ -86,7 +86,7 @@ inject:
   - hook: { event: Resume, run: "jigc start", when: supports(resume) }  # post-compaction re-injection (ships when the assistant API exposes the event)
 allowlist:
   file: .claude/settings.json
-  permit: ["jigc *"]
+  permit: ["Bash(jigc:*)"]          # allow rules must name the tool scope (`Bash(…)`) — a bare `jigc *` glob is rejected by the harness
   deny:                               # safety floor — merged into permissions.deny, never clobbered (see § Make jigc frictionless)
     - "Bash(rm -rf:*)"
     - "Bash(curl:*)"

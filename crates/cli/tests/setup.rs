@@ -8,7 +8,7 @@
 //!      comments);
 //!   3. the project layer is initialized (`.jigc/config/.gitkeep`) and
 //!      `.jigc/.gitignore` exists;
-//!   4. the `jigc *` permit **and** the `SessionStart` hook running `jigc start`
+//!   4. the `Bash(jigc:*)` permit **and** the `SessionStart` hook running `jigc start`
 //!      land in `.claude/settings.json`.
 //!
 //! It also asserts the command exits clean, is idempotent (a second run leaves
@@ -167,19 +167,19 @@ fn setup_installs_reference_layer_and_allowlist() {
         "setup must create `.jigc/.gitignore`",
     );
 
-    // (d) Both the `jigc *` allowlist AND the SessionStart hook running
+    // (d) Both the `Bash(jigc:*)` allowlist AND the SessionStart hook running
     //     `jigc start` landed in .claude/settings.json (parsed as JSON).
     let settings_raw = fs::read_to_string(repo.path().join(".claude/settings.json"))
         .expect(".claude/settings.json was written");
     assert!(
-        settings_raw.contains("\"jigc *\""),
-        ".claude/settings.json must permit `jigc *`; got:\n{settings_raw}",
+        settings_raw.contains("\"Bash(jigc:*)\""),
+        ".claude/settings.json must permit `Bash(jigc:*)`; got:\n{settings_raw}",
     );
     let settings: serde_json::Value =
         serde_json::from_str(&settings_raw).expect(".claude/settings.json must be valid JSON");
     assert_eq!(
-        settings["permissions"]["allow"][0], "jigc *",
-        "the allowlist must permit `jigc *`; got:\n{settings_raw}",
+        settings["permissions"]["allow"][0], "Bash(jigc:*)",
+        "the allowlist must permit `Bash(jigc:*)`; got:\n{settings_raw}",
     );
     assert!(
         session_start_runs_jigc_start(&settings),
@@ -378,8 +378,8 @@ fn setup_preserves_seeded_host_content_and_is_idempotent() {
     assert!(
         settings["permissions"]["allow"]
             .as_array()
-            .is_some_and(|a| a.iter().any(|v| v == "jigc *")),
-        "setup must add the `jigc *` permit alongside the seeded one; got:\n{settings_raw}",
+            .is_some_and(|a| a.iter().any(|v| v == "Bash(jigc:*)")),
+        "setup must add the `Bash(jigc:*)` permit alongside the seeded one; got:\n{settings_raw}",
     );
     assert!(
         session_start_runs_jigc_start(&settings),

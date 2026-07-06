@@ -157,7 +157,7 @@ pub struct Allowlist {
     /// The assistant's permission/settings file (e.g. `.claude/settings.json`).
     pub file: String,
 
-    /// The command patterns to permit (e.g. `["jigc *"]`).
+    /// The command patterns to permit (e.g. `["Bash(jigc:*)"]`).
     pub permit: Vec<String>,
 
     /// The **safety-floor** deny patterns merged into the settings file's
@@ -1244,7 +1244,7 @@ mod tests {
           - hook: { event: SessionStart, run: "jigc start" }
         allowlist:
           file: .claude/settings.json
-          permit: ["jigc *", "git add *"]
+          permit: ["Bash(jigc:*)", "Bash(git add:*)"]
           deny:
             - "Bash(rm -rf:*)"
             - "Bash(curl:*)"
@@ -1275,7 +1275,7 @@ mod tests {
     /// inject **reference** target points `CLAUDE.md` at the managed
     /// `.jigc/AGENT.md` (the universal floor), the inject **hook** binds
     /// `SessionStart` to `jigc start` (the primary injection), the **allowlist**
-    /// file is `.claude/settings.json` with the `jigc *` permit, and the **spawn**
+    /// file is `.claude/settings.json` with the `Bash(jigc:*)` permit, and the **spawn**
     /// launch template is the shipped one-line Claude Code template.
     #[test]
     fn claude_code_profile_loads_with_inject_and_allowlist_targets() {
@@ -1314,8 +1314,8 @@ mod tests {
         );
         assert_eq!(
             profile.allowlist.permit,
-            vec!["jigc *".to_string(), "git add *".to_string()],
-            "the allowlist permits the `jigc *` command pattern and `git add *` staging",
+            vec!["Bash(jigc:*)".to_string(), "Bash(git add:*)".to_string()],
+            "the allowlist permits the `Bash(jigc:*)` command pattern and `Bash(git add:*)` staging",
         );
 
         let spawn = profile
@@ -1645,8 +1645,8 @@ mod tests {
             serde_json::from_str(&after).expect("settings stays valid JSON");
         let allow = parsed["permissions"]["allow"].as_array().unwrap();
         assert!(
-            !allow.iter().any(|x| x == "jigc *"),
-            "the `jigc *` permit must be dropped; got:\n{after}",
+            !allow.iter().any(|x| x == "Bash(jigc:*)"),
+            "the `Bash(jigc:*)` permit must be dropped; got:\n{after}",
         );
         assert!(
             allow.iter().any(|x| x == "git status"),
@@ -1868,7 +1868,7 @@ mod tests {
     /// creates the file (and the `.claude/` dir) with a `permissions.allow` array
     /// holding exactly the profile's permit pattern; a second merge is a no-op at
     /// the byte level (run twice ⇒ byte-identical). The created form is
-    /// golden-locked: pretty JSON, the `jigc *` permit present once.
+    /// golden-locked: pretty JSON, the `Bash(jigc:*)` permit present once.
     #[test]
     fn allowlist_added_then_idempotent() {
         let dir = TempDir::new();
@@ -1890,7 +1890,7 @@ mod tests {
             "allowlist merge is idempotent: a second run leaves the file byte-identical",
         );
         assert_eq!(
-            after_first.matches("\"jigc *\"").count(),
+            after_first.matches("\"Bash(jigc:*)\"").count(),
             1,
             "the permit appears exactly once — no duplicate, got:\n{after_first}",
         );
@@ -1899,8 +1899,8 @@ mod tests {
         {
           "permissions": {
             "allow": [
-              "jigc *",
-              "git add *"
+              "Bash(jigc:*)",
+              "Bash(git add:*)"
             ]
           }
         }
@@ -1908,7 +1908,7 @@ mod tests {
     }
 
     /// Merging into a `.claude/settings.json` that already holds an unrelated
-    /// top-level key **and** an unrelated permission preserves both: the `jigc *`
+    /// top-level key **and** an unrelated permission preserves both: the `Bash(jigc:*)`
     /// permit is added once to the existing allow list, the unrelated permission
     /// stays, and the unrelated top-level key is untouched. A re-run is then
     /// idempotent.
@@ -1939,7 +1939,7 @@ mod tests {
         let after = std::fs::read_to_string(&settings).expect("read after merge");
 
         assert!(
-            after.contains("\"jigc *\""),
+            after.contains("\"Bash(jigc:*)\""),
             "the jigc permit is added, got:\n{after}",
         );
         assert!(
@@ -1951,7 +1951,7 @@ mod tests {
             "the unrelated top-level key is preserved, got:\n{after}",
         );
         assert_eq!(
-            after.matches("\"jigc *\"").count(),
+            after.matches("\"Bash(jigc:*)\"").count(),
             1,
             "the permit is added exactly once, got:\n{after}",
         );
@@ -1969,8 +1969,8 @@ mod tests {
           "permissions": {
             "allow": [
               "Bash(ls:*)",
-              "jigc *",
-              "git add *"
+              "Bash(jigc:*)",
+              "Bash(git add:*)"
             ]
           }
         }
@@ -2193,7 +2193,7 @@ mod tests {
         let after = std::fs::read_to_string(&settings).expect("read after both");
 
         assert!(
-            after.contains("\"jigc *\""),
+            after.contains("\"Bash(jigc:*)\""),
             "the allowlist permit is preserved, got:\n{after}",
         );
         assert!(
@@ -2226,8 +2226,8 @@ mod tests {
           },
           "permissions": {
             "allow": [
-              "jigc *",
-              "git add *"
+              "Bash(jigc:*)",
+              "Bash(git add:*)"
             ]
           }
         }
@@ -2279,7 +2279,7 @@ mod tests {
               \x20 - reference: { file: CLAUDE.md, to: .jigc/AGENT.md, syntax: at-import }\n\
               allowlist:\n\
               \x20 file: .claude/settings.json\n\
-              \x20 permit: [\"jigc *\"]\n\
+              \x20 permit: [\"Bash(jigc:*)\"]\n\
               spawn:\n\
               \x20 template: \"on-disk only `jigc workflow {{workflow}} --task {{task_id}}`\"\n",
         )

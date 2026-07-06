@@ -226,8 +226,8 @@ fn scenario_1_setup_is_idempotent() {
         ".jigc/AGENT.md must carry the bootstrap sentence; got:\n{agent1}"
     );
     assert!(
-        settings1.contains("\"jigc *\""),
-        "setup must allowlist `jigc *`; got:\n{settings1}"
+        settings1.contains("\"Bash(jigc:*)\""),
+        "setup must allowlist `Bash(jigc:*)`; got:\n{settings1}"
     );
 
     // Second run: byte-identical (no duplicate reference, no duplicate permit).

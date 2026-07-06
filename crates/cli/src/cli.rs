@@ -128,12 +128,12 @@ pub enum Command {
 
     /// Install the Claude Code adapter — writes the `.jigc/AGENT.md` bootstrap and
     /// a reference into `CLAUDE.md`, initializes the project layer (`.jigc/config/`),
-    /// allowlists `jigc *`, and installs the `SessionStart` and warn-only git
+    /// allowlists `Bash(jigc:*)`, and installs the `SessionStart` and warn-only git
     /// `pre-commit` hooks. Idempotent.
     Setup,
 
     /// Reverse this project's jigc install — removes `.jigc/`, unwires the
-    /// `CLAUDE.md` reference, and drops the `jigc *` permit from
+    /// `CLAUDE.md` reference, and drops the `Bash(jigc:*)` permit from
     /// `.claude/settings.json`. Leaves the machine-global `doc-code` probe (shared
     /// across repos) in place. Idempotent and non-destructive: a second run is a
     /// clean no-op, and your own file content is preserved byte-for-byte.
@@ -327,7 +327,7 @@ fn run_describe(format: Format) -> Outcome {
 
 /// Run `jigc setup` (the adapter install) against the current working directory:
 /// locate the repo root, install the Claude Code adapter (bootstrap reference +
-/// project-layer init + `jigc *` allowlist), render the outcome through the
+/// project-layer init + `Bash(jigc:*)` allowlist), render the outcome through the
 /// selected `format`, and map
 /// it to the exit code. Success prints a summary on stdout and exits 0; a write
 /// failure prints a blocking `setup.*` finding (with its route) on stderr and
@@ -355,7 +355,7 @@ fn run_setup(format: Format) -> Outcome {
 
 /// Run `jigc uninstall` (the repo-local teardown) against the current working
 /// directory: locate the repo root, reverse the enumerated repo-local install
-/// (remove `.jigc/`, unwire the `CLAUDE.md` reference, drop the `jigc *` allowlist
+/// (remove `.jigc/`, unwire the `CLAUDE.md` reference, drop the `Bash(jigc:*)` allowlist
 /// permit — never the machine-global `doc-code` probe), render the outcome through the
 /// selected `format`, and map it to the exit code. Success prints a summary on stdout
 /// and exits 0; a write failure prints a blocking `uninstall.*` finding (with its

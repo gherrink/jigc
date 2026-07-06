@@ -4,7 +4,7 @@
 //!
 //! Drives the **built** `jigc` binary against a throwaway temp repo. `jigc setup`
 //! installs the repo-local footprint (`.jigc/`, the `CLAUDE.md` `@.jigc/AGENT.md`
-//! import line, the `.claude/settings.json` `jigc *` permit, the
+//! import line, the `.claude/settings.json` `Bash(jigc:*)` permit, the
 //! `compose-embedded-methodology` marker) **and** the one machine-global write — the
 //! `doc-code` probe sibling beside the `jigc` binary. `jigc uninstall` then reverses
 //! **exactly the repo-local set**, leaving the probe sibling intact (design-review
@@ -13,7 +13,7 @@
 //!
 //! Asserts the Deliverable's done-picture: (i) `.jigc/` is gone; (ii) `CLAUDE.md` no
 //! longer carries `@.jigc/AGENT.md` with the pre-existing house-rules prose preserved
-//! **byte-for-byte**; (iii) `permissions.allow` no longer carries `jigc *` with
+//! **byte-for-byte**; (iii) `permissions.allow` no longer carries `Bash(jigc:*)` with
 //! unrelated keys preserved and the file still valid JSON; (iv) the machine-global
 //! `<bin-dir>/doc-code` probe **STILL exists** (the B2 guarantee — the
 //! omits-the-target face of the hardening rule); (v) a second `jigc uninstall` is a
@@ -148,7 +148,7 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
     fs::write(repo.path().join("CLAUDE.md"), seeded_claude).expect("seed CLAUDE.md");
 
     // Seed a .claude/settings.json with an unrelated top-level key, an unrelated
-    // permit, and a FOREIGN SessionStart hook — uninstall must drop only the `jigc *`
+    // permit, and a FOREIGN SessionStart hook — uninstall must drop only the `Bash(jigc:*)`
     // permit and jigc's own SessionStart command, keeping everything else (surgical,
     // not a clobber).
     fs::create_dir_all(repo.path().join(".claude")).expect("seed .claude dir");
@@ -239,7 +239,7 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         "uninstall must restore the pre-existing CLAUDE.md content byte-for-byte",
     );
 
-    // (iii) permissions.allow no longer carries `jigc *`; the unrelated permit + the
+    // (iii) permissions.allow no longer carries `Bash(jigc:*)`; the unrelated permit + the
     //       unrelated top-level key survive, and the file is still valid JSON.
     let settings_raw = fs::read_to_string(repo.path().join(".claude/settings.json"))
         .expect(".claude/settings.json present");
@@ -249,8 +249,8 @@ fn uninstall_removes_repo_local_footprint_keeps_probe_and_is_idempotent() {
         .as_array()
         .expect("permissions.allow is an array");
     assert!(
-        !allow.iter().any(|v| v == "jigc *"),
-        "uninstall must drop the `jigc *` permit; got:\n{settings_raw}",
+        !allow.iter().any(|v| v == "Bash(jigc:*)"),
+        "uninstall must drop the `Bash(jigc:*)` permit; got:\n{settings_raw}",
     );
     assert!(
         allow.iter().any(|v| v == "git status"),

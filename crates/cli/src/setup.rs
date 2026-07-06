@@ -9,7 +9,7 @@
 //!      reference floor — no marker-fenced block);
 //!   2. initialize the project cascade layer (`.jigc/config/.gitkeep` +
 //!      `.jigc/.gitignore`), so the project resolves as *set up*;
-//!   3. merge the `jigc *` **allowlist** into `.claude/settings.json` (the
+//!   3. merge the `Bash(jigc:*)` **allowlist** into `.claude/settings.json` (the
 //!      path-of-least-resistance the bootstrap depends on);
 //!   4. install the `SessionStart` **hook** running `jigc start` into the same
 //!      settings file (the primary bootstrap injection — advertise+demonstrate at
@@ -1079,7 +1079,7 @@ pub struct RemovedArtifacts {
     pub jigc_dir: bool,
     /// A jigc-injected bootstrap reference was unwired from the always-loaded file.
     pub reference: bool,
-    /// The `jigc *` allowlist permit was dropped from the settings file.
+    /// The `Bash(jigc:*)` allowlist permit was dropped from the settings file.
     pub allowlist: bool,
     /// jigc's `SessionStart` hook command was dropped from the settings file.
     pub hook: bool,
@@ -1108,7 +1108,7 @@ impl RemovedArtifacts {
 /// `AGENT.md`, the cascade config layer, the `compose-embedded-methodology` marker, and
 /// the index/state working area), unwire the `CLAUDE.md` `## Project interface` section
 /// and its `@.jigc/AGENT.md` import line, remove **all three** `.claude/settings.json`
-/// writes — the `jigc *` permit (`permissions.allow`), the `SessionStart` hook
+/// writes — the `Bash(jigc:*)` permit (`permissions.allow`), the `SessionStart` hook
 /// (`hooks.SessionStart`), and the `deny` safety floor (`permissions.deny`) — and prune
 /// the git `pre-commit` hook (the M36 symmetry fix: both hooks must come out, or they
 /// fire against a removed install; `design/project-setup.md` → Flow 2 hardening →
@@ -1183,7 +1183,7 @@ fn uninstall(repo_root: &Path, profile: &AdapterProfile) -> Result<UninstallSumm
         )
     })?;
 
-    // 3. Remove the `jigc *` permit from the allowlist — leaving unrelated permits and
+    // 3. Remove the `Bash(jigc:*)` permit from the allowlist — leaving unrelated permits and
     //    keys intact and the file valid JSON.
     let allowlist_file = profile.allowlist.file.clone();
     removed.allowlist = adapter::remove_allowlist(repo_root, profile).map_err(|err| {
