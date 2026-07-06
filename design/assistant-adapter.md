@@ -45,6 +45,8 @@ The bootstrap reaches the agent by the assistant's *best available* mechanism, d
 
 **Discipline:** the hook obeys the same *routing, not content* rule — it injects the bootstrap + at most a one-line current-state nudge, **never a content dump**. Its value is freshness and salience, not volume; the agent still *pulls* real context JIT via `jigc`. (Capability-dependent: the profile declares which mechanisms the assistant supports; the line is the floor.)
 
+**The managed bootstrap body** (`.jigc/AGENT.md`) is three paragraphs, all stable: the canonical routing sentence ([bootstrap.md](bootstrap.md) → The sentence, verbatim), a one-line **context-compiler framing** (what `jigc` *is* and the division of labor — the mental model behind the never-read-directly rule; added 2026-07-06 from the RC greenfield trial), and the **output contract** (stop on a non-zero exit, follow the output, never retry blindly — M36, narrowed 2026-07-06: the per-exit-code enumeration is retired because each outcome's meaning rides in the command's own output — blocking findings carry routes, route-less advisories say "no action needed").
+
 ### 2. Make `jigc` frictionless
 
 Allowlist `jigc` in the assistant's permission/settings so the agent runs it without friction. This is the **path-of-least-resistance** the bootstrap *depends on* — if `jigc` prompts every time, the agent routes around it and the whole bet fails. Generating this makes it a guaranteed setup step, not something a human must remember.

@@ -451,16 +451,18 @@ impl std::error::Error for ProfileError {
     }
 }
 
-/// The managed bootstrap file's contents: the canonical routing sentence, then
-/// the exit-code contract, each on its own line with a trailing newline.
+/// The managed bootstrap file's contents: the canonical routing sentence, the
+/// context-compiler framing, then the output contract — each its own paragraph,
+/// with a trailing newline.
 ///
 /// A pure function of the embedded contract — no filesystem. The file is wholly
 /// CLI-owned and rewritten in full each `setup`, so it needs no in-file
 /// idempotency markers. The routing sentence stays *routing, not content*
-/// (`design/bootstrap.md` → The sentence); the exit-code line beneath it is a
-/// *use-the-interface* fact — how to read `jigc`'s signals — not a routing rule.
+/// (`design/bootstrap.md` → The sentence); the two lines beneath it are
+/// *use-the-interface* facts — what `jigc` is, and how to read its signals —
+/// not routing rules.
 pub fn bootstrap_file() -> String {
-    format!("{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_EXIT_CONTRACT}\n")
+    format!("{BOOTSTRAP_SENTENCE}\n\n{BOOTSTRAP_FRAMING}\n\n{BOOTSTRAP_OUTPUT_CONTRACT}\n")
 }
 
 /// Write the managed bootstrap file (`<repo_root>/.jigc/AGENT.md`) with the
@@ -1024,14 +1026,23 @@ const BOOTSTRAP_IMPORT_LINE: &str = "@.jigc/AGENT.md";
 /// part of the sentence.
 const BOOTSTRAP_SENTENCE: &str = "`jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.";
 
-/// The exit-code contract stated beneath the routing sentence in the managed
-/// bootstrap body (M36). `jigc` signals every outcome through the process exit
-/// code, so the agent must read it and stop on a non-zero rather than retry
-/// blindly; the validation-block code (`3`, [`crate::task::EXIT_VALIDATION_BLOCKED`])
-/// is named so a blocked finalize routes to fixing the findings. A
-/// *use-the-interface* fact, not routing content (`design/assistant-adapter.md`
-/// → the bootstrap body).
-const BOOTSTRAP_EXIT_CONTRACT: &str = "Read every command's exit code: `0` is success; non-zero means stop and read the output, do not retry blindly. A finalize blocked by validation exits `3` — fix the reported findings and re-run; `1` is an operational error, `2` a usage error, `4` a review still pending.";
+/// The context-compiler framing stated beneath the routing sentence (RC
+/// greenfield trial A4, 2026-07-06): one stable line on what `jigc` *is* and the
+/// division of labor, giving the agent the mental model behind the prohibition.
+/// Framing, not content — it names the thesis (categories of ownership), never a
+/// convention or doc list, so it cannot rot (`design/assistant-adapter.md` →
+/// Inject the bootstrap).
+const BOOTSTRAP_FRAMING: &str = "`jigc` is a context compiler: it assembles exactly the workflow steps and doc slices your task needs, and owns every structural write — placement, cross-references, commits. You author only the prose.";
+
+/// The output contract stated beneath the framing (M36, narrowed 2026-07-06 —
+/// RC greenfield trial A4): the behavioral core only. The per-code enumeration
+/// is retired — every non-zero outcome's meaning rides in the command's own
+/// output (blocking findings carry `route:` lines; route-less advisories say
+/// "no action needed"), so a code table here was content that rots. What must
+/// stay is the *behavior*: stop on non-zero, follow the output, never retry
+/// blindly ([`crate::task::EXIT_VALIDATION_BLOCKED`] et al. keep their meanings
+/// — the bootstrap just no longer enumerates them).
+const BOOTSTRAP_OUTPUT_CONTRACT: &str = "Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly.";
 
 /// The env var that selects a directory adapter-profile source over the
 /// binary-embedded default. The adapter analogue of [`crate::pack`]'s
@@ -1359,32 +1370,43 @@ mod tests {
     }
 
     /// Golden over [`bootstrap_file`]: the canonical routing sentence
-    /// (`design/bootstrap.md` → The sentence, verbatim) as the managed file body,
-    /// with a single trailing newline. This is the exact content `jigc setup`
-    /// writes into `.jigc/AGENT.md` (rewritten whole each run — no markers).
+    /// (`design/bootstrap.md` → The sentence, verbatim), the context-compiler
+    /// framing, and the output contract as the managed file body, with a single
+    /// trailing newline. This is the exact content `jigc setup` writes into
+    /// `.jigc/AGENT.md` (rewritten whole each run — no markers).
     #[test]
     fn bootstrap_file_is_the_sentence_body() {
         insta::assert_snapshot!(bootstrap_file(), @r###"
         `jigc` is your interface to this project — your single, current source for the workflow for your task, the project's state, and the doc context you need, all assembled and validated for you. The files are storage, not your interface: never read or edit managed docs directly. Start every task with `jigc start`; write every change back through `jigc`.
 
-        Read every command's exit code: `0` is success; non-zero means stop and read the output, do not retry blindly. A finalize blocked by validation exits `3` — fix the reported findings and re-run; `1` is an operational error, `2` a usage error, `4` a review still pending.
+        `jigc` is a context compiler: it assembles exactly the workflow steps and doc slices your task needs, and owns every structural write — placement, cross-references, commits. You author only the prose.
+
+        Read every command's output; a non-zero exit means stop and follow what the output says — never retry blindly.
         "###);
     }
 
-    /// The managed bootstrap body states the exit-code contract (M36): the agent
-    /// must read `jigc`'s exit codes and stop on non-zero, and the validation-block
-    /// code (`3`) is named so a blocked finalize is not retried blindly. Driven on
-    /// the emitted body itself — the bytes `setup` writes into `.jigc/AGENT.md`.
+    /// The managed bootstrap body states the output contract (M36, narrowed
+    /// 2026-07-06 — RC greenfield trial A4): the behavioral core (stop on
+    /// non-zero, follow the output, never retry blindly) plus the
+    /// context-compiler framing — and NOT the per-code enumeration, whose
+    /// meaning now rides in each command's own output (blocking findings carry
+    /// routes; route-less advisories say "no action needed"). Driven on the
+    /// emitted body itself — the bytes `setup` writes into `.jigc/AGENT.md`.
     #[test]
-    fn bootstrap_file_states_the_exit_code_contract() {
+    fn bootstrap_file_states_the_output_contract() {
         let body = bootstrap_file();
         assert!(
-            body.contains("exit code"),
-            "the bootstrap body must state the exit-code contract; got:\n{body}",
+            body.contains("never retry blindly"),
+            "the bootstrap body must state the behavioral output contract; got:\n{body}",
         );
         assert!(
-            body.contains("exits `3`"),
-            "the bootstrap body must name the validation-block exit code (3); got:\n{body}",
+            body.contains("context compiler"),
+            "the bootstrap body must carry the what-jigc-is framing; got:\n{body}",
+        );
+        assert!(
+            !body.contains("usage error") && !body.contains("exits `3`"),
+            "the per-code enumeration is retired from the bootstrap body — \
+             the output carries each outcome's meaning; got:\n{body}",
         );
     }
 
