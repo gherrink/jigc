@@ -52,8 +52,8 @@
 | A1 | Invalid permission allow rules from setup | fix (adapter profile) | **done 2026-07-06** — permits now `Bash(jigc:*)` / `Bash(git add:*)` |
 | A2 | Skip permissions under bypassPermissions | idea: adapter permission model | **parked 2026-07-06** — [ideas/adapter-permission-model.md](../../../ideas/adapter-permission-model.md) |
 | A3 | Permissions too restrictive | idea: adapter permission model (rebuts the M36 deny-floor — engage its rationale) | **parked 2026-07-06** — same file as A2 |
-| A4 | AGENT.md content (status codes, what jigc does) | fix (pack content) | pending |
-| A5 | form-vision should include research | design discussion | pending |
+| A4 | AGENT.md content (status codes, what jigc does) | fix (bootstrap body) | **done 2026-07-06** — context-compiler framing added; exit-code table narrowed to the behavioral core |
+| A5 | form-vision should include research | settled: route to do-research, never merge (advisory — research not always required, may take several rounds) | **parked 2026-07-06** — [ideas/form-vision-research-routing.md](../../../ideas/form-vision-research-routing.md) |
 | A6 | Team-ready state externalization | idea | **parked 2026-07-06** — [ideas/team-ready-state-externalization.md](../../../ideas/team-ready-state-externalization.md) |
 | A7 | Mass command output / context leak | extends composed-context-token-budget | **parked 2026-07-06** — invocation-output face added to [ideas/composed-context-token-budget.md](../../../ideas/composed-context-token-budget.md) |
 | F1 | No read path for committed docs (`jigc doc show`; all grounded research on compose) | idea — strongest next-milestone candidate | **parked 2026-07-06** — [ideas/doc-read-surface.md](../../../ideas/doc-read-surface.md) |
