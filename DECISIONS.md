@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-06 — RC greenfield trial 1 ran (project-kb): counts as RC input
+
+The human drove a fresh project (`~/ideas/project-kb`) on the installed **1.0.0-rc.2** binary at the full design altitude (dev ▸ embedded methodology; `do-research` → `form-vision` grounded-in → `park-idea`), invocation log **ON** (72 records). Adjudicated: this run **counts as the greenfield arm of the RC trials** (keeper corpus; its log snapshot joins the RC invocation-log analysis feeding the 1.0.0 call — the adoption trial is still owed). Feedback + findings preserved verbatim with provenance at [completions/artifacts/RC-greenfield/trial-record.md](completions/artifacts/RC-greenfield/trial-record.md); triage: v1-valuable items route into the next RC, the rest park as ideas or defer (running disposition table in the record).
+
 ## 2026-07-04 — M38 Increment 6 planning: decomposition
 
 Cut [Increment 6 — acceptance + doc fold-back (test/docs)](implementation/roadmap.md) into **2 ordered single-concern tasks**, grounded in the code at HEAD `a77a02a` (tree clean; Inc 1–5 all landed — the `placement`/`display-title` engine model, reconcile/ownership, `root-render` retired + `vision`/methodology-singletons relocated, the `Relocated`/`DisplayTitleChanged` classifier + git-free move-arm, and the `changelog` v1→v2 relocation + adopt-in-place). The one grouped-scope bullet ("the suite + the re-pointed vision flows + the enumerated doc fold-back cut-list") maps across the tasks: **the acceptance suite (the composite `[dev ▸ methodology]` placement-layout proof + confirming the already-re-pointed flows hold) → T1**; **the enumerated doc fold-back cut-list (incl. worked-examples flow 39 + the now-false flow 38 root-render lines) → T2**. The cut mirrors the grouped scope's own two-part shape ({the suite/acceptance} vs {the doc fold-back}, which itself lists flow 39).
