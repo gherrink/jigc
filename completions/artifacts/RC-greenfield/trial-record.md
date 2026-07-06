@@ -50,15 +50,15 @@
 | # | Finding | Route | Status |
 |---|---------|-------|--------|
 | A1 | Invalid permission allow rules from setup | fix (adapter profile) | **done 2026-07-06** — permits now `Bash(jigc:*)` / `Bash(git add:*)` |
-| A2 | Skip permissions under bypassPermissions | idea: adapter permission model | pending |
-| A3 | Permissions too restrictive | idea: adapter permission model (rebuts the M36 deny-floor — engage its rationale) | pending |
+| A2 | Skip permissions under bypassPermissions | idea: adapter permission model | **parked 2026-07-06** — [ideas/adapter-permission-model.md](../../../ideas/adapter-permission-model.md) |
+| A3 | Permissions too restrictive | idea: adapter permission model (rebuts the M36 deny-floor — engage its rationale) | **parked 2026-07-06** — same file as A2 |
 | A4 | AGENT.md content (status codes, what jigc does) | fix (pack content) | pending |
 | A5 | form-vision should include research | design discussion | pending |
-| A6 | Team-ready state externalization | idea | pending |
-| A7 | Mass command output / context leak | idea (possibly extends composed-context-token-budget) | pending |
-| F1 | No read path for committed docs (`jigc doc show`; all grounded research on compose) | idea — strongest next-milestone candidate | pending |
-| F2 | Compose not state-aware (checklist done/pending; fold in two-step-routing redundancy) | idea | pending |
-| F3 | Slug minting truncates mid-word; no `--slug` override | idea | pending |
-| F4 | Sticky active-task context (`jigc task use`) | idea | pending |
+| A6 | Team-ready state externalization | idea | **parked 2026-07-06** — [ideas/team-ready-state-externalization.md](../../../ideas/team-ready-state-externalization.md) |
+| A7 | Mass command output / context leak | extends composed-context-token-budget | **parked 2026-07-06** — invocation-output face added to [ideas/composed-context-token-budget.md](../../../ideas/composed-context-token-budget.md) |
+| F1 | No read path for committed docs (`jigc doc show`; all grounded research on compose) | idea — strongest next-milestone candidate | **parked 2026-07-06** — [ideas/doc-read-surface.md](../../../ideas/doc-read-surface.md) |
+| F2 | Compose not state-aware (checklist done/pending; fold in two-step-routing redundancy) | idea | **parked 2026-07-06** — [ideas/state-aware-compose.md](../../../ideas/state-aware-compose.md) |
+| F3 | Slug minting truncates mid-word; no `--slug` override | idea | **parked 2026-07-06** — [ideas/slug-minting-ergonomics.md](../../../ideas/slug-minting-ergonomics.md) |
+| F4 | Sticky active-task context (`jigc task use`) | idea | **parked 2026-07-06** — [ideas/sticky-task-context.md](../../../ideas/sticky-task-context.md) |
 | F5 | Advisory noise (baseline-adopt with no action cue) | fix (output wording) | **done 2026-07-06** — every route-less advisory now renders `(no action needed)` |
 | F6 | `--from-file -` heredoc: works, keep stable | no action (positive signal) | closed |

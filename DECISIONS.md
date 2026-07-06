@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-06 — RC trial triage: two fixes shipped, six directions parked
+
+From the trial record's disposition table: **A1 fixed** (`fix(adapter)` — setup's permit rules now the valid `Bash(jigc:*)` shape Claude Code accepts; the old bare globs were rejected on every install) and **F5 fixed** (`fix(render)` — a route-less advisory now says `(no action needed)`; an advisory the agent can't act on must say so). **Six directions parked as ideas in one motion** (the 2026-07-02 harvest-batch pattern; indexed from VISION.md → Open questions): `doc-read-surface` (the trial's #1 finding) · `state-aware-compose` · `slug-minting-ergonomics` · `sticky-task-context` · `adapter-permission-model` (part-rebuts the M36 deny-floor) · `team-ready-state-externalization`; A7 (mass output) extended `composed-context-token-budget` instead of a new file. Still open from the trial: A4 (AGENT.md content) and A5 (form-vision ↔ research) — both genuine design discussions, not fixes.
+
 ## 2026-07-06 — RC greenfield trial 1 ran (project-kb): counts as RC input
 
 The human drove a fresh project (`~/ideas/project-kb`) on the installed **1.0.0-rc.2** binary at the full design altitude (dev ▸ embedded methodology; `do-research` → `form-vision` grounded-in → `park-idea`), invocation log **ON** (72 records). Adjudicated: this run **counts as the greenfield arm of the RC trials** (keeper corpus; its log snapshot joins the RC invocation-log analysis feeding the 1.0.0 call — the adoption trial is still owed). Feedback + findings preserved verbatim with provenance at [completions/artifacts/RC-greenfield/trial-record.md](completions/artifacts/RC-greenfield/trial-record.md); triage: v1-valuable items route into the next RC, the rest park as ideas or defer (running disposition table in the record).
