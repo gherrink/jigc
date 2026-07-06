@@ -1,4 +1,7 @@
 /target
 
+# personal untracked notes (scratch inboxes like TODO.local.md)
+*.local.md
+
 # insta transient pending-snapshot logs (inline snapshots accepted in-source)
 *.pending-snap
