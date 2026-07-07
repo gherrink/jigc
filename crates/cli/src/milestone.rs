@@ -29,8 +29,9 @@ use engine::finalize::plan_milestone_finalize;
 use engine::finding::Finding;
 use engine::index::load_committed;
 use engine::milestone::{
-    JoinOutcome, add_from_spec, add_task, join, materialize, milestone_dir, mint_milestone,
-    read_base_pin, read_task_list, synthesized_message, worktree_path,
+    JoinOutcome, MintedMilestone, add_from_spec, add_task, join, materialize, milestone_dir,
+    mint_milestone, read_base_pin, read_task_list, render_fresh_record, synthesized_message,
+    worktree_path,
 };
 use engine::packsource::PackResourceKind;
 use engine::schema::Schema;
@@ -195,15 +196,114 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
     // checkout), so all worktrees share one `.jigc/` (M31 Inc 2 / WF3).
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
     crate::gitignore::ensure(&jigc_root)?;
     let base = read_head(&repo_root)?;
 
     let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
+
+    // The record-home split (`design/team-ready-state.md` → The `milestone-record` doctype;
+    // The commit model): under a `[dev ▸ methodology]` project the composed cascade resolves
+    // the methodology-pack `milestone-record` doctype, so materialize the committed record and
+    // land a **record-only** path-scoped commit. Dev-only (no methodology pack) resolves no
+    // such schema → degrade to today's no-record, no-extra-commit behavior.
+    let schemas = shipped_schemas(&jigc_home)?;
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        materialize_and_commit_record(&jigc_home, schema, &minted)?;
+    }
+
     Ok(format!(
         "minted milestone:{} (shared base {})",
         minted.id, minted.base.short
     ))
+}
+
+/// The methodology-pack doctype governing a milestone's committed team-ready state
+/// (`design/team-ready-state.md` → The `milestone-record` doctype). Present in the resolved
+/// schema set only under a `[dev ▸ methodology]` project; **absent** dev-only (no methodology
+/// pack), which is what degrades `create` back to today's no-record behavior.
+const MILESTONE_RECORD_TYPE: &str = "milestone-record";
+
+/// Materialize the milestone's committed team-ready `milestone-record` and commit ONLY it —
+/// the record-home split (`design/team-ready-state.md` → The commit model: path-scoped commit
+/// at each milestone op). Renders the fresh record bytes ([`render_fresh_record`]: `base` +
+/// `status: active` + an empty `tasks` section), writes them to the record's canonical
+/// committed home under docs-root (`docs/milestone-records/<id>.md`, resolved by
+/// [`shipped_schemas`]' `apply_docs_root`), then lands a **record-only** commit — never
+/// sweeping the agent's in-flight staged/untracked WIP (the M30/M31 path-scoped discipline).
+fn materialize_and_commit_record(
+    jigc_home: &Path,
+    schema: &Schema,
+    minted: &MintedMilestone,
+) -> Result<()> {
+    let record_path = engine::store::canonical_path(jigc_home, schema, &minted.id)
+        .context("the `milestone-record` doctype declares no committed location")?;
+    if let Some(parent) = record_path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("could not create the record home {parent:?}"))?;
+    }
+    let body = render_fresh_record(schema, &minted.id, &minted.base);
+    std::fs::write(&record_path, &body)
+        .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
+
+    // The message temp file lands in the gitignored milestone area (never a tracked path).
+    commit_record_only(jigc_home, &record_path, &minted.dir, &minted.id)
+}
+
+/// Land a **record-only** commit for a milestone op (`design/team-ready-state.md` → The commit
+/// model). Stages ONLY the record (`git add -- <record>`, index-restricted) and commits ONLY
+/// that pathspec (`git commit -F <msg> -- <record>`), so any other staged/untracked change
+/// stays out of the record commit and stays staged — the WIP-safety the whole-index
+/// [`crate::task::git_commit`] cannot give, hence its narrowed sibling
+/// [`git_commit_pathspec`]. The CLI-synthesized message is structural (a record carries no
+/// authored prose) and is written into the gitignored `msg_dir` (the milestone area).
+fn commit_record_only(
+    repo_root: &Path,
+    record_path: &Path,
+    msg_dir: &Path,
+    milestone_id: &str,
+) -> Result<()> {
+    let spec = record_path
+        .strip_prefix(repo_root)
+        .unwrap_or(record_path)
+        .to_str()
+        .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?;
+    // Stage ONLY the record (a `git add -- <path>` never sweeps the ambient dirty tree).
+    crate::task::git_run(repo_root, &["add", "--", spec])?;
+
+    let msg_path = msg_dir.join("record-commit-msg.txt");
+    std::fs::write(
+        &msg_path,
+        format!("chore(milestone): open record for milestone:{milestone_id}\n"),
+    )
+    .with_context(|| format!("could not write the record commit message {msg_path:?}"))?;
+    git_commit_pathspec(repo_root, &msg_path, spec)
+}
+
+/// `git commit -F <message_file> -- <pathspec>` in `repo_root` — a **pathspec-restricted**
+/// commit recording ONLY the listed path, leaving any other staged/untracked change untouched
+/// (the WIP-safe milestone-op commit). [`crate::task::git_commit`] commits the whole index, so
+/// the record path needs this narrowed sibling. Bails with git's stdout+stderr on a non-zero
+/// exit (nothing was committed).
+fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) -> Result<()> {
+    let out = Command::new("git")
+        .arg("commit")
+        .arg("-F")
+        .arg(message_file)
+        .arg("--")
+        .arg(pathspec)
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git commit` (is git on PATH?)")?;
+    if !out.status.success() {
+        bail!(
+            "`git commit` (record-only) was rejected (no commit was made):\n{}{}",
+            String::from_utf8_lossy(&out.stdout).trim(),
+            String::from_utf8_lossy(&out.stderr).trim(),
+        );
+    }
+    Ok(())
 }
 
 /// `jigc milestone add-task <milestone-id> "<intent>"` — mint a sub-task pinned to
