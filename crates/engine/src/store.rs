@@ -88,7 +88,8 @@ pub fn lexical_normalize(p: &Path) -> PathBuf {
 /// - **`#unit/item`** (a 2-hop fragment over a repeatable section) → that item
 ///   rendered;
 /// - **`#unit/item/leaf`** and deeper **`#unit/item/…/leaf`** nested paths → the
-///   addressed leaf's opaque prose byte-for-byte, or a nested item rendered.
+///   addressed leaf — a slot's opaque prose byte-for-byte, the block's `id-from` leaf
+///   (the item's heading), a per-item field's rendered value, or a nested item rendered.
 ///
 /// Every navigation hop is resolved over the already-parsed
 /// [`crate::parse::ParsedSection`]/[`ParsedItem`] span data — the writer's
@@ -166,7 +167,7 @@ pub fn read_slice(
     // enforced conformance / surfaced the unparseable block).
     match &address.fragment {
         None => Ok(source),
-        Some(fragment) => slice_fragment(&doc, &source, fragment, &address_str),
+        Some(fragment) => slice_fragment(schema, &doc, &source, fragment, &address_str),
     }
 }
 
@@ -193,11 +194,16 @@ fn block(code: &str, message: String, address: &str, route: String) -> Finding {
 /// Zero items yields empty content (the absent-value case, not an error).
 ///
 /// **Further hops** navigate into the section's [`ParsedItem`] data: the second hop
-/// is a repeatable item id (that item, rendered), a third hop is that item's leaf
-/// (its opaque prose, byte-for-byte) or a nested item, and deeper hops recurse into
-/// nested items (the M22 multi-level shape) to the addressed leaf. Each hop that
-/// names no existing section/item/leaf is a located block rather than a panic.
+/// is a repeatable item id (that item, rendered), a third hop is that item's leaf —
+/// a **slot** (its opaque prose, byte-for-byte), the block's **`id-from`** leaf (the
+/// item's heading, its stable id-source), a per-item **field** (its rendered
+/// canonical value), or a nested item — and deeper hops recurse into nested items
+/// (the M22 multi-level shape) to the addressed leaf. Resolving the `id-from` leaf is
+/// the one place the read path consults a schema role (the block's declared `id-from`
+/// name); every other hop is structural over the parsed data. Each hop that names no
+/// existing section/item/leaf is a located block rather than a panic.
 fn slice_fragment(
+    schema: &Schema,
     doc: &Document,
     source: &str,
     fragment: &Fragment,
@@ -233,7 +239,22 @@ fn slice_fragment(
         ));
     };
 
-    resolve_item_path(item, source, item_rest, address)
+    // The section's declared `id-from` leaf name (the top-level repeatable), so a
+    // `#section/<item>/<id-from>` slice resolves to the item's heading — mirroring how
+    // the item object keys that leaf. Nested repeatables carry their own `id-from`, but
+    // nested content is out of the pinned read-surface contract, so it degrades.
+    let id_from = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .and_then(|s| match &s.body {
+            crate::schema::SectionBody::Repeatable { repeatable } => {
+                Some(repeatable.id_from.as_str())
+            }
+            crate::schema::SectionBody::Simple { .. } => None,
+        });
+
+    resolve_item_path(item, source, item_rest, id_from, address)
 }
 
 /// Split a [`Fragment`] into its section id and the remaining navigation hops, as
@@ -256,15 +277,21 @@ fn fragment_hops(fragment: &Fragment) -> (&str, Vec<&str>) {
 /// Navigate the remaining `hops` within a located repeatable `item`.
 ///
 /// - **no hops** → the item rendered ([`render_item`]);
-/// - **one hop** → a nested item (rendered) when the id matches, else the item's
-///   addressed leaf slot prose byte-for-byte;
+/// - **one hop** → a nested item (rendered) when the id matches; else the addressed
+///   leaf — a **slot** (its prose byte-for-byte), the block's **`id-from`** leaf (the
+///   item's heading), or a per-item **field** (its rendered canonical value);
 /// - **deeper** → recurse into the named nested item (the M22 multi-level shape).
+///
+/// `id_from` is the block's declared `id-from` leaf name at *this* item's level (so a
+/// slice of that leaf resolves to the item's heading); it is `None` for nested items,
+/// whose content is out of the pinned read-surface contract.
 ///
 /// A hop naming no existing nested item or leaf is a located block, never a panic.
 fn resolve_item_path(
     item: &ParsedItem,
     source: &str,
     hops: &[&str],
+    id_from: Option<&str>,
     address: &str,
 ) -> Result<String, Finding> {
     let Some((head, tail)) = hops.split_first() else {
@@ -272,13 +299,20 @@ fn resolve_item_path(
     };
 
     if tail.is_empty() {
-        // Leaf terminus: a nested item id renders that item; else the addressed slot
-        // leaf slices byte-for-byte over its opaque span.
+        // Leaf terminus: a nested item id renders that item; the addressed slot slices
+        // byte-for-byte over its opaque span; the declared `id-from` leaf resolves to the
+        // item's heading; a per-item field to its rendered canonical value.
         if let Some(nested) = item.items.iter().find(|it| it.id == *head) {
             return Ok(render_item(nested, source));
         }
         if let Some(span) = item.slot_span(head) {
             return Ok(span.slice(source).to_string());
+        }
+        if id_from == Some(*head) {
+            return Ok(item.title.trim().to_string());
+        }
+        if let Some(field) = item.fields.iter().find(|f| f.key == *head) {
+            return Ok(field.value.render());
         }
         return Err(block(
             "store.no-such-leaf",
@@ -288,7 +322,9 @@ fn resolve_item_path(
         ));
     }
 
-    // A deeper path: `head` must name a nested item to recurse into.
+    // A deeper path: `head` must name a nested item to recurse into. Nested items carry
+    // their own `id-from`, but nested content is unpinned, so pass `None` (its `id-from`
+    // leaf degrades rather than pinning an unpinned shape).
     let Some(nested) = item.items.iter().find(|it| it.id == *head) else {
         return Err(block(
             "store.no-such-item",
@@ -300,7 +336,7 @@ fn resolve_item_path(
             "name a nested item that exists in the committed item".to_string(),
         ));
     };
-    resolve_item_path(nested, source, tail, address)
+    resolve_item_path(nested, source, tail, None, address)
 }
 
 /// Render a list of repeatable items as a Content list for the store-read path:

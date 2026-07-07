@@ -1264,6 +1264,10 @@ fn fragment_json(
                         Some(leaf) if leaf_rest.len() == 1 => {
                             if let Some(span) = item.slot_span(leaf) {
                                 serde_json::Value::String(span.slice(source).trim().to_string())
+                            } else if *leaf == repeatable.id_from {
+                                // The `id-from` leaf resolves to the item's heading (its
+                                // id-source) — the same value the item object keys it under.
+                                serde_json::Value::String(item.title.clone())
                             } else if let Some(field) = item.fields.iter().find(|f| &f.key == leaf)
                             {
                                 field_json(&field.value)

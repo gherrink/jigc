@@ -17,7 +17,7 @@ The `<ref>` is a doc address, optionally carrying a `#fragment` that names a sub
 | `type:slug` (whole-doc) | the whole document |
 | `type:slug#section` | one section — a **slot** section's prose, or a **repeatable** section's item array |
 | `type:slug#section/<item>` | one repeatable **item** object |
-| `type:slug#section/<item>/<leaf>` | one **leaf** — a slot's prose, or a field's value |
+| `type:slug#section/<item>/<leaf>` | one **leaf** — a slot's prose, a field's value, or the `id-from` leaf (the item's heading) |
 
 ## Plain text vs. `--format json`
 
@@ -45,7 +45,7 @@ Pinned once here; every doctype's json read conforms. The **milestone record is 
 - a **slot section** → its trimmed prose string;
 - a **repeatable section** (`#section`) → its **item array**;
 - an **item** (`#section/<item>`) → its item object;
-- a **leaf** (`#section/<item>/<leaf>`) → the leaf value (a slot's trimmed prose string, or a field value shaped as in `fields`).
+- a **leaf** (`#section/<item>/<leaf>`) → the leaf value (a slot's trimmed prose string, a field value shaped as in `fields`, or the block's `id-from` leaf → the item's heading string).
 
 **An item object** carries its `id-from` leaf keyed by the block's declared `id-from` → the item's heading (its stable id-source), each other field keyed by leaf id (scalar → string, list → array), and each slot keyed by leaf id → its trimmed prose.
 
