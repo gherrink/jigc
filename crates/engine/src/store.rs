@@ -31,7 +31,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::address::{Address, Fragment};
 use crate::finding::{Finding, Location, Severity};
-use crate::parse::{self, Document, ParsedSection};
+use crate::parse::{self, Document, ParsedItem};
 use crate::schema::Schema;
 
 /// The canonical on-disk path a committed `<type>:<slug>` instance lives at, when
@@ -74,19 +74,29 @@ pub fn lexical_normalize(p: &Path) -> PathBuf {
     out
 }
 
-/// Read the committed managed doc named by `address` and slice its `#fragment` to
-/// the section slot's prose bytes.
+/// Read the committed managed doc named by `address` and render it — the whole doc
+/// when the address carries no fragment, or the addressed `#fragment` slice.
 ///
 /// Resolves the address's `type` to a [`Schema`] in `schemas`, computes the
 /// canonical path under `repo_root`, reads and parses the committed file against the
-/// schema, and slices the `#unit` fragment to that section's content — a slot's
-/// opaque prose (byte-exact over the committed source), or a repeatable section's
-/// rendered items. The address **must** carry a `#unit` fragment naming a slot
-/// section (flow #5's `#decision`) or a repeatable section (the spec's `#criteria`).
+/// schema, then:
+///
+/// - **no fragment** → the whole committed doc, byte-for-byte over the committed
+///   source (the canonical render is the file's own bytes — the round-trip guarantee);
+/// - **`#unit`** → the section's content: a slot's opaque prose (byte-exact), or a
+///   repeatable section's rendered items;
+/// - **`#unit/item`** (a 2-hop fragment over a repeatable section) → that item
+///   rendered;
+/// - **`#unit/item/leaf`** and deeper **`#unit/item/…/leaf`** nested paths → the
+///   addressed leaf's opaque prose byte-for-byte, or a nested item rendered.
+///
+/// Every navigation hop is resolved over the already-parsed
+/// [`crate::parse::ParsedSection`]/[`ParsedItem`] span data — the writer's
+/// byte-stable inverse.
 ///
 /// Every failure is a blocking [`Finding`] carrying a `route`: an unknown type, a
-/// transient (location-less) type, a missing file, an unparseable file, or a missing
-/// or unsliceable fragment.
+/// transient (location-less) type, a missing file, an unparseable file, or a fragment
+/// naming a section/item/leaf that does not exist in the committed doc.
 pub fn read_slice(
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
@@ -103,16 +113,6 @@ pub fn read_slice(
             format!("unknown doctype `{type_name}` for `{address_str}`"),
             &address_str,
             "list the available doctypes with `jigc doc types`".to_string(),
-        ));
-    };
-
-    // A `#unit` fragment naming a slot section is required (the MVP store-read target).
-    let Some(fragment) = &address.fragment else {
-        return Err(block(
-            "store.no-fragment",
-            format!("`{address_str}` names no `#section` to slice"),
-            &address_str,
-            "add a `#section` fragment naming a slot section".to_string(),
         ));
     };
 
@@ -162,7 +162,12 @@ pub fn read_slice(
         )
     })?;
 
-    slice_fragment(&doc, &source, fragment, &address_str)
+    // No fragment → the whole committed doc, byte-for-byte (the parse above already
+    // enforced conformance / surfaced the unparseable block).
+    match &address.fragment {
+        None => Ok(source),
+        Some(fragment) => slice_fragment(&doc, &source, fragment, &address_str),
+    }
 }
 
 /// Build a blocking store-read [`Finding`] with a located message and a route.
@@ -176,86 +181,164 @@ fn block(code: &str, message: String, address: &str, route: String) -> Finding {
     )
 }
 
-/// Slice the `#unit` fragment of a parsed `doc` to its section content over
-/// `source`, or a blocking finding when the fragment names no sliceable section.
+/// Slice the `#fragment` of a parsed `doc` to its content over `source`, or a
+/// blocking finding when the fragment names no target that exists.
 ///
-/// Two section shapes slice. A **slot** section (flow #5's `#decision`) returns its
-/// slot prose byte-for-byte over the recorded opaque [`Span`](crate::parse::Span). A
+/// The first hop is always a section id. With **no further hops** the section slices
+/// as before: a **slot** section (flow #5's `#decision`) returns its slot prose
+/// byte-for-byte over the recorded opaque [`Span`](crate::parse::Span); a
 /// **repeatable** section (no slot — e.g. the spec's `#criteria`) returns its items
-/// rendered as a Content list: each item's `### <title>` followed by its statement
-/// slot prose (see [`render_repeatable_items`]), so `{{@task.spec#criteria}}` resolves
-/// to the criteria the implementer reads (`worked-examples.md` → flow 6). Zero items
-/// yields empty content (the absent-value case, not an error).
+/// rendered as a Content list (see [`render_item`]), so `{{@task.spec#criteria}}`
+/// resolves to the criteria the implementer reads (`worked-examples.md` → flow 6).
+/// Zero items yields empty content (the absent-value case, not an error).
 ///
-/// Deeper fragment shapes (`#unit/leaf`, `#unit/item[/leaf]`) are not store-read
-/// targets at this scope and surface as a located block rather than a panic.
+/// **Further hops** navigate into the section's [`ParsedItem`] data: the second hop
+/// is a repeatable item id (that item, rendered), a third hop is that item's leaf
+/// (its opaque prose, byte-for-byte) or a nested item, and deeper hops recurse into
+/// nested items (the M22 multi-level shape) to the addressed leaf. Each hop that
+/// names no existing section/item/leaf is a located block rather than a panic.
 fn slice_fragment(
     doc: &Document,
     source: &str,
     fragment: &Fragment,
     address: &str,
 ) -> Result<String, Finding> {
-    let Fragment::Unit(unit) = fragment else {
-        return Err(block(
-            "store.unsliceable-fragment",
-            format!("`{address}` does not name a `#section` slot"),
-            address,
-            "slice a `#section` whose body is a slot".to_string(),
-        ));
-    };
+    let (section_id, rest) = fragment_hops(fragment);
 
-    let Some(section) = doc.sections.iter().find(|s| s.id == unit.as_str()) else {
+    let Some(section) = doc.sections.iter().find(|s| s.id == section_id) else {
         return Err(block(
             "store.no-such-section",
-            format!("`{address}` names no section `{unit}`"),
+            format!("`{address}` names no section `{section_id}`"),
             address,
             "name a section that exists in the committed doc".to_string(),
         ));
     };
 
-    // A slot section slices to its prose span; a repeatable section (no slot) slices
-    // to its rendered items — the read-path inverse for each non-deref shape.
-    match &section.slot {
-        Some(span) => Ok(span.slice(source).to_string()),
-        None => Ok(render_repeatable_items(section, source)),
+    // Section-level (no further hops): a slot section slices to its prose span; a
+    // repeatable section (no slot) slices to its rendered items.
+    let Some((item_id, item_rest)) = rest.split_first() else {
+        return Ok(match &section.slot {
+            Some(span) => span.slice(source).to_string(),
+            None => render_items(&section.items, source),
+        });
+    };
+
+    // A further hop resolves a repeatable item within the section, then navigates.
+    let Some(item) = section.items.iter().find(|it| it.id == *item_id) else {
+        return Err(block(
+            "store.no-such-item",
+            format!("`{address}` names no item `{item_id}` in section `{section_id}`"),
+            address,
+            "name an item that exists in the committed section".to_string(),
+        ));
+    };
+
+    resolve_item_path(item, source, item_rest, address)
+}
+
+/// Split a [`Fragment`] into its section id and the remaining navigation hops, as
+/// plain strings — the read-path is purely structural (no schema roles), so it
+/// resolves each hop over the parsed data. A [`Fragment::Deep`] always carries ≥4
+/// hops (the parser only mints it past three), so its first element is present.
+fn fragment_hops(fragment: &Fragment) -> (&str, Vec<&str>) {
+    match fragment {
+        Fragment::Unit(u) => (u.as_str(), Vec::new()),
+        Fragment::UnitLeaf(u, l) => (u.as_str(), vec![l.as_str()]),
+        Fragment::UnitItem(u, i) => (u.as_str(), vec![i.as_str()]),
+        Fragment::UnitItemLeaf(u, i, l) => (u.as_str(), vec![i.as_str(), l.as_str()]),
+        Fragment::Deep(hops) => (
+            hops[0].as_str(),
+            hops[1..].iter().map(String::as_str).collect(),
+        ),
     }
 }
 
-/// Render a repeatable section's items as a Content list for the store-read path:
-/// each item is its `### <title>` heading and, when the item block carries a slot
-/// (e.g. the spec criterion's `statement`), the slot prose beneath it. Items are
-/// joined by a blank line, mirroring their on-disk order. The composer wraps the
-/// whole string as a `> ` Content blockquote, so `{{@task.spec#criteria}}` reads as
-/// the titled, prose-carrying criteria list the implementer needs.
-fn render_repeatable_items(section: &ParsedSection, source: &str) -> String {
-    section
-        .items
+/// Navigate the remaining `hops` within a located repeatable `item`.
+///
+/// - **no hops** → the item rendered ([`render_item`]);
+/// - **one hop** → a nested item (rendered) when the id matches, else the item's
+///   addressed leaf slot prose byte-for-byte;
+/// - **deeper** → recurse into the named nested item (the M22 multi-level shape).
+///
+/// A hop naming no existing nested item or leaf is a located block, never a panic.
+fn resolve_item_path(
+    item: &ParsedItem,
+    source: &str,
+    hops: &[&str],
+    address: &str,
+) -> Result<String, Finding> {
+    let Some((head, tail)) = hops.split_first() else {
+        return Ok(render_item(item, source));
+    };
+
+    if tail.is_empty() {
+        // Leaf terminus: a nested item id renders that item; else the addressed slot
+        // leaf slices byte-for-byte over its opaque span.
+        if let Some(nested) = item.items.iter().find(|it| it.id == *head) {
+            return Ok(render_item(nested, source));
+        }
+        if let Some(span) = item.slot_span(head) {
+            return Ok(span.slice(source).to_string());
+        }
+        return Err(block(
+            "store.no-such-leaf",
+            format!("`{address}` names no leaf `{head}` on item `{}`", item.id),
+            address,
+            "name a leaf that exists in the committed item".to_string(),
+        ));
+    }
+
+    // A deeper path: `head` must name a nested item to recurse into.
+    let Some(nested) = item.items.iter().find(|it| it.id == *head) else {
+        return Err(block(
+            "store.no-such-item",
+            format!(
+                "`{address}` names no nested item `{head}` on item `{}`",
+                item.id
+            ),
+            address,
+            "name a nested item that exists in the committed item".to_string(),
+        ));
+    };
+    resolve_item_path(nested, source, tail, address)
+}
+
+/// Render a list of repeatable items as a Content list for the store-read path:
+/// each item via [`render_item`], joined by a blank line, mirroring on-disk order.
+/// The composer wraps the whole string as a `> ` Content blockquote, so
+/// `{{@task.spec#criteria}}` reads as the titled, prose-carrying list the implementer
+/// needs.
+fn render_items(items: &[ParsedItem], source: &str) -> String {
+    items
         .iter()
-        .map(|item| {
-            if !item.slots.is_empty() {
-                // A multi-slot item: the `### <title>` heading then each slot under its
-                // `#### <Leaf-Title>` sub-heading (the writer's form), so the read view
-                // mirrors the on-disk shape.
-                let mut out = format!("### {}", item.title.trim());
-                for (leaf_id, span) in &item.slots {
-                    out.push_str(&format!(
-                        "\n\n#### {}\n\n{}",
-                        title_case_label(leaf_id),
-                        span.slice(source).trim()
-                    ));
-                }
-                out
-            } else {
-                match &item.slot {
-                    Some(span) => {
-                        format!("### {}\n\n{}", item.title.trim(), span.slice(source).trim())
-                    }
-                    None => format!("### {}", item.title.trim()),
-                }
-            }
-        })
+        .map(|item| render_item(item, source))
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+/// Render a single repeatable item: its `### <title>` heading, then — for a
+/// multi-slot template — each slot under its `#### <Leaf-Title>` sub-heading (the
+/// writer's form), or — for a single bare-prose slot — the slot prose beneath the
+/// heading. A slot-less item is its heading alone. Mirrors the on-disk shape.
+fn render_item(item: &ParsedItem, source: &str) -> String {
+    if !item.slots.is_empty() {
+        let mut out = format!("### {}", item.title.trim());
+        for (leaf_id, span) in &item.slots {
+            out.push_str(&format!(
+                "\n\n#### {}\n\n{}",
+                title_case_label(leaf_id),
+                span.slice(source).trim()
+            ));
+        }
+        out
+    } else {
+        match &item.slot {
+            Some(span) => {
+                format!("### {}\n\n{}", item.title.trim(), span.slice(source).trim())
+            }
+            None => format!("### {}", item.title.trim()),
+        }
+    }
 }
 
 /// Title-case a single-word slot leaf id for its `#### <Leaf-Title>` sub-heading in
@@ -521,6 +604,106 @@ A cold node loses its sessions; clients re-authenticate.
         );
         assert!(err.location.is_some(), "the block is located");
         assert!(err.route.is_some(), "the block carries a route");
+    }
+
+    /// (M39 inc-1 T1) A **fragmentless** address reads the whole committed doc
+    /// byte-for-byte — the `jigc doc show <ref>` whole-doc read. The parse enforces
+    /// conformance first, then the committed source is returned verbatim (the
+    /// round-trip guarantee: the file's own bytes are its canonical render).
+    #[test]
+    fn store_reads_a_whole_committed_doc_with_no_fragment() {
+        let root = TempRoot::new("whole-doc");
+        write_committed_adr(root.path());
+
+        let address = Address::parse("adr:single-node-cache").expect("valid address");
+        let whole =
+            read_slice(root.path(), &schemas(), &address).expect("whole committed ADR resolves");
+        assert_eq!(
+            whole, COMMITTED_ADR,
+            "whole-doc read is byte-for-byte the file"
+        );
+
+        // A committed spec (repeatable body) reads whole just the same.
+        let path = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, COMMITTED_SPEC).expect("write committed spec");
+        let address = Address::parse("spec:gateway-rate-limiting").expect("valid address");
+        let whole = read_slice(root.path(), &schemas(), &address).expect("whole committed spec");
+        assert_eq!(
+            whole, COMMITTED_SPEC,
+            "whole-doc spec read is byte-for-byte"
+        );
+    }
+
+    /// (M39 inc-1 T1) A **2-hop item slice** over a repeatable section
+    /// (`spec:…#criteria/<id>`) renders that single item — its `### <title>` heading
+    /// and its `statement` slot prose — the read-path inverse of the writer's item.
+    #[test]
+    fn store_slices_a_committed_spec_item() {
+        let root = TempRoot::new("spec-item");
+        let path = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, COMMITTED_SPEC).expect("write committed spec");
+
+        let address =
+            Address::parse("spec:gateway-rate-limiting#criteria/rejects-burst").expect("valid");
+        let item = read_slice(root.path(), &schemas(), &address).expect("item slice resolves");
+        insta::assert_snapshot!(item, @r"
+        ### Rejects the 101st request
+
+        The gateway rejects the 101st request in a rolling 60s window.
+        ");
+    }
+
+    /// (M39 inc-1 T1) A **3-hop leaf slice** (`spec:…#criteria/<id>/statement`) returns
+    /// the addressed leaf's prose **byte-for-byte** over its opaque span — no heading,
+    /// no rendering, just the committed slot bytes.
+    #[test]
+    fn store_slices_a_committed_spec_item_leaf_byte_for_byte() {
+        let root = TempRoot::new("spec-item-leaf");
+        let path = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, COMMITTED_SPEC).expect("write committed spec");
+
+        let address = Address::parse("spec:gateway-rate-limiting#criteria/rejects-burst/statement")
+            .expect("valid");
+        let leaf = read_slice(root.path(), &schemas(), &address).expect("leaf slice resolves");
+        assert_eq!(
+            leaf, "The gateway rejects the 101st request in a rolling 60s window.",
+            "the leaf slice is the committed statement prose, byte-for-byte",
+        );
+    }
+
+    /// (M39 inc-1 T1) A fragment naming a **missing section** still blocks with
+    /// `store.no-such-section` + a route; a missing **item** blocks with
+    /// `store.no-such-item`; a missing **leaf** on a multi-slot-less item resolves the
+    /// single bare-prose slot (the `slot_span` contract) — so the miss surfaces only
+    /// where the parsed data has no such target.
+    #[test]
+    fn store_read_misses_block_with_a_route() {
+        let root = TempRoot::new("misses");
+        let path = root.path().join("specs").join("gateway-rate-limiting.md");
+        std::fs::create_dir_all(path.parent().unwrap()).expect("mk specs/");
+        std::fs::write(&path, COMMITTED_SPEC).expect("write committed spec");
+        let schemas = schemas();
+
+        let no_section = Address::parse("spec:gateway-rate-limiting#nope").expect("valid");
+        let err =
+            read_slice(root.path(), &schemas, &no_section).expect_err("missing section blocks");
+        assert_eq!(err.code, "store.no-such-section");
+        assert!(
+            err.route.is_some(),
+            "the no-such-section block carries a route"
+        );
+
+        let no_item =
+            Address::parse("spec:gateway-rate-limiting#criteria/no-such-item").expect("valid");
+        let err = read_slice(root.path(), &schemas, &no_item).expect_err("missing item blocks");
+        assert_eq!(err.code, "store.no-such-item");
+        assert!(
+            err.route.is_some(),
+            "the no-such-item block carries a route"
+        );
     }
 }
 
