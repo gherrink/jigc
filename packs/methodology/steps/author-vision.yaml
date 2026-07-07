@@ -17,9 +17,9 @@ resolve only after `grounded-in` is set:
 
 jigc start --task {{task.id}}
 
-The first grounding research's findings appear here for reference (nothing appears
-until you set `grounded-in` and re-compose; all bound research is recorded in
-`grounded-in`, not only the one shown):
+The findings of ALL grounding research appear here for reference (nothing appears
+until you set `grounded-in` and re-compose; with multiple grounding sources each
+one renders under its own labelled `> **type:slug**` blockquote):
 {{ @task.vision.grounded-in#findings }}
 
 Author the three prose slots — the core claim, the invariants it holds, and the
