@@ -117,6 +117,29 @@ pub fn read_slice(
         ));
     };
 
+    // A placement doctype is a singleton homed at its one literal `placement.file`, so
+    // `canonical_path` resolves it regardless of `slug`. On the read path the only valid
+    // address is the singleton's canonical slug (= the type id, mirroring how `create`
+    // fixes a singleton's slug to `schema.ty`); any other slug names no committed doc, so
+    // route a not-found block rather than silently returning the singleton's content for
+    // an invalid reference (M39 read-surface hardening — a read verb must route a bad ref
+    // like every other). This guard is read-scoped: the write/promote/reconcile callers
+    // use `canonical_path` directly and are unaffected.
+    if schema.placement.is_some() && slug != schema.ty {
+        return Err(block(
+            "store.not-found",
+            format!(
+                "`{address_str}` names no committed doc: `{type_name}` is a singleton, so its only address is `{type_name}:{}`",
+                schema.ty
+            ),
+            &address_str,
+            format!(
+                "read `{type_name}:{}` — a singleton doctype has one instance at a fixed slug",
+                schema.ty
+            ),
+        ));
+    }
+
     // Identity is the path: `<repo_root>/<location>/<slug>.md`. A transient
     // (location-less) type has no committed path and is not store-readable.
     let Some(path) = canonical_path(repo_root, schema, slug) else {

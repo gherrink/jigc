@@ -461,3 +461,61 @@ fn doc_show_serves_the_committed_read_surface() {
         "the block envelope names the bad ref + its route; got:\n{stderr}",
     );
 }
+
+/// A **placement singleton** (`vision`, homed at the literal `VISION.md`) is addressable
+/// only at its canonical slug = the type id (`vision:vision`). `jigc doc show` must route
+/// a **non-canonical** slug (`vision:does-not-exist`) as a not-found block — never silently
+/// return the singleton's content for an invalid reference — while the canonical read
+/// (`vision:vision`) keeps working. Regression guard for the M39 read-surface hardening:
+/// `canonical_path` resolves a placement doctype regardless of slug, so without the
+/// read-path guard ANY slug returned `VISION.md` at exit 0 (a looseness in the 1.0 read
+/// contract). Proven on the emitted bytes + exit code of the real binary.
+#[test]
+fn doc_show_routes_a_non_canonical_slug_for_a_placement_singleton() {
+    let repo = TempDir::new("placement-slug");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    commit_vision(repo.path(), home.path());
+
+    // The canonical slug still resolves the committed VISION.md at exit 0 (the valid read
+    // stays working — the guard must not over-reject).
+    let ok = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "vision:vision"],
+        None,
+    );
+    assert_ok(
+        &ok,
+        "`jigc doc show vision:vision` (the canonical singleton slug)",
+    );
+    assert!(
+        stdout_of(&ok).contains("A deterministic context compiler for coding agents."),
+        "the canonical placement read returns the committed VISION.md body",
+    );
+
+    // A NON-canonical slug names no committed doc — it must exit non-zero with the routed
+    // not-found envelope, exactly like a non-placement bad ref, not return VISION.md.
+    let bad = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "show", "vision:does-not-exist"],
+        None,
+    );
+    assert!(
+        !bad.status.success(),
+        "a non-canonical placement slug must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        stdout_of(&bad),
+        String::from_utf8_lossy(&bad.stderr),
+    );
+    assert!(
+        !stdout_of(&bad).contains("A deterministic context compiler for coding agents."),
+        "the invalid ref must NOT leak the singleton's committed content; stdout:\n{}",
+        stdout_of(&bad),
+    );
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains("route:") && stderr.contains("does-not-exist"),
+        "the block envelope names the bad ref + its route; got:\n{stderr}",
+    );
+}
