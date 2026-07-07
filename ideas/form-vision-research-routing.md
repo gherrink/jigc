@@ -1,6 +1,6 @@
 # form-vision research routing — detect a missing ground, route to do-research
 
-**Status: parked 2026-07-06, unscheduled — direction settled at parking.** From RC greenfield trial 1, finding A5 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)); the route-vs-merge fork settled by the human 2026-07-06. Indexed from [VISION.md](../VISION.md) → Open questions.
+**Status: ✅ shipped M39** (parked 2026-07-06, direction settled at parking; built as the empty-research-store `do-research` advisory on `form-vision` — route-not-merge, non-blocking). From RC greenfield trial 1, finding A5 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)); the route-vs-merge fork settled by the human 2026-07-06. Indexed from [VISION.md](../VISION.md) → Open questions.
 
 ## The gap
 

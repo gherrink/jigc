@@ -2498,3 +2498,61 @@ $ jigc ingest
 3. **The two root placement doctypes coexist under one composition.** Both land in the *same* `[dev ▸ methodology]` repo (methodology `vision` + dev `changelog`), no collision — the RC-trial layout the greenfield trial runs on.
 4. **Exact-path ownership — a literal home is not a glob.** `jigc ingest` reports the three managed docs `adopted` and the sibling root `README.md`/`CLAUDE.md` `unmanaged`: a placement home owns exactly its one declared `file:`, so a neighboring root `.md` is never vacuumed into management (rebutting the M16 B-1 dir-glob objection).
 5. **A managed root file reconciles like any managed doc.** An out-of-band nonconformant edit to **each** root home (`VISION.md`, `CHANGELOG.md`) is detected + routed `needs-reconcile` by the census, while the unmanaged siblings stay untouched — the placement branch the M38 reconciliation sweep learned (Inc 2).
+
+## 40. The M39 RC-findings wave, end-to-end — read surface · team-ready milestone record · relocation floor · slug + advisory (M39)
+
+The M39 wave answers the RC greenfield trial's live findings ([completions/artifacts/RC-greenfield/trial-record.md](../completions/artifacts/RC-greenfield/trial-record.md)) — four features whose per-feature reds land in their own increments; this flow is the **composite acceptance** that ties them into one done-picture over the real binary (`crates/cli/tests/flow40_acceptance.rs`), composed the RC way (the on-disk **methodology** pack over the embedded **dev** base, `[dev ▸ methodology]`). The designs of record are elsewhere and not restated here: the read surface in [doc-read-surface.md](doc-read-surface.md), the milestone record + the `.jigc`-is-the-workbench principle in [team-ready-state.md](team-ready-state.md), the freeze-exempt relocation floor in [storage.md](storage.md) (→ What M39 closes) + [corpus-migration.md](corpus-migration.md) (→ The freeze-exempt sibling), and the slug mint in [structural-grammar.md](structural-grammar.md) (→ Open questions). Notation illustrative.
+
+### The walk — four arms, one wave
+
+```text
+# ── F1 · the read surface: a fresh session reads + revises a committed vision, all groundings in view. ──
+$ jigc doc create research --title "Cache Benchmarks"   # → research:cache-benchmarks   (+ finalize)
+$ jigc doc create research --title "Sharded Writes"     # → research:sharded-writes     (+ finalize)
+$ jigc start --workflow form-vision "form the project vision"
+$ jigc doc create vision --title Vision --task form-the-project-vision   # → vision:vision
+$ jigc doc set-field vision:vision#meta/grounded-in "[research:cache-benchmarks, research:sharded-writes]"
+$ jigc start --task form-the-project-vision            # RE-COMPOSE
+> …A single node caps throughput under contention.     # BOTH groundings' findings render, not just the first
+> …Sharding removes the write-contention ceiling.      #   (the cardinality-n edge-walk fix — the trial's #1 gap)
+$ jigc task finalize form-the-project-vision           # → promote VISION.md (both grounded-in targets resolve)
+$ jigc doc show vision:vision                           # the M39 read surface — the committed doc, byte-exact
+> # Vision …thesis… grounded-in: [research:cache-benchmarks, research:sharded-writes]
+
+# ── F1/team-ready · the milestone record: create → add-task ×2 → join, then a FRESH CLONE continues. ──
+$ jigc milestone create "Cache rework"                  # → milestone:cache-rework  (base pin recorded)
+$ jigc milestone add-task cache-rework "Warm the read cache"    # append a tasks item (status: active)
+$ jigc milestone add-task cache-rework "Evict cold entries"     # append a second (each a path-scoped record commit)
+$ jigc milestone finalize cache-rework                  # join: flip every item + header status → joined, byte-stable
+> commit docs/milestone-records/cache-rework.md         #   the record's status-flip folds INTO the join commit
+
+# … a teammate clones; NO `.jigc/` working state travels …
+$ rm -rf .jigc                                          # simulate the fresh clone — drop ALL workbench state
+$ jigc doc show milestone-record:cache-rework --format json
+> { "type": "milestone-record", "slug": "cache-rework", "status": "joined",
+>   "sections": { "tasks": [ { "task-id": "warm-the-read-cache", "intent": "Warm the read cache", … },
+>                            { "task-id": "evict-cold-entries",  … } ] } }   # the pinned 1.0 shape
+$ jigc milestone list-tasks cache-rework                # continue: re-derives the demoted cache from the record
+> warm-the-read-cache   evict-cold-entries              #   .jigc/milestones/cache-rework/{base,tasks}.json re-seeded
+
+# ── the relocation floor: a stranded freeze-exempt instance is detected + moved, never silently lost. ──
+$ git mv research/cache-benchmarks.md docs/legacy-research/cache-benchmarks.md   # a pre-convention strand
+$ jigc relocate research --from docs/legacy-research/
+> 1 moved   docs/legacy-research/cache-benchmarks.md -> research/cache-benchmarks.md   # byte-preserving git mv
+
+# ── slug + advisory: a long intent caps readably; --slug overrides; empty research nudges do-research. ──
+$ jigc start --workflow single-task "move the session cache to a shared redis cluster"
+> task: move-the-session-cache-to                       # ≤5-word word-boundary cap (was mid-word truncation)
+$ jigc start --workflow single-task "move the session cache …" --slug redis-cache
+> task: redis-cache                                     # --slug sets identity verbatim
+$ jigc start --workflow form-vision "form the project vision"   # over an EMPTY research store
+> consider running `do-research` first — a vision grounds in research   # advisory, NON-blocking
+> Run: jigc doc create vision …                          #   form-vision still composes fully
+```
+
+### What it asserts (the M39-wave acceptance bar — flow40_acceptance.rs)
+
+1. **The read surface serves + re-composes every grounding (F1).** After grounding a `vision` in **two** committed `research` docs, the resume re-compose renders **both** groundings' findings into the guidance (the cardinality-n edge-walk, not just the first), finalize resolves both `grounded-in` targets in one commit, and `jigc doc show vision:vision` serves the committed doc byte-exact carrying the thesis + both targets.
+2. **The team-ready arc joins byte-stable and continues from a fresh clone.** `create → add-task ×2 → finalize` yields the committed `docs/milestone-records/cache-rework.md` with the base pin + both sub-tasks; `join` flips every item's + the header `status` to `joined` (no `active` survives), folded into the join commit. After `rm -rf .jigc`, `jigc doc show milestone-record:cache-rework --format json` returns the pinned 1.0 shape and the next milestone op re-derives `.jigc/milestones/<id>/{base,tasks}.json` from the committed record — the source-of-truth demotion made true.
+3. **The freeze-exempt relocation floor moves a stranded instance.** A committed `research` instance `git mv`'d to a prior home is detected + moved back to its current schema home by `jigc relocate research --from <prior>` (reported `1 moved`, on disk, byte-preserving) — never silently stranded.
+4. **Slug capping + `--slug` + the empty-research advisory.** A 9-word intent mints the `≤5`-word word-boundary-capped slug; `--slug` sets identity verbatim; and `form-vision` composed against an **empty** research store surfaces the non-blocking `do-research` advisory while still composing fully.

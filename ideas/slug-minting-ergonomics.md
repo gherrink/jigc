@@ -1,6 +1,6 @@
 # Slug minting ergonomics — word-boundary mint, shorter cap, `--slug` override
 
-**Status: parked 2026-07-06, unscheduled.** From RC greenfield trial 1, finding F3 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)). Indexed from [VISION.md](../VISION.md) → Open questions. The concrete arrival of [structural-grammar.md](../design/structural-grammar.md) → Open questions "minting mechanics (slug normalization, collision-suffix form)".
+**Status: ✅ shipped M39** (parked 2026-07-06; built as the word-boundary/~5-word-cap mint + the mint-time `--slug` override on `jigc start` + `jigc doc create`). From RC greenfield trial 1, finding F3 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)). Indexed from [VISION.md](../VISION.md) → Open questions. The concrete arrival of [structural-grammar.md](../design/structural-grammar.md) → Open questions "minting mechanics (slug normalization, collision-suffix form)".
 
 ## The gap
 

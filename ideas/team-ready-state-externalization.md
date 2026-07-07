@@ -1,6 +1,6 @@
 # Team-ready state externalization — shareable work state out of `.jigc`
 
-**Status: parked 2026-07-06, unscheduled.** From RC greenfield trial 1, finding A6 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)). Indexed from [VISION.md](../VISION.md) → Open questions.
+**Status: ✅ shipped M39** (parked 2026-07-06; built as the `milestone-record` doctype under the `.jigc`-is-the-workbench principle — design of record in [design/team-ready-state.md](../design/team-ready-state.md)). The standalone single-task sibling stays parked in [task-record-graduation](task-record-graduation.md). From RC greenfield trial 1, finding A6 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)). Indexed from [VISION.md](../VISION.md) → Open questions.
 
 ## The gap
 

@@ -1,6 +1,6 @@
 # Doc read surface — `jigc doc show` + render every grounded source on compose
 
-**Status: parked 2026-07-06, unscheduled — the trial's #1 finding, strongest next-milestone candidate.** From RC greenfield trial 1, finding F1 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)). Indexed from [VISION.md](../VISION.md) → Open questions.
+**Status: ✅ shipped M39** (parked 2026-07-06 as the trial's #1 finding; built as `jigc doc show` + the render-every-grounding fix, design of record in [design/doc-read-surface.md](../design/doc-read-surface.md)). From RC greenfield trial 1, finding F1 ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md)). Indexed from [VISION.md](../VISION.md) → Open questions.
 
 ## The gap
 

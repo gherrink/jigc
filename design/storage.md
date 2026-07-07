@@ -8,6 +8,8 @@ Builds on [structural-grammar.md](structural-grammar.md) (addressing, units, min
 
 **The committed Markdown at type locations is the only source of truth.** Every other artifact — the staging working area, the edge index, the file↔state hashes — is either a rebuildable cache or a transient working copy. Delete all of it, rebuild from the `.md`, and nothing committed is lost; the system degrades cleanly to *plain Markdown a human can read and edit*. This is what keeps "documents live in the repo as plain files" honest.
 
+**The milestone record joins this set (M39) — a strengthening, not a relaxation.** In-flight **milestone** state (the base-SHA pin + the ordered sub-task list with each sub-task's `intent`/`status`) once lived only as raw engine JSON in the gitignored `.jigc/milestones/<id>/{base,tasks}.json` — a *second*, clone-invisible island outside the `.md` set. M39 graduates it to a committed **`milestone-record`** doctype (`docs/milestone-records/<slug>.md`) and **demotes** that JSON to exactly a *rebuildable cache* (re-derived from the record when absent or stale), so the milestone record becomes a first-class member of the only-source-of-truth `.md` set: delete `.jigc/`, rebuild from the `.md`s, and milestone state survives too. The principle underneath — **`.jigc/` is the workbench, the repo is the record** (working state gitignored by *identity*, the record committed at a legible home) — is the design of record in [team-ready-state.md](team-ready-state.md); this invariant is revised in the *strengthening* direction (a new committed `.md` member), never relaxed toward a second raw-JSON source of truth.
+
 ## The document file format
 
 ### Single-file canonical Markdown
@@ -87,7 +89,7 @@ docs/decisions/ docs/specs/ docs/prds/ docs/architecture/ docs/changelog/   # co
   tasks/<task-id>/          #   gitignored — per-task working area (staging)
   index/                    #   gitignored — edge index (rebuildable cache)
   state/                    #   gitignored — file↔CLI-state hashes (rebuildable)
-  milestones/               #   gitignored — milestone working state
+  milestones/               #   gitignored — milestone WIP (merge staging, worktrees) + the {base,tasks}.json cache re-derived from the committed milestone-record (M39; team-ready-state.md)
   worktrees/<sub-task-id>/  #   gitignored — ephemeral per-sub-agent code worktrees (provisioned + torn down per fan-out)
 ```
 
