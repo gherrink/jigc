@@ -876,14 +876,18 @@ fn dispatch_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Outcome 
 /// by-task-id join and writes the suffix-resolved doc bodies into the parent staging area
 /// `<.jigc>/milestones/<id>/merged/docs/` — **blocking** (surfacing the routed finding,
 /// committing nothing) if the join holds any blocking finding (a same-doc clash, an
-/// unknown milestone), the `dispatch_join` precedent; (2) the message is the
-/// CLI-[`synthesized_message`] structural projection of the milestone id + its id-ordered
-/// sub-task list (a milestone has no commit doc to render — planner-note (b)); (3)
-/// [`plan_milestone_finalize`] runs the shared preflight (`base` == HEAD) + empty-commit
-/// guard + promote/hash sweep over the materialized staging area; (4) the **shared**
-/// [`crate::task::execute_finalize_plan`] executor promotes, stages, and commits in **one**
-/// boundary, removing the milestone area on success. The engine performs no git; the CLI
-/// reads HEAD and locates `.jigc/`.
+/// unknown milestone), the `dispatch_join` precedent; (1b) under a `[dev ▸ methodology]`
+/// project [`flip_record_for_finalize`] flips the committed `milestone-record` to `joined`
+/// (the `join` in-place-mutate arm) and folds that write into THIS commit — path-added
+/// alongside the promoted docs, its change gating `has_diff`, guarded so a blocked/failed
+/// finalize restores it (`design/team-ready-state.md` → The commit model — join folds); (2)
+/// the message is the CLI-[`synthesized_message`] structural projection of the milestone id +
+/// its id-ordered sub-task list (a milestone has no commit doc to render — planner-note (b));
+/// (3) [`plan_milestone_finalize`] runs the shared preflight (`base` == HEAD, or advanced over
+/// a record-only range) + empty-commit guard + promote/hash sweep over the materialized staging
+/// area; (4) the **shared** [`crate::task::execute_finalize_plan`] executor promotes, stages
+/// (incl. the flipped record), and commits in **one** boundary, removing the milestone area on
+/// success. The engine performs no git; the CLI reads HEAD and locates `.jigc/`.
 fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Result<Outcome> {
     // The committed doc-store + `.jigc/` bind to jigc_home (the main checkout); HEAD + the
     // git commit/stage stay on the worktree `repo_root` (M31 Inc 2 / WF3). The promote
@@ -916,6 +920,20 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let materialized = materialize(&jigc_root, &jigc_home, milestone_id, &schemas, &committed)
         .map_err(finding_to_err)?;
 
+    // The `join` in-place-mutate arm, CLI side (`design/team-ready-state.md` → Engine capability
+    // 1 (write), the `join` — in-place mutate arm; The commit model — join folds): under a
+    // `[dev ▸ methodology]` project flip the committed record's every `tasks` item + the header
+    // `status` active → joined via [`engine::milestone::join_record`] and FOLD the write into
+    // THIS single finalize commit (never a second commit). Dev-only (no methodology pack, no
+    // `milestone-record` schema) resolves no record → `None`, the finalize path byte-untouched.
+    // The returned [`RecordFlipGuard`] restores the pre-flip bytes on ANY blocked/failed
+    // finalize below (the flip must not persist on a non-landed commit — "Writes are
+    // transactional"); the success paths [`disarm`](RecordFlipGuard::disarm) it once the commit
+    // has landed.
+    let mut record_flip = flip_record_for_finalize(&repo_root, &jigc_home, &schemas, milestone_id)?;
+    let record_changed = record_flip.as_ref().is_some_and(|f| f.changed);
+    let record_pathspec = record_flip.as_ref().map(|f| f.pathspec.clone());
+
     // Step 2 — the CLI-synthesized message (a milestone has no commit doc to render).
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
@@ -944,7 +962,12 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     // the fan-out's code — it lives in the isolated worktrees — so a main-checkout
     // diff/untracked scan would both miss the real code and false-count unrelated WIP.
     let head = git_head(&repo_root)?;
-    let has_diff = !materialized.addresses.is_empty() || worktrees_have_staged_code(&worktrees)?;
+    // `record_changed` folds the milestone record's `join` status-flip into the diff signal
+    // (M39 T4 — "has_diff gated on the record change"): a docs-only milestone whose only change
+    // is the record flip is NOT an empty commit.
+    let has_diff = !materialized.addresses.is_empty()
+        || worktrees_have_staged_code(&worktrees)?
+        || record_changed;
 
     // The finalize base-guard refinement (`design/team-ready-state.md` → The commit model: the
     // finalize base-guard refinement; `DECISIONS.md` 2026-07-07). Per-op record commits advance
@@ -1041,9 +1064,16 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             &dir,
             &schemas,
             None,
-            crate::task::StagePolicy::ChainPerSubtask { subtasks, format },
+            crate::task::StagePolicy::ChainPerSubtask {
+                subtasks,
+                format,
+                record: record_pathspec,
+            },
         )? {
             Ok(hook_output) => {
+                // The boundary landed — the flipped record rode the aggregate commit; disarm
+                // its restore guard so the committed `joined` bytes are not reverted.
+                disarm_record_flip(&mut record_flip);
                 // Relay the aggregate commit's non-blocking hook output (each per-sub-task
                 // commit already relayed its own inside `chain_commit` — every fan-out commit
                 // runs the user's hooks, `design/finalize.md` → 6. Commit).
@@ -1086,12 +1116,15 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
             &dir,
             &schemas,
             format,
-            crate::task::StagePolicy::Combine(worktrees),
+            crate::task::StagePolicy::Combine(worktrees, record_pathspec),
         )?;
         // On a landed commit, clean up the per-sub-task working areas too (the executor only
         // removed the milestone area). A failed/rolled-back finalize exits non-zero and leaves
         // the areas intact for retry.
         if code.code == 0 {
+            // The flipped record rode the single combine commit — disarm its restore guard so
+            // the committed `joined` bytes are not reverted.
+            disarm_record_flip(&mut record_flip);
             cleanup_subtask_areas(&jigc_root, &list);
             // Tear down the fan-out worktrees on the landed default-path commit too (the
             // heavier A2 teardown — a non-blocking warning on a leaked worktree).
@@ -1099,6 +1132,92 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         }
         Ok(code)
     }
+}
+
+/// A transactional guard over the milestone record's `joined` flip that the finalize commit
+/// folds in (`design/team-ready-state.md` → The commit model — join folds). Holds the record's
+/// pre-flip bytes; on `Drop` (any early return / blocked / failed finalize) it rewrites them, so
+/// a non-landed finalize leaves the committed record at its pre-flip `active` state ("Writes are
+/// transactional" — the flip must not persist without the commit). The success paths call
+/// [`disarm`](RecordFlipGuard::disarm) once the commit has landed, so the committed `joined`
+/// bytes are kept.
+struct RecordFlipGuard {
+    /// The committed record's on-disk path (outside `.jigc/`).
+    path: PathBuf,
+    /// The pre-flip bytes to restore on an aborted finalize.
+    before: String,
+    /// Whether the flip actually changed bytes — folded into the `has_diff` signal.
+    changed: bool,
+    /// The repo-relative pathspec the finalize commit path-adds.
+    pathspec: String,
+    /// Cleared by [`disarm`](RecordFlipGuard::disarm) once the commit lands.
+    armed: bool,
+}
+
+impl RecordFlipGuard {
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for RecordFlipGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            // Best-effort restore — the finalize did not land, so revert the working-tree flip.
+            let _ = std::fs::write(&self.path, &self.before);
+        }
+    }
+}
+
+/// Disarm the (optional) record-flip guard on a landed finalize — a `None` (dev-only, no record)
+/// is inert.
+fn disarm_record_flip(guard: &mut Option<RecordFlipGuard>) {
+    if let Some(guard) = guard {
+        guard.disarm();
+    }
+}
+
+/// Flip the committed `milestone-record` to `joined` in place and set up its fold into the
+/// finalize commit — the CLI half of the `join` in-place-mutate arm
+/// (`design/team-ready-state.md` → Engine capability 1 (write); The commit model — join folds).
+///
+/// Returns `None` dev-only (no `milestone-record` schema resolved → the finalize path stays
+/// byte-identical to today — the omitting-context inert case). Under `[dev ▸ methodology]` it
+/// reads the committed record, calls [`engine::milestone::join_record`] (the byte-stable
+/// in-place item-leaf + header `status` splice, active → joined), and returns an **armed**
+/// [`RecordFlipGuard`] carrying the pre-flip bytes (for a transactional restore on a
+/// blocked/failed finalize), the change signal (fed into `has_diff`), and the repo-relative
+/// pathspec the finalize commit path-adds. The record home is under `jigc_home`'s docs-root; the
+/// pathspec is stripped against the git-commit `repo_root` (they coincide outside a worktree,
+/// and milestone-finalize-in-a-worktree is the deferred WF4/WF5 concern).
+fn flip_record_for_finalize(
+    repo_root: &Path,
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    milestone_id: &str,
+) -> Result<Option<RecordFlipGuard>> {
+    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+        return Ok(None);
+    };
+    let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
+        .context("the `milestone-record` doctype declares no committed location")?;
+    let before = std::fs::read_to_string(&record_path)
+        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
+    let joined = engine::milestone::join_record(&record_path, schema, milestone_id)
+        .map_err(finding_to_err)?;
+    let pathspec = record_path
+        .strip_prefix(repo_root)
+        .unwrap_or(&record_path)
+        .to_str()
+        .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?
+        .to_owned();
+    Ok(Some(RecordFlipGuard {
+        changed: joined != before,
+        path: record_path,
+        before,
+        pathspec,
+        armed: true,
+    }))
 }
 
 /// Remove each sub-task's working area (`.jigc/tasks/<sub-id>/`) after a **landed**

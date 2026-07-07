@@ -1167,14 +1167,16 @@ pub(crate) enum StagePolicy {
     /// ([`stage_index_honoring`]); unstaged/untracked WIP stays uncommitted.
     IndexHonoring,
     /// The `squash: true` fan-out boundary (M31 Inc 4) — the id-ordered list of the
-    /// milestone's still-provisioned worktree paths. The sub-agent code lives in those
-    /// isolated worktrees, NOT this checkout, so a `git add --all` sweep would drop it;
-    /// instead [`combine_commit`] folds each worktree's staged code-set onto the base tree
-    /// **off-line**, overlays the promoted docs + config, and commits the combined tree with
-    /// the user's hooks running from a dedicated worktree (M31 Inc 5). An empty list (a
-    /// docs-only / never-provisioned milestone) degrades to a docs-only commit, byte-identical
-    /// to the M7 single-aggregate form.
-    Combine(Vec<PathBuf>),
+    /// milestone's still-provisioned worktree paths, plus the optional repo-relative
+    /// `milestone-record` pathspec to path-add into the same commit (M39 T4: the `join`
+    /// status-flip folds into the one finalize commit; `None` dev-only / no record). The
+    /// sub-agent code lives in those isolated worktrees, NOT this checkout, so a `git add
+    /// --all` sweep would drop it; instead [`combine_commit`] folds each worktree's staged
+    /// code-set onto the base tree **off-line**, overlays the promoted docs + config + the
+    /// record, and commits the combined tree with the user's hooks running from a dedicated
+    /// worktree (M31 Inc 5). An empty list (a docs-only / never-provisioned milestone)
+    /// degrades to a docs-only commit, byte-identical to the M7 single-aggregate form.
+    Combine(Vec<PathBuf>, Option<String>),
     /// The `squash: false` fan-out boundary (M31 — WIP-safe rework). The id-ordered
     /// `(staged-patch, rendered-commit-message)` pairs for the code-carrying sub-tasks, plus
     /// the output [`Format`] for the per-commit hook relay. [`chain_commit`] builds the whole
@@ -1187,6 +1189,10 @@ pub(crate) enum StagePolicy {
     ChainPerSubtask {
         subtasks: Vec<(Vec<u8>, String)>,
         format: Format,
+        /// The optional repo-relative `milestone-record` pathspec to path-add into the
+        /// merged-docs aggregate commit (M39 T4: the `join` status-flip folds into the one
+        /// finalize commit; `None` dev-only / no record).
+        record: Option<String>,
     },
 }
 
@@ -1338,8 +1344,8 @@ pub(crate) fn try_execute_finalize_plan(
             // + config, and commit the combined tree with the user's hooks running from a
             // dedicated worktree — never `git add --all` (the code lives in the isolated
             // worktrees, not this checkout, so a sweep would drop it).
-            StagePolicy::Combine(worktrees) => {
-                combine_commit(repo_root, &worktrees, plan, &msg_path)
+            StagePolicy::Combine(worktrees, record) => {
+                combine_commit(repo_root, &worktrees, record.as_deref(), plan, &msg_path)
             }
             // The `squash: false` honest-rework boundary (M31 — WIP-safe): build the N+1
             // commit chain in a dedicated worktree (one commit per sub-task carrying its own
@@ -1348,9 +1354,18 @@ pub(crate) fn try_execute_finalize_plan(
             // unrelated WIP intact (no `git reset --hard`). Returns the aggregate's hook
             // output (the success-relay site surfaces it; the per-sub-task outputs are relayed
             // inside).
-            StagePolicy::ChainPerSubtask { subtasks, format } => {
-                chain_commit(repo_root, &subtasks, plan, &msg_path, format)
-            }
+            StagePolicy::ChainPerSubtask {
+                subtasks,
+                format,
+                record,
+            } => chain_commit(
+                repo_root,
+                &subtasks,
+                record.as_deref(),
+                plan,
+                &msg_path,
+                format,
+            ),
         }
     })();
     let _ = std::fs::remove_file(&msg_path);
@@ -2085,19 +2100,21 @@ fn git_apply_index(repo_root: &Path, patch: &[u8]) -> Result<()> {
 fn combine_commit(
     repo_root: &Path,
     worktrees: &[PathBuf],
+    record: Option<&str>,
     plan: &engine::finalize::FinalizePlan,
     msg_path: &Path,
 ) -> Result<String> {
-    // base == HEAD (the milestone preflight guaranteed it before we got here), so the
-    // fan-out's pin tree is this checkout's HEAD tree.
+    // base == HEAD (the milestone preflight guaranteed it, or advanced over a record-only
+    // range, before we got here), so the fan-out's pin tree is this checkout's HEAD tree.
     let code_tree = match crate::combine::combine_worktree_trees(repo_root, "HEAD", worktrees)? {
         crate::combine::CombineOutcome::Combined(tree) => tree,
         crate::combine::CombineOutcome::Blocked(finding) => return Err(finding_to_err(finding)),
     };
-    // Overlay the promoted docs + config onto the combined code tree and commit it (with the
-    // user's hooks) as a child of HEAD, then fast-forward main — the shared WIP-safe aggregate.
+    // Overlay the promoted docs + config + the flipped milestone record onto the combined code
+    // tree and commit it (with the user's hooks) as a child of HEAD, then fast-forward main —
+    // the shared WIP-safe aggregate.
     let head = git_head(repo_root)?;
-    overlay_docs_commit_and_ff(repo_root, &code_tree, &head, plan, msg_path)
+    overlay_docs_commit_and_ff(repo_root, &code_tree, &head, record, plan, msg_path)
 }
 
 /// Build the merged-docs aggregate commit **off the live checkout** and fast-forward main —
@@ -2127,6 +2144,7 @@ fn overlay_docs_commit_and_ff(
     repo_root: &Path,
     base_treeish: &str,
     parent: &str,
+    record: Option<&str>,
     plan: &engine::finalize::FinalizePlan,
     msg_path: &Path,
 ) -> Result<String> {
@@ -2141,6 +2159,14 @@ fn overlay_docs_commit_and_ff(
         repo_root,
         &[".jigc/config", ".jigc/.gitignore"],
     ));
+    // The milestone record's in-place `joined` flip folds into THIS finalize commit
+    // (`design/team-ready-state.md` → The commit model: join folds) — path-added alongside the
+    // promoted docs. The record is a committed managed doc outside `.jigc/`, already flipped on
+    // disk by [`engine::milestone::join_record`], so a targeted `git add` stages exactly its
+    // joined bytes into both the off-line tree and (below) the live index for the fast-forward.
+    if let Some(record) = record {
+        pathspecs.push(record.to_owned());
+    }
     if !pathspecs.is_empty() {
         let mut args: Vec<&str> = vec!["add", "--"];
         args.extend(pathspecs.iter().map(String::as_str));
@@ -2182,6 +2208,7 @@ fn overlay_docs_commit_and_ff(
 fn chain_commit(
     repo_root: &Path,
     subtasks: &[(Vec<u8>, String)],
+    record: Option<&str>,
     plan: &engine::finalize::FinalizePlan,
     msg_path: &Path,
     format: Format,
@@ -2206,7 +2233,14 @@ fn chain_commit(
     // The aggregate carries the merged docs (a milestone-level merge artifact, review B1/B2),
     // built off the last sub-task commit's tree and fast-forwarded onto main with the chain.
     let subtask_head = git_head(wt)?;
-    overlay_docs_commit_and_ff(repo_root, &subtask_head, &subtask_head, plan, msg_path)
+    overlay_docs_commit_and_ff(
+        repo_root,
+        &subtask_head,
+        &subtask_head,
+        record,
+        plan,
+        msg_path,
+    )
 }
 
 /// Commit the off-line-built combined `tree` as a child of `parent`, **running the repo's

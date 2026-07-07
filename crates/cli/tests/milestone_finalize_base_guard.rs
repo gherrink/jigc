@@ -168,9 +168,10 @@ fn foreign_commit_in_range_still_blocks_finalize_with_base_mismatch() {
 
 /// (GREEN — the refinement) With ONLY the milestone's own record commits in `base..HEAD`,
 /// `finalize` no longer emits base-mismatch — the base advances over the record-only range and
-/// the preflight proceeds (blocking downstream on the empty-commit guard, since no sub-task
-/// authored a doc — that is past the base-guard). Before the fix this blocked with
-/// base-mismatch, so the absence of "HEAD is now" is the red→green witness.
+/// the preflight proceeds. Before the fix this blocked with base-mismatch, so the absence of
+/// "HEAD is now" is the red→green witness. Since M39 T4 folds the record's `join` status-flip
+/// into the commit, that flip is a real diff, so the finalize now **lands** (exit 0) rather than
+/// blocking on the empty-commit guard — the stronger witness that it advanced past the base-guard.
 #[test]
 fn record_only_range_advances_base_past_the_guard() {
     let repo = TempDir::new("record-only");
@@ -187,8 +188,9 @@ fn record_only_range_advances_base_past_the_guard() {
          stderr:\n{stderr}",
     );
     assert!(
-        stderr.contains("produced no diff"),
-        "the guard advanced and the preflight proceeded to the (downstream) empty-commit guard; \
+        out.status.success(),
+        "the guard advanced and the finalize landed the record's join-flip (T4); exit {:?}, \
          stderr:\n{stderr}",
+        out.status.code(),
     );
 }
