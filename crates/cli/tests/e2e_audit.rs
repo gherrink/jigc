@@ -479,7 +479,7 @@ fn commit_prior_adr(repo: &Path, home: &Path, decision: &str) {
         ],
     );
     assert_ok(&out, "`jigc start` (prior-ADR task)");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
     let create = jigc_doc(
         repo,
         home,
@@ -522,7 +522,7 @@ fn scenario_4_superseding_decision_resolves_slice_and_passes_edge_walk() {
     commit_prior_adr(repo.path(), home.path(), PRIOR_DECISION);
 
     // Task 2: supersede it.
-    let task = "move-the-session-cache-to-a-shared-redis-cluster";
+    let task = "move-the-session-cache-to";
     let start = jigc(
         repo.path(),
         home.path(),

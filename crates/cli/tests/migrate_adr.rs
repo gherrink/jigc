@@ -165,9 +165,10 @@ fn shipped_adr_schema(pack: &Path) -> engine::schema::Schema {
 /// The per-file migration task id — `migrate-adr-<slug(source-path)>`, path-folded so a
 /// corpus migrates sequentially without serial-colliding on the singleton `migrate-adr`
 /// (T1; `auto-migration.md` → Migration model). For `docs/adr/<stem>.md` the stem folds
-/// path separators to `-`.
+/// path separators to `-`, then the mint re-slugifies (applying the word cap, so a long
+/// stem yields a capped id).
 fn migration_task(stem: &str) -> String {
-    format!("migrate-adr-docs-adr-{stem}")
+    engine::slug::slugify(&format!("migrate-adr-docs-adr-{stem}"))
 }
 
 /// Write a foreign ADR at `docs/adr/<stem>.md` and **commit it**, so the retire surfaces
@@ -967,7 +968,8 @@ fn migration_task_for(rel: &str) -> String {
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    format!("migrate-adr-{}", engine::slug::slugify(&folded))
+    let source = format!("migrate-adr-{}", engine::slug::slugify(&folded));
+    engine::slug::slugify(&source)
 }
 
 /// `task finalize <task> --approve` raw output (the clobber arm asserts the BLOCK, so it

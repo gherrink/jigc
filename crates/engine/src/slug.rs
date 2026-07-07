@@ -18,17 +18,21 @@
 //! 3. map spaces and `_` to `-`,
 //! 4. strip every remaining char outside `[a-z0-9-]`,
 //! 5. collapse runs of `-` and trim leading/trailing `-`,
-//! 6. cap at ~50 chars, truncating at a `-` (word) boundary,
-//! 7. re-trim any trailing `-` the cap exposed.
+//! 6. cap at the first ~5 words (dash-separated), dropping the rest,
+//! 7. (the word cap always cuts on a `-` boundary, so no trailing `-` is
+//!    exposed and no re-trim is needed).
 //!
 //! The output always matches `^[a-z0-9-]*$` with no leading, trailing, or
 //! doubled `-`, and the function is idempotent: `slugify(slugify(x)) ==
 //! slugify(x)`.
 
-/// Soft cap on slug length, in bytes/chars (the slug is pure ASCII, so the two
-/// coincide). The cap truncates at a `-` boundary, never mid-word, so the
-/// actual result may be shorter.
-const MAX_LEN: usize = 50;
+/// Cap on slug length, in **words** (dash-separated segments). A minted slug
+/// keeps at most the first `MAX_WORDS` words of its id-source and drops the
+/// rest, so a long intent yields a short, legible slug rather than one that
+/// trails off into filler. The cut always lands on a `-` boundary, never
+/// mid-word. This is a mint-time cap only; [`is_slug`] is uncapped so a ref to
+/// a pre-existing longer slug still resolves.
+const MAX_WORDS: usize = 5;
 
 /// Apply the **deterministic collision suffix** to a base slug: `1` keeps the bare
 /// `slug`, `2` yields `<slug>-2`, `3` yields `<slug>-3`, … (`design/structural-grammar.md`
@@ -89,8 +93,8 @@ pub fn slugify(id_source: &str) -> String {
     // 5: collapse runs of '-' and trim.
     let collapsed = collapse_dashes(&out);
 
-    // 6–7: cap at a '-' boundary, then re-trim.
-    cap_at_boundary(&collapsed)
+    // 6–7: cap at the first MAX_WORDS words (always a '-' boundary).
+    cap_words(&collapsed)
 }
 
 /// Transliterate a single non-ASCII char to its ASCII lowercase skeleton, or
@@ -138,23 +142,15 @@ fn collapse_dashes(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Cap a collapsed, trimmed slug at [`MAX_LEN`], truncating at a `-` boundary.
+/// Cap a collapsed, trimmed slug at the first [`MAX_WORDS`] dash-separated
+/// words, dropping the rest.
 ///
-/// If the slug is already within the cap, it is returned as-is. Otherwise we
-/// cut at the last `-` at or before the cap so we never split a word; if there
-/// is no `-` within the cap (one long word), we hard-cut at the cap. A trailing
-/// `-` left by the cut is trimmed.
-fn cap_at_boundary(s: &str) -> String {
-    if s.len() <= MAX_LEN {
-        return s.to_string();
-    }
-    // Prefer the last '-' at or before MAX_LEN (a word boundary).
-    let head = &s[..MAX_LEN];
-    let cut = match head.rfind('-') {
-        Some(i) if i > 0 => i,
-        _ => MAX_LEN, // no usable boundary: hard-cut the single long word.
-    };
-    s[..cut].trim_end_matches('-').to_string()
+/// The input is already collapsed and edge-trimmed, so splitting on `-` yields
+/// clean, non-empty words; joining the first `MAX_WORDS` back with `-` always
+/// lands on a word boundary and can never leave a leading, trailing, or doubled
+/// `-`. A slug already within the cap is returned unchanged.
+fn cap_words(s: &str) -> String {
+    s.split('-').take(MAX_WORDS).collect::<Vec<_>>().join("-")
 }
 
 #[cfg(test)]
@@ -182,8 +178,8 @@ mod tests {
             ("strips-to-empty", "!!!___---"),
             ("non-latin-dropped", "日本語 test"),
             (
-                "cap-at-boundary-50",
-                "this is a very long intent that should be truncated at a dash boundary near fifty",
+                "cap-to-five-words",
+                "this is a very long intent that should be truncated at a word boundary",
             ),
             (
                 "cap-one-long-word",
@@ -207,8 +203,8 @@ mod tests {
         empty: "" -> ""
         strips-to-empty: "!!!___---" -> ""
         non-latin-dropped: "日本語 test" -> "test"
-        cap-at-boundary-50: "this is a very long intent that should be truncated at a dash boundary near fifty" -> "this-is-a-very-long-intent-that-should-be"
-        cap-one-long-word: "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious" -> "supercalifragilisticexpialidocioussupercalifragili"
+        cap-to-five-words: "this is a very long intent that should be truncated at a word boundary" -> "this-is-a-very-long"
+        cap-one-long-word: "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious" -> "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious"
         "#);
     }
 
@@ -219,6 +215,18 @@ mod tests {
         assert_eq!(slugify("café"), "cafe");
         assert_eq!(slugify("Add rate limiter"), "add-rate-limiter");
         assert_eq!(slugify(""), "");
+    }
+
+    /// The word cap: an intent with more than [`MAX_WORDS`] words caps to the
+    /// first [`MAX_WORDS`], at a `-` boundary, still a valid slug.
+    #[test]
+    fn caps_to_five_words() {
+        let out = slugify("move the session cache to a shared redis cluster");
+        assert_eq!(out, "move-the-session-cache-to");
+        assert!(
+            out.split('-').count() <= MAX_WORDS,
+            "over word cap: {out:?}"
+        );
     }
 
     /// The deterministic collision suffix: the first instance (`nth == 1`) keeps the
@@ -264,11 +272,15 @@ mod tests {
     }
 
     #[test]
-    fn cap_truncates_at_dash_boundary() {
+    fn cap_truncates_at_word_boundary() {
         let input =
             "this is a very long intent that should be truncated at a dash boundary near fifty";
         let out = slugify(input);
-        assert!(out.len() <= MAX_LEN, "over cap: {out:?} ({})", out.len());
+        assert!(
+            out.split('-').count() <= MAX_WORDS,
+            "over word cap: {out:?} ({} words)",
+            out.split('-').count()
+        );
         assert!(!out.ends_with('-'), "trailing dash: {out:?}");
         // The cut must land on a word boundary: the truncated slug is a
         // dash-joined prefix of the full (uncapped) word sequence.
@@ -307,7 +319,7 @@ mod tests {
         }
 
         /// Charset + shape invariant: output is `^[a-z0-9-]*$`, never starts or
-        /// ends with `-`, never contains `--`, and respects the cap.
+        /// ends with `-`, never contains `--`, and respects the word cap.
         #[test]
         fn charset_and_shape(s in ".{0,200}") {
             let out = slugify(&s);
@@ -318,7 +330,7 @@ mod tests {
             prop_assert!(!out.starts_with('-'), "leading dash: {:?}", out);
             prop_assert!(!out.ends_with('-'), "trailing dash: {:?}", out);
             prop_assert!(!out.contains("--"), "doubled dash: {:?}", out);
-            prop_assert!(out.len() <= MAX_LEN, "over cap: {:?}", out);
+            prop_assert!(out.split('-').count() <= MAX_WORDS, "over word cap: {:?}", out);
         }
     }
 }

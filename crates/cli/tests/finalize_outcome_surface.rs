@@ -172,7 +172,7 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
         ],
     );
     assert_ok(&out, "`jigc start` (task A)");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
 
     let create = jigc_doc(
         repo,
@@ -1029,7 +1029,7 @@ fn promote_adr_and_finalize(format: Option<&str>) -> (String, String, String) {
         ],
     );
     assert_ok(&out, "`jigc start`");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
 
     let create = jigc_doc(
         repo.path(),

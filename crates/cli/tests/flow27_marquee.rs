@@ -195,14 +195,16 @@ fn shipped_schema(pack: &Path, doctype: &str) -> engine::schema::Schema {
 
 /// The per-file migration task id for a repo-relative source `rel` — the production
 /// derivation ([`crate::start::mint_migration_in_repo`]): strip `.md`, fold path
-/// separators to `-`, slugify, prefix `migrate-<doctype>-`.
+/// separators to `-`, slugify, prefix `migrate-<doctype>-`, then re-slugify at the
+/// mint (which applies the word cap, so a long path yields a capped id).
 fn migration_task(doctype: &str, rel: &str) -> String {
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    format!("migrate-{doctype}-{}", engine::slug::slugify(&folded))
+    let source = format!("migrate-{doctype}-{}", engine::slug::slugify(&folded));
+    engine::slug::slugify(&source)
 }
 
 /// Write a foreign doc at `rel` and **commit it**, so its retirement lands as a tracked

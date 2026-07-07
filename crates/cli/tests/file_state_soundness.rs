@@ -173,7 +173,7 @@ fn commit_prior_adr(repo: &Path, home: &Path) {
         ],
     );
     assert_ok(&out, "`jigc start` (task 0)");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
 
     let create = jigc_doc(
         repo,
@@ -763,7 +763,7 @@ fn docs_located_committed_baseline_survives_landed_finalize() {
         None,
     );
     assert_ok(&out, "`jigc start` (task 0)");
-    let task0 = "cache-sessions-in-a-single-in-memory-node";
+    let task0 = "cache-sessions-in-a-single";
     let create = jigc_with_pack(
         repo.path(),
         home.path(),

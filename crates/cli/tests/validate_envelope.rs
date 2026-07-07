@@ -243,7 +243,7 @@ fn commit_baselined_adr(repo: &Path, home: &Path) {
         ],
     );
     assert_ok(&out, "`jigc start`");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
 
     let create = jigc_doc(
         repo,

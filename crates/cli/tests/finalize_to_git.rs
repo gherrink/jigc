@@ -351,7 +351,7 @@ fn finalize_minimal_commit_type_and_summary_only_lands_clean() {
 #[test]
 fn finalize_promotes_a_created_adr_to_decisions() {
     let (repo, home) = started_repo("cache sessions in a single in-memory node");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
 
     // The agent creates the ADR in-task (the create-gate binds it to task.decision).
     let create = run_doc(

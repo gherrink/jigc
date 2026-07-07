@@ -220,14 +220,16 @@ fn shipped_arch_doc_schema(pack: &Path) -> engine::schema::Schema {
 
 /// The per-file migration task id for a repo-relative source `rel` — the production
 /// derivation ([`crate::start::migration_task_id_source`]): strip `.md`, fold path
-/// separators to `-`, slugify, prefix `migrate-arch-doc-`.
+/// separators to `-`, slugify, prefix `migrate-arch-doc-`, then re-slugify at the
+/// mint (which applies the word cap, so a long path yields a capped id).
 fn migration_task(rel: &str) -> String {
     let stem = rel.strip_suffix(".md").unwrap_or(rel);
     let folded: String = stem
         .chars()
         .map(|c| if c == '/' { '-' } else { c })
         .collect();
-    format!("migrate-arch-doc-{}", engine::slug::slugify(&folded))
+    let source = format!("migrate-arch-doc-{}", engine::slug::slugify(&folded));
+    engine::slug::slugify(&source)
 }
 
 /// Write a foreign arch-doc at `docs/architecture/<stem>.md` and **commit it**, so the

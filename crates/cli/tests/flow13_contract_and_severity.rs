@@ -507,7 +507,7 @@ fn finalize_block_findings(out: &std::process::Output) -> Vec<serde_json::Value>
 }
 
 const WORK_INTENT: &str = "enforce the rate limit at the gateway";
-const WORK_TASK: &str = "enforce-the-rate-limit-at-the-gateway";
+const WORK_TASK: &str = "enforce-the-rate-limit-at";
 
 // ─────────── META-FINDING FIRING — timeout (intrinsic, floor-locked) ───────────
 

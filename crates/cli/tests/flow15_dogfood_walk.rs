@@ -259,7 +259,7 @@ fn flow15_deterministic_dogfood_walk_lands_one_code_only_commit_on_a_galey_copy(
     let mint = jigc_ok(&copy, home.path(), &pack, &["start", intent], None);
     // The intent → slug derivation gives this task id; the composed spine must carry the
     // finalize Run line addressed to it (guards against an orient/error page masquerading).
-    let task = "add-a-greeting-helper-to-the-utils-package";
+    let task = "add-a-greeting-helper-to";
     let finalize_run = format!("jigc task finalize {task}");
     assert!(
         mint.contains("done-criterion") && mint.contains(&finalize_run),

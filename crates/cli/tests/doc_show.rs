@@ -420,7 +420,7 @@ fn doc_show_serves_the_committed_read_surface() {
 
     // (5) A `#requirements/<id>` slice returns the item — plain (the rendered item) and
     //     json (the item object).
-    let item_addr = "prd:habit-tracker#requirements/log-a-habit-in-one-tap";
+    let item_addr = "prd:habit-tracker#requirements/log-a-habit-in-one";
     let plain = jigc(repo.path(), home.path(), &["doc", "show", item_addr], None);
     assert_ok(&plain, "`jigc doc show <item>`");
     let plain = stdout_of(&plain);

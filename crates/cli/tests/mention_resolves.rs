@@ -322,7 +322,7 @@ fn task_finalize_never_emits_mention_resolves() {
         ],
     );
     assert_ok(&out, "`jigc start`");
-    let task = "cache-sessions-in-a-single-in-memory-node";
+    let task = "cache-sessions-in-a-single";
 
     let create = jigc_doc(
         repo.path(),

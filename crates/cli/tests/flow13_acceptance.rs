@@ -463,7 +463,7 @@ fn flow13_passing_walk_resolves_both_anchors_and_lands_one_commit() {
     // the base branch BEFORE the work task mints.
     commit_spec_with_maps_to_test(repo.path(), home.path(), MAPS_TO_TEST);
 
-    let task = "enforce-the-rate-limit-at-the-gateway";
+    let task = "enforce-the-rate-limit-at";
     let slug = mint_bind_and_author_adr(
         repo.path(),
         home.path(),
@@ -572,7 +572,7 @@ fn flow13_passing_walk_resolves_via_production_default_probe_path() {
 
     commit_spec_with_maps_to_test(repo.path(), home.path(), MAPS_TO_TEST);
 
-    let task = "enforce-the-rate-limit-at-the-gateway";
+    let task = "enforce-the-rate-limit-at";
     let slug = mint_bind_and_author_adr(
         repo.path(),
         home.path(),
@@ -641,7 +641,7 @@ fn flow13_blocking_walk_dangling_maps_to_test_blocks_finalize() {
         "tests/rate_limit.rs#burst_rejected_renamed",
     );
 
-    let task = "enforce-the-rate-limit-at-the-gateway";
+    let task = "enforce-the-rate-limit-at";
     let _slug = mint_bind_and_author_adr(
         repo.path(),
         home.path(),
@@ -703,7 +703,7 @@ fn flow13_blocking_walk_dangling_cites_code_blocks_finalize() {
     // The criterion's `maps-to-test` resolves — only the adr's `cites-code` dangles.
     commit_spec_with_maps_to_test(repo.path(), home.path(), MAPS_TO_TEST);
 
-    let task = "enforce-the-rate-limit-at-the-gateway";
+    let task = "enforce-the-rate-limit-at";
     let _slug = mint_bind_and_author_adr(
         repo.path(),
         home.path(),

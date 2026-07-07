@@ -280,7 +280,7 @@ fn multi_requirement_prd_via_doc_author_from_round_trips() {
     );
     for (id, expected) in [
         (
-            "log-a-habit-in-one-tap",
+            "log-a-habit-in-one",
             "Logging a habit takes a single tap from the home screen.",
         ),
         (
