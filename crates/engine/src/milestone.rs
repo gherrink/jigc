@@ -476,6 +476,32 @@ fn unknown_milestone_finding(milestone_id: &str) -> Finding {
     )
 }
 
+/// The **stale-base block**: a blocking finding for a milestone whose recorded
+/// base-SHA pin names a commit that **no longer exists** — a history rewrite orphaned
+/// it (`design/team-ready-state.md` → Stale-base edge (history rewrite)). Routes the
+/// human to restore the base commit or re-pin the milestone, never a silent git-op
+/// against the missing commit (a partial worktree, a corrupt combine). The CLI owns the
+/// git I/O that *detects* the missing commit; the engine owns only this finding shape
+/// (no git I/O), the [`unknown_milestone_finding`] sibling.
+pub fn stale_base_finding(milestone_id: &str, base_short: &str) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.stale-base",
+        format!(
+            "milestone `{milestone_id}` is pinned to base `{base_short}`, which no longer exists (the base commit was rewritten away)"
+        ),
+        Some(Location::addressed(
+            format!("milestone:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some(
+            "restore the base commit, or re-pin the milestone's base, then re-run the op"
+                .to_string(),
+        ),
+    )
+}
+
 /// The within-milestone serial-collision block: a blocking finding naming the
 /// already-listed sub-task id, routing the agent to a distinct intent (the `-2`
 /// suffix is the join's, never incremental add; `write-commands.md` → add-task).

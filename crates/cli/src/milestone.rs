@@ -496,6 +496,45 @@ fn git_is_ancestor(repo_root: &Path, ancestor: &str, descendant: &str) -> Result
     }
 }
 
+/// Whether the milestone's recorded base-SHA `sha` **no longer names a commit** in
+/// `repo_root`'s object store — the stale-base detection (`design/team-ready-state.md` →
+/// Stale-base edge (history rewrite)). A history rewrite can orphan the pinned base;
+/// `git rev-parse --verify --quiet <sha>^{commit}` exits 0 when the sha resolves to a commit
+/// and non-zero when it does not (a rewritten-away / fabricated sha). The zero-commit
+/// sentinel ([`crate::task::EMPTY_TREE_SHA`]) is a valid pre-first-commit base, never a stale
+/// pin, so it is exempt. The engine does no git I/O, so this CLI probe feeds the engine's
+/// [`engine::milestone::stale_base_finding`] shape.
+fn base_commit_missing(repo_root: &Path, sha: &str) -> Result<bool> {
+    if sha == crate::task::EMPTY_TREE_SHA {
+        return Ok(false);
+    }
+    let out = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet"])
+        .arg(format!("{sha}^{{commit}}"))
+        .current_dir(repo_root)
+        .output()
+        .context("could not run `git rev-parse` (is git on PATH?)")?;
+    Ok(!out.status.success())
+}
+
+/// Guard a milestone op against a **stale base pin** (`design/team-ready-state.md` →
+/// Stale-base edge). If the milestone's recorded base SHA no longer names a commit — a
+/// history rewrite orphaned it — route the human with the engine's blocking
+/// [`stale_base_finding`](engine::milestone::stale_base_finding) and abort **before** any
+/// git operation against the missing commit (a partial worktree provisioning, a corrupt
+/// worktree-combine), never silent corruption. Called by every base-reading op
+/// (`provision`/`join`/`finalize`) right after it reads the base pin. Inert when the base
+/// still resolves (the common case) and for the zero-commit sentinel.
+fn guard_base_live(repo_root: &Path, milestone_id: &str, base: &BasePin) -> Result<()> {
+    if base_commit_missing(repo_root, &base.sha)? {
+        return Err(finding_to_err(engine::milestone::stale_base_finding(
+            milestone_id,
+            &base.short,
+        )));
+    }
+    Ok(())
+}
+
 /// `jigc milestone add-task <milestone-id> "<intent>"` — mint a sub-task pinned to
 /// the milestone's shared base in its own isolated area and append it. Returns the
 /// summary line; an unknown milestone or a within-milestone collision surfaces as
@@ -760,6 +799,10 @@ fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
     let base = read_base_pin(&dir).with_context(|| {
         format!("could not read the shared base pin for milestone `{milestone_id}`")
     })?;
+    // Stale-base edge (T7): a rewritten-away base pin routes the human BEFORE any
+    // `git worktree add` against the missing commit (else a partial, half-provisioned
+    // worktree set) (`design/team-ready-state.md` → Stale-base edge).
+    guard_base_live(&repo_root, milestone_id, &base)?;
     let list = read_task_list(&dir)
         .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
     // Id-sorted ids — the deterministic order the fan-out spawns its sub-agents.
@@ -1034,7 +1077,16 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
     // as it stood at that base. An unknown milestone has no base pin; fall back to the
     // engine's routed `milestone.unknown` block by leaving the join to detect it.
     let head = match read_base_pin(&milestone_dir(&jigc_root, milestone_id)) {
-        Ok(pin) => pin.sha,
+        Ok(pin) => {
+            // Stale-base edge (T7): a rewritten-away base pin routes the human rather than
+            // resolving the committed index against a missing commit — a silently-empty
+            // committed store would mis-report the cross-area ref walk
+            // (`design/team-ready-state.md` → Stale-base edge). The main checkout is a git
+            // dir, so probe there. An unknown milestone (no pin, the `Err` arm) is left to
+            // the engine's routed `milestone.unknown` block below.
+            guard_base_live(&jigc_home, milestone_id, &pin)?;
+            pin.sha
+        }
         Err(_) => String::new(),
     };
     let committed = load_committed(&jigc_home, &jigc_root, &schemas, &head);
@@ -1107,6 +1159,11 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let base = read_base_pin(&dir).with_context(|| {
         format!("could not read the shared base pin for milestone `{milestone_id}`")
     })?;
+    // Stale-base edge (T7): a rewritten-away base pin routes the human BEFORE any git work
+    // against the missing commit (the worktree-combine base, the base-guard `merge-base`) —
+    // so nothing is materialized, flipped, or committed against a base that no longer exists
+    // (`design/team-ready-state.md` → Stale-base edge).
+    guard_base_live(&repo_root, milestone_id, &base)?;
     let committed = load_committed(&jigc_home, &jigc_root, &schemas, &base.sha);
 
     // Step 1 — materialize the join's suffix-resolved bodies. A blocking join finding (a
