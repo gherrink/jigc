@@ -686,9 +686,10 @@ fn emit_inline_data_values(line: &str, ctx: &crate::data_value::ComposeContext) 
 /// [`crate::store`]; a test may supply a fake.
 pub trait ContentStore {
     /// Walk one `.relation` edge from `from` (a `<type>:<slug>` identity), returning
-    /// the target identity, or `None` when the relation is unset on `from` (an
-    /// **absent** value → empty text, not an error).
-    fn walk_edge(&self, from: &str, relation: &str) -> Option<String>;
+    /// **every** target identity — a `0..*` relation fans out to all its bound
+    /// targets; an empty `Vec` means the relation is unset on `from` (an **absent**
+    /// value → empty text, not an error).
+    fn walk_edge(&self, from: &str, relation: &str) -> Vec<String>;
 
     /// Slice the committed/working doc named by `address` to its `#fragment` prose,
     /// or a blocking [`Finding`] when the target is missing/unparseable/unsliceable
@@ -714,7 +715,7 @@ pub struct StoreContext<'a> {
 }
 
 impl ContentStore for StoreContext<'_> {
-    fn walk_edge(&self, from: &str, relation: &str) -> Option<String> {
+    fn walk_edge(&self, from: &str, relation: &str) -> Vec<String> {
         self.overlay.walk_edge(from, relation)
     }
 
@@ -731,9 +732,10 @@ impl ContentStore for StoreContext<'_> {
 ///
 /// With a `store` (the live read path): a bound role plus a cross-doc `.relation`
 /// hop chain is **dereferenced** — the bound doc is walked along each relation edge
-/// over the overlay, the landing doc's `#fragment` is sliced through the store, and
-/// the prose is emitted as a multi-line `> ` Content blockquote (each prose line
-/// prefixed, `workflow-dialect.md` → Emitted format). An unbound role
+/// over the overlay (a `0..*` relation fans out to *every* target), each landing doc's
+/// `#fragment` is sliced through the store, and the sources are emitted as `> ` Content
+/// blockquotes (one bare blockquote for a single source; each labelled when several
+/// ground the content — `workflow-dialect.md` → Emitted format). An unbound role
 /// ([`Resolution::Absent`]) or an unset relation (a hop with no edge) short-circuits
 /// to an **empty line** — no finding (`worked-examples.md` flow #1; the
 /// empty-vs-unresolvable contract).
@@ -746,10 +748,7 @@ fn emit_content(
     match path.resolve(ctx)? {
         Resolution::Content { address } => match store {
             // The live read path: dereference through the edge hops + the store.
-            Some(store) => match deref_content(path, &address, store)? {
-                Some(prose) => Ok(blockquote(&prose)),
-                None => Ok(String::new()), // an unset relation → empty, no finding.
-            },
+            Some(store) => Ok(emit_sources(&deref_content(path, &address, store)?)),
             // No store (the structural gate): the resolved address handle.
             None => Ok(format!("> {address}")),
         },
@@ -762,49 +761,78 @@ fn emit_content(
     }
 }
 
-/// Dereference a bound-role `@`-Content `path` to the prose its final address slices
-/// to, walking the cross-doc `.relation` hops past the role over `store`'s overlay.
+/// Dereference a bound-role `@`-Content `path` to the prose **every** landing address
+/// slices to, walking the cross-doc `.relation` hops past the role over `store`'s
+/// overlay. A `0..*` relation fans out — each bound target is one landing.
 ///
 /// `bound` is the bound role's doc address ([`Resolution::Content`] built it from the
 /// role binding). The path's hops are `[role, relation*]`: the **first** hop is the
 /// role (already resolved into `bound`), the **rest** are cross-doc relation edges to
-/// walk (e.g. `supersedes`). Each hop walks one edge over the overlay; an **unset**
-/// relation (no edge) yields `Ok(None)` → the caller emits empty text. The landing
-/// identity carries the path's own `#fragment`, which the store slices to its prose.
+/// walk (e.g. `grounded-in`). Each hop walks every edge from every current identity
+/// over the overlay, so the frontier fans out; an **unset** relation (no edge) empties
+/// the frontier → an empty result → the caller emits empty text. Each surviving landing
+/// carries the path's own `#fragment`, which the store slices to its prose.
 ///
-/// A walk that lands on a malformed identity, or a store read that fails (missing /
-/// unparseable / unsliceable target), surfaces the store's blocking [`Finding`] —
-/// the one routed block envelope, never a panic.
+/// Returns each source as `(identity, prose)` in walk order — the identity labels the
+/// source when more than one grounds the content. A walk that lands on a malformed
+/// identity, or a store read that fails (missing / unparseable / unsliceable target),
+/// surfaces the store's blocking [`Finding`] — the one routed block envelope, never a
+/// panic.
 fn deref_content(
     path: &crate::data_value::Path,
     bound: &crate::address::Address,
     store: &dyn ContentStore,
-) -> Result<Option<String>, Finding> {
+) -> Result<Vec<(String, String)>, Finding> {
     // The bound role's doc identity — `<type>:<slug>`, fragment dropped (it is the
-    // *final* slice, re-attached after the hops land).
-    let mut current = format!("{}:{}", bound.r#type, bound.slug);
+    // *final* slice, re-attached after the hops land). The frontier starts singular.
+    let mut frontier = vec![format!("{}:{}", bound.r#type, bound.slug)];
 
-    // Walk every cross-doc relation hop past the role (the first hop is the role).
+    // Walk every cross-doc relation hop past the role (the first hop is the role),
+    // fanning each current identity out to all its edge targets.
     for hop in path.hops.iter().skip(1) {
-        match store.walk_edge(&current, hop.as_str()) {
-            Some(to) => current = to,
-            None => return Ok(None), // unset relation → absent, empty text.
-        }
+        frontier = frontier
+            .iter()
+            .flat_map(|current| store.walk_edge(current, hop.as_str()))
+            .collect();
     }
 
-    // The landing doc, sliced at the path's own `#fragment`.
-    let landing = match &path.fragment {
-        Some(fragment) => format!("{current}#{fragment}"),
-        None => current,
-    };
-    let address = crate::address::Address::parse(&landing).map_err(|source| {
-        Finding::blocking(
-            "workflow-refs.malformed-data-value",
-            format!("the dereferenced target `{landing}` is not a valid address: {source}"),
-            Location::at(1, 1),
-        )
-    })?;
-    store.read_slice(&address).map(Some)
+    // Slice every landing at the path's own `#fragment`; empty frontier → no sources.
+    let mut sources = Vec::with_capacity(frontier.len());
+    for current in frontier {
+        let landing = match &path.fragment {
+            Some(fragment) => format!("{current}#{fragment}"),
+            None => current.clone(),
+        };
+        let address = crate::address::Address::parse(&landing).map_err(|source| {
+            Finding::blocking(
+                "workflow-refs.malformed-data-value",
+                format!("the dereferenced target `{landing}` is not a valid address: {source}"),
+                Location::at(1, 1),
+            )
+        })?;
+        let prose = store.read_slice(&address)?;
+        sources.push((current, prose));
+    }
+    Ok(sources)
+}
+
+/// Render the dereferenced `sources` (`(identity, prose)` per grounding doc) as the
+/// emitted `> ` Content block. Empty → an empty line (an unset relation, no finding).
+/// **One** source emits a bare multi-line blockquote — byte-identical to the shipped
+/// single-source superseding-context slice (the N==1 contract). **Two or more** render
+/// each source as its own blockquote, labelled by its `<type>:<slug>` identity and
+/// separated by a blank line, so a vision grounded in several research docs re-composes
+/// *all* their findings (`design-altitude-doctypes.md` → §3 constraint 2).
+fn emit_sources(sources: &[(String, String)]) -> String {
+    match sources {
+        [] => String::new(),
+        [(_, prose)] => blockquote(prose),
+        many => many
+            .iter()
+            .map(|(identity, prose)| format!("> **{identity}**\n>\n{}", blockquote(prose)))
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+    }
 }
 
 /// Render `prose` as a Markdown blockquote — each line prefixed `> ` (a blank line

@@ -330,22 +330,24 @@ pub fn overlay_working(
 impl WorkingOverlay {
     /// Walk one `.relation` edge from `from` (a `<type>:<slug>` identity) over the
     /// **overlaid** graph (this task's working edges layered over the committed
-    /// edges), returning the target identity `to`, or `None` when no such edge
-    /// exists.
+    /// edges), returning **every** target identity `to` — a `0..*` relation fans out
+    /// to all its bound targets; an empty `Vec` means the relation is **unset** on
+    /// `from` (the context-slice reads that as an absent value → empty text, not an
+    /// error — `workflow-dialect.md` → Empty vs unresolvable).
     ///
-    /// The task's working edges take precedence: an `adr:b` staged in this task
-    /// with a `supersedes` edge resolves to that staged target even if the
-    /// committed index carried a different (stale) one. A `None` means the relation
-    /// is **unset** on `from` — the context-slice reads that as an absent value
-    /// (empty text), not an error (`workflow-dialect.md` → Empty vs unresolvable).
+    /// The task's working edges are listed first (an `adr:b` staged in this task with
+    /// a `supersedes` edge surfaces its staged target ahead of any committed one).
+    /// Within each surface the edges are already `(from, relation, to)`-sorted, so the
+    /// returned order is deterministic.
     ///
     /// Pure over the overlay's in-memory edge sets — no I/O.
-    pub fn walk_edge(&self, from: &str, relation: &str) -> Option<String> {
+    pub fn walk_edge(&self, from: &str, relation: &str) -> Vec<String> {
         self.task_edges
             .iter()
             .chain(self.committed.iter())
-            .find(|e| e.from == from && e.relation == relation)
+            .filter(|e| e.from == from && e.relation == relation)
             .map(|e| e.to.clone())
+            .collect()
     }
 }
 

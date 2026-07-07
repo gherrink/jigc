@@ -172,12 +172,16 @@ each with a `when:` hint). Each mints a task and lands one commit through `final
      → flow 5, lines 257–285): create vision → `jigc doc set-field …grounded-in` → **re-compose**
      (`jigc start --task <id>`) → author using the now-populated slice. A single create→set→author
      pass would author against an empty read (a vacuous green).
-  2. **The content-echo surfaces only the *first-bound* research.** `walk_edge` returns the first
-     matching edge target (`index.rs`), so the slice shows one research doc's `findings`, not all N.
-     This is an **authoring convenience, not the anchor** — the multi-valued grounding lives in the
-     stored refs, which are unaffected. The workflow guidance says so plainly ("the first grounding
-     research is shown for reference; all bound research is recorded in `grounded-in`"); a true
-     all-N read would need an unbuilt multi-target slice and is out of scope.
+  2. **The content-echo surfaces *all* grounded research.** `walk_edge` fans out to *every* matching
+     edge target (`index.rs`), so the slice renders each bound research doc's `findings` as its own
+     labelled `> ` blockquote — the full grounding set, not just one. *(This was originally documented
+     as a first-only echo, on the basis that a single-source convenience read sufficed and a true
+     all-N read was an out-of-scope engine lift. The M39 RC greenfield trial falsified that basis: a
+     vision grounded in two research docs must re-compose **both** findings for the compare-against
+     read to do its job — so the all-source fan-out is the built behavior, M39 inc-2.)* The stored
+     `grounded-in` refs remain the load-bearing anchor; the echo now mirrors them in full. The emitted
+     form is byte-identical to the superseding-context precedent when a single research grounds the
+     vision (one bare blockquote, N==1); N≥2 labels each source by its `<type>:<slug>` identity.
 - **`park-idea`** — `allows-create: [{type: idea, as: idea}]`. Mints one `idea` (description
   + trigger) and finalizes. `when:` "a shaped-but-unscheduled idea occurs mid-work and is
   worth keeping." Router-selectable so it is discoverable (fork 5).

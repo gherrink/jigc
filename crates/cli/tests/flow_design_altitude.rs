@@ -375,7 +375,7 @@ fn done_picture_research_to_vision_to_park_idea() {
         &format!("[{research_a}, {research_b}]"),
     );
 
-    // RE-COMPOSE: the edge-walk slice now READS the FIRST grounding research's findings
+    // RE-COMPOSE: the edge-walk slice now READS ALL grounding research's findings
     // (the green side of the red step — the slice actually read the committed research).
     let resume = jigc(repo.path(), home.path(), &["start", "--task", task], None);
     assert_ok(&resume, "`jigc start --task <id>` re-compose (form-vision)");
@@ -386,9 +386,9 @@ fn done_picture_research_to_vision_to_park_idea() {
          the edge-walk slice must READ the FIRST research's findings into the guidance; got:\n{recomposed}",
     );
     assert!(
-        !recomposed.contains(SECOND_FINDINGS),
-        "walk_edge returns the FIRST target only — the second research's findings must NOT appear \
-         (the first-bound content-echo, §3 constraint 2); got:\n{recomposed}",
+        recomposed.contains(SECOND_FINDINGS),
+        "walk_edge fans out to ALL grounded targets — the SECOND research's findings must ALSO appear \
+         (the all-source content-echo, §3 constraint 2); got:\n{recomposed}",
     );
 
     // Author the three prose slots, fill the commit, and finalize.

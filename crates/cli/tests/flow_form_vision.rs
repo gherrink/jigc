@@ -241,8 +241,8 @@ fn commit_research(repo: &Path, home: &Path, intent: &str, title: &str, findings
 /// then `form-vision` grounds the vision in BOTH (the multi-valued anchor). The
 /// LOAD-BEARING contrast: the first grounding research's `findings` are ABSENT from the
 /// first compose (empty slice) and PRESENT only after `grounded-in` is set and the task is
-/// re-composed (the edge-walk slice actually read the committed research). The second
-/// research's findings never appear (walk_edge returns the FIRST target — the first-bound
+/// re-composed (the edge-walk slice actually read the committed research). BOTH research
+/// docs' findings appear (walk_edge fans out to ALL grounded targets — the all-source
 /// content-echo, §3 constraint 2). Finalize resolves BOTH grounded-in targets (no block),
 /// lands exactly one commit, the vision is managed directly at the repo-root literal
 /// `VISION.md` (placement knob) with H1 `# Vision` (display-title knob), and an OOB edit to
@@ -340,7 +340,7 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
         &format!("[{research_a}, {research_b}]"),
     );
 
-    // RE-COMPOSE: the edge-walk slice now reads the FIRST grounding research's findings.
+    // RE-COMPOSE: the edge-walk slice now reads ALL grounding research's findings.
     let resume = jigc(repo.path(), home.path(), &["start", "--task", task], None);
     assert_ok(&resume, "`jigc start --task <id>` re-compose (form-vision)");
     let recomposed = String::from_utf8(resume.stdout).expect("utf-8 recomposed stdout");
@@ -351,9 +351,9 @@ fn form_vision_reentry_reads_grounding_research_and_finalizes() {
          into the guidance; got:\n{recomposed}",
     );
     assert!(
-        !recomposed.contains(SECOND_FINDINGS),
-        "walk_edge returns the FIRST target only — the second research's findings must NOT \
-         appear (the first-bound content-echo, §3 constraint 2); got:\n{recomposed}",
+        recomposed.contains(SECOND_FINDINGS),
+        "walk_edge fans out to ALL grounded targets — the SECOND research's findings must \
+         ALSO appear (the all-source content-echo, §3 constraint 2); got:\n{recomposed}",
     );
 
     // (3) Author the three prose slots, fill the commit, and finalize.
