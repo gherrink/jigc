@@ -122,8 +122,10 @@ fn parent_basename(rel: &str) -> Option<&str> {
 }
 
 /// Enumerate `git ls-files` under `repo_root`, returning the committed `.md` paths,
-/// address-sorted. A `git` failure yields an empty listing (best-effort advisory).
-fn committed_markdown(repo_root: &Path) -> Vec<String> {
+/// address-sorted. A `git` failure yields an empty listing (best-effort advisory). Shared
+/// with the freeze-exempt relocation path (`crate::relocate`), which walks the same committed
+/// truth to find the instances stranded at a supplied prior home.
+pub(crate) fn committed_markdown(repo_root: &Path) -> Vec<String> {
     let Ok(listing) = crate::task::git_capture(repo_root, &["ls-files"]) else {
         return Vec::new();
     };

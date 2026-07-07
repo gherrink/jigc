@@ -137,6 +137,14 @@ fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
         // stamp-inject gate uses the same `location.is_some() || placement.is_some()`
         // idiom; `design/storage.md` → Placement). `resolve_migration_homes` then walks
         // the prior `location:` home and moves each instance to the placement `file`.
+        //
+        // **The frozen gate — reconciled with the freeze-exempt sibling (M39 inc-5 T4).**
+        // This relocation arm gates to `frozen_doctype_versions` (the manifest set): its prior
+        // home is *derived* from the versioned snapshot (`resolve_migration_homes`), so it is
+        // safe to auto-move. A **freeze-exempt** doctype (no manifest entry, no snapshot) has
+        // no derivable prior home, so it is skipped here and relocates through the parallel
+        // `crate::relocate::relocate_freeze_exempt` path with a **human-supplied** prior home
+        // (`design/corpus-migration.md` → Relocation: freeze-exempt sibling).
         let Some(&version) = versions.get(&ty) else {
             continue;
         };
@@ -594,9 +602,10 @@ fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
 }
 
 /// Locate the repo root and its `.jigc/config/` project layer — the store-walk locate
-/// preamble shared with `jigc validate` / `jigc ingest`. Errors with routed messages when
-/// the repo or the project layer is absent.
-fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
+/// preamble shared with `jigc validate` / `jigc ingest` (and the freeze-exempt relocation
+/// path in `crate::relocate`). Errors with routed messages when the repo or the project
+/// layer is absent.
+pub(crate) fn require_project_layer(cwd: &Path) -> Result<PathBuf> {
     let ctx = crate::locate::locate(cwd)?;
     if ctx.project_config.is_none() {
         anyhow::bail!(

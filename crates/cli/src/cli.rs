@@ -16,6 +16,7 @@ use crate::migrate;
 use crate::migrate_corpus;
 use crate::milestone::MilestoneCommand;
 use crate::orient;
+use crate::relocate;
 use crate::rename;
 use crate::render;
 use crate::setup;
@@ -202,6 +203,23 @@ pub enum Command {
         slug: Option<String>,
     },
 
+    /// Relocate a **freeze-exempt** doctype's pre-existing committed instance(s) from a
+    /// human-supplied prior home to its current schema home — `jigc relocate <type> --from
+    /// <prior-home>`. The sibling of the version-gated `jigc migrate-corpus` relocation for
+    /// frozen doctypes: a freeze-exempt doctype carries no prior-home snapshot, so the prior
+    /// home is supplied by hand and each stranded instance is `git mv`d byte-faithful to the
+    /// current home (never silently stranded). A frozen doctype is refused (use
+    /// `migrate-corpus`).
+    Relocate {
+        /// The freeze-exempt doctype id whose schema home moved (e.g. `vision`).
+        r#type: String,
+
+        /// The prior home the committed instance(s) sit at — a directory (`docs/vision/`) or
+        /// a literal file (`docs/vision.md`). Required (no snapshot records it).
+        #[arg(long)]
+        from: String,
+    },
+
     /// Print a prose tour of what's available — every workflow and doc-type with
     /// their descriptions, plus command-ref hints — reflecting the resolved
     /// cascade. The output is a human menu, not a stable API; don't parse it.
@@ -292,6 +310,7 @@ impl Cli {
             Command::Rename { old_slug, to, slug } => {
                 run_rename(self.format, &old_slug, &to, slug.as_deref())
             }
+            Command::Relocate { r#type, from } => run_relocate(self.format, &r#type, &from),
             Command::Describe => run_describe(self.format),
             Command::Validate => run_validate_store(self.format),
         }
@@ -522,6 +541,24 @@ fn run_migrate_corpus(format: Format) -> Outcome {
         }
     };
     migrate_corpus::run(&cwd, format)
+}
+
+/// Run `jigc relocate <type> --from <prior-home>` against the current working directory: the
+/// freeze-exempt relocation path (`design/corpus-migration.md` → Relocation: freeze-exempt
+/// sibling). Locate the repo + project layer, resolve the doctype's current home, detect the
+/// committed instances stranded at the supplied prior home, `git mv` each to the current home
+/// via the T1 move primitive, render the report, and print it. A clean run exits 0 (even with
+/// nothing to move — an idempotent no-op); a locator error or a frozen-doctype refusal routes
+/// to stderr and exits non-zero.
+fn run_relocate(format: Format, doctype: &str, from: &str) -> Outcome {
+    let cwd = match std::env::current_dir() {
+        Ok(cwd) => cwd,
+        Err(err) => {
+            eprintln!("cannot determine the current directory: {err}");
+            return Outcome::failure();
+        }
+    };
+    relocate::run(&cwd, doctype, from, format)
 }
 
 /// Run `jigc unmanage <rel_path>` against the current working directory: locate the
@@ -1195,6 +1232,26 @@ mod cli_parse {
         let cli =
             Cli::try_parse_from(["jigc", "migrate-corpus"]).expect("`jigc migrate-corpus` parses");
         assert_eq!(cli.command, Command::MigrateCorpus);
+    }
+
+    #[test]
+    fn relocate_parses_type_and_from() {
+        let cli = Cli::try_parse_from(["jigc", "relocate", "vision", "--from", "docs/vision/"])
+            .expect("`jigc relocate <type> --from <prior>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Relocate {
+                r#type: "vision".to_string(),
+                from: "docs/vision/".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn relocate_requires_the_from_flag() {
+        let err = Cli::try_parse_from(["jigc", "relocate", "vision"])
+            .expect_err("`jigc relocate <type>` with no `--from` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
     #[test]

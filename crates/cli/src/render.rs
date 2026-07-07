@@ -986,6 +986,36 @@ pub fn corpus_migration(
     }
 }
 
+/// Render a `jigc relocate <type> --from <prior>` outcome (the freeze-exempt relocation
+/// path) to the surface `format` selects: `agent` / `human` emit one `moved from -> to` line
+/// per relocated instance plus, for each doc whose move failed, its reason, followed by the
+/// routing footer; `json` emits the generic projection of the report (tooling-consumed, no
+/// footer). The CLI only formats the report the relocation returns — the move itself is the
+/// deterministic T1 primitive (`design/corpus-migration.md` → Relocation: freeze-exempt).
+pub fn freeze_exempt_relocation(
+    format: Format,
+    report: &crate::relocate::RelocationReport,
+) -> String {
+    match format {
+        Format::Json => json(report),
+        Format::Agent | Format::Human => {
+            let mut out = format!(
+                "freeze-exempt relocation: {} moved, {} blocked\n",
+                report.moved.len(),
+                report.blocked.len(),
+            );
+            for (from, to) in &report.moved {
+                out.push_str(&format!("  moved   {from} -> {to}\n"));
+            }
+            for (path, reason) in &report.blocked {
+                out.push_str(&format!("  blocked {path}\n    {reason}\n"));
+            }
+            out.push_str(ROUTING_FOOTER);
+            out
+        }
+    }
+}
+
 /// Render a successful `jigc milestone <verb>` action to the surface `format`
 /// selects: `agent` / `human` emit the action summary line (e.g. `minted
 /// milestone:<id> …`) followed by the routing footer; `json` emits a generic
