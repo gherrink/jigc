@@ -128,6 +128,18 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
+    /// Read a **committed** managed doc (or an addressed `#section`/item/leaf slice)
+    /// through the canonical parse/render path. Plain text is the byte-exact committed
+    /// view; `--format json` is the pinned stable shape (`design/team-ready-state.md` →
+    /// The read surface): a whole-doc object `{ type, slug, fields, sections }` where a
+    /// slot section serializes to its prose string and a repeatable section to its item
+    /// array; a `#section` slice returns that section's value (item array / slot prose),
+    /// an `#section/<id>` slice the item object, an `#section/<id>/<leaf>` slice the leaf.
+    /// Reads the committed store — it takes **no** `--task` (unlike the write verbs).
+    Show {
+        /// The doc address — `<type>:<slug>`, or a `#section`/item/leaf slice of it.
+        addr: String,
+    },
 }
 
 /// A `doc` verb's failure: a write-time **block** (a structured [`Finding`],
@@ -179,6 +191,7 @@ impl DocCommand {
                 from_file,
                 task,
             } => run_author(cwd, &doctype, &from_file, task.as_deref()),
+            DocCommand::Show { addr } => run_show(cwd, &addr, format),
         };
         match result {
             Ok(()) => Outcome::success(),
@@ -1062,6 +1075,285 @@ fn apply_leaf(
                 .with_context(|| format!("no slot addressed by `{addr}`"))?;
             apply_slot_target(schema, source, target, &addr, prose)
         }
+    }
+}
+
+/// `jigc doc show <ref>` — read a **committed** managed doc (or an addressed slice)
+/// from the store (`design/team-ready-state.md` → The read surface; `design/
+/// introspection.md` → "Reading *filled* prose stays `jigc doc show`"). Unlike the
+/// write verbs this is task-less: it resolves the cascade schema set + repo root the
+/// same way `jigc validate` does, then serves the read through the canonical parse
+/// path — plain text is the byte-exact [`engine::store::read_slice`] view; `--format
+/// json` is the pinned stable shape (a 1.0 contract, [`show_json`]). A read-side block
+/// (unknown type / not-found / unparseable / a `#fragment` naming nothing) routes
+/// through the shared [`DocFailure`] envelope, non-zero exit + route, exactly like a
+/// write block.
+fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
+    let address = parse_addr(addr)?;
+    let jigc_home = crate::ingest::require_project_layer(cwd)?;
+    let schemas = committed_schemas(&jigc_home)?;
+    match format {
+        Format::Json => {
+            let value = show_json(&jigc_home, &schemas, &address)?;
+            println!("{}", render::json(&value));
+        }
+        Format::Agent | Format::Human => {
+            let slice = engine::store::read_slice(&jigc_home, &schemas, &address)
+                .map_err(DocFailure::Block)?;
+            println!("{slice}");
+        }
+    }
+    Ok(())
+}
+
+/// The cascade-resolved schema set keyed by doctype the committed-store read resolves
+/// against — the `project > team > pack-default` shadow set with each `location:`
+/// nested under the resolved `docs-root` (the `jigc validate` store-read idiom; a
+/// placement doctype homes at its literal file, docs-root inert). Reads the composed
+/// pack from cwd, so a `[dev ▸ methodology]` repo's `vision`/`milestone-record` resolve
+/// alongside the dev doctypes.
+fn committed_schemas(jigc_home: &Path) -> Result<BTreeMap<String, Schema>> {
+    let pack = make_pack();
+    let project_config = jigc_home.join(".jigc").join("config");
+    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
+    defs.all_schemas(pack.as_ref())
+}
+
+/// Build the pinned `--format json` value for `address` (`design/team-ready-state.md` →
+/// The read surface — the 1.0 stable contract, a one-way door). Reads the whole
+/// committed doc through [`engine::store::read_slice`] (which surfaces every doc-level
+/// block — unknown type / transient / not-found / unparseable — identically to the
+/// plain path), re-parses it (guaranteed clean: `read_slice` just parsed it), and shapes
+/// the value from the parsed structure. For a `#fragment`, a second `read_slice`
+/// validates the fragment resolves so the json path blocks on a bad `#section`/item/leaf
+/// exactly as plain does; the value itself is navigated over the parsed structure.
+fn show_json(
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    address: &Address,
+) -> Result<serde_json::Value, DocFailure> {
+    let whole = Address {
+        fragment: None,
+        ..address.clone()
+    };
+    let source =
+        engine::store::read_slice(jigc_home, schemas, &whole).map_err(DocFailure::Block)?;
+    let schema = schemas
+        .get(address.r#type.as_str())
+        .expect("read_slice resolved the type, so it is in the schema set");
+    let doc = engine::parse::parse_sections(schema, &source)
+        .expect("read_slice already parsed the committed doc clean");
+    match &address.fragment {
+        None => Ok(whole_doc_json(schema, &doc, &source, address)),
+        Some(fragment) => {
+            engine::store::read_slice(jigc_home, schemas, address).map_err(DocFailure::Block)?;
+            Ok(fragment_json(schema, &doc, &source, fragment))
+        }
+    }
+}
+
+/// The whole-doc json wrapper `{ type, slug, fields, sections }`. `fields` flattens
+/// every simple section's fields (the header's front-matter + any body trailing group)
+/// keyed by leaf id; `sections` carries one entry per slot section (its prose string)
+/// and per repeatable section (its item array) — a header/fields-only section
+/// contributes to `fields` alone. A scalar field serializes as its string, a list-
+/// cardinality field as a json array; slot prose is trimmed (the clean machine value —
+/// the byte-exact form stays the plain path).
+fn whole_doc_json(
+    schema: &Schema,
+    doc: &engine::parse::Document,
+    source: &str,
+    address: &Address,
+) -> serde_json::Value {
+    let mut fields = serde_json::Map::new();
+    let mut sections = serde_json::Map::new();
+    for section in &schema.sections {
+        let parsed = doc.sections.iter().find(|s| s.id == section.id);
+        match &section.body {
+            SectionBody::Simple { slot, .. } => {
+                if let Some(parsed) = parsed {
+                    for field in &parsed.fields {
+                        fields.insert(field.key.clone(), field_json(&field.value));
+                    }
+                }
+                if slot.is_some() {
+                    sections.insert(
+                        section.id.clone(),
+                        slot_json(parsed.and_then(|p| p.slot.as_ref()), source),
+                    );
+                }
+            }
+            SectionBody::Repeatable { repeatable } => {
+                let items = parsed.map(|p| p.items.as_slice()).unwrap_or(&[]);
+                sections.insert(section.id.clone(), items_json(items, repeatable, source));
+            }
+        }
+    }
+    serde_json::json!({
+        "type": schema.ty,
+        "slug": address.slug.as_str(),
+        "fields": serde_json::Value::Object(fields),
+        "sections": serde_json::Value::Object(sections),
+    })
+}
+
+/// The json value an addressed `#fragment` slice resolves to (the sub-node of the
+/// whole-doc shape): a slot section → its prose string; a repeatable section → its item
+/// array; `#section/<id>` → the item object; `#section/<id>/<leaf>` → the leaf value
+/// (slot prose or field). `read_slice` already validated the fragment resolves, so each
+/// lookup is infallible. Nested repeatable-in-item content (the M22 changelog shape) is
+/// not part of the pinned read-surface contract — every witness + the milestone-record
+/// are flat — so a deeper path degrades to the enclosing item object rather than
+/// modelling an unpinned nested json shape.
+fn fragment_json(
+    schema: &Schema,
+    doc: &engine::parse::Document,
+    source: &str,
+    fragment: &Fragment,
+) -> serde_json::Value {
+    let hops = fragment_hops(fragment);
+    let (section_id, rest) = hops
+        .split_first()
+        .expect("a fragment carries a section hop");
+    let section = schema
+        .sections
+        .iter()
+        .find(|s| &s.id == section_id)
+        .expect("read_slice validated the section");
+    let parsed = doc.sections.iter().find(|s| &s.id == section_id);
+    match &section.body {
+        // A simple section only reaches here at the section level (`read_slice` blocks a
+        // sub-hop into a simple section), so it is the slot-prose case.
+        SectionBody::Simple { .. } => slot_json(parsed.and_then(|p| p.slot.as_ref()), source),
+        SectionBody::Repeatable { repeatable } => {
+            let items = parsed.map(|p| p.items.as_slice()).unwrap_or(&[]);
+            match rest.split_first() {
+                None => items_json(items, repeatable, source),
+                Some((item_id, leaf_rest)) => {
+                    let item = items
+                        .iter()
+                        .find(|it| &it.id == item_id)
+                        .expect("read_slice validated the item");
+                    match leaf_rest.first() {
+                        None => item_json(item, repeatable, source),
+                        Some(leaf) if leaf_rest.len() == 1 => {
+                            if let Some(span) = item.slot_span(leaf) {
+                                serde_json::Value::String(span.slice(source).trim().to_string())
+                            } else if let Some(field) = item.fields.iter().find(|f| &f.key == leaf)
+                            {
+                                field_json(&field.value)
+                            } else {
+                                // A nested item id at leaf position (unpinned nested case).
+                                item_json(item, repeatable, source)
+                            }
+                        }
+                        // A deeper nested path — unpinned; degrade to the enclosing item.
+                        Some(_) => item_json(item, repeatable, source),
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Split a [`Fragment`] into its ordered hop strings (section id first) — the read
+/// path is purely structural, so it resolves each hop over the parsed data (the CLI
+/// mirror of the engine's own `store::fragment_hops`).
+fn fragment_hops(fragment: &Fragment) -> Vec<&str> {
+    match fragment {
+        Fragment::Unit(u) => vec![u.as_str()],
+        Fragment::UnitLeaf(u, l) => vec![u.as_str(), l.as_str()],
+        Fragment::UnitItem(u, i) => vec![u.as_str(), i.as_str()],
+        Fragment::UnitItemLeaf(u, i, l) => vec![u.as_str(), i.as_str(), l.as_str()],
+        Fragment::Deep(hops) => hops.iter().map(String::as_str).collect(),
+    }
+}
+
+/// A repeatable section's items as a json array of item objects.
+fn items_json(
+    items: &[engine::parse::ParsedItem],
+    repeatable: &engine::schema::Repeatable,
+    source: &str,
+) -> serde_json::Value {
+    serde_json::Value::Array(
+        items
+            .iter()
+            .map(|item| item_json(item, repeatable, source))
+            .collect(),
+    )
+}
+
+/// One repeatable item as a json object of its leaves: the `id-from` leaf keyed by its
+/// id → the item's heading value (its stable id-source), each other field keyed by leaf
+/// id (scalar → string, list → array), each slot keyed by leaf id → its trimmed prose.
+/// A single bare-prose slot carries no leaf id in the parsed item, so the block names it
+/// ([`single_slot_leaf`]). Nested repeatable content is not serialized (the unpinned
+/// nested case; see [`fragment_json`]).
+fn item_json(
+    item: &engine::parse::ParsedItem,
+    repeatable: &engine::schema::Repeatable,
+    source: &str,
+) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    // The id-from leaf is the item's `###` heading (its id-source), not a bullet field,
+    // so it is carried by `item.title` — key it under the block's declared `id-from`.
+    map.insert(
+        repeatable.id_from.clone(),
+        serde_json::Value::String(item.title.clone()),
+    );
+    for field in &item.fields {
+        map.insert(field.key.clone(), field_json(&field.value));
+    }
+    if !item.slots.is_empty() {
+        for (leaf_id, span) in &item.slots {
+            map.insert(
+                leaf_id.clone(),
+                serde_json::Value::String(span.slice(source).trim().to_string()),
+            );
+        }
+    } else if let Some(span) = &item.slot
+        && let Some(leaf_id) = single_slot_leaf(repeatable)
+    {
+        map.insert(
+            leaf_id.to_string(),
+            serde_json::Value::String(span.slice(source).trim().to_string()),
+        );
+    }
+    serde_json::Value::Object(map)
+}
+
+/// The id of a repeatable block's single bare-prose slot leaf — the key the parsed
+/// item's un-keyed `slot` span serializes under (the multi-slot case keys itself via
+/// `slots`). `None` for a slot-less block.
+fn single_slot_leaf(repeatable: &engine::schema::Repeatable) -> Option<&str> {
+    repeatable.block.iter().find_map(|leaf| match leaf {
+        engine::schema::Leaf::Slot { id, .. } => Some(id.as_str()),
+        _ => None,
+    })
+}
+
+/// A slot section's json value — its prose, trimmed (the clean machine value; the
+/// byte-exact form is the plain path). An unfilled/absent slot is the empty string.
+fn slot_json(span: Option<&engine::parse::Span>, source: &str) -> serde_json::Value {
+    serde_json::Value::String(
+        span.map(|s| s.slice(source).trim().to_string())
+            .unwrap_or_default(),
+    )
+}
+
+/// One field value as json: a scalar → its string (an enum member is already its
+/// lowercase string), a list-cardinality value → a json array of its elements.
+fn field_json(value: &Value) -> serde_json::Value {
+    match value {
+        Value::Scalar(s) => serde_json::Value::String(s.clone()),
+        Value::List(elems) => serde_json::Value::Array(
+            elems
+                .iter()
+                .cloned()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
     }
 }
 
