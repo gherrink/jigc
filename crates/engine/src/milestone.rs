@@ -56,6 +56,10 @@ const RECORD_STATUS_FIELD: &str = "status";
 /// appended to by the `add-task` write arm.
 const RECORD_TASKS_SECTION: &str = "tasks";
 
+/// The `tasks` item leaf carrying a sub-task's **intent** (`set: on-transition`),
+/// materialized by the CLI at `add-task` from the sub-task's recorded intent.
+const RECORD_TASK_INTENT_FIELD: &str = "intent";
+
 /// The `status` value a freshly materialized record (and each fresh sub-task item)
 /// carries until `join` transitions it to `joined`.
 const RECORD_STATUS_ACTIVE: &str = "active";
@@ -548,6 +552,49 @@ pub fn render_fresh_record(
         ],
     };
     crate::write::render(schema, &instance)
+}
+
+/// **Append one sub-task item to a `milestone-record`'s `tasks` section** — the
+/// `add-task` write arm (`design/team-ready-state.md` → Engine capability 1 (write),
+/// the `add-task` — append arm; M39 Increment 3). Materializes one `tasks` item —
+/// `task-id` (the `id-from` heading, so `task_id` IS the item title) plus the
+/// `set: on-transition` leaves `intent` and `status: active` (the CLI-supplied
+/// machine-set values a freshly-added sub-task carries until `join`) — via the M16
+/// [`crate::write::add_item`] primitive over the pack-supplied `schema`.
+///
+/// A **distinct operation** from the `join` in-place mutate (the design's F5 two-arm
+/// census): this is a pure **append**, ordered and byte-stable — the primitive
+/// re-renders any prior last item canonically, so the bytes outside the appended item's
+/// span are byte-identical and the result re-parses. The engine stays clock-free and
+/// LLM-free: every value is the caller-supplied structural state (`task_id`/`intent`)
+/// or the `active` constant, so this is a pure function of
+/// (`schema`, `source`, `task_id`, `intent`) → bytes.
+///
+/// A `task_id` with no slug-able content (an empty minted anchor) or one already present
+/// in the section surfaces the primitive's [`GenerateError`](crate::write::GenerateError)
+/// unchanged — the CLI wiring maps it to a routed finding.
+pub fn append_task_item(
+    schema: &crate::schema::Schema,
+    source: &str,
+    task_id: &str,
+    intent: &str,
+) -> Result<String, crate::write::GenerateError> {
+    use crate::field_block::{Field, Value};
+
+    // The `set: on-transition` leaves in schema block order (the id-from `task-id` is the
+    // heading, not a bullet), materialized to the fresh-append values: the recorded
+    // `intent`, seeded `status: active` until `join` transitions it to `joined`.
+    let fields = vec![
+        Field {
+            key: RECORD_TASK_INTENT_FIELD.to_string(),
+            value: Value::Scalar(intent.to_string()),
+        },
+        Field {
+            key: RECORD_STATUS_FIELD.to_string(),
+            value: Value::Scalar(RECORD_STATUS_ACTIVE.to_string()),
+        },
+    ];
+    crate::write::add_item(schema, source, RECORD_TASKS_SECTION, task_id, None, &fields)
 }
 
 /// One staged doc folded into the parent working overlay at the by-task-id join
@@ -3293,6 +3340,108 @@ status: active
         assert!(
             tasks.items.is_empty(),
             "a freshly materialized record stages no sub-task items"
+        );
+    }
+
+    /// T2 done-criterion (`design/team-ready-state.md` → Engine capability 1 (write),
+    /// the `add-task` — append arm; M39 Increment 3): [`append_task_item`] appends one
+    /// `tasks` item per sub-task over the fresh record — `task-id`/`intent`/`status:
+    /// active` — **byte-stable** (the bytes outside each appended item's span are
+    /// byte-identical: the append never disturbs the `meta` header, the H1, the earlier
+    /// item, or the `## Tasks` heading) and the twice-appended record **re-parses** with
+    /// both items in append order carrying their machine-set values.
+    #[test]
+    fn add_task_appends_both_sub_tasks_byte_stable_and_reparses() {
+        let schema = milestone_record_schema();
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4".to_string(),
+        };
+        let fresh = render_fresh_record(&schema, "cache-rework", &base);
+
+        // Append the first sub-task, then the second — each via the `add-task` append arm.
+        let after_one = append_task_item(&schema, &fresh, "warm-cache", "Warm the read cache")
+            .expect("first sub-task appends");
+        let after_two = append_task_item(&schema, &after_one, "evict-cold", "Evict cold entries")
+            .expect("second sub-task appends");
+
+        // Golden: both items, in append order, under the untouched `meta`/H1/`## Tasks`.
+        let expected = "\
+---
+base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c
+status: active
+---
+
+# cache-rework
+
+## Tasks
+
+### warm-cache  {#warm-cache}
+
+<!-- fields -->
+- intent: Warm the read cache
+- status: active
+
+### evict-cold  {#evict-cold}
+
+<!-- fields -->
+- intent: Evict cold entries
+- status: active
+";
+        assert_eq!(
+            after_two, expected,
+            "the twice-appended record is the golden form"
+        );
+
+        // Byte-stability: the append is confined to the new item's span — every byte of
+        // the prior record (header, H1, `## Tasks`, the first item) survives byte-identical.
+        assert!(
+            after_two.starts_with(after_one.trim_end_matches('\n')),
+            "the second append leaves the first record's bytes untouched outside the appended span:\n\
+             --- after_one ---\n{after_one}\n--- after_two ---\n{after_two}"
+        );
+
+        // Re-parses: the `tasks` section carries both items in append order, each with its
+        // machine-set `task-id` (heading/id), `intent`, and `status: active`.
+        let doc = crate::parse::parse_sections(&schema, &after_two)
+            .expect("the twice-appended record re-parses against its schema");
+        let tasks = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_TASKS_SECTION)
+            .expect("the parsed doc carries the `tasks` section");
+        let seen: Vec<(&str, Option<String>, Option<String>)> = tasks
+            .items
+            .iter()
+            .map(|item| {
+                let leaf = |key: &str| {
+                    item.fields
+                        .iter()
+                        .find(|f| f.key == key)
+                        .map(|f| f.value.render())
+                };
+                (
+                    item.title.as_str(),
+                    leaf(RECORD_TASK_INTENT_FIELD),
+                    leaf(RECORD_STATUS_FIELD),
+                )
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                (
+                    "warm-cache",
+                    Some("Warm the read cache".to_string()),
+                    Some(RECORD_STATUS_ACTIVE.to_string()),
+                ),
+                (
+                    "evict-cold",
+                    Some("Evict cold entries".to_string()),
+                    Some(RECORD_STATUS_ACTIVE.to_string()),
+                ),
+            ],
+            "both sub-tasks re-parse in append order with their machine-set values"
         );
     }
 }
