@@ -988,10 +988,11 @@ pub fn corpus_migration(
 
 /// Render a `jigc relocate <type> --from <prior>` outcome (the freeze-exempt relocation
 /// path) to the surface `format` selects: `agent` / `human` emit one `moved from -> to` line
-/// per relocated instance plus, for each doc whose move failed, its reason, followed by the
-/// routing footer; `json` emits the generic projection of the report (tooling-consumed, no
-/// footer). The CLI only formats the report the relocation returns — the move itself is the
-/// deterministic T1 primitive (`design/corpus-migration.md` → Relocation: freeze-exempt).
+/// per relocated instance, one `displaced` line per foreign squatter moved into the workbench,
+/// and each blocked doc's reason, followed by the routing footer; `json` emits the generic
+/// projection of the report (tooling-consumed, no footer). The CLI only formats the report the
+/// relocation returns — the move itself is the deterministic T1 primitive
+/// (`design/corpus-migration.md` → Relocation: freeze-exempt).
 pub fn freeze_exempt_relocation(
     format: Format,
     report: &crate::relocate::RelocationReport,
@@ -1000,15 +1001,21 @@ pub fn freeze_exempt_relocation(
         Format::Json => json(report),
         Format::Agent | Format::Human => {
             let mut out = format!(
-                "freeze-exempt relocation: {} moved, {} blocked\n",
+                "freeze-exempt relocation: {} moved, {} displaced, {} blocked\n",
                 report.moved.len(),
+                report.displaced.len(),
                 report.blocked.len(),
             );
             for (from, to) in &report.moved {
-                out.push_str(&format!("  moved   {from} -> {to}\n"));
+                out.push_str(&format!("  moved     {from} -> {to}\n"));
+            }
+            for (from, to) in &report.displaced {
+                out.push_str(&format!(
+                    "  displaced {from} -> {to} (foreign squatter → workbench)\n"
+                ));
             }
             for (path, reason) in &report.blocked {
-                out.push_str(&format!("  blocked {path}\n    {reason}\n"));
+                out.push_str(&format!("  blocked   {path}\n    {reason}\n"));
             }
             out.push_str(ROUTING_FOOTER);
             out

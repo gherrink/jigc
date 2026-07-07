@@ -242,8 +242,9 @@ fn milestone_create_then_add_tasks_through_the_binary() {
     // (M39 3→1 collapse) — byte-exact, so a re-divergence from the one source of truth
     // (e.g. a dropped `worktrees/`) is caught here at the milestone.rs write path.
     assert_eq!(
-        gitignore, "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\n",
-        "`.jigc/.gitignore` must be the canonical union set incl. `worktrees/`; got:\n{gitignore}",
+        gitignore, "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\ndisplaced/\n",
+        "`.jigc/.gitignore` must be the canonical union set incl. `worktrees/` + the \
+         `displaced/` relocation workbench; got:\n{gitignore}",
     );
     // Verified through git itself: the milestone area is ignored.
     let check = Command::new("git")

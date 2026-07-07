@@ -16,9 +16,13 @@ use std::path::Path;
 /// The transient-runtime entry set every `.jigc/.gitignore` writer emits, in order:
 /// the sub-task working areas (`tasks/`), the rebuildable caches (`index/`, `state/`),
 /// the milestone WIP staging (`milestones/`), the fan-out worktrees (`worktrees/`,
-/// M31 Inc 3), and the M36 invocation log (`logs/`). This is the **union** of the three
-/// formerly-divergent literals — carrying `worktrees/` closes the pre-M39 drift.
-pub(crate) const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\n";
+/// M31 Inc 3), the M36 invocation log (`logs/`), and the **relocation workbench**
+/// (`displaced/`, M39 Inc 5 T5 — the parking home for a foreign file moved out of a
+/// relocation destination, kept uncommittable; `crate::relocate::WORKBENCH_SUBDIR`).
+/// This is the **union** of the three formerly-divergent literals — carrying `worktrees/`
+/// closes the pre-M39 drift.
+pub(crate) const ENTRIES: &str =
+    "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\ndisplaced/\n";
 
 /// Ensure `<jigc_root>/.gitignore` lists every [`ENTRIES`] line. Idempotent — the file
 /// is (re)written only when it is absent or does not already list **all** of the entry

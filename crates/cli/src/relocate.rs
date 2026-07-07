@@ -65,6 +65,11 @@ pub struct RelocationReport {
     /// Instances detected stranded whose move failed (a `git mv` clobber, an unreadable
     /// file), each with its reason — address-sorted. Surfaced, never fatal.
     pub blocked: Vec<(String, String)>,
+    /// Foreign (untracked/unmanaged) files that **squatted a relocation destination** and
+    /// were **moved into the gitignored `.jigc/` workbench** (`from` destination path → `to`
+    /// workbench path), out of the way so the managed instance could land — uncommittable,
+    /// never clobbered (`design/reconciliation.md` → Relocation collisions). Address-sorted.
+    pub displaced: Vec<(String, String)>,
 }
 
 /// Run `jigc relocate <ty> --from <from>` against `cwd`: locate the repo + project layer,
@@ -165,6 +170,7 @@ pub(crate) fn relocate_stranded(
     let mut report = RelocationReport {
         moved: Vec::new(),
         blocked: Vec::new(),
+        displaced: Vec::new(),
     };
     for rel in orphan::committed_markdown(repo_root) {
         if !orphan::is_stranded(&rel, prior, current) {
@@ -177,20 +183,35 @@ pub(crate) fn relocate_stranded(
             continue; // already at the destination (is_stranded guards this — defensive).
         }
         match relocate_one(repo_root, jigc_root, &rel, &dest) {
-            Ok(()) => report.moved.push((rel, dest)),
+            Ok(displaced) => {
+                report.moved.push((rel, dest));
+                if let Some(pair) = displaced {
+                    report.displaced.push(pair);
+                }
+            }
             Err(err) => report.blocked.push((rel, format!("{err:#}"))),
         }
     }
     report.moved.sort();
+    report.displaced.sort();
     report.blocked.sort();
     report
 }
 
 /// Move one stranded doc `old_rel` → `new_rel` byte-preserving via [`move_doc`]. A pure
 /// relocation keeps the bytes (`git mv` is byte-identical), so the re-keyed file-state hash is
-/// the current file's. The destination directory is created first (`git mv` needs it to
-/// exist — a relocation to a fresh home creates dirs that never existed).
-fn relocate_one(repo_root: &Path, jigc_root: &Path, old_rel: &str, new_rel: &str) -> Result<()> {
+/// the current file's. Any **foreign** squatter occupying the destination is first displaced
+/// into the workbench ([`displace_foreign_squatter`]) so the move lands and no working file is
+/// clobbered; a *managed* instance already there blocks (a managed move-INTO is deferred). The
+/// destination directory is created after (a `git mv` needs it to exist — a relocation to a
+/// fresh home creates dirs that never existed). Returns the displaced-squatter pair, if any.
+fn relocate_one(
+    repo_root: &Path,
+    jigc_root: &Path,
+    old_rel: &str,
+    new_rel: &str,
+) -> Result<Option<(String, String)>> {
+    let displaced = displace_foreign_squatter(repo_root, jigc_root, new_rel)?;
     let bytes = std::fs::read(repo_root.join(old_rel))
         .with_context(|| format!("reading the stranded doc {old_rel}"))?;
     let new_hash = hash_bytes(&bytes);
@@ -200,7 +221,78 @@ fn relocate_one(repo_root: &Path, jigc_root: &Path, old_rel: &str, new_rel: &str
         std::fs::create_dir_all(repo_root.join(parent))
             .with_context(|| format!("creating the destination dir for {new_rel}"))?;
     }
-    move_doc(repo_root, jigc_root, old_rel, new_rel, &new_hash)
+    move_doc(repo_root, jigc_root, old_rel, new_rel, &new_hash)?;
+    Ok(displaced)
+}
+
+/// The gitignored `.jigc/` subdir a **foreign** file squatting a relocation destination is
+/// parked in — out of the destination, uncommittable (the move-INTO-workbench arm;
+/// `design/reconciliation.md` → Relocation collisions). A dedicated home (not `tasks/`,
+/// `milestones/`, or `worktrees/`, each of which a reader enumerates) so parked detritus never
+/// masquerades as a task/worktree; listed in [`crate::gitignore::ENTRIES`].
+const WORKBENCH_SUBDIR: &str = "displaced";
+
+/// Resolve a **collision at the relocation destination** `dest_rel` by *kind*
+/// (`design/reconciliation.md` → Relocation collisions — the two-resolutions reconcile):
+///
+/// - **destination free** → `Ok(None)`, nothing to do;
+/// - a **managed** instance already there (baselined in the file-state record) → a managed
+///   move-INTO the destination is **deferred** (it needs an unmodeled managed-but-uncommitted
+///   state), so the collision is **surfaced as a block**, never a clobber;
+/// - a **foreign** (untracked/unmanaged) file → **moved into the gitignored `.jigc/`
+///   workbench** ([`WORKBENCH_SUBDIR`]) so the managed instance can land and a working file is
+///   never accidentally committed — returned as `Some((dest, workbench))` for the report.
+///
+/// Classification is by baseline: a managed instance is recorded in the file-state map; a
+/// foreign file is not. The index slot of a *committed-but-unmanaged* squatter is freed
+/// (`git rm --cached --ignore-unmatch`, a no-op for an untracked squatter) so the managed
+/// `git mv` into the now-vacated destination succeeds.
+fn displace_foreign_squatter(
+    repo_root: &Path,
+    jigc_root: &Path,
+    dest_rel: &str,
+) -> Result<Option<(String, String)>> {
+    let dest_abs = repo_root.join(dest_rel);
+    if !dest_abs.exists() {
+        return Ok(None);
+    }
+    let record = FileStateRecord::load(jigc_root)
+        .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
+    if record.get(dest_rel).is_some() {
+        anyhow::bail!(
+            "the destination `{dest_rel}` is occupied by a managed instance — a managed \
+             move-INTO the destination is deferred; reconcile it by hand"
+        );
+    }
+    let name = Path::new(dest_rel)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow!("the squatter `{dest_rel}` has no file name"))?;
+    let workbench_dir = jigc_root.join(WORKBENCH_SUBDIR);
+    std::fs::create_dir_all(&workbench_dir)
+        .with_context(|| format!("creating the .jigc workbench {workbench_dir:?}"))?;
+    let workbench_abs = workbench_dir.join(name);
+    // Free any index slot the squatter holds (a committed-but-unmanaged file) so the managed
+    // `git mv` into the destination succeeds; `--ignore-unmatch` makes an untracked squatter a
+    // no-op.
+    git_run(
+        repo_root,
+        &[
+            "rm",
+            "--cached",
+            "--ignore-unmatch",
+            "--quiet",
+            "--",
+            dest_rel,
+        ],
+    )?;
+    std::fs::rename(&dest_abs, &workbench_abs)
+        .with_context(|| format!("moving the foreign squatter {dest_rel} into the workbench"))?;
+    let workbench_rel = workbench_abs
+        .strip_prefix(repo_root)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| workbench_abs.to_string_lossy().into_owned());
+    Ok(Some((dest_rel.to_string(), workbench_rel)))
 }
 
 /// The destination path a stranded doc `rel` moves to inside `current`: a `Placement` home is
@@ -452,6 +544,110 @@ mod tests {
         assert!(
             repo.path().join("VISION.md").exists(),
             "the instance at the current home stays put",
+        );
+    }
+
+    /// Whether git treats `rel` (repo-relative) as ignored — `git check-ignore` exits 0
+    /// when the path is ignored, 1 when it is not. Used to prove the displaced squatter's
+    /// workbench home is genuinely uncommittable.
+    fn git_ignores(repo: &TempRepo, rel: &str) -> bool {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo.path())
+            .args(["check-ignore", "-q", rel])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .status()
+            .expect("run git check-ignore")
+            .success()
+    }
+
+    /// (M39 inc-5 T5, done-criterion / Prove #3) The **foreign-squatter move-into-workbench
+    /// arm**: a foreign (untracked/unmanaged) file squatting the relocation *destination* is
+    /// relocated **into the gitignored `.jigc/` workbench** — out of the destination,
+    /// uncommittable — and the managed instance lands. The two-resolutions-for-one-collision
+    /// reconcile (`design/reconciliation.md` → Relocation collisions): a foreign squatter →
+    /// move-into-workbench (this arm); a *managed* instance at the destination → adopt-in-place
+    /// (deferred move-INTO), never a clobber.
+    #[test]
+    fn a_foreign_squatter_at_the_destination_moves_into_the_workbench_and_the_managed_lands() {
+        let repo = TempRepo::new();
+        // The managed instance at the human-supplied prior home.
+        let managed = "---\nx: y\n---\n\n# Vision\n\nThesis.\n";
+        repo.commit_file("docs/vision/vision.md", managed);
+        // A FOREIGN (untracked, unmanaged) file squatting the relocation destination.
+        let foreign = "# Someone else's VISION\n\nNot a managed doc.\n";
+        std::fs::write(repo.path().join("VISION.md"), foreign).expect("write the foreign squatter");
+
+        let jigc_root = repo.path().join(".jigc");
+        // The gitignore is the workbench's uncommittable guarantee — write the canonical set
+        // (which now carries the `displaced/` workbench subdir) so `git check-ignore` can
+        // witness it.
+        crate::gitignore::ensure(&jigc_root).expect("write the canonical .jigc/.gitignore");
+        // Only the managed instance is baselined; the foreign squatter is not (→ foreign).
+        let mut seed = FileStateRecord::new();
+        seed.record(
+            "docs/vision/vision.md".to_string(),
+            hash_bytes(managed.as_bytes()),
+        );
+        seed.save(&jigc_root).expect("seed the file-state record");
+
+        let schema = placement_schema("vision", "VISION.md");
+        let pack = crate::pack::EmbeddedPack::new();
+        let prior = Home::location("docs/vision/").expect("prior home");
+        let report = relocate_freeze_exempt(&pack, repo.path(), &jigc_root, &schema, prior)
+            .expect("the relocation runs");
+
+        // The managed instance is moved to the current home; the foreign squatter is displaced
+        // into the workbench — no blockers.
+        assert_eq!(
+            report.moved,
+            vec![("docs/vision/vision.md".to_string(), "VISION.md".to_string())],
+            "the managed instance lands at the destination: {report:?}",
+        );
+        assert_eq!(
+            report.displaced,
+            vec![(
+                "VISION.md".to_string(),
+                ".jigc/displaced/VISION.md".to_string()
+            )],
+            "the foreign squatter is displaced into the gitignored workbench: {report:?}",
+        );
+        assert!(
+            report.blocked.is_empty(),
+            "no blockers: {:?}",
+            report.blocked
+        );
+
+        // The managed instance now owns the destination, byte-faithful (git mv preserves it).
+        let landed = std::fs::read_to_string(repo.path().join("VISION.md")).expect("destination");
+        assert_eq!(landed, managed, "the managed bytes land at the destination");
+
+        // The foreign content is preserved in the workbench, out of the destination and
+        // genuinely uncommittable (gitignored under `.jigc/displaced/`).
+        let parked = std::fs::read_to_string(repo.path().join(".jigc/displaced/VISION.md"))
+            .expect("the displaced foreign file");
+        assert_eq!(
+            parked, foreign,
+            "the foreign bytes are preserved in the workbench"
+        );
+        assert!(
+            git_ignores(&repo, ".jigc/displaced/VISION.md"),
+            "the displaced squatter's workbench home is gitignored — uncommittable",
+        );
+
+        // The file-state is re-keyed to the managed instance at its new home; the foreign
+        // squatter is never baselined.
+        let record = FileStateRecord::load(&jigc_root).expect("reload the record");
+        assert_eq!(
+            record.get("VISION.md"),
+            Some(hash_bytes(managed.as_bytes()).as_str()),
+            "the destination is baselined at the managed hash",
+        );
+        assert_eq!(
+            record.get(".jigc/displaced/VISION.md"),
+            None,
+            "the displaced foreign file is never baselined",
         );
     }
 }
