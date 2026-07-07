@@ -1,3 +1,6 @@
+<!-- research-advisory -->
+No committed research exists yet — a vision grounds in the research it cites, so consider running `do-research` first to gather it. (Advisory, not required: a vision may ground in experience, and grounding can take several research rounds.)
+<!-- /research-advisory -->
 Form the project vision on the `vision` singleton. Create it — the slug is fixed
 (`vision`), and its H1 reads `# Vision` regardless of the title:
 

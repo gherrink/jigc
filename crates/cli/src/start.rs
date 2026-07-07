@@ -459,6 +459,73 @@ fn is_optional_ref(field: &engine::schema::Field) -> bool {
 /// (`DECISIONS.md` 2026-06-01 → M2 flips `default-workflow` to `router`).
 const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
 
+/// The doctype a **vision-forming** workflow admits through its create-gate — the
+/// trigger for the empty-research advisory ([`resolve_research_advisory`]).
+const VISION_DOCTYPE: &str = "vision";
+
+/// The [`committed_store`] key (the `research/` location stem) under which committed
+/// `research` instances are enumerated — the collection the empty-research advisory
+/// queries. Absent ⇔ no research is committed (`committed_store` omits empty
+/// collections), so a vision grounds in `0..*` research and zero is a legal state.
+const RESEARCH_STORE_KEY: &str = "research";
+
+/// The HTML-comment marker lines delimiting the empty-research advisory block the
+/// `author-vision` step carries at its opening (`packs/methodology/steps/author-vision.yaml`).
+/// The CLI keeps the inner advisory line when the compose warrants it, else drops the
+/// whole block; the markers are **always** stripped, so they never reach the agent.
+const ADVISORY_OPEN: &str = "<!-- research-advisory -->";
+const ADVISORY_CLOSE: &str = "<!-- /research-advisory -->";
+
+/// Whether the composing workflow warrants the empty-research advisory: it creates a
+/// `vision` (its `allows-create` gate admits the [`VISION_DOCTYPE`]) **and** no
+/// `research` is committed. A `vision` grounds in the research it cites, so an empty
+/// research store earns a nudge toward `do-research` first — **advisory, never
+/// blocking** (some visions ground in experience, and grounding may take several
+/// research rounds; `ideas/form-vision-research-routing.md`, `DECISIONS.md`
+/// 2026-07-06 → form-vision advisory G7).
+fn warrants_research_advisory(def: &WorkflowDef, store: &BTreeMap<String, Vec<Address>>) -> bool {
+    def.allows_create
+        .iter()
+        .any(|entry| entry.doc_type == VISION_DOCTYPE)
+        && !store.contains_key(RESEARCH_STORE_KEY)
+}
+
+/// Resolve the empty-research advisory block a vision-forming workflow's
+/// `author-vision` step carries: when `advise`, keep its inner advisory line (drop the
+/// two markers); otherwise drop the whole marker block — plus a single blank line that
+/// immediately follows it, so no leading gap remains. A composed text carrying no
+/// advisory block (every non-vision workflow) is returned unchanged. The markers are
+/// **always** removed, so they never leak into the emitted bytes on any compose path.
+fn resolve_research_advisory(text: String, advise: bool) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    let (Some(open), Some(close)) = (
+        lines.iter().position(|l| l.trim() == ADVISORY_OPEN),
+        lines.iter().position(|l| l.trim() == ADVISORY_CLOSE),
+    ) else {
+        return text; // no advisory block — nothing to resolve.
+    };
+    if close <= open {
+        return text; // malformed block ordering — leave the bytes untouched.
+    }
+    let trailing_newline = text.ends_with('\n');
+    let mut out: Vec<&str> = lines[..open].to_vec();
+    if advise {
+        out.extend_from_slice(&lines[open + 1..close]);
+    }
+    // Resume past the close marker; when dropping the block, also drop a single
+    // trailing blank line so the following prose does not start with a gap.
+    let mut resume = close + 1;
+    if !advise && lines.get(resume).is_some_and(|l| l.trim().is_empty()) {
+        resume += 1;
+    }
+    out.extend_from_slice(&lines[resume..]);
+    let mut result = out.join("\n");
+    if trailing_newline {
+        result.push('\n');
+    }
+    result
+}
+
 /// Mint a task from `intent`, then compose the cascade's default workflow over
 /// it — the `jigc start "<intent>"` front door.
 ///
@@ -904,6 +971,10 @@ fn compose_core(
     // resolves the same split internally for its `.jigc/` write + worktree HEAD read.
     let store_root = cli::repo::jigc_home(repo_root).unwrap_or_else(|| repo_root.to_path_buf());
     let store = committed_store(&store_root, &schemas);
+    // The empty-research advisory decision — computed before `store` is moved into the
+    // context. A vision-forming workflow composed against an empty research store keeps
+    // the `author-vision` advisory (route to `do-research` first); all else drops it.
+    let advise_research = warrants_research_advisory(&def, &store);
 
     let ctx = if should_provision_commit_doc(&def) {
         // Mint the task (reads HEAD). Minting after the definition loads so a
@@ -989,7 +1060,10 @@ fn compose_core(
         fills: &overrides.fills,
         ctx: &ctx,
     };
-    compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)
+    let composed = compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)?;
+    Ok(ComposedWorkflow {
+        text: resolve_research_advisory(composed.text, advise_research),
+    })
 }
 
 /// The manifest's `structural-op` deltas scoped to `workflow_id` — a
@@ -1617,6 +1691,10 @@ fn compose_task_workflow(
     // `schemas/<id>.yaml` shadow wins.
     let schemas = defs.all_schemas(pack)?;
     let store_feed = committed_store(repo_root, &schemas);
+    // The empty-research advisory decision (same as the fresh front door), computed
+    // before `store_feed` is moved into the context — so a resumed vision-forming
+    // workflow strips (or keeps) the `author-vision` advisory block identically.
+    let advise_research = warrants_research_advisory(&def, &store_feed);
 
     // No source seam on the resume path — the seam is fed only by `jigc migrate`.
     let ctx = build_context(id, &intent, &def, &bound, selectable, store_feed, None);
@@ -1679,8 +1757,11 @@ fn compose_task_workflow(
         fills: &overrides.fills,
         ctx: &ctx,
     };
-    compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
-        .map_err(finding_to_err)
+    let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
+        .map_err(finding_to_err)?;
+    Ok(ComposedWorkflow {
+        text: resolve_research_advisory(composed.text, advise_research),
+    })
 }
 
 /// Enumerate the committed managed store into the `store` data-value feed: for every
