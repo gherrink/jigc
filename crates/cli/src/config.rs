@@ -201,35 +201,41 @@ fn run_set(cwd: &Path, key: &str, value: &str) -> Result<()> {
         )));
     }
 
-    // docs-root orphan warning (M36): re-pointing the managed-doc parent strands every
-    // committed doc under the *prior* resolved root. Warn (naming them) + route BEFORE the
-    // knob lands so the operator can move them or re-point back. This is `run_set`'s first
-    // read of the committed doc surface — a net-new store-access seam that resolves the
-    // *current* cascade and enumerates `git ls-files`, comparing the old resolved root
-    // against the new value (`design/storage.md` → docs-root; `design/validation.md` →
-    // Orphan detection). Best-effort: it never fails the write (the config still lands).
+    // docs-root re-point: detect + route + MOVE the committed docs the change would strand at
+    // the *prior* resolved root (M39 inc-5 T3, replacing the M36 warn-then-strand). This is
+    // `run_set`'s first read of the committed doc surface — a store-access seam that resolves
+    // the *current* cascade (its `docs-root` is the old root) and enumerates `git ls-files`,
+    // comparing the old resolved root against the new value (`design/storage.md` → docs-root;
+    // `design/reconciliation.md` → the route home). It runs BEFORE the knob lands so the
+    // resolution reads the old cascade. Best-effort: it never fails the write (the set lands).
     if key == "docs-root" {
-        warn_if_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
+        route_docs_root_repoint_orphans(pack.as_ref(), &project_config, value);
     }
 
     // Step 3 — record the `scalar-set` into the project manifest (last-write-wins).
     write_scalar(&project_config, key, value)
 }
 
-/// Warn on stderr (never failing the write) when a `docs-root` re-point to `new_value`
-/// would strand committed docs under the prior resolved root. Resolves the *current*
-/// cascade (its `docs-root` is the old root) + its schemas, then delegates the enumeration
-/// to [`crate::orphan::docs_root_would_orphan`]. A resolution or store-access hiccup is
-/// swallowed — the warning is advisory and must never block a legitimate config edit.
-fn warn_if_docs_root_repoint_orphans(
-    pack: &dyn PackSource,
-    project_config: &Path,
-    new_value: &str,
-) {
+/// On a `docs-root` re-point to `new_value`, **detect + route + move** the committed docs the
+/// change would strand under the prior resolved root — the surface-and-move resolution that
+/// replaces the M36 warn-then-strand (`design/storage.md` → docs-root; `design/reconciliation.md`
+/// → the route home; M39 inc-5 T3).
+///
+/// A `docs-root` re-point has a **recorded prior home** — the old resolved root, deterministic
+/// from the current cascade — so auto-move is *safe* here (unlike a freeze-exempt doctype, which
+/// carries no prior-home snapshot and whose relocation resolution is human-supplied — T4). Each
+/// stranded doc is relocated to its new resolved home via the shared move primitive
+/// ([`crate::relocate::move_doc`] — `git mv` + file-state re-key) and the move is surfaced. The
+/// destination is a whole-path prefix swap old-root → new-root: `docs-root` is a uniform prefix
+/// over every location doctype, so the doc's sub-path (`<location>/<slug>.md`) is invariant.
+///
+/// Best-effort: a resolution/store-access hiccup returns silently, and a per-doc move failure is
+/// surfaced (routing the operator to move it by hand) but never fails the write — the set lands.
+fn route_docs_root_repoint_orphans(pack: &dyn PackSource, project_config: &Path, new_value: &str) {
     let Ok(resolved) = crate::start::resolve_severity_cascade(pack, project_config) else {
         return;
     };
-    let old_docs_root = resolved.scalar("docs-root").unwrap_or("").to_string();
+    let old_docs_root = crate::start::docs_root_prefix(&resolved).to_string();
     let defs = crate::start::CascadeDefs::new(&resolved, project_config);
     let Ok(old_schemas) = defs.all_schemas(pack) else {
         return;
@@ -238,27 +244,68 @@ fn warn_if_docs_root_repoint_orphans(
     let Some(repo_root) = project_config.parent().and_then(Path::parent) else {
         return;
     };
-    let orphaned = crate::orphan::docs_root_would_orphan(
+    let stranded = crate::orphan::docs_root_would_orphan(
         repo_root,
         old_schemas.values(),
         &old_docs_root,
         new_value,
     );
-    if orphaned.is_empty() {
+    if stranded.is_empty() {
         return;
     }
+    let new_root = normalize_docs_root(new_value);
+    let jigc_root = repo_root.join(".jigc");
     eprintln!(
-        "warning: re-pointing `docs-root` to `{new_value}` would orphan {} committed doc(s) \
-         under the prior root:",
-        orphaned.len()
+        "relocating {} committed doc(s) stranded by the `docs-root` re-point to `{new_value}`:",
+        stranded.len()
     );
-    for rel in &orphaned {
-        eprintln!("  - {rel}");
+    for old_rel in &stranded {
+        let Some(new_rel) = reroot(old_rel, &old_docs_root, &new_root) else {
+            continue;
+        };
+        // A pure relocation preserves the bytes, so the re-keyed hash is the current file's.
+        let new_hash = match std::fs::read(repo_root.join(old_rel)) {
+            Ok(bytes) => engine::file_state::hash_bytes(&bytes),
+            Err(_) => continue,
+        };
+        // `git mv` needs the destination directory to exist (a re-point to a fresh root creates
+        // dirs that never existed).
+        if let Some(parent) = Path::new(&new_rel).parent() {
+            let _ = std::fs::create_dir_all(repo_root.join(parent));
+        }
+        match crate::relocate::move_doc(repo_root, &jigc_root, old_rel, &new_rel, &new_hash) {
+            Ok(()) => eprintln!("  - {old_rel} → {new_rel}"),
+            Err(err) => {
+                eprintln!("  - {old_rel}: could not relocate ({err:#}) — move it by hand")
+            }
+        }
     }
-    eprintln!(
-        "  route: move them under the new root (or re-point `docs-root` back), or drop each \
-         with `jigc unmanage`, then re-run"
-    );
+}
+
+/// Normalize a raw `docs-root` value to [`crate::start::apply_docs_root`]'s rule: strip
+/// surrounding slashes; the flat forms (`""` / `.`) canonicalize to `""` (the repo-root layout).
+/// The raw-string sibling of [`crate::start::docs_root_prefix`] (which normalizes a *resolved*
+/// value) — needed because `new_value` is not yet in the cascade.
+fn normalize_docs_root(value: &str) -> String {
+    let trimmed = value.trim_matches('/');
+    if trimmed == "." { "" } else { trimmed }.to_string()
+}
+
+/// Reroot a stranded committed path from `old_root` to `new_root` (both normalized): strip the
+/// leading `<old_root>/` and prepend `<new_root>/`. `docs-root` is a uniform prefix over every
+/// location doctype, so this whole-path prefix swap yields the doc's new resolved home. `None`
+/// when the path lacks the expected old-root prefix (defensive — every stranded doc carries it).
+fn reroot(rel: &str, old_root: &str, new_root: &str) -> Option<String> {
+    let sub = if old_root.is_empty() {
+        rel
+    } else {
+        rel.strip_prefix(&format!("{old_root}/"))?
+    };
+    Some(if new_root.is_empty() {
+        sub.to_string()
+    } else {
+        format!("{new_root}/{sub}")
+    })
 }
 
 /// `jigc config insert-step --workflow <id> (--after|--before) <step-id> <file>` —

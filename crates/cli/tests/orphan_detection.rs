@@ -9,8 +9,10 @@
 //!   `docs-root` re-point — while a `README.md`, an ordinary prose file under the
 //!   docs-root parent, and a *live* doc at the *current* resolved root never flag (the
 //!   bare-`.md`-match false-positive the location-basename predicate rules out).
-//! - **`jigc config set docs-root`** warns *before the knob lands* when the re-point
-//!   would orphan committed docs under the prior resolved root, routing the operator.
+//! - **`jigc config set docs-root`** *detect+routes+moves* (M39 inc-5 T3): when the re-point
+//!   would strand committed docs under the prior resolved root, it relocates each to the new
+//!   root (file-state re-keyed) and surfaces the move — the set still lands. (Auto-move is safe
+//!   because the prior home is recorded — the old resolved root.)
 //!
 //! The `jigc` path comes from `CARGO_BIN_EXE_jigc`; the temp repo is a real `git init`;
 //! the `doc-code` probe (the `validate` pre-flight requires it) is the real binary built
@@ -179,13 +181,17 @@ fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
     let repo = TempDir::new("validate");
     seed(repo.path());
 
-    // Re-point docs-root docs/ → archive/. `docs/decisions/cache.md` is now stranded.
-    let out = jigc(repo.path(), &["config", "set", "docs-root", "archive"]);
-    assert!(
-        out.status.success(),
-        "`jigc config set docs-root archive` must succeed; stderr:\n{}",
-        String::from_utf8_lossy(&out.stderr),
-    );
+    // Re-point docs-root docs/ → archive/ by writing the manifest **directly**, NOT via
+    // `jigc config set docs-root` — which now detect+routes+MOVES the stranded doc (T3),
+    // leaving no orphan for `validate` to find. A manifest re-pointed out-of-band (a human
+    // edit, or a commit that landed on another machine before its docs were relocated) still
+    // strands the committed `docs/decisions/cache.md` at the old root, which the store-scope
+    // sweep must detect regardless of how the strand arose.
+    fs::write(
+        repo.path().join(".jigc/config/manifest.yaml"),
+        "scalar:\n  docs-root: archive\n",
+    )
+    .expect("re-point docs-root via a direct manifest edit");
 
     let out = jigc(repo.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -221,36 +227,73 @@ fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
     );
 }
 
-/// `jigc config set docs-root <new>` over a repo with committed docs at the prior root
-/// warns (naming the doc that would orphan) and routes — before the knob lands (exit 0).
+/// (M39 inc-5 T3) `jigc config set docs-root <new>` over a repo with a committed doc at the
+/// prior resolved root **detect+routes+moves** it — the surface-and-move resolution that
+/// replaces the M36 warn-then-strand. Because a `docs-root` re-point has a **recorded prior
+/// home** (the old resolved root, deterministic from the current cascade), auto-move is safe:
+/// the stranded `docs/decisions/cache.md` is surfaced on stderr AND relocated to the new root
+/// `archive/decisions/cache.md`, its file-state entry re-keyed (old forgotten / new recorded).
+/// The set still lands (exit 0); a doc already at the new root is untouched (Prove #2).
 #[test]
-fn config_set_docs_root_warns_when_the_repoint_would_orphan() {
+fn config_set_docs_root_surfaces_and_moves_the_stranded_doc() {
     let repo = TempDir::new("configset");
     seed(repo.path());
+
+    // Seed a file-state record carrying the OLD path key, so the re-key's *forget-old* arm is
+    // genuinely exercised (not only the record-new arm). The hash value is irrelevant — a pure
+    // relocation preserves bytes and re-keys the path.
+    let state_dir = repo.path().join(".jigc").join("state");
+    fs::create_dir_all(&state_dir).expect("mk state dir");
+    fs::write(
+        state_dir.join("file-state.json"),
+        "{\n  \"hashes\": {\n    \"docs/decisions/cache.md\": \"deadbeef\"\n  }\n}\n",
+    )
+    .expect("seed the file-state record with the old path key");
 
     let out = jigc(repo.path(), &["config", "set", "docs-root", "archive"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
         out.status.success(),
-        "the warning must not fail the write — `config set` still lands (exit 0); \
+        "the detect+route+move must not fail the write — `config set` still lands (exit 0); \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
+
+    // The stranded doc is physically relocated to the new resolved root; the old path is gone.
     assert!(
-        stderr.contains("docs/decisions/cache.md"),
-        "the warning must name the committed doc the re-point would orphan; stderr:\n{stderr}",
+        !repo.path().join("docs/decisions/cache.md").exists(),
+        "the stranded doc must be moved off the old root; stderr:\n{stderr}",
     );
-    // A live doc at the FUTURE root is not orphaned by the move — it must not be named.
+    assert!(
+        repo.path().join("archive/decisions/cache.md").exists(),
+        "the stranded doc must land at the new resolved root; stderr:\n{stderr}",
+    );
+
+    // A doc already under the new root is not a strand and is untouched.
+    assert!(
+        repo.path().join("archive/decisions/live.md").exists(),
+        "a doc already at the new root must not be disturbed by the re-point",
+    );
+
+    // File-state is re-keyed: the old key forgotten, the new key recorded.
+    let record = fs::read_to_string(state_dir.join("file-state.json")).expect("read file-state");
+    assert!(
+        !record.contains("docs/decisions/cache.md"),
+        "the old file-state key must be forgotten after the move; record:\n{record}",
+    );
+    assert!(
+        record.contains("archive/decisions/cache.md"),
+        "the new file-state key must be recorded after the move; record:\n{record}",
+    );
+
+    // The relocation is surfaced + routed — it names the old→new move it performed.
+    assert!(
+        stderr.contains("docs/decisions/cache.md") && stderr.contains("archive/decisions/cache.md"),
+        "the surface must name the old→new relocation it performed; stderr:\n{stderr}",
+    );
+    // A doc already under the new root was not moved, so it is not named.
     assert!(
         !stderr.contains("archive/decisions/live.md"),
-        "a doc already under the new root is not orphaned by the re-point; stderr:\n{stderr}",
-    );
-    assert!(
-        stderr.to_lowercase().contains("orphan"),
-        "the warning must announce the orphaning consequence; stderr:\n{stderr}",
-    );
-    assert!(
-        stderr.contains("jigc unmanage") || stderr.contains("re-point"),
-        "the warning must route the operator (move / re-point / unmanage); stderr:\n{stderr}",
+        "a doc already under the new root is not relocated by the re-point; stderr:\n{stderr}",
     );
 }
