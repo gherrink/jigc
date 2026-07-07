@@ -64,6 +64,10 @@ const RECORD_TASK_INTENT_FIELD: &str = "intent";
 /// carries until `join` transitions it to `joined`.
 const RECORD_STATUS_ACTIVE: &str = "active";
 
+/// The `status` value the `join` in-place-mutate write arm transitions the record's
+/// header **and** every committed sub-task item to (the `set: on-transition` target).
+const RECORD_STATUS_JOINED: &str = "joined";
+
 /// A milestone's persisted task list — the sub-task ids appended by `add_task`,
 /// the collection the by-task-id join enumerates (`design/storage.md` → The
 /// by-task-id join). Serialized as a JSON list in a stable, golden-locked byte
@@ -595,6 +599,97 @@ pub fn append_task_item(
         },
     ];
     crate::write::add_item(schema, source, RECORD_TASKS_SECTION, task_id, None, &fields)
+}
+
+/// **Flip a `milestone-record` to `joined` in place** — the `join` write arm
+/// (`design/team-ready-state.md` → Engine capability 1 (write), the `join` — in-place
+/// mutate arm; M39 Increment 3). Reads the **committed record** at `record_path`,
+/// rewrites the machine-set `status` field of **every already-committed `tasks` item**
+/// (active → joined) and the header `status`, and writes the result back — the
+/// direct-record-file read/edit/write plumbing (net-new vs. the task-scoped author
+/// buffer path: the join arm writes the committed record directly, outside any task
+/// working area). Returns the joined bytes (the CLI folds them into the join commit).
+///
+/// A **distinct operation** from the `add-task` append (the design's F5 two-arm census):
+/// this is an in-place rewrite of N existing item-leaves, each routed through the
+/// byte-stable [`crate::write::set_item_field`] value splice, plus the header
+/// [`crate::write::set_field`] splice. The engine stays clock-free and LLM-free: the
+/// only value written is the `joined` structural constant, so the transform is a pure
+/// function of (`schema`, on-disk bytes) → bytes. Byte-stability of the in-place rewrite
+/// is the red obligation — the joined record is byte-identical to the committed one
+/// modulo exactly the flipped `status` values.
+///
+/// A record that does not read, does not conform, or lacks a targeted `status` leaf
+/// surfaces a routed blocking [`Finding`]; nothing partial is committed (the write lands
+/// only after every splice succeeds).
+pub fn join_record(
+    record_path: &Path,
+    schema: &crate::schema::Schema,
+    milestone_id: &str,
+) -> Result<String, Finding> {
+    let source = std::fs::read_to_string(record_path)
+        .map_err(|err| io_finding(milestone_id, "read the milestone record", &err))?;
+    let flipped = flip_record_status_to_joined(schema, &source)
+        .map_err(|err| record_flip_finding(milestone_id, err))?;
+    std::fs::write(record_path, &flipped)
+        .map_err(|err| io_finding(milestone_id, "write the joined milestone record", &err))?;
+    Ok(flipped)
+}
+
+/// The pure in-place status flip behind [`join_record`]: read the committed `tasks` item
+/// ids from the record itself (the source of truth), splice **each** item's `status`
+/// value to `joined` via the byte-stable item-leaf splice threading the updated bytes
+/// item by item, then splice the header `status` (front-matter, block-order-first). A
+/// non-conformant record, or a `status` leaf the splice cannot locate, is a
+/// [`SpliceError`](crate::write::SpliceError) the caller routes.
+fn flip_record_status_to_joined(
+    schema: &crate::schema::Schema,
+    source: &str,
+) -> Result<String, crate::write::SpliceError> {
+    let doc = crate::parse::parse_sections(schema, source)
+        .map_err(|_| crate::write::SpliceError::NotConformant)?;
+    let item_ids: Vec<String> = doc
+        .sections
+        .iter()
+        .find(|s| s.id == RECORD_TASKS_SECTION)
+        .map(|s| s.items.iter().map(|i| i.id.clone()).collect())
+        .unwrap_or_default();
+
+    let mut body = source.to_string();
+    for item_id in &item_ids {
+        body = crate::write::set_item_field(
+            schema,
+            &body,
+            RECORD_TASKS_SECTION,
+            item_id,
+            RECORD_STATUS_FIELD,
+            RECORD_STATUS_JOINED,
+        )?;
+    }
+    crate::write::set_field(
+        schema,
+        &body,
+        RECORD_HEADER_SECTION,
+        RECORD_STATUS_FIELD,
+        RECORD_STATUS_JOINED,
+    )
+}
+
+/// A blocking finding for a `status` splice failure while flipping a milestone record to
+/// `joined` — the record did not conform or a targeted `status` leaf vanished (a real
+/// fault: the record is the record arm's own materialized output). Routed to reconcile.
+fn record_flip_finding(milestone_id: &str, err: crate::write::SpliceError) -> Finding {
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.record-flip",
+        format!("could not flip milestone record `{milestone_id}` to joined: {err:?}"),
+        Some(Location::addressed(
+            format!("milestone-record:{milestone_id}"),
+            1,
+            1,
+        )),
+        Some("reconcile the milestone record, then re-run the join".to_string()),
+    )
 }
 
 /// One staged doc folded into the parent working overlay at the by-task-id join
@@ -3443,5 +3538,93 @@ status: active
             ],
             "both sub-tasks re-parse in append order with their machine-set values"
         );
+    }
+
+    /// T3 done-criterion (`design/team-ready-state.md` → Engine capability 1 (write),
+    /// the `join` — in-place mutate arm; M39 Increment 3): over a committed record
+    /// (create → append ×2), [`join_record`] reads the record **directly from disk**,
+    /// flips **every** committed `tasks` item's `status` AND the header `status` to
+    /// `joined`, and writes it back — the doc **byte-identical modulo exactly the
+    /// flipped status values** (the byte-stability red obligation) and re-parsing with
+    /// every status now `joined`.
+    #[test]
+    fn join_flips_every_item_and_header_status_byte_stable() {
+        let schema = milestone_record_schema();
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4".to_string(),
+        };
+        let fresh = render_fresh_record(&schema, "cache-rework", &base);
+        let after_one = append_task_item(&schema, &fresh, "warm-cache", "Warm the read cache")
+            .expect("first sub-task appends");
+        let committed = append_task_item(&schema, &after_one, "evict-cold", "Evict cold entries")
+            .expect("second sub-task appends");
+
+        // The committed record on disk — the join arm writes it directly (net-new
+        // plumbing vs. the task-scoped author buffer path).
+        let root = TempRoot::new("join");
+        let record_path = root.path().join("cache-rework.md");
+        std::fs::write(&record_path, &committed).expect("stage the committed record");
+
+        let joined =
+            join_record(&record_path, &schema, "cache-rework").expect("the join flips the record");
+
+        // The write hit disk: the file bytes ARE the returned bytes.
+        assert_eq!(
+            std::fs::read_to_string(&record_path).expect("read back the joined record"),
+            joined,
+            "the join arm writes the committed record directly"
+        );
+
+        // Byte-stability — the red obligation: the joined record is byte-identical to the
+        // committed one modulo EXACTLY the flipped `status` values. `active`/`joined` are
+        // the same length, but nothing is assumed — every `status: active` (the header +
+        // both items) becomes `status: joined`, and no other byte moves.
+        assert_eq!(
+            joined,
+            committed.replace("status: active", "status: joined"),
+            "the join flips only the status values; every other byte survives byte-identical"
+        );
+        assert!(
+            !joined.contains("status: active"),
+            "no committed status survives un-flipped after the join"
+        );
+
+        // Re-parses: the header and both items carry `status: joined`.
+        let doc = crate::parse::parse_sections(&schema, &joined)
+            .expect("the joined record re-parses against its schema");
+        let header = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_HEADER_SECTION)
+            .expect("the joined record carries the `meta` header");
+        assert_eq!(
+            header
+                .fields
+                .iter()
+                .find(|f| f.key == RECORD_STATUS_FIELD)
+                .map(|f| f.value.render())
+                .as_deref(),
+            Some(RECORD_STATUS_JOINED),
+            "the header status flipped to joined"
+        );
+        let tasks = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_TASKS_SECTION)
+            .expect("the joined record carries the `tasks` section");
+        assert_eq!(tasks.items.len(), 2, "both sub-tasks survive the join");
+        for item in &tasks.items {
+            assert_eq!(
+                item.fields
+                    .iter()
+                    .find(|f| f.key == RECORD_STATUS_FIELD)
+                    .map(|f| f.value.render())
+                    .as_deref(),
+                Some(RECORD_STATUS_JOINED),
+                "sub-task `{}` status flipped to joined",
+                item.title
+            );
+        }
     }
 }
