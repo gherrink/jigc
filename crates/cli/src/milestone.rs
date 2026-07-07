@@ -313,6 +313,80 @@ fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) ->
     Ok(())
 }
 
+/// Whether `base..head` is a linear-ancestor range whose **every** commit touches ONLY this
+/// milestone's committed record path — the CLI half of the finalize base-guard refinement
+/// (`design/team-ready-state.md` → The commit model: the finalize base-guard refinement). The
+/// engine does no git I/O, so the CLI computes the verdict and feeds it to
+/// [`plan_milestone_finalize`]: (1) `base` must be a linear ancestor of `head` (else genuine
+/// divergence — a rebase/rewrite — keeps the base-mismatch block); (2) every path touched by
+/// any commit in `base..head` must be the record path (a foreign, non-record commit fails this,
+/// so external drift that would invalidate the M31 worktree-combine still blocks). Absent the
+/// `milestone-record` schema (dev-only, no methodology pack) there is no committed record path,
+/// so the range is never treated as record-only.
+fn record_only_range(
+    repo_root: &Path,
+    jigc_home: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    milestone_id: &str,
+    base_sha: &str,
+    head_sha: &str,
+) -> Result<bool> {
+    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+        return Ok(false);
+    };
+    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
+        return Ok(false);
+    };
+    let record_spec = record_path
+        .strip_prefix(repo_root)
+        .unwrap_or(&record_path)
+        .to_str()
+        .with_context(|| format!("record path {record_path:?} is not valid UTF-8"))?;
+
+    // (1) `base` must be a linear ancestor of `head` (else genuine divergence).
+    if !git_is_ancestor(repo_root, base_sha, head_sha)? {
+        return Ok(false);
+    }
+    // (2) every path touched by any commit in `base..head` must be the record path. `git log
+    // --name-only` lists the per-commit touched paths (a path touched then reverted still
+    // appears), so the union ⊆ {record} iff every commit's fileset ⊆ {record}. `--no-renames`
+    // pins the fact against the user's `diff.renames` config (the `git_changed_paths` precedent).
+    let touched = crate::task::git_capture(
+        repo_root,
+        &[
+            "log",
+            "--format=",
+            "--name-only",
+            "--no-renames",
+            &format!("{base_sha}..{head_sha}"),
+        ],
+    )?;
+    let all_record = touched
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .all(|p| p == record_spec);
+    Ok(all_record)
+}
+
+/// Whether `ancestor` is a linear ancestor of `descendant` (`git merge-base --is-ancestor`:
+/// exit 0 = ancestor, exit 1 = not, other = error). The linearity half of the finalize
+/// base-guard refinement — a non-ancestor base is genuine divergence and keeps the
+/// base-mismatch block. No existing helper carries the exit-1-is-not-an-error semantics, so
+/// it shells out directly (the [`git_commit_pathspec`] precedent).
+fn git_is_ancestor(repo_root: &Path, ancestor: &str, descendant: &str) -> Result<bool> {
+    let status = Command::new("git")
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
+        .current_dir(repo_root)
+        .status()
+        .context("could not run `git merge-base` (is git on PATH?)")?;
+    match status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        other => bail!("`git merge-base --is-ancestor {ancestor} {descendant}` failed ({other:?})"),
+    }
+}
+
 /// `jigc milestone add-task <milestone-id> "<intent>"` — mint a sub-task pinned to
 /// the milestone's shared base in its own isolated area and append it. Returns the
 /// summary line; an unknown milestone or a within-milestone collision surfaces as
@@ -872,6 +946,23 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let head = git_head(&repo_root)?;
     let has_diff = !materialized.addresses.is_empty() || worktrees_have_staged_code(&worktrees)?;
 
+    // The finalize base-guard refinement (`design/team-ready-state.md` → The commit model: the
+    // finalize base-guard refinement; `DECISIONS.md` 2026-07-07). Per-op record commits advance
+    // HEAD past the pinned base, so `base == HEAD` can never hold once record commits land. The
+    // engine does no git I/O, so the CLI computes the verdict: `base..HEAD` is a linear-ancestor
+    // range whose every commit touches ONLY this milestone's record path. Any non-record
+    // (external) commit fails the check → the engine keeps the base-mismatch block, preserving
+    // the M31 worktree-combine guarantee. Only computed when the base actually trails HEAD.
+    let record_only_advance = base.sha != head
+        && record_only_range(
+            &repo_root,
+            &jigc_home,
+            &schemas,
+            milestone_id,
+            &base.sha,
+            &head,
+        )?;
+
     // Step 3 — the thin sibling planner over the materialized staging area (the parent of
     // `merged/docs/`): shared preflight + empty-commit guard + promote/hash sweep.
     let staging_dir = materialized
@@ -879,25 +970,32 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
         .parent()
         .expect("the materialized docs dir has a parent staging area")
         .to_path_buf();
-    let plan =
-        match plan_milestone_finalize(&staging_dir, &base, &head, message, has_diff, &schemas) {
-            Ok(plan) => plan,
-            Err(findings) => {
-                for finding in &findings {
-                    eprintln!("{}", finding.message);
-                    if let Some(route) = &finding.route {
-                        eprintln!("  route: {route}");
-                    }
+    let plan = match plan_milestone_finalize(
+        &staging_dir,
+        &base,
+        &head,
+        record_only_advance,
+        message,
+        has_diff,
+        &schemas,
+    ) {
+        Ok(plan) => plan,
+        Err(findings) => {
+            for finding in &findings {
+                eprintln!("{}", finding.message);
+                if let Some(route) = &finding.route {
+                    eprintln!("  route: {route}");
                 }
-                // The same outcome class as the task-finalize planner block: a
-                // `plan_*_finalize`-findings block is a validation outcome, exit 3
-                // (`design/measurement.md` → The capture substrate, item 2).
-                return Ok(Outcome::with_findings(
-                    crate::task::EXIT_VALIDATION_BLOCKED,
-                    &findings,
-                ));
             }
-        };
+            // The same outcome class as the task-finalize planner block: a
+            // `plan_*_finalize`-findings block is a validation outcome, exit 3
+            // (`design/measurement.md` → The capture substrate, item 2).
+            return Ok(Outcome::with_findings(
+                crate::task::EXIT_VALIDATION_BLOCKED,
+                &findings,
+            ));
+        }
+    };
 
     // `squash: false` — lay down the per-sub-task commits in id order now (the planner's
     // preflight has validated base == HEAD against the pre-boundary HEAD; these commits then

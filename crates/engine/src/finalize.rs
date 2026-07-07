@@ -477,7 +477,8 @@ pub fn decide_base_repin(
 /// fork resolution: M7 ships one synthesized commit).
 ///
 /// It shares [`plan_finalize`]'s phases — the preflight (`staging_dir` exists, `base`
-/// == `head_sha`), the empty-commit guard, and the phase-4 promote / phase-7 hash sweep
+/// reconciled with `head_sha` — see `record_only_advance` below), the empty-commit guard,
+/// and the phase-4 promote / phase-7 hash sweep
 /// ([`plan_promotions`]) — with **two** structural differences a milestone forces:
 ///
 /// - **No commit-doc render.** A milestone has no `commit:<slug>` doc to render (the
@@ -499,15 +500,25 @@ pub fn plan_milestone_finalize(
     staging_dir: &Path,
     base: &BasePin,
     head_sha: &str,
+    record_only_advance: bool,
     message: String,
     has_diff: bool,
     schemas: &BTreeMap<String, Schema>,
 ) -> Result<FinalizePlan, Vec<Finding>> {
-    // Preflight (shared): the staging area exists, base pin == supplied HEAD.
+    // Preflight (shared): the staging area exists, and the base pin is reconciled with the
+    // supplied HEAD. The base-guard is refined for the per-op record-commit model
+    // (`design/team-ready-state.md` → The commit model: the finalize base-guard refinement;
+    // `DECISIONS.md` 2026-07-07 → the Inc-4/T4 fork): proceed when `base == HEAD` (the fast
+    // path), OR when the CLI has verified `base..HEAD` is a linear-ancestor range whose every
+    // commit touches only this milestone's record path (`record_only_advance`) — then the base
+    // advances to HEAD. Any non-record commit in the range keeps the base-mismatch block, so
+    // **external** drift (which would invalidate the M31 worktree-combine) is still caught; the
+    // milestone's own record-only bookkeeping (touching no code) is tolerated. The engine does
+    // no git I/O — the CLI computes the range verdict and supplies it here.
     if !staging_dir.exists() {
         return Err(vec![task_missing_finding(staging_dir)]);
     }
-    if base.sha != head_sha {
+    if base.sha != head_sha && !record_only_advance {
         return Err(vec![base_mismatch_finding(base, head_sha)]);
     }
 
@@ -1748,6 +1759,7 @@ sections:
             &staging,
             &base(),
             &base().sha,
+            false,
             "Finalize milestone page-rework (1 sub-task)\n".to_string(),
             true,
             &with_placement,
@@ -1884,11 +1896,13 @@ sections:
         let adr_bytes = stage_filled_adr(&staging, "cache-strategy");
         let message = "Finalize milestone cache-rework (2 sub-tasks)\n\n- area-low\n- area-zed\n";
 
-        // (Preflight) base != supplied HEAD → the SAME divergence-routing block, no plan.
+        // (Preflight) base != supplied HEAD, and NOT a record-only advance → the SAME
+        // divergence-routing block, no plan.
         let err = plan_milestone_finalize(
             &staging,
             &base(),
             "ffffffffffffffffffffffffffffffffffffffff",
+            false,
             message.to_string(),
             true,
             &schemas(),
@@ -1897,11 +1911,31 @@ sections:
         assert_eq!(err.len(), 1);
         assert_eq!(err[0].code, "finalize.base-mismatch");
 
+        // (Preflight) base != supplied HEAD, but the CLI verified `base..HEAD` is a
+        // record-only linear-ancestor range (`record_only_advance = true`) → the base advances
+        // and the preflight proceeds (the finalize base-guard refinement). The milestone's own
+        // record-only bookkeeping is tolerated; only external drift keeps the block above.
+        let plan = plan_milestone_finalize(
+            &staging,
+            &base(),
+            "ffffffffffffffffffffffffffffffffffffffff",
+            true,
+            message.to_string(),
+            true,
+            &schemas(),
+        )
+        .expect("a record-only-range advance clears the base-guard and yields a plan");
+        assert_eq!(
+            plan.message, message,
+            "the advanced-base plan still carries the synthesized message verbatim",
+        );
+
         // (Preflight) a missing staging area aborts before anything.
         let err = plan_milestone_finalize(
             &root.path().join("milestones").join("none").join("merged"),
             &base(),
             &base().sha,
+            false,
             message.to_string(),
             true,
             &schemas(),
@@ -1914,6 +1948,7 @@ sections:
             &staging,
             &base(),
             &base().sha,
+            false,
             message.to_string(),
             false,
             &schemas(),
@@ -1927,6 +1962,7 @@ sections:
             &staging,
             &base(),
             &base().sha,
+            false,
             message.to_string(),
             true,
             &schemas(),
