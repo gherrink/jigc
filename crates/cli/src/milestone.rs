@@ -645,6 +645,19 @@ fn run_add_from_spec(
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the mint reads through it, so `add-from-spec` on a fresh clone seeds onto the continued
+    // milestone (`design/team-ready-state.md` → Engine capability 2 (read-back)). No-op once the
+    // cache exists / dev-only (no record).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
+
+    // Reconcile preflight (T6): before any mutation, conflict-block if the committed record
+    // drifted out-of-band, leaving both the cache and the record untouched
+    // (`design/team-ready-state.md` → F3). Inert dev-only.
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
+    }
+
     let added = add_from_spec(
         &jigc_root,
         &jigc_home,
@@ -654,6 +667,32 @@ fn run_add_from_spec(
         workflow,
     )
     .map_err(finding_to_err)?;
+
+    // The record-home split (`design/team-ready-state.md` → Engine capability 1 (write), the
+    // `add-task` append arm; The commit model): under a `[dev ▸ methodology]` project the composed
+    // cascade resolves the `milestone-record` doctype, so each spec-seeded sub-task must ALSO land
+    // in the committed record — exactly like `add-task` — else the sub-tasks are silently lost on
+    // a fresh clone (the source-of-truth invariant). One separate record-only path-scoped commit
+    // per seeded sub-task; the intent is read back from the minted task's working area (the
+    // verbatim criterion text `add_from_spec` persisted). Dev-only resolves no schema → no record.
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        for a in &added {
+            let intent = engine::state::read_intent(&a.task.dir).with_context(|| {
+                format!(
+                    "could not read the seeded sub-task intent for `{}`",
+                    a.task.id
+                )
+            })?;
+            append_and_commit_record(
+                &jigc_home,
+                &jigc_root,
+                schema,
+                milestone_id,
+                &a.task.id,
+                &intent,
+            )?;
+        }
+    }
 
     let ids: Vec<&str> = added.iter().map(|a| a.task.id.as_str()).collect();
     Ok(format!(
