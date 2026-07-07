@@ -25,9 +25,10 @@ use crate::pack::make_pack;
 use crate::render;
 use crate::task::git_head;
 use anyhow::{Context, Result, bail};
+use engine::file_state::{FileStateRecord, hash_bytes, reconcile_committed};
 use engine::finalize::plan_milestone_finalize;
-use engine::finding::Finding;
-use engine::index::load_committed;
+use engine::finding::{Finding, Severity};
+use engine::index::{EdgeIndex, load_committed};
 use engine::milestone::{
     JoinOutcome, MintedMilestone, add_from_spec, add_task, join, materialize, milestone_dir,
     mint_milestone, read_base_pin, read_task_list, render_fresh_record, synthesized_message,
@@ -256,7 +257,16 @@ fn materialize_and_commit_record(
             "chore(milestone): open record for milestone:{}\n",
             minted.id
         ),
-    )
+    )?;
+    // Seed the record's `file-state` baseline to what `create` just wrote, so the first
+    // `add-task`'s reconcile preflight compares against the CLI's own write (T6).
+    baseline_record(
+        &jigc_home.join(".jigc"),
+        schema,
+        &minted.id,
+        body.as_bytes(),
+    );
+    Ok(())
 }
 
 /// Land a **record-only** commit for a milestone op (`design/team-ready-state.md` → The commit
@@ -309,6 +319,105 @@ fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) ->
             String::from_utf8_lossy(&out.stdout).trim(),
             String::from_utf8_lossy(&out.stderr).trim(),
         );
+    }
+    Ok(())
+}
+
+/// The committed record's **file-state key** — the repo-relative `<location><id>.md` path
+/// [`reconcile_committed_store`](engine::file_state::reconcile_committed_store) keys the
+/// baseline hash under (`format!("{location}{slug}.md")`). The `location:` here is already
+/// docs-root-nested by [`shipped_schemas`] (`docs/milestone-records/`), so the key matches
+/// the store-sweep's exactly — the same string the reconcile finding names.
+fn record_key(schema: &Schema, milestone_id: &str) -> Option<String> {
+    let location = schema.location.as_deref()?;
+    Some(format!("{location}{milestone_id}.md"))
+}
+
+/// Advance the committed record's `file-state` baseline to `bytes` — recorded at each
+/// milestone-op record WRITE (`create` materialize, `add-task` append) so the *next*
+/// overwrite's [`reconcile_record_preflight`] compares against what the CLI last wrote, not a
+/// stale hash (else a legitimate sequential op would false-drift against its own prior
+/// append). The engine stays shell-free; the CLI persists the `.jigc/state/file-state.json`
+/// baseline it owns. A record with no `location:` (never this doctype) or an unreadable
+/// baseline store degrades to no-op — the guard then treats the next op as first-encounter
+/// (baseline-adopt, no block), never a spurious error.
+fn baseline_record(jigc_root: &Path, schema: &Schema, milestone_id: &str, bytes: &[u8]) {
+    let Some(key) = record_key(schema, milestone_id) else {
+        return;
+    };
+    let Ok(mut record) = FileStateRecord::load(jigc_root) else {
+        return;
+    };
+    record.record(key, hash_bytes(bytes));
+    let _ = record.save(jigc_root);
+}
+
+/// The **reconcile preflight** before a `set: on-transition` record overwrite — the
+/// No-silent-overwrite discipline (`design/team-ready-state.md` → F3;
+/// `design/reconciliation.md`). Because the `milestone-record` is machine-owned, an OOB human
+/// edit to a machine-set field cannot be *merged*; it must **conflict-block**, not be silently
+/// clobbered. So every overwrite site (`add-task` append, finalize status-flip) runs this
+/// first and **routes a blocking finding** if the committed record drifted since the CLI last
+/// wrote it, leaving the record untouched.
+///
+/// The CLI op IS the machine touching the record, so this drives the per-doc reconcile
+/// primitive [`reconcile_committed`] with **`task_touched: true`** — the exact
+/// `DRIFTED + TOUCHED → conflict-block` arm F3 mandates ("detected + conflict-blocked, **not
+/// absorbed**"). The whole-store [`reconcile_committed_store`](engine::file_state::reconcile_committed_store)
+/// wrapper cannot express this: it would *absorb* a conformant OOB edit (`DRIFTED + UNTOUCHED`)
+/// — the silent clobber F3 forbids — and would sweep sibling records / unrelated committed
+/// docs the milestone op has no business gating on. The per-doc primitive is scoped exactly to
+/// this record (`DECISIONS.md` 2026-07-07 M39 T6). No edge-index mutation reaches disk — the
+/// only mutator (absorb) is unreachable under `task_touched: true` — so a throwaway index
+/// suffices; a first-encounter baseline-adopt is persisted so detection binds on the next op.
+///
+/// Inert where there is nothing to guard: dev-only (no `milestone-record` schema) never calls
+/// this, and a record file absent on disk (nothing to overwrite) is a no-op.
+fn reconcile_record_preflight(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    schema: &Schema,
+    milestone_id: &str,
+) -> Result<()> {
+    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
+        return Ok(());
+    };
+    let Ok(bytes) = std::fs::read(&record_path) else {
+        return Ok(()); // no committed record yet → nothing to overwrite, nothing to guard.
+    };
+    let Some(key) = record_key(schema, milestone_id) else {
+        return Ok(());
+    };
+    let from = format!("{MILESTONE_RECORD_TYPE}:{milestone_id}");
+
+    let mut fs_record = FileStateRecord::load(jigc_root)
+        .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
+    // No edge is ever written: absorb (the sole index mutator) is unreachable with
+    // `task_touched: true`, so a throwaway index is never persisted.
+    let mut index = EdgeIndex {
+        stamp: String::new(),
+        edges: Vec::new(),
+    };
+    let findings = reconcile_committed(
+        &mut fs_record,
+        &mut index,
+        schema,
+        &key,
+        &from,
+        &bytes,
+        /* task_touched = */ true,
+    );
+    if let Some(blocking) = findings.iter().find(|f| f.severity == Severity::Blocking) {
+        // Drift on a machine-owned record → conflict-block, the record untouched, routed.
+        return Err(finding_to_err(blocking.clone()));
+    }
+    // A first-encounter baseline-adopt mutated the record in memory; persist it so the next
+    // op's preflight has a baseline to detect drift against (a clean IN_SYNC yields no finding
+    // and no mutation, so this skips the write there).
+    if !findings.is_empty() {
+        fs_record.save(jigc_root).with_context(|| {
+            format!("could not persist the file-state baseline under {jigc_root:?}")
+        })?;
     }
     Ok(())
 }
@@ -403,6 +512,13 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
     // cache exists / dev-only (no record).
     reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
+    // Reconcile preflight (T6): before ANY mutation (the cache append below or the record
+    // overwrite), conflict-block if the committed record drifted out-of-band, leaving both the
+    // cache and the record untouched (`design/team-ready-state.md` → F3). Inert dev-only.
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
+    }
+
     let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
 
     // The record-home split (`design/team-ready-state.md` → Engine capability 1 (write), the
@@ -462,7 +578,11 @@ fn append_and_commit_record(
         &record_path,
         &msg_dir,
         &format!("chore(milestone): record task:{task_id} on milestone:{milestone_id}\n"),
-    )
+    )?;
+    // Advance the record's `file-state` baseline to the appended bytes, so the next overwrite's
+    // reconcile preflight compares against this write, not the pre-append record (T6).
+    baseline_record(jigc_root, schema, milestone_id, appended.as_bytes());
+    Ok(())
 }
 
 /// `jigc milestone add-from-spec <milestone-id> <spec-addr>` — seed the milestone's
@@ -1274,6 +1394,13 @@ fn flip_record_for_finalize(
     let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
         return Ok(None);
     };
+    // Reconcile preflight (T6): the status-flip is a `set: on-transition` overwrite, so
+    // conflict-block if the committed record drifted out-of-band before we flip it — leaving
+    // the record untouched (`design/team-ready-state.md` → F3). `repo_root` and `jigc_home`
+    // coincide outside a worktree (milestone-finalize-in-a-worktree is the deferred WF4/WF5
+    // concern), so the `.jigc/` baseline home is `jigc_home/.jigc`.
+    reconcile_record_preflight(jigc_home, &jigc_home.join(".jigc"), schema, milestone_id)?;
+
     let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
         .context("the `milestone-record` doctype declares no committed location")?;
     let before = std::fs::read_to_string(&record_path)
