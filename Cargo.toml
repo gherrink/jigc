@@ -33,6 +33,9 @@ include_dir = "0.7"
 thiserror = "2"
 anyhow = "1"
 blake3 = "1"
+# Raw `dup`/`dup2`/`pipe` for the invocation-log fd-level output-size tee (`main.rs`).
+# Unix-only, matching jigc's target (DECISIONS 2026-07-06 fork F).
+libc = "0.2"
 engine = { path = "crates/engine" }
 
 # Dev-dependencies (test tooling, language-runtime.md / parsing.md round-trip contract).

@@ -231,6 +231,70 @@ fn failing_verb_records_finding_codes() {
     );
 }
 
+/// Knob ON: the recorded `output_bytes` equals the exact stdout+stderr byte count the driven
+/// binary emitted for a known-output verb — the fd-level tee counts the true total, not a
+/// per-emitter tally. A swallowing tee (counts but never forwards) fails here too: `Command`
+/// would capture 0 bytes while `output_bytes` stayed non-zero.
+#[test]
+fn output_bytes_equals_emitted_stdout_plus_stderr() {
+    let repo = TempDir::new("outsize");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    enable_log(repo.path(), home.path());
+
+    let out = jigc(repo.path(), home.path(), &["describe"]);
+    assert!(out.status.success(), "`jigc describe` must succeed");
+    assert!(
+        !out.stdout.is_empty(),
+        "`jigc describe` emits a non-empty report (guards against a trivial 0 == 0 pass)",
+    );
+    let emitted = out.stdout.len() + out.stderr.len();
+
+    let records = log_records(repo.path());
+    let rec = record_with_arg(&records, "describe").expect("the describe invocation is logged");
+    assert_eq!(
+        rec["output_bytes"].as_u64(),
+        Some(emitted as u64),
+        "logged output_bytes equals the exact stdout+stderr byte count the binary emitted; \
+         emitted={emitted}, record={rec}",
+    );
+}
+
+/// Knob ON: `jigc --help` — a clap-arm emission that exits before dispatch — records
+/// `output_bytes` == its emitted-stdout length. This is the fd-tee's differentiator over the
+/// rejected per-emitter tally (which records `--help`/`--version` as size 0): it forces the
+/// tee to span the `Err(err) => err.print()` arm and be torn down only *after* that emission.
+#[test]
+fn help_output_bytes_equals_emitted_help_length() {
+    let repo = TempDir::new("help");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    enable_log(repo.path(), home.path());
+
+    let out = jigc(repo.path(), home.path(), &["--help"]);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "`--help` prints to stdout and exits 0"
+    );
+    assert!(out.stderr.is_empty(), "`--help` writes nothing to stderr");
+    assert!(
+        !out.stdout.is_empty(),
+        "`--help` emits a non-empty help text"
+    );
+    let emitted = out.stdout.len();
+
+    let records = log_records(repo.path());
+    let rec = record_with_arg(&records, "--help").expect("the --help invocation is logged");
+    assert_eq!(rec["exit_code"].as_u64(), Some(0), "--help exits 0");
+    assert_eq!(
+        rec["output_bytes"].as_u64(),
+        Some(emitted as u64),
+        "`--help` records output_bytes == its emitted stdout length (the clap-arm output a \
+         per-emitter tally would record as 0); emitted={emitted}, record={rec}",
+    );
+}
+
 /// Knob OFF (the default): nothing is written — no `.jigc/logs/` file appears.
 #[test]
 fn knob_off_writes_nothing() {

@@ -20,7 +20,7 @@
 //! (`design/measurement.md` → Honest capability boundary).
 
 use engine::finding::Finding;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -81,31 +81,30 @@ impl Outcome {
     }
 }
 
-/// Append one JSONL record for this invocation **iff** the `invocation-log` knob resolves ON
-/// in the project cascade. Resolved independent of argv (so a clap-rejected usage error is
-/// logged too) and **no-op outside a jigc project layer**. Best-effort — any failure
-/// (locate, cascade, filesystem) is swallowed so instrumentation never breaks a run.
-pub fn log_invocation(duration: Duration, outcome: &Outcome) {
-    let Some(logs_dir) = enabled_logs_dir() else {
-        return;
-    };
+/// Append one JSONL record for this invocation to `logs_dir` (the caller resolved it via
+/// [`enabled_logs_dir`], so the knob is already ON). `output_bytes` is the true stdout+stderr
+/// total the run emitted, measured by `main()`'s fd-level tee. Best-effort — any filesystem
+/// failure is swallowed so instrumentation never breaks a run.
+pub fn log_invocation(logs_dir: &Path, duration: Duration, outcome: &Outcome, output_bytes: u128) {
     // argv without the (machine-specific, absolute) program path — the record captures the
     // verb + flags + intent text (`design/measurement.md` → Honesty note on `argv` content).
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let _ = append_record(
-        &logs_dir,
+        logs_dir,
         &now_timestamp(),
         &argv,
         outcome.code,
         duration.as_millis(),
         &outcome.finding_codes,
+        output_bytes,
     );
 }
 
 /// Resolve the log directory `<jigc_home>/.jigc/logs` **iff** the knob is ON — else `None`.
 /// Returns `None` (no log) outside a git repo, outside a jigc project layer, or on any
 /// resolution error: instrumentation is opt-in and best-effort, never a failure surface.
-fn enabled_logs_dir() -> Option<PathBuf> {
+/// `main()` reads this once, independent of argv, to gate both the fd-tee install and the log.
+pub fn enabled_logs_dir() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     let ctx = crate::locate::locate(&cwd).ok()?;
     // Outside a jigc project layer (no `.jigc/config/`) there is no log — the wrapper no-ops.
@@ -129,9 +128,14 @@ struct Record<'a> {
     exit_code: u8,
     duration_ms: u128,
     finding_codes: &'a [String],
+    /// The true total stdout+stderr bytes this invocation emitted (incl. clap `--help`/
+    /// `--version`), counted by `main()`'s fd-level tee — the adoption trial's A7 mass-output
+    /// signal (`design/measurement.md`:70).
+    output_bytes: u128,
 }
 
 /// Append one JSONL line to `<logs_dir>/invocations.jsonl`, creating `logs_dir` on demand.
+#[allow(clippy::too_many_arguments)]
 fn append_record(
     logs_dir: &std::path::Path,
     timestamp: &str,
@@ -139,6 +143,7 @@ fn append_record(
     exit_code: u8,
     duration_ms: u128,
     finding_codes: &[String],
+    output_bytes: u128,
 ) -> std::io::Result<()> {
     use std::io::Write;
     std::fs::create_dir_all(logs_dir)?;
@@ -148,6 +153,7 @@ fn append_record(
         exit_code,
         duration_ms,
         finding_codes,
+        output_bytes,
     };
     let mut line = serde_json::to_string(&record).map_err(std::io::Error::other)?;
     line.push('\n');
