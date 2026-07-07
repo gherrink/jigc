@@ -1,0 +1,48 @@
+# milestone-record — the methodology pack's PER-MILESTONE team-ready state record
+# (M39 Increment 3). The continuation state a teammate (or a fresh agent session)
+# resumes from — the milestone's shared base-SHA pin, its ordered sub-task list, and
+# each sub-task's intent + status — graduated OUT of the gitignored `.jigc/` workbench
+# into a committed, managed, legible doctype (design/team-ready-state.md → The
+# milestone-record doctype). The committed `.md` is the source of truth;
+# `.jigc/milestones/<id>/{base,tasks}.json` is demoted to a rebuildable cache.
+#
+# NOT a singleton and NOT `id-from: title`-slugged: `id-from: title` names the H1 the
+# CLI supplies at create, but the slug IS the milestone work-unit id (CLI-supplied, not
+# title-slugified) — so `milestone-record:cache-rework` names the record for work-unit
+# `milestone:cache-rework` (the completion-record mint precedent). Flat home
+# `location: milestone-records/` (the completion-record `completions/` sibling; under
+# the composed `[dev ▸ methodology]` cascade `docs-root` applies → `docs/`).
+#
+# It carries NO LLM-authored prose slot — every leaf is machine-maintained structured
+# state (the settled pure-machine-maintained fork). The `meta` header pairs the `base`
+# SHA pin (materialized `set: on-create`) with the `status` (active/joined, materialized
+# `set: on-transition` — the M39 seam). A repeatable `tasks` section records one item
+# per sub-task: `task-id` (the item `id-from`, a plain STRING — not a managed `ref`: a
+# `task` is a work-unit, `ref-resolves` cannot walk it, the `deferral-ledger.trigger`
+# precedent), `intent`, and a per-item `status`, all CLI-materialized (so all
+# non-author-required — `set:`-bearing).
+#
+# Section ids are SINGLE WORDS ONLY (`meta`/`tasks`): a multi-word id trips the logged
+# title-case reparse defect, deferred — this routes around it exactly as
+# completion-record did. Freeze-EXEMPT (methodology pack ships no schema-manifest,
+# auto-registers by directory; no version-gate). Engine-native types only. See
+# design/team-ready-state.md; design/methodology-docs.md.
+type: milestone-record
+location: milestone-records/
+id-from: title
+description: The per-milestone team-ready state record — the shared base-SHA pin, the ordered sub-task list, and each sub-task's intent and status, resumable from a fresh clone.
+usage: a milestone is executing and its in-flight state (base, sub-tasks, statuses) must be committed and legible so a teammate or fresh session can continue it, not stranded in the gitignored workbench.
+
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: base, type: string, set: on-create }
+      - { id: status, type: enum, of: [active, joined], set: on-transition }
+  - id: tasks
+    repeatable:
+      id-from: task-id
+      block:
+        - { id: task-id, type: string, set: on-transition }
+        - { id: intent, type: string, set: on-transition }
+        - { id: status, type: enum, of: [active, joined], set: on-transition }

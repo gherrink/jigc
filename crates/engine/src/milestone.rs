@@ -36,6 +36,30 @@ const BASE_PIN_FILE: &str = "base.json";
 /// by-task-id join will enumerate, persisted as deterministic engine state.
 const TASKS_FILE: &str = "tasks.json";
 
+/// The `milestone-record` doctype's **header (front-matter) section id** — the
+/// `meta` block, the `completion-record` sibling convention
+/// (`packs/methodology/schemas/milestone-record.yaml`;
+/// `design/team-ready-state.md` → The milestone-record doctype). The record's
+/// machine-maintained state lives on this doctype; the ids below name its leaves,
+/// so the create/materialize write arm can build the canonical instance the pack
+/// schema declares.
+const RECORD_HEADER_SECTION: &str = "meta";
+
+/// The header leaf carrying the milestone's shared **base-SHA pin** (`set: on-create`).
+const RECORD_BASE_FIELD: &str = "base";
+
+/// The header leaf carrying the record's **status** (active / joined,
+/// `set: on-transition` — the M39 seam); seeded `active` at create.
+const RECORD_STATUS_FIELD: &str = "status";
+
+/// The repeatable section id holding one item per sub-task — empty at create,
+/// appended to by the `add-task` write arm.
+const RECORD_TASKS_SECTION: &str = "tasks";
+
+/// The `status` value a freshly materialized record (and each fresh sub-task item)
+/// carries until `join` transitions it to `joined`.
+const RECORD_STATUS_ACTIVE: &str = "active";
+
 /// A milestone's persisted task list — the sub-task ids appended by `add_task`,
 /// the collection the by-task-id join enumerates (`design/storage.md` → The
 /// by-task-id join). Serialized as a JSON list in a stable, golden-locked byte
@@ -474,6 +498,56 @@ pub fn read_base_pin(milestone_dir: &Path) -> std::io::Result<BasePin> {
     let bytes = std::fs::read(milestone_dir.join(BASE_PIN_FILE))?;
     serde_json::from_slice(&bytes)
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
+}
+
+/// **Materialize a fresh `milestone-record` doc body** from a milestone's shared
+/// base pin — the create/materialize write arm (`design/team-ready-state.md` →
+/// Engine capability 1 (write), the `set: on-create` materialization; M39
+/// Increment 3). Builds the canonical byte form against the pack-supplied `schema`:
+/// the `meta` header carrying the `base` SHA (`set: on-create`) and `status: active`
+/// (`set: on-transition`, seeded active at create), the `# <milestone_id>` H1, and
+/// an **empty** repeatable `tasks` section — no sub-task appended yet (`add_task` is
+/// the incremental populator, the mint-site precedent). The result is the committed
+/// record's source-of-truth bytes; the CLI writes + path-scoped-commits them.
+///
+/// The engine stays **clock-free and LLM-free**: `base` is the caller-supplied SHA
+/// (the CLI read HEAD, "CLI orchestrates, git executes") and `status: active` is a
+/// structural constant, so this is a pure function of (`schema`, `milestone_id`,
+/// `base`) → bytes — golden-testable and the parser's inverse (`render → parse`
+/// round-trips the novel all-machine-set header + empty-repeatable shape).
+pub fn render_fresh_record(
+    schema: &crate::schema::Schema,
+    milestone_id: &str,
+    base: &BasePin,
+) -> String {
+    use crate::field_block::{Field, Value};
+    use crate::write::{Instance, SectionContent};
+
+    let instance = Instance {
+        title: milestone_id.to_string(),
+        sections: vec![
+            SectionContent {
+                id: RECORD_HEADER_SECTION.to_string(),
+                fields: vec![
+                    Field {
+                        key: RECORD_BASE_FIELD.to_string(),
+                        value: Value::Scalar(base.sha.clone()),
+                    },
+                    Field {
+                        key: RECORD_STATUS_FIELD.to_string(),
+                        value: Value::Scalar(RECORD_STATUS_ACTIVE.to_string()),
+                    },
+                ],
+                ..Default::default()
+            },
+            // The empty repeatable `tasks` section — no sub-task materialized yet.
+            SectionContent {
+                id: RECORD_TASKS_SECTION.to_string(),
+                ..Default::default()
+            },
+        ],
+    };
+    crate::write::render(schema, &instance)
 }
 
 /// One staged doc folded into the parent working overlay at the by-task-id join
@@ -3137,6 +3211,88 @@ Finalize milestone cache-hardening (3 sub-tasks)
             synthesized_message("cache-hardening", &reverse),
             msg,
             "the message is byte-identical across divergent insertion orders"
+        );
+    }
+
+    /// Load the **shipped** `milestone-record` schema from the methodology pack
+    /// tree (`packs/methodology/schemas/milestone-record.yaml`, `../../` off the
+    /// engine crate root) — so the golden pins the create arm against the real
+    /// pack bytes, not an inlined stand-in.
+    fn milestone_record_schema() -> crate::schema::Schema {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("packs")
+            .join("methodology")
+            .join("schemas")
+            .join("milestone-record.yaml");
+        let bytes = std::fs::read(&path).expect("read the shipped milestone-record schema");
+        crate::schema::load_schema(&bytes).expect("the shipped milestone-record schema loads")
+    }
+
+    /// T1 done-criterion (`design/team-ready-state.md` → The milestone-record
+    /// doctype; Engine capability 1 (write)): [`render_fresh_record`] materializes a
+    /// fresh record from a [`BasePin`] — the `meta` header carries the `base` SHA +
+    /// `status: active`, the H1 is the milestone id, and the `tasks` section is an
+    /// **empty repeatable** — as **byte-golden** output that **re-parses** via
+    /// [`crate::parse::parse_sections`]. This proves the novel all-machine-set
+    /// header + empty-repeatable shape both materializes and round-trips (the
+    /// claim-as-red: no shipped doctype expresses this shape today).
+    #[test]
+    fn fresh_milestone_record_is_byte_golden_and_reparses() {
+        let schema = milestone_record_schema();
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4".to_string(),
+        };
+
+        let body = render_fresh_record(&schema, "cache-rework", &base);
+
+        // Golden: the `meta` front-matter (base SHA + seeded-active status), the
+        // `# cache-rework` H1, and an EMPTY `## Tasks` repeatable — one trailing LF.
+        let expected = "\
+---
+base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c
+status: active
+---
+
+# cache-rework
+
+## Tasks
+";
+        assert_eq!(body, expected, "the fresh record is the golden byte form");
+
+        // Re-parses via the schema-driven parse path: the header fields read back
+        // opaque, and the repeatable `tasks` section carries zero items.
+        let doc = crate::parse::parse_sections(&schema, &body)
+            .expect("the fresh record re-parses against its schema");
+
+        let header = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_HEADER_SECTION)
+            .expect("the parsed doc carries the `meta` header section");
+        let field = |key: &str| {
+            header
+                .fields
+                .iter()
+                .find(|f| f.key == key)
+                .map(|f| f.value.render())
+        };
+        assert_eq!(field(RECORD_BASE_FIELD).as_deref(), Some(base.sha.as_str()));
+        assert_eq!(
+            field(RECORD_STATUS_FIELD).as_deref(),
+            Some(RECORD_STATUS_ACTIVE)
+        );
+
+        let tasks = doc
+            .sections
+            .iter()
+            .find(|s| s.id == RECORD_TASKS_SECTION)
+            .expect("the parsed doc carries the `tasks` section");
+        assert!(
+            tasks.items.is_empty(),
+            "a freshly materialized record stages no sub-task items"
         );
     }
 }
