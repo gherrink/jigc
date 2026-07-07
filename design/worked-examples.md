@@ -2381,9 +2381,9 @@ $ jigc start --workflow form-vision "form the project vision"     # first compos
 #   the edge-walk slice {{@task.vision.grounded-in#findings}} resolves EMPTY (no findings echoed yet).
 $ jigc doc create vision --title Vision --task <t2>              # → vision:vision (singleton fixed slug)
 $ jigc doc set-field vision:vision#meta/grounded-in --value "[research:cache-benchmark, research:session-store-survey]"
-$ jigc start --task <t2>                                         # RE-COMPOSE: the slice now reads the
-#   FIRST grounding research's `findings` into the guidance (walk_edge returns the first target only —
-#   the second's findings do NOT appear; the multi-valued anchor lives in the stored refs, not the echo).
+$ jigc start --task <t2>                                         # RE-COMPOSE: the slice now reads
+#   BOTH grounding research docs' `findings` into the guidance (walk_edge fans out to every target —
+#   each rendered as its own `<type>:<slug>`-labelled blockquote for N≥2; the stored refs stay the anchor).
 $ jigc doc set-slot vision:vision#thesis         --from-file -
 $ jigc doc set-slot vision:vision#invariants     --from-file -
 $ jigc doc set-slot vision:vision#open-questions --from-file -
@@ -2419,7 +2419,7 @@ $ jigc task finalize <t2>     # first form-vision finalize, foreign root file pr
 ### What it asserts (the M37 acceptance bar — the six §7 arms)
 
 1. **The two-task committed-read spine holds under `[dev ▸ methodology]`.** `do-research` commits a `research` doc (on-create `date` stamped) so `form-vision` reads it committed — the superseding-flow shape, now at the design-altitude level in a methodology composition (the `grounded-in` edge-walk's first real driver).
-2. **The multi-valued anchor + the findings-echo both resolve.** A `vision` grounded in **both** research docs finalizes clean (every element `ref-resolves`-validated, no block), and the re-composed `form-vision` guidance actually *reads* the **first** grounding research's `findings` prose into itself — the edge-walk slice, not merely "resolved" (closing the vacuous-green gap); the second's findings do not appear (first-bound content-echo).
+2. **The multi-valued anchor + the findings-echo both resolve.** A `vision` grounded in **both** research docs finalizes clean (every element `ref-resolves`-validated, no block), and the re-composed `form-vision` guidance actually *reads* **both** grounding research docs' `findings` prose into itself — the edge-walk slice fans out to every bound target, not merely "resolved" (closing the vacuous-green gap); each source renders as its own `<type>:<slug>`-labelled blockquote for N≥2 (the all-source content-echo, §3 constraint 2).
 3. **The two engine knobs land.** The managed root `VISION.md` H1 reads `# Vision` (the `display-title:` knob narrows the singleton `title = slug` branch), and the doc is *managed directly at repo-root* — one file, proper reconciliation — via the `placement:` knob (M38 retired M37's render-to-root mechanism, [storage.md](storage.md) → Placement) — `describe` lists all three doctypes + three workflows.
 4. **Parking is a first-class, discoverable move.** `park-idea` mints an `idea` (description + `trigger`) and finalizes to `ideas/<slug>.md`, and it is **router-selectable** — it appears in the selection surface, so a shaped mid-work direction is kept without leaving the loop.
 5. **The dangling arm blocks per-element.** A `grounded-in` with one non-existent target blocks at finalize on `ref-resolves` — the resolvable sibling does not rescue it (no commit).
