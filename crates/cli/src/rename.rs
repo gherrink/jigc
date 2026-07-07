@@ -295,12 +295,19 @@ fn apply_and_commit(
         std::fs::write(&write.abs, &write.source)
             .with_context(|| format!("could not write the repointed referrer at {}", write.rel))?;
     }
-    // 2. Move the doc (stages the rename) unless this is a retitle-only (the new slug
-    // equals the old, so old_rel == new_rel and there is no identity change to move), then
-    // rewrite its H1 at the (possibly unchanged) path.
-    if old_rel != new_rel {
-        git_run(repo_root, &["mv", old_rel, new_rel])?;
-    }
+    // 2. Move the doc via the shared move primitive — `git mv` old→new (skipped for a
+    // retitle-only, where old_rel == new_rel and there is no identity change) plus the
+    // moved-doc file-state re-key (forget old, record new at the retitled bytes' hash) —
+    // then rewrite its H1 at the (possibly unchanged) path. The primitive re-keys only the
+    // moved doc; the referrers' re-keys are layered on in step 5 (the two record saves
+    // compose byte-identically).
+    crate::relocate::move_doc(
+        repo_root,
+        jigc_root,
+        old_rel,
+        new_rel,
+        &hash_bytes(new_source.as_bytes()),
+    )?;
     std::fs::write(repo_root.join(new_rel), new_source)
         .with_context(|| format!("could not write the retitled doc at {new_rel}"))?;
     // 3. Stage the content changes (the move is staged; the H1 + referrer edits are not).
@@ -326,12 +333,11 @@ fn apply_and_commit(
         );
     }
 
-    // 5. Re-baseline file-state inside the boundary (forget old, record new + every
-    // rewritten referrer), so the renamed store is in-sync on the next sweep.
+    // 5. Re-baseline the referrers' file-state inside the boundary (the moved doc's own
+    // re-key already happened in the move primitive, step 2), so the renamed store is
+    // in-sync on the next sweep.
     let mut record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
-    record.forget(old_rel);
-    record.record(new_rel.to_string(), hash_bytes(new_source.as_bytes()));
     for write in referrer_writes {
         record.record(write.rel.clone(), hash_bytes(write.source.as_bytes()));
     }

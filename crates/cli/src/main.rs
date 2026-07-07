@@ -23,6 +23,7 @@ mod milestone;
 mod orient;
 mod orphan;
 mod pack;
+mod relocate;
 mod rename;
 mod render;
 mod setup;
