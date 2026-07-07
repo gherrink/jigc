@@ -21,7 +21,7 @@ describe is the **menu**; validate is the **check**; bootstrap is the **runtime 
 
 ## The load-bearing constraint — facts, not advice
 
-describe emits *what exists and how it's used*, never *"you should fan out / compose these."* Advisory output would hand structural-composition judgment back to an LLM — the determinism thesis inverted one meta-level up. It speaks **usage and intent, never mechanism**: how a thing functions internally stays hidden behind jigc and its definitions. (Reading *filled* prose stays `jigc doc show`, a different verb.)
+describe emits *what exists and how it's used*, never *"you should fan out / compose these."* Advisory output would hand structural-composition judgment back to an LLM — the determinism thesis inverted one meta-level up. It speaks **usage and intent, never mechanism**: how a thing functions internally stays hidden behind jigc and its definitions. (Reading *filled* prose stays [`jigc doc show`](doc-read-surface.md) — a different verb: the committed-doc read surface, whose slice grammar + pinned 1.0 `--format json` contract are homed in [doc-read-surface.md](doc-read-surface.md).)
 
 **Who enforces which constraint — be honest about the split.** describe carries two constraints, and they have *different* enforcement owners:
 
