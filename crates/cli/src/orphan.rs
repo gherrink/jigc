@@ -1,25 +1,31 @@
-//! Orphan detection — committed managed-looking docs stranded **outside** the resolved
-//! doctype roots after a `docs-root` re-point (M36; `design/validation.md` → Orphan
-//! detection; `design/storage.md` → docs-root).
+//! Orphan detection — committed managed-looking docs **stranded** at a doctype's prior home
+//! after its home moved (M36 same-shape `docs-root` re-point; M39 the general relocation
+//! floor). `design/validation.md` → Orphan detection; `design/storage.md` → docs-root.
 //!
-//! Two consumers share the location-basename predicate here (CLI-side because the engine
-//! ships empty by invariant and never shells to git for tracked status):
+//! **The strand discriminator (M39 re-key).** A doc is stranded when it sits at a doctype's
+//! **prior** home yet no longer at its **current** home — [`is_stranded`] over the
+//! generalized [`Home`] vocabulary (`location` dir **or** `placement` file), which the two
+//! arms share:
 //!
-//! - [`orphaned_docs`] backs the store-scope `file-state.orphaned-doc` advisory pushed by
-//!   `jigc validate` — a committed `.md` whose immediate-parent dir basename matches a
-//!   doctype's resolved `location:` basename yet falls outside that doctype's *current*
-//!   resolved root.
-//! - [`docs_root_would_orphan`] backs the pre-write `jigc config set docs-root` warning —
-//!   the live docs a re-point to a *different* root would strand.
+//! - **found-stranded** — the prior home is *self-discovered* from the doc's own dir, keyed
+//!   on a `location:` basename match. Backs the store-scope `file-state.orphaned-doc`
+//!   advisory ([`orphaned_docs`], `jigc validate`). Here the location-dir basename is the
+//!   *only* signal available (no prior-home record in hand), so a placement/root strand — a
+//!   file with no dir pattern — is **not** self-discoverable; only the recorded arm sees it.
+//! - **recorded-prior-home** — the prior home is *supplied/recorded* (the M39 relocation +
+//!   `config set docs-root` fire-points), so a placement→root, root→`docs`, `location`
+//!   basename **rename**, or shape change (`location`↔`placement`) all become detectable —
+//!   relocations the old location-dir-basename-only key was blind to.
 //!
-//! **The match predicate (pinned).** Doctypes carry no filename pattern (`id-from: title`
-//! mints an arbitrary slug), so the only stable discriminator is the `location:`
-//! **directory** basename (`decisions`, `specs`, …), which survives a `docs-root` change.
 //! Matching by the `.md` extension alone is explicitly wrong — it would flag `README.md`
 //! and every stray markdown file (a front-door false-positive). Enumeration is over
 //! `git ls-files` (committed truth that survives a fresh clone, where the finalize-gated
 //! file-state map does not). A `git` failure yields none — a best-effort advisory, never
-//! an error.
+//! an error. CLI-side because the engine ships empty by invariant and never shells to git
+//! for tracked status.
+//!
+//! [`docs_root_would_orphan`] backs the pre-write `jigc config set docs-root` warning — the
+//! live docs a re-point to a *different* root would strand.
 
 use std::path::Path;
 
@@ -43,12 +49,76 @@ pub(crate) fn under_location(rel: &str, schema: &Schema) -> bool {
     !dir.is_empty() && rel.starts_with(&format!("{dir}/"))
 }
 
+/// A doctype's **home** — the shape of where its instance(s) live, generalized off the
+/// location-dir-basename key so the strand discriminator sees every relocation kind
+/// (M39; `design/validation.md` → Orphan detection): a **`location`** directory (instances
+/// at `<dir>/<slug>.md`) *or* a **`placement`** literal file (the one root/`docs` instance
+/// at an exact path, bypassing `docs-root`). This is the vocabulary a **recorded/supplied
+/// prior home** is expressed in, so a placement→root, root→`docs`, or `location`-basename
+/// **rename** all become first-class — not just the M36 same-shape `docs-root` re-point.
+pub(crate) enum Home {
+    /// Instances live directly under this **normalized** directory (no trailing slash).
+    Location(String),
+    /// The one instance lives at this exact repo-root-relative file (a placement doctype).
+    Placement(String),
+}
+
+impl Home {
+    /// A location home from a `location:` string, normalized (trailing slash stripped);
+    /// `None` for an empty/flat-root location (never a doctype home).
+    pub(crate) fn location(dir: &str) -> Option<Self> {
+        let dir = dir.trim_end_matches('/');
+        (!dir.is_empty()).then(|| Home::Location(dir.to_string()))
+    }
+
+    /// A placement home at an exact repo-root-relative file.
+    pub(crate) fn placement(file: &str) -> Self {
+        Home::Placement(file.to_string())
+    }
+
+    /// Whether a committed repo-relative `.md` path sits **at** this home — directly under a
+    /// `Location` dir, or exactly equal to a `Placement` file.
+    pub(crate) fn contains(&self, rel: &str) -> bool {
+        match self {
+            Home::Location(dir) => rel.starts_with(&format!("{dir}/")),
+            Home::Placement(file) => rel == file,
+        }
+    }
+}
+
+/// A doctype's **current** home — its `placement` file (bypassing `docs-root`) or its
+/// resolved `location:` dir. `None` for a transient (home-less) doctype. `schemas` must
+/// carry the `docs-root`-applied `location:` (the resolved roots).
+pub(crate) fn home_of(schema: &Schema) -> Option<Home> {
+    if let Some(p) = &schema.placement {
+        return Some(Home::placement(&p.file));
+    }
+    Home::location(schema.location.as_deref()?)
+}
+
+/// **The strand discriminator** — a committed doc `rel` is stranded when it sits at a
+/// doctype's **prior** home yet is no longer at its **current** home. Both the
+/// **found-stranded** arm (prior home *self-discovered* from the doc's own dir, keyed on a
+/// `location:` basename — [`orphaned_docs`]) and the **recorded-prior-home** arm (prior home
+/// *supplied/recorded* — the M39 relocation + `config set docs-root` fire-points) route
+/// through this one predicate, which sees placement/root/basename-rename relocations that
+/// the old location-dir-basename key was blind to.
+pub(crate) fn is_stranded(rel: &str, prior: &Home, current: &Home) -> bool {
+    prior.contains(rel) && !current.contains(rel)
+}
+
+/// The immediate-parent directory (full repo-relative path) of a `.md` path —
+/// `docs/decisions` for `docs/decisions/foo.md`. `None` for a root-level file (`README.md`),
+/// which is never a `location`-homed managed doc.
+fn parent_dir(rel: &str) -> Option<&str> {
+    rel.rsplit_once('/').map(|(parent, _file)| parent)
+}
+
 /// The immediate-parent directory basename of a repo-relative `.md` path — `decisions`
 /// for `docs/decisions/foo.md`. `None` for a root-level file (`README.md`), which is never
 /// a managed doc — the false-positive a bare extension match would trip.
 fn parent_basename(rel: &str) -> Option<&str> {
-    let (parent, _file) = rel.rsplit_once('/')?;
-    Some(parent.rsplit('/').next().unwrap_or(parent))
+    parent_dir(rel).map(|parent| parent.rsplit('/').next().unwrap_or(parent))
 }
 
 /// Enumerate `git ls-files` under `repo_root`, returning the committed `.md` paths,
@@ -79,15 +149,20 @@ pub(crate) fn orphaned_docs<'a>(
     let mut hits = Vec::new();
     for rel in committed_markdown(repo_root) {
         let Some(base) = parent_basename(&rel) else {
-            continue; // a root-level file — never a managed doc.
+            continue; // a root-level file — never a `location`-homed managed doc.
         };
         // The doctype whose resolved location basename matches — at most one (basenames
         // are unique per doctype). No match → ordinary prose, never flagged.
         let Some(schema) = schemas.iter().find(|s| location_basename(s) == Some(base)) else {
             continue;
         };
-        // Directly under the CURRENT resolved root → a live managed doc, not an orphan.
-        if !under_location(&rel, schema) {
+        let (Some(current), Some(parent)) = (home_of(schema), parent_dir(&rel)) else {
+            continue; // a location match always has both — defensive.
+        };
+        // Found-stranded self-discovery: the doc's own parent dir *looks like* a home (its
+        // basename matched), so it is the self-discovered prior home; stranded iff the doc is
+        // no longer at the doctype's CURRENT home (directly under the current resolved root).
+        if is_stranded(&rel, &Home::Location(parent.to_string()), &current) {
             hits.push(rel);
         }
     }
@@ -250,5 +325,72 @@ mod tests {
             parent_basename("docs/decisions/cache.md"),
             Some("decisions")
         );
+    }
+
+    /// (M39 inc-5 T2) `home_of` reads a doctype's home in the generalized vocabulary — a
+    /// `placement` doctype homes at its literal file, a `location` doctype at its resolved
+    /// dir (trailing slash stripped), a transient doctype has no home.
+    #[test]
+    fn home_of_reads_placement_and_location_homes() {
+        assert!(matches!(
+            home_of(&placement_schema("vision", "VISION.md")),
+            Some(Home::Placement(f)) if f == "VISION.md"
+        ));
+        assert!(matches!(
+            home_of(&adr_schema("docs/decisions/")),
+            Some(Home::Location(d)) if d == "docs/decisions"
+        ));
+        // A transient (location-less, placement-less) schema has no home.
+        let transient = engine::schema::load_schema(
+            b"type: commit\nsections:\n  - id: body\n    slot: { hint: x }\n",
+        )
+        .expect("transient schema loads");
+        assert!(home_of(&transient).is_none());
+    }
+
+    /// (M39 inc-5 T2) The recorded-prior-home discriminator detects a **placement/root**
+    /// strand: a `vision` doctype relocated from `docs/vision.md` to root `VISION.md` leaves
+    /// the pre-existing `docs/vision.md` stranded, while the instance already at the current
+    /// home is not — a relocation the old location-dir-basename key could not see.
+    #[test]
+    fn is_stranded_detects_a_placement_root_strand_given_a_prior_home() {
+        let prior = Home::placement("docs/vision.md");
+        let current = Home::placement("VISION.md");
+        assert!(
+            is_stranded("docs/vision.md", &prior, &current),
+            "the instance left at the prior placement home is stranded",
+        );
+        assert!(
+            !is_stranded("VISION.md", &prior, &current),
+            "the instance at the current placement home is not stranded",
+        );
+    }
+
+    /// (M39 inc-5 T2) The discriminator detects a **`location` basename-rename** strand: a
+    /// doctype whose home dir was renamed `docs/decisions/` → `docs/adrs/` leaves docs under
+    /// the old dir stranded, while a doc under the new dir is not.
+    #[test]
+    fn is_stranded_detects_a_location_basename_rename_strand() {
+        let prior = Home::location("docs/decisions/").expect("prior home");
+        let current = Home::location("docs/adrs/").expect("current home");
+        assert!(
+            is_stranded("docs/decisions/cache.md", &prior, &current),
+            "a doc under the renamed-away dir is stranded",
+        );
+        assert!(
+            !is_stranded("docs/adrs/live.md", &prior, &current),
+            "a doc under the current dir is not stranded",
+        );
+    }
+
+    /// (M39 inc-5 T2) The discriminator also spans a **shape change** — `location` → root
+    /// `placement` (the freeze-exempt relocation kind): a doc at the old `location` dir is
+    /// stranded once the home becomes a root file; the root file itself is not.
+    #[test]
+    fn is_stranded_detects_a_location_to_placement_relocation() {
+        let prior = Home::location("decisions/").expect("prior home");
+        let current = Home::placement("DECISIONS.md");
+        assert!(is_stranded("decisions/cache.md", &prior, &current));
+        assert!(!is_stranded("DECISIONS.md", &prior, &current));
     }
 }
