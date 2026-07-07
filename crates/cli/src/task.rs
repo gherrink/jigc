@@ -928,7 +928,7 @@ impl TaskArea {
     ///   `.jigc/config` / `.jigc/.gitignore` (`modified`). No user WIP.
     ///
     /// Accepted prediction bound: on a first-ever finalize, the transaction's
-    /// `ensure_jigc_gitignore` may create `.jigc/.gitignore` that `git add --all` would
+    /// `crate::gitignore::ensure` may create `.jigc/.gitignore` that `git add --all` would
     /// then sweep but this prediction won't show (it doesn't exist yet) — setup typically
     /// already writes it, so the gap is rare.
     fn predict_manifest(
@@ -1312,7 +1312,7 @@ pub(crate) fn try_execute_finalize_plan(
         // working area is never committed (`design/storage.md` → repository layout).
         // Ensure it exists so the `git add --all` stage picks up `config/` + the promoted
         // docs + the code changes.
-        ensure_jigc_gitignore(jigc_root)?;
+        crate::gitignore::ensure(jigc_root)?;
         match stage {
             // Narrowed migration stage (`design/auto-migration.md` → Hardening #9a/#9;
             // `DECISIONS.md` B2): a migration touches no code, so stage ONLY its own
@@ -1641,32 +1641,6 @@ fn rollback_promotions(
             let _ = std::fs::write(&abs, bytes);
         }
     }
-}
-
-/// Ensure `.jigc/.gitignore` ignores the transient subdirs so a `finalize` stage never
-/// commits the working area or the rebuildable caches (`design/storage.md` → repository
-/// layout: `.jigc/` is one home whose `config/` is committed while `tasks/`/`index/`/
-/// `state/`/`milestones/`/`logs/` are gitignored). Idempotent — (re)written only when
-/// absent or not already listing both `milestones/` and `logs/` (so an adapter-written
-/// `.gitignore` predating the milestone area or the M36 invocation log is amended once,
-/// matching `crate::milestone::ensure_jigc_gitignore`).
-fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
-    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nlogs/\n";
-    let path = jigc_root.join(".gitignore");
-    let needs_write = match std::fs::read_to_string(&path) {
-        Ok(existing) => {
-            let lines: Vec<&str> = existing.lines().map(str::trim).collect();
-            !lines.contains(&"milestones/") || !lines.contains(&"logs/")
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
-        Err(err) => return Err(err).with_context(|| format!("could not read {path:?}")),
-    };
-    if needs_write {
-        std::fs::create_dir_all(jigc_root)
-            .with_context(|| format!("could not create {jigc_root:?}"))?;
-        std::fs::write(&path, ENTRIES).with_context(|| format!("could not write {path:?}"))?;
-    }
-    Ok(())
 }
 
 /// Phase 7 (`design/finalize.md` → 7. Post-commit, best-effort). Three updates, none of

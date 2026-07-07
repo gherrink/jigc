@@ -17,7 +17,7 @@
 //! with `tasks/`, the milestone area is gitignored runtime state
 //! (`design/storage.md` → repository layout) — a doc-elaboration pin
 //! (`DECISIONS.md` 2026-06-04) — so create ensures `.jigc/.gitignore` lists
-//! `milestones/`.
+//! `milestones/` via the shared [`crate::gitignore::ensure`] writer.
 
 use crate::cli::Format;
 use crate::invocation_log::Outcome;
@@ -196,7 +196,7 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
     let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
-    ensure_jigc_gitignore(&jigc_root)?;
+    crate::gitignore::ensure(&jigc_root)?;
     let base = read_head(&repo_root)?;
 
     let minted = mint_milestone(&jigc_root, title, base).map_err(finding_to_err)?;
@@ -331,7 +331,7 @@ fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
     let jigc_root = jigc_home.join(".jigc");
     // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
     // checkout's `git status` / `git add --all`.
-    ensure_jigc_gitignore(&jigc_root)?;
+    crate::gitignore::ensure(&jigc_root)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
@@ -1008,35 +1008,6 @@ fn worktree_staged_patch(worktree: &Path) -> Result<Vec<u8>> {
         );
     }
     Ok(out.stdout)
-}
-
-/// Ensure `.jigc/.gitignore` ignores the transient runtime subdirs, including
-/// `milestones/` and the fan-out `worktrees/` (`design/storage.md` → repository layout;
-/// `DECISIONS.md` 2026-06-04 → `milestones/` gitignored like `tasks/`; `DECISIONS.md`
-/// 2026-06-21 → M31 Inc 3 adds `worktrees/`; M36 adds `logs/`). Idempotent — the file is
-/// (re)written only when it is absent or does not already list **all** of `milestones/`,
-/// `worktrees/`, and `logs/`, so an adapter-written `.gitignore` (which predates any) is
-/// amended once. Carrying `logs/` in this ENTRIES set keeps a milestone rewrite from
-/// clobbering the M36 invocation-log ignore the setup gitignore already landed.
-fn ensure_jigc_gitignore(jigc_root: &Path) -> Result<()> {
-    const ENTRIES: &str = "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\n";
-    let path = jigc_root.join(".gitignore");
-    let needs_write = match std::fs::read_to_string(&path) {
-        Ok(existing) => {
-            let lines: Vec<&str> = existing.lines().map(str::trim).collect();
-            !lines.contains(&"milestones/")
-                || !lines.contains(&"worktrees/")
-                || !lines.contains(&"logs/")
-        }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => true,
-        Err(err) => return Err(err).with_context(|| format!("could not read {path:?}")),
-    };
-    if needs_write {
-        std::fs::create_dir_all(jigc_root)
-            .with_context(|| format!("could not create {jigc_root:?}"))?;
-        std::fs::write(&path, ENTRIES).with_context(|| format!("could not write {path:?}"))?;
-    }
-    Ok(())
 }
 
 /// Read HEAD as a [`BasePin`] (full + short SHA) via the user's `git` — the same

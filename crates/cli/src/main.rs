@@ -13,6 +13,7 @@ mod combine;
 mod config;
 mod describe;
 mod doc;
+mod gitignore;
 mod ingest;
 mod invocation_log;
 mod locate;

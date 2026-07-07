@@ -238,9 +238,12 @@ fn milestone_create_then_add_tasks_through_the_binary() {
     // `.jigc/milestones/` is gitignored — the milestone area is never committed.
     let gitignore = fs::read_to_string(repo.path().join(".jigc").join(".gitignore"))
         .expect(".gitignore written");
-    assert!(
-        gitignore.lines().any(|l| l.trim() == "milestones/"),
-        "`.jigc/.gitignore` must ignore `milestones/`; got:\n{gitignore}",
+    // The real `milestone create` path writes the shared canonical union entry set
+    // (M39 3→1 collapse) — byte-exact, so a re-divergence from the one source of truth
+    // (e.g. a dropped `worktrees/`) is caught here at the milestone.rs write path.
+    assert_eq!(
+        gitignore, "tasks/\nindex/\nstate/\nmilestones/\nworktrees/\nlogs/\n",
+        "`.jigc/.gitignore` must be the canonical union set incl. `worktrees/`; got:\n{gitignore}",
     );
     // Verified through git itself: the milestone area is ignored.
     let check = Command::new("git")
