@@ -73,7 +73,7 @@ This does **not** breach the finalize-transaction invariant, which governs the *
 
 ## The read surface — `jigc doc show` + a pinned `--format json` shape
 
-The milestone record is the first doctype whose *primary* consumer is a **machine** read (fresh-clone continuation), so its `jigc doc show --format json` output is a **1.0 stable contract** (a one-way door — pinned now, not left to the first implementation, the review's F6 fix): whole-doc = `{ type, slug, fields: { base, status }, sections: { tasks: [ { task-id, intent, status }, … ] } }`; a `#tasks` slice returns the item array; the `status` enum serializes as its lowercase string. Pinned in the doc-read-surface design; the milestone record is its conformance witness.
+The milestone record is the first doctype whose *primary* consumer is a **machine** read (fresh-clone continuation), so its `jigc doc show --format json` output is a **1.0 stable contract** (a one-way door — pinned now, not left to the first implementation, the review's F6 fix): whole-doc = `{ type, slug, fields: { base, status }, sections: { tasks: [ { task-id, intent, status }, … ] } }`, where `base` is a **structured object** `{ sha, short }` (the compound base pin — clean lossless machine access to both SHAs, resolving the Inc-3 audit advisory that flagged the space-joined scalar; the committed `.md` still stores `base: <sha> <short>` as a scalar line, so this is json-projection-only — [DECISIONS.md](../DECISIONS.md) → 2026-07-07) and every other field is a scalar; a `#tasks` slice returns the item array; the `status` enum serializes as its lowercase string. Pinned in the doc-read-surface design; the milestone record is its conformance witness.
 
 ## Interactions
 

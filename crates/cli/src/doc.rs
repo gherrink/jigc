@@ -1198,7 +1198,10 @@ fn whole_doc_json(
             SectionBody::Simple { slot, .. } => {
                 if let Some(parsed) = parsed {
                     for field in &parsed.fields {
-                        fields.insert(field.key.clone(), field_json(&field.value));
+                        fields.insert(
+                            field.key.clone(),
+                            header_field_json(schema, &field.key, &field.value),
+                        );
                     }
                 }
                 if slot.is_some() {
@@ -1368,6 +1371,35 @@ fn slot_json(span: Option<&engine::parse::Span>, source: &str) -> serde_json::Va
         span.map(|s| s.slice(source).trim().to_string())
             .unwrap_or_default(),
     )
+}
+
+/// The doctype (`schema.ty`) and header-field id of the one **compound** field in the
+/// pinned json read-surface: the milestone-record's `base` pin. Every other field
+/// stays a scalar; only this pair renders as a structured `{ sha, short }` object
+/// (`DECISIONS.md` 2026-07-07 → the pinned json renders `milestone-record.base` as
+/// structured `{sha, short}`).
+const COMPOUND_BASE_DOCTYPE: &str = "milestone-record";
+const COMPOUND_BASE_FIELD: &str = "base";
+
+/// A **simple-section header** field's json value. The milestone-record's `base` field
+/// is the one compound leaf in the pinned read surface: its stored value is the
+/// space-joined `<sha> <short>` scalar the `.md` renders (the lossless round-trip that
+/// reconstructs `BasePin`), but json projects it as a structured `{ "sha": …, "short": … }`
+/// object so a consumer reads the two SHAs without splitting on an undocumented delimiter
+/// (`DECISIONS.md` 2026-07-07; `design/team-ready-state.md` → The read surface). The `.md`
+/// scalar + its read-back are unchanged — this is json-projection-only. A malformed base
+/// value (no space) degrades to the plain scalar rather than fabricating an empty `short`;
+/// the normal path is always `<sha> <short>`. Every other field falls through to the
+/// scalar/list [`field_json`].
+fn header_field_json(schema: &Schema, key: &str, value: &Value) -> serde_json::Value {
+    if schema.ty == COMPOUND_BASE_DOCTYPE
+        && key == COMPOUND_BASE_FIELD
+        && let Value::Scalar(raw) = value
+        && let Some((sha, short)) = raw.split_once(' ')
+    {
+        return serde_json::json!({ "sha": sha, "short": short });
+    }
+    field_json(value)
 }
 
 /// One field value as json: a scalar → its string (an enum member is already its

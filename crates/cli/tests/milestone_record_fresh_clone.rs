@@ -128,6 +128,11 @@ fn fresh_clone_reseeds_cache_from_record_and_resumes() {
     let home = TempDir::new("home");
     init_repo(repo.path());
     write_compose_marker(repo.path());
+    // The base pin `create` materializes pins the HEAD at create time (the init commit).
+    let base_sha = git(repo.path(), &["rev-parse", "HEAD"]).trim().to_string();
+    let base_short = git(repo.path(), &["rev-parse", "--short", "HEAD"])
+        .trim()
+        .to_string();
 
     assert_ok(
         &run_jigc(
@@ -208,6 +213,25 @@ fn fresh_clone_reseeds_cache_from_record_and_resumes() {
             && json.contains("\"intent\": \"Warm the read cache\"")
             && json.contains("\"task-id\": \"evict-cold-entries\""),
         "fresh-clone `doc show --format json` returns the pinned record shape; got:\n{json}",
+    );
+    // The compound `base` pin projects as a structured `{ sha, short }` object — NOT the
+    // space-joined scalar the `.md` stores (`DECISIONS.md` 2026-07-07). Parse the json and
+    // assert the object shape (a substring check would pass on the scalar too).
+    let doc: serde_json::Value = serde_json::from_str(&json).expect("pinned json parses");
+    let base = &doc["fields"]["base"];
+    assert_eq!(
+        base["sha"].as_str(),
+        Some(base_sha.as_str()),
+        "the pinned json `base` object carries the full SHA; got:\n{json}",
+    );
+    assert_eq!(
+        base["short"].as_str(),
+        Some(base_short.as_str()),
+        "the pinned json `base` object carries the short SHA; got:\n{json}",
+    );
+    assert!(
+        !base.is_string(),
+        "the pinned json `base` must be a structured object, not the space-joined scalar; got:\n{json}",
     );
 
     // (b) A subsequent milestone op re-derives the cache from the record and continues.

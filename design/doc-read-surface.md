@@ -37,7 +37,7 @@ Pinned once here; every doctype's json read conforms. The **milestone record is 
 ```
 
 - **`type`** — the doctype id. **`slug`** — the addressed slug.
-- **`fields`** — every *simple* section's leaves flattened, keyed by leaf id (the header front-matter + any body field group). A **scalar** field serializes as its string; a **list**-cardinality field as a json array of strings; an **enum** leaf as its **lowercase string** (the enum member is already its canonical lowercase form).
+- **`fields`** — every *simple* section's leaves flattened, keyed by leaf id (the header front-matter + any body field group). A **scalar** field serializes as its string; a **list**-cardinality field as a json array of strings; an **enum** leaf as its **lowercase string** (the enum member is already its canonical lowercase form). The one **compound** field in the pinned surface is the milestone-record's `base` pin: it projects as a structured object `{ "sha": …, "short": … }` (clean lossless access to both SHAs; the committed `.md` stores the space-joined `<sha> <short>` scalar, so this is json-projection-only — [team-ready-state.md](team-ready-state.md) → The read surface, [DECISIONS.md](../DECISIONS.md) → 2026-07-07). Every other field stays a scalar.
 - **`sections`** — one entry per **slot** section (its **trimmed prose string** — the clean machine value; leading/trailing whitespace stripped) and per **repeatable** section (its **item array**). A header/fields-only simple section contributes to `fields` alone and has no `sections` entry. An unfilled/absent slot is the empty string.
 
 **A `#fragment` slice** returns the corresponding sub-node of the whole-doc shape:
