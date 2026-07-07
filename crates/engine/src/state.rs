@@ -410,6 +410,16 @@ pub struct MintedTask {
 /// `workflow_id` the task was minted from (so resume composes the task's *own*
 /// workflow — [`read_workflow_id`]).
 ///
+/// `slug_override` **drives the minted id verbatim** when `Some` — the front door's
+/// `--slug` override (`DECISIONS.md` 2026-07-06 M39 planning → Slug (G6);
+/// `design/write-commands.md` → `jigc rename`'s `--slug` precedent): the intent is
+/// still persisted verbatim (so resume re-composes with the same `{{task.intent}}`),
+/// but the id is the caller-supplied slug, not the slugged intent. `None` is
+/// today's behavior — the slugged intent with the empty→type-name fallback ([`mint_id`]).
+/// The override is validated at the CLI boundary (via [`crate::slug::is_slug`]) and
+/// used as-is here, so the serial-collision guard below rejects a colliding override
+/// through the same route a colliding slugged-intent takes.
+///
 /// `jigc_root` is the project's `.jigc/` home (a temp root under test). On
 /// success the working-area directory and its `base.json` exist on disk. On a
 /// serial collision the returned [`Finding`] is `Severity::Blocking`, carries the
@@ -421,8 +431,12 @@ pub fn mint_task(
     type_name: &str,
     workflow_id: &str,
     base: BasePin,
+    slug_override: Option<&str>,
 ) -> Result<MintedTask, Finding> {
-    let id = mint_id(intent, type_name);
+    let id = match slug_override {
+        Some(slug) => slug.to_string(),
+        None => mint_id(intent, type_name),
+    };
     let dir = jigc_root.join("tasks").join(&id);
 
     // Serial collision: an active task dir of that id already exists → reject,
@@ -679,6 +693,7 @@ pub fn create(
     id_source: &str,
     repo_root: &Path,
     on_create: &[crate::field_block::Field],
+    slug_override: Option<&str>,
 ) -> Result<CreatedDoc, Finding> {
     // 1. Unknown doctype → reject before anything is minted or placed.
     let Some(schema) = schemas.get(type_name) else {
@@ -692,15 +707,23 @@ pub fn create(
     //    slug-derivation guard (`crates/cli/src/rename.rs`). Placed in the shared mint
     //    so it covers both `doc create` and `doc author` (author → `create_gated` →
     //    `create`). A `singleton` fixes its slug to the type id (no title to derive),
-    //    so it is untouched.
-    if !schema.singleton && crate::slug::slugify(id_source).is_empty() {
+    //    so it is untouched. A `slug_override` supplies the id explicitly, so the id
+    //    no longer depends on the title slug — the guard is inert then (the H1 still
+    //    reads the title; an empty-slugging title with an override falls back to the
+    //    override slug as the H1 below).
+    if !schema.singleton && slug_override.is_none() && crate::slug::slugify(id_source).is_empty() {
         return Err(empty_title_finding(type_name));
     }
     // Mint the frozen content-slug. A `singleton` doctype fixes the slug to the type
     // id unconditionally (so a re-create targets the same `<location>/<ty>.md`, review
-    // B-2); a non-singleton slugs the (now guaranteed non-empty-slugging) id-source.
+    // B-2); a non-singleton with a `slug_override` takes it **verbatim** (the front
+    // door's `--slug`, validated at the CLI boundary via `is_slug`; `DECISIONS.md`
+    // 2026-07-06 M39 planning → Slug (G6)); otherwise it slugs the (now guaranteed
+    // non-empty-slugging) id-source.
     let slug = if schema.singleton {
         schema.ty.clone()
+    } else if let Some(slug) = slug_override {
+        slug.to_string()
     } else {
         mint_id(id_source, type_name)
     };
@@ -781,6 +804,7 @@ pub fn create(
 /// (`DECISIONS.md` 2026-05-31 → inc-5 `as:` role binding at create). A
 /// **bare-form** entry (an empty `as_role`) grants create permission without
 /// declaring a role and binds nothing.
+#[allow(clippy::too_many_arguments)]
 pub fn create_gated(
     task_dir: &Path,
     schemas: &std::collections::BTreeMap<String, Schema>,
@@ -789,6 +813,7 @@ pub fn create_gated(
     id_source: &str,
     repo_root: &Path,
     on_create: &[crate::field_block::Field],
+    slug_override: Option<&str>,
 ) -> Result<CreatedDoc, Finding> {
     // Step 3: unknown doctype rejects before the gate is consulted.
     if !schemas.contains_key(type_name) {
@@ -798,9 +823,16 @@ pub fn create_gated(
     let Some(entry) = gate.iter().find(|e| e.doc_type == type_name) else {
         return Err(gate_blocked_finding(type_name, gate));
     };
-    // Step 4: admitted → mint + provision (or copy-in a committed singleton) …
+    // Step 4: admitted → mint + provision (or copy-in a committed singleton) — the
+    // `slug_override` (the front door's `--slug`) drives the minted id verbatim.
     let created = create(
-        task_dir, schemas, type_name, id_source, repo_root, on_create,
+        task_dir,
+        schemas,
+        type_name,
+        id_source,
+        repo_root,
+        on_create,
+        slug_override,
     )?;
     // … then bind it to the entry's `as:` role if the entry declares one.
     if !entry.as_role.is_empty() {
@@ -996,6 +1028,7 @@ mod tests {
             "commit",
             "single-task",
             base.clone(),
+            None,
         )
         .expect("first mint succeeds");
 
@@ -1026,6 +1059,7 @@ mod tests {
             "commit",
             "single-task",
             base.clone(),
+            None,
         )
         .expect_err("re-mint of the same slug rejects");
         assert_eq!(err.severity, Severity::Blocking);
@@ -1054,8 +1088,15 @@ mod tests {
         let root = TempRoot::new("workflow-id");
         let base = BasePin::new("b".repeat(40), "bbbbbbb");
 
-        let minted = mint_task(root.path(), "Add rate limiter", "commit", "quick-fix", base)
-            .expect("mint succeeds");
+        let minted = mint_task(
+            root.path(),
+            "Add rate limiter",
+            "commit",
+            "quick-fix",
+            base,
+            None,
+        )
+        .expect("mint succeeds");
 
         // Persisted verbatim as a plain file next to `intent` (golden over the bytes).
         let on_disk = std::fs::read_to_string(minted.dir.join(WORKFLOW_FILE))
@@ -1086,7 +1127,7 @@ mod tests {
         let root = TempRoot::new("fallback");
         let base = BasePin::new("a".repeat(40), "aaaaaaa");
 
-        let minted = mint_task(root.path(), "!!!___---", "adr", "single-task", base)
+        let minted = mint_task(root.path(), "!!!___---", "adr", "single-task", base, None)
             .expect("fallback mint succeeds");
         assert_eq!(
             minted.id, "adr",
@@ -1397,6 +1438,7 @@ sections:
             "Add rate limiter",
             root.path(),
             &[],
+            None,
         )
         .expect("create of a known type succeeds");
         assert_eq!(
@@ -1423,8 +1465,16 @@ sections:
         let docs_before = std::fs::read_dir(task_dir.join("docs"))
             .expect("docs dir")
             .count();
-        let err = create(&task_dir, &schemas, "spec", "whatever", root.path(), &[])
-            .expect_err("unknown doctype rejects");
+        let err = create(
+            &task_dir,
+            &schemas,
+            "spec",
+            "whatever",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("unknown doctype rejects");
         assert_eq!(err.severity, Severity::Blocking);
         assert_eq!(err.code, "create.unknown-doctype");
         assert!(
@@ -1447,6 +1497,7 @@ sections:
             "Add rate limiter",
             root.path(),
             &[],
+            None,
         )
         .expect_err("a serial collision on an existing instance id rejects");
         assert_eq!(collide.severity, Severity::Blocking);
@@ -1477,7 +1528,7 @@ sections:
             let docs_before = std::fs::read_dir(task_dir.join("docs"))
                 .map(|it| it.count())
                 .unwrap_or(0);
-            let err = create(&task_dir, &schemas, "commit", bad, root.path(), &[])
+            let err = create(&task_dir, &schemas, "commit", bad, root.path(), &[], None)
                 .expect_err("a title that slugs to nothing rejects");
             assert_eq!(err.severity, Severity::Blocking);
             assert_eq!(err.code, "create.empty-title", "for title {bad:?}");
@@ -1495,8 +1546,16 @@ sections:
         }
 
         // A normal title still mints.
-        let ok = create(&task_dir, &schemas, "commit", "Add cache", root.path(), &[])
-            .expect("a normal title still creates");
+        let ok = create(
+            &task_dir,
+            &schemas,
+            "commit",
+            "Add cache",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("a normal title still creates");
         assert_eq!(ok.address, "commit:add-cache");
 
         // A singleton with an empty id-source is untouched — its slug is the fixed
@@ -1517,6 +1576,7 @@ sections: []
             "",
             root.path(),
             &[],
+            None,
         )
         .expect("a singleton create with an empty id-source stays green");
         assert_eq!(sing.address, "changelog:changelog");
@@ -1553,6 +1613,7 @@ sections: []
             "Some Milestone Plan Title",
             root.path(),
             &[],
+            None,
         )
         .expect("singleton create succeeds");
         assert_eq!(
@@ -1573,6 +1634,7 @@ sections: []
             "Add rate limiter",
             root.path(),
             &[],
+            None,
         )
         .expect("non-singleton create succeeds");
         assert_eq!(
@@ -1618,6 +1680,7 @@ sections: []
             "some ignored id-source",
             root.path(),
             &[],
+            None,
         )
         .expect("vision singleton create succeeds");
         let body = std::fs::read_to_string(&created.path).expect("read created vision");
@@ -1645,6 +1708,7 @@ sections: []
             "some ignored id-source",
             root.path(),
             &[],
+            None,
         )
         .expect("changelog singleton create succeeds");
         let body = std::fs::read_to_string(&created.path).expect("read created changelog");
@@ -1707,8 +1771,16 @@ sections:
         let schemas = singleton_schemas();
 
         // No committed roadmap/roadmap.md under the repo root → cold create.
-        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path(), &[])
-            .expect("cold singleton create succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "roadmap",
+            "M16",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("cold singleton create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
         assert_eq!(
             created.path,
@@ -1762,8 +1834,16 @@ sections:
         std::fs::write(&committed_path, committed).expect("commit the prior roadmap");
 
         // Warm create: copies the committed body in, does NOT mint blank.
-        let created = create(&task_dir, &schemas, "roadmap", "M16", root.path(), &[])
-            .expect("warm singleton create succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "roadmap",
+            "M16",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("warm singleton create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
 
         // The staged body preserves the prior content — it is the committed body,
@@ -1832,8 +1912,16 @@ sections:
 
         // First create mints fresh (the committed file does NOT trigger copy-in for a
         // non-singleton): the mint path runs, recording `created`.
-        let first = create(&task_dir, &schemas, "adr", "Rate limit", root.path(), &[])
-            .expect("a non-singleton create mints fresh over a committed slug");
+        let first = create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Rate limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("a non-singleton create mints fresh over a committed slug");
         assert_eq!(first.address, "adr:rate-limit");
         let minted = std::fs::read_to_string(&first.path).expect("read minted");
         assert_eq!(
@@ -1851,8 +1939,16 @@ sections:
 
         // A second create of the same slug rejects with the UNCHANGED blocking
         // serial-collision — copy-in never substituted for the reject.
-        let collide = create(&task_dir, &schemas, "adr", "Rate limit", root.path(), &[])
-            .expect_err("a non-singleton committed-slug re-create rejects, unchanged");
+        let collide = create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Rate limit",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("a non-singleton committed-slug re-create rejects, unchanged");
         assert_eq!(collide.severity, Severity::Blocking);
         assert_eq!(collide.code, "create.serial-collision");
         assert!(
@@ -1894,6 +1990,7 @@ sections:
             "Use MySQL: the choice",
             root.path(),
             &[],
+            None,
         )
         .expect("create succeeds");
 
@@ -1977,8 +2074,16 @@ sections:
             },
         ];
 
-        let created = create(&task_dir, &schemas, "adr", "Rate limit", root.path(), &seed)
-            .expect("seeded create succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "adr",
+            "Rate limit",
+            root.path(),
+            &seed,
+            None,
+        )
+        .expect("seeded create succeeds");
         let staged = std::fs::read_to_string(&created.path).expect("read staged");
 
         assert!(
@@ -2044,13 +2149,23 @@ sections:
             "Some Decision",
             root.path(),
             &[],
+            None,
         )
         .expect("a gate-admitted type proceeds");
         assert_eq!(ok.address, "adr:some-decision");
 
         // Not in the gate → structured gate-block with the loosen route.
-        let blocked = create_gated(&task_dir, &all, &gate, "commit", "x", root.path(), &[])
-            .expect_err("a disallowed type is gate-blocked");
+        let blocked = create_gated(
+            &task_dir,
+            &all,
+            &gate,
+            "commit",
+            "x",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("a disallowed type is gate-blocked");
         assert_eq!(blocked.severity, Severity::Blocking);
         assert_eq!(blocked.code, "create.gate-blocked");
         assert!(
@@ -2063,8 +2178,17 @@ sections:
         );
 
         // Unknown type → unknown-doctype reject fires *before* the gate.
-        let unknown = create_gated(&task_dir, &all, &gate, "wormhole", "x", root.path(), &[])
-            .expect_err("an unknown type rejects before the gate");
+        let unknown = create_gated(
+            &task_dir,
+            &all,
+            &gate,
+            "wormhole",
+            "x",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect_err("an unknown type rejects before the gate");
         assert_eq!(unknown.code, "create.unknown-doctype");
     }
 
@@ -2103,6 +2227,7 @@ sections:
             "Shared Redis session cache",
             root.path(),
             &[],
+            None,
         )
         .expect("the gate-admitted adr is created");
         assert_eq!(created.address, "adr:shared-redis-session-cache");
@@ -2134,6 +2259,7 @@ sections:
             "Add rate limiter",
             root.path(),
             &[],
+            None,
         )
         .expect("the bare-form-gated commit is created");
         assert!(
@@ -2168,8 +2294,16 @@ sections:
         persist(&task_dir.join(SOURCE_PATH_FILE), b"roadmap/roadmap.md")
             .expect("record the in-location source path");
 
-        let created = create(&task_dir, &schemas, "roadmap", "M24", root.path(), &[])
-            .expect("squatter migration create succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "roadmap",
+            "M24",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("squatter migration create succeeds");
         assert_eq!(created.address, "roadmap:roadmap");
 
         // Seeded BLANK — the empty template, never the committed squatter body.
@@ -2230,8 +2364,16 @@ sections:
         persist(&task_dir.join(SOURCE_PATH_FILE), b"CHANGELOG.md")
             .expect("record the in-location source path");
 
-        let created = create(&task_dir, &schemas, "changelog", "M38", root.path(), &[])
-            .expect("placement squatter migration create succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "changelog",
+            "M38",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("placement squatter migration create succeeds");
         assert_eq!(created.address, "changelog:changelog");
 
         // Seeded BLANK — the empty template, never the committed foreign body.
@@ -2283,8 +2425,16 @@ sections:
         persist(&task_dir.join(SOURCE_PATH_FILE), b"CHANGELOG.md")
             .expect("record the off-canonical source path");
 
-        let created = create(&task_dir, &schemas, "roadmap", "M24", root.path(), &[])
-            .expect("off-canonical migration create succeeds");
+        let created = create(
+            &task_dir,
+            &schemas,
+            "roadmap",
+            "M24",
+            root.path(),
+            &[],
+            None,
+        )
+        .expect("off-canonical migration create succeeds");
 
         let staged = std::fs::read_to_string(&created.path).expect("read staged");
         assert_eq!(
@@ -2324,8 +2474,16 @@ sections:
             persist(&task_dir.join(SOURCE_PATH_FILE), spelling.as_bytes())
                 .expect("record a redundantly-spelled in-location source path");
 
-            let created = create(&task_dir, &schemas, "roadmap", "M24", root.path(), &[])
-                .expect("squatter migration create succeeds");
+            let created = create(
+                &task_dir,
+                &schemas,
+                "roadmap",
+                "M24",
+                root.path(),
+                &[],
+                None,
+            )
+            .expect("squatter migration create succeeds");
             let staged = std::fs::read_to_string(&created.path).expect("read staged");
             assert_eq!(
                 staged,

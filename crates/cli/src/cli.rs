@@ -82,6 +82,14 @@ pub enum Command {
         /// exclusive with `--task`.
         #[arg(long, conflicts_with = "task")]
         explain: bool,
+
+        /// Override the minted task id (only meaningful when a task is minted).
+        /// Taken **verbatim** and validated as a well-formed slug — a malformed value
+        /// is rejected, never silently re-slugified. Mutually exclusive with `--task`
+        /// (a resume mints nothing); inert on a non-minting compose (`design/write-
+        /// commands.md` → `jigc rename`'s `--slug` precedent).
+        #[arg(long, conflicts_with = "task")]
+        slug: Option<String>,
     },
 
     /// Re-enter a milestone sub-task as a fanned sub-agent — compose the named
@@ -248,12 +256,14 @@ impl Cli {
                 workflow,
                 task: None,
                 explain: true,
+                slug: _,
             } => run_explain(self.format, intent.as_deref(), workflow.as_deref()),
             Command::Start {
                 intent: None,
                 workflow: None,
                 task: None,
                 explain: false,
+                slug: _,
             } => run_orient(self.format),
             // `--workflow <X>` with no `<intent>`: a `creates-task: false` `<X>`
             // composes (no mint); a `creates-task: true` `<X>` is rejected (it slugs
@@ -263,24 +273,28 @@ impl Cli {
                 workflow: Some(workflow),
                 task: None,
                 explain: false,
+                slug: _,
             } => run_compose_named_no_intent(self.format, &workflow),
             Command::Start {
                 intent: Some(intent),
                 workflow: None,
                 task: None,
                 explain: false,
-            } => run_compose(self.format, &intent),
+                slug,
+            } => run_compose(self.format, &intent, slug.as_deref()),
             Command::Start {
                 intent: Some(intent),
                 workflow: Some(workflow),
                 task: None,
                 explain: false,
-            } => run_compose_named(self.format, &intent, &workflow),
+                slug,
+            } => run_compose_named(self.format, &intent, &workflow, slug.as_deref()),
             Command::Start {
                 intent: None,
                 workflow: _,
                 task: Some(id),
                 explain: false,
+                slug: _,
             } => run_resume(self.format, &id),
             // `conflicts_with` makes clap reject `<intent>` + `--task` and
             // `--explain` + `--task` together, so these arms are unreachable.
@@ -289,6 +303,7 @@ impl Cli {
                 workflow: _,
                 task: Some(_),
                 explain: _,
+                slug: _,
             }
             | Command::Start {
                 task: Some(_),
@@ -827,7 +842,7 @@ fn run_doc(format: Format, verb: DocCommand) -> Outcome {
 /// `format`, and print it — mapping success/failure to the process exit code. A
 /// blocking gate / minting finding surfaces on stderr (with its route) and exits
 /// non-zero; nothing is emitted past a block.
-fn run_compose(format: Format, intent: &str) -> Outcome {
+fn run_compose(format: Format, intent: &str, slug: Option<&str>) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -835,7 +850,7 @@ fn run_compose(format: Format, intent: &str) -> Outcome {
             return Outcome::failure();
         }
     };
-    match start::compose_in_repo(&cwd, intent) {
+    match start::compose_in_repo(&cwd, intent, slug) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
             Outcome::success()
@@ -856,7 +871,7 @@ fn run_compose(format: Format, intent: &str) -> Outcome {
 /// and exits 0; an unknown `<X>` or a blocking gate finding surfaces on stderr
 /// (with its route) and exits non-zero — nothing is emitted past a block, and an
 /// unknown id is rejected before any mint.
-fn run_compose_named(format: Format, intent: &str, workflow: &str) -> Outcome {
+fn run_compose_named(format: Format, intent: &str, workflow: &str, slug: Option<&str>) -> Outcome {
     let cwd = match std::env::current_dir() {
         Ok(cwd) => cwd,
         Err(err) => {
@@ -864,7 +879,7 @@ fn run_compose_named(format: Format, intent: &str, workflow: &str) -> Outcome {
             return Outcome::failure();
         }
     };
-    match start::compose_named_in_repo(&cwd, intent, workflow) {
+    match start::compose_named_in_repo(&cwd, intent, workflow, slug) {
         Ok(view) => {
             println!("{}", render::composed(format, &view));
             Outcome::success()
@@ -1025,6 +1040,7 @@ mod cli_parse {
                 workflow: None,
                 task: None,
                 explain: false,
+                slug: None,
             }
         );
     }
@@ -1040,6 +1056,7 @@ mod cli_parse {
                 workflow: None,
                 task: None,
                 explain: false,
+                slug: None,
             }
         );
     }
@@ -1055,6 +1072,7 @@ mod cli_parse {
                 workflow: None,
                 task: Some("add-rate-limiter".to_string()),
                 explain: false,
+                slug: None,
             }
         );
     }
@@ -1070,6 +1088,7 @@ mod cli_parse {
                 workflow: Some("single-task".to_string()),
                 task: None,
                 explain: false,
+                slug: None,
             }
         );
     }
@@ -1092,6 +1111,7 @@ mod cli_parse {
                 workflow: Some("single-task".to_string()),
                 task: None,
                 explain: true,
+                slug: None,
             }
         );
     }
@@ -1115,6 +1135,39 @@ mod cli_parse {
     fn start_rejects_intent_and_task_together() {
         let err = Cli::try_parse_from(["jigc", "start", "an intent", "--task", "some-id"])
             .expect_err("`<intent>` together with `--task` must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn start_parses_the_slug_override() {
+        let cli = Cli::try_parse_from([
+            "jigc",
+            "start",
+            "--workflow",
+            "single-task",
+            "an intent",
+            "--slug",
+            "explicit-id",
+        ])
+        .expect("`jigc start --workflow <X> <intent> --slug <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Start {
+                intent: Some("an intent".to_string()),
+                workflow: Some("single-task".to_string()),
+                task: None,
+                explain: false,
+                slug: Some("explicit-id".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn start_rejects_slug_and_task_together() {
+        let err = Cli::try_parse_from(["jigc", "start", "--task", "some-id", "--slug", "explicit"])
+            .expect_err(
+                "`--slug` together with `--task` must be rejected (a resume mints nothing)",
+            );
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
@@ -1833,6 +1886,7 @@ mod cli_parse {
                 verb: DocCommand::Create {
                     r#type: "adr".to_string(),
                     title: "Pick redis".to_string(),
+                    slug: None,
                     task: Some("move-cache".to_string()),
                 },
             }

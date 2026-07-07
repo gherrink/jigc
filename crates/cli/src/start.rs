@@ -69,7 +69,12 @@ const MIGRATION_COMMIT_TYPE: &str = "docs";
 /// ([`crate::locate`]). A serial collision (an active task of the slugged id
 /// already exists) surfaces as the engine's routed blocking finding, mapped here
 /// to an `anyhow` error carrying that route.
-pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<MintedTask> {
+pub fn mint_in_repo(
+    start: &Path,
+    intent: &str,
+    workflow_id: &str,
+    slug_override: Option<&str>,
+) -> Result<MintedTask> {
     // Reject a user intent with no sluggable content up front, before minting:
     // `slugify` would otherwise fold an empty/whitespace/punctuation-only intent to
     // nothing, and `mint_task`'s empty-slug fallback would mint the task under the
@@ -78,6 +83,17 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
     // intent via `mint_migration_in_repo`); only this user-intent boundary is guarded.
     if engine::slug::slugify(intent).is_empty() {
         bail!("intent must contain at least one letter or digit (got {intent:?})");
+    }
+    // The `--slug` override drives the minted id **verbatim** — validate its shape at
+    // this CLI boundary (never silently re-slugify a malformed value; `DECISIONS.md`
+    // 2026-07-06 M39 planning → Slug (G6)). A value that is not a well-formed slug is
+    // rejected with a route, mirroring `jigc rename`'s `--slug` discipline.
+    if let Some(slug) = slug_override
+        && !engine::slug::is_slug(slug)
+    {
+        bail!(
+            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
+        );
     }
     // The base pin is the *worktree* HEAD (code/HEAD resolve against the worktree); the
     // `.jigc/` working area binds to **jigc_home**, the main checkout, so every worktree
@@ -88,7 +104,15 @@ pub fn mint_in_repo(start: &Path, intent: &str, workflow_id: &str) -> Result<Min
     let jigc_root = jigc_home_or_repo(start)?.join(".jigc");
     let base = read_head(&repo_root)?;
 
-    state::mint_task(&jigc_root, intent, FALLBACK_TYPE, workflow_id, base).map_err(finding_to_err)
+    state::mint_task(
+        &jigc_root,
+        intent,
+        FALLBACK_TYPE,
+        workflow_id,
+        base,
+        slug_override,
+    )
+    .map_err(finding_to_err)
 }
 
 /// Resolve **jigc_home** — the main checkout the committed doc-store + `.jigc/` bind to
@@ -154,7 +178,7 @@ pub(crate) fn mint_migration_in_repo(
     // Empty intent → the id slugs from this per-file `migrate-<doctype>-<slug>` fallback,
     // keeping the bare `<doctype>` task namespace free and the migration task per-file.
     let mint_id_source = migration_task_id_source(doctype, source_path);
-    let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base)
+    let minted = state::mint_task(&jigc_root, "", &mint_id_source, workflow_id, base, None)
         .map_err(finding_to_err)?;
     let pack = make_pack();
     provision_migration_commit_doc(pack.as_ref(), &minted.dir, &minted.id, source_path, doctype)?;
@@ -449,7 +473,11 @@ const DEFAULT_WORKFLOW_KEY: &str = "default-workflow";
 /// with that finding's message + route — nothing is emitted past the gate.
 ///
 /// Returns the composed view; the caller renders it through the selected format.
-pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
+pub fn compose_in_repo(
+    start: &Path,
+    intent: &str,
+    slug_override: Option<&str>,
+) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
     let project_config = require_project_config(start)?;
@@ -475,6 +503,7 @@ pub fn compose_in_repo(start: &Path, intent: &str) -> Result<ComposedWorkflow> {
         &overrides,
         &[],
         None,
+        slug_override,
     )
 }
 
@@ -489,6 +518,7 @@ pub fn compose_named_in_repo(
     start: &Path,
     intent: &str,
     workflow_id: &str,
+    slug_override: Option<&str>,
 ) -> Result<ComposedWorkflow> {
     let repo_root = discover_repo_root(start)
         .with_context(|| format!("not inside a git repository (from {})", start.display()))?;
@@ -510,6 +540,7 @@ pub fn compose_named_in_repo(
         &overrides,
         &[],
         None,
+        slug_override,
     )
 }
 
@@ -565,6 +596,9 @@ pub fn compose_named_no_intent_in_repo(
         &overrides,
         &[],
         None,
+        // No mint on the `creates-task: false` arm (a `creates-task: true` `<X>` was
+        // rejected above), so a `--slug` override could never apply here.
+        None,
     )
 }
 
@@ -601,6 +635,8 @@ pub fn execute_milestone_in_repo(
         &source,
         &overrides,
         milestone_ids,
+        None,
+        // A milestone execution mints no top-level task, so no `--slug` applies.
         None,
     )
 }
@@ -725,6 +761,7 @@ pub(crate) fn execute_milestone_core(
         &overrides,
         milestone_ids,
         None,
+        None,
     )
 }
 
@@ -744,6 +781,7 @@ fn compose_drained(
     overrides: &ComposeOverrides,
     milestone_ids: &[String],
     seam: Option<&str>,
+    slug_override: Option<&str>,
 ) -> Result<ComposedWorkflow> {
     // Pack-load freeze gate (M33): block an un-migrated schema-shape change before
     // any composition — recompute each shipped doctype's schema-hash against the
@@ -767,6 +805,7 @@ fn compose_drained(
         overrides,
         milestone_ids,
         seam,
+        slug_override,
     );
     if result.is_err()
         && let Some(located) = source.take_error()
@@ -825,6 +864,7 @@ fn compose_core(
     overrides: &ComposeOverrides,
     milestone_ids: &[String],
     seam: Option<&str>,
+    slug_override: Option<&str>,
 ) -> Result<ComposedWorkflow> {
     let workflow_bytes = defs.read_workflow(pack, workflow_id)?;
     let mut def = load_workflow_def(&workflow_bytes).map_err(finding_to_err)?;
@@ -867,8 +907,9 @@ fn compose_core(
 
     let ctx = if should_provision_commit_doc(&def) {
         // Mint the task (reads HEAD). Minting after the definition loads so a
-        // malformed pack never leaves a task dir behind.
-        let minted = mint_in_repo(repo_root, intent, workflow_id)?;
+        // malformed pack never leaves a task dir behind. The `--slug` override, when
+        // present, drives the minted id verbatim (validated inside `mint_in_repo`).
+        let minted = mint_in_repo(repo_root, intent, workflow_id, slug_override)?;
         // Workflow-provisioned instance — a `creates-task` work-workflow
         // provisions the task's commit doc (the sink of its
         // `<<author: {{task.commit#summary}}>>` slot), so the agent only fills
@@ -2822,8 +2863,8 @@ mod tests {
         let repo = TempDir::new("repo");
         let (sha, short) = init_repo_with_commit(repo.path());
 
-        let minted =
-            mint_in_repo(repo.path(), "Add rate limiter", "single-task").expect("mint succeeds");
+        let minted = mint_in_repo(repo.path(), "Add rate limiter", "single-task", None)
+            .expect("mint succeeds");
 
         assert_eq!(minted.id, "add-rate-limiter");
         let dir = repo
@@ -2840,7 +2881,7 @@ mod tests {
         assert_eq!(base.short, short, "base pin records HEAD's short SHA");
 
         // A serial re-mint of the same intent rejects, surfacing the route.
-        let err = mint_in_repo(repo.path(), "Add rate limiter", "single-task")
+        let err = mint_in_repo(repo.path(), "Add rate limiter", "single-task", None)
             .expect_err("re-mint rejects");
         let msg = err.to_string();
         assert!(
@@ -2862,7 +2903,7 @@ mod tests {
         let tasks = repo.path().join(".jigc").join("tasks");
 
         for bad in ["", "   ", "!!!"] {
-            let err = mint_in_repo(repo.path(), bad, "single-task")
+            let err = mint_in_repo(repo.path(), bad, "single-task", None)
                 .expect_err("no-sluggable-content intent must reject");
             let msg = err.to_string();
             assert!(
@@ -2880,7 +2921,7 @@ mod tests {
         }
 
         // A normal intent still mints.
-        let minted = mint_in_repo(repo.path(), "Add rate limiter", "single-task")
+        let minted = mint_in_repo(repo.path(), "Add rate limiter", "single-task", None)
             .expect("real intent mints");
         assert_eq!(minted.id, "add-rate-limiter");
     }
@@ -3079,6 +3120,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("Form-D compose of ingest-existing");
 
@@ -3192,6 +3234,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("no-task compose");
 
@@ -3297,6 +3340,7 @@ mod tests {
             &ComposeOverrides::structural(deltas),
             &[],
             None,
+            None,
         )
         .expect_err("the insert's anchor was removed by the earlier delta");
 
@@ -3357,6 +3401,7 @@ mod tests {
             &ComposeOverrides::structural(deltas),
             &[],
             None,
+            None,
         )
         .expect_err("the delta introduces an include cycle");
 
@@ -3414,6 +3459,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(deltas),
             &[],
+            None,
             None,
         )
         .expect("flow 3a's different-id re-include composes clean");
@@ -3531,6 +3577,7 @@ mod tests {
                 &ComposeOverrides::structural(deltas),
                 &[],
                 None,
+                None,
             )
             .expect("flow composes under the replace delta")
             .text
@@ -3602,6 +3649,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("Form-D compose of a creates-task workflow");
 
@@ -3640,6 +3688,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
             None,
         )
         .expect_err("an unknown --workflow id must reject");
@@ -4222,6 +4271,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("the loser-pack workflow composes");
 
@@ -4268,6 +4318,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("the winner-pack workflow composes");
 
@@ -4307,6 +4358,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("compose over the single-pack composite");
         let over_bare = compose_drained(
@@ -4317,6 +4369,7 @@ mod tests {
             &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
             None,
         )
         .expect("compose over the bare pack");
@@ -4406,6 +4459,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect(
             "the loser-pack workflow must resolve its own `{{cli.low-cmd}}` against ITS pack's catalog",
@@ -4447,6 +4501,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("the winner-pack workflow composes its own command-ref");
 
@@ -4486,6 +4541,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("compose over the single-pack composite");
         let over_bare = compose_drained(
@@ -4496,6 +4552,7 @@ mod tests {
             &CascadeStepSource::new(&base_pack_clone, &resolved, repo.path()),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
             None,
         )
         .expect("compose over the bare pack");
@@ -5348,6 +5405,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("shadowed flow composes");
         assert!(
@@ -5368,6 +5426,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), project_config),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
             None,
         )
         .expect("pack-baseline flow composes");
@@ -5394,6 +5453,7 @@ mod tests {
             &ComposeOverrides::structural(Vec::new()),
             &[],
             None,
+            None,
         )
         .expect("unshadowed other composes under the shadow cascade")
         .text;
@@ -5406,6 +5466,7 @@ mod tests {
             &CascadeDefs::new(&no_shadow_resolved(), project_config),
             &ComposeOverrides::structural(Vec::new()),
             &[],
+            None,
             None,
         )
         .expect("unshadowed other composes under the no-shadow cascade")

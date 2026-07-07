@@ -46,6 +46,13 @@ pub enum DocCommand {
         /// form; `--title "…"` is the MVP surface for the title-slugged types).
         #[arg(long)]
         title: String,
+        /// Override the minted doc slug (`<type>:<slug>`), decoupling the id from the
+        /// title. Taken **verbatim** and validated as a well-formed slug — a malformed
+        /// value is rejected, never silently re-slugified (`design/write-commands.md`
+        /// → `jigc rename`'s `--slug` precedent). Inert for a singleton doctype (its
+        /// slug is fixed to the type id).
+        #[arg(long)]
+        slug: Option<String>,
         /// The active task to scope the write to. Optional: explicit wins; else the
         /// single active task; else (zero / more-than-one) the write rejects.
         #[arg(long)]
@@ -170,8 +177,9 @@ impl DocCommand {
             DocCommand::Create {
                 r#type,
                 title,
+                slug,
                 task,
-            } => run_create(cwd, &r#type, &title, task.as_deref()),
+            } => run_create(cwd, &r#type, &title, slug.as_deref(), task.as_deref()),
             DocCommand::AddItem { addr, title, task } => {
                 run_add_item(cwd, &addr, &title, task.as_deref())
             }
@@ -924,13 +932,26 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-/// `jigc doc create <type> --title <…>` — agent-initiated, create-gated mint.
+/// `jigc doc create <type> --title <…>` (optional `--slug`) — agent-initiated,
+/// create-gated mint. A `--slug` override drives the minted doc id verbatim
+/// (decoupled from the title); it is validated here as a well-formed slug and
+/// **never silently re-slugified** (`DECISIONS.md` 2026-07-06 M39 planning → Slug
+/// (G6)), then handed to `create_gated` so a colliding override rejects through the
+/// settled instance-collision route.
 fn run_create(
     cwd: &Path,
     type_name: &str,
     title: &str,
+    slug_override: Option<&str>,
     task_id: Option<&str>,
 ) -> Result<(), DocFailure> {
+    if let Some(slug) = slug_override
+        && !engine::slug::is_slug(slug)
+    {
+        return Err(DocFailure::Orchestration(anyhow!(
+            "`--slug {slug:?}` is not a valid slug — use lowercase letters, digits, and single hyphens (no leading, trailing, or doubled `-`)"
+        )));
+    }
     let task = ActiveTask::resolve(cwd, task_id)?;
     let schemas = task.schemas()?;
     let gate = task.workflow_gate()?;
@@ -951,6 +972,7 @@ fn run_create(
         title,
         &task.jigc_home,
         &on_create,
+        slug_override,
     )
     .map_err(|f| block(&f, "create", type_name))?;
     println!("{}", created.address);
@@ -1007,6 +1029,8 @@ fn run_author(
         &plan.title,
         &task.jigc_home,
         &on_create,
+        // `doc author` derives the slug from the payload title, never a `--slug` flag.
+        None,
     )
     .map_err(|f| block(&f, "author", doctype))?;
     // `create_gated` admitted the doctype, so it is in the loaded set — resolve the

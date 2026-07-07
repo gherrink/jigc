@@ -260,7 +260,7 @@ pub fn add_task(
 
     // Reuse the task mint so the sub-task inherits the milestone's base and the
     // standard working-area files (base/intent/workflow), in the shared namespace.
-    let task = crate::state::mint_task(jigc_root, intent, SUB_TASK_TYPE, workflow_id, base)?;
+    let task = crate::state::mint_task(jigc_root, intent, SUB_TASK_TYPE, workflow_id, base, None)?;
 
     // Append to the milestone's task list and persist it.
     list.tasks.push(task.id.clone());
