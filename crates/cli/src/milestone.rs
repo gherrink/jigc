@@ -395,6 +395,13 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
+    let schemas = shipped_schemas(&jigc_home)?;
+
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the engine reads through it, so `add-task` on a fresh clone (no `.jigc/` WIP) continues the
+    // milestone (`design/team-ready-state.md` → Engine capability 2 (read-back)). No-op once the
+    // cache exists / dev-only (no record).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
 
@@ -404,7 +411,6 @@ fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) ->
     // committed record and land a **separate record-only** path-scoped commit (the JSON-cache
     // append above is retained as the demoted cache). Dev-only (no methodology pack) resolves
     // no such schema → degrade to today's no-record, no-extra-commit behavior.
-    let schemas = shipped_schemas(&jigc_home)?;
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
         append_and_commit_record(
             &jigc_home,
@@ -521,6 +527,46 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
     Ok(out)
 }
 
+/// **Re-derive the demoted `.jigc` milestone cache from the committed record when absent** —
+/// the fresh-clone resume read-path arm (`design/team-ready-state.md` → Engine capability 2
+/// (read-back): "on a fresh clone (no `.jigc/` working state) the first milestone op parses the
+/// record back into `BasePin` + `TaskList` and re-seeds the cache"; "Continue" means resume, not
+/// WIP recovery; M39 T5). Every milestone-op **cache reader** (`add-task`/`provision`/`join`/
+/// `finalize`/`list-tasks`/`execute`) calls this before it reads through the demoted cache
+/// (`read_base_pin`/`read_task_list`) or its `dir.is_dir()` unknown-milestone guard, so a
+/// teammate on a fresh clone (the gitignored `.jigc/milestones/<id>/` WIP gone, the committed
+/// record present) re-derives the milestone shape from the source-of-truth record and resumes
+/// its un-joined sub-tasks from scratch.
+///
+/// Gated twice so it stays inert where there is nothing to re-derive: (1) the `milestone-record`
+/// schema must be resolved (a `[dev ▸ methodology]` project) — dev-only (no methodology pack) has
+/// no committed record, so the demoted JSON cache is the only home and this no-ops; and (2) the
+/// committed record file must exist at its canonical home — a genuinely-unknown milestone has no
+/// record, so this no-ops and the caller's existing unknown-milestone guard still fires. The
+/// engine reseed ([`engine::milestone::reseed_cache_from_record`]) is itself a no-op when both
+/// cache files are already present (the live session's cache stays authoritative), so calling
+/// this on every op is cheap and side-effect-free once the cache exists.
+fn reseed_cache(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    milestone_id: &str,
+) -> Result<()> {
+    let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) else {
+        return Ok(());
+    };
+    let Some(record_path) = engine::store::canonical_path(jigc_home, schema, milestone_id) else {
+        return Ok(());
+    };
+    if !record_path.exists() {
+        return Ok(());
+    }
+    let source = std::fs::read_to_string(&record_path)
+        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
+    let dir = milestone_dir(jigc_root, milestone_id);
+    engine::milestone::reseed_cache_from_record(&dir, schema, &source).map_err(finding_to_err)
+}
+
 /// `jigc milestone list-tasks <milestone-id>` — read the milestone's persisted
 /// task list and emit its sub-task ids in **canonical id-sorted order** (the
 /// deterministic order the by-task-id join enumerates, surfaced through the
@@ -529,7 +575,13 @@ fn shipped_schemas(repo_root: &Path) -> Result<BTreeMap<String, Schema>> {
 /// error and exits non-zero.
 fn run_list_tasks(cwd: &Path, milestone_id: &str) -> Result<String> {
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
-    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the `dir.is_dir()` guard, so `list-tasks` on a fresh clone re-derives the milestone shape
+    // and continues (`design/team-ready-state.md` → Engine capability 2 (read-back)).
+    let schemas = shipped_schemas(&jigc_home)?;
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
         bail!(
@@ -570,6 +622,12 @@ fn run_provision(cwd: &Path, milestone_id: &str) -> Result<String> {
     // `.jigc/worktrees/` must be ignored or the linked worktrees pollute the main
     // checkout's `git status` / `git add --all`.
     crate::gitignore::ensure(&jigc_root)?;
+
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the `dir.is_dir()` guard + base-pin/task-list reads, so `provision` on a fresh clone
+    // re-derives the milestone shape (`design/team-ready-state.md` → Engine capability 2).
+    let schemas = shipped_schemas(&jigc_home)?;
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
@@ -766,7 +824,13 @@ fn run_execute(cwd: &Path, milestone_id: &str) -> Result<engine::compose::Compos
     // the same split internally (it derives jigc_home from the worktree `repo_root`).
     let repo_root = discover_repo_root(cwd)
         .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
-    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the `dir.is_dir()` guard + task-list read, so `execute` on a fresh clone re-derives the
+    // milestone shape and composes the fan-out (`design/team-ready-state.md` → Engine capability 2).
+    let schemas = shipped_schemas(&jigc_home)?;
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
         bail!(
@@ -840,6 +904,11 @@ fn run_join(cwd: &Path, milestone_id: &str) -> Result<JoinOutcome> {
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
 
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the base-pin read + the engine `join`'s internal cache reads, so `join` on a fresh clone
+    // re-derives the milestone shape (`design/team-ready-state.md` → Engine capability 2).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
+
     // The committed edge index is keyed to the milestone's shared base — the commit
     // every sub-task inherited — so the cross-area ref walk resolves against the store
     // as it stood at that base. An unknown milestone has no base pin; fall back to the
@@ -898,6 +967,12 @@ fn run_milestone_finalize(cwd: &Path, format: Format, milestone_id: &str) -> Res
     let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
     let jigc_root = jigc_home.join(".jigc");
     let schemas = shipped_schemas(&jigc_home)?;
+
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the `dir.is_dir()` guard + base-pin/task-list reads + the engine `materialize`'s internal
+    // cache reads, so `finalize` on a fresh clone re-derives the milestone shape and joins the
+    // recorded sub-tasks (`design/team-ready-state.md` → Engine capability 2 (read-back)).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
 
     let dir = milestone_dir(&jigc_root, milestone_id);
     if !dir.is_dir() {
