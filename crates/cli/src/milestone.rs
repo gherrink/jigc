@@ -248,7 +248,15 @@ fn materialize_and_commit_record(
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
 
     // The message temp file lands in the gitignored milestone area (never a tracked path).
-    commit_record_only(jigc_home, &record_path, &minted.dir, &minted.id)
+    commit_record_only(
+        jigc_home,
+        &record_path,
+        &minted.dir,
+        &format!(
+            "chore(milestone): open record for milestone:{}\n",
+            minted.id
+        ),
+    )
 }
 
 /// Land a **record-only** commit for a milestone op (`design/team-ready-state.md` → The commit
@@ -256,13 +264,15 @@ fn materialize_and_commit_record(
 /// that pathspec (`git commit -F <msg> -- <record>`), so any other staged/untracked change
 /// stays out of the record commit and stays staged — the WIP-safety the whole-index
 /// [`crate::task::git_commit`] cannot give, hence its narrowed sibling
-/// [`git_commit_pathspec`]. The CLI-synthesized message is structural (a record carries no
-/// authored prose) and is written into the gitignored `msg_dir` (the milestone area).
+/// [`git_commit_pathspec`]. The caller-supplied `message` is a CLI-synthesized structural
+/// line (a record carries no authored prose) and is written into the gitignored `msg_dir`
+/// (the milestone area). Reused by every per-op record commit (`create` opens, `add-task`
+/// appends), each passing its own structural subject.
 fn commit_record_only(
     repo_root: &Path,
     record_path: &Path,
     msg_dir: &Path,
-    milestone_id: &str,
+    message: &str,
 ) -> Result<()> {
     let spec = record_path
         .strip_prefix(repo_root)
@@ -273,11 +283,8 @@ fn commit_record_only(
     crate::task::git_run(repo_root, &["add", "--", spec])?;
 
     let msg_path = msg_dir.join("record-commit-msg.txt");
-    std::fs::write(
-        &msg_path,
-        format!("chore(milestone): open record for milestone:{milestone_id}\n"),
-    )
-    .with_context(|| format!("could not write the record commit message {msg_path:?}"))?;
+    std::fs::write(&msg_path, message)
+        .with_context(|| format!("could not write the record commit message {msg_path:?}"))?;
     git_commit_pathspec(repo_root, &msg_path, spec)
 }
 
@@ -312,13 +319,70 @@ fn git_commit_pathspec(repo_root: &Path, message_file: &Path, pathspec: &str) ->
 /// the engine's routed blocking finding.
 fn run_add_task(cwd: &Path, milestone_id: &str, intent: &str, workflow: &str) -> Result<String> {
     // The `.jigc/` area binds to jigc_home (the main checkout); no git read here.
-    let jigc_root = crate::start::jigc_home_or_repo(cwd)?.join(".jigc");
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
 
     let added = add_task(&jigc_root, milestone_id, intent, workflow).map_err(finding_to_err)?;
+
+    // The record-home split (`design/team-ready-state.md` → Engine capability 1 (write), the
+    // `add-task` — append arm; The commit model): under a `[dev ▸ methodology]` project the
+    // composed cascade resolves the `milestone-record` doctype, so append the sub-task to the
+    // committed record and land a **separate record-only** path-scoped commit (the JSON-cache
+    // append above is retained as the demoted cache). Dev-only (no methodology pack) resolves
+    // no such schema → degrade to today's no-record, no-extra-commit behavior.
+    let schemas = shipped_schemas(&jigc_home)?;
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        append_and_commit_record(
+            &jigc_home,
+            &jigc_root,
+            schema,
+            milestone_id,
+            &added.task.id,
+            intent,
+        )?;
+    }
+
     Ok(format!(
         "added task:{} to milestone:{}",
         added.task.id, added.milestone_id
     ))
+}
+
+/// Append one sub-task to the committed `milestone-record` and commit ONLY it — the
+/// `add-task` append arm of the record-home split (`design/team-ready-state.md` → Engine
+/// capability 1 (write); The commit model: a **separate** record-only path-scoped commit per
+/// `add-task`). Reads the committed record source at its canonical home under docs-root,
+/// appends one `tasks` item (`task-id`/`intent`/`status: active`) via the byte-stable
+/// [`engine::milestone::append_task_item`] primitive, writes it back, then lands a
+/// record-only commit through the shared [`commit_record_only`] helper — never sweeping the
+/// agent's in-flight staged/untracked WIP (the M30/M31 path-scoped discipline). A failed
+/// append (a malformed record, a duplicate id) surfaces the engine's routed blocking finding.
+fn append_and_commit_record(
+    jigc_home: &Path,
+    jigc_root: &Path,
+    schema: &Schema,
+    milestone_id: &str,
+    task_id: &str,
+    intent: &str,
+) -> Result<()> {
+    let record_path = engine::store::canonical_path(jigc_home, schema, milestone_id)
+        .context("the `milestone-record` doctype declares no committed location")?;
+    let source = std::fs::read_to_string(&record_path)
+        .with_context(|| format!("could not read the milestone record {record_path:?}"))?;
+
+    let appended = engine::milestone::append_task_item(schema, &source, task_id, intent)
+        .map_err(|err| finding_to_err(engine::write::generate_error_finding(&err)))?;
+    std::fs::write(&record_path, &appended)
+        .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
+
+    // The message temp file lands in the gitignored milestone WIP area (never a tracked path).
+    let msg_dir = milestone_dir(jigc_root, milestone_id);
+    commit_record_only(
+        jigc_home,
+        &record_path,
+        &msg_dir,
+        &format!("chore(milestone): record task:{task_id} on milestone:{milestone_id}\n"),
+    )
 }
 
 /// `jigc milestone add-from-spec <milestone-id> <spec-addr>` — seed the milestone's
