@@ -508,6 +508,128 @@ pub fn read_base_pin(milestone_dir: &Path) -> std::io::Result<BasePin> {
         .map_err(|err| std::io::Error::new(std::io::ErrorKind::InvalidData, err))
 }
 
+/// Render the record's `base` header field value — the shared base pin as the full
+/// SHA and its abbreviated short SHA, space-joined (`<sha> <short>`). **Both** are
+/// stored because the short is *not* recoverable from the full SHA: git's `--short`
+/// is a variable-length unambiguous abbreviation, not a fixed-length prefix, so a
+/// sha-only record could not round-trip a [`BasePin`] losslessly on a fresh-clone
+/// re-derive (`design/team-ready-state.md` → Engine capability 2 (read-back);
+/// `DECISIONS.md` 2026-07-07 → M39 Increment 3 T4). Mirrors `base.json`, which
+/// likewise persists both `sha` and `short`.
+fn render_base_field(base: &BasePin) -> String {
+    format!("{} {}", base.sha, base.short)
+}
+
+/// Parse the record's `base` header field value back into a [`BasePin`] — the exact
+/// inverse of [`render_base_field`]. The value is `<sha> <short>`; the short is read
+/// from the **second** token, *never* re-derived as a prefix of the sha (the short's
+/// length is not recoverable from the sha, so trusting `short = sha[..n]` would be
+/// lossy). A single-token value (a legacy or hand-edited record that never stored the
+/// short) degrades to `short == sha` rather than panicking; the read-back is lossless
+/// only for records this module wrote.
+fn parse_base_field(value: &str) -> BasePin {
+    let mut parts = value.split_whitespace();
+    let sha = parts.next().unwrap_or_default().to_string();
+    let short = parts
+        .next()
+        .map(str::to_string)
+        .unwrap_or_else(|| sha.clone());
+    BasePin { sha, short }
+}
+
+/// **Re-derive a milestone's operational state from its committed record** — the
+/// read-back half of Engine capability 2 (`design/team-ready-state.md` → Engine
+/// capability 2 (read-back): the committed `.md` record is the source of truth and
+/// the `.jigc/milestones/<id>/{base,tasks}.json` cache is rebuildable from it; M39
+/// Increment 3 T4). Parses the record `source` against its pack `schema` and
+/// reconstructs the `(BasePin, TaskList)` the JSON cache holds: the [`BasePin`] from
+/// the `meta` header's `base` field (full + short SHA, [`parse_base_field`]) and the
+/// [`TaskList`] from the `tasks` section's item ids — each item's frozen `{#id}`
+/// anchor **is** the sub-task id (the `id-from: task-id` heading slug), the same ids
+/// [`add_task`] appends to `tasks.json`.
+///
+/// Pure over the bytes: no `.jigc/` I/O, no git — the inverse of
+/// [`render_fresh_record`] + [`append_task_item`], so re-deriving a record this
+/// module wrote yields the exact `BasePin` (sha **and** short) and task-id set the
+/// cache was seeded with. A record that does not conform to `schema`, or one missing
+/// its `base` header field, is a routed blocking [`Finding`] (a real fault — the
+/// record is this module's own materialized output).
+pub fn read_back_record(
+    schema: &crate::schema::Schema,
+    source: &str,
+) -> Result<(BasePin, TaskList), Finding> {
+    let doc = crate::parse::parse_sections(schema, source)
+        .map_err(|findings| read_back_finding(findings.first()))?;
+    let base_value = doc
+        .sections
+        .iter()
+        .find(|s| s.id == RECORD_HEADER_SECTION)
+        .and_then(|s| s.fields.iter().find(|f| f.key == RECORD_BASE_FIELD))
+        .map(|f| f.value.render())
+        .ok_or_else(|| read_back_finding(None))?;
+    let base = parse_base_field(&base_value);
+    let tasks = doc
+        .sections
+        .iter()
+        .find(|s| s.id == RECORD_TASKS_SECTION)
+        .map(|s| s.items.iter().map(|i| i.id.clone()).collect())
+        .unwrap_or_default();
+    Ok((base, TaskList { tasks }))
+}
+
+/// **Re-seed the `.jigc` cache from the committed record when absent** — the
+/// fresh-clone half of Engine capability 2 (`design/team-ready-state.md` → Engine
+/// capability 2 (read-back): "on a fresh clone (no `.jigc/` working state) the first
+/// milestone op parses the record back into `BasePin` + `TaskList` and re-seeds the
+/// cache"; M39 Increment 3 T4). When either cache file (`base.json` / `tasks.json`)
+/// is **absent** under `milestone_dir`, re-derives both from `record_source`
+/// ([`read_back_record`]) and writes them in the same frozen byte form the mint
+/// wrote — so the demoted cache is rebuilt from the source-of-truth record with no
+/// loss. When both cache files are already present this is a **no-op** (the live
+/// cache is authoritative for the session; staleness is not this arm's concern).
+///
+/// The live cache-resolve wiring (the CLI reading through this on every milestone op)
+/// and the full fresh-clone `.jigc` delete are Inc 4; this is the engine primitive
+/// they call.
+pub fn reseed_cache_from_record(
+    milestone_dir: &Path,
+    schema: &crate::schema::Schema,
+    record_source: &str,
+) -> Result<(), Finding> {
+    let id = milestone_dir
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("milestone-record");
+    if milestone_dir.join(BASE_PIN_FILE).exists() && milestone_dir.join(TASKS_FILE).exists() {
+        return Ok(());
+    }
+    let (base, tasks) = read_back_record(schema, record_source)?;
+    std::fs::create_dir_all(milestone_dir)
+        .map_err(|err| io_finding(id, "open the milestone cache area", &err))?;
+    std::fs::write(milestone_dir.join(BASE_PIN_FILE), render_base_pin(&base))
+        .map_err(|err| io_finding(id, "re-seed the base pin cache", &err))?;
+    std::fs::write(milestone_dir.join(TASKS_FILE), tasks.to_bytes())
+        .map_err(|err| io_finding(id, "re-seed the task list cache", &err))?;
+    Ok(())
+}
+
+/// A blocking finding for a record that could not be read back into operational
+/// state — it did not conform to its schema, or it carried no `base` header field (a
+/// real fault: the record is this module's own materialized output). Routed to
+/// reconcile the record, then re-run the milestone op.
+fn read_back_finding(cause: Option<&Finding>) -> Finding {
+    let why = cause
+        .map(|f| f.message.clone())
+        .unwrap_or_else(|| "no `base` header field".to_string());
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.record-read-back",
+        format!("could not re-derive milestone state from its record: {why}"),
+        Some(Location::addressed("milestone-record", 1, 1)),
+        Some("reconcile the milestone record, then re-run the milestone op".to_string()),
+    )
+}
+
 /// **Materialize a fresh `milestone-record` doc body** from a milestone's shared
 /// base pin — the create/materialize write arm (`design/team-ready-state.md` →
 /// Engine capability 1 (write), the `set: on-create` materialization; M39
@@ -539,7 +661,10 @@ pub fn render_fresh_record(
                 fields: vec![
                     Field {
                         key: RECORD_BASE_FIELD.to_string(),
-                        value: Value::Scalar(base.sha.clone()),
+                        // Both the full SHA and the short — the short is not a fixed
+                        // prefix of the sha, so a sha-only record could not round-trip
+                        // a `BasePin` losslessly ([`render_base_field`]).
+                        value: Value::Scalar(render_base_field(base)),
                     },
                     Field {
                         key: RECORD_STATUS_FIELD.to_string(),
@@ -3394,7 +3519,7 @@ Finalize milestone cache-hardening (3 sub-tasks)
         // `# cache-rework` H1, and an EMPTY `## Tasks` repeatable — one trailing LF.
         let expected = "\
 ---
-base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c
+base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c 1f2e3d4
 status: active
 ---
 
@@ -3421,7 +3546,12 @@ status: active
                 .find(|f| f.key == key)
                 .map(|f| f.value.render())
         };
-        assert_eq!(field(RECORD_BASE_FIELD).as_deref(), Some(base.sha.as_str()));
+        // The `base` field carries BOTH the full SHA and the short (space-joined), so
+        // the record round-trips a `BasePin` losslessly on a fresh-clone re-derive.
+        assert_eq!(
+            field(RECORD_BASE_FIELD),
+            Some(format!("{} {}", base.sha, base.short))
+        );
         assert_eq!(
             field(RECORD_STATUS_FIELD).as_deref(),
             Some(RECORD_STATUS_ACTIVE)
@@ -3463,7 +3593,7 @@ status: active
         // Golden: both items, in append order, under the untouched `meta`/H1/`## Tasks`.
         let expected = "\
 ---
-base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c
+base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c 1f2e3d4
 status: active
 ---
 
@@ -3626,5 +3756,95 @@ status: active
                 item.title
             );
         }
+    }
+
+    /// T4 done-criterion (`design/team-ready-state.md` → Engine capability 2
+    /// (read-back); M39 Increment 3): the committed record is the engine's source of
+    /// truth — deleting the `.jigc` JSON cache and re-deriving from the record yields
+    /// **byte-identical operational state**. Builds the cache (mint then add-task
+    /// twice), captures the `BasePin`/`TaskList` it holds, builds the matching record
+    /// (create then append twice), then reads the record back into the same
+    /// `(BasePin, TaskList)` and — after deleting the JSON — re-seeds it from the
+    /// record; both paths must yield an **identical `BasePin` (sha AND short)** and
+    /// `TaskList::enumerate()`.
+    ///
+    /// The short is **asserted equal, not trusted to be a sha prefix**: the fixture
+    /// short is *not* the git-default 7-char prefix, so a sha-only record (or a naive
+    /// `sha[..7]` reconstruction) is lossy — the base field stores BOTH sha and short,
+    /// and this test is what proves the round-trip is lossless.
+    #[test]
+    fn record_re_derives_base_pin_and_task_list_after_cache_delete() {
+        let schema = milestone_record_schema();
+        let root = TempRoot::new("read-back");
+        // A short that is NOT the git-default 7-char prefix (8 chars) — so trusting
+        // `short = sha[..7]` would reconstruct the WRONG short; the round-trip must
+        // carry it explicitly.
+        let base = BasePin {
+            sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
+            short: "1f2e3d4c".to_string(),
+        };
+        assert_ne!(
+            &base.sha[..7],
+            base.short.as_str(),
+            "the fixture short is deliberately not the default 7-char prefix"
+        );
+
+        // 1. Build the JSON cache: mint + two sub-tasks. Capture what the cache holds.
+        let minted =
+            mint_milestone(root.path(), "Cache rework", base.clone()).expect("mint milestone");
+        let a = add_task(
+            root.path(),
+            &minted.id,
+            "Warm the read cache",
+            "single-task",
+        )
+        .expect("add sub-task 1");
+        let b = add_task(root.path(), &minted.id, "Evict cold entries", "single-task")
+            .expect("add sub-task 2");
+        let cache_base = read_base_pin(&minted.dir).expect("read cache base");
+        let cache_tasks = read_task_list(&minted.dir).expect("read cache tasks");
+
+        // 2. Build the matching record: create + append the two minted sub-task ids.
+        let fresh = render_fresh_record(&schema, &minted.id, &base);
+        let r1 = append_task_item(&schema, &fresh, &a.task.id, "Warm the read cache")
+            .expect("append sub-task 1");
+        let record = append_task_item(&schema, &r1, &b.task.id, "Evict cold entries")
+            .expect("append sub-task 2");
+
+        // 3. Read-back parses the record into the SAME (BasePin, TaskList) — sha AND
+        //    short. Asserting BasePin equality (not just sha) is the round-trip claim.
+        let (rb_base, rb_tasks) = read_back_record(&schema, &record).expect("read back the record");
+        assert_eq!(
+            rb_base, cache_base,
+            "the re-derived BasePin equals the cache's — sha AND short"
+        );
+        assert_eq!(
+            rb_base.short, cache_base.short,
+            "the short round-trips from the record, not re-derived as a sha prefix"
+        );
+        assert_eq!(
+            rb_tasks.enumerate(),
+            cache_tasks.enumerate(),
+            "the re-derived task set equals the cache's"
+        );
+
+        // 4. Re-seed path: delete the JSON cache, re-derive it from the record, and the
+        //    JSON readers return byte-identical operational state (the fresh-clone
+        //    rebuild — the demoted cache is genuinely rebuilt from the `.md` record).
+        std::fs::remove_file(minted.dir.join(BASE_PIN_FILE)).expect("delete base.json");
+        std::fs::remove_file(minted.dir.join(TASKS_FILE)).expect("delete tasks.json");
+        reseed_cache_from_record(&minted.dir, &schema, &record).expect("re-seed the cache");
+        assert_eq!(
+            read_base_pin(&minted.dir).expect("re-seeded base reads back"),
+            cache_base,
+            "the re-seeded base.json equals the original (sha AND short)"
+        );
+        assert_eq!(
+            read_task_list(&minted.dir)
+                .expect("re-seeded tasks reads back")
+                .enumerate(),
+            cache_tasks.enumerate(),
+            "the re-seeded tasks.json enumerates identically"
+        );
     }
 }
