@@ -20,7 +20,10 @@
 //! 5. collapse runs of `-` and trim leading/trailing `-`,
 //! 6. cap at the first ~5 words (dash-separated), dropping the rest,
 //! 7. (the word cap always cuts on a `-` boundary, so no trailing `-` is
-//!    exposed and no re-trim is needed).
+//!    exposed and no re-trim is needed),
+//! 8. apply a char-length backstop — truncate to a filesystem-safe length,
+//!    trimming any `-` the cut exposes (bounds a single long word, which the
+//!    word cap leaves untouched).
 //!
 //! The output always matches `^[a-z0-9-]*$` with no leading, trailing, or
 //! doubled `-`, and the function is idempotent: `slugify(slugify(x)) ==
@@ -33,6 +36,16 @@
 /// mid-word. This is a mint-time cap only; [`is_slug`] is uncapped so a ref to
 /// a pre-existing longer slug still resolves.
 const MAX_WORDS: usize = 5;
+
+/// Character-length backstop, applied *after* the word cap. The word cap alone
+/// leaves a single long word (no `-` to cut on) unbounded, and a minted slug is
+/// used verbatim as a filename (`<location>/<slug>.md`), so a pathological
+/// single-word intent could overrun the filesystem `NAME_MAX` (~255 bytes) and
+/// fail the write. This final ceiling truncates such a slug to a filesystem-safe
+/// length. `50` restores the pre-M39 backstop — well under `NAME_MAX` even with
+/// the `.md` suffix and any `-N` collision suffix. Normal ≤5-word intents sit
+/// far below it, so multi-word behaviour is unchanged.
+const MAX_CHARS: usize = 50;
 
 /// Apply the **deterministic collision suffix** to a base slug: `1` keeps the bare
 /// `slug`, `2` yields `<slug>-2`, `3` yields `<slug>-3`, … (`design/structural-grammar.md`
@@ -94,7 +107,11 @@ pub fn slugify(id_source: &str) -> String {
     let collapsed = collapse_dashes(&out);
 
     // 6–7: cap at the first MAX_WORDS words (always a '-' boundary).
-    cap_words(&collapsed)
+    let capped = cap_words(&collapsed);
+
+    // 8: char-length backstop — bound a single long word (which the word cap
+    // leaves untouched) to a filesystem-safe length.
+    cap_chars(&capped)
 }
 
 /// Transliterate a single non-ASCII char to its ASCII lowercase skeleton, or
@@ -153,6 +170,22 @@ fn cap_words(s: &str) -> String {
     s.split('-').take(MAX_WORDS).collect::<Vec<_>>().join("-")
 }
 
+/// Char-length backstop: truncate a slug to at most [`MAX_CHARS`] characters,
+/// then trim any `-` the cut exposed at the end.
+///
+/// Applied after [`cap_words`], this is the final ceiling that bounds a single
+/// long word (which has no `-` for the word cap to cut on). The prior steps
+/// guarantee the input is pure ASCII (`[a-z0-9-]`), so the `MAX_CHARS`-th char
+/// boundary is also a byte boundary — but we cut on `char_indices` regardless so
+/// the truncation can never split a multibyte char. A slug already within the
+/// cap is returned unchanged.
+fn cap_chars(s: &str) -> String {
+    match s.char_indices().nth(MAX_CHARS) {
+        None => s.to_string(),
+        Some((byte_idx, _)) => s[..byte_idx].trim_end_matches('-').to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,7 +237,7 @@ mod tests {
         strips-to-empty: "!!!___---" -> ""
         non-latin-dropped: "日本語 test" -> "test"
         cap-to-five-words: "this is a very long intent that should be truncated at a word boundary" -> "this-is-a-very-long"
-        cap-one-long-word: "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious" -> "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious"
+        cap-one-long-word: "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious" -> "supercalifragilisticexpialidocioussupercalifragili"
         "#);
     }
 
@@ -215,6 +248,18 @@ mod tests {
         assert_eq!(slugify("café"), "cafe");
         assert_eq!(slugify("Add rate limiter"), "add-rate-limiter");
         assert_eq!(slugify(""), "");
+    }
+
+    /// The char backstop: a single long-word id-source (no `-` for the word cap
+    /// to cut on) is bounded to [`MAX_CHARS`], so a pathological intent can never
+    /// mint a slug that overruns the filesystem `NAME_MAX` when used verbatim as
+    /// `<slug>.md`. The cut lands on a char boundary and leaves a valid slug.
+    #[test]
+    fn caps_single_long_word_to_char_backstop() {
+        let input = "x".repeat(300);
+        let out = slugify(&input);
+        assert_eq!(out.len(), MAX_CHARS, "single long word not capped: {out:?}");
+        assert!(is_slug(&out), "backstop output not a slug: {out:?}");
     }
 
     /// The word cap: an intent with more than [`MAX_WORDS`] words caps to the
@@ -265,7 +310,7 @@ mod tests {
     // Every non-empty `slugify` output is a valid slug (the dual property).
     proptest! {
         #[test]
-        fn slugify_output_is_a_slug_or_empty(s in ".{0,200}") {
+        fn slugify_output_is_a_slug_or_empty(s in ".{0,400}") {
             let out = slugify(&s);
             prop_assert!(out.is_empty() || is_slug(&out), "not a slug: {:?}", out);
         }
@@ -313,7 +358,7 @@ mod tests {
     proptest! {
         /// Idempotence: a slug is a fixed point of the normalization.
         #[test]
-        fn idempotent(s in ".{0,200}") {
+        fn idempotent(s in ".{0,400}") {
             let once = slugify(&s);
             prop_assert_eq!(slugify(&once), once);
         }
@@ -321,7 +366,7 @@ mod tests {
         /// Charset + shape invariant: output is `^[a-z0-9-]*$`, never starts or
         /// ends with `-`, never contains `--`, and respects the word cap.
         #[test]
-        fn charset_and_shape(s in ".{0,200}") {
+        fn charset_and_shape(s in ".{0,400}") {
             let out = slugify(&s);
             prop_assert!(
                 out.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'),
@@ -331,6 +376,7 @@ mod tests {
             prop_assert!(!out.ends_with('-'), "trailing dash: {:?}", out);
             prop_assert!(!out.contains("--"), "doubled dash: {:?}", out);
             prop_assert!(out.split('-').count() <= MAX_WORDS, "over word cap: {:?}", out);
+            prop_assert!(out.chars().count() <= MAX_CHARS, "over char cap: {:?}", out);
         }
     }
 }
