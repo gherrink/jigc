@@ -504,6 +504,17 @@ pub fn validate_store_families(
     // direction, the blocking counterpart is the transform-transaction migration gate.
     findings.extend(schema_conformance_store(repo_root, schemas, versions));
 
+    // The M40 hollow-adoption advisory (`schema-conformance.repeatable-populated`,
+    // `validation.md` → Hollow and surplus adoption) — its **own** walk, appended after
+    // family 5 so the version-mismatch adjudication there stays intact, covering the
+    // placement instances family 5 skips ([`repeatable_populated_store`]). Exemptions
+    // ride the `….exempt` string knob (space-separated `doctype#section` tokens),
+    // read from the resolved cascade the CLI seeded from the pack `knobs.yaml`.
+    let exempt = resolved
+        .scalar("validation.schema-conformance.repeatable-populated.exempt")
+        .unwrap_or("");
+    findings.extend(repeatable_populated_store(repo_root, schemas, exempt));
+
     Ok(ValidationReport::new(findings, resolved))
 }
 
@@ -622,6 +633,54 @@ fn schema_conformance_store(
                     findings.extend(parse_findings);
                 }
             }
+        }
+    }
+    findings
+}
+
+/// The M40 hollow-adoption advisory's **own store walk** (`design/validation.md` →
+/// Hollow and surplus adoption): re-parse every committed instance and run
+/// [`repeatable_populated`] over it. A separate walk from [`schema_conformance_store`]
+/// — deliberately, twice over:
+///
+/// - **Placement coverage.** Family 5 walks only `location:`-bearing schemas, but the
+///   headline hollow case (a zero-item roadmap) is a **placement** doctype
+///   (`design/storage.md` → Placement), so this walk enumerates
+///   [`crate::index::committed_instances`] — located `<location>/*.md` **and** a
+///   placement type's single literal file — without wholesale-extending family 5's
+///   presence/value checks to placement docs.
+/// - **The version-mismatch adjudication stays intact.** Family 5 surfaces the
+///   pure-stamp v0 case only when a doc has *no other* findings; an advisory folded
+///   into its per-doc `doc_findings` would silently swallow that break.
+///
+/// Advisory-only and report-only like every store family; an unparseable committed
+/// file is family 5's concern, not this advisory's (skipped here).
+fn repeatable_populated_store(
+    repo_root: &Path,
+    schemas: &BTreeMap<String, Schema>,
+    exempt: &str,
+) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for (ty, schema) in schemas {
+        for (_identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
+            let Ok(mut source) = std::fs::read_to_string(&path) else {
+                continue; // read race: skip; the next sweep re-checks.
+            };
+            crate::parse::strip_leading_bom(&mut source);
+            let Ok(doc) = parse_sections(schema, &source) else {
+                continue; // unparseable committed file: family 5's concern, not this one's.
+            };
+            let mut doc_findings = repeatable_populated(schema, &doc, exempt);
+            if doc_findings.is_empty() {
+                continue;
+            }
+            let rel_key = path
+                .strip_prefix(repo_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned();
+            attribute_to_doc(&mut doc_findings, &rel_key);
+            findings.extend(doc_findings);
         }
     }
     findings
@@ -1269,6 +1328,59 @@ pub fn schema_conformance(schema: &Schema, source: &str, doc: &Document) -> Vec<
                 check_repeatable(section, repeatable, parsed, source, &mut findings);
             }
         }
+    }
+    findings
+}
+
+/// The **`schema-conformance.repeatable-populated`** advisory (M40;
+/// `design/validation.md` → Hollow and surplus adoption): a top-level repeatable
+/// section that parses **zero items** is structurally hollow — the adoption trial
+/// adopted a zero-item roadmap clean, so the emptiness must be *visible*, never a
+/// gate. One [`Severity::Advisory`] finding per empty repeatable section, addressed
+/// at the section fragment; a populated section, a simple section, or a schema with
+/// no repeatable yields nothing (the omitting context stays inert).
+///
+/// `exempt` is the resolved value of the
+/// `validation.schema-conformance.repeatable-populated.exempt` string knob — a
+/// space-separated list of `doctype#section` tokens naming sections where zero items
+/// **is** the steady state (pack-default: `changelog#unreleased-changes
+/// milestone-record#tasks completion-record#findings`). A matching token suppresses
+/// the finding. Top-level sections only — the token grammar addresses no nested
+/// repeatable, and a hollow parent already surfaces.
+///
+/// Fire points are the store sweep ([`validate_store_families`]) and the CLI's
+/// adopt-time triage re-parse — **never** [`validate_task`] / the finalize gate
+/// (completeness, not integrity; the MVP minimum-cardinality posture preserved).
+pub fn repeatable_populated(schema: &Schema, doc: &Document, exempt: &str) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    for section in &schema.sections {
+        let SectionBody::Repeatable { .. } = &section.body else {
+            continue; // a simple/header section has no items to be hollow of.
+        };
+        let token = format!("{}#{}", schema.ty, section.id);
+        if exempt.split_whitespace().any(|t| t == token) {
+            continue; // zero items is this section's declared steady state.
+        }
+        let is_empty = doc
+            .sections
+            .iter()
+            .any(|s| s.id == section.id && s.items.is_empty());
+        if !is_empty {
+            continue;
+        }
+        findings.push(Finding::graded(
+            Severity::Advisory,
+            "schema-conformance.repeatable-populated",
+            format!(
+                "repeatable section `{}` parses zero items — structurally empty",
+                section.id
+            ),
+            Some(Location::addressed(section.id.clone(), 1, 1)),
+            Some(format!(
+                "populate the section, or exempt `{token}` via the \
+                 `validation.schema-conformance.repeatable-populated.exempt` knob"
+            )),
+        ));
     }
     findings
 }
@@ -2760,6 +2872,155 @@ sections:
 }
 
 #[cfg(test)]
+mod repeatable_populated_tests {
+    //! (M40 F4 half 1) The pure `schema-conformance.repeatable-populated` check
+    //! (`design/validation.md` → Hollow and surplus adoption): a top-level repeatable
+    //! section parsing zero items yields one **advisory** finding; a populated
+    //! section, a schema with no repeatable (the omitting context), or a matching
+    //! `doctype#section` exempt token yields nothing. Never a gate.
+
+    use super::*;
+    use crate::schema::load_schema;
+
+    /// A located doctype with one simple + one repeatable section — the check's
+    /// happy-path substrate.
+    const LOG_YAML: &[u8] = b"\
+type: log
+location: logs/
+id-from: title
+sections:
+  - id: intro
+    slot: { hint: One sentence. }
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: notes, slot: { hint: The notes. } }
+";
+
+    /// A doctype with **no** repeatable section — the omitting context.
+    const FLAT_YAML: &[u8] = b"\
+type: note
+location: notes/
+id-from: title
+sections:
+  - id: body
+    slot: { hint: The body. }
+";
+
+    fn parse(schema: &Schema, source: &str) -> Document {
+        parse_sections(schema, source).expect("fixture parses")
+    }
+
+    const HOLLOW_LOG: &str = "\
+# Log
+
+## Intro
+Prose.
+
+## Entries
+";
+
+    const POPULATED_LOG: &str = "\
+# Log
+
+## Intro
+Prose.
+
+## Entries
+
+### First  {#first}
+
+Some notes.
+";
+
+    /// A zero-item repeatable fires exactly one advisory, addressed at the section
+    /// fragment, carrying the `(schema-conformance, repeatable-populated)` handle and
+    /// a route naming the exempt knob; a populated one is silent.
+    #[test]
+    fn zero_item_repeatable_fires_one_advisory_populated_is_silent() {
+        let schema = load_schema(LOG_YAML).expect("log schema loads");
+
+        let doc = parse(&schema, HOLLOW_LOG);
+        let findings = repeatable_populated(&schema, &doc, "");
+        assert_eq!(
+            findings.len(),
+            1,
+            "a zero-item repeatable fires exactly one advisory, got {findings:?}"
+        );
+        let finding = &findings[0];
+        assert_eq!(
+            finding.severity,
+            Severity::Advisory,
+            "advisory, never a gate"
+        );
+        assert_eq!(finding.probe, "schema-conformance");
+        assert_eq!(finding.check, "repeatable-populated");
+        assert_eq!(finding.code, "schema-conformance.repeatable-populated");
+        assert_eq!(
+            finding.location.as_ref().and_then(|l| l.address.as_deref()),
+            Some("entries"),
+            "addressed at the hollow section's fragment",
+        );
+        assert!(
+            finding.route.as_deref().is_some_and(|r| r
+                .contains("validation.schema-conformance.repeatable-populated.exempt")
+                && r.contains("log#entries")),
+            "the route names the exempt knob + this section's token, got {:?}",
+            finding.route,
+        );
+
+        let doc = parse(&schema, POPULATED_LOG);
+        assert!(
+            repeatable_populated(&schema, &doc, "").is_empty(),
+            "a populated repeatable stays silent",
+        );
+    }
+
+    /// The omitting context stays **inert**: a schema with no repeatable section
+    /// yields nothing (never an error) — the check composed into a doctype that
+    /// omits the target must not fire.
+    #[test]
+    fn schema_without_repeatable_is_inert() {
+        let schema = load_schema(FLAT_YAML).expect("flat schema loads");
+        let doc = parse(&schema, "# Note\n\n## Body\nProse.\n");
+        assert!(
+            repeatable_populated(&schema, &doc, "").is_empty(),
+            "a doctype with no repeatable section is inert",
+        );
+    }
+
+    /// A matching `doctype#section` exempt token suppresses the advisory; a
+    /// non-matching token list (wrong doctype, wrong section) leaves it firing —
+    /// the exemption is exact-token, never substring.
+    #[test]
+    fn exempt_token_suppresses_only_exact_matches() {
+        let schema = load_schema(LOG_YAML).expect("log schema loads");
+        let doc = parse(&schema, HOLLOW_LOG);
+
+        assert!(
+            repeatable_populated(&schema, &doc, "log#entries").is_empty(),
+            "the exact `log#entries` token suppresses the advisory",
+        );
+        assert!(
+            repeatable_populated(
+                &schema,
+                &doc,
+                "changelog#unreleased-changes milestone-record#tasks log#entries"
+            )
+            .is_empty(),
+            "a matching token anywhere in the space-separated list suppresses",
+        );
+        assert_eq!(
+            repeatable_populated(&schema, &doc, "other#entries log#other log#entrie").len(),
+            1,
+            "non-matching tokens never suppress (exact-token, not substring)",
+        );
+    }
+}
+
+#[cfg(test)]
 mod validate_task_tests {
     //! The task-scope sweep: `validate_task` resolves a working area's staged doc
     //! instances, runs `file-state` + `schema-conformance` over them, and aggregates
@@ -3885,6 +4146,183 @@ sections:
             load_schema_with_types(SPEC_YAML, &dev_pack_field_types()).expect("spec fixture loads"),
         );
         m
+    }
+
+    /// The real methodology `roadmap` — a **placement** doctype (its one instance
+    /// lives at the literal `docs/roadmap.md`, `location: None`), the headline
+    /// hollow-adoption case the family-5 location walk cannot reach.
+    const ROADMAP_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/roadmap.yaml");
+
+    /// A `milestone-record`-shaped located doctype whose `tasks` section is a
+    /// pack-default exempt token (`milestone-record#tasks` — zero tasks is a valid
+    /// just-created state, `design/validation.md` → Hollow and surplus adoption).
+    const MREC_YAML: &[u8] = b"\
+type: milestone-record
+location: docs/milestone-records/
+id-from: title
+sections:
+  - id: tasks
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: notes, slot: { hint: Notes. } }
+";
+
+    /// A committed roadmap whose `milestones` repeatable parses **zero items** —
+    /// exactly what the adoption trial adopted structurally silent.
+    const HOLLOW_ROADMAP: &str = "\
+# roadmap
+
+## Milestones
+";
+
+    /// A committed spec whose `criteria` repeatable parses **zero items**.
+    const HOLLOW_SPEC: &str = "\
+# Hollow spec
+
+## Goal
+One sentence.
+
+## Criteria
+";
+
+    /// The store-test schemas plus the placement `roadmap` — the map the
+    /// hollow-adoption sweep tests drive.
+    fn schemas_with_roadmap() -> BTreeMap<String, Schema> {
+        let mut m = schemas();
+        m.insert(
+            "roadmap".to_string(),
+            crate::schema::load_schema(ROADMAP_YAML).expect("roadmap.yaml loads"),
+        );
+        m
+    }
+
+    /// A resolved cascade whose base carries the `…repeatable-populated.exempt`
+    /// string knob at `value` — the shape `jigc validate`'s cascade resolves from the
+    /// embedded `knobs.yaml` pack default.
+    fn resolved_with_exempt(value: &str) -> crate::cascade::Resolved {
+        let mut base = BTreeMap::new();
+        base.insert(
+            "validation.schema-conformance.repeatable-populated.exempt".to_string(),
+            value.to_string(),
+        );
+        crate::cascade::resolve(
+            &crate::cascade::PackDefaultLayer::new("dev-pack", "0.1.0", base, Vec::new()),
+            None,
+            None,
+        )
+        .expect("resolves")
+    }
+
+    /// (M40 F4 half 1, the done-criterion) The store sweep advises a committed
+    /// zero-item **placement** instance (the roadmap at its literal `docs/roadmap.md`
+    /// — family 5 skips placement doctypes, so this walk must cover it) AND a
+    /// zero-item **located** instance (`specs/hollow.md`), each addressed at
+    /// `<rel-key>#<section>`, advisory severity, never flipping the gate.
+    #[test]
+    fn store_sweep_advises_zero_item_placement_and_located_repeatables() {
+        let repo = TempRoot::new("hollow-adoption");
+        repo.commit("docs", "roadmap", HOLLOW_ROADMAP);
+        repo.commit("specs", "hollow", HOLLOW_SPEC);
+
+        // Baseline the located doc so the file↔CLI-state family stays quiet.
+        let mut record = FileStateRecord::new();
+        record.record("specs/hollow.md", hash_bytes(HOLLOW_SPEC.as_bytes()));
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas_with_roadmap(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+
+        let hollow: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.repeatable-populated")
+            .collect();
+        let addresses: Vec<&str> = hollow
+            .iter()
+            .filter_map(|f| f.location.as_ref().and_then(|l| l.address.as_deref()))
+            .collect();
+        assert_eq!(
+            addresses,
+            vec!["docs/roadmap.md#milestones", "specs/hollow.md#criteria"],
+            "the placement roadmap AND the located spec each surface one hollow \
+             advisory, addressed at their section; got {:?}",
+            report.findings,
+        );
+        for finding in &hollow {
+            assert_eq!(
+                finding.severity,
+                Severity::Advisory,
+                "hollow adoption is visibility, never a gate: {finding:?}"
+            );
+        }
+        assert!(
+            !report.has_blocking(),
+            "the advisories alone must not block: {:?}",
+            report.findings,
+        );
+    }
+
+    /// (M40 F4 half 1, the done-criterion) A **pack-default exempt token**
+    /// (`milestone-record#tasks`) suppresses the advisory for that `doctype#section`
+    /// while a non-exempt hollow section (`roadmap#milestones`) still fires — the
+    /// knob read through the resolved cascade, exact-token matching.
+    #[test]
+    fn store_sweep_exempt_token_suppresses_the_matching_section_only() {
+        let repo = TempRoot::new("hollow-exempt");
+        repo.commit("docs", "roadmap", HOLLOW_ROADMAP);
+        let mrec = "# m40\n\n## Tasks\n";
+        repo.commit("docs/milestone-records", "m40", mrec);
+
+        let mut schemas = schemas_with_roadmap();
+        schemas.insert(
+            "milestone-record".to_string(),
+            crate::schema::load_schema(MREC_YAML).expect("milestone-record fixture loads"),
+        );
+        let mut record = FileStateRecord::new();
+        record.record("docs/milestone-records/m40.md", hash_bytes(mrec.as_bytes()));
+
+        // The shipped pack-default token list (`knobs.yaml`).
+        let resolved = resolved_with_exempt(
+            "changelog#unreleased-changes milestone-record#tasks completion-record#findings",
+        );
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas,
+            &resolved,
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+
+        let addresses: Vec<&str> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.repeatable-populated")
+            .filter_map(|f| f.location.as_ref().and_then(|l| l.address.as_deref()))
+            .collect();
+        assert_eq!(
+            addresses,
+            vec!["docs/roadmap.md#milestones"],
+            "the exempt `milestone-record#tasks` token suppresses its advisory; the \
+             non-exempt roadmap still fires; got {:?}",
+            report.findings,
+        );
     }
 
     /// A committed ADR with a **valid** anchor (a real symbol — `validate_task` exists in

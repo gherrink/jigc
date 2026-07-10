@@ -8,10 +8,10 @@
 # not a project-overridable value, so it stays in defaults.yaml.
 # The `validation.*.severity` keys are the per-check severity surface; their
 # defaults + intrinsic-ness are governed by the single source of truth,
-# validation.md → MVP check inventory (29 checks across 9 categories — pinned by
-# engine::knobs per_check_severity_surface_reconciles_to_the_29_18_11_inventory).
-# (The engine's CHECK_INVENTORY post-pass membership set is a 26-row subset of
-# these 29 — it drops the 3 compose-time marker checks; see engine::result
+# validation.md → MVP check inventory (30 checks across 9 categories — pinned by
+# engine::knobs per_check_severity_surface_reconciles_to_the_30_18_12_inventory).
+# (The engine's CHECK_INVENTORY post-pass membership set is a 27-row subset of
+# these 30 — it drops the 3 compose-time marker checks; see engine::result
 # check_inventory_membership_count_is_stable.) The two
 # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
 # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -180,6 +180,22 @@ validation.schema-conformance.mention-resolves.severity:
   type: enum
   of: [blocking, warning, advisory]
   default: advisory
+
+# --- schema-conformance.repeatable-populated (1, tunable; advisory — M40) ---
+# Hollow-adoption visibility: a required repeatable section that parses zero
+# items is structurally silent (the adoption trial adopted a zero-item roadmap
+# clean), so the store sweep + the adopt-time triage annotate it — advisory,
+# never a gate (validation.md → Hollow and surplus adoption). The sibling
+# `.exempt` string knob carries space-separated `doctype#section` tokens where
+# zero items IS the steady state (the staging area, a valid just-created state,
+# a clean audit) — a matching token suppresses the finding entirely.
+validation.schema-conformance.repeatable-populated.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+validation.schema-conformance.repeatable-populated.exempt:
+  type: string
+  default: "changelog#unreleased-changes milestone-record#tasks completion-record#findings"
 
 # --- override-default.* (3, tunable from M6; blocking-by-default) ---
 validation.override-default.target-exists.severity:

@@ -325,7 +325,9 @@ mod tests {
                 "validation.schema-completeness.inverse-cardinality.severity",
                 "advisory",
             ),
-            // schema-conformance (4 intrinsic + 1 tunable store-scope, M33).
+            // schema-conformance (4 intrinsic + 2 tunable store-scope — M33
+            // mention-resolves, M40 repeatable-populated + its `.exempt` string
+            // sibling, the pinned `doctype#section` steady-state tokens).
             (
                 "validation.schema-conformance.field-value-conformant.severity",
                 "blocking",
@@ -337,6 +339,14 @@ mod tests {
             (
                 "validation.schema-conformance.ref-resolves.severity",
                 "blocking",
+            ),
+            (
+                "validation.schema-conformance.repeatable-populated.exempt",
+                "changelog#unreleased-changes milestone-record#tasks completion-record#findings",
+            ),
+            (
+                "validation.schema-conformance.repeatable-populated.severity",
+                "advisory",
             ),
             (
                 "validation.schema-conformance.required-field-present.severity",
@@ -586,22 +596,24 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **29 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
-    /// (floored at `blocking`) + 11 tunable (no floor)** (`validation.md` → Severity
+    /// **30 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
+    /// (floored at `blocking`) + 12 tunable (no floor)** (`validation.md` → Severity
     /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
     /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18);
     /// the M33 `schema-conformance.mention-resolves` row joins the **tunable** set
     /// (9 → 10 — advisory, store-scope only, unfloored); the M40
     /// `doc-code.title-names-symbol` row joins it too (10 → 11 — the stale-heading
     /// guard, live since the long-horizon-study fix but shipped un-keyed, keyed +
-    /// demoted to advisory here). The 18 intrinsic are exactly
-    /// [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every other per-check key,
-    /// including the three `doc-code.*` rows. Counted over the *embedded* bytes, so
-    /// the count is the shipped surface — not a synthetic one.
+    /// demoted to advisory here); the M40 `schema-conformance.repeatable-populated`
+    /// row follows (11 → 12 — the hollow-adoption advisory; its sibling `….exempt`
+    /// **string** knob is not a severity key and stays outside this count). The 18
+    /// intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every
+    /// other per-check key, including the three `doc-code.*` rows. Counted over the
+    /// *embedded* bytes, so the count is the shipped surface — not a synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_29_18_11_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_30_18_12_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -616,8 +628,8 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            29,
-            "the inventory totals 29 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            30,
+            "the inventory totals 30 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
         // 18 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
@@ -628,12 +640,47 @@ mod tests {
         assert_eq!(intrinsic, 18, "18 intrinsic checks (floored at blocking)");
         assert_eq!(INTRINSIC_CHECK_KEYS.len(), 18);
 
-        // The remaining 11 are tunable (no floor) — 29 - 18.
+        // The remaining 12 are tunable (no floor) — 30 - 18.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
             .count();
-        assert_eq!(tunable, 11, "11 tunable checks (unfloored)");
+        assert_eq!(tunable, 12, "12 tunable checks (unfloored)");
+    }
+
+    /// (M40 F4 half 1) The `repeatable-populated` pair is declared as designed
+    /// (`validation.md` → Hollow and surplus adoption): the severity key is a
+    /// **tunable advisory** (no floor), and the sibling `….exempt` knob is a plain
+    /// **string** carrying the pinned pack-default `doctype#section` token list —
+    /// declared, unfloored, and (by not ending in `.severity`) outside the per-check
+    /// severity count above.
+    #[test]
+    fn repeatable_populated_pair_is_declared_advisory_with_the_pinned_exempt_default() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        let severity = "validation.schema-conformance.repeatable-populated.severity";
+        assert!(knobs.field(severity).is_some(), "{severity} is declared");
+        assert!(
+            knobs.floors().get(severity).is_none(),
+            "the hollow-adoption advisory is tunable — no floor",
+        );
+        assert_eq!(
+            knobs.base_scalars().get(severity).map(String::as_str),
+            Some("advisory"),
+            "advisory-by-default — visibility, never a gate",
+        );
+
+        let exempt = "validation.schema-conformance.repeatable-populated.exempt";
+        assert!(knobs.field(exempt).is_some(), "{exempt} is declared");
+        assert!(
+            knobs.floors().get(exempt).is_none(),
+            "no floor on a string knob"
+        );
+        assert_eq!(
+            knobs.base_scalars().get(exempt).map(String::as_str),
+            Some("changelog#unreleased-changes milestone-record#tasks completion-record#findings"),
+            "the pack-default exempt token list is the pinned three steady-state sections",
+        );
     }
 
     /// Done-criterion (c): the new `checkpoint-marker-not-shadowed` severity key is

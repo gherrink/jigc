@@ -697,7 +697,11 @@ fn inverse_card_min(inverse_card: &str) -> usize {
 /// `<type>:<type>` — but only when that file is present on disk (an absent placement
 /// singleton has no committed doc, matching the located-dir glob which lists only existing
 /// files). A transient (location-less, non-placement) type yields none.
-fn committed_instances(repo_root: &Path, ty: &str, schema: &Schema) -> Vec<(String, PathBuf)> {
+pub(crate) fn committed_instances(
+    repo_root: &Path,
+    ty: &str,
+    schema: &Schema,
+) -> Vec<(String, PathBuf)> {
     // A placement doctype's one instance lives at its literal repo-root-relative file,
     // addressed by the fixed `<type>:<type>` singleton slug — never a `<location>/*.md` glob.
     if let Some(placement) = &schema.placement {
