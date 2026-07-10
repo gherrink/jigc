@@ -24,8 +24,8 @@
 #
 # Section ids are SINGLE WORDS ONLY (`meta`/`tasks`): a multi-word id trips the logged
 # title-case reparse defect, deferred — this routes around it exactly as
-# completion-record did. Freeze-EXEMPT (methodology pack ships no schema-manifest,
-# auto-registers by directory; no version-gate). Engine-native types only. See
+# completion-record did. Manifest-FROZEN at v1 since M40 A1 (the methodology
+# schema-manifest.yaml; version-gated like the dev pack). Engine-native types only. See
 # design/team-ready-state.md; design/methodology-docs.md.
 type: milestone-record
 location: milestone-records/

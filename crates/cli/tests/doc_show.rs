@@ -284,8 +284,13 @@ fn commit_prd(repo: &Path, home: &Path) {
 
 // ---- the pinned `--format json` goldens (the 1.0 contract, byte-verbatim) ----
 
+// `schema-version` joined the pinned witness `fields` when the M40 A1 methodology
+// manifest froze `vision` (the declared additive-pre-pin posture —
+// design/team-ready-state.md → the pinned witness fields).
 const VISION_JSON: &str = r#"{
-  "fields": {},
+  "fields": {
+    "schema-version": "1"
+  },
   "sections": {
     "invariants": "The CLI owns every structural write; the LLM writes only prose.",
     "open-questions": "How far can one methodology pack compose.",

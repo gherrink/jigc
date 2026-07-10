@@ -23,7 +23,9 @@
 //!
 //!   (3) **freeze-exempt relocation.** A pre-existing committed instance of a freeze-exempt
 //!       doctype stranded at a prior home is **detected + moved** to its current schema home
-//!       by `jigc relocate`, never silently stranded.
+//!       by `jigc relocate`, never silently stranded. Since M40 A1 the methodology doctypes
+//!       are manifest-frozen, so the moving arm rides a genuinely manifest-less fixture
+//!       doctype and `research` asserts the refusal + `migrate-corpus` route.
 //!
 //!   (4) **slug + advisory.** A long intent mints a `≤5`-word capped slug (and `--slug`
 //!       sets identity verbatim); `form-vision` composed against an EMPTY research store
@@ -551,66 +553,77 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
 
 // ───────────────────── Arm 3 — freeze-exempt relocation ─────────────────────
 
-/// **Arm 3.** A pre-existing committed instance of a freeze-exempt doctype (`research`)
-/// stranded at a prior home is **detected + moved** to its current schema home by
-/// `jigc relocate`, never silently stranded. A real committed `research/<slug>.md` is
-/// `git mv`'d to a legacy prior home (simulating a pre-existing strand from before the home
-/// convention), then `jigc relocate research --from <prior>` moves it back — reported, on
-/// disk, and byte-preserving.
+/// A minimal **manifest-less** pack dir shipping one persisted `note` doctype
+/// (`location: notes/`) — the genuinely freeze-exempt fixture arm 3 relocates,
+/// now that the methodology pack ships its own `schema-manifest.yaml` (M40 A1)
+/// and its doctypes left the freeze-exempt set.
+fn write_noteless_pack(dir: &Path) {
+    fs::create_dir_all(dir.join("schemas")).expect("mk fixture pack schemas/");
+    fs::write(
+        dir.join("schemas").join("note.yaml"),
+        "type: note\nlocation: notes/\nid-from: title\nsections:\n  - id: body\n    slot: { hint: \"The note.\" }\n",
+    )
+    .expect("write the note schema");
+}
+
+/// **Arm 3.** A pre-existing committed instance of a genuinely **freeze-exempt**
+/// (manifest-less) doctype stranded at a prior home is **detected + moved** to its current
+/// schema home by `jigc relocate`, never silently stranded — while a **manifest-frozen**
+/// methodology doctype (`research`, in the M40 A1 methodology `schema-manifest.yaml`) is
+/// **refused** by the same verb and routed to the version-gated `jigc migrate-corpus`
+/// (`design/corpus-migration.md` → M40 revises the dichotomy: the exempt path covers only
+/// genuinely manifest-less doctypes).
 #[test]
 fn freeze_exempt_relocation_moves_a_stranded_committed_instance() {
     let repo = TempDir::new("reloc");
     let home = TempDir::new("home");
-    init_listed_pack(repo.path());
+    git_init(repo.path());
+    // `[note-pack ▸ methodology]` over the embedded dev base: the manifest-less `note`
+    // fixture pack plus the manifest-bearing methodology pack (for the refusal arm).
+    let note_pack = repo.path().join(".jigc").join("note-pack");
+    write_noteless_pack(&note_pack);
+    fs::write(
+        repo.path().join(".jigc").join("config").join("packs.yaml"),
+        format!(
+            "packs:\n  - {}\n  - {}\n",
+            note_pack.display(),
+            methodology_pack_tree().display()
+        ),
+    )
+    .expect("write packs.yaml naming the note + methodology packs");
 
-    // A genuinely-committed research at its current schema home `research/cache-benchmarks.md`.
-    let addr = commit_research(
-        repo.path(),
-        home.path(),
-        "benchmark the cache",
-        "Cache Benchmarks",
-        b"A single node caps throughput under contention.\n",
-    );
-    assert_eq!(addr, "research:cache-benchmarks");
-    let current_rel = "research/cache-benchmarks.md";
-    let prior_rel = "docs/legacy-research/cache-benchmarks.md";
-    let bytes_before = fs::read(repo.path().join(current_rel)).expect("read committed research");
-
-    // Strand it: `git mv` the committed instance to a legacy prior home + commit — a
-    // pre-existing instance no longer at the current home.
-    fs::create_dir_all(repo.path().join("docs").join("legacy-research")).expect("mk prior home");
-    git(repo.path(), &["mv", current_rel, prior_rel]);
+    // A committed `note` instance stranded at a legacy prior home (a pre-existing strand
+    // from before the home convention — hand-authored, committed, never at `notes/`).
+    let current_rel = "notes/cache-benchmarks.md";
+    let prior_rel = "docs/legacy-notes/cache-benchmarks.md";
+    let body = "# Cache Benchmarks\n\n## Body\n\nA single node caps throughput.\n";
+    fs::create_dir_all(repo.path().join("docs").join("legacy-notes")).expect("mk prior home");
+    fs::write(repo.path().join(prior_rel), body).expect("write the stranded note");
+    git(repo.path(), &["add", prior_rel]);
     git(
         repo.path(),
-        &["commit", "-q", "-m", "strand the research at a legacy home"],
-    );
-    assert!(
-        repo.path().join(prior_rel).exists() && !repo.path().join(current_rel).exists(),
-        "precondition: the instance is stranded at the prior home",
+        &["commit", "-q", "-m", "strand the note at a legacy home"],
     );
 
-    // Detect + move: `jigc relocate research --from docs/legacy-research/`.
+    // Detect + move: `jigc relocate note --from docs/legacy-notes/`.
     let out = jigc(
         repo.path(),
         home.path(),
-        &["relocate", "research", "--from", "docs/legacy-research/"],
+        &["relocate", "note", "--from", "docs/legacy-notes/"],
         None,
     );
-    assert_ok(
-        &out,
-        "`jigc relocate research --from docs/legacy-research/`",
-    );
+    assert_ok(&out, "`jigc relocate note --from docs/legacy-notes/`");
     let report = stdout_of(&out);
     assert!(
         report.contains("1 moved") && report.contains(&format!("{prior_rel} -> {current_rel}")),
         "the relocation report names the detected move prior → current; got:\n{report}",
     );
 
-    // The instance is back at its current schema home, byte-preserving, and the prior home
+    // The instance lands at its current schema home, byte-preserving, and the prior home
     // is vacated — never silently stranded.
     assert!(
         repo.path().join(current_rel).exists(),
-        "the stranded instance must land back at its current schema home",
+        "the stranded instance must land at its current schema home",
     );
     assert!(
         !repo.path().join(prior_rel).exists(),
@@ -618,8 +631,28 @@ fn freeze_exempt_relocation_moves_a_stranded_committed_instance() {
     );
     assert_eq!(
         fs::read(repo.path().join(current_rel)).expect("read the relocated instance"),
-        bytes_before,
+        body.as_bytes(),
         "the freeze-exempt relocation is byte-preserving (a pure `git mv`)",
+    );
+
+    // The reconcile: `research` is now manifest-FROZEN (M40 A1), so the freeze-exempt verb
+    // refuses it and routes to the version-gated migrate-corpus path.
+    let refused = jigc(
+        repo.path(),
+        home.path(),
+        &["relocate", "research", "--from", "docs/legacy-research/"],
+        None,
+    );
+    assert!(
+        !refused.status.success(),
+        "`jigc relocate research` must be refused now that research is manifest-frozen; \
+         stdout:\n{}",
+        String::from_utf8_lossy(&refused.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(
+        stderr.contains("frozen") && stderr.contains("migrate-corpus"),
+        "the refusal names the freeze and routes to `jigc migrate-corpus`; got:\n{stderr}",
     );
 }
 

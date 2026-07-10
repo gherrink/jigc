@@ -8,8 +8,8 @@
 # string naming what would resurface it, the `deferral-ledger.trigger` shape, NOT a new
 # enum-status axis) and the `date` (CLI-derived on create). The one prose slot is the
 # `description` (the ecosystem-plain term, not the house term "shape"). Section ids are
-# single words. Ref-free leaf — engine-native types only, no managed ref. Freeze-exempt
-# (the methodology pack ships no schema-manifest.yaml). See design/
+# single words. Ref-free leaf — engine-native types only, no managed ref. Manifest-FROZEN
+# at v1 since M40 A1 (the methodology schema-manifest.yaml). See design/
 # design-altitude-doctypes.md → The three schemas.
 type: idea
 location: ideas/

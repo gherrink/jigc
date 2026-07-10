@@ -1,0 +1,56 @@
+# schema-manifest.yaml — the methodology pack's frozen v1 doctype-set manifest
+# (M40 A1; design/corpus-migration.md → M40 revises the dichotomy).
+#
+# The versioned/hashed declaration that ends the methodology pack's freeze
+# exemption: the engine recomputes each shipped doctype's schema-hash (blake3 of
+# its canonical JSON, stamp injected for the persisted set) and requires it to
+# match the entry here, with the declared set and the shipped set exactly equal.
+# A methodology schema-shape change that bumps no version — or a doctype
+# added/removed without touching this file — fails LOUDLY at pack-load / build
+# time, not at review. The recorded precondition (hash-freezing a shape never
+# proven byte-stable would be premature; implementation/doctype-map.md → the
+# scope pin) is discharged by the M40 methodology `arb_doc()` byte-stability
+# census, landed before this manifest.
+#
+# v1 frozen set = all TEN shipped methodology schemas: the nine persisted
+# work-doc/design-altitude doctypes (stamp-injected, migrate-corpus-owned —
+# `jigc relocate` now refuses them) plus the transient `commit` shadow (listed
+# for the strict set-equality assert, stamp-excluded: no `location:`/`placement:`).
+# `schema-snapshots/` starts ABSENT at v1 (the dev precedent ships snapshots only
+# for migrated doctypes; first populated at the first methodology v1→v2 bump).
+#
+# `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
+# is engine::manifest::schema_hash of its resolved definition. Regenerate a hash
+# only alongside a deliberate, versioned schema change — never to silence this
+# gate.
+doctypes:
+  - type: commit
+    schema-version: 1
+    schema-hash: 188e7f1b3b148f1fa6b0d65c28dd01a31535370021fe62588d7f82363b723ffc
+  - type: completion-record
+    schema-version: 1
+    schema-hash: 8cd10292cbfe8880a4d66d6187d6c5e7600e30ad1ba3425192deb4b3ff1a2547
+  - type: decisions-log
+    schema-version: 1
+    schema-hash: 8845359c1d4f62bc02cbaa092bd2c6b834f39900f86373176e1aa7c266a0b068
+  - type: deferral-ledger
+    schema-version: 1
+    schema-hash: 901d1191c3badce007452215d866199e3d222fcaef0a4eaeb2f41972f810e378
+  - type: dogfood-record
+    schema-version: 1
+    schema-hash: e7980a7e5308270993ee923c8b56a8150b6f0577165960ab413558a679c8f768
+  - type: idea
+    schema-version: 1
+    schema-hash: b26be85495e7b2c7282dee62a43dc232a096f7cb680660334448bdaf0883c0b8
+  - type: milestone-record
+    schema-version: 1
+    schema-hash: d1aa55a1365137d997ce2e4c6b93c1d1ed89896bbcf8e2ece6324fff84e30207
+  - type: research
+    schema-version: 1
+    schema-hash: 2801874c3c4969e06088f4e1f82ed1acb88278acd93b53c2f5ecb1f4759fbe9d
+  - type: roadmap
+    schema-version: 1
+    schema-hash: f440faa700967c004a8e00c3101010b574d540c78e9fcb4279e23c0d59bd8cf0
+  - type: vision
+    schema-version: 1
+    schema-hash: c54616e9d284012a2d97b84bcb139002eff6ab231c0a13e25be8874e515eb102

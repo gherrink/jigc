@@ -10,7 +10,7 @@
 # and the `grounds` inverse derivable. It points INSIDE the composed schema universe
 # (intra-pack), honoring — not reopening — the M16 "methodology composes alone" bound.
 #
-# Two doctype knobs beyond the singletons before it (both freeze-exempt additive keys):
+# Two doctype knobs beyond the singletons before it (both additive keys, pre-freeze):
 #   - `display-title: Vision` — the H1 reads `# Vision`, not `# vision` (§4).
 #   - `placement: { file: VISION.md }` — the vision is MANAGED DIRECTLY at the repo-root
 #     literal `VISION.md` (one file, OOB-reconciled — not a mirror), the idiomatic
@@ -18,7 +18,8 @@
 #     `location`; docs-root never applies (design/storage.md → Placement). This retires
 #     M37's root-render mirror (design-altitude-doctypes.md §4 superseded by M38).
 # `invariants`/`open-questions` are prose slots, not repeatable sections (§2): no M37
-# consumer reads an individual invariant/question, and methodology is freeze-exempt.
+# consumer reads an individual invariant/question (methodology is manifest-frozen at v1
+# since M40 A1 — a reshape now takes a version bump + corpus migration).
 # See design/design-altitude-doctypes.md → The three schemas; design/storage.md → Placement.
 type: vision
 placement: { file: VISION.md }

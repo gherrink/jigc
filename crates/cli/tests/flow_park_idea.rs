@@ -381,7 +381,11 @@ fn create_idea_pre_stamps_the_author_required_trigger_line() {
         lines[2].starts_with("date: "),
         "the CLI-seeded on-create `date` follows in schema order; got:\n{body}",
     );
-    assert_eq!(lines[3], "---", "front matter closes; got:\n{body}");
+    assert_eq!(
+        lines[3], "schema-version: 1",
+        "the CLI-derived stamp follows (idea is manifest-frozen since M40 A1); got:\n{body}",
+    );
+    assert_eq!(lines[4], "---", "front matter closes; got:\n{body}");
 }
 
 /// (3) + (4): `park-idea` is on the router catalog (selectable: true — the fork-5

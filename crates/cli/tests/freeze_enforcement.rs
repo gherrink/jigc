@@ -50,6 +50,16 @@ fn embedded_pack_tree() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("pack")
 }
 
+/// The on-disk methodology pack home (`<root>/packs/methodology`) — the faithful
+/// source the methodology-arm copies mirror.
+fn methodology_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
+}
+
 /// Recursively copy `src` into `dst` (both directories), creating `dst`.
 fn copy_tree(src: &Path, dst: &Path) {
     fs::create_dir_all(dst).expect("create copy target dir");
@@ -164,6 +174,168 @@ fn unmutated_pack_copy_composes_clean() {
         out.status.success(),
         "an unmutated dev-pack copy must compose clean; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Copy the methodology pack into a fresh temp dir and return the copy's root.
+fn methodology_pack_copy(tag: &str) -> TempDir {
+    let dir = TempDir::new(tag);
+    copy_tree(&methodology_pack_tree(), dir.path());
+    dir
+}
+
+/// Mutate the copied `research` schema's **shape** (a slot hint) — a hash-affecting
+/// change that bumps no `schema-version`. The methodology manifest is deliberately
+/// left unbumped.
+fn drift_research_schema(pack: &Path) {
+    let schema = pack.join("schemas").join("research.yaml");
+    let body = fs::read_to_string(&schema).expect("read the copied research.yaml");
+    let drifted = body.replacen(
+        "The question this research set out to answer.",
+        "A drifted question hint.",
+        1,
+    );
+    assert_ne!(body, drifted, "research.yaml must carry the question hint");
+    fs::write(&schema, drifted).expect("write the drifted research.yaml");
+}
+
+/// Compose `[dev ▸ methodology-copy]` via the listed-pack mechanism: `packs.yaml`
+/// names the on-disk copy over the embedded dev base. `JIGC_PACK_DIR` must stay
+/// unset so the embedded base (not an env pack) anchors the composition.
+fn list_pack(repo: &Path, pack: &Path) {
+    fs::write(
+        repo.join(".jigc").join("config").join("packs.yaml"),
+        format!("packs:\n  - {}\n", pack.display()),
+    )
+    .expect("write packs.yaml naming the methodology copy");
+}
+
+/// Run `jigc <args>` with `cwd = repo`, `$HOME = home`, and NO `JIGC_PACK_DIR`
+/// (the listed-pack composition path — the pack rides in `packs.yaml`).
+fn run_listed(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("spawn the jigc binary")
+}
+
+/// The M40 A1 headline: a **methodology** schema-shape change with no manifest bump
+/// is **blocked at pack-load** — the methodology pack now ships its own
+/// `config/schema-manifest.yaml`, so it is freeze-enforced exactly like the dev
+/// pack (`design/corpus-migration.md` → M40 revises the dichotomy). The composing
+/// `jigc start` exits non-zero and stderr names the schema-hash mismatch on the
+/// drifted `research` doctype.
+#[test]
+fn methodology_schema_shape_drift_without_manifest_bump_is_blocked() {
+    let repo = TempDir::new("m-repo");
+    let home = TempDir::new("m-home");
+    let pack = methodology_pack_copy("m-drift");
+    init_repo(repo.path());
+    list_pack(repo.path(), pack.path());
+    drift_research_schema(pack.path());
+
+    let out = run_listed(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "single-task", "freeze-gate probe"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a drifted methodology schema must make `jigc start` exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("schema-hash mismatch"),
+        "stderr must name the schema-hash mismatch; got:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("research"),
+        "stderr must name the drifted `research` doctype; got:\n{stderr}",
+    );
+}
+
+/// The stamp goes live with the manifest (one atomic unit): a **fresh methodology
+/// mint** through the real `do-research` workflow carries `schema-version: 1` in
+/// its committed front matter — the value the validate side's version-aware
+/// routing demands (`design/corpus-migration.md` → The schema-version stamp).
+#[test]
+fn fresh_methodology_mint_carries_schema_version_1() {
+    let repo = TempDir::new("mint-repo");
+    let home = TempDir::new("mint-home");
+    init_repo(repo.path());
+    list_pack(repo.path(), &methodology_pack_tree());
+
+    // Mint a research doc through the real workflow: start → create → author →
+    // fill the commit doc → finalize.
+    let start = run_listed(
+        repo.path(),
+        home.path(),
+        &["start", "--workflow", "do-research", "study the cache"],
+    );
+    assert!(
+        start.status.success(),
+        "`jigc start --workflow do-research` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&start.stderr),
+    );
+    let run = |args: &[&str]| {
+        let out = run_listed(repo.path(), home.path(), args);
+        assert!(
+            out.status.success(),
+            "jigc {args:?} must succeed; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    };
+    let set_slot = |addr: &str, prose: &[u8]| {
+        use std::io::Write;
+        let mut child = Command::new(env!("CARGO_BIN_EXE_jigc"))
+            .args(["doc", "set-slot", addr, "--from-file", "-"])
+            .current_dir(repo.path())
+            .env("HOME", home.path())
+            .env_remove("JIGC_PACK_DIR")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn jigc set-slot");
+        child
+            .stdin
+            .take()
+            .expect("stdin piped")
+            .write_all(prose)
+            .expect("write stdin");
+        let out = child.wait_with_output().expect("wait for jigc");
+        assert!(
+            out.status.success(),
+            "set-slot {addr} must succeed; stdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    };
+    run(&["doc", "create", "research", "--title", "Cache Study"]);
+    for slot in ["question", "findings", "sources"] {
+        set_slot(&format!("research:cache-study#{slot}"), b"Some prose.\n");
+    }
+    let task = "study-the-cache";
+    run(&[
+        "doc",
+        "set-field",
+        &format!("commit:{task}#type"),
+        "--value",
+        "docs",
+    ]);
+    set_slot(&format!("commit:{task}#summary"), b"record the study\n");
+    run(&["task", "finalize", task]);
+
+    let committed = fs::read_to_string(repo.path().join("research").join("cache-study.md"))
+        .expect("the finalized research doc is committed at research/cache-study.md");
+    assert!(
+        committed.contains("schema-version: 1"),
+        "a fresh methodology mint must carry `schema-version: 1` in its front matter; got:\n{committed}",
     );
 }
 

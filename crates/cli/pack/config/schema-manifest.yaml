@@ -9,9 +9,9 @@
 # (design/corpus-migration.md → The freeze, declared and enforced).
 #
 # v1 frozen set = the SIX persisted dev-pack doctypes proven byte-stable. The
-# methodology self-host doctypes are out of the productive-go v1 freeze; the
-# mechanism is general (an absent manifest = unchecked, an unlisted shipped
-# doctype = ExtraEntry). To change a frozen schema's shape you bump its
+# methodology pack ships its OWN manifest since M40 A1 (each pack declares its
+# own frozen set); the mechanism is general (an absent manifest = unchecked, an
+# unlisted shipped doctype = ExtraEntry). To change a frozen schema's shape you bump its
 # schema-version and re-freeze its hash here (the means to satisfy a blocked
 # change is the M34 corpus migration).
 #

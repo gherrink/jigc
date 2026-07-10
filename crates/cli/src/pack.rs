@@ -1689,8 +1689,9 @@ mod tests {
     ///
     /// The v1 frozen set is the **six** persisted dev-pack doctypes (`commit`,
     /// `adr`, `spec`, `prd`, `arch-doc`, `changelog`) — exactly the set proven
-    /// byte-stable. The methodology self-host doctypes are out of the productive-go
-    /// v1 freeze; the manifest mechanism is general (an unlisted doctype would be an
+    /// byte-stable. The methodology doctypes are governed by the methodology pack's
+    /// **own** manifest (M40 A1 — [`methodology_schema_manifest_matches_the_frozen_doctype_set`]);
+    /// the manifest mechanism is general (an unlisted doctype would be an
     /// [`engine::manifest::ManifestError::ExtraEntry`]).
     #[test]
     fn shipped_schema_manifest_matches_the_frozen_doctype_set() {
@@ -1752,6 +1753,138 @@ mod tests {
         // equality with the manifest — the loud build-time failure on any drift.
         engine::manifest::check(&manifest, &schemas)
             .expect("shipped doctype set must match the frozen schema-manifest");
+    }
+
+    /// The **methodology sibling** of the build-time freeze gate (M40 A1 —
+    /// `design/corpus-migration.md` → M40 revises the dichotomy): the methodology
+    /// pack now ships its **own** `config/schema-manifest.yaml` listing all **ten**
+    /// shipped schemas — the nine persisted work-doc/design-altitude doctypes plus
+    /// the transient `commit` shadow (the freeze assert is strict set-equality; the
+    /// dev precedent lists its transient `commit`) — every one frozen at
+    /// schema-version 1 (the v1 baseline; `schema-snapshots/` starts absent), with
+    /// every recomputed hash matching. A methodology schema-shape change that bumps
+    /// no version fails **here, loudly**, at build time.
+    #[test]
+    fn methodology_schema_manifest_matches_the_frozen_doctype_set() {
+        use std::collections::BTreeMap;
+
+        let pack = EmbeddedPack::methodology();
+
+        // Every shipped methodology doctype, loaded through the production
+        // field-type-resolving loader against its own pack (so the persisted nine
+        // carry the injected stamp, exactly what the pack-load gate recomputes).
+        let schemas: BTreeMap<String, Schema> = pack
+            .list(PackResourceKind::Schemas)
+            .iter()
+            .map(|id| {
+                let bytes = pack
+                    .read(PackResourceKind::Schemas, id)
+                    .unwrap_or_else(|e| panic!("schema `{}` reads back: {e}", id.as_str()));
+                let schema = load_pack_schema(&pack, &bytes)
+                    .unwrap_or_else(|e| panic!("schema `{}` loads: {e:?}", id.as_str()));
+                (schema.ty.clone(), schema)
+            })
+            .collect();
+
+        let manifest_bytes = pack
+            .read(
+                PackResourceKind::Config,
+                &ResourceId::from("schema-manifest"),
+            )
+            .expect("the methodology pack must ship config/schema-manifest.yaml");
+        let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
+            .expect("config/schema-manifest.yaml parses as a freeze manifest");
+
+        // The frozen set is exactly the ten shipped methodology schemas, each at
+        // schema-version 1 (the crystallizing v1 baseline).
+        let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
+        declared.sort_unstable();
+        assert_eq!(
+            declared,
+            [
+                "commit",
+                "completion-record",
+                "decisions-log",
+                "deferral-ledger",
+                "dogfood-record",
+                "idea",
+                "milestone-record",
+                "research",
+                "roadmap",
+                "vision",
+            ],
+            "the methodology freeze manifest must enumerate exactly the ten shipped schemas",
+        );
+        for entry in &manifest.doctypes {
+            assert_eq!(
+                entry.schema_version, 1,
+                "methodology doctype `{}` is frozen at schema-version 1",
+                entry.ty,
+            );
+        }
+
+        engine::manifest::check(&manifest, &schemas)
+            .expect("the shipped methodology doctype set must match its frozen schema-manifest");
+    }
+
+    /// The methodology sibling of the stamp-injection contract: with the methodology
+    /// manifest shipped (M40 A1), [`load_pack_schema`] injects the schema-version
+    /// stamp into every **persisted** methodology doctype — appended to an existing
+    /// `meta` header, or carried by a fresh first header for the header-less
+    /// singletons (`roadmap`/`decisions-log`/`deferral-ledger`, which thereby gain a
+    /// `---` block on mint) — and stays **inert** for the transient `commit` shadow
+    /// (in the manifest, neither `location:` nor `placement:` — stamp-excluded).
+    #[test]
+    fn load_pack_schema_stamps_persisted_methodology_doctypes_and_shadow_commit_is_inert() {
+        use engine::schema::{FieldType, SCHEMA_VERSION_FIELD, SCHEMA_VERSION_SET, SectionBody};
+
+        let pack = EmbeddedPack::methodology();
+
+        for ty in [
+            "completion-record",
+            "decisions-log",
+            "deferral-ledger",
+            "dogfood-record",
+            "idea",
+            "milestone-record",
+            "research",
+            "roadmap",
+            "vision",
+        ] {
+            let bytes = pack
+                .read(PackResourceKind::Schemas, &ResourceId::from(ty))
+                .expect("schema reads");
+            let schema = load_pack_schema(&pack, &bytes).expect("schema loads");
+
+            let header = &schema.sections[0];
+            assert!(
+                header.header,
+                "`{ty}` must carry a header section first after stamp injection",
+            );
+            let SectionBody::Simple { fields, .. } = &header.body else {
+                panic!("`{ty}` header is a simple field section");
+            };
+            let stamp = fields
+                .iter()
+                .find(|f| f.id == SCHEMA_VERSION_FIELD)
+                .unwrap_or_else(|| panic!("`{ty}` header carries the schema-version stamp"));
+            assert_eq!(stamp.ty, FieldType::Int, "the stamp is an int");
+            assert_eq!(
+                stamp.set.as_deref(),
+                Some(SCHEMA_VERSION_SET),
+                "the stamp carries the schema-version deriver marker",
+            );
+        }
+
+        // Inert for the transient `commit` shadow (in the manifest, no home).
+        let commit_bytes = pack
+            .read(PackResourceKind::Schemas, &ResourceId::from("commit"))
+            .expect("commit reads");
+        let commit = load_pack_schema(&pack, &commit_bytes).expect("commit loads");
+        assert!(
+            !has_schema_version_field(&commit),
+            "the transient methodology `commit` shadow must not gain a stamp",
+        );
     }
 
     mod pack_list {

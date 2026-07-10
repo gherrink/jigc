@@ -510,8 +510,12 @@ fn an_authored_completion_record_round_trips_byte_stable() {
     let promoted = repo.path().join("completions").join("m16.md");
     let bytes = fs::read_to_string(&promoted)
         .unwrap_or_else(|e| panic!("read promoted completion-record at {promoted:?}: {e}"));
-    let schema: Schema =
+    let mut schema: Schema =
         load_schema(&completion_record_bytes()).expect("completion-record schema loads");
+    // Mirror the production loader's resolved shape: since M40 A1 the methodology
+    // manifest freezes `completion-record`, so the promoted instance carries the
+    // injected schema-version stamp.
+    engine::schema::inject_schema_version_stamp(&mut schema);
     let rerendered = render(
         &schema,
         &instance_from_source(&schema, &bytes).expect("promoted completion-record parses"),

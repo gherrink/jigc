@@ -10,7 +10,7 @@
 # The `meta` header (header: true) carries the `date` (CLI-derived on create); the
 # three prose slots are question / findings / sources. Section ids are single words.
 # Ref-free leaf — engine-native types only, no managed ref (the vision→research ref
-# is declared on `vision`, T2). Freeze-exempt (the methodology pack ships no
+# is declared on `vision`, T2). Manifest-FROZEN at v1 since M40 A1 (the methodology
 # schema-manifest.yaml). See design/design-altitude-doctypes.md → The three schemas.
 type: research
 location: research/

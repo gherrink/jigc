@@ -12,11 +12,10 @@
 //! per-section `{id, kind, optional?, item: {fields, slots, nested}}`, the `item`
 //! object **recursive** for nested repeatables. The three witnesses:
 //!
-//! - **dogfood-record** — a methodology doctype (manifest-less at this increment):
-//!   `schema-version` null, and ALL 14 meta fields `author-required: true` (the
-//!   roadmap Proves line), asserted behaviorally as well as by golden. Inc 5 (A1)
-//!   flips this doctype's version non-null + injects its stamp field — that golden
-//!   refresh is Inc 5's blast radius, pinned here against today's resolved shape.
+//! - **dogfood-record** — a methodology doctype, frozen at schema-version 1 since
+//!   Inc 5 (A1, the methodology `schema-manifest.yaml`): the loader-injected stamp
+//!   field joins its 14 meta fields (which stay ALL `author-required: true` — the
+//!   roadmap Proves line), asserted behaviorally as well as by golden.
 //! - **changelog** — schema-version 2 + the recursive nested `item` (the M22
 //!   two-level repeatable), with the loader-injected stamp field in `fields`.
 //! - **adr** — ref / pack-typed / default / set field rendering.
@@ -124,12 +123,13 @@ fn stdout_of(out: &std::process::Output) -> String {
 
 // ---- the pinned `--format json` goldens (contract-version 1, byte-verbatim) ----
 
-/// dogfood-record — methodology (manifest-less): `schema-version` null; all 14
-/// meta fields author-required (no default, no set, no optional/pack exemption).
+/// dogfood-record — methodology, frozen v1 (M40 A1): `schema-version` 1 with the
+/// loader-injected stamp field appended; the 14 meta fields stay author-required
+/// (no default, no set, no optional/pack exemption).
 const DOGFOOD_RECORD_JSON: &str = r#"{
   "contract-version": 1,
   "type": "dogfood-record",
-  "schema-version": null,
+  "schema-version": 1,
   "fields": [
     {
       "id": "case",
@@ -214,6 +214,13 @@ const DOGFOOD_RECORD_JSON: &str = r#"{
       "type": "owned-location",
       "required": true,
       "author-required": true
+    },
+    {
+      "id": "schema-version",
+      "type": "int",
+      "required": true,
+      "author-required": false,
+      "set": "schema-version"
     }
   ],
   "sections": [
@@ -400,21 +407,28 @@ fn doc_schema_json_is_the_pinned_contract() {
     );
 
     // (2) dogfood-record — the Proves line, asserted behaviorally (not just bytes):
-    //     schema-version null, exactly 14 fields, every one author-required.
+    //     schema-version 1 (frozen by the M40 A1 methodology manifest), the 14 meta
+    //     fields plus the injected stamp, every meta field author-required.
     let value: serde_json::Value =
         serde_json::from_str(&dogfood).expect("the emitted contract parses as json");
     assert_eq!(value["contract-version"], 1, "the contract is versioned");
-    assert!(
-        value["schema-version"].is_null(),
-        "a manifest-less methodology doctype reports schema-version null",
+    assert_eq!(
+        value["schema-version"], 1,
+        "a manifest-frozen methodology doctype reports schema-version 1",
     );
     let fields = value["fields"].as_array().expect("`fields` is an array");
-    assert_eq!(fields.len(), 14, "all 14 dogfood-record meta fields render");
+    assert_eq!(
+        fields.len(),
+        15,
+        "the 14 dogfood-record meta fields render, plus the injected stamp",
+    );
     for field in fields {
+        let is_stamp = field["id"] == "schema-version";
         assert_eq!(
             field["author-required"],
-            serde_json::Value::Bool(true),
-            "every dogfood-record meta field is author-required; `{}` is not",
+            serde_json::Value::Bool(!is_stamp),
+            "every dogfood-record meta field is author-required (the CLI-derived \
+             stamp is not); `{}` breaks that",
             field["id"],
         );
     }
