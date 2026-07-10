@@ -1,0 +1,10 @@
+---
+when: migrate a foreign roadmap/milestone plan into the managed roadmap
+description: Migrate a foreign roadmap or milestone plan into the managed `roadmap` singleton at `docs/roadmap.md` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant roadmap (a milestone plan, a phase list, a GSD ROADMAP.md) and `jigc migrate <path> --as roadmap` is rewriting it into the managed roadmap. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: roadmap, as: roadmap}]
+---
+{{ include: step:author-migration-roadmap }}
+{{ include: step:finalize }}

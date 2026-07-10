@@ -1,0 +1,10 @@
+---
+when: migrate a foreign milestone-completion record into a managed completion record
+description: Migrate a foreign milestone-close record into a managed per-milestone `completion-record` at `completions/` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs (resolving the required `owner-artifact` by the artifact ladder), and the task finalizes.
+usage: an existing project carries a non-conformant milestone-close record (a GSD completion file, a "M3 done" write-up) and `jigc migrate <path> --as completion-record` is rewriting it into a managed completion record. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: completion-record, as: record}]
+---
+{{ include: step:author-migration-completion-record }}
+{{ include: step:finalize }}

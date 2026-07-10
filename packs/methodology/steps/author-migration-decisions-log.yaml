@@ -1,0 +1,49 @@
+Migrate the foreign decisions log into the managed `decisions-log` singleton — the
+running log of decisions made, managed directly at `docs/decisions-log.md`. Below is
+the foreign source the CLI staged for you (read-only context — you author the
+canonical record through the write verbs, you never edit this file or place anything
+yourself):
+
+{{ source }}
+
+Author the WHOLE canonical log in ONE declarative batch payload — the CLI creates the
+fixed-slug singleton (`title: Decisions-Log` stays exactly as written; the CLI owns
+the placement at `docs/decisions-log.md`) and mints every entry over a single staged
+buffer. Pipe the payload on stdin:
+
+jigc doc author decisions-log --from-file - --task {{task.id}} <<'EOF'
+title: Decisions-Log
+sections:
+  - id: entries
+    items:
+      - title: "<the decision>"   # one entry per foreign decision, oldest first
+        set:
+          date: "<historical-date>" # PER ENTRY — the date rule below; OMIT this key when THIS entry is dateless
+          why: "<<why this was decided — the reasoning, in a sentence or two>>"
+EOF
+
+The `<<…>>` around the `why` slot value is REQUIRED literal wrapping — the `<<`/`>>`
+markers tell the CLI this is slot prose, they are NOT a fill-me placeholder to
+delete. Keep them; replace only the text BETWEEN them. (The `date` field and the item
+`title` take bare values with no markers; wrapping one is rejected.)
+
+Re-author every DECISION from the foreign log, oldest first, as one item under
+`entries`, titled with the decision itself (strip a leading date from a foreign
+heading — the date belongs in the `date` field, never the title).
+
+Decide the `date` key PER ENTRY, mechanically — never once for the whole file:
+
+  - THIS entry carries a date in the foreign source → TRANSCRIBE it exactly as it
+    appears (ISO `YYYY-MM-DD`) in that entry's `date` key;
+  - THIS entry carries NO date → OMIT the `date` key for that entry. In migration
+    the CLI does NOT stamp today's date, so a dateless entry renders dateless — no
+    false history. Never fill a gap with today, and never copy a neighbouring
+    entry's date.
+
+Fill `why` from the foreign entry's rationale. When the foreign entry records the
+call but preserves no reasoning, transcribe its stated intent and say so ("as
+recorded; the source preserved no rationale") — never invent a reason.
+
+A foreign cross-reference (an ADR number, an issue link) stays plain prose inside the
+`why` slot — the decisions-log schema declares no managed ref, so never invent a
+field for it. Foreign preamble with no entry home is dropped.

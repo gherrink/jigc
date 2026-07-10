@@ -58,9 +58,9 @@ pub fn run(cwd: &Path, path: &str, doctype: &str, format: Format) -> Outcome {
 }
 
 /// The off-router `migrate-<doctype>` workflow id — the migration workflow the
-/// minted task composes. `changelog`, `adr`, `spec`, `prd`, and `arch-doc` all
-/// migrate; the verb is doctype-parameterized so the workflow id is derived, not
-/// hard-wired.
+/// minted task composes. Any doctype whose composed pack ships a `migrate-<doctype>`
+/// workflow migrates (the dev five plus the methodology seven, as of M40); the verb
+/// is doctype-parameterized so the workflow id is derived, not hard-wired.
 fn migration_workflow(doctype: &str) -> String {
     format!("migrate-{doctype}")
 }
@@ -71,7 +71,8 @@ fn migration_workflow(doctype: &str) -> String {
 /// leaves `jigc task list` unchanged, never an orphan that can neither compose nor
 /// finalize). The message distinguishes an *unknown* doctype from a *known-but-not-
 /// migratable* one (a schema ships but no `migrate-<doctype>` workflow does — e.g.
-/// `commit`, or methodology's `roadmap`) and names the migratable set.
+/// `commit`, or methodology's machine-maintained `milestone-record`) and names the
+/// migratable set.
 fn ensure_migratable(pack: &dyn PackSource, doctype: &str) -> Result<()> {
     let workflow_id = migration_workflow(doctype);
     if pack

@@ -1,5 +1,7 @@
-//! M40 Increment 7, T2 — the design-altitude trio's migrate workflows
-//! (`migrate-vision` / `migrate-idea` / `migrate-research`), end-to-end through the
+//! M40 Increment 7, T2+T3 — the methodology pack's seven migrate workflows
+//! (`migrate-vision` / `migrate-idea` / `migrate-research` — the design-altitude trio,
+//! T2 — plus `migrate-roadmap` / `migrate-decisions-log` / `migrate-deferral-ledger` /
+//! `migrate-completion-record` — the GSD work-doc quartet, T3), end-to-end through the
 //! **built** `jigc` binary over the `[dev ▸ methodology]` composition (methodology pack
 //! listed in `packs.yaml` over the embedded dev base — the `flow_form_vision.rs`
 //! harness shape). Pure pack YAML rides the proven verb + source seam + review gate +
@@ -17,7 +19,20 @@
 //!     placement-singleton home — the repo-root literal `VISION.md`, H1 `# Vision`,
 //!     byte-stable — (b) retires the foreign original in the SAME commit, and (c) a
 //!     follow-up `jigc ingest` reports the managed vision **adopted**.
-//!   - **Guidance skeletons** — each of the three shipped author-guidance steps emits
+//!   - **The verbatim-source rung + the floored gate (the increment's second Proves
+//!     arm, T3)** — a GSD completion record with NO evidence file anywhere migrates via
+//!     the artifact ladder's rung 3 (the verbatim foreign source IS the artifact,
+//!     copied under `completions/artifacts/<milestone>/` BEFORE finalize retires the
+//!     original), and M17's floored `owner-artifact` presence gate still BLOCKS an
+//!     approved finalize when the rung is skipped — no migration carve-out.
+//!   - **Historic dates transcribe-or-omit, per entry (T3)** — a dated foreign
+//!     decisions-log entry carries its date verbatim into the committed record; a
+//!     dateless one renders dateless (the M24 migration-mode suppression — never a
+//!     fabricated today-stamp).
+//!   - **The two-slot roadmap item payload (T3)** — one `milestones` item with both
+//!     `proves` + `decomposition` in one `set:` map renders both `#### Proves` /
+//!     `#### Decomposition` sub-headings.
+//!   - **Guidance skeletons** — each of the seven shipped author-guidance steps emits
 //!     a `doc author <doctype> --from-file -` heredoc payload skeleton that parses
 //!     against the SAME payload parser `doc author` runs (the agent-facing emitted
 //!     artifact is the contract; a skeleton the parser rejects would silently break
@@ -408,12 +423,493 @@ fn migrate_vision_finalize_writes_root_vision_retires_and_adopts() {
     );
 }
 
-/// Each of the three shipped guidance steps emits a payload skeleton that parses
+// ---------------------------------------------------------------------------
+// T3 — the GSD work-doc quartet (roadmap / decisions-log / deferral-ledger /
+// completion-record).
+// ---------------------------------------------------------------------------
+
+/// A GSD-style foreign completion record with NO evidence file anywhere in the repo —
+/// the verbatim-source rung's motivating shape (the record itself is the milestone's
+/// only surviving evidence).
+const FOREIGN_COMPLETION: &str = "\
+# M3 Completion — importer hardening
+
+Status: DONE. All acceptance criteria met; audit closed clean.
+
+## Findings
+
+- Importer retries flaked in CI once; re-ran green (fixed).
+";
+
+/// The canonical completion-record rewrite: the milestone title mints the per-milestone
+/// slug, the `meta` header carries the derived `verdict` + the rung-3 `owner-artifact`
+/// path (the copied verbatim source), and the one foreign finding maps onto a
+/// `findings` item — every `set:` value here is an inline FIELD (no `<<…>>`).
+const PAYLOAD_COMPLETION: &str = r#"title: M3
+sections:
+  - id: meta
+    set:
+      verdict: green
+      owner-artifact: completions/artifacts/M3/source.md
+  - id: findings
+    items:
+      - title: "Importer retries flaked in CI"
+        set:
+          severity: advisory
+          disposition: fixed
+          evidence: "CI run 118 - re-ran green"
+"#;
+
+/// The per-file migration task id `jigc migrate M3-DONE.md --as completion-record`
+/// mints (the production derivation: strip `.md`, fold `/` to `-`, slugify, prefix
+/// `migrate-completion-record-`).
+const TASK_COMPLETION: &str = "migrate-completion-record-m3-done";
+
+/// The increment's second Proves arm: a GSD completion record with NO evidence file
+/// migrates via the artifact ladder's **verbatim-source rung** (the foreign source is
+/// copied under `completions/artifacts/<milestone>/` and staged BEFORE finalize retires
+/// the original) — and M17's floored `owner-artifact` presence gate still BLOCKS an
+/// approved finalize while the rung is skipped (no migration carve-out).
+#[test]
+fn migrate_completion_record_verbatim_source_rung_and_the_floored_gate() {
+    let repo = TempDir::new("completion");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    fs::write(repo.path().join("M3-DONE.md"), FOREIGN_COMPLETION)
+        .expect("write foreign completion record");
+    git(repo.path(), &["add", "M3-DONE.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "track foreign completion record"],
+    );
+
+    let composed = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["migrate", "M3-DONE.md", "--as", "completion-record"],
+            None,
+        ),
+        "jigc migrate M3-DONE.md --as completion-record",
+    );
+    assert!(
+        composed.contains("audit closed clean"),
+        "the composed migrate workflow surfaces the foreign content through the source \
+         seam; stdout:\n{composed}",
+    );
+    assert!(
+        composed.contains("doc author completion-record --from-file"),
+        "the composed guidance carries the batch author verb; stdout:\n{composed}",
+    );
+    assert!(
+        composed.contains("completions/artifacts/"),
+        "the composed guidance names the owned artifact home the ladder resolves \
+         `owner-artifact` into; stdout:\n{composed}",
+    );
+
+    let authored = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "author",
+                "completion-record",
+                "--from-file",
+                "-",
+                "--task",
+                TASK_COMPLETION,
+            ],
+            Some(PAYLOAD_COMPLETION.as_bytes()),
+        ),
+        "jigc doc author completion-record",
+    );
+    assert_eq!(
+        authored, "completion-record:m3",
+        "the per-milestone record mints its slug from the milestone title",
+    );
+
+    // The rung SKIPPED: `owner-artifact` names the ladder path but nothing was copied.
+    // M17's floored presence gate blocks even an APPROVED finalize — exit 3
+    // (validation-blocked), `owner-artifact.present`, nothing committed, the foreign
+    // original untouched.
+    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+    let blocked = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", TASK_COMPLETION, "--approve"],
+        None,
+    );
+    let rendered = format!(
+        "{}{}",
+        String::from_utf8_lossy(&blocked.stdout),
+        String::from_utf8_lossy(&blocked.stderr),
+    );
+    assert_eq!(
+        blocked.status.code(),
+        Some(3),
+        "an absent owner-artifact file must block the approved finalize with exit 3 \
+         (the floored gate carries no migration carve-out); got:\n{rendered}",
+    );
+    assert!(
+        rendered.contains("owner-artifact.present"),
+        "the block surfaces the #5 presence gate's finding; got:\n{rendered}",
+    );
+    assert_eq!(
+        count_before,
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        "the gate-blocked finalize commits nothing",
+    );
+    assert!(
+        repo.path().join("M3-DONE.md").exists(),
+        "the gate-blocked finalize leaves the foreign original untouched",
+    );
+
+    // The verbatim-source rung: NO evidence file exists anywhere, so the foreign source
+    // ITSELF is the artifact — copied under the owned home + staged BEFORE finalize
+    // retires the original.
+    fs::create_dir_all(repo.path().join("completions/artifacts/M3"))
+        .expect("mk owned artifact home");
+    fs::copy(
+        repo.path().join("M3-DONE.md"),
+        repo.path().join("completions/artifacts/M3/source.md"),
+    )
+    .expect("copy the verbatim foreign source under the owned home");
+    git(repo.path(), &["add", "completions/artifacts/M3/source.md"]);
+
+    let approve = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", TASK_COMPLETION, "--approve"],
+        None,
+    );
+    assert!(
+        approve.status.success(),
+        "with the verbatim source staged as the artifact, finalize --approve must land; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approve.stdout),
+        String::from_utf8_lossy(&approve.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        count_before + 1,
+        "the approved migration lands exactly ONE commit",
+    );
+
+    // The managed record is committed, byte-stable, and the artifact is the foreign
+    // source VERBATIM — while the original is retired in the SAME commit.
+    let on_disk = fs::read_to_string(repo.path().join("completions/m3.md"))
+        .expect("the managed completion-record is on disk");
+    assert!(
+        on_disk.contains("Importer retries flaked in CI"),
+        "the committed record carries the migrated finding:\n{on_disk}",
+    );
+    let schema = methodology_schema("completion-record");
+    let parsed = engine::write::instance_from_source(&schema, &on_disk)
+        .expect("the committed completion-record re-parses");
+    assert_eq!(
+        engine::write::render(&schema, &parsed),
+        on_disk,
+        "the migrated completion-record is byte-stable across parse -> render",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join("completions/artifacts/M3/source.md"))
+            .expect("the owner-artifact is on disk"),
+        FOREIGN_COMPLETION,
+        "the rung-3 artifact is the foreign source VERBATIM",
+    );
+    assert!(
+        !repo.path().join("M3-DONE.md").exists(),
+        "the approved migration retires the foreign original from disk",
+    );
+    let name_status = git(
+        repo.path(),
+        &["show", "--name-status", "--no-renames", "--format=", "HEAD"],
+    );
+    for expected in [
+        "D\tM3-DONE.md",
+        "A\tcompletions/m3.md",
+        "A\tcompletions/artifacts/M3/source.md",
+    ] {
+        assert!(
+            name_status.contains(expected),
+            "the ONE finalize commit must carry `{expected}`:\n{name_status}",
+        );
+    }
+}
+
+/// A foreign decisions log with one DATED entry and one DATELESS entry — the
+/// historic-date TRANSCRIBE-or-OMIT rule's two arms in one file.
+const FOREIGN_DECISIONS: &str = "\
+# Decisions
+
+## 2024-03-05 — Use Postgres
+
+Because the ORM already speaks it.
+
+## Drop the mobile app
+
+Not enough users to justify it. No date was ever recorded.
+";
+
+/// The canonical rewrite: the dated entry TRANSCRIBES its historic date verbatim in a
+/// per-entry `date` key; the dateless entry OMITS the key entirely (in migration the
+/// CLI does not stamp today, so it renders dateless — no false history).
+const PAYLOAD_DECISIONS: &str = r#"title: Decisions-Log
+sections:
+  - id: entries
+    items:
+      - title: "Use Postgres"
+        set:
+          date: "2024-03-05"
+          why: "<<Because the ORM already speaks it.>>"
+      - title: "Drop the mobile app"
+        set:
+          why: "<<Not enough users to justify it.>>"
+"#;
+
+/// The task id `jigc migrate OLD-DECISIONS.md --as decisions-log` mints.
+const TASK_DECISIONS: &str = "migrate-decisions-log-old-decisions";
+
+/// Historic dates transcribe-or-omit, PER ENTRY: the dated foreign entry carries
+/// `2024-03-05` verbatim into the committed singleton; the dateless one renders with
+/// NO date field at all — never a fabricated migration-day stamp (the M24 rule).
+#[test]
+fn migrate_decisions_log_transcribes_dates_verbatim_and_keeps_dateless_dateless() {
+    let repo = TempDir::new("decisions");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    fs::write(repo.path().join("OLD-DECISIONS.md"), FOREIGN_DECISIONS)
+        .expect("write foreign decisions log");
+    git(repo.path(), &["add", "OLD-DECISIONS.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "track foreign decisions log"],
+    );
+
+    let composed = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["migrate", "OLD-DECISIONS.md", "--as", "decisions-log"],
+            None,
+        ),
+        "jigc migrate OLD-DECISIONS.md --as decisions-log",
+    );
+    assert!(
+        composed.contains("doc author decisions-log --from-file"),
+        "the composed guidance carries the batch author verb; stdout:\n{composed}",
+    );
+
+    let authored = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "author",
+                "decisions-log",
+                "--from-file",
+                "-",
+                "--task",
+                TASK_DECISIONS,
+            ],
+            Some(PAYLOAD_DECISIONS.as_bytes()),
+        ),
+        "jigc doc author decisions-log",
+    );
+    assert_eq!(
+        authored, "decisions-log:decisions-log",
+        "the singleton mints at the fixed slug = the type id",
+    );
+
+    let approve = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", TASK_DECISIONS, "--approve"],
+        None,
+    );
+    assert!(
+        approve.status.success(),
+        "finalize --approve on a conformant decisions-log migration must land; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approve.stdout),
+        String::from_utf8_lossy(&approve.stderr),
+    );
+
+    let on_disk = fs::read_to_string(repo.path().join("docs/decisions-log.md"))
+        .expect("the managed decisions-log is on disk at its placement home");
+    assert!(
+        on_disk.contains("date: 2024-03-05"),
+        "the dated entry transcribes its historic date verbatim:\n{on_disk}",
+    );
+    let schema = methodology_schema("decisions-log");
+    let parsed = engine::write::instance_from_source(&schema, &on_disk)
+        .expect("the committed decisions-log re-parses");
+    assert_eq!(
+        engine::write::render(&schema, &parsed),
+        on_disk,
+        "the migrated decisions-log is byte-stable across parse -> render",
+    );
+
+    let entries = parsed
+        .sections
+        .iter()
+        .find(|s| s.id == "entries")
+        .expect("entries section present");
+    let dated = entries
+        .items
+        .iter()
+        .find(|i| i.id == "use-postgres")
+        .expect("the dated entry is present");
+    assert!(
+        dated.fields.iter().any(|f| f.key == "date"
+            && matches!(&f.value, engine::field_block::Value::Scalar(v) if v == "2024-03-05")),
+        "the dated entry's `date` field is the historic date verbatim; parsed: {dated:?}",
+    );
+    let dateless = entries
+        .items
+        .iter()
+        .find(|i| i.id == "drop-the-mobile-app")
+        .expect("the dateless entry is present");
+    assert!(
+        !dateless.fields.iter().any(|f| f.key == "date"),
+        "the dateless foreign entry renders with NO date field — the migration-mode \
+         on-create suppression, never a fabricated today-stamp; parsed: {dateless:?}",
+    );
+}
+
+/// A foreign roadmap with one milestone — a goal statement and a step list, the
+/// two-slot item payload's source shape.
+const FOREIGN_ROADMAP: &str = "\
+# Roadmap
+
+## M1 — The importer
+
+Goal: spreadsheets import without babysitting.
+
+Steps: build the retry loop, then the resume path.
+";
+
+/// The canonical rewrite: ONE `milestones` item carrying BOTH slot keys (`proves` +
+/// `decomposition`) in one `set:` map — the two-slot item payload spiked at planning.
+const PAYLOAD_ROADMAP: &str = r#"title: Roadmap
+sections:
+  - id: milestones
+    items:
+      - title: "M1 - The importer"
+        set:
+          proves: "<<Spreadsheets import without babysitting.>>"
+          decomposition: "<<One increment: the retry loop, then the resume path.>>"
+"#;
+
+/// The task id `jigc migrate OLD-ROADMAP.md --as roadmap` mints.
+const TASK_ROADMAP: &str = "migrate-roadmap-old-roadmap";
+
+/// The two-slot item payload: one authored `milestones` item renders BOTH `#### Proves`
+/// and `#### Decomposition` sub-headings in the committed placement singleton.
+#[test]
+fn migrate_roadmap_two_slot_item_renders_both_sub_headings() {
+    let repo = TempDir::new("roadmap");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    fs::write(repo.path().join("OLD-ROADMAP.md"), FOREIGN_ROADMAP).expect("write foreign roadmap");
+    git(repo.path(), &["add", "OLD-ROADMAP.md"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "track foreign roadmap"],
+    );
+
+    let composed = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["migrate", "OLD-ROADMAP.md", "--as", "roadmap"],
+            None,
+        ),
+        "jigc migrate OLD-ROADMAP.md --as roadmap",
+    );
+    assert!(
+        composed.contains("doc author roadmap --from-file"),
+        "the composed guidance carries the batch author verb; stdout:\n{composed}",
+    );
+
+    let authored = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "author",
+                "roadmap",
+                "--from-file",
+                "-",
+                "--task",
+                TASK_ROADMAP,
+            ],
+            Some(PAYLOAD_ROADMAP.as_bytes()),
+        ),
+        "jigc doc author roadmap",
+    );
+    assert_eq!(
+        authored, "roadmap:roadmap",
+        "the singleton mints at the fixed slug = the type id",
+    );
+
+    let approve = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "finalize", TASK_ROADMAP, "--approve"],
+        None,
+    );
+    assert!(
+        approve.status.success(),
+        "finalize --approve on a conformant roadmap migration must land; \
+         stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&approve.stdout),
+        String::from_utf8_lossy(&approve.stderr),
+    );
+
+    let on_disk = fs::read_to_string(repo.path().join("docs/roadmap.md"))
+        .expect("the managed roadmap is on disk at its placement home");
+    assert!(
+        on_disk.contains("#### Proves") && on_disk.contains("#### Decomposition"),
+        "the two-slot item payload renders BOTH sub-headings:\n{on_disk}",
+    );
+    assert!(
+        on_disk.contains("Spreadsheets import without babysitting")
+            && on_disk.contains("the retry loop, then the resume path"),
+        "the committed roadmap carries both authored slot proses:\n{on_disk}",
+    );
+    let schema = methodology_schema("roadmap");
+    let parsed = engine::write::instance_from_source(&schema, &on_disk)
+        .expect("the committed roadmap re-parses");
+    assert_eq!(
+        engine::write::render(&schema, &parsed),
+        on_disk,
+        "the migrated roadmap is byte-stable across parse -> render",
+    );
+    assert!(
+        !repo.path().join("OLD-ROADMAP.md").exists(),
+        "the approved migration retires the foreign original from disk",
+    );
+}
+
+/// Each of the seven shipped guidance steps emits a payload skeleton that parses
 /// against the SAME parser `doc author` runs — an undeclared key or a mis-marked
 /// slot/field value (rejected by the parse-time cross-check) would silently break
 /// every per-guidance migration with a green spine test masking it.
 #[test]
-fn shipped_guidance_payload_skeletons_parse_for_all_three_doctypes() {
+fn shipped_guidance_payload_skeletons_parse_for_all_seven_doctypes() {
     let repo = TempDir::new("skeletons");
     let home = TempDir::new("home");
     init_repo(repo.path());
@@ -430,6 +926,14 @@ fn shipped_guidance_payload_skeletons_parse_for_all_three_doctypes() {
             "old-notes.md",
             "# Spreadsheet pain notes\n\nUsers re-import hourly.\n",
         ),
+        ("roadmap", "OLD-ROADMAP.md", FOREIGN_ROADMAP),
+        ("decisions-log", "OLD-DECISIONS.md", FOREIGN_DECISIONS),
+        (
+            "deferral-ledger",
+            "OLD-LEDGER.md",
+            "# Deferred\n\n- Decide the auth provider once SSO lands.\n",
+        ),
+        ("completion-record", "M3-DONE.md", FOREIGN_COMPLETION),
     ] {
         fs::write(repo.path().join(rel), foreign).expect("write foreign file");
         let composed = ok_stdout(

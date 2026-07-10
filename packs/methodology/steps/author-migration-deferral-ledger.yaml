@@ -1,0 +1,53 @@
+Migrate the foreign owed-and-when record into the managed `deferral-ledger`
+singleton — the running ledger of deferred decisions and parked ideas, managed
+directly at `docs/deferral-ledger.md`. Below is the foreign source the CLI staged for
+you (read-only context — you author the canonical record through the write verbs,
+you never edit this file or place anything yourself):
+
+{{ source }}
+
+Author the WHOLE canonical ledger in ONE declarative batch payload — the CLI creates
+the fixed-slug singleton (`title: Deferral-Ledger` stays exactly as written; the CLI
+owns the placement at `docs/deferral-ledger.md`) and mints every entry over a single
+staged buffer. Pipe the payload on stdin:
+
+jigc doc author deferral-ledger --from-file - --task {{task.id}} <<'EOF'
+title: Deferral-Ledger
+sections:
+  - id: entries
+    items:
+      - title: "<what is owed>"
+        set:
+          kind: "<D-or-I>"          # the two-letter mapping rule below
+          trigger: "<what resurfaces it>"
+          date: "<historical-date>" # PER ENTRY — the date rule below; OMIT this key when THIS entry is dateless
+          body: "<<what is owed and why it was deferred — the decision or parked idea, in prose>>"
+EOF
+
+The `<<…>>` around the `body` slot value is REQUIRED literal wrapping — the `<<`/`>>`
+markers tell the CLI this is slot prose, they are NOT a fill-me placeholder to
+delete. Keep them; replace only the text BETWEEN them. (Inline fields — `kind`,
+`trigger`, `date`, the item `title` — take bare values with no markers; wrapping one
+is rejected.)
+
+Re-author every DEFERRAL from the foreign record, oldest first, as one item under
+`entries`. Fill its fields mechanically:
+
+  - `kind` MUST be one of the two enum members, mapped by what the entry holds open:
+    the foreign entry defers a CHOICE (a decision consciously not made yet — an open
+    fork, a "decide X when Y") → `D`; the foreign entry parks a THING (an idea,
+    direction, or feature kept for later) → `I`. There is no third member.
+  - `trigger` is REQUIRED — what resurfaces this entry. The foreign entry names a
+    resurface condition or trigger milestone → transcribe it; it names NONE → derive
+    the trigger from the entry's own subject ("a concrete need for <the subject>
+    shows up") — never leave `trigger` out.
+  - Decide the `date` key PER ENTRY, mechanically: THIS entry carries a date in the
+    foreign source → TRANSCRIBE it exactly as it appears (ISO `YYYY-MM-DD`); THIS
+    entry carries NO date → OMIT the `date` key for that entry. In migration the CLI
+    does NOT stamp today's date, so a dateless entry renders dateless — no false
+    history. Never fill a gap with today.
+
+Everything else the foreign entry says — the rationale, the caveats — folds into the
+`body` prose. A foreign cross-reference stays plain prose inside `body` — the
+deferral-ledger schema declares no managed ref, so never invent a field for it.
+Foreign preamble with no entry home is dropped.

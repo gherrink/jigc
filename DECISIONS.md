@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-10 — M40 Inc 7 T3: the completion-record verdict maps mechanically, and the refusal rung routes through `task discard`
+
+Two executor elaborations of the quartet's templates (auto-migration.md:189-193 pins the rest): **(1)** the required `verdict` enum gets a mechanical mapping rung — a foreign record that closes the milestone clean (done/shipped/accepted) → `green`, one that records the close with unresolved blockers or a failed audit → `red`, and *neither derivable* is exactly the refusal rung, never a guess (the T2 derive-rung discipline applied to an enum: mapped, not fabricated); **(2)** the refusal rung names its concrete route — `jigc task discard {{task.id}}` then stay-unmanaged or re-`migrate --as` the doctype it actually is — because a rung that says "author nothing" without disposing of the already-minted task would strand an orphan in `jigc task list`.
+
 ## 2026-07-10 — M40 Inc 7 T2: required fields get a derive-when-absent rung, never a blank
 
 One executor elaboration of the trio's decision-tree templates (auto-migration.md:186-192 pins the rest): a **required** field/slot the foreign source doesn't supply gets an explicit mechanical *derive* rung in the template — idea's `trigger` falls back to "a concrete need for <the subject> shows up" when the note names no revisit condition; research's `question`/`sources` derive from what the findings answer / "first-hand notes from <context>". *Why:* the dashbard lesson the templates exist for — a required leaf with no rule for the missing-in-source case is exactly where an agent flounders (or fabricates); optional leaves (`date`, `grounded-in`) stay OMIT, never derived.

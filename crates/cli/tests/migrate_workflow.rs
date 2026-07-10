@@ -107,6 +107,30 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
     String::from_utf8(out.stdout).expect("utf-8 stdout")
 }
 
+/// Run a `jigc` subcommand over the EMBEDDED pack pair: `JIGC_PACK_DIR` is cleared
+/// (an empty value is not an explicit base selection), so the setup-written
+/// `compose-embedded-methodology` marker fires and the composition is the production
+/// `[dev ▸ methodology]` every set-up project runs — the full 12-member migratable set.
+fn run_jigc_embedded(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env("JIGC_PACK_DIR", "")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn the jigc binary")
+        .wait_with_output()
+        .expect("wait for jigc")
+}
+
+/// The full migratable set — every doctype with a shipped `migrate-<doctype>` workflow
+/// across the composed `[dev ▸ methodology]` pair (dev 5 + methodology 7 = 12),
+/// address-sorted as the rejection message renders it.
+const MIGRATABLE_SET: &str = "adr, arch-doc, changelog, completion-record, decisions-log, \
+                              deferral-ledger, idea, prd, research, roadmap, spec, vision";
+
 /// A realistic multi-release foreign Keep-a-Changelog file carrying HISTORICAL dates.
 const FOREIGN: &str = "\
 # Changelog
@@ -363,11 +387,12 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
 
     let before = task_dirs(repo.path());
 
-    // (a) An unknown doctype (a typo) — rejected, no task minted.
-    let out = run_jigc(
+    // (a) An unknown doctype (a typo) — rejected over the production embedded
+    // `[dev ▸ methodology]` composition, no task minted, the FULL 12-member
+    // migratable set named.
+    let out = run_jigc_embedded(
         repo.path(),
         home.path(),
-        &pack,
         &["migrate", "STATE.md", "--as", "nonsense"],
     );
     assert!(
@@ -382,8 +407,9 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
         "the message must name the unknown doctype; stderr:\n{stderr}",
     );
     assert!(
-        stderr.contains("changelog") && stderr.contains("adr"),
-        "the message must name the migratable set; stderr:\n{stderr}",
+        stderr.contains(&format!("migratable doctypes: {MIGRATABLE_SET}")),
+        "the message must name the full 12-member migratable set (dev 5 + \
+         methodology 7); stderr:\n{stderr}",
     );
     assert_eq!(
         task_dirs(repo.path()),
@@ -393,10 +419,9 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
 
     // (b) A known-but-not-migratable doctype (`commit` ships a schema but no
     // `migrate-commit` workflow) — distinguished message, still no task minted.
-    let out = run_jigc(
+    let out = run_jigc_embedded(
         repo.path(),
         home.path(),
-        &pack,
         &["migrate", "STATE.md", "--as", "commit"],
     );
     assert!(
@@ -409,6 +434,11 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
         stderr.contains("commit") && stderr.contains("not migratable"),
         "a known-but-not-migratable doctype must say so; stderr:\n{stderr}",
     );
+    assert!(
+        stderr.contains(&format!("migratable doctypes: {MIGRATABLE_SET}")),
+        "the not-migratable message must name the full 12-member migratable set; \
+         stderr:\n{stderr}",
+    );
     assert_eq!(
         task_dirs(repo.path()),
         before,
@@ -418,10 +448,9 @@ fn migrate_with_an_unknown_as_rejects_before_minting_any_task() {
     // (c) The happy path still mints + stages: a VALID `--as changelog` composes and
     // leaves exactly one task behind (the validate-before-mint guard didn't break it).
     fs::write(repo.path().join("CHANGELOG.md"), FOREIGN).expect("write foreign CHANGELOG.md");
-    let out = run_jigc(
+    let out = run_jigc_embedded(
         repo.path(),
         home.path(),
-        &pack,
         &["migrate", "CHANGELOG.md", "--as", "changelog"],
     );
     ok_stdout(out, "jigc migrate CHANGELOG.md --as changelog");

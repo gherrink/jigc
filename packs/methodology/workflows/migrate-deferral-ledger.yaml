@@ -1,0 +1,10 @@
+---
+when: migrate a foreign deferral/backlog ledger into the managed deferral ledger
+description: Migrate a foreign record of deferred decisions and parked ideas into the managed `deferral-ledger` singleton at `docs/deferral-ledger.md` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant owed-and-when record (a deferred-decisions list, a "later" backlog kept as prose) and `jigc migrate <path> --as deferral-ledger` is rewriting it into the managed deferral ledger. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: deferral-ledger, as: ledger}]
+---
+{{ include: step:author-migration-deferral-ledger }}
+{{ include: step:finalize }}
