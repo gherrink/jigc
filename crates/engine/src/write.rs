@@ -1722,6 +1722,121 @@ pub fn remove_nested_item(
     Ok(splice(source, start..region.end, ""))
 }
 
+/// `retitle-item` for a (possibly nested) repeatable item, addressed by its
+/// section-qualified id chain `item_ids`: rewrite the item's heading line to the
+/// canonical `{hashes} {title}  {{#id}}` form with the **`{#id}` anchor frozen** —
+/// the retitle-without-reslug invariant's verb at item level
+/// (`design/write-commands.md` → `jigc doc retitle-item`; `design/storage.md` →
+/// Identity). [`set_title`]'s heading-line splice, carried over the parent-scoped
+/// nested locator: only the heading line's bytes change, so the anchor, the item
+/// body, and every other byte stay identical and `render(parse(out)) == out` holds.
+///
+/// Because the heading **is** the item's `id-from` field's value, the new title
+/// **re-validates against that field's declared type** when the block declares it
+/// (the [`set_nested_item_field_or_insert`] `check_value` guard shape) — a
+/// non-member title against an enum id-source is rejected as
+/// [`GenerateError::MalformedValue`]. (The *unconditional* enum-id-from refusal —
+/// a member-to-member change is an identity change, not a retitle — is the CLI
+/// guard's, mirroring `add-item`'s.) The anchor is read from the located heading
+/// via [`anchor_of`], never re-derived from the new title. An empty/whitespace
+/// title, an absent item/section, or a non-conformant source →
+/// [`GenerateError::WrongShape`] (the existing nested-write error shapes).
+pub fn retitle_item(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    new_title: &str,
+) -> Result<String, GenerateError> {
+    let title = new_title.trim();
+    if title.is_empty() {
+        return Err(GenerateError::WrongShape {
+            what: "retitle title is empty".to_string(),
+        });
+    }
+    // The id-from re-validation (see doc comment): resolved against the repeatable
+    // block the chain bottoms out in, before any bytes move.
+    if let Some(repeatable) = chain_repeatable(schema, section_id, item_ids)
+        && let Some(field) = repeatable.block.iter().find_map(|leaf| match leaf {
+            crate::schema::Leaf::Field(field) if field.id == repeatable.id_from => Some(&**field),
+            _ => None,
+        })
+        && let Err(why) = check_value(field, &Value::Scalar(title.to_string()))
+    {
+        return Err(GenerateError::MalformedValue { why });
+    }
+
+    let doc = parse::parse_sections(schema, source).map_err(|_| GenerateError::WrongShape {
+        what: format!("source does not conform to schema for section {section_id:?}"),
+    })?;
+    if nested_parsed_item(schema, &doc, section_id, item_ids).is_none() {
+        return Err(GenerateError::WrongShape {
+            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+        });
+    }
+    let physical = physical_item_chain(schema, section_id, item_ids).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_ids:?} in section {section_id:?} not present"),
+        }
+    })?;
+    let region = locate_item_path(schema, source, section_id, &physical).ok_or_else(|| {
+        GenerateError::WrongShape {
+            what: format!("item {item_ids:?} block not locatable"),
+        }
+    })?;
+
+    // The item's heading is the located region's FIRST line; its anchor is read from
+    // those bytes ([`anchor_of`]) — never re-derived from the new title — so the id is
+    // frozen by construction. Replace the heading line (exclusive of its `\n`) with
+    // the canonical `{hashes} {title}  {{#id}}` render ([`render_item_at`]'s frozen
+    // heading form at this nesting depth), leaving every other byte untouched — the
+    // [`set_title`] discipline at item level.
+    let line_end = source[region.start..]
+        .find('\n')
+        .map(|n| region.start + n)
+        .unwrap_or(source.len());
+    let anchor =
+        anchor_of(&source[region.start..line_end]).ok_or_else(|| GenerateError::WrongShape {
+            what: format!("item {item_ids:?} heading carries no {{#id}} anchor"),
+        })?;
+    let hashes = "#".repeat(item_heading_level(physical.len()));
+    let heading = format!("{hashes} {title}  {{#{anchor}}}");
+    Ok(splice(source, region.start..line_end, &heading))
+}
+
+/// The [`crate::schema::Repeatable`] whose items a section-qualified id chain bottoms
+/// out in: the section's own repeatable for a top-level chain (`["1-2-0"]`), descending
+/// one declared nested repeatable per nested-section segment for a deeper chain
+/// (`["1-2-0", "changes", "added"]` → the `changes` repeatable). The schema-side walk
+/// [`physical_item_chain`] / [`item_field_schema`] share. `None` if the section is not
+/// repeatable or a nested-section segment names no declared nested repeatable.
+fn chain_repeatable<'a>(
+    schema: &'a Schema,
+    section_id: &str,
+    item_ids: &[&str],
+) -> Option<&'a crate::schema::Repeatable> {
+    let section = schema.sections.iter().find(|s| s.id == section_id)?;
+    let SectionBody::Repeatable { repeatable } = &section.body else {
+        return None;
+    };
+    let mut current = repeatable;
+    let mut expect_item = true;
+    for segment in item_ids {
+        if expect_item {
+            expect_item = false;
+        } else {
+            current = current.block.iter().find_map(|leaf| match leaf {
+                crate::schema::Leaf::Repeatable { id, repeatable } if id == segment => {
+                    Some(repeatable)
+                }
+                _ => None,
+            })?;
+            expect_item = true;
+        }
+    }
+    Some(current)
+}
+
 /// The nested [`crate::schema::Repeatable`] named `nested_section_id` declared in the
 /// item block reached by walking the **section-qualified** `parent_item_ids` chain from
 /// `section_id` — the schema dual of [`nested_parsed_item`]. The chain
@@ -5022,26 +5137,8 @@ fn item_field_schema<'a>(
     item_chain: &[&str],
     field_key: &str,
 ) -> Option<&'a SchemaField> {
-    let section = schema.sections.iter().find(|s| s.id == section_id)?;
-    let SectionBody::Repeatable { repeatable } = &section.body else {
-        return None;
-    };
-    let mut block = &repeatable.block;
-    let mut expect_item = true;
-    for segment in item_chain {
-        if expect_item {
-            expect_item = false;
-        } else {
-            block = block.iter().find_map(|leaf| match leaf {
-                crate::schema::Leaf::Repeatable { id, repeatable } if id == segment => {
-                    Some(&repeatable.block)
-                }
-                _ => None,
-            })?;
-            expect_item = true;
-        }
-    }
-    block.iter().find_map(|leaf| match leaf {
+    let repeatable = chain_repeatable(schema, section_id, item_chain)?;
+    repeatable.block.iter().find_map(|leaf| match leaf {
         crate::schema::Leaf::Field(field) if field.id == field_key => Some(&**field),
         _ => None,
     })
@@ -8202,6 +8299,264 @@ OAuth device-code flow.
             "the release's date bullet must sit in the release's OWN region, before its \
              nested #### Added; out:\n{out}",
         );
+    }
+}
+
+#[cfg(test)]
+mod retitle_item_tests {
+    //! M40 Increment 2, T1 — [`retitle_item`]: the retitle-without-reslug verb at item
+    //! level. The heading-title bytes change; the `{#id}` anchor and EVERY other byte
+    //! stay identical (the expected buffer is computed by replacing exactly the heading
+    //! line, so the assertion is over the whole document — never a scoped subtree).
+
+    use super::*;
+    use crate::schema::Schema;
+
+    const ARCH_DOC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/arch-doc.yaml");
+
+    fn arch_doc_schema() -> Schema {
+        crate::schema::load_schema_with_types(ARCH_DOC_YAML, &crate::schema::dev_pack_field_types())
+            .expect("arch-doc.yaml loads")
+    }
+
+    /// The `changelog`-shaped two-level schema with a **string** nested id-source
+    /// (`category`, free text) — the nested happy path.
+    fn changelog_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: date, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: string }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        crate::schema::load_schema(yaml).expect("changelog schema loads")
+    }
+
+    /// The same shape with an **enum** nested id-source — the id-from type-check arm.
+    fn enum_changelog_schema() -> Schema {
+        let yaml = b"\
+type: changelog
+id-from: title
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - { id: date, type: string }
+        - id: changes
+          repeatable:
+            id-from: category
+            block:
+              - { id: category, type: enum, of: [added, fixed] }
+              - { id: notes, slot: { hint: \"One bullet per change.\" } }
+";
+        crate::schema::load_schema(yaml).expect("enum changelog schema loads")
+    }
+
+    /// A canonical committed arch-doc with two components — the shipped doctype the
+    /// retitle verb is minted for (a component heading gone stale against its symbol).
+    const ARCH_DOC: &str = "\
+---
+cites: adr:0001-storage-layout
+---
+
+# Storage layer
+
+## Overview
+
+The storage layer owns the on-disk task working areas.
+
+## Components
+
+### Working area  {#working-area}
+
+Owns the per-task scratch tree.
+
+<!-- fields -->
+- implemented-by: src/storage.rs#WorkingArea
+
+### Join merge  {#join-merge}
+
+Merges fan-out results by task id.
+
+<!-- fields -->
+- implemented-by: src/join.rs#merge
+";
+
+    /// Two releases, EACH carrying a `#added` nested change-group — the parent-scoped
+    /// same-anchor fixture (`1-3-0` first, `1-2-0` second).
+    const TWO_PARENT: &str = "\
+# Changelog
+
+## Releases
+
+### 1.3.0  {#1-3-0}
+
+<!-- fields -->
+- date: 2026-07-01
+
+#### Added  {#added}
+
+Audit log export.
+
+### 1.2.0  {#1-2-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+OAuth device-code flow.
+";
+
+    /// Round-trip helper: `render(instance_from_source(x)) == x` over the WHOLE doc.
+    fn assert_byte_stable(schema: &Schema, src: &str) {
+        let instance = instance_from_source(schema, src)
+            .unwrap_or_else(|f| panic!("source parses: {f:?}\n--- src ---\n{src}"));
+        assert_eq!(
+            render(schema, &instance),
+            src,
+            "render(parse(x)) must equal x"
+        );
+    }
+
+    /// The fixtures are themselves canonical, so whole-document byte comparisons hold.
+    #[test]
+    fn fixtures_are_canonical() {
+        assert_byte_stable(&arch_doc_schema(), ARCH_DOC);
+        assert_byte_stable(&changelog_schema(), TWO_PARENT);
+    }
+
+    /// Done-criterion (1): a TOP-LEVEL arch-doc component retitle changes exactly the
+    /// heading-title bytes — the `{#working-area}` anchor and every other byte
+    /// identical (whole-document equality against a replace-only expected buffer) —
+    /// and the result round-trips byte-stable.
+    #[test]
+    fn top_level_component_retitle_changes_only_the_heading_title_bytes() {
+        let schema = arch_doc_schema();
+        let out = retitle_item(
+            &schema,
+            ARCH_DOC,
+            "components",
+            &["working-area"],
+            "WorkingArea store",
+        )
+        .expect("top-level retitle succeeds");
+
+        // The expected buffer differs from the source in exactly the heading line.
+        let expected = ARCH_DOC.replace(
+            "### Working area  {#working-area}",
+            "### WorkingArea store  {#working-area}",
+        );
+        assert_ne!(out, ARCH_DOC, "the retitle must change bytes");
+        assert_eq!(
+            out, expected,
+            "only the heading-title bytes change; anchor + all other bytes identical"
+        );
+
+        // The frozen anchor still resolves the item.
+        locate_item_path(&schema, &out, "components", &["working-area"])
+            .expect("the item is still addressable by its frozen anchor");
+
+        // render(parse(out)) == out.
+        assert_byte_stable(&schema, &out);
+    }
+
+    /// Done-criterion (2): a NESTED chain-addressed item retitles the same way — the
+    /// section-qualified chain (`1-2-0/changes/added`) lands on exactly the addressed
+    /// item, the same-anchor `#added` under the OTHER parent stays byte-untouched, and
+    /// the result round-trips byte-stable.
+    #[test]
+    fn nested_chain_addressed_retitle_freezes_the_anchor() {
+        let schema = changelog_schema();
+        let out = retitle_item(
+            &schema,
+            TWO_PARENT,
+            "releases",
+            &["1-2-0", "changes", "added"],
+            "Added (auth)",
+        )
+        .expect("nested retitle succeeds");
+
+        // Expected: exactly the SECOND `#### Added  {#added}` heading (1-2-0's — the
+        // later one in the fixture) rewritten; 1-3-0's same-anchor heading untouched.
+        let heading = "#### Added  {#added}";
+        let pos = TWO_PARENT.rfind(heading).expect("1-2-0's heading present");
+        let mut expected = String::new();
+        expected.push_str(&TWO_PARENT[..pos]);
+        expected.push_str("#### Added (auth)  {#added}");
+        expected.push_str(&TWO_PARENT[pos + heading.len()..]);
+        assert_eq!(
+            out, expected,
+            "only the addressed nested heading's title bytes change"
+        );
+
+        assert_byte_stable(&schema, &out);
+    }
+
+    /// Done-criterion (3): an absent item — top-level, nested, or under a mis-named
+    /// parent — and an unknown section error with the existing nested-write shape
+    /// ([`GenerateError::WrongShape`]), never a wrong-item write.
+    #[test]
+    fn absent_item_or_section_errors_with_the_existing_shapes() {
+        let schema = changelog_schema();
+        // Absent top-level item.
+        let err = retitle_item(&schema, TWO_PARENT, "releases", &["9-9-9"], "New")
+            .expect_err("no such release");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
+        // Absent nested item under a present parent.
+        let err = retitle_item(
+            &schema,
+            TWO_PARENT,
+            "releases",
+            &["1-2-0", "changes", "removed"],
+            "New",
+        )
+        .expect_err("no such nested group");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
+        // Unknown section.
+        let err = retitle_item(&schema, TWO_PARENT, "nope", &["1-2-0"], "New")
+            .expect_err("no such section");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
+    }
+
+    /// The id-from re-validation: the heading IS the id-source field's value, so a new
+    /// title failing the declared type — a non-member against an ENUM id-from — is
+    /// rejected as [`GenerateError::MalformedValue`] before any bytes move (the
+    /// [`set_nested_item_field_or_insert`] guard shape).
+    #[test]
+    fn enum_id_from_rejects_a_non_member_title_as_malformed() {
+        let schema = enum_changelog_schema();
+        let err = retitle_item(
+            &schema,
+            TWO_PARENT,
+            "releases",
+            &["1-2-0", "changes", "added"],
+            "Rewritten",
+        )
+        .expect_err("a non-member title against an enum id-source is malformed");
+        assert!(matches!(err, GenerateError::MalformedValue { .. }));
+    }
+
+    /// An empty / whitespace-only title is rejected (it would emit a titleless heading
+    /// whose round-trip is undefined), with the existing [`GenerateError::WrongShape`].
+    #[test]
+    fn empty_title_is_rejected() {
+        let schema = arch_doc_schema();
+        let err = retitle_item(&schema, ARCH_DOC, "components", &["working-area"], "  ")
+            .expect_err("an empty title is rejected");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
     }
 }
 
