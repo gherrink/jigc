@@ -375,16 +375,35 @@ fn render_items(items: &[ParsedItem], source: &str) -> String {
         .join("\n\n")
 }
 
-/// Render a single repeatable item: its `### <title>` heading, then — for a
-/// multi-slot template — each slot under its `#### <Leaf-Title>` sub-heading (the
-/// writer's form), or — for a single bare-prose slot — the slot prose beneath the
-/// heading. A slot-less item is its heading alone. Mirrors the on-disk shape.
+/// The field-group sentinel line (mirrors the parser/writer's private const).
+const FIELD_SENTINEL: &str = "<!-- fields -->";
+
+/// Render a single repeatable item — the depth-1 entry point over
+/// [`render_item_at`], which carries the depth-aware recursion.
 fn render_item(item: &ParsedItem, source: &str) -> String {
-    if !item.slots.is_empty() {
-        let mut out = format!("### {}", item.title.trim());
+    render_item_at(item, source, 1)
+}
+
+/// Render one repeatable item at nesting `depth` — the read-path mirror of the
+/// writer's `render_item_at` body shape, **anchorless** (no `{#id}` anchors): the
+/// `<#…> <title>` heading at level `2 + depth` (depth 1 → `###`; the schema loader
+/// caps nesting at H6), then — for a multi-slot template — each slot under its
+/// `<#…> <Leaf-Title>` sub-heading one level deeper, or — for a single bare-prose
+/// slot — the slot prose beneath the heading; then the item's sentinelled per-item
+/// **field group** (only when fields are present), then — recursively — its
+/// **nested** items one level deeper (the M22 multi-level shape; M40 — nested
+/// content joins the plain slice, `design/doc-read-surface.md` → Nested repeatables
+/// join the pin). A **flat** item (no fields, no nested children) renders
+/// byte-identically to the pre-M40 form, so compose-deref flat output (e.g.
+/// `{{@task.spec#criteria}}`) is unchanged.
+fn render_item_at(item: &ParsedItem, source: &str, depth: usize) -> String {
+    let hashes = "#".repeat(2 + depth);
+    let mut out = if !item.slots.is_empty() {
+        let leaf_hashes = "#".repeat(3 + depth);
+        let mut out = format!("{hashes} {}", item.title.trim());
         for (leaf_id, span) in &item.slots {
             out.push_str(&format!(
-                "\n\n#### {}\n\n{}",
+                "\n\n{leaf_hashes} {}\n\n{}",
                 title_case_label(leaf_id),
                 span.slice(source).trim()
             ));
@@ -393,11 +412,27 @@ fn render_item(item: &ParsedItem, source: &str) -> String {
     } else {
         match &item.slot {
             Some(span) => {
-                format!("### {}\n\n{}", item.title.trim(), span.slice(source).trim())
+                format!(
+                    "{hashes} {}\n\n{}",
+                    item.title.trim(),
+                    span.slice(source).trim()
+                )
             }
-            None => format!("### {}", item.title.trim()),
+            None => format!("{hashes} {}", item.title.trim()),
+        }
+    };
+    if !item.fields.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(FIELD_SENTINEL);
+        for field in &item.fields {
+            out.push_str(&format!("\n- {}: {}", field.key, field.value.render()));
         }
     }
+    for child in &item.items {
+        out.push_str("\n\n");
+        out.push_str(&render_item_at(child, source, depth + 1));
+    }
+    out
 }
 
 /// Title-case a single-word slot leaf id for its `#### <Leaf-Title>` sub-heading in
@@ -417,6 +452,7 @@ mod tests {
     const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
     const COMMIT_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/commit.yaml");
     const SPEC_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/spec.yaml");
+    const CHANGELOG_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/changelog.yaml");
 
     #[test]
     fn lexical_normalize_collapses_curdir_and_parentdir() {
@@ -518,6 +554,10 @@ sections: []
                 &crate::schema::dev_pack_field_types(),
             )
             .expect("spec.yaml loads"),
+        );
+        m.insert(
+            "changelog".to_string(),
+            crate::schema::load_schema(CHANGELOG_YAML).expect("changelog.yaml loads"),
         );
         m
     }
@@ -763,6 +803,113 @@ A cold node loses its sessions; clients re-authenticate.
             err.route.is_some(),
             "the no-such-item block carries a route"
         );
+    }
+
+    /// A committed changelog (the shipped nested-repeatable doctype) at its literal
+    /// placement home — releases carry a per-item `date` field group and nested
+    /// `#### <group>` change-group items, the exact on-disk shape the writer mints.
+    const COMMITTED_CHANGELOG: &str = "\
+# Changelog
+
+## Unreleased Changes
+
+## Releases
+
+### 1.1.0  {#1-1-0}
+
+<!-- fields -->
+- date: 2026-07-01
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+### 1.0.0  {#1-0-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+- initial release
+
+#### Fixed  {#fixed}
+
+- session fixation on logout
+";
+
+    /// Write the committed changelog fixture to its placement home (`CHANGELOG.md`).
+    fn write_committed_changelog(repo_root: &Path) {
+        std::fs::write(repo_root.join("CHANGELOG.md"), COMMITTED_CHANGELOG)
+            .expect("write committed changelog");
+    }
+
+    /// GOLDEN (M40 inc-6 T1): a committed changelog's `#releases` **section slice**
+    /// carries each release's `date` field group plus its nested `#### <group>`
+    /// headings and notes — the plain slice mirrors the writer's item body shape
+    /// anchorlessly ([doc-read-surface.md](../../../design/doc-read-surface.md) →
+    /// Nested repeatables join the pin). Before M40 the fields + nested content were
+    /// silently dropped (only the whole-doc plain read was complete).
+    #[test]
+    fn store_slices_a_changelog_releases_section_with_fields_and_nested_groups() {
+        let root = TempRoot::new("changelog-releases");
+        write_committed_changelog(root.path());
+
+        let address = Address::parse("changelog:changelog#releases").expect("valid address");
+        let rendered = read_slice(root.path(), &schemas(), &address)
+            .expect("committed changelog releases slice resolves");
+
+        insta::assert_snapshot!(rendered, @r"
+        ### 1.1.0
+
+        <!-- fields -->
+        - date: 2026-07-01
+
+        #### Added
+
+        - OAuth device-code flow
+
+        ### 1.0.0
+
+        <!-- fields -->
+        - date: 2026-06-14
+
+        #### Added
+
+        - initial release
+
+        #### Fixed
+
+        - session fixation on logout
+        ");
+    }
+
+    /// GOLDEN (M40 inc-6 T1): a single **release-item slice** (`#releases/<id>`)
+    /// carries the item's `date` field group and its nested change-groups one heading
+    /// level deeper — complete, not just the bare `### <title>` heading.
+    #[test]
+    fn store_slices_a_changelog_release_item_with_fields_and_nested_groups() {
+        let root = TempRoot::new("changelog-release-item");
+        write_committed_changelog(root.path());
+
+        let address = Address::parse("changelog:changelog#releases/1-0-0").expect("valid address");
+        let rendered = read_slice(root.path(), &schemas(), &address)
+            .expect("committed changelog release-item slice resolves");
+
+        insta::assert_snapshot!(rendered, @r"
+        ### 1.0.0
+
+        <!-- fields -->
+        - date: 2026-06-14
+
+        #### Added
+
+        - initial release
+
+        #### Fixed
+
+        - session fixation on logout
+        ");
     }
 }
 
