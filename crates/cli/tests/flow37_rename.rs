@@ -29,6 +29,12 @@
 //! - **mid-fan-out guard (#4):** an active task working area **or** an in-flight milestone
 //!   blocks the rename (the marker present case); its absence is the happy path proceeding
 //!   (the marker-absent case — increment-workflow #5, the guard proven not inert).
+//!
+//! The M40 A4 reslug guards ride the same file (`write-commands.md` → Placement singletons /
+//! Milestone-record reslug): a **placement-singleton** reslug rejects with the real rule
+//! (identity fixed to the type; retitle-only — never the collision text), and a
+//! **milestone-record** reslug refuses always — between milestones too — while a same-slug
+//! retitle stays legal on both.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -933,6 +939,260 @@ fn rename_succeeds_despite_unrelated_preexisting_dangle() {
             && !stderr.contains("ghost-that-does-not-exist"),
         "the pre-existing dangle must not be blamed on the rename; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+}
+
+/// A conformant **v2** `changelog` at its root placement home `CHANGELOG.md` — the
+/// post-M38-relocation byte form (the `schema-version: 2` stamp, the `display-title`
+/// `# Changelog` H1, the two empty KaC sections).
+const CHANGELOG_V2: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+## Releases
+";
+
+/// Seed a real git repo whose managed store is one committed placement singleton —
+/// the root `CHANGELOG.md` — plus the `.jigc/config/` project layer.
+fn seed_placement_store(repo: &Path) {
+    git(repo, &["init", "-q"]);
+    git(repo, &["config", "user.email", "test@example.com"]);
+    git(repo, &["config", "user.name", "Test"]);
+    fs::write(repo.join("CHANGELOG.md"), CHANGELOG_V2).expect("write CHANGELOG.md");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "initial"]);
+    fs::create_dir_all(repo.join(".jigc/config")).expect("create project layer");
+}
+
+/// Placement-singleton reslug guard (M40 A4): a placement doctype's identity is **fixed
+/// to its type** — the singleton's slug IS the type id and the doc lives at its literal
+/// `placement.file` — so reslug is *undefined*, not merely blocked. A reslug attempt
+/// (`--to "Release Notes"` slugs to `release-notes` ≠ `changelog`) must reject with the
+/// real rule, **not** the misleading collision text (pre-fix, `doc_path` resolves the
+/// placement literal ignoring the slug, so `new_abs == old_abs` fell through to guard
+/// (d)'s "a different doc already exists" — it is the SAME file, not a collision;
+/// write-commands.md → Placement singletons).
+#[test]
+fn placement_reslug_rejects_with_the_identity_fixed_rule() {
+    let repo = TempDir::new("placement-reslug");
+    seed_placement_store(repo.path());
+    let before_count = commit_count(repo.path());
+    let before_bytes = fs::read(repo.path().join("CHANGELOG.md")).unwrap();
+
+    let out = jigc(
+        repo.path(),
+        &["rename", "changelog:changelog", "--to", "Release Notes"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a placement-singleton reslug must reject; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("identity is fixed to its type") && stderr.contains("retitle"),
+        "the rejection must state the real rule (identity fixed to the type; retitle-only); \
+         stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("a different doc already exists"),
+        "the rejection must NOT be the collision text — it is the same file, not a \
+         collision; stderr:\n{stderr}",
+    );
+
+    // The store is untouched: the singleton keeps its bytes, no commit landed.
+    assert_eq!(
+        fs::read(repo.path().join("CHANGELOG.md")).unwrap(),
+        before_bytes,
+        "a rejected placement reslug must leave the singleton byte-untouched",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a rejected placement reslug must land no commit",
+    );
+}
+
+/// Placement-singleton retitle-only (M40 A4, the legal arm): a `--to` title that slugs
+/// to the singleton's own fixed slug (`"CHANGELOG"` → `changelog`) is the degenerate
+/// no-op reslug — the rename degrades to a retitle-only (rewrite the H1 + commit once,
+/// no move), so "make the title right" still works on a placement doctype.
+#[test]
+fn placement_same_slug_retitle_succeeds() {
+    let repo = TempDir::new("placement-retitle");
+    seed_placement_store(repo.path());
+    let before_count = commit_count(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        &["rename", "changelog:changelog", "--to", "CHANGELOG"],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "a same-slug placement retitle must succeed; stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    // The doc stays at its literal placement home with the rewritten H1.
+    let body = fs::read_to_string(repo.path().join("CHANGELOG.md")).unwrap();
+    assert!(
+        body.contains("# CHANGELOG") && !body.contains("# Changelog\n"),
+        "the retitle must rewrite the placement singleton's H1 in place; got:\n{body}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count + 1,
+        "a placement retitle-only must emit exactly one commit",
+    );
+}
+
+/// Write the `[dev ▸ methodology]` compose-embedded marker — the exact key `make_pack`
+/// reads to assemble the composition dev-highest (so the dev `docs-root` knob applies
+/// and `milestone-record` homes at `docs/milestone-records/`).
+fn write_compose_marker(repo: &Path) {
+    fs::create_dir_all(repo.join(".jigc/config")).expect("mk project config");
+    fs::write(
+        repo.join(".jigc/config/packs.yaml"),
+        "compose-embedded-methodology: true\n",
+    )
+    .expect("write compose marker");
+}
+
+/// Run `jigc <args>` under the composed `[dev ▸ methodology]` project: `cwd = repo`,
+/// `$HOME = home`, and `JIGC_PACK_DIR` removed (the compose-marker path requires it
+/// ABSENT, else a harness env pack supersedes the marker).
+fn jigc_composed(repo: &Path, home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(args)
+        .current_dir(repo)
+        .env("HOME", home)
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary")
+}
+
+/// Milestone-record reslug guard (M40 A4.4): `jigc rename` refuses a `milestone-record`
+/// reslug **unconditionally — between milestones too**. The record's slug IS the
+/// milestone work-unit id (it keys `.jigc/milestones/<id>` and every milestone op), so a
+/// reslug would sever the committed record from its work unit. With NO milestone in
+/// flight (the workbench dropped — the exact gap the coarse mid-fan-out guard leaves),
+/// the reslug must still refuse with the work-unit-id rationale, keyed on the committed
+/// record's doctype (fresh-clone survivable, no workbench read) — while a same-slug
+/// retitle stays legal (write-commands.md → Milestone-record reslug).
+#[test]
+fn milestone_record_reslug_refuses_between_milestones_and_retitle_stays_legal() {
+    let repo = TempDir::new("milestone-record");
+    let home = TempDir::new("milestone-record-home");
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    fs::write(repo.path().join("README.md"), "hello\n").expect("write file");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial"]);
+    write_compose_marker(repo.path());
+
+    // Mint the milestone — the real binary materializes + commits the record at its
+    // docs-root home (`docs/milestone-records/cache-rework.md`).
+    let out = jigc_composed(
+        repo.path(),
+        home.path(),
+        &["milestone", "create", "Cache rework"],
+    );
+    assert!(
+        out.status.success(),
+        "`jigc milestone create` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let record = repo.path().join("docs/milestone-records/cache-rework.md");
+    assert!(record.is_file(), "the committed record must exist");
+
+    // Between milestones: drop the gitignored workbench so NO milestone is in flight —
+    // the mid-fan-out marker is gone, so only the unconditional record guard can refuse.
+    fs::remove_dir_all(repo.path().join(".jigc/milestones")).expect("drop the workbench");
+    let before_count = commit_count(repo.path());
+    let before_bytes = fs::read(&record).unwrap();
+
+    let out = jigc_composed(
+        repo.path(),
+        home.path(),
+        &[
+            "rename",
+            "milestone-record:cache-rework",
+            "--to",
+            "Cache overhaul",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a milestone-record reslug must refuse even with no milestone in flight; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("work-unit id"),
+        "the refusal must carry the work-unit-id rationale; stderr:\n{stderr}",
+    );
+    assert!(
+        !stderr.contains("in flight"),
+        "the refusal must be the unconditional record guard, not the mid-fan-out \
+         guard (no milestone is in flight); stderr:\n{stderr}",
+    );
+
+    // The store is untouched: the record keeps its slug + bytes, no commit landed.
+    assert!(
+        record.is_file()
+            && !repo
+                .path()
+                .join("docs/milestone-records/cache-overhaul.md")
+                .exists(),
+        "a refused reslug must leave the record at its work-unit slug",
+    );
+    assert_eq!(
+        fs::read(&record).unwrap(),
+        before_bytes,
+        "a refused reslug must leave the record byte-untouched",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count,
+        "a refused reslug must land no commit",
+    );
+
+    // Retitle-only stays legal: "Cache Rework" slugs to the record's own `cache-rework`,
+    // so the rename degrades to the H1 rewrite + one commit — identity untouched.
+    let out = jigc_composed(
+        repo.path(),
+        home.path(),
+        &[
+            "rename",
+            "milestone-record:cache-rework",
+            "--to",
+            "Cache Rework",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "a same-slug milestone-record retitle must stay legal; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    let body = fs::read_to_string(&record).unwrap();
+    assert!(
+        body.contains("# Cache Rework") && !body.contains("# Cache rework"),
+        "the retitle must rewrite the record's H1 in place; got:\n{body}",
+    );
+    assert_eq!(
+        commit_count(repo.path()),
+        before_count + 1,
+        "a record retitle-only must emit exactly one commit",
     );
 }
 

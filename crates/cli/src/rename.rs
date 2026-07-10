@@ -24,9 +24,11 @@
 //! be swept into the one atomic rename commit — commit or stash first); a **collision** with a
 //! *different* committed doc blocks (an identity refactor never silently suffixes); a **no-op
 //! reslug** (the new title slugs to the doc's own current slug) degrades to a **retitle-only**
-//! (rewrite the H1 + commit, no `git mv`, no referrer repoint); and a **mid-fan-out** guard
+//! (rewrite the H1 + commit, no `git mv`, no referrer repoint); a **mid-fan-out** guard
 //! blocks whenever any task working area *or* milestone is in-flight ([DECISIONS.md] 2026-06-28,
-//! pins I2/I4). The advisory prose/unmanaged-mention report is T5.
+//! pins I2/I4); a **placement-singleton** reslug rejects with the real rule (identity fixed to
+//! the type; retitle-only) and a **milestone-record** reslug refuses always — between milestones
+//! too (M40 A4). The advisory prose/unmanaged-mention report is T5.
 
 use anyhow::{Context, Result, anyhow, bail};
 use std::collections::{BTreeMap, BTreeSet};
@@ -147,7 +149,35 @@ pub(crate) fn run(
     //     is unchanged, so the rename degrades to a retitle-only (rewrite H1 + commit, no
     //     `git mv`, no referrer repoint — nothing dangles).
     let is_retitle = new_slug == old_slug;
-    // (d) **collision** — a non-degenerate new slug must be free; a collision with a
+    // (d) **placement-singleton reslug** — undefined, not merely blocked (M40 A4;
+    //     write-commands.md → Placement singletons): a placement doctype's identity is fixed
+    //     to its type — the singleton's slug IS the type id and the doc lives at its literal
+    //     `placement.file` — so there is no reslug to perform. Reject with the real rule
+    //     rather than falling through to (f)'s misleading collision text (`doc_path` resolves
+    //     the placement literal ignoring the slug, so `new_abs == old_abs`: it is the SAME
+    //     file, not a collision). Retitle-only (the degenerate arm (c)) stays supported.
+    if !is_retitle && schema_map[ty.as_str()].placement.is_some() {
+        bail!(
+            "cannot reslug `{old_id}` — a placement singleton's identity is fixed to its type \
+             (the slug IS the type id `{ty}` and the doc lives at the literal {old_rel}); only \
+             a retitle is supported: pass a `--to` title that keeps the slug `{old_slug}`"
+        );
+    }
+    // (e) **milestone-record reslug** — refused always, between milestones too (M40 A4.4;
+    //     write-commands.md → Milestone-record reslug): the record's slug IS the milestone
+    //     work-unit id — it keys `.jigc/milestones/<id>` and every milestone op — so a reslug
+    //     would sever the committed record from its work unit. Keyed on the (necessarily
+    //     committed) rename target's doctype, fresh-clone survivable — no workbench read; the
+    //     coarse mid-fan-out guard (b) covers only the in-flight window.
+    if !is_retitle && ty == crate::milestone::MILESTONE_RECORD_TYPE {
+        bail!(
+            "cannot reslug `{old_id}` — a milestone-record's slug IS its milestone \
+             work-unit id (it keys `.jigc/milestones/{old_slug}` and every milestone op), \
+             so a reslug would sever the committed record from its work unit; only a \
+             retitle is supported: pass a `--to` title that keeps the slug `{old_slug}`"
+        );
+    }
+    // (f) **collision** — a non-degenerate new slug must be free; a collision with a
     //     *different* committed doc blocks (an identity refactor, never the join's suffix).
     if !is_retitle && new_abs.is_file() {
         bail!("cannot rename to `{new_id}` — a different doc already exists at {new_rel}");

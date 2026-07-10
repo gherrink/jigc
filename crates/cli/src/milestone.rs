@@ -230,8 +230,9 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
 /// The methodology-pack doctype governing a milestone's committed team-ready state
 /// (`design/team-ready-state.md` → The `milestone-record` doctype). Present in the resolved
 /// schema set only under a `[dev ▸ methodology]` project; **absent** dev-only (no methodology
-/// pack), which is what degrades `create` back to today's no-record behavior.
-const MILESTONE_RECORD_TYPE: &str = "milestone-record";
+/// pack), which is what degrades `create` back to today's no-record behavior. `pub(crate)`
+/// for the one cross-verb consumer: `rename`'s unconditional record reslug guard (M40 A4.4).
+pub(crate) const MILESTONE_RECORD_TYPE: &str = "milestone-record";
 
 /// Materialize the milestone's committed team-ready `milestone-record` and commit ONLY it —
 /// the record-home split (`design/team-ready-state.md` → The commit model: path-scoped commit
