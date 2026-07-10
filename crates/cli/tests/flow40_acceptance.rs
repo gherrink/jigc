@@ -496,6 +496,9 @@ fn team_ready_arc_joins_then_fresh_clone_reads_and_continues() {
         "\"type\": \"milestone-record\"",
         "\"slug\": \"cache-rework\"",
         "\"status\": \"joined\"",
+        // `schema-version` joined the pinned witness fields when the M40 A1
+        // methodology manifest froze milestone-record.
+        "\"schema-version\": \"1\"",
         "\"task-id\": \"warm-the-read-cache\"",
         "\"intent\": \"Warm the read cache\"",
         "\"task-id\": \"evict-cold-entries\"",

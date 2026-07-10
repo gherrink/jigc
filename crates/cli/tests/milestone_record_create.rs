@@ -99,7 +99,9 @@ fn methodology_pack_tree() -> PathBuf {
 
 /// The shipped `milestone-record.yaml` schema, loaded engine-native — the record read-back
 /// parses committed record bytes against this (structure only; docs-root does not affect
-/// the parse).
+/// the parse). Production loads it through `load_pack_schema`, which injects the
+/// engine-declared schema-version stamp (milestone-record is manifest-frozen since M40 A1)
+/// — mirror the injection so the stamped record bytes parse.
 fn milestone_record_schema() -> engine::schema::Schema {
     let bytes = fs::read(
         methodology_pack_tree()
@@ -107,7 +109,9 @@ fn milestone_record_schema() -> engine::schema::Schema {
             .join("milestone-record.yaml"),
     )
     .expect("read milestone-record.yaml");
-    load_schema(&bytes).expect("milestone-record.yaml loads engine-native")
+    let mut schema = load_schema(&bytes).expect("milestone-record.yaml loads engine-native");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// Run `jigc milestone <args>` with `cwd = repo` and `$HOME = home`, never inheriting a
@@ -225,6 +229,14 @@ fn methodology_create_materializes_record_and_path_scoped_commits() {
         body.contains("status: active"),
         "the fresh record seeds `status: active`; got:\n{body}",
     );
+    // The schema-version stamp: milestone-record is manifest-frozen (M40 A1), so a fresh
+    // mint must carry the stamp the store-scope validate demands — an unstamped mint is
+    // the tool creating its own blocking finding.
+    assert!(
+        body.contains("schema-version: 1"),
+        "the fresh record carries the `schema-version: 1` stamp its manifest-frozen \
+         schema demands; got:\n{body}",
+    );
     let (base, tasks) =
         read_back_record(&milestone_record_schema(), &body).expect("the record reads back");
     assert_eq!(base.sha, head, "the record's `base` pins the repo HEAD");
@@ -232,6 +244,26 @@ fn methodology_create_materializes_record_and_path_scoped_commits() {
         tasks.tasks.is_empty(),
         "a freshly-created record carries an EMPTY task list; got {:?}",
         tasks.tasks,
+    );
+
+    // The store-scope validate does NOT flag the tool's own fresh mint as below the
+    // current schema-version (the M40 A1 stamp demand) — a mint the validator immediately
+    // routes to `migrate` would be the tool creating its own blocking finding.
+    let validate = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .arg("validate")
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env_remove("JIGC_PACK_DIR")
+        .output()
+        .expect("run the jigc binary");
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&validate.stdout),
+        String::from_utf8_lossy(&validate.stderr),
+    );
+    assert!(
+        !report.contains("field schema-version is absent"),
+        "`jigc validate` must not flag the fresh mint as pre-stamp; got:\n{report}",
     );
 
     // Exactly one new commit, naming ONLY the record — the pre-staged unrelated file is NOT

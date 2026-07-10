@@ -89,7 +89,9 @@ fn methodology_pack_tree() -> PathBuf {
         .join("methodology")
 }
 
-/// The shipped `milestone-record.yaml` schema, loaded engine-native.
+/// The shipped `milestone-record.yaml` schema, loaded engine-native, with the
+/// schema-version stamp injected exactly as the production load does
+/// (`load_pack_schema`: milestone-record is manifest-frozen since M40 A1).
 fn milestone_record_schema() -> Schema {
     let bytes = fs::read(
         methodology_pack_tree()
@@ -97,7 +99,9 @@ fn milestone_record_schema() -> Schema {
             .join("milestone-record.yaml"),
     )
     .expect("read milestone-record.yaml");
-    load_schema(&bytes).expect("milestone-record.yaml loads engine-native")
+    let mut schema = load_schema(&bytes).expect("milestone-record.yaml loads engine-native");
+    engine::schema::inject_schema_version_stamp(&mut schema);
+    schema
 }
 
 /// Write the `[dev ▸ methodology]` compose marker.

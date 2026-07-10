@@ -211,7 +211,14 @@ fn run_create(cwd: &Path, title: &str) -> Result<String> {
     // such schema → degrade to today's no-record, no-extra-commit behavior.
     let schemas = shipped_schemas(&jigc_home)?;
     if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
-        materialize_and_commit_record(&jigc_home, schema, &minted)?;
+        // The record's schema-version stamp value: the doctype's manifest version (the
+        // same authority `doc create`'s stamp deriver reads — milestone-record is
+        // manifest-frozen since M40 A1), falling back to 1 for a manifest-less pack.
+        let stamp = crate::pack::frozen_doctype_versions(make_pack().as_ref())
+            .get(MILESTONE_RECORD_TYPE)
+            .copied()
+            .unwrap_or(1);
+        materialize_and_commit_record(&jigc_home, schema, &minted, stamp)?;
     }
 
     Ok(format!(
@@ -229,14 +236,16 @@ const MILESTONE_RECORD_TYPE: &str = "milestone-record";
 /// Materialize the milestone's committed team-ready `milestone-record` and commit ONLY it —
 /// the record-home split (`design/team-ready-state.md` → The commit model: path-scoped commit
 /// at each milestone op). Renders the fresh record bytes ([`render_fresh_record`]: `base` +
-/// `status: active` + an empty `tasks` section), writes them to the record's canonical
-/// committed home under docs-root (`docs/milestone-records/<id>.md`, resolved by
-/// [`shipped_schemas`]' `apply_docs_root`), then lands a **record-only** commit — never
-/// sweeping the agent's in-flight staged/untracked WIP (the M30/M31 path-scoped discipline).
+/// `status: active` + the `schema_version` stamp + an empty `tasks` section), writes them to
+/// the record's canonical committed home under docs-root (`docs/milestone-records/<id>.md`,
+/// resolved by [`shipped_schemas`]' `apply_docs_root`), then lands a **record-only** commit —
+/// never sweeping the agent's in-flight staged/untracked WIP (the M30/M31 path-scoped
+/// discipline).
 fn materialize_and_commit_record(
     jigc_home: &Path,
     schema: &Schema,
     minted: &MintedMilestone,
+    schema_version: u32,
 ) -> Result<()> {
     let record_path = engine::store::canonical_path(jigc_home, schema, &minted.id)
         .context("the `milestone-record` doctype declares no committed location")?;
@@ -244,7 +253,7 @@ fn materialize_and_commit_record(
         std::fs::create_dir_all(parent)
             .with_context(|| format!("could not create the record home {parent:?}"))?;
     }
-    let body = render_fresh_record(schema, &minted.id, &minted.base);
+    let body = render_fresh_record(schema, &minted.id, &minted.base, schema_version);
     std::fs::write(&record_path, &body)
         .with_context(|| format!("could not write the milestone record {record_path:?}"))?;
 

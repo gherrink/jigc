@@ -660,43 +660,70 @@ fn read_back_finding(cause: Option<&Finding>) -> Finding {
 /// base pin — the create/materialize write arm (`design/team-ready-state.md` →
 /// Engine capability 1 (write), the `set: on-create` materialization; M39
 /// Increment 3). Builds the canonical byte form against the pack-supplied `schema`:
-/// the `meta` header carrying the `base` SHA (`set: on-create`) and `status: active`
-/// (`set: on-transition`, seeded active at create), the `# <milestone_id>` H1, and
+/// the `meta` header carrying the `base` SHA (`set: on-create`), `status: active`
+/// (`set: on-transition`, seeded active at create), and — when the schema declares
+/// the injected stamp field — the `schema-version` stamp, the `# <milestone_id>` H1, and
 /// an **empty** repeatable `tasks` section — no sub-task appended yet (`add_task` is
 /// the incremental populator, the mint-site precedent). The result is the committed
 /// record's source-of-truth bytes; the CLI writes + path-scoped-commits them.
 ///
 /// The engine stays **clock-free and LLM-free**: `base` is the caller-supplied SHA
-/// (the CLI read HEAD, "CLI orchestrates, git executes") and `status: active` is a
-/// structural constant, so this is a pure function of (`schema`, `milestone_id`,
-/// `base`) → bytes — golden-testable and the parser's inverse (`render → parse`
-/// round-trips the novel all-machine-set header + empty-repeatable shape).
+/// (the CLI read HEAD, "CLI orchestrates, git executes"), `status: active` is a
+/// structural constant, and `schema_version` is the caller-supplied manifest version
+/// (the CLI's `set: schema-version` deriver value — the manifest lives CLI-side), so
+/// this is a pure function of (`schema`, `milestone_id`, `base`, `schema_version`) →
+/// bytes — golden-testable and the parser's inverse (`render → parse` round-trips
+/// the novel all-machine-set header + empty-repeatable shape).
+///
+/// The stamp is materialized **only when `schema` declares it** — a stamp-injected
+/// schema (the manifest-frozen production load, `load_pack_schema`) renders
+/// `schema-version: <v>` in the header so the fresh mint satisfies the store-scope
+/// stamp demand; a stamp-free schema (a manifest-less pack, the bare engine load)
+/// renders exactly the prior shape, mirroring the load-time injection gate.
 pub fn render_fresh_record(
     schema: &crate::schema::Schema,
     milestone_id: &str,
     base: &BasePin,
+    schema_version: u32,
 ) -> String {
     use crate::field_block::{Field, Value};
     use crate::write::{Instance, SectionContent};
+
+    let mut header_fields = vec![
+        Field {
+            key: RECORD_BASE_FIELD.to_string(),
+            // Both the full SHA and the short — the short is not a fixed
+            // prefix of the sha, so a sha-only record could not round-trip
+            // a `BasePin` losslessly ([`render_base_field`]).
+            value: Value::Scalar(render_base_field(base)),
+        },
+        Field {
+            key: RECORD_STATUS_FIELD.to_string(),
+            value: Value::Scalar(RECORD_STATUS_ACTIVE.to_string()),
+        },
+    ];
+    let declares_stamp = schema.sections.iter().any(|s| {
+        s.header
+            && match &s.body {
+                crate::schema::SectionBody::Simple { fields, .. } => fields
+                    .iter()
+                    .any(|f| f.id == crate::schema::SCHEMA_VERSION_FIELD),
+                crate::schema::SectionBody::Repeatable { .. } => false,
+            }
+    });
+    if declares_stamp {
+        header_fields.push(Field {
+            key: crate::schema::SCHEMA_VERSION_FIELD.to_string(),
+            value: Value::Scalar(schema_version.to_string()),
+        });
+    }
 
     let instance = Instance {
         title: milestone_id.to_string(),
         sections: vec![
             SectionContent {
                 id: RECORD_HEADER_SECTION.to_string(),
-                fields: vec![
-                    Field {
-                        key: RECORD_BASE_FIELD.to_string(),
-                        // Both the full SHA and the short — the short is not a fixed
-                        // prefix of the sha, so a sha-only record could not round-trip
-                        // a `BasePin` losslessly ([`render_base_field`]).
-                        value: Value::Scalar(render_base_field(base)),
-                    },
-                    Field {
-                        key: RECORD_STATUS_FIELD.to_string(),
-                        value: Value::Scalar(RECORD_STATUS_ACTIVE.to_string()),
-                    },
-                ],
+                fields: header_fields,
                 ..Default::default()
             },
             // The empty repeatable `tasks` section — no sub-task materialized yet.
@@ -3510,7 +3537,9 @@ Finalize milestone cache-hardening (3 sub-tasks)
     /// Load the **shipped** `milestone-record` schema from the methodology pack
     /// tree (`packs/methodology/schemas/milestone-record.yaml`, `../../` off the
     /// engine crate root) — so the golden pins the create arm against the real
-    /// pack bytes, not an inlined stand-in.
+    /// pack bytes, not an inlined stand-in. The schema-version stamp is injected
+    /// exactly as the production load does (`load_pack_schema`: milestone-record is
+    /// manifest-frozen since M40 A1), so the goldens pin the stamped shape.
     fn milestone_record_schema() -> crate::schema::Schema {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -3520,7 +3549,10 @@ Finalize milestone cache-hardening (3 sub-tasks)
             .join("schemas")
             .join("milestone-record.yaml");
         let bytes = std::fs::read(&path).expect("read the shipped milestone-record schema");
-        crate::schema::load_schema(&bytes).expect("the shipped milestone-record schema loads")
+        let mut schema =
+            crate::schema::load_schema(&bytes).expect("the shipped milestone-record schema loads");
+        crate::schema::inject_schema_version_stamp(&mut schema);
+        schema
     }
 
     /// T1 done-criterion (`design/team-ready-state.md` → The milestone-record
@@ -3539,7 +3571,7 @@ Finalize milestone cache-hardening (3 sub-tasks)
             short: "1f2e3d4".to_string(),
         };
 
-        let body = render_fresh_record(&schema, "cache-rework", &base);
+        let body = render_fresh_record(&schema, "cache-rework", &base, 1);
 
         // Golden: the `meta` front-matter (base SHA + seeded-active status), the
         // `# cache-rework` H1, and an EMPTY `## Tasks` repeatable — one trailing LF.
@@ -3547,6 +3579,7 @@ Finalize milestone cache-hardening (3 sub-tasks)
 ---
 base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c 1f2e3d4
 status: active
+schema-version: 1
 ---
 
 # cache-rework
@@ -3608,7 +3641,7 @@ status: active
             sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
             short: "1f2e3d4".to_string(),
         };
-        let fresh = render_fresh_record(&schema, "cache-rework", &base);
+        let fresh = render_fresh_record(&schema, "cache-rework", &base, 1);
 
         // Append the first sub-task, then the second — each via the `add-task` append arm.
         let after_one = append_task_item(&schema, &fresh, "warm-cache", "Warm the read cache")
@@ -3621,6 +3654,7 @@ status: active
 ---
 base: 1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c 1f2e3d4
 status: active
+schema-version: 1
 ---
 
 # cache-rework
@@ -3710,7 +3744,7 @@ status: active
             sha: "1f2e3d4c5b6a7980a1b2c3d4e5f60718293a4b5c".to_string(),
             short: "1f2e3d4".to_string(),
         };
-        let fresh = render_fresh_record(&schema, "cache-rework", &base);
+        let fresh = render_fresh_record(&schema, "cache-rework", &base, 1);
         let after_one = append_task_item(&schema, &fresh, "warm-cache", "Warm the read cache")
             .expect("first sub-task appends");
         let committed = append_task_item(&schema, &after_one, "evict-cold", "Evict cold entries")
@@ -3831,7 +3865,7 @@ status: active
         let cache_tasks = read_task_list(&minted.dir).expect("read cache tasks");
 
         // 2. Build the matching record: create + append the two minted sub-task ids.
-        let fresh = render_fresh_record(&schema, &minted.id, &base);
+        let fresh = render_fresh_record(&schema, &minted.id, &base, 1);
         let r1 = append_task_item(&schema, &fresh, &a.task.id, "Warm the read cache")
             .expect("append sub-task 1");
         let record = append_task_item(&schema, &r1, &b.task.id, "Evict cold entries")
