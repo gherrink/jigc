@@ -2650,7 +2650,7 @@ pub(crate) fn apply_docs_root<'a>(
 /// point shared by [`apply_docs_root`] (the schema-load surfaces) and the `migrate-corpus`
 /// relocation walk-home (a relocated doctype's committed instances still sit under this
 /// prefix at the prior `location:` home, but the prior *snapshot* stores that location raw,
-/// so the walk must re-apply the prefix — `crate::migrate_corpus::resolve_migration_homes`).
+/// so the walk must re-apply the prefix — `crate::migrate_corpus::candidate_docs`).
 pub(crate) fn docs_root_prefix(resolved: &cascade::Resolved) -> &str {
     let root = resolved.scalar("docs-root").unwrap_or("").trim_matches('/');
     if root == "." { "" } else { root }

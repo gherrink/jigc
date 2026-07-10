@@ -71,7 +71,7 @@ pub(crate) struct DoctypeMigration {
     /// The resolved `docs-root` prefix (`""` for a flat layout). Applied to the **relocation
     /// walk-home** only: a relocated doctype's committed instances sit under this prefix at
     /// the prior `location:` home, but the prior *snapshot* stores that location raw, so
-    /// [`resolve_migration_homes`] re-applies the prefix. The in-place `to.location` is
+    /// [`candidate_docs`] re-applies the prefix. The in-place `to.location` is
     /// already docs-root-resolved (via `all_schemas`), so this is inert there.
     pub docs_root: String,
 }
@@ -135,12 +135,14 @@ fn migrate_in_repo(cwd: &Path) -> Result<CorpusMigrationReport> {
         // relocated doctype (M38 changelog: `placement: CHANGELOG.md`, `location: None`)
         // must reach the job list so its instances relocate (the sibling `pack.rs`
         // stamp-inject gate uses the same `location.is_some() || placement.is_some()`
-        // idiom; `design/storage.md` → Placement). `resolve_migration_homes` then walks
-        // the prior `location:` home and moves each instance to the placement `file`.
+        // idiom; `design/storage.md` → Placement). `candidate_docs` then walks the
+        // prior `location:` home and moves each instance to the placement `file` — or,
+        // for a placement-born doctype (no prior location), migrates the literal
+        // placement file in place.
         //
         // **The frozen gate — reconciled with the freeze-exempt sibling (M39 inc-5 T4).**
         // This relocation arm gates to `frozen_doctype_versions` (the manifest set): its prior
-        // home is *derived* from the versioned snapshot (`resolve_migration_homes`), so it is
+        // home is *derived* from the versioned snapshot (`candidate_docs`), so it is
         // safe to auto-move. A **freeze-exempt** doctype (no manifest entry, no snapshot) has
         // no derivable prior home, so it is skipped here and relocates through the parallel
         // `crate::relocate::relocate_freeze_exempt` path with a **human-supplied** prior home
@@ -203,24 +205,15 @@ pub(crate) fn migrate_committed_corpus(
     // halts at the first blocker — is deterministic.
     let mut prepared: Vec<PreparedDoc> = Vec::new();
     for dt in doctypes {
-        // Resolve the FROM home to walk (where the committed instances actually sit) and,
-        // for a doctype **relocated** to a single-file placement home, the literal TO path
-        // each instance moves to. The corpus walk keys on the **from** home, never the
-        // (dir-less) placement `to` home, so a relocated doctype's instances at the old
-        // location are still found (`design/corpus-migration.md` → Relocation).
-        let Some((walk_home, relocate_to)) = resolve_migration_homes(pack, dt) else {
-            continue;
-        };
         // The stamp's value comes from the doctype's manifest version: thread it in as the
         // field `default` so the v0 add-field branch (which has no value source for a bare
         // `set`-derived field) places it deterministically. Inert for the below-version
         // path (the stamp is already present there — it is value-bumped, not added).
         let to = with_stamp_default(&dt.to, dt.version);
-        for slug in committed_slugs(repo_root, &walk_home) {
-            let rel_key = format!("{walk_home}{slug}.md");
-            // The destination: the placement `to` for a relocated doctype, else the doc's
-            // own home (an in-place migration, `target_key == rel_key`).
-            let target_key = relocate_to.clone().unwrap_or_else(|| rel_key.clone());
+        // Each candidate is `(source, destination)` — the FROM home the walk found the
+        // committed instance at, and the path the gated bytes land at
+        // (`design/corpus-migration.md` → Relocation: the walk keys on the from home).
+        for (rel_key, target_key) in candidate_docs(pack, repo_root, dt) {
             let Ok(bytes) = std::fs::read(repo_root.join(&rel_key)) else {
                 continue; // read race: skip; the next run re-checks.
             };
@@ -548,40 +541,66 @@ fn deferred_route(rel_key: &str) -> String {
     )
 }
 
-/// Resolve, for one doctype migration job, the **from** home the corpus walk enumerates
-/// (where the committed instances actually sit) and — for a doctype **relocated** to a
-/// single-file placement home — the literal **to** path each instance moves to
-/// (`design/corpus-migration.md` → Relocation: the walk keys on the from home). `None` when
-/// the doctype has no walkable home (a relocated doctype whose prior-location snapshot is
-/// missing).
+/// Enumerate one doctype migration job's committed candidate docs as
+/// `(source, destination)` pairs — the **from** home the corpus walk found each committed
+/// instance at, and the path its gated bytes land at (`design/corpus-migration.md` →
+/// Relocation: the walk keys on the from home). Empty when nothing is committed to walk.
 ///
-/// - A doctype whose **current** shape still declares a `location:` directory migrates
-///   **in place** — walk that directory, no move (`relocate_to = None`).
-/// - A doctype whose current shape is a single-file `placement:` (no `location:`) has
-///   **relocated**: its committed instances still sit at the **prior** version's `location:`
-///   home, sourced from the versioned snapshot at `version - 1` via
-///   [`crate::pack::load_prior_schema`]. The walk enumerates that old directory; each instance
-///   moves to the placement `file`. A missing / location-less prior snapshot yields `None`.
-fn resolve_migration_homes(
+/// - A doctype whose **current** shape declares a `location:` directory migrates
+///   **in place** — every `.md` under that (already docs-root-resolved) directory,
+///   `destination == source`.
+/// - A doctype whose current shape is a single-file `placement:` (no `location:`) splits
+///   on its prior snapshot:
+///   - **relocated** (the M38 changelog): the versioned snapshot at `version - 1`
+///     (via [`crate::pack::load_prior_schema`]) declares the `location:` home its
+///     committed instances still sit at — walk that old directory; each instance moves
+///     to the placement `file`;
+///   - **placement-born** (the M40 methodology singletons — placement at v1, so no
+///     location-bearing prior snapshot exists): the committed instance IS the literal
+///     placement file — migrate it **in place** (the stamp-absent v0 arm's placement
+///     case; pre-M40 this arm skipped the doctype entirely, so an unstamped roadmap
+///     never migrated).
+fn candidate_docs(
     pack: &dyn PackSource,
+    repo_root: &Path,
     dt: &DoctypeMigration,
-) -> Option<(String, Option<String>)> {
+) -> Vec<(String, String)> {
     if let Some(location) = &dt.to.location {
-        return Some((location.clone(), None));
+        return committed_slugs(repo_root, location)
+            .into_iter()
+            .map(|slug| {
+                let key = format!("{location}{slug}.md");
+                (key.clone(), key)
+            })
+            .collect();
     }
-    let placement = dt.to.placement.as_ref()?;
-    let prior = crate::pack::load_prior_schema(pack, &dt.ty, dt.version.checked_sub(1)?).ok()?;
-    let raw_home = prior.location?;
-    // The prior snapshot stores its `location:` **raw** (docs-root-free), but the committed
-    // instances sit under the resolved `docs-root` prefix — re-apply it (the in-place branch
-    // above returns an already-resolved `to.location`, so this is the sole re-application
-    // site; `crate::start::docs_root_prefix`).
-    let from_home = if dt.docs_root.is_empty() {
-        raw_home
-    } else {
-        format!("{}/{raw_home}", dt.docs_root)
+    let Some(placement) = &dt.to.placement else {
+        return Vec::new();
     };
-    Some((from_home, Some(placement.file.clone())))
+    let prior_location = dt
+        .version
+        .checked_sub(1)
+        .and_then(|k| crate::pack::load_prior_schema(pack, &dt.ty, k).ok())
+        .and_then(|prior| prior.location);
+    if let Some(raw_home) = prior_location {
+        // The prior snapshot stores its `location:` **raw** (docs-root-free), but the
+        // committed instances sit under the resolved `docs-root` prefix — re-apply it
+        // (the in-place branch above walks an already-resolved `to.location`, so this is
+        // the sole re-application site; `crate::start::docs_root_prefix`).
+        let from_home = if dt.docs_root.is_empty() {
+            raw_home
+        } else {
+            format!("{}/{raw_home}", dt.docs_root)
+        };
+        return committed_slugs(repo_root, &from_home)
+            .into_iter()
+            .map(|slug| (format!("{from_home}{slug}.md"), placement.file.clone()))
+            .collect();
+    }
+    if repo_root.join(&placement.file).is_file() {
+        return vec![(placement.file.clone(), placement.file.clone())];
+    }
+    Vec::new()
 }
 
 /// The committed-doc slugs of a persisted type — the `.md` file stems under
