@@ -387,6 +387,12 @@ pub fn collect_repeatable(
                 // work (no code resolution), emitted as a `doc-code.*` guard so the
                 // floor/hook catch it. Bound: a compound *tech word* in a title
                 // (`WebSocket`) that is not the symbol would flag — acceptable and rare.
+                // Emitted **advisory** (M40 — keyed as
+                // `validation.doc-code.title-names-symbol.severity`, re-promotable by
+                // a project scalar-set): the brand-name false-positive class
+                // (`WordPress`, `PostgreSQL`) has no valid remedy under blocking —
+                // renaming the heading would be *wrong* — which wedged the agent
+                // (`validation.md` → the M40 knob + demotion block).
                 if let Some((_, symbol)) = value.split_once('#')
                     && declared.title_names_symbol
                     && !symbol.is_empty()
@@ -402,7 +408,7 @@ pub fn collect_repeatable(
                             section.id, item.id, repeatable.id_from
                         );
                         guard_findings.push(Finding::graded(
-                            Severity::Blocking,
+                            Severity::Advisory,
                             "doc-code.title-names-symbol",
                             format!(
                                 "component title `{}` names symbol(s) {title_symbols:?} \
@@ -412,11 +418,13 @@ pub fn collect_repeatable(
                                 item.title
                             ),
                             Some(Location::addressed(title_address, 1, 1)),
-                            Some(
-                                "rename the component heading to the symbol its \
-                                 `implemented-by` anchor names"
-                                    .to_string(),
-                            ),
+                            Some(format!(
+                                "run `jigc doc retitle-item {ty}:{slug}#{}/{} --title \
+                                 \"<new title>\"` — the heading retitles with its \
+                                 `{{#id}}` anchor frozen (a descriptive title that drops \
+                                 the stale symbol also clears this)",
+                                section.id, item.id
+                            )),
                         ));
                     }
                 }
@@ -872,14 +880,17 @@ sections:
         );
     }
 
-    /// A `code-anchor` field carrying `title-names-symbol: true` blocks when the
+    /// A `code-anchor` field carrying `title-names-symbol: true` flags when the
     /// repeatable item's **title** does not contain the symbol the anchor names —
     /// the long-horizon study's Opus prose blind spot (the agent fixed the anchor
     /// to `CommentTagParser` to clear the symbol-exists gate but left the heading
     /// `CommentBlockParser`). The opt-in is pack-declared so a doctype whose item
-    /// titles are prose (spec criteria) is unaffected.
+    /// titles are prose (spec criteria) is unaffected. Emitted **advisory** by
+    /// default (M40 — the brand-name false-positive class has no valid remedy
+    /// under blocking; re-promotable via the cascade knob), with a route naming
+    /// the verb that performs the repair, `jigc doc retitle-item`.
     #[test]
-    fn title_names_symbol_blocks_when_title_does_not_name_the_anchored_symbol() {
+    fn title_names_symbol_flags_advisory_when_title_does_not_name_the_anchored_symbol() {
         const ARCH_SCHEMA: &[u8] = b"\
 type: arch-doc
 location: architecture/
@@ -922,7 +933,7 @@ sections:
 
         // The anchor itself is still enumerated (symbol-exists runs against the code).
         assert_eq!(anchors.len(), 1, "the code-anchor is still enumerated");
-        // …and the title-mismatch raises exactly one blocking guard finding.
+        // …and the title-mismatch raises exactly one advisory guard finding.
         assert_eq!(
             guard_findings.len(),
             1,
@@ -930,7 +941,20 @@ sections:
         );
         let f = &guard_findings[0];
         assert_eq!(f.code, "doc-code.title-names-symbol");
-        assert_eq!(f.severity, Severity::Blocking);
+        assert_eq!(
+            f.severity,
+            Severity::Advisory,
+            "advisory-by-default (M40 demotion)"
+        );
+        // The route names the verb that performs the repair, with the concrete
+        // item address — not a retitle no verb could perform.
+        let route = f.route.as_deref().expect("the finding carries a route");
+        assert!(
+            route.contains(
+                "jigc doc retitle-item arch-doc:core-public-api#components/commentblockparser"
+            ),
+            "the route names `jigc doc retitle-item` at the item address; got: {route}"
+        );
 
         // Control: when the title DOES name the symbol, no finding.
         const CONSISTENT: &str = "\
@@ -969,6 +993,111 @@ sections:
         let (_a3, g3) =
             enumerate_target_surface(&task_dir3, repo3.path(), &schemas).expect("enumerates");
         assert!(g3.is_empty(), "descriptive title raises no finding: {g3:?}");
+    }
+
+    /// The arch-doc schema fixture + a staged brand-name-titled component whose
+    /// anchor names a different symbol — the M40 knob tests' shared drift shape
+    /// (`WordPress` is a compound identifier by the camel-hump rule, but renaming
+    /// the heading to the symbol would be *wrong*: the false-positive class the
+    /// demotion exists for).
+    fn wordpress_guard_findings(tag: &str) -> Vec<Finding> {
+        const ARCH_SCHEMA: &[u8] = b"\
+type: arch-doc
+location: architecture/
+id-from: title
+sections:
+  - id: components
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: implemented-by, type: code-anchor, title-names-symbol: true }
+";
+        const ARCH_INSTANCE: &str = "\
+# Integrations
+
+## Components
+
+### WordPress adapter  {#wordpress-adapter}
+
+<!-- fields -->
+- implemented-by: src/wp/adapter.rs#WpAdapter
+";
+        let repo = TempRoot::new(tag);
+        let task_dir = repo.path().join(".jigc").join("tasks").join("arch");
+        stage(&task_dir, "arch-doc:integrations", ARCH_INSTANCE);
+
+        let mut schemas = BTreeMap::new();
+        schemas.insert(
+            "arch-doc".to_string(),
+            load_schema_with_types(ARCH_SCHEMA, &dev_pack_field_types())
+                .expect("arch-doc fixture loads"),
+        );
+        let (_anchors, guard_findings) =
+            enumerate_target_surface(&task_dir, repo.path(), &schemas).expect("enumerates");
+        guard_findings
+    }
+
+    /// The resolved cascade over the **shipped** knob surface (the embedded
+    /// `knobs.yaml` bytes, production floor-wiring), with an optional project layer.
+    fn shipped_cascade(
+        project: Option<&crate::cascade::OverrideLayer>,
+    ) -> crate::cascade::Resolved {
+        let knobs = crate::knobs::load_knobs(include_bytes!("../../cli/pack/config/knobs.yaml"))
+            .expect("knobs.yaml loads");
+        let pack =
+            crate::cascade::PackDefaultLayer::new("dev", "0.1.0", knobs.base_scalars(), Vec::new())
+                .with_floors(knobs.floors().clone());
+        crate::cascade::resolve(&pack, None, project).expect("resolves")
+    }
+
+    /// The WordPress proof (M40): a brand-name compound identifier in a component
+    /// title over a differently-named symbol raises `doc-code.title-names-symbol`
+    /// at its **advisory** default, and the report built over the *shipped* knob
+    /// surface (no cascade delta) carries no blocking finding — the task
+    /// gate/finalize passes. Under the old hardcoded blocking there was no valid
+    /// remedy (renaming the heading would be wrong), which wedged the agent
+    /// (`validation.md` → doc-code.title-names-symbol, the M40 demotion block).
+    #[test]
+    fn brand_name_title_is_advisory_and_passes_the_gate_over_the_shipped_knobs() {
+        let findings = wordpress_guard_findings("wordpress-advisory");
+        assert_eq!(findings.len(), 1, "one title finding: {findings:?}");
+        assert_eq!(findings[0].code, "doc-code.title-names-symbol");
+
+        let resolved = shipped_cascade(None);
+        let report = crate::result::ValidationReport::new(findings, &resolved);
+        assert_eq!(report.findings[0].severity, Severity::Advisory);
+        assert!(
+            !report.has_blocking(),
+            "an advisory-only title finding does not flip the gate — the \
+             WordPress-titled component finalizes",
+        );
+    }
+
+    /// A strict project re-promotes with one cascade line: a project-layer
+    /// `scalar-set validation.doc-code.title-names-symbol.severity blocking`
+    /// re-grades the emitted advisory to **blocking** through the severity
+    /// post-pass — the check is a keyed `CHECK_INVENTORY` row over a declared,
+    /// tunable (unfloored) knob, not an exempt un-keyed code
+    /// (`validation.md` → doc-code.title-names-symbol: "a strict project
+    /// re-promotes it with one cascade line").
+    #[test]
+    fn title_names_symbol_repromotes_to_blocking_via_a_project_scalar_set() {
+        let findings = wordpress_guard_findings("wordpress-repromote");
+        assert_eq!(findings.len(), 1, "one title finding: {findings:?}");
+
+        let project = crate::cascade::OverrideLayer::empty().scalar_set(
+            "validation.doc-code.title-names-symbol.severity",
+            "blocking",
+        );
+        let resolved = shipped_cascade(Some(&project));
+        let report = crate::result::ValidationReport::new(findings, &resolved);
+        assert_eq!(
+            report.findings[0].severity,
+            Severity::Blocking,
+            "the project scalar-set re-grades the finding through assign_severity",
+        );
+        assert!(report.has_blocking(), "the re-promoted finding gates again");
     }
 
     #[test]

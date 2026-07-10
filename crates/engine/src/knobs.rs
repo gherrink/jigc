@@ -278,13 +278,19 @@ mod tests {
                 "validation.commit-rendering.line-limit-subject.severity",
                 "advisory",
             ),
-            // doc-code (2, tunable; M10 — the pack-provided doc↔code probe,
-            // blocking-by-default, NOT floored).
+            // doc-code (3, tunable; M10 ×2 — the pack-provided doc↔code probe,
+            // blocking-by-default — + the M40 stale-heading guard, advisory-by-
+            // default: the brand-name false-positive class has no valid remedy
+            // under blocking. NOT floored).
             (
                 "validation.doc-code.criterion-maps-to-test.severity",
                 "blocking",
             ),
             ("validation.doc-code.symbol-exists.severity", "blocking"),
+            (
+                "validation.doc-code.title-names-symbol.severity",
+                "advisory",
+            ),
             // file-state: the M4 per-probe default (retained, additive) + the
             // hash-matches per-check key (tunable).
             ("validation.file-state.hash-matches.severity", "blocking"),
@@ -580,19 +586,22 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **28 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
-    /// (floored at `blocking`) + 10 tunable (no floor)** (`validation.md` → Severity
+    /// **29 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
+    /// (floored at `blocking`) + 11 tunable (no floor)** (`validation.md` → Severity
     /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
     /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18);
     /// the M33 `schema-conformance.mention-resolves` row joins the **tunable** set
-    /// (9 → 10 — advisory, store-scope only, unfloored). The 18 intrinsic are exactly
+    /// (9 → 10 — advisory, store-scope only, unfloored); the M40
+    /// `doc-code.title-names-symbol` row joins it too (10 → 11 — the stale-heading
+    /// guard, live since the long-horizon-study fix but shipped un-keyed, keyed +
+    /// demoted to advisory here). The 18 intrinsic are exactly
     /// [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every other per-check key,
-    /// including the two M10 `doc-code.*` rows. Counted over the *embedded* bytes, so
+    /// including the three `doc-code.*` rows. Counted over the *embedded* bytes, so
     /// the count is the shipped surface — not a synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_28_18_10_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_29_18_11_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -607,8 +616,8 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            28,
-            "the inventory totals 28 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            29,
+            "the inventory totals 29 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
         // 18 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
@@ -619,12 +628,12 @@ mod tests {
         assert_eq!(intrinsic, 18, "18 intrinsic checks (floored at blocking)");
         assert_eq!(INTRINSIC_CHECK_KEYS.len(), 18);
 
-        // The remaining 10 are tunable (no floor) — 28 - 18.
+        // The remaining 11 are tunable (no floor) — 29 - 18.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
             .count();
-        assert_eq!(tunable, 10, "10 tunable checks (unfloored)");
+        assert_eq!(tunable, 11, "11 tunable checks (unfloored)");
     }
 
     /// Done-criterion (c): the new `checkpoint-marker-not-shadowed` severity key is

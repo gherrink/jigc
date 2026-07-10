@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-10 — M40 Inc 2 T4: `title-names-symbol` joins `CHECK_INVENTORY`; the route suggests, never dictates, the new title
+
+The minted knob (`validation.doc-code.title-names-symbol.severity`, advisory-default, unfloored) needs a `CHECK_INVENTORY` row to be re-promotable — the post-pass re-grades members only — so the membership count goes 25 → 26 (29 keyed / 18 intrinsic / 11 tunable). The route text names `jigc doc retitle-item <item-addr> --title "<new title>"` with a **placeholder** title, not the anchored symbol: for the brand-name false-positive class the symbol would be the *wrong* title, and a descriptive (identifier-free) retitle also clears the check (executor-chosen per the T4 delegation).
+
 ## 2026-07-10 — M40 Inc 2 T3: the set-field id-from guard mints `write.id-from-field`, one code, type-aware route
 
 `set-field` on a repeatable item's heading-derived `id-from` field rejects with the single write-time code `write.id-from-field` for both arms (not `write.identity-change` — the string arm is a wrong-verb reject, not an identity change; the defect class is one, only the **route** is type-aware: string → `doc retitle-item <item-addr>`, enum → `remove-item` + `add-item` under the target category, T2's route text). The guard lives in `apply_field_target`, so the per-leaf verb and the `doc author` batch inherit it in one place (executor-chosen per the T3 delegation).

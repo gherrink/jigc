@@ -8,10 +8,10 @@
 # not a project-overridable value, so it stays in defaults.yaml.
 # The `validation.*.severity` keys are the per-check severity surface; their
 # defaults + intrinsic-ness are governed by the single source of truth,
-# validation.md → MVP check inventory (28 checks across 9 categories — pinned by
-# engine::knobs per_check_severity_surface_reconciles_to_the_28_18_10_inventory).
-# (The engine's CHECK_INVENTORY post-pass membership set is a 25-row subset of
-# these 28 — it drops the 3 compose-time marker checks; see engine::result
+# validation.md → MVP check inventory (29 checks across 9 categories — pinned by
+# engine::knobs per_check_severity_surface_reconciles_to_the_29_18_11_inventory).
+# (The engine's CHECK_INVENTORY post-pass membership set is a 26-row subset of
+# these 29 — it drops the 3 compose-time marker checks; see engine::result
 # check_inventory_membership_count_is_stable.) The two
 # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
 # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -205,10 +205,11 @@ validation.commit-rendering.line-limit-body.severity:
   of: [blocking, warning, advisory]
   default: advisory
 
-# --- doc-code.* (2, tunable; M10 — the pack-provided doc↔code probe) ---
-# blocking-by-default (a dangling anchor is a real integrity failure) but
-# cascade-tunable, NOT floored — a project may rationally demote to warning.
-# Unlike the floor-locked pack-probe-integrity.* meta-findings above.
+# --- doc-code.* (3, tunable; M10 ×2 + the M40 stale-heading guard) ---
+# symbol-exists / criterion-maps-to-test: blocking-by-default (a dangling
+# anchor is a real integrity failure) but cascade-tunable, NOT floored — a
+# project may rationally demote to warning. Unlike the floor-locked
+# pack-probe-integrity.* meta-findings above.
 validation.doc-code.symbol-exists.severity:
   type: enum
   of: [blocking, warning, advisory]
@@ -217,6 +218,15 @@ validation.doc-code.criterion-maps-to-test.severity:
   type: enum
   of: [blocking, warning, advisory]
   default: blocking
+# title-names-symbol: the stale-heading guard (a component title carrying a
+# compound identifier that is not its anchored symbol). Advisory-by-default —
+# the brand-name false-positive class (`WordPress`, `PostgreSQL`) has no valid
+# remedy under blocking; a strict project re-promotes it with one scalar-set
+# (validation.md → doc-code.title-names-symbol, the M40 demotion block).
+validation.doc-code.title-names-symbol.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
 
 # --- owner-artifact.present (1, intrinsic — the M16 #5 completion-half gate) ---
 # A finalize-time presence assertion: the `owner-artifact` owned-location path on a
