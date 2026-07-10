@@ -125,6 +125,19 @@ long:
 
 Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
+Author its three required slots on the address `create` prints — `context` (the
+forces at play), `decision` (the call itself), `consequences` (tradeoffs and
+follow-on effects):
+
+jigc doc set-slot adr:<slug>#context --from-file - --task add-rate-limiter
+jigc doc set-slot adr:<slug>#decision --from-file - --task add-rate-limiter
+jigc doc set-slot adr:<slug>#consequences --from-file - --task add-rate-limiter
+
+The `options` slot is optional — fill it only when alternatives were genuinely
+weighed; omit it when the call was obvious:
+
+jigc doc set-slot adr:<slug>#options --from-file - --task add-rate-limiter
+
 Before you finalize, verify the change actually works: build it and run the
 tests, and confirm the behaviour you set out to produce. Finalize commits your
 staged work; it does not check that the work is correct.
@@ -419,6 +432,56 @@ fn no_structural_delta_single_task_compose_is_byte_identical_to_the_golden() {
         stdout, NO_DELTA_SINGLE_TASK_GOLDEN,
         "the no-structural-delta compose must stay byte-identical to the pre-increment baseline",
     );
+}
+
+#[test]
+fn single_task_compose_enumerates_all_four_adr_slot_commands() {
+    // The M40 A4 done-criterion (doctype-authoring.md → Authoring surface: adr's
+    // inline step was the named anti-pattern): the composed `single-task` view must
+    // enumerate ALL FOUR adr slots — the three required (`context`, `decision`,
+    // `consequences`) plus the optional `options` — each with its `set-slot`
+    // command, task-id resolved. Asserted on the emitted bytes through the binary:
+    // the create-adr mint line first, then the slot commands, before the
+    // finalize-verification prose.
+    let repo = TempDir::new("adr-slot-enumeration");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    fs::write(
+        repo.path()
+            .join(".jigc")
+            .join("config")
+            .join("manifest.yaml"),
+        "scalar:\n  default-workflow: single-task\n",
+    )
+    .expect("write project manifest");
+
+    let out = run_start(repo.path(), home.path(), &["add rate limiter"]);
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    assert!(
+        out.status.success(),
+        "the compose must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let create_at = stdout
+        .find("Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`")
+        .expect("the create-adr mint line composes");
+    let verify_at = stdout
+        .find("Before you finalize")
+        .expect("the finalize-verification prose composes");
+    for slot in ["context", "decision", "consequences", "options"] {
+        let line =
+            format!("jigc doc set-slot adr:<slug>#{slot} --from-file - --task add-rate-limiter");
+        let at = stdout.find(&line).unwrap_or_else(|| {
+            panic!("the composed view must carry the `{slot}` set-slot command; got:\n{stdout}")
+        });
+        assert!(
+            create_at < at && at < verify_at,
+            "the `{slot}` set-slot command must sit between the create-adr mint and the verification prose; got:\n{stdout}",
+        );
+    }
 }
 
 #[test]

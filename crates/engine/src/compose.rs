@@ -5076,6 +5076,19 @@ explain what changes (nothing appears if it supersedes none).
 
         Run: `jigc doc create adr --title <TITLE> --task add-rate-limiter`
 
+        Author its three required slots on the address `create` prints — `context` (the
+        forces at play), `decision` (the call itself), `consequences` (tradeoffs and
+        follow-on effects):
+
+        jigc doc set-slot adr:<slug>#context --from-file - --task {{task.id}}
+        jigc doc set-slot adr:<slug>#decision --from-file - --task {{task.id}}
+        jigc doc set-slot adr:<slug>#consequences --from-file - --task {{task.id}}
+
+        The `options` slot is optional — fill it only when alternatives were genuinely
+        weighed; omit it when the call was obvious:
+
+        jigc doc set-slot adr:<slug>#options --from-file - --task {{task.id}}
+
         Before you finalize, verify the change actually works: build it and run the
         tests, and confirm the behaviour you set out to produce. Finalize commits your
         staged work; it does not check that the work is correct.
