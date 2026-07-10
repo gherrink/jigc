@@ -132,6 +132,9 @@ struct Record<'a> {
     /// `--version`), counted by `main()`'s fd-level tee — the adoption trial's A7 mass-output
     /// signal (`design/measurement.md`:70).
     output_bytes: u128,
+    /// The running binary's own `CARGO_PKG_VERSION` (M40 A3) — a log spanning an upgrade
+    /// attributes each record to the binary that wrote it.
+    binary_version: &'static str,
 }
 
 /// Append one JSONL line to `<logs_dir>/invocations.jsonl`, creating `logs_dir` on demand.
@@ -154,6 +157,7 @@ fn append_record(
         duration_ms,
         finding_codes,
         output_bytes,
+        binary_version: env!("CARGO_PKG_VERSION"),
     };
     let mut line = serde_json::to_string(&record).map_err(std::io::Error::other)?;
     line.push('\n');

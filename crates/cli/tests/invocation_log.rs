@@ -231,6 +231,29 @@ fn failing_verb_records_finding_codes() {
     );
 }
 
+/// Knob ON: every record carries `binary_version` — the running binary's own
+/// `CARGO_PKG_VERSION` (M40 A3) — so a log spanning an upgrade attributes each record to the
+/// binary that wrote it. The integration test shares the `cli` package's version, so the
+/// expectation is the same `env!` the binary stamps.
+#[test]
+fn record_carries_binary_version() {
+    let repo = TempDir::new("version");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    enable_log(repo.path(), home.path());
+
+    let out = jigc(repo.path(), home.path(), &["describe"]);
+    assert!(out.status.success(), "`jigc describe` must succeed");
+
+    let records = log_records(repo.path());
+    let rec = record_with_arg(&records, "describe").expect("the describe invocation is logged");
+    assert_eq!(
+        rec["binary_version"].as_str(),
+        Some(env!("CARGO_PKG_VERSION")),
+        "the record carries the running binary's CARGO_PKG_VERSION; got {rec}",
+    );
+}
+
 /// Knob ON: the recorded `output_bytes` equals the exact stdout+stderr byte count the driven
 /// binary emitted for a known-output verb — the fd-level tee counts the true total, not a
 /// per-emitter tally. A swallowing tee (counts but never forwards) fails here too: `Command`
