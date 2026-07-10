@@ -84,12 +84,17 @@ pub fn instance_path(task_dir: &Path, type_name: &str, slug: &str) -> PathBuf {
 /// Build the **empty** in-memory instance for `schema` — the canonical template the
 /// workflow provisions: the H1 title is the caller-supplied `title` (the human
 /// id-source text, **not** the kebab slug — `design/write-commands.md` → the H1
-/// renders the title, the id is `slugify(title)`), and every schema section is left
-/// content-free (no field values, no slot prose, no items). Rendered through
-/// [`crate::write::render`], this yields the full skeleton — front-matter (no
-/// values), the `# <title>` H1, and every `## Heading` with an empty slot — the bytes
-/// the agent then fills slot-by-slot (`design/write-commands.md` → Instance
-/// provisioning: "the agent only fills slots").
+/// renders the title, the id is `slugify(title)`), every body section is left
+/// content-free (no slot prose, no items), and every **header** section pre-stamps
+/// its **author-required** fields as empty `key:` lines in schema-declared order
+/// (M40 F1 — the commit doc's fillable-form precedent generalized through the shared
+/// [`crate::validate::is_author_required`] predicate, so a required field is never
+/// invisible at create; `design/write-commands.md` → Instance provisioning;
+/// `DECISIONS.md` 2026-07-10 → M40 Settle #4). Rendered through
+/// [`crate::write::render`], this yields the full skeleton — front-matter (the
+/// stamped empty keys), the `# <title>` H1, and every `## Heading` with an empty
+/// slot — the bytes the agent then fills slot-by-slot (`design/write-commands.md` →
+/// Instance provisioning: "the agent only fills slots").
 fn empty_instance(schema: &Schema, title: &str) -> Instance {
     Instance {
         title: title.to_string(),
@@ -98,10 +103,33 @@ fn empty_instance(schema: &Schema, title: &str) -> Instance {
             .iter()
             .map(|s| SectionContent {
                 id: s.id.clone(),
+                fields: stamped_header_fields(s),
                 ..Default::default()
             })
             .collect(),
     }
+}
+
+/// The pre-stamped empty `key:` lines for one schema section: every
+/// **author-required** field of a **header** simple section, in schema-declared
+/// order ([`empty_instance`]'s M40 F1 skeleton stamp). A non-header section, a
+/// repeatable, and every exempt field (`default:`/`set:`/optional/`optional ref`/
+/// pack-typed — [`crate::validate::is_author_required`]) stamp nothing.
+fn stamped_header_fields(section: &crate::schema::Section) -> Vec<crate::field_block::Field> {
+    if !section.header {
+        return Vec::new();
+    }
+    let crate::schema::SectionBody::Simple { fields, .. } = &section.body else {
+        return Vec::new();
+    };
+    fields
+        .iter()
+        .filter(|f| crate::validate::is_author_required(f))
+        .map(|f| crate::field_block::Field {
+            key: f.id.clone(),
+            value: crate::field_block::Value::Scalar(String::new()),
+        })
+        .collect()
 }
 
 /// The empty template ([`empty_instance`]) with the caller-supplied **on-create**
@@ -113,14 +141,17 @@ fn empty_instance(schema: &Schema, title: &str) -> Instance {
 ///
 /// An **empty** `on_create` slice leaves the instance byte-identical to
 /// [`empty_instance`] — the additive-neutrality guard every existing caller relies
-/// on. Each non-empty seed field is routed to the simple section whose `fields`
+/// on (which, since M40 F1, includes the pre-stamped author-required header lines).
+/// Each non-empty seed field is routed to the simple section whose `fields`
 /// **declares a leaf of that id** (mirroring the item-level model where a field lands
-/// in its own block), in the section's own declared field order; the header is just
-/// one such section. A field declared by no simple section is dropped (no home to
-/// seed) — but the CLI collects seeds *from* the schema's simple sections, so every
-/// seed has a declaring section. (Before this routing the slice was written wholesale
-/// into the single header section, silently misplacing a seed declared in a non-header
-/// body section — inert for the shipped header-only doctypes, but a latent gap.)
+/// in its own block), **merged with that section's skeleton stamps in the section's
+/// own declared field order** — a stamped author-required line and a seeded
+/// default/on-create value interleave exactly as the schema declares them. A field
+/// declared by no simple section is dropped (no home to seed) — but the CLI collects
+/// seeds *from* the schema's simple sections, so every seed has a declaring section.
+/// (Before this routing the slice was written wholesale into the single header
+/// section, silently misplacing a seed declared in a non-header body section — inert
+/// for the shipped header-only doctypes, but a latent gap.)
 fn seeded_instance(
     schema: &Schema,
     title: &str,
@@ -134,16 +165,28 @@ fn seeded_instance(
         let crate::schema::SectionBody::Simple { fields, .. } = &section.body else {
             continue;
         };
-        // The seeds this section declares, in the section's own declared field order.
-        let seeded: Vec<crate::field_block::Field> = fields
+        // The section's declared fields, in declared order: a seed where the caller
+        // supplied one, else the skeleton's author-required empty stamp (header only).
+        let merged: Vec<crate::field_block::Field> = fields
             .iter()
-            .filter_map(|decl| on_create.iter().find(|f| f.key == decl.id).cloned())
+            .filter_map(|decl| {
+                if let Some(seed) = on_create.iter().find(|f| f.key == decl.id) {
+                    return Some(seed.clone());
+                }
+                if section.header && crate::validate::is_author_required(decl) {
+                    return Some(crate::field_block::Field {
+                        key: decl.id.clone(),
+                        value: crate::field_block::Value::Scalar(String::new()),
+                    });
+                }
+                None
+            })
             .collect();
-        if seeded.is_empty() {
+        if merged.is_empty() {
             continue;
         }
         if let Some(content) = instance.sections.iter_mut().find(|c| c.id == section.id) {
-            content.fields = seeded;
+            content.fields = merged;
         }
     }
     instance

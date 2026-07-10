@@ -689,9 +689,10 @@ fn split_emitted(line: &str) -> Vec<String> {
 ///      `completions/m16.md` / `docs/decisions-log.md` /
 ///      `completions/artifacts/...`);
 ///   4. finalize with `owner-artifact` unset exits 3 and surfaces
-///      `schema-conformance.required-field-present` naming the field — the omission
-///      now blocks at CONFORMANCE (never a vacuous pass, never the #5 gate's job),
-///      and no commit lands;
+///      `schema-conformance.field-value-conformant` naming the field (the M40 F1
+///      create skeleton pre-stamps the author-required field empty, so the
+///      omission is present-but-empty) — it still blocks at CONFORMANCE (never a
+///      vacuous pass, never the #5 gate's job), and no commit lands;
 ///   5. after `set-field meta/owner-artifact` + durably staging the artifact, finalize
 ///      auto-RE-PINS over the moved (disjoint) history and lands exactly ONE commit
 ///      promoting the record + the artifact together — the fix commit's own file does
@@ -758,7 +759,8 @@ fn completion_finalize_after_fix_commits_repins_and_blocks_on_omitted_owner_arti
     );
 
     // 4. Finalize with `owner-artifact` unset: the omission blocks at CONFORMANCE —
-    //    exit 3, `schema-conformance.required-field-present` naming the field, no commit.
+    //    exit 3, `schema-conformance.field-value-conformant` naming the pre-stamped
+    //    empty field (M40 F1), no commit.
     let before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .trim()
         .parse()
@@ -776,9 +778,10 @@ fn completion_finalize_after_fix_commits_repins_and_blocks_on_omitted_owner_arti
          got:\n{rendered}",
     );
     assert!(
-        rendered.contains("schema-conformance.required-field-present"),
-        "the omission surfaces `schema-conformance.required-field-present` (conformance \
-         owns absence — the M17 flip); got:\n{rendered}",
+        rendered.contains("schema-conformance.field-value-conformant"),
+        "the omission surfaces `schema-conformance.field-value-conformant` (conformance \
+         owns the un-filled field — the M17 flip kept it a gate; the M40 F1 pre-stamp \
+         makes it present-but-empty); got:\n{rendered}",
     );
     assert!(
         rendered.contains("owner-artifact"),

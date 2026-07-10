@@ -399,9 +399,18 @@ fn provision_on_first_entry(
 /// blocking) — yet the design mandates a spec-less `commit` finalizes cleanly
 /// without it (`implementation/doctype-map.md` → `commit —implements→ spec`, `0..1`).
 /// So an optional ref is **absent** in the fillable form, exactly as `validate.rs`'s
-/// `required-field-present` exempts it (the two views agree on the same cardinality
-/// predicate). The spec-driven workflow that *does* set it materializes the line
-/// when it lands (a later M3 increment), not here.
+/// `required-field-present` exempts it — through the engine's own
+/// [`engine::validate::is_optional_ref`] predicate (M40 F1 retired the local
+/// mirror), so provisioning and validation cannot drift. The spec-driven workflow
+/// that *does* set it materializes the line when it lands (a later M3 increment),
+/// not here.
+///
+/// Note the rule here is deliberately **all header fields minus optional refs** —
+/// broader than the engine skeleton's author-required-only stamp
+/// (`engine::state`'s M40 create skeleton): the commit form also stamps
+/// `optional:` fields like `scope:` as fill-me levers, and that byte shape is
+/// locked by the migration-commit golden, so the predicate's *home* moved without
+/// changing the stamping rule.
 fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::Instance {
     use engine::field_block::{Field, Value};
     use engine::schema::SectionBody;
@@ -415,7 +424,7 @@ fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::
                 match &section.body {
                     SectionBody::Simple { fields, .. } => fields
                         .iter()
-                        .filter(|f| !is_optional_ref(f))
+                        .filter(|f| !engine::validate::is_optional_ref(f))
                         .map(|f| Field {
                             key: f.id.clone(),
                             value: Value::Scalar(String::new()),
@@ -437,19 +446,6 @@ fn fillable_form(schema: &engine::schema::Schema, slug: &str) -> engine::write::
         title: slug.to_string(),
         sections,
     }
-}
-
-/// Whether `field` is an **optional `ref`** — a `ref` whose forward cardinality has a
-/// minimum of 0 (`card:` absent ⇒ the `"0..1"` default, or an explicit form starting
-/// with `0`). Such a ref carries no author obligation, so the fillable form omits its
-/// line. Mirrors `engine::validate`'s `required-field-present` optional-ref exemption
-/// so provisioning and validation agree on the same predicate.
-fn is_optional_ref(field: &engine::schema::Field) -> bool {
-    field.ty == engine::schema::FieldType::Ref
-        && field
-            .card
-            .as_deref()
-            .is_none_or(|card| card.trim_start().starts_with('0'))
 }
 
 /// The cascade knob the default-workflow id is read from
@@ -3949,7 +3945,7 @@ mod tests {
             panic!("header is a simple section");
         };
         let implements = fields.iter().find(|f| f.id == "implements").unwrap();
-        assert!(is_optional_ref(implements));
+        assert!(engine::validate::is_optional_ref(implements));
         // The pre-stamped required fields carry an empty scalar (the fillable line).
         assert_eq!(header.fields[0].value, Value::Scalar(String::new()));
     }

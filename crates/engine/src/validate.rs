@@ -1787,14 +1787,20 @@ fn check_field_value(
 /// (`design/validation.md` → the synthetic `ref-resolves` check; `document-type-schema.md`
 /// → `ref` cardinality + Pack-declared field types; `DECISIONS.md 2026-06-06` → M10 inc-1:
 /// both shipped anchors are optional.)
-fn is_author_required(field: &SchemaField) -> bool {
+///
+/// `pub` since M40 F1: this predicate is the **shared** authority the mint and the
+/// read surface consume — [`crate::state`]'s create skeleton pre-stamps exactly the
+/// author-required header fields, and the CLI's `doc schema` projection reports
+/// `author-required` per field — so provisioning, validation, and introspection can
+/// never drift apart (`DECISIONS.md` 2026-07-10 → M40 Settle #4).
+pub fn is_author_required(field: &SchemaField) -> bool {
     // An `optional:` field is never author-required — its absence does not block
     // finalize, while a required field still does (`design/changelog.md` → engine
     // work #3). Covers both the simple-section and repeatable-item field arms.
     if field.optional {
         return false;
     }
-    if field.ty == FieldType::Ref && ref_min_cardinality_zero(field) {
+    if is_optional_ref(field) {
         return false;
     }
     if matches!(field.ty, FieldType::Pack(_)) {
@@ -1810,14 +1816,19 @@ fn is_author_required(field: &SchemaField) -> bool {
     field.default.is_none() && field.set.is_none()
 }
 
-/// Whether a `ref` field's forward cardinality has a minimum of 0 (it is optional).
-/// `card:` defaults to `"0..1"` when omitted (`schema.rs` → `SchemaField::card`); an
-/// explicit form is optional iff it starts with `"0"` (`"0..1"` / `"0..*"`).
-fn ref_min_cardinality_zero(field: &SchemaField) -> bool {
-    match field.card.as_deref() {
-        None => true,
-        Some(card) => card.trim_start().starts_with('0'),
-    }
+/// Whether `field` is an **optional `ref`** — a `ref` whose forward cardinality has
+/// a minimum of 0 (`card:` absent ⇒ the `"0..1"` default per `schema.rs` →
+/// `SchemaField::card`, or an explicit form starting with `0` — `"0..1"` / `"0..*"`).
+/// Such a ref carries no author obligation ([`is_author_required`] exempts it), and
+/// the commit doc's fillable form omits its line for the same reason — `pub` so the
+/// CLI consumes this one predicate instead of a hand-maintained mirror (M40 F1;
+/// `DECISIONS.md` 2026-07-10 → M40 Settle #4).
+pub fn is_optional_ref(field: &SchemaField) -> bool {
+    field.ty == FieldType::Ref
+        && match field.card.as_deref() {
+            None => true,
+            Some(card) => card.trim_start().starts_with('0'),
+        }
 }
 
 /// The located coordinate for a slot finding: the slot span's start line when known.

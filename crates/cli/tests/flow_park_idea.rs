@@ -321,6 +321,69 @@ fn park_idea_composes_creates_authors_and_finalizes() {
     );
 }
 
+/// M40 F1 (T1): the create mint **pre-stamps every author-required header field as
+/// an empty `key:` line in schema position** (`design/write-commands.md` → Instance
+/// provisioning, the M40 create note; `DECISIONS.md` 2026-07-10 M40 Settle #4) —
+/// `idea`'s `trigger` (no `default:`/`set:`, not an optional ref or pack type) must
+/// appear in the staged skeleton BEFORE the CLI-seeded on-create `date`, so a
+/// required field is never invisible at create.
+#[test]
+fn create_idea_pre_stamps_the_author_required_trigger_line() {
+    let repo = TempDir::new("skeleton");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    setup(repo.path(), home.path());
+
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "park-idea", "a cache warming pass"],
+            None,
+        ),
+        "`jigc start --workflow park-idea` mints the task",
+    );
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "create",
+                "idea",
+                "--title",
+                "Warm The Cache On Boot",
+                "--task",
+                "a-cache-warming-pass",
+            ],
+            None,
+        ),
+        "`doc create idea`",
+    );
+
+    let staged = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join("a-cache-warming-pass")
+        .join("docs")
+        .join("idea:warm-the-cache-on-boot.md");
+    let body = fs::read_to_string(&staged).expect("read the staged idea skeleton");
+    let lines: Vec<&str> = body.lines().collect();
+    assert_eq!(lines[0], "---", "front matter opens; got:\n{body}");
+    assert_eq!(
+        lines[1], "trigger: ",
+        "the author-required `trigger` is pre-stamped as an empty `key:` line (the \
+         canonical empty-scalar form, same as the commit form's `type: `) in schema \
+         position (before the seeded `date`); got:\n{body}",
+    );
+    assert!(
+        lines[2].starts_with("date: "),
+        "the CLI-seeded on-create `date` follows in schema order; got:\n{body}",
+    );
+    assert_eq!(lines[3], "---", "front matter closes; got:\n{body}");
+}
+
 /// (3) + (4): `park-idea` is on the router catalog (selectable: true — the fork-5
 /// discoverability requirement) AND narrated by `describe` with its authored prose.
 #[test]

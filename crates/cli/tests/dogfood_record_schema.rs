@@ -19,7 +19,9 @@
 //!       engine-validated at the write boundary (the typed-but-transcribed bound).
 //!
 //!   (c) **A missing fact field / an omitted owner-artifact BLOCKS finalize** at
-//!       `required-field-present` — the record cannot land half-transcribed.
+//!       `field-value-conformant` (the M40 F1 create skeleton pre-stamps every
+//!       author-required meta field empty, so an un-set field is present-but-empty)
+//!       — the record cannot land half-transcribed.
 //!
 //!   (d) **A fully-authored record with a durably-staged artifact finalizes**,
 //!       promoting the record to `dogfood/` (its OWN location dir).
@@ -450,7 +452,11 @@ fn a_malformed_int_and_an_invalid_case_enum_write_block() {
 }
 
 /// (c) A record missing one transcribed fact field makes `task finalize` exit
-/// non-zero at `required-field-present` — it cannot land half-transcribed.
+/// non-zero — it cannot land half-transcribed. Since M40 F1 the create skeleton
+/// pre-stamps every author-required meta field as an empty `key:` line, so the
+/// un-transcribed fact is **present-but-empty** and blocks at
+/// `field-value-conformant` (an empty int is non-conformant), no longer at
+/// `required-field-present` — the gate holds either way.
 #[test]
 fn finalize_blocks_a_missing_fact_field() {
     let repo = TempDir::new("missingfact");
@@ -484,12 +490,12 @@ fn finalize_blocks_a_missing_fact_field() {
         "a missing fact field must make finalize exit non-zero; got:\n{rendered}",
     );
     assert!(
-        rendered.contains("required-field-present"),
-        "the block surfaces required-field-present; got:\n{rendered}",
+        rendered.contains("field-value-conformant"),
+        "the pre-stamped empty fact blocks at field-value-conformant; got:\n{rendered}",
     );
     assert!(
         rendered.contains("oob-edits"),
-        "the block names the missing `oob-edits` fact field; got:\n{rendered}",
+        "the block names the un-transcribed `oob-edits` fact field; got:\n{rendered}",
     );
     let after: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
         .trim()
@@ -499,8 +505,10 @@ fn finalize_blocks_a_missing_fact_field() {
 }
 
 /// (c, cont.) A record whose `owner-artifact` field is never set makes `task
-/// finalize` exit non-zero at `required-field-present` — the raw capture cannot
-/// be silently omitted.
+/// finalize` exit non-zero — the raw capture cannot be silently omitted. The M40 F1
+/// skeleton pre-stamps the field empty, so the omission blocks at
+/// `field-value-conformant` (an empty owned-location is non-conformant), no longer
+/// at `required-field-present` — the gate holds either way.
 #[test]
 fn finalize_blocks_an_omitted_owner_artifact() {
     let repo = TempDir::new("noartifact");
@@ -533,8 +541,8 @@ fn finalize_blocks_an_omitted_owner_artifact() {
         "an omitted owner-artifact must make finalize exit non-zero; got:\n{rendered}",
     );
     assert!(
-        rendered.contains("required-field-present"),
-        "the block surfaces required-field-present; got:\n{rendered}",
+        rendered.contains("field-value-conformant"),
+        "the pre-stamped empty owner-artifact blocks at field-value-conformant; got:\n{rendered}",
     );
     assert!(
         rendered.contains("owner-artifact"),

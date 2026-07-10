@@ -579,8 +579,10 @@ fn flow21_measured_run_end_to_end() {
     );
     let stderr = String::from_utf8_lossy(&blocked.stderr).to_string();
     assert!(
-        stderr.contains("required-field-present") && stderr.contains("oob-edits"),
-        "the block names the missing `oob-edits` fact field; got:\n{stderr}",
+        stderr.contains("field-value-conformant") && stderr.contains("oob-edits"),
+        "the block names the un-transcribed `oob-edits` fact field (present-but-empty \
+         since the M40 F1 create skeleton pre-stamps it, so it blocks at \
+         field-value-conformant); got:\n{stderr}",
     );
 
     // 3b — fact transcribed; the omitted owner-artifact still blocks (#5 gate).
