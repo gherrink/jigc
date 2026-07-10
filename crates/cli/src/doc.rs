@@ -161,6 +161,8 @@ pub enum DocCommand {
     /// array; a `#section` slice returns that section's value (item array / slot prose),
     /// an `#section/<id>` slice the item object, an `#section/<id>/<leaf>` slice the leaf.
     /// Reads the committed store — it takes **no** `--task` (unlike the write verbs).
+    /// A doc still staged in an open task is not committed yet; read it with
+    /// `jigc task diff <id>` instead.
     Show {
         /// The doc address — `<type>:<slug>`, or a `#section`/item/leaf slice of it.
         addr: String,

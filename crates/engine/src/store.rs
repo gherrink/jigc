@@ -167,7 +167,9 @@ pub fn read_slice(
                 path.display()
             ),
             &address_str,
-            "create the referenced doc, or fix the reference to an existing one".to_string(),
+            "create the referenced doc, or fix the reference to an existing one; a doc \
+             staged in an open task is not committed yet — read it with `jigc task diff <id>`"
+                .to_string(),
         )
     })?;
     // Tolerate a leading BOM on read (Windows-editor edits) before parse + slice.
@@ -779,6 +781,25 @@ A cold node loses its sessions; clients re-authenticate.
         );
         assert!(err.location.is_some(), "the block is located");
         assert!(err.route.is_some(), "the block carries a route");
+    }
+
+    /// (M40 F12) The `store.not-found` route names `jigc task diff <id>` for the
+    /// staged-in-an-open-task case: a doc minted but not yet finalized has no
+    /// committed file, so "create the referenced doc" alone actively misleads —
+    /// the sanctioned read of a staged doc is the task's working diff.
+    #[test]
+    fn store_not_found_route_points_staged_docs_at_task_diff() {
+        let root = TempRoot::new("missing-route");
+        let address = Address::parse("adr:does-not-exist#decision").expect("valid address");
+        let err = read_slice(root.path(), &schemas(), &address)
+            .expect_err("a missing committed file blocks");
+
+        assert_eq!(err.code, "store.not-found");
+        let route = err.route.expect("the block carries a route");
+        assert!(
+            route.contains("jigc task diff <id>"),
+            "route names the staged-doc read: {route}"
+        );
     }
 
     /// (M39 inc-1 T1) A **fragmentless** address reads the whole committed doc

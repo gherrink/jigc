@@ -156,19 +156,24 @@ pub enum Command {
     /// Scan the project for existing markdown docs, adopt every conformant one
     /// (register-only — never moving or rewriting a file), and print a triage
     /// report. Misplaced or non-conformant files are flagged for a human; exits 0.
+    /// A flagged non-conformant file is rewritten into managed shape with `jigc
+    /// migrate <path> --as <doctype>`.
     Ingest,
 
     /// Rewrite a foreign, non-conformant document into managed shape — `jigc
     /// migrate <path> --as <doctype>`. Mints a migration task and composes the
     /// `migrate-<doctype>` workflow so the agent re-authors the content through the
-    /// write verbs (`changelog`, `adr`, `spec`, `prd`, and `arch-doc` all migrate).
+    /// write verbs. Works for any doctype with a shipped `migrate-<doctype>` workflow
+    /// — see the error message for the live set. An already-conformant file needs no
+    /// rewrite: adopt it with `jigc ingest` instead.
     Migrate {
         /// The repo-relative path of the foreign document to migrate (e.g.
         /// `CHANGELOG.md`).
         path: String,
 
-        /// The target managed doctype the foreign document is rewritten into — one of
-        /// `changelog`, `adr`, `spec`, `prd`, `arch-doc`.
+        /// The target managed doctype the foreign document is rewritten into — any
+        /// doctype with a shipped `migrate-<doctype>` workflow — see the error
+        /// message for the live set.
         #[arg(long = "as")]
         r#as: String,
     },
@@ -2036,5 +2041,75 @@ mod cli_parse {
         let err = Cli::try_parse_from(["jigc", "start", "--help"])
             .expect_err("--help short-circuits parsing");
         assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+    }
+
+    /// Render the long help (`--help`) of a nested subcommand — the emitted text an
+    /// agent/human actually reads, not a reconstruction of the doc comments.
+    fn long_help(path: &[&str]) -> String {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        let mut sub = &mut cmd;
+        for name in path {
+            sub = sub
+                .find_subcommand_mut(name)
+                .unwrap_or_else(|| panic!("subcommand `{name}` exists"));
+        }
+        sub.render_long_help().to_string()
+    }
+
+    /// (M40 F9) `jigc migrate --help` carries **no** hardcoded doctype enumeration —
+    /// the migratable set is derived at runtime from the shipped `migrate-<doctype>`
+    /// workflows (12 post-M40), so compile-time clap text enumerating it goes stale
+    /// on every pack addition. Both former sites (the verb doc-comment and the `--as`
+    /// arg doc) now point at the live set instead, and the verb cross-points `ingest`
+    /// (the conformant-adoption sibling).
+    #[test]
+    fn migrate_help_is_de_enumerated_and_cross_points_ingest() {
+        let help = long_help(&["migrate"]);
+        for stale in ["`adr`", "`spec`", "`prd`", "arch-doc"] {
+            assert!(
+                !help.contains(stale),
+                "migrate --help must not enumerate doctypes (found {stale}): {help}"
+            );
+        }
+        assert_eq!(
+            help.matches("any doctype with a shipped `migrate-<doctype>` workflow")
+                .count(),
+            2,
+            "both former enumeration sites route to the live set: {help}"
+        );
+        assert!(
+            help.contains("see the error message for the live set"),
+            "migrate --help points at the runtime-derived set: {help}"
+        );
+        assert!(
+            help.contains("jigc ingest"),
+            "migrate --help cross-points ingest: {help}"
+        );
+    }
+
+    /// (M40 F9) `jigc ingest --help` cross-points `jigc migrate` — the two verbs are
+    /// the adopt/rewrite halves of one foreign-doc surface, and neither help text
+    /// naming the other was the RC-adoption routing gap.
+    #[test]
+    fn ingest_help_cross_points_migrate() {
+        let help = long_help(&["ingest"]);
+        assert!(
+            help.contains("jigc migrate"),
+            "ingest --help cross-points migrate: {help}"
+        );
+    }
+
+    /// (M40 F12) `jigc doc show --help` routes the staged-doc case: a doc still
+    /// staged in an open task is not committed, so `show` cannot read it — the help
+    /// names `jigc task diff <id>` as the sanctioned read instead of dead-ending at
+    /// "takes no `--task`".
+    #[test]
+    fn doc_show_help_points_staged_docs_at_task_diff() {
+        let help = long_help(&["doc", "show"]);
+        assert!(
+            help.contains("jigc task diff"),
+            "doc show --help routes staged docs to `jigc task diff`: {help}"
+        );
     }
 }
