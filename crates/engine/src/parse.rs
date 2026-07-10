@@ -459,8 +459,17 @@ pub(crate) fn scan_blocks(source: &str) -> Vec<Block> {
                 in_metadata = true;
                 meta_content = None;
             }
-            Event::Text(_) if in_metadata && meta_content.is_none() => {
-                meta_content = Some(range.clone());
+            Event::Text(_) if in_metadata => {
+                // Accumulate across Text events: under LF the parser emits the
+                // whole metadata content as ONE Text event, but under CRLF it
+                // emits one PER LINE — keeping only the first silently dropped
+                // every front-matter field after the first (the defect the M40
+                // methodology byte-stability census surfaced). The content range
+                // spans the first event's start to the last event's end.
+                meta_content = Some(match meta_content.take() {
+                    None => range.clone(),
+                    Some(existing) => existing.start..range.end,
+                });
             }
             Event::End(TagEnd::MetadataBlock(_)) => {
                 in_metadata = false;
@@ -1335,6 +1344,57 @@ Each service drops its local limiter.
             prose.ends_with("A trailing line."),
             "ends before next ##: {prose:?}"
         );
+    }
+
+    /// Regression (M40 methodology byte-stability census): a **CRLF** doc's
+    /// multi-field front-matter parses EVERY field, not just the first. Under
+    /// CRLF, pulldown-cmark emits the metadata block's content as one `Text`
+    /// event **per line** (LF emits a single event for the whole block);
+    /// `scan_blocks` kept only the first event's range, so a CRLF ADR silently
+    /// dropped `date`/`supersedes` — every field after the first. The scan now
+    /// accumulates the Text ranges across the block.
+    #[test]
+    fn crlf_front_matter_parses_every_field() {
+        let lf = "\
+---
+status: accepted
+date: 2026-05-23
+supersedes: adr:old-call
+---
+
+# Rate-limit at the gateway
+
+## Context
+Per-client limits were enforced ad hoc.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+Centralize rate limiting at the gateway.
+
+## Consequences
+Each service drops its local limiter.
+";
+        let crlf = lf.replace('\n', "\r\n");
+        for (label, src) in [("LF", lf.to_string()), ("CRLF", crlf)] {
+            let doc = parse_sections(&adr_schema(), &src).expect("conformant ADR parses");
+            let header = doc.sections.iter().find(|s| s.id == "status").unwrap();
+            let fields: Vec<(&str, String)> = header
+                .fields
+                .iter()
+                .map(|f| (f.key.as_str(), f.value.render()))
+                .collect();
+            assert_eq!(
+                fields,
+                vec![
+                    ("status", "accepted".to_string()),
+                    ("date", "2026-05-23".to_string()),
+                    ("supersedes", "adr:old-call".to_string()),
+                ],
+                "{label}: every front-matter field parses with its value"
+            );
+        }
     }
 
     /// Golden: a `commit` fixture (header section + `summary`/`body` slots + an

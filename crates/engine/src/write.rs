@@ -6909,6 +6909,974 @@ Done.
     }
 }
 
+// ============================================================================
+// The M40 methodology byte-stability census — the M33 `roundtrip` pattern over
+// the NINE persisted methodology doctypes (`roadmap`, `deferral-ledger`,
+// `decisions-log`, `completion-record`, `dogfood-record`, `vision`, `research`,
+// `idea`, `milestone-record`). Discharges the recorded freeze precondition
+// (`implementation/doctype-map.md` → the revised scope pin; `DECISIONS.md`
+// 2026-07-10 M40 Settle item 1): the methodology pack's manifest (T4) may only
+// hash-freeze shapes proven byte-stable, and M33's census deliberately scoped
+// the methodology doctypes out. Same clauses as `mod roundtrip`:
+//
+//   1. **render∘parse == id** on the canonical LF form (built THROUGH `render`
+//      from the shipped schema YAML), plus the no-op write idempotent modulo the
+//      canonicalization ledger across LF/CRLF.
+//   2. **Surgical on edits** where a settable `meta` front-matter scalar exists
+//      (`completion-record`/`dogfood-record` `verdict`, `research` `date`,
+//      `idea` `trigger`, `milestone-record` `base`) — a single `set_field`
+//      changes only that field's value bytes.
+//
+// The schema bytes are loaded test-only via `include_bytes!` from
+// `packs/methodology/schemas/` (the M33 pattern) — the engine-empty invariant
+// is intact: nothing ships in the engine binary.
+// ============================================================================
+#[cfg(test)]
+mod methodology_roundtrip {
+    //! The methodology byte-stability census (M40 inc-5 T2). One named generator
+    //! arm per persisted methodology doctype; every instance is built through
+    //! [`render`] over the **shipped** schema YAML, so the fuzz drives the real
+    //! pack shapes — the multi-slot repeatable (`roadmap`), slot+field items
+    //! (`deferral-ledger`/`decisions-log`), fields-only items
+    //! (`completion-record` findings, `milestone-record` tasks), the 14-field
+    //! header (`dogfood-record`), and the optional front-matter ref-list
+    //! (`vision.grounded-in`).
+
+    use super::*;
+    use crate::parse::parse_sections;
+    use crate::schema::Schema;
+    use proptest::prelude::*;
+
+    const ROADMAP_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/roadmap.yaml");
+    const DEFERRAL_LEDGER_YAML: &[u8] =
+        include_bytes!("../../../packs/methodology/schemas/deferral-ledger.yaml");
+    const DECISIONS_LOG_YAML: &[u8] =
+        include_bytes!("../../../packs/methodology/schemas/decisions-log.yaml");
+    const COMPLETION_RECORD_YAML: &[u8] =
+        include_bytes!("../../../packs/methodology/schemas/completion-record.yaml");
+    const DOGFOOD_RECORD_YAML: &[u8] =
+        include_bytes!("../../../packs/methodology/schemas/dogfood-record.yaml");
+    const VISION_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/vision.yaml");
+    const RESEARCH_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/research.yaml");
+    const IDEA_YAML: &[u8] = include_bytes!("../../../packs/methodology/schemas/idea.yaml");
+    const MILESTONE_RECORD_YAML: &[u8] =
+        include_bytes!("../../../packs/methodology/schemas/milestone-record.yaml");
+
+    /// Load the shipped schema for one methodology doctype. Every methodology
+    /// doctype declares **engine-native** field types only (`string`/`enum`/
+    /// `date`/`int`/`ref`/`owned-location`), so all nine load bare — no pack
+    /// field-type registration (unlike the dev pack's `code-anchor`).
+    fn schema_for(ty: &str) -> Schema {
+        let bytes: &[u8] = match ty {
+            "roadmap" => ROADMAP_YAML,
+            "deferral-ledger" => DEFERRAL_LEDGER_YAML,
+            "decisions-log" => DECISIONS_LOG_YAML,
+            "completion-record" => COMPLETION_RECORD_YAML,
+            "dogfood-record" => DOGFOOD_RECORD_YAML,
+            "vision" => VISION_YAML,
+            "research" => RESEARCH_YAML,
+            "idea" => IDEA_YAML,
+            "milestone-record" => MILESTONE_RECORD_YAML,
+            other => panic!("unknown methodology doctype {other:?}"),
+        };
+        crate::schema::load_schema(bytes)
+            .unwrap_or_else(|e| panic!("shipped {ty} schema loads: {e:?}"))
+    }
+
+    /// One generated `deferral-ledger` entry: `(title, kind, trigger, date, body)`.
+    type GenLedgerEntry = (String, String, String, String, String);
+    /// One generated `completion-record` finding:
+    /// `(title, severity, disposition, evidence)`.
+    type GenFinding = (String, String, String, String);
+
+    /// One generated arbitrary conformant document plus its known-canonical LF
+    /// form and the metadata the surgical-edit clause needs (the M33 `GenDoc`).
+    #[derive(Clone, Debug)]
+    struct GenDoc {
+        /// The methodology doctype id — selects the schema.
+        ty: String,
+        /// The canonical LF document text (no BOM, exactly one trailing `\n`).
+        canonical_lf: String,
+        /// The EOL the perturbed variant uses (`"\n"` or `"\r\n"`).
+        eol: String,
+        /// A present `meta` front-matter field key + a fresh canonical value to
+        /// set it to (drives clause 2). `None` where the doctype has no settable
+        /// header scalar (`roadmap`/`deferral-ledger`/`decisions-log` are
+        /// header-less; `vision`'s only header field is a ref-list).
+        edit: Option<(String, String)>,
+    }
+
+    /// A canonical front-matter/field scalar value (trimmed, single-line, not
+    /// list-shaped) — the M33 `scalar_value`.
+    fn scalar_value() -> impl Strategy<Value = String> {
+        "[a-zA-Z0-9][a-zA-Z0-9 ._/-]{0,18}[a-zA-Z0-9]|[a-zA-Z0-9]"
+            .prop_filter("not list-shaped", |s: &String| {
+                !(s.starts_with('[') && s.ends_with(']'))
+            })
+    }
+
+    /// A canonical `date` field value (`YYYY-MM-DD`). Day capped at 28 so every
+    /// `(y, m, d)` is a real date. Years below 2031, so the clause-2 fresh date
+    /// (`2031-01-15`) always differs from a generated one.
+    fn date_value() -> impl Strategy<Value = String> {
+        (2020u32..2030, 1u32..=12, 1u32..=28).prop_map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"))
+    }
+
+    /// A canonical `owned-location` value — a run-artifact directory path (the
+    /// shipped `owner-artifact` shape, e.g. `completions/artifacts/M16/`).
+    /// Opaque to the reader, so it round-trips verbatim; modelling the real path
+    /// drives a realistic value.
+    fn owner_artifact_value() -> impl Strategy<Value = String> {
+        "[a-z][a-z0-9-]{0,12}".prop_map(|s: String| format!("completions/artifacts/{s}/"))
+    }
+
+    /// Opaque slot prose for a **section-level** slot or a `###`-item slot — the
+    /// M33 `edgy_prose`: a fenced block whose body is `## not a heading`, a
+    /// `- x:` line that is prose (no sentinel), a `####` deeper heading (safe at
+    /// section/`###`-item depth), and extra interior blank lines.
+    fn section_prose() -> impl Strategy<Value = String> {
+        let para = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        let fragment = prop_oneof![
+            para,
+            Just("```\n## not a heading\n```".to_string()),
+            Just("- x: this is prose, not a field".to_string()),
+            Just("#### a deeper heading is allowed".to_string()),
+            "[a-zA-Z][a-zA-Z0-9 .,]{0,30}".prop_map(|s: String| format!("{s}\n\n\n{s}")),
+        ];
+        prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
+    }
+
+    /// Opaque prose for a **multi-slot leaf** (the roadmap's `proves`/
+    /// `decomposition`, rendered under a `####` sub-heading): like
+    /// [`section_prose`] but its deeper-heading fragment is at **`#####` (H5)**,
+    /// never `####` — a `####` heading inside a leaf's prose would collide with a
+    /// *sibling* leaf sub-heading level (the M33 `notes_prose` reasoning, applied
+    /// to the multi-slot shape).
+    fn leaf_prose() -> impl Strategy<Value = String> {
+        let para = "[a-zA-Z][a-zA-Z0-9 .,]{0,30}";
+        let fragment = prop_oneof![
+            para,
+            Just("```\n## not a heading\n```".to_string()),
+            Just("- x: this is prose, not a field".to_string()),
+            Just("##### a deeper heading is allowed".to_string()),
+            "[a-zA-Z][a-zA-Z0-9 .,]{0,30}".prop_map(|s: String| format!("{s}\n\n\n{s}")),
+        ];
+        prop::collection::vec(fragment, 1..4).prop_map(|frags| frags.join("\n\n"))
+    }
+
+    /// Build a canonical-LF `roadmap` by constructing an [`Instance`] and
+    /// **rendering it** — the census's first fuzz of the **multi-slot repeatable
+    /// item** (M16): each milestone renders its `proves`/`decomposition` prose
+    /// under `#### Proves` / `#### Decomposition` sub-headings. `0..` milestones
+    /// covers the fresh-singleton EMPTY repeatable (a bare `## Milestones`).
+    fn build_roadmap(title: &str, milestones: &[(String, String, String)]) -> String {
+        let items: Vec<ItemContent> = milestones
+            .iter()
+            .map(|(m_title, proves, decomposition)| ItemContent {
+                id: crate::slug::slugify(m_title),
+                title: m_title.clone(),
+                slot: None,
+                slots: vec![
+                    ("proves".to_string(), proves.clone()),
+                    ("decomposition".to_string(), decomposition.clone()),
+                ],
+                fields: Vec::new(),
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![SectionContent {
+                id: "milestones".to_string(),
+                items,
+                ..Default::default()
+            }],
+        };
+        render(&schema_for("roadmap"), &instance)
+    }
+
+    /// Build a canonical-LF `deferral-ledger`: header-less, one `entries`
+    /// repeatable whose items carry a `body` slot **plus** a three-field group
+    /// (`kind` enum / `trigger` string / `date`) — the slot-then-fields item
+    /// shape (`spec.criteria` precedent, with three fields).
+    fn build_deferral_ledger(title: &str, entries: &[GenLedgerEntry]) -> String {
+        let items: Vec<ItemContent> = entries
+            .iter()
+            .map(|(e_title, kind, trigger, date, body)| ItemContent {
+                id: crate::slug::slugify(e_title),
+                title: e_title.clone(),
+                slot: Some(body.clone()),
+                slots: Vec::new(),
+                fields: vec![
+                    Field {
+                        key: "kind".to_string(),
+                        value: Value::Scalar(kind.clone()),
+                    },
+                    Field {
+                        key: "trigger".to_string(),
+                        value: Value::Scalar(trigger.clone()),
+                    },
+                    Field {
+                        key: "date".to_string(),
+                        value: Value::Scalar(date.clone()),
+                    },
+                ],
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items,
+                ..Default::default()
+            }],
+        };
+        render(&schema_for("deferral-ledger"), &instance)
+    }
+
+    /// Build a canonical-LF `decisions-log`: header-less, one `entries`
+    /// repeatable whose items carry a `why` slot plus a single `date` field.
+    fn build_decisions_log(title: &str, entries: &[(String, String, String)]) -> String {
+        let items: Vec<ItemContent> = entries
+            .iter()
+            .map(|(e_title, date, why)| ItemContent {
+                id: crate::slug::slugify(e_title),
+                title: e_title.clone(),
+                slot: Some(why.clone()),
+                slots: Vec::new(),
+                fields: vec![Field {
+                    key: "date".to_string(),
+                    value: Value::Scalar(date.clone()),
+                }],
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items,
+                ..Default::default()
+            }],
+        };
+        render(&schema_for("decisions-log"), &instance)
+    }
+
+    /// Build a canonical-LF `completion-record`: a `meta` header (a `verdict`
+    /// enum and an `owner-artifact` owned-location) and a `findings` repeatable
+    /// of **fields-only** (slotless) items — `severity`/`disposition`/
+    /// `evidence`, the changelog-release shape without nesting. `0..` findings
+    /// covers the clean-audit EMPTY repeatable.
+    fn build_completion_record(
+        title: &str,
+        verdict: &str,
+        owner: &str,
+        findings: &[GenFinding],
+    ) -> String {
+        let items: Vec<ItemContent> = findings
+            .iter()
+            .map(|(f_title, severity, disposition, evidence)| ItemContent {
+                id: crate::slug::slugify(f_title),
+                title: f_title.clone(),
+                slot: None,
+                slots: Vec::new(),
+                fields: vec![
+                    Field {
+                        key: "severity".to_string(),
+                        value: Value::Scalar(severity.clone()),
+                    },
+                    Field {
+                        key: "disposition".to_string(),
+                        value: Value::Scalar(disposition.clone()),
+                    },
+                    Field {
+                        key: "evidence".to_string(),
+                        value: Value::Scalar(evidence.clone()),
+                    },
+                ],
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![
+                        Field {
+                            key: "verdict".to_string(),
+                            value: Value::Scalar(verdict.to_string()),
+                        },
+                        Field {
+                            key: "owner-artifact".to_string(),
+                            value: Value::Scalar(owner.to_string()),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "findings".to_string(),
+                    items,
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("completion-record"), &instance)
+    }
+
+    /// Field keys of the ten transcribed `dogfood-record` int facts, schema order.
+    const DOGFOOD_INT_FIELDS: [&str; 10] = [
+        "adapter-writes",
+        "oob-edits",
+        "drift-caught",
+        "validate-blocks",
+        "halts-expected",
+        "halts-unplanned",
+        "fix-rounds",
+        "audit-findings",
+        "seeded-oob",
+        "seeded-blocks",
+    ];
+
+    /// Build a canonical-LF `dogfood-record`: the census's widest header — a
+    /// `meta` front-matter of **14 fields** (`case` enum, `binary-sha`, the ten
+    /// `int` facts — negatives included, the stated stores-verbatim dialect
+    /// bound — `verdict` enum, `owner-artifact`) plus the `judgment` prose slot.
+    fn build_dogfood_record(
+        title: &str,
+        case: &str,
+        sha: &str,
+        ints: &[i64],
+        verdict: &str,
+        owner: &str,
+        judgment: &str,
+    ) -> String {
+        let mut fields = vec![
+            Field {
+                key: "case".to_string(),
+                value: Value::Scalar(case.to_string()),
+            },
+            Field {
+                key: "binary-sha".to_string(),
+                value: Value::Scalar(sha.to_string()),
+            },
+        ];
+        for (key, n) in DOGFOOD_INT_FIELDS.iter().zip(ints) {
+            fields.push(Field {
+                key: (*key).to_string(),
+                value: Value::Scalar(n.to_string()),
+            });
+        }
+        fields.push(Field {
+            key: "verdict".to_string(),
+            value: Value::Scalar(verdict.to_string()),
+        });
+        fields.push(Field {
+            key: "owner-artifact".to_string(),
+            value: Value::Scalar(owner.to_string()),
+        });
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "judgment".to_string(),
+                    slot: Some(judgment.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("dogfood-record"), &instance)
+    }
+
+    /// Build a canonical-LF `vision`: a `meta` header whose only field is the
+    /// `grounded-in` ref-list (`card: 0..*` — 0 refs → the field is OMITTED, an
+    /// empty `---\n---` header; ≥1 → an inline-flow `grounded-in: [research:…]`
+    /// list, the `arch-doc.cites` shape), then the `thesis`/`invariants`/
+    /// `open-questions` prose slots (`open-questions` exercises the multi-word
+    /// section heading `## Open Questions`).
+    fn build_vision(
+        title: &str,
+        grounded: &[String],
+        thesis: &str,
+        invariants: &str,
+        open_questions: &str,
+    ) -> String {
+        let meta_fields = if grounded.is_empty() {
+            Vec::new()
+        } else {
+            vec![Field {
+                key: "grounded-in".to_string(),
+                value: Value::List(grounded.to_vec()),
+            }]
+        };
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: meta_fields,
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "thesis".to_string(),
+                    slot: Some(thesis.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "invariants".to_string(),
+                    slot: Some(invariants.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "open-questions".to_string(),
+                    slot: Some(open_questions.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("vision"), &instance)
+    }
+
+    /// Build a canonical-LF `research`: a `meta` header with the one `date`
+    /// field, then the `question`/`findings`/`sources` prose slots.
+    fn build_research(
+        title: &str,
+        date: &str,
+        question: &str,
+        findings: &str,
+        sources: &str,
+    ) -> String {
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![Field {
+                        key: "date".to_string(),
+                        value: Value::Scalar(date.to_string()),
+                    }],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "question".to_string(),
+                    slot: Some(question.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "findings".to_string(),
+                    slot: Some(findings.to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "sources".to_string(),
+                    slot: Some(sources.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("research"), &instance)
+    }
+
+    /// Build a canonical-LF `idea`: a `meta` header with `trigger` + `date`,
+    /// then the `description` prose slot.
+    fn build_idea(title: &str, trigger: &str, date: &str, description: &str) -> String {
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![
+                        Field {
+                            key: "trigger".to_string(),
+                            value: Value::Scalar(trigger.to_string()),
+                        },
+                        Field {
+                            key: "date".to_string(),
+                            value: Value::Scalar(date.to_string()),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "description".to_string(),
+                    slot: Some(description.to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("idea"), &instance)
+    }
+
+    /// Build a canonical-LF `milestone-record`: a `meta` header (`base` SHA pin +
+    /// `status` enum) and a `tasks` repeatable whose items are keyed
+    /// `id-from: task-id` — the task-id IS both the heading text and the `{#id}`
+    /// anchor (a slug, not a slugified title), with `intent`/`status` as the
+    /// fields-only body (the shipped `render_fresh_record`/`append_task_item`
+    /// byte form). `0..` tasks covers the fresh-record EMPTY repeatable.
+    fn build_milestone_record(
+        title: &str,
+        base: &str,
+        status: &str,
+        tasks: &[(String, String, String)],
+    ) -> String {
+        let items: Vec<ItemContent> = tasks
+            .iter()
+            .map(|(task_id, intent, task_status)| ItemContent {
+                id: task_id.clone(),
+                title: task_id.clone(),
+                slot: None,
+                slots: Vec::new(),
+                fields: vec![
+                    Field {
+                        key: "intent".to_string(),
+                        value: Value::Scalar(intent.clone()),
+                    },
+                    Field {
+                        key: "status".to_string(),
+                        value: Value::Scalar(task_status.clone()),
+                    },
+                ],
+                items: Vec::new(),
+            })
+            .collect();
+        let instance = Instance {
+            title: title.to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![
+                        Field {
+                            key: "base".to_string(),
+                            value: Value::Scalar(base.to_string()),
+                        },
+                        Field {
+                            key: "status".to_string(),
+                            value: Value::Scalar(status.to_string()),
+                        },
+                    ],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "tasks".to_string(),
+                    items,
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&schema_for("milestone-record"), &instance)
+    }
+
+    /// The generator: an arbitrary conformant doc of one of the NINE persisted
+    /// methodology doctypes — one named arm per doctype — with a chosen EOL.
+    /// Item titles are index-suffixed so slugified `{#id}` anchors stay distinct
+    /// (a repeatable rejects duplicate anchors; the M33 discipline).
+    fn arb_doc() -> impl Strategy<Value = GenDoc> {
+        let eol = prop_oneof![Just("\n".to_string()), Just("\r\n".to_string())];
+
+        let roadmap = (
+            scalar_value(),
+            prop::collection::vec((scalar_value(), leaf_prose(), leaf_prose()), 0..3),
+        )
+            .prop_map(|(title, raw)| {
+                let milestones: Vec<(String, String, String)> = raw
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (m_title, proves, decomposition))| {
+                        (format!("{} {i}", m_title.trim()), proves, decomposition)
+                    })
+                    .collect();
+                (
+                    "roadmap".to_string(),
+                    build_roadmap(&title, &milestones),
+                    // Header-less (no front-matter section): no settable scalar;
+                    // the surgical-edit clause self-skips on `edit: None`.
+                    None,
+                )
+            });
+
+        let deferral_ledger = (
+            scalar_value(),
+            prop::collection::vec(
+                (
+                    scalar_value(),
+                    prop::sample::select(vec!["D", "I"]),
+                    scalar_value(),
+                    date_value(),
+                    section_prose(),
+                ),
+                1..3,
+            ),
+        )
+            .prop_map(|(title, raw)| {
+                let entries: Vec<GenLedgerEntry> = raw
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (e_title, kind, trigger, date, body))| {
+                        (
+                            format!("{} {i}", e_title.trim()),
+                            kind.to_string(),
+                            trigger,
+                            date,
+                            body,
+                        )
+                    })
+                    .collect();
+                (
+                    "deferral-ledger".to_string(),
+                    build_deferral_ledger(&title, &entries),
+                    None,
+                )
+            });
+
+        let decisions_log = (
+            scalar_value(),
+            prop::collection::vec((scalar_value(), date_value(), section_prose()), 1..3),
+        )
+            .prop_map(|(title, raw)| {
+                let entries: Vec<(String, String, String)> = raw
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (e_title, date, why))| (format!("{} {i}", e_title.trim()), date, why))
+                    .collect();
+                (
+                    "decisions-log".to_string(),
+                    build_decisions_log(&title, &entries),
+                    None,
+                )
+            });
+
+        let completion_record = (
+            scalar_value(),
+            prop::sample::select(vec!["green", "red"]),
+            owner_artifact_value(),
+            // `0..` findings covers the clean-audit EMPTY repeatable as well as
+            // the populated fields-only items.
+            prop::collection::vec(
+                (
+                    scalar_value(),
+                    prop::sample::select(vec!["blocking", "advisory"]),
+                    prop::sample::select(vec!["fixed", "deferred", "contested"]),
+                    scalar_value(),
+                ),
+                0..3,
+            ),
+        )
+            .prop_map(|(title, verdict, owner, raw)| {
+                let findings: Vec<GenFinding> = raw
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (f_title, severity, disposition, evidence))| {
+                        (
+                            format!("{} {i}", f_title.trim()),
+                            severity.to_string(),
+                            disposition.to_string(),
+                            evidence,
+                        )
+                    })
+                    .collect();
+                // Re-set `verdict` to the *other* enum member so the edit always
+                // changes a byte (clause 2 asserts exactly one line differs).
+                let flipped = if verdict == "green" { "red" } else { "green" };
+                (
+                    "completion-record".to_string(),
+                    build_completion_record(&title, verdict, &owner, &findings),
+                    Some(("verdict".to_string(), flipped.to_string())),
+                )
+            });
+
+        let dogfood_record = (
+            scalar_value(),
+            prop::sample::select(vec!["pilot", "existing-docs", "greenfield"]),
+            "[0-9a-f]{7,40}",
+            // The ten transcribed int facts — negatives included (the
+            // stores-verbatim dialect bound).
+            prop::collection::vec(-3i64..1000, 10),
+            prop::sample::select(vec!["green", "red"]),
+            owner_artifact_value(),
+            section_prose(),
+        )
+            .prop_map(|(title, case, sha, ints, verdict, owner, judgment)| {
+                let flipped = if verdict == "green" { "red" } else { "green" };
+                (
+                    "dogfood-record".to_string(),
+                    build_dogfood_record(&title, case, &sha, &ints, verdict, &owner, &judgment),
+                    Some(("verdict".to_string(), flipped.to_string())),
+                )
+            });
+
+        let vision = (
+            scalar_value(),
+            // `grounded-in`: 0..3 research refs — the `0..` lower bound covers
+            // BOTH the omitted-field empty header and the inline-flow list.
+            prop::collection::vec("[a-z][a-z0-9]{0,12}", 0..3),
+            section_prose(),
+            section_prose(),
+            section_prose(),
+        )
+            .prop_map(|(title, slugs, thesis, invariants, open_questions)| {
+                let grounded: Vec<String> = slugs
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, slug)| format!("research:{slug}-{i}"))
+                    .collect();
+                (
+                    "vision".to_string(),
+                    build_vision(&title, &grounded, &thesis, &invariants, &open_questions),
+                    // The only header field is a ref-list (not a scalar
+                    // `set_field` target): the surgical-edit clause self-skips.
+                    None,
+                )
+            });
+
+        let research = (
+            scalar_value(),
+            date_value(),
+            section_prose(),
+            section_prose(),
+            section_prose(),
+        )
+            .prop_map(|(title, date, question, findings, sources)| {
+                (
+                    "research".to_string(),
+                    build_research(&title, &date, &question, &findings, &sources),
+                    // Re-set `date` to a year the generator never mints (< 2030),
+                    // so the edit always changes a byte.
+                    Some(("date".to_string(), "2031-01-15".to_string())),
+                )
+            });
+
+        let idea = (
+            scalar_value(),
+            scalar_value(),
+            date_value(),
+            section_prose(),
+        )
+            .prop_map(|(title, trigger, date, description)| {
+                (
+                    "idea".to_string(),
+                    build_idea(&title, &trigger, &date, &description),
+                    Some(("trigger".to_string(), "a fresh de-park trigger".to_string())),
+                )
+            });
+
+        let milestone_record = (
+            "[a-z][a-z0-9-]{0,15}",
+            ("[0-9a-f]{40}", "[0-9a-f]{7}"),
+            prop::sample::select(vec!["active", "joined"]),
+            // `0..` tasks covers the fresh-record EMPTY repeatable. The task-id
+            // stem is hyphen-free: the `-{i}` suffix supplies the only hyphen,
+            // since the anchor grammar rejects a non-canonical slug (`a--0`,
+            // a trailing `-`).
+            prop::collection::vec(
+                (
+                    "[a-z][a-z0-9]{0,11}",
+                    scalar_value(),
+                    prop::sample::select(vec!["active", "joined"]),
+                ),
+                0..3,
+            ),
+        )
+            .prop_map(|(title, (sha, short), status, raw)| {
+                // Index-suffix each task id so the `{#id}` anchors are distinct
+                // (the task-id IS the anchor — no slugification).
+                let tasks: Vec<(String, String, String)> = raw
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (task_id, intent, task_status))| {
+                        (format!("{task_id}-{i}"), intent, task_status.to_string())
+                    })
+                    .collect();
+                (
+                    "milestone-record".to_string(),
+                    build_milestone_record(&title, &format!("{sha} {short}"), status, &tasks),
+                    // `base` is a plain string scalar — set it to a fresh pin
+                    // (all-`a` SHA + short, never minted by the hex generator in
+                    // practice; the clause-2 no-op guard covers a collision).
+                    Some((
+                        "base".to_string(),
+                        format!("{} {}", "a".repeat(40), "a".repeat(7)),
+                    )),
+                )
+            });
+
+        (
+            prop_oneof![
+                roadmap,
+                deferral_ledger,
+                decisions_log,
+                completion_record,
+                dogfood_record,
+                vision,
+                research,
+                idea,
+                milestone_record,
+            ],
+            eol,
+        )
+            .prop_map(|((ty, canonical_lf, edit), eol)| GenDoc {
+                ty,
+                canonical_lf,
+                eol,
+                edit,
+            })
+    }
+
+    /// Project a canonical-LF doc onto the generated EOL (EOL is preserved
+    /// through the round-trip, never normalized).
+    fn with_eol(canonical_lf: &str, eol: &str) -> String {
+        if eol == "\n" {
+            canonical_lf.to_string()
+        } else {
+            canonical_lf.replace('\n', "\r\n")
+        }
+    }
+
+    /// Project a parsed document to its structural shape — per section: the id,
+    /// the field keys, and the item `{#id}` anchors (recursively flattened one
+    /// level; no methodology doctype nests deeper). Drives the clause-1
+    /// LF-vs-CRLF structure-equality check.
+    fn parsed_shape(doc: &crate::parse::Document) -> Vec<(String, Vec<String>, Vec<String>)> {
+        doc.sections
+            .iter()
+            .map(|s| {
+                (
+                    s.id.clone(),
+                    s.fields.iter().map(|f| f.key.clone()).collect(),
+                    s.items.iter().map(|it| it.id.clone()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    proptest! {
+        /// Clause 1 — **render∘parse == id** on the canonical LF form, and the
+        /// **no-op write idempotent modulo the canonicalization ledger** across
+        /// LF/CRLF. The generated doc (built through `render` from the shipped
+        /// schema) must parse; re-deriving the [`Instance`] from the rendered
+        /// bytes and re-rendering must be byte-identical; and the no-op write
+        /// over the EOL-projected + BOM/trailing-newline-perturbed variant must
+        /// canonicalize exactly the ledger deviations, EOL preserved.
+        #[test]
+        fn methodology_no_op_write_is_byte_identical_modulo_ledger(doc in arb_doc()) {
+            let schema = schema_for(&doc.ty);
+
+            // render∘parse == id: the parse→Instance→render inverse reproduces
+            // the canonical LF bytes exactly.
+            let reparsed = match instance_from_source(&schema, &doc.canonical_lf) {
+                Ok(instance) => instance,
+                Err(findings) => {
+                    return Err(TestCaseError::fail(format!(
+                        "generated {} doc must parse: {findings:?}\n--- doc ---\n{}",
+                        doc.ty, doc.canonical_lf
+                    )));
+                }
+            };
+            prop_assert_eq!(
+                render(&schema, &reparsed),
+                doc.canonical_lf.clone(),
+                "render∘parse == id for {}",
+                doc.ty.clone()
+            );
+
+            // The EOL-projected form still parses (CRLF is a first-class input) —
+            // and to the SAME structure: same sections, same field keys, same
+            // item anchors. Parse-ok alone is not enough: the CRLF metadata-scan
+            // defect this census surfaced DROPPED every front-matter field after
+            // the first while still parsing "ok".
+            let canonical = with_eol(&doc.canonical_lf, &doc.eol);
+            let eol_doc = match parse_sections(&schema, &canonical) {
+                Ok(parsed) => parsed,
+                Err(findings) => {
+                    return Err(TestCaseError::fail(format!(
+                        "generated {} doc must parse under {:?} EOL: {findings:?}",
+                        doc.ty, doc.eol
+                    )));
+                }
+            };
+            let lf_doc = parse_sections(&schema, &doc.canonical_lf)
+                .expect("the canonical LF form parsed above");
+            prop_assert_eq!(
+                parsed_shape(&lf_doc),
+                parsed_shape(&eol_doc),
+                "the EOL projection must not change the parsed structure of a {} doc",
+                doc.ty.clone()
+            );
+
+            // The no-op write of the already-canonical doc is byte-identical.
+            prop_assert_eq!(first_touch_canonicalize(&canonical), canonical.clone());
+
+            // Perturb with the two ledger-covered deviations: a leading BOM and
+            // extra trailing newlines. The no-op write must canonicalize *only*
+            // those back — nothing line-spanning touched.
+            let perturbed = format!("\u{feff}{canonical}{eol}{eol}", eol = doc.eol);
+            prop_assert_eq!(first_touch_canonicalize(&perturbed), canonical.clone());
+
+            // EOL is preserved: a CRLF doc canonicalizes to CRLF, never LF.
+            if doc.eol == "\r\n" {
+                prop_assert!(
+                    first_touch_canonicalize(&perturbed).contains("\r\n"),
+                    "CRLF must be preserved, never normalized to LF"
+                );
+            }
+            // And the canonicalized form still parses (re-parse stability).
+            let canon = first_touch_canonicalize(&perturbed);
+            prop_assert!(
+                parse_sections(&schema, &canon).is_ok(),
+                "canonicalized doc must still parse"
+            );
+        }
+
+        /// Clause 2 — **surgical on edits.** Where the doctype carries a settable
+        /// `meta` front-matter scalar, a single `set_field` changes *only* that
+        /// field's value bytes: the prefix and suffix survive byte-identical, the
+        /// EOL is preserved, and the new value is in place.
+        #[test]
+        fn methodology_single_field_edit_changes_only_that_field(doc in arb_doc()) {
+            let Some((key, new_value)) = doc.edit.clone() else { return Ok(()); };
+            let schema = schema_for(&doc.ty);
+            let source = with_eol(&doc.canonical_lf, &doc.eol);
+            // Skip the no-op edit case (new value equals the existing one): there
+            // is no byte to change, so "exactly one line differs" would not hold.
+            if source.contains(&format!("{key}: {new_value}")) {
+                return Ok(());
+            }
+
+            // Every methodology header section is `meta`.
+            let edited = set_field(&schema, &source, "meta", &key, &new_value)
+                .expect("present front-matter field is settable");
+
+            // EOL preserved.
+            if doc.eol == "\r\n" {
+                prop_assert!(edited.contains("\r\n"), "EOL must survive the edit");
+            }
+
+            // Only the target field's value line differs.
+            let src_lines: Vec<&str> = source.split(doc.eol.as_str()).collect();
+            let edt_lines: Vec<&str> = edited.split(doc.eol.as_str()).collect();
+            prop_assert_eq!(src_lines.len(), edt_lines.len(), "no lines added/removed");
+            let mut differing = Vec::new();
+            for (i, (a, b)) in src_lines.iter().zip(edt_lines.iter()).enumerate() {
+                if a != b {
+                    differing.push(i);
+                }
+            }
+            prop_assert_eq!(differing.len(), 1, "exactly one line differs");
+            let changed = edt_lines[differing[0]];
+            prop_assert!(
+                changed.starts_with(&format!("{key}: ")),
+                "the differing line is the target field {key:?}: {changed:?}"
+            );
+            prop_assert_eq!(changed, format!("{key}: {new_value}"));
+        }
+    }
+}
+
 #[cfg(test)]
 mod spec_roundtrip {
     //! The shipped `spec` doctype round-trips byte-stably (M3 Increment 1, T2).
