@@ -175,6 +175,27 @@ pub trait PackSource: AsPackSource {
         self.as_pack_source()
     }
 
+    /// **Every** constituent pack that ships `(kind, id)`, highest-precedence
+    /// first — the plural sibling of [`origin_pack`]. Where `origin_pack` answers
+    /// "who wins this id" (the body-reference anchor), this answers "who all ships
+    /// it": a resource shadowed by a higher-precedence pack is still enumerated,
+    /// which is what the pack-load freeze assertion needs to enforce **every**
+    /// manifest-shipping constituent rather than only the precedence winner
+    /// (`design/corpus-migration.md` → unified per-origin-pack manifest
+    /// resolution). A single pack reports itself when it owns the id
+    /// ([`read`] succeeds) and nothing otherwise; a composite overrides this to
+    /// concatenate its constituents' owners in precedence order.
+    ///
+    /// [`origin_pack`]: PackSource::origin_pack
+    /// [`read`]: PackSource::read
+    fn origin_packs(&self, kind: PackResourceKind, id: &ResourceId) -> Vec<&dyn PackSource> {
+        if self.read(kind, id).is_ok() {
+            vec![self.as_pack_source()]
+        } else {
+            Vec::new()
+        }
+    }
+
     /// This pack's own `config/defaults` `pack-id`, best-effort (empty if the
     /// resource is absent, non-UTF-8, non-YAML, or declares no `pack-id`). The
     /// default [`provenance_segments`] reads it; not overridden by `CompositePack`,
@@ -367,6 +388,34 @@ mod tests {
     fn pack_version_is_callable() {
         let pack = seeded();
         assert_eq!(pack.pack_version(), "0.0.0");
+    }
+
+    /// The default `origin_packs` is the singular ownership test: a pack that
+    /// ships the id reports exactly itself; a pack that does not reports nothing
+    /// (never a fallback `self`, unlike `origin_pack` — an owner-less id has no
+    /// manifest-shipping constituent to walk).
+    #[test]
+    fn origin_packs_default_is_self_when_owning_else_empty() {
+        let pack = seeded();
+        let owners = pack.origin_packs(
+            PackResourceKind::Workflows,
+            &ResourceId::from("single-task"),
+        );
+        assert_eq!(owners.len(), 1, "an owning pack reports exactly itself");
+        assert!(
+            owners[0]
+                .read(
+                    PackResourceKind::Workflows,
+                    &ResourceId::from("single-task"),
+                )
+                .is_ok(),
+            "the reported owner ships the id",
+        );
+        assert!(
+            pack.origin_packs(PackResourceKind::Steps, &ResourceId::from("absent"))
+                .is_empty(),
+            "a non-owning pack reports no owners",
+        );
     }
 
     /// The trait must be usable behind a `dyn` reference (object-safe) — a

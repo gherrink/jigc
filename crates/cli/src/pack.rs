@@ -45,18 +45,18 @@ pub fn pack_field_types(pack: &dyn PackSource) -> Result<Vec<PackTypeDecl>, Sche
 pub fn load_pack_schema(pack: &dyn PackSource, bytes: &[u8]) -> Result<Schema, SchemaError> {
     let mut schema = load_schema_with_types(bytes, &pack_field_types(pack)?)?;
     // The per-doc schema-version stamp (M34): inject the engine-declared stamp field
-    // into every **persisted** doctype the pack's freeze manifest declares frozen —
-    // the convergence point shared by the freeze gate, `ingest::load_schemas`, and
-    // `all_schemas`, so the stamp rides every CLI schema-load uniformly while the bare
-    // engine `load_schema` (and `arb_doc()` fuzz) stays stamp-free. Gated on the
-    // manifest's frozen set (the pack's own declaration, not an engine-baked list —
-    // the engine-empty invariant) AND *persisted* — a `location:` folder home OR a
-    // literal `placement:` home (the M38 changelog root-`CHANGELOG.md` form). So the
-    // transient `commit` (in the manifest, neither location nor placement) is excluded
-    // and a non-freeze pack (no manifest — the methodology pack) injects nothing
-    // (`design/corpus-migration.md` → The schema-version stamp).
+    // into every **persisted** doctype whose **governing manifest entry** declares it
+    // frozen — the convergence point shared by the freeze gate, `ingest::load_schemas`,
+    // and `all_schemas`, so the stamp rides every CLI schema-load uniformly while the
+    // bare engine `load_schema` (and `arb_doc()` fuzz) stays stamp-free. Gated on the
+    // per-origin rule ([`governing_version`]: the doctype's own origin pack's manifest,
+    // the pack's own declaration, not an engine-baked list — the engine-empty
+    // invariant) AND *persisted* — a `location:` folder home OR a literal `placement:`
+    // home (the M38 changelog root-`CHANGELOG.md` form). So the transient `commit`
+    // (in the manifest, neither location nor placement) is excluded and a manifest-less
+    // pack injects nothing (`design/corpus-migration.md` → The schema-version stamp).
     if (schema.location.is_some() || schema.placement.is_some())
-        && frozen_doctype_set(pack).contains(schema.ty.as_str())
+        && governing_version(pack, schema.ty.as_str()).is_some()
     {
         engine::schema::inject_schema_version_stamp(&mut schema);
     }
@@ -101,49 +101,58 @@ pub fn load_prior_schema(pack: &dyn PackSource, ty: &str, version: u32) -> anyho
         .with_context(|| format!("prior-schema snapshot `{ty}.v{version}` is malformed"))
 }
 
-/// The set of doctype names the pack's freeze manifest declares frozen — the gate for
-/// schema-version-stamp injection ([`load_pack_schema`]). Read from the manifest-owning
-/// pack's `config/schema-manifest.yaml` ([`SCHEMA_MANIFEST_ID`], located via
-/// [`origin_pack`](PackSource::origin_pack)). An **absent** or **malformed** manifest
-/// is the empty set (no injection) — the field-types-absent precedent: only a pack that
-/// ships a valid freeze manifest stamps. The loud manifest authority is the freeze gate
-/// ([`assert_schema_freeze`]); this read stays best-effort so a non-freeze pack-load
-/// never errors here.
-fn frozen_doctype_set(pack: &dyn PackSource) -> std::collections::BTreeSet<String> {
-    let id = ResourceId::from(SCHEMA_MANIFEST_ID);
-    let owner = pack.origin_pack(PackResourceKind::Config, &id);
-    let Ok(bytes) = owner.read(PackResourceKind::Config, &id) else {
-        return std::collections::BTreeSet::new();
-    };
-    let Ok(manifest) = serde_yaml_ng::from_slice::<engine::manifest::Manifest>(&bytes) else {
-        return std::collections::BTreeSet::new();
-    };
-    manifest.doctypes.into_iter().map(|e| e.ty).collect()
+/// A pack's **own** `config/schema-manifest.yaml`, best-effort: an **absent** or
+/// **malformed** manifest is `None` — the field-types-absent precedent: only a pack
+/// that ships a valid freeze manifest stamps/gates. The loud manifest authority is
+/// the freeze gate ([`assert_schema_freeze`]); this read stays best-effort so a
+/// non-freeze pack-load never errors here. Reads the pack directly (its own bytes),
+/// never a composed surface — the per-origin rule's building block.
+fn own_manifest(pack: &dyn PackSource) -> Option<engine::manifest::Manifest> {
+    let bytes = pack
+        .read(
+            PackResourceKind::Config,
+            &ResourceId::from(SCHEMA_MANIFEST_ID),
+        )
+        .ok()?;
+    serde_yaml_ng::from_slice(&bytes).ok()
 }
 
-/// The pack's freeze-manifest `doctype → schema-version` map — the "current manifest
+/// The doctype's **governing manifest entry's** schema-version — the **unified
+/// per-origin-pack resolution rule** (M40 A1, `design/corpus-migration.md` → the
+/// split-brain close): a doctype `ty` is governed by the manifest of
+/// `origin_pack(Schemas, ty)`, the pack whose schema definition wins — never by the
+/// single Config-resource precedence winner's manifest (under which one of two
+/// manifest-shipping packs went silently unread, and a colliding doctype could be
+/// judged by a manifest that never froze the shape actually composed). `None` when
+/// the origin pack ships no valid manifest, or its manifest omits `ty` — the
+/// freeze-exempt case.
+fn governing_version(pack: &dyn PackSource, ty: &str) -> Option<u32> {
+    let owner = pack.origin_pack(PackResourceKind::Schemas, &ResourceId::from(ty));
+    own_manifest(owner)?
+        .doctypes
+        .into_iter()
+        .find(|e| e.ty == ty)
+        .map(|e| e.schema_version)
+}
+
+/// The composed pack-set's `doctype → schema-version` map — the "current manifest
 /// version" the store-scope schema-conformance detector routes each non-conformant doc
 /// against (`design/validation.md` → Version-aware routing; `design/corpus-migration.md` →
-/// The schema-version stamp). Read from the manifest-owning pack via
-/// [`origin_pack`](PackSource::origin_pack), the same best-effort path as
-/// [`frozen_doctype_set`]: an absent or malformed manifest is the empty map, so a
-/// non-freeze pack routes nothing (every finding stays un-routed), never an error.
+/// The schema-version stamp). The **per-doctype governed union**: each shipped doctype
+/// resolves through [`governing_version`] to **its own origin pack's** manifest entry,
+/// so two manifest-shipping packs each govern exactly the doctypes they win. Best-effort
+/// throughout: a doctype whose origin pack ships no manifest (or omits it) is simply
+/// absent from the map — a manifest-less pack-set routes nothing, never an error.
 pub(crate) fn frozen_doctype_versions(
     pack: &dyn PackSource,
 ) -> std::collections::BTreeMap<String, u32> {
-    let id = ResourceId::from(SCHEMA_MANIFEST_ID);
-    let owner = pack.origin_pack(PackResourceKind::Config, &id);
-    let Ok(bytes) = owner.read(PackResourceKind::Config, &id) else {
-        return std::collections::BTreeMap::new();
-    };
-    let Ok(manifest) = serde_yaml_ng::from_slice::<engine::manifest::Manifest>(&bytes) else {
-        return std::collections::BTreeMap::new();
-    };
-    manifest
-        .doctypes
-        .into_iter()
-        .map(|e| (e.ty, e.schema_version))
-        .collect()
+    let mut out = std::collections::BTreeMap::new();
+    for id in pack.list(PackResourceKind::Schemas) {
+        if let Some(version) = governing_version(pack, id.as_str()) {
+            out.insert(id.as_str().to_owned(), version);
+        }
+    }
+    out
 }
 
 /// The `config/` resource id of a pack's frozen doctype-set manifest (the M33
@@ -160,49 +169,55 @@ const SCHEMA_MANIFEST_ID: &str = "schema-manifest";
 /// (`design/corpus-migration.md` → The enforcement gate fires at pack-load — review
 /// Finding 3; *not* the report-only `validate` store sweep).
 ///
-/// Recomputes each doctype's `schema-hash` over the **manifest-owning pack's own
-/// shipped schema shapes** and compares against the manifest
+/// Recomputes each doctype's `schema-hash` over each **manifest-owning pack's own
+/// shipped schema shapes** and compares against that pack's manifest
 /// ([`engine::manifest::check`]) — failing loudly on a drift, an added, or a removed
-/// doctype. It checks the pack that *ships* the manifest, located via
-/// [`origin_pack`](PackSource::origin_pack), **in isolation** — never the composed
-/// cascade: the freeze records what WE ship, so a higher-precedence pack that
-/// shadows a frozen doctype with a divergent shape (the methodology pack's own
-/// `commit`) does not perturb the dev pack's freeze. Schemas load through the
-/// field-type-resolving [`load_pack_schema`] against that same owning pack, and the
-/// read is shadow- / `docs-root`-independent (it reads the pack directly, not the
-/// project-resolved [`crate::start::CascadeDefs::all_schemas`]).
+/// doctype. It walks **every** constituent that ships a manifest, enumerated via
+/// [`origin_packs`](PackSource::origin_packs) (the M40 per-origin unification —
+/// under the old single-`origin_pack` rule, one of two manifest-shipping packs went
+/// **silently unenforced**), and checks each **in isolation** — never the composed
+/// cascade: the freeze records what each pack ships, so a higher-precedence pack
+/// that shadows a frozen doctype with a divergent shape (the methodology pack's own
+/// `commit`) does not perturb the dev pack's freeze, and vice versa. Schemas load
+/// through the field-type-resolving [`load_pack_schema`] against their own owning
+/// pack, and the read is shadow- / `docs-root`-independent (it reads the pack
+/// directly, not the project-resolved [`crate::start::CascadeDefs::all_schemas`]).
 ///
-/// An **absent** manifest is skipped (`Ok(())`) — the field-types-absent precedent
-/// ([`pack_field_types`]): a seeded / composed / methodology pack that ships no
-/// manifest stays unchecked, so only a pack that opts into the freeze is held to it.
+/// An **absent** manifest is skipped (no owners → `Ok(())`) — the
+/// field-types-absent precedent ([`pack_field_types`]): a seeded / composed pack
+/// that ships no manifest stays unchecked, so only a pack that opts into the freeze
+/// is held to it.
 pub fn assert_schema_freeze(pack: &dyn PackSource) -> anyhow::Result<()> {
     use anyhow::Context;
 
     let manifest_id = ResourceId::from(SCHEMA_MANIFEST_ID);
-    // The single constituent that SHIPS the manifest (origin = the pack itself for a
-    // non-composite). A composite with no manifest-owner yields `self`, whose read
-    // below is `NotFound` → skip — the manifest-less inert path.
-    let owner = pack.origin_pack(PackResourceKind::Config, &manifest_id);
-    let Ok(manifest_bytes) = owner.read(PackResourceKind::Config, &manifest_id) else {
-        return Ok(());
-    };
-    let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
-        .context("config/schema-manifest.yaml is not a valid freeze manifest")?;
+    // Every constituent that SHIPS a manifest (for a non-composite: the pack itself
+    // when it ships one, else nothing — the manifest-less inert path).
+    for owner in pack.origin_packs(PackResourceKind::Config, &manifest_id) {
+        // Owners are enumerated by a successful read, so this read succeeds; a racy
+        // filesystem pack that lost the file between the two reads simply skips.
+        let Ok(manifest_bytes) = owner.read(PackResourceKind::Config, &manifest_id) else {
+            continue;
+        };
+        let manifest: engine::manifest::Manifest = serde_yaml_ng::from_slice(&manifest_bytes)
+            .context("config/schema-manifest.yaml is not a valid freeze manifest")?;
 
-    // The manifest-owning pack's OWN shipped doctype shapes, keyed by type, loaded
-    // through the field-type-resolving loader against that same pack.
-    let mut schemas = std::collections::BTreeMap::new();
-    for id in owner.list(PackResourceKind::Schemas) {
-        let bytes = owner
-            .read(PackResourceKind::Schemas, &id)
-            .with_context(|| format!("the `{}` schema is unreadable", id.as_str()))?;
-        let schema = load_pack_schema(owner, &bytes)
-            .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
-        schemas.insert(schema.ty.clone(), schema);
+        // The manifest-owning pack's OWN shipped doctype shapes, keyed by type, loaded
+        // through the field-type-resolving loader against that same pack.
+        let mut schemas = std::collections::BTreeMap::new();
+        for id in owner.list(PackResourceKind::Schemas) {
+            let bytes = owner
+                .read(PackResourceKind::Schemas, &id)
+                .with_context(|| format!("the `{}` schema is unreadable", id.as_str()))?;
+            let schema = load_pack_schema(owner, &bytes)
+                .with_context(|| format!("the `{}` schema is malformed", id.as_str()))?;
+            schemas.insert(schema.ty.clone(), schema);
+        }
+
+        engine::manifest::check(&manifest, &schemas)
+            .map_err(|err| anyhow::anyhow!("pack-load freeze check failed: {err}"))?;
     }
-
-    engine::manifest::check(&manifest, &schemas)
-        .map_err(|err| anyhow::anyhow!("pack-load freeze check failed: {err}"))
+    Ok(())
 }
 
 /// The built-in dev pack, embedded at compile time from `crates/cli/pack/`.
@@ -696,6 +711,21 @@ impl PackSource for CompositePack {
             .find(|p| p.read(kind, id).is_ok())
             .map(|p| p.as_ref())
             .unwrap_or(self)
+    }
+
+    /// **Every** constituent that ships `(kind, id)`, highest-precedence first —
+    /// the plural sibling of [`origin_pack`](PackSource::origin_pack): a resource
+    /// shadowed by a higher-precedence pack is still enumerated. Delegates to each
+    /// constituent's own `origin_packs` (a nested composite flattens), so the walk
+    /// reaches every genuine owner. The freeze assertion
+    /// ([`assert_schema_freeze`](crate::pack::assert_schema_freeze)) reads this to
+    /// enforce every manifest-shipping constituent, never just the Config-resource
+    /// precedence winner. No owner is the empty `Vec` — there is nothing to walk.
+    fn origin_packs(&self, kind: PackResourceKind, id: &ResourceId) -> Vec<&dyn PackSource> {
+        self.0
+            .iter()
+            .flat_map(|p| p.origin_packs(kind, id))
+            .collect()
     }
 
     /// Each constituent pack's own `(pack-id, version)` segment, **in precedence
@@ -2716,6 +2746,35 @@ mod tests {
             );
         }
 
+        /// `origin_packs` enumerates **every** owner of a shadowed id in
+        /// precedence order — the winner A first, then the shadowed B — where
+        /// the singular `origin_pack` stops at A. An id no constituent owns is
+        /// the empty `Vec` (never a `self` fallback — there is nothing to walk).
+        #[test]
+        fn origin_packs_enumerates_every_owner_in_precedence_order() {
+            let composite = two_pack_step_composite();
+            let owners =
+                composite.origin_packs(PackResourceKind::Steps, &ResourceId::from("implement"));
+            let bytes: Vec<Vec<u8>> = owners
+                .iter()
+                .map(|p| {
+                    p.read(PackResourceKind::Steps, &ResourceId::from("implement"))
+                        .expect("an enumerated owner ships the id")
+                })
+                .collect();
+            assert_eq!(
+                bytes,
+                vec![b"A-implement".to_vec(), b"B-implement".to_vec()],
+                "both owners, winner first — the shadowed constituent is not dropped",
+            );
+            assert!(
+                composite
+                    .origin_packs(PackResourceKind::Steps, &ResourceId::from("absent"))
+                    .is_empty(),
+                "an unowned id has no owners to walk",
+            );
+        }
+
         /// An id **no** constituent owns falls back to `self` (the composite) —
         /// so a dangling body-reference still flows to the existing not-found
         /// path (a clean `NotFound`), never a panic.
@@ -2777,6 +2836,139 @@ mod tests {
                 reference.pack_version(),
                 "Composite([single]).pack_version must equal the single pack's",
             );
+        }
+
+        /// The **per-origin manifest-resolution rule** (M40 A1 T3,
+        /// `design/corpus-migration.md` → the split-brain close): a doctype's
+        /// governing `schema-manifest.yaml` entry is the one shipped by
+        /// `origin_pack(Schemas, ty)` — the pack whose schema definition wins —
+        /// never the single Config-resource precedence winner's manifest; and the
+        /// pack-load freeze assertion enforces **every** manifest-shipping
+        /// constituent, not just that winner.
+        mod per_origin_manifests {
+            use super::*;
+
+            /// Pack A's transient `commit` shape — structurally distinct from pack
+            /// B's, so the two manifests carry **different hashes** for the same
+            /// doctype (the genuine-overlap fixture the rule is proven over).
+            const COMMIT_A: &str = "type: commit
+sections:
+  - id: summary
+    slot: { hint: \"Pack A's subject line.\" }
+";
+
+            /// Pack B's divergent `commit` shadow — an extra optional slot, so its
+            /// schema-hash differs from A's.
+            const COMMIT_B: &str = "type: commit
+sections:
+  - id: summary
+    slot: { hint: \"Pack B's subject line.\" }
+  - id: body
+    slot: { hint: \"Pack B's body.\", optional: true }
+";
+
+            /// Pack B's non-colliding `note` doctype — the loser-pack-only doctype
+            /// whose manifest entry the one-winner rule would drop.
+            const NOTE_B: &str = "type: note
+sections:
+  - id: text
+    slot: { hint: \"The note.\" }
+";
+
+            /// The [`schema_hash`](engine::manifest::schema_hash) of fixture
+            /// `bytes`, loaded through the production [`load_pack_schema`] — the
+            /// same load the freeze assertion recomputes over.
+            fn hash_of(bytes: &[u8]) -> String {
+                let schema = load_pack_schema(&MemPack::new("hash-tmp"), bytes)
+                    .expect("the fixture schema loads");
+                engine::manifest::schema_hash(&schema)
+            }
+
+            /// A `schema-manifest.yaml` body over `(type, schema-version,
+            /// schema-hash)` entries, serialized through the engine model so the
+            /// on-disk key spelling can never drift from the deserializer.
+            fn manifest_yaml(entries: &[(&str, u32, String)]) -> Vec<u8> {
+                let manifest = engine::manifest::Manifest {
+                    doctypes: entries
+                        .iter()
+                        .map(|(ty, version, hash)| engine::manifest::ManifestEntry {
+                            ty: (*ty).to_owned(),
+                            schema_version: *version,
+                            schema_hash: hash.clone(),
+                        })
+                        .collect(),
+                };
+                serde_yaml_ng::to_string(&manifest)
+                    .expect("the manifest model serializes")
+                    .into_bytes()
+            }
+
+            /// The two-manifest composite `[A, B]`: pack A (highest-precedence)
+            /// ships its `commit` + a manifest freezing it at version 3; pack B
+            /// ships a **divergent** `commit` shadow + a non-colliding `note`,
+            /// with its **own** manifest freezing both (commit at 7, note at 5).
+            /// `note_hash` is B's *declared* hash for `note`, so the enforcement
+            /// test can corrupt exactly the loser pack's manifest.
+            fn two_manifest_composite(note_hash: String) -> CompositePack {
+                let a = MemPack::new("a-ver")
+                    .with(PackResourceKind::Schemas, "commit", COMMIT_A.as_bytes())
+                    .with(
+                        PackResourceKind::Config,
+                        "schema-manifest",
+                        &manifest_yaml(&[("commit", 3, hash_of(COMMIT_A.as_bytes()))]),
+                    );
+                let b = MemPack::new("b-ver")
+                    .with(PackResourceKind::Schemas, "commit", COMMIT_B.as_bytes())
+                    .with(PackResourceKind::Schemas, "note", NOTE_B.as_bytes())
+                    .with(
+                        PackResourceKind::Config,
+                        "schema-manifest",
+                        &manifest_yaml(&[
+                            ("commit", 7, hash_of(COMMIT_B.as_bytes())),
+                            ("note", 5, note_hash),
+                        ]),
+                    );
+                CompositePack::new(vec![Box::new(a), Box::new(b)])
+            }
+
+            /// Each doctype's version resolves to **its own origin pack's**
+            /// manifest entry: the colliding `commit` is governed by A's entry
+            /// (3 — A's schema wins, so A's manifest governs; never B's 7), and
+            /// the loser-only `note` is governed by B's entry (5 — invisible
+            /// under the one-winner Config-resource rule, which read only A's
+            /// manifest).
+            #[test]
+            fn frozen_doctype_versions_is_the_per_doctype_governed_union() {
+                let composite = two_manifest_composite(hash_of(NOTE_B.as_bytes()));
+                let versions = frozen_doctype_versions(&composite);
+                let expected: std::collections::BTreeMap<String, u32> =
+                    [("commit".to_owned(), 3), ("note".to_owned(), 5)].into();
+                assert_eq!(
+                    versions, expected,
+                    "each doctype must resolve to its origin pack's manifest entry",
+                );
+            }
+
+            /// `assert_schema_freeze` enforces **both** manifests: the clean
+            /// composite passes, and corrupting only the **loser** pack B's
+            /// declared `note` hash blocks — even though pack A (the Config
+            /// precedence winner, the only manifest the one-winner rule checked)
+            /// is still clean, so the old rule would have silently passed.
+            #[test]
+            fn assert_schema_freeze_enforces_every_manifest_shipping_constituent() {
+                let clean = two_manifest_composite(hash_of(NOTE_B.as_bytes()));
+                assert_schema_freeze(&clean)
+                    .expect("a composite whose every manifest holds composes clean");
+
+                let drifted = two_manifest_composite("0".repeat(64));
+                let err = assert_schema_freeze(&drifted)
+                    .expect_err("the loser pack's manifest must be enforced too");
+                let msg = format!("{err:#}");
+                assert!(
+                    msg.contains("note") && msg.contains("schema-hash mismatch"),
+                    "the failure must name the drifted `note` hash mismatch; got: {msg}",
+                );
+            }
         }
     }
 
