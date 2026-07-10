@@ -520,6 +520,67 @@ fn approved_migration_with_tracked_foreign_still_stages_the_deletion() {
     );
 }
 
+/// M40 F7 — the two-axis scoped rollback (`design/finalize.md` → Rollback discipline,
+/// phase 6 commit (migration — the retire, M40)): a commit failure must restore **what
+/// jigc deleted or staged — never what the user deleted**. Here the user pre-staged the
+/// retirement (`git rm HISTORY.md`) and a rejecting `pre-commit` hook fails the commit:
+/// the retire captured nothing (the worktree file was already gone) and the stage
+/// skipped the pathspec (not in the index), so the rollback must leave the user's
+/// deletion fully intact — worktree absent AND the deletion still staged (porcelain
+/// X column `D`). Pre-fix, the unconditional per-planned-retirement `git restore
+/// --staged --worktree` resurrected the file on both axes.
+#[test]
+fn pre_staged_git_rm_survives_a_hook_rejection_rollback() {
+    let repo = TempDir::new("prestaged-rollback");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    // The user pre-stages the retirement: worktree file gone, deletion in the index.
+    git(repo.path(), &["rm", "-q", "HISTORY.md"]);
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    seed_rejecting_precommit(repo.path());
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+
+    assert!(
+        !out.status.success(),
+        "a hook-rejected --approve finalize must exit non-zero; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "HEAD must be unchanged — no commit landed",
+    );
+
+    // The scoped-rollback contract: the user's pre-staged deletion is never restored.
+    assert!(
+        !repo.path().join("HISTORY.md").exists(),
+        "the rollback must not resurrect the user's deleted worktree file",
+    );
+    let porcelain = git(repo.path(), &["status", "--porcelain", "HISTORY.md"]);
+    assert!(
+        porcelain.starts_with("D "),
+        "the user's staged deletion must stay staged (porcelain X column D); \
+         porcelain: {porcelain:?}",
+    );
+
+    // jigc's own acts ARE rolled back: the promoted canonical copy is gone.
+    assert!(
+        !repo.path().join("CHANGELOG.md").exists(),
+        "the promoted canonical copy must be rolled back on a failed commit",
+    );
+}
+
 /// M40 F7 dry-run/landed symmetry on the pre-staged shape: `predict_manifest` keeps the
 /// HEAD discriminator, and its forecast stays outcome-accurate *because the commit is
 /// whole-index* — the user's staged deletion lands regardless of the skipped stage

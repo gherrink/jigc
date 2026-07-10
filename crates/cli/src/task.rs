@@ -1306,6 +1306,10 @@ pub(crate) fn try_execute_finalize_plan(
     // untracked foreign original `git restore` cannot recover (review F3). Empty unless a
     // migration retire ran.
     let mut retired: Vec<(PathBuf, Vec<u8>)> = Vec::new();
+    // The pathspecs the migration stage actually `git add`ed (M40 F7) — the rollback's
+    // index-axis key, so only a deletion jigc itself staged is un-staged on failure.
+    // Empty on every non-migration stage arm (those have no retirements to un-stage).
+    let mut staged: Vec<String> = Vec::new();
     let commit_result = (|| -> Result<String> {
         // Phase 4 — promote: copy each staged managed doc to `<repo>/<destination>`.
         promote(repo_root, &plan.promotions)?;
@@ -1329,7 +1333,7 @@ pub(crate) fn try_execute_finalize_plan(
             // (never `-- <pathspec>`) then lands it, so an agent-`git add`ed but
             // non-promoted artifact (the `owner-artifact`) still rides the commit (G6).
             StagePolicy::MigrationFixed => {
-                stage_migration(repo_root, plan)?;
+                staged = stage_migration(repo_root, plan)?;
                 git_commit(repo_root, &msg_path)
             }
             // Per-task IndexHonoring (M30 G6): honor the agent's existing index and add
@@ -1374,9 +1378,16 @@ pub(crate) fn try_execute_finalize_plan(
         Err(err) => {
             // Roll back phases 4–5 (`design/finalize.md` → Rollback discipline): restore
             // HEAD content for the promoted paths and delete the promoted copies, and
-            // restore each retired foreign original (review B1) — so an approved-but-failed
-            // commit never leaves the foreign file deleted with no commit; no commit landed.
-            rollback_promotions(repo_root, &plan.promotions, &plan.retirements, &retired);
+            // restore what the retire/stage themselves touched (review B1; scoped M40 F7)
+            // — so an approved-but-failed commit never leaves the foreign file deleted
+            // with no commit, and never resurrects a user's own pre-staged deletion.
+            rollback_promotions(
+                repo_root,
+                &plan.promotions,
+                &plan.retirements,
+                &retired,
+                &staged,
+            );
             return Ok(Err(err));
         }
     };
@@ -1498,7 +1509,12 @@ fn retire(repo_root: &Path, retirements: &[PathBuf]) -> Result<Vec<(PathBuf, Vec
 ///
 /// This deliberately excludes arbitrary user WIP (the whole point of #9a). The general
 /// dirty-tree-sweep redesign for non-migration tasks stays deferred.
-fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> Result<()> {
+///
+/// **Returns the staged-pathspec set** it fed to `git add` (M40 F7) — the key for
+/// [`rollback_promotions`]'s index axis: on a commit failure, only a deletion *this
+/// stage* staged is un-staged, so a user's pre-staged `git rm` (skipped above, never in
+/// this set) is never resurrected in the index.
+fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> Result<Vec<String>> {
     let mut pathspecs: Vec<String> = Vec::new();
     for promotion in &plan.promotions {
         pathspecs.push(promotion.destination.clone());
@@ -1531,7 +1547,8 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
     ));
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
-    git_run(repo_root, &args)
+    git_run(repo_root, &args)?;
+    Ok(pathspecs)
 }
 
 /// Refresh the committed binary-provenance stamp (`.jigc/version`) to the running build —
@@ -1606,23 +1623,31 @@ fn existing_pathspecs(repo_root: &Path, candidates: &[&str]) -> Vec<String> {
 }
 
 /// Roll back phase 4–5 on a commit failure (`design/finalize.md` → Rollback discipline /
-/// 6. Commit; `design/auto-migration.md` → Retire-the-foreign-original, the rollback).
-/// For each promoted path, restore HEAD's content in the index + worktree (undoing the
-/// stage) and delete the promoted copy. For each **retired** foreign original (review
-/// B1), restore HEAD's content in the index + worktree — the retire deleted a file
-/// present at HEAD and `git add --all` staged that deletion, so `git restore --staged
-/// --worktree` brings its bytes back, ensuring an approved-but-failed commit never leaves
-/// the foreign file deleted with no commit. When the foreign was **untracked** at HEAD
-/// (review F3), `git restore` has no committed bytes to recover and is a no-op — so if the
-/// path is still absent afterward, rewrite the bytes `retire` captured pre-deletion
-/// (`retired`), keyed by repo-relative path, so an untracked foreign is never permanently
-/// lost. Best-effort: a failure is logged, never raised — the commit did not land, so the
-/// worst case is a stray copy the next `finalize`/`discard` overwrites.
+/// 6. Commit; `design/auto-migration.md` → The transaction mechanism, the scoped
+/// rollback obligation). For each promoted path, restore HEAD's content in the index +
+/// worktree (undoing the stage) and delete the promoted copy. Retirements are restored
+/// **two-axis scoped (M40 F7)** — restore only what jigc's own retire/staging touched,
+/// never what the user deleted:
+///
+/// - **worktree axis, keyed on the retire byte-capture set** (`retired`): a path
+///   [`retire`] itself deleted has its captured pre-deletion bytes rewritten if still
+///   absent (this also recovers an **untracked** foreign, which `git restore` cannot —
+///   review F3);
+/// - **index axis, keyed on the staged-pathspec set** (`staged`, what
+///   [`stage_migration`] actually `git add`ed): only a deletion jigc's own stage staged
+///   is un-staged (`git restore --staged`).
+///
+/// A planned-but-untouched retirement — the user's pre-finalize `git rm` (absent from
+/// both sets) — is never restored on either axis: the prior unconditional
+/// per-planned-retirement `git restore --staged --worktree` resurrected it on any
+/// commit failure. Best-effort: a failure is logged, never raised — the commit did not
+/// land, so the worst case is a stray copy the next `finalize`/`discard` overwrites.
 fn rollback_promotions(
     repo_root: &Path,
     promotions: &[Promotion],
     retirements: &[PathBuf],
     retired: &[(PathBuf, Vec<u8>)],
+    staged: &[String],
 ) {
     for promotion in promotions {
         let _ = git_run(
@@ -1648,11 +1673,16 @@ fn rollback_promotions(
         }
     }
     for retirement in retirements {
+        // Index axis: un-stage the deletion ONLY when jigc's own stage staged it — a
+        // user's pre-staged `git rm` is not in `staged` and stays staged.
         let path = retirement.to_string_lossy();
-        let _ = git_run(repo_root, &["restore", "--staged", "--worktree", &path]);
-        // `git restore` is a no-op for a foreign that was untracked at HEAD — there are no
-        // committed bytes to recover. If it is still gone, rewrite the captured bytes so an
-        // untracked foreign is never permanently lost on a rolled-back commit (review F3).
+        if staged.iter().any(|spec| *spec == path) {
+            let _ = git_run(repo_root, &["restore", "--staged", &path]);
+        }
+        // Worktree axis: rewrite ONLY the bytes [`retire`] itself captured pre-deletion —
+        // exact bytes, so an untracked foreign (no committed bytes for `git restore` to
+        // recover — review F3) comes back too; a user-deleted worktree file (never
+        // captured) stays gone.
         let abs = repo_root.join(retirement);
         if !abs.exists()
             && let Some((_, bytes)) = retired.iter().find(|(p, _)| p == retirement)
