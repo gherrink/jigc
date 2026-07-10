@@ -908,6 +908,16 @@ impl TaskArea {
                 Ok(Outcome::with_findings(0, &report.findings))
             }
             Err(err) => {
+                // M40 F7 item 2 — a failure in jigc's OWN stage phase (the marked
+                // `git add` in `stage_migration`/`stage_index_honoring`) surfaces as a
+                // routed blocking finding through the findings envelope, the git
+                // stderr embedded verbatim; the rollback already ran in the executor.
+                // A commit-phase rejection (no marker) stays verbatim-raw below — the
+                // recorded hook decision honored (`design/finalize.md` → 6. Commit,
+                // M40 item 3): the hook output IS the correction signal.
+                if let Some(stage) = err.downcast_ref::<StageGitFailure>() {
+                    return self.blocked(vec![stage_failed_finding(&stage.0)], format);
+                }
                 eprintln!("{}", render::operational_error(format, &err));
                 Ok(Outcome::failure())
             }
@@ -1547,7 +1557,7 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
     ));
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
-    git_run(repo_root, &args)?;
+    git_run(repo_root, &args).map_err(mark_stage_failure)?;
     Ok(pathspecs)
 }
 
@@ -1593,7 +1603,31 @@ fn stage_index_honoring(repo_root: &Path, plan: &engine::finalize::FinalizePlan)
     }
     let mut args: Vec<&str> = vec!["add", "--"];
     args.extend(pathspecs.iter().map(String::as_str));
-    git_run(repo_root, &args)
+    git_run(repo_root, &args).map_err(mark_stage_failure)
+}
+
+/// Typed marker for a git failure during jigc's **own stage phase** — the `git add` in
+/// [`stage_migration`] / [`stage_index_honoring`] (M40 F7, `design/finalize.md` → M40
+/// refinement item 2). Carried through [`try_execute_finalize_plan`]'s error channel so
+/// the per-task surface can tell a stage-phase failure (routed blocking finding, the
+/// git stderr embedded verbatim — [`stage_failed_finding`]) from a commit-phase hook
+/// rejection (verbatim-raw, the recorded hook decision — item 3). The executor's shared
+/// `Err` arm runs the rollback either way, before the surface discriminates.
+#[derive(Debug)]
+struct StageGitFailure(String);
+
+impl std::fmt::Display for StageGitFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for StageGitFailure {}
+
+/// Wrap a stage-phase [`git_run`] failure in the [`StageGitFailure`] marker, flattening
+/// the chain (`{:#}`) so the message keeps `git_run`'s embedded verbatim stderr.
+fn mark_stage_failure(err: anyhow::Error) -> anyhow::Error {
+    anyhow::Error::new(StageGitFailure(format!("{err:#}")))
 }
 
 /// The M30 G2 block-on-empty guidance: the working tree is dirty but the narrowed index
@@ -1606,6 +1640,24 @@ fn nothing_staged_finding() -> Finding {
         "finalize.nothing-staged",
         "you staged nothing — the working tree has changes but the index is empty",
         "`git add` your changes, then re-run `jigc task finalize`",
+    )
+}
+
+/// The M40 F7 routed stage-failure block (`design/finalize.md` → M40 refinement item
+/// 2): a git failure during jigc's **own stage phase**, surfaced as a blocking finding
+/// with the git stderr embedded verbatim — previously a raw enveloped operational error
+/// with no code and no route. The rollback has already run when this surfaces (the
+/// executor's shared `Err` arm). Code executor-chosen in the `finalize.*` family (the
+/// design names no code; `DECISIONS.md` 2026-07-10 M40 Inc 1 T3).
+fn stage_failed_finding(git_error: &str) -> Finding {
+    Finding::block(
+        "finalize.stage-failed",
+        format!(
+            "jigc could not stage its own changes — no commit was made and the \
+             promotions were rolled back: {git_error}"
+        ),
+        "resolve the embedded git failure (e.g. remove a stale `.git/index.lock`), \
+         then re-run `jigc task finalize`",
     )
 }
 

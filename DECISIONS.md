@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-10 — M40 Inc 1 T3: the routed stage-failure code is `finalize.stage-failed`
+
+The M40 F7 routed stage-phase wrap surfaces as code **`finalize.stage-failed`** (executor-chosen per the T3 delegation — the design named only the `finalize.*` family), discriminated via a typed `StageGitFailure` marker on the two stage `git add`s so the executor's shared rollback runs before the surface splits stage-routed vs commit-raw.
+
 ## 2026-07-10 — M40 Increment 1 planning: decomposition
 
 Cut [Increment 1 — F7: finalize transaction hardening](implementation/roadmap.md) into **3 ordered single-concern tasks**, grounded in the code at HEAD `3640c21` (tree clean). Verified bases: `stage_migration` discriminates the retirement pathspec on `path_at_head` (`crates/cli/src/task.rs:1515`) and has one call site (1332); `rollback_promotions` (1617–1659, one call site at 1379) restores every *planned* retirement unconditionally — the Settle-recorded sibling defect; the current pre-staged-`git rm` failure is exit 1 via `render::operational_error` (910–913, enveloped-not-routed, matching the Settle correction); `git_run` already embeds git's stderr verbatim in its error (1999–2003), so the routed wrap has the bytes; the `blocked()` findings-envelope precedent is `finalize.nothing-staged` (784); `crates/cli/tests/migrate_rollback.rs` carries the rejecting-hook idiom + the `staged_migration(track_foreign)` helper. The gate-record's "dry-run divergence self-heals" claim is **verified against the code and pinned as a test, not trusted**: `predict_manifest`'s migration arm keeps `path_at_head` (955–963) and its forecast stays outcome-accurate on the pre-staged shape because the commit is whole-index — the user's staged deletion lands regardless of the skipped pathspec.

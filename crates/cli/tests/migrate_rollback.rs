@@ -629,6 +629,80 @@ fn pre_staged_dry_run_forecast_matches_the_landed_manifest() {
     );
 }
 
+/// M40 F7 (`design/finalize.md` → M40 refinement item 2): a git failure during jigc's
+/// OWN stage phase (`stage_migration`'s `git add`) surfaces as a **routed blocking
+/// finding** through the findings envelope — a `finalize.*` code + a route + the
+/// verbatim git stderr embedded in the message — never the raw enveloped operational
+/// error (exit 1, no code, no route) it was pre-fix. The rollback still runs before the
+/// routed surface: no commit, the promoted copy gone, the retire-deleted foreign
+/// restored byte-intact. A seeded stale `.git/index.lock` makes the stage `git add`
+/// fail deterministically (the preflight git commands are read-only and tolerate it).
+/// Item 3's counterpart — the commit-phase hook rejection staying verbatim-raw — is
+/// pinned by the existing rejection tests above, unchanged.
+#[test]
+fn stage_phase_git_failure_yields_a_routed_finding_and_rolls_back() {
+    let repo = TempDir::new("stagefail");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    let head_before = git(repo.path(), &["rev-parse", "HEAD"]);
+
+    // Seed the stale lock: the stage-phase `git add` needs `.git/index.lock` and fails.
+    fs::write(repo.path().join(".git").join("index.lock"), "").expect("seed index.lock");
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+
+    // The routed surface: the validation-blocked exit (3, the findings envelope) —
+    // not the raw operational exit (1) the pre-fix path took.
+    assert_eq!(
+        out.status.code(),
+        Some(3),
+        "a stage-phase git failure must exit via the findings envelope (3); stdout:\n{}\nstderr:\n{stderr}",
+        String::from_utf8_lossy(&out.stdout),
+    );
+    assert!(
+        stderr.contains("finalize.stage-failed"),
+        "the finding must carry the finalize.* code; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("route:"),
+        "the finding must carry a route; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("index.lock"),
+        "the git stderr must be embedded verbatim in the finding; stderr:\n{stderr}",
+    );
+
+    // The rollback ran before the routed surface.
+    assert_eq!(
+        git(repo.path(), &["rev-parse", "HEAD"]),
+        head_before,
+        "no commit landed",
+    );
+    assert!(
+        !repo.path().join("CHANGELOG.md").exists(),
+        "the promoted canonical copy must be rolled back",
+    );
+    let restored = repo.path().join("HISTORY.md");
+    assert!(
+        restored.exists(),
+        "the retire-deleted foreign must be restored on the stage-failure rollback",
+    );
+    assert_eq!(
+        fs::read_to_string(&restored).expect("read restored foreign"),
+        FOREIGN,
+        "the foreign original must be restored byte-intact",
+    );
+}
+
 /// Review F3: an **untracked** foreign original (never committed at HEAD) + a seeded
 /// commit failure must still leave the foreign file byte-intact on disk. `git restore`
 /// alone cannot recover an untracked file — there are no committed bytes — so the retire
