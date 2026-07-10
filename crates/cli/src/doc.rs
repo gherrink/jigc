@@ -1784,12 +1784,16 @@ fn whole_doc_json(
 
 /// The json value an addressed `#fragment` slice resolves to (the sub-node of the
 /// whole-doc shape): a slot section → its prose string; a repeatable section → its item
-/// array; `#section/<id>` → the item object; `#section/<id>/<leaf>` → the leaf value
-/// (slot prose or field). `read_slice` already validated the fragment resolves, so each
-/// lookup is infallible. Nested repeatable-in-item content (the M22 changelog shape) is
-/// not part of the pinned read-surface contract — every witness + the milestone-record
-/// are flat — so a deeper path degrades to the enclosing item object rather than
-/// modelling an unpinned nested json shape.
+/// array; further hops resolve over the **section-qualified write grammar** — the chain
+/// alternates `item, nested-section, item, …` (the CLI mirror of the engine's
+/// `store::slice_fragment` / `write::physical_item_chain` walk; one canonical address,
+/// no second grammar — M40, `design/doc-read-surface.md` → Nested repeatables join the
+/// pin): an odd chain ends on an **item** (its object), an even chain on a declared
+/// **nested section** (its array of recursive item objects), and a chain minus a
+/// trailing **leaf** hop ends on that leaf's value (slot prose / the block's `id-from`
+/// → the item's heading / a field, shaped as in the item object). `read_slice` already
+/// validated the fragment resolves — a bad hop blocked before this runs — so navigation
+/// is infallible: correct node or the honest upstream block, never a wrong node.
 fn fragment_json(
     schema: &Schema,
     doc: &engine::parse::Document,
@@ -1812,37 +1816,106 @@ fn fragment_json(
         SectionBody::Simple { .. } => slot_json(parsed.and_then(|p| p.slot.as_ref()), source),
         SectionBody::Repeatable { repeatable } => {
             let items = parsed.map(|p| p.items.as_slice()).unwrap_or(&[]);
-            match rest.split_first() {
-                None => items_json(items, repeatable, source),
-                Some((item_id, leaf_rest)) => {
-                    let item = items
-                        .iter()
-                        .find(|it| &it.id == item_id)
-                        .expect("read_slice validated the item");
-                    match leaf_rest.first() {
-                        None => item_json(item, repeatable, source),
-                        Some(leaf) if leaf_rest.len() == 1 => {
-                            if let Some(span) = item.slot_span(leaf) {
-                                serde_json::Value::String(span.slice(source).trim().to_string())
-                            } else if *leaf == repeatable.id_from {
-                                // The `id-from` leaf resolves to the item's heading (its
-                                // id-source) — the same value the item object keys it under.
-                                serde_json::Value::String(item.title.clone())
-                            } else if let Some(field) = item.fields.iter().find(|f| &f.key == leaf)
-                            {
-                                field_json(&field.value)
-                            } else {
-                                // A nested item id at leaf position (unpinned nested case).
-                                item_json(item, repeatable, source)
-                            }
-                        }
-                        // A deeper nested path — unpinned; degrade to the enclosing item.
-                        Some(_) => item_json(item, repeatable, source),
-                    }
-                }
+            if rest.is_empty() {
+                return items_json(items, repeatable, source);
             }
+            // 1. The whole hop chain as a write-grammar item path: an odd chain ends
+            //    on an item (its object), an even chain on a declared nested section
+            //    (its items array) — the engine's first interpretation.
+            if let Some(end) = walk_write_chain(repeatable, items, rest) {
+                return if end.at_nested_section {
+                    items_json(&end.item.items, end.template, source)
+                } else {
+                    item_json(end.item, end.template, source)
+                };
+            }
+            // 2. The chain minus a trailing leaf hop: the leaf resolves on the chain's
+            //    item against the template its block bottoms out in.
+            let (leaf, chain) = rest.split_last().expect("rest is non-empty");
+            walk_write_chain(repeatable, items, chain)
+                .and_then(|end| leaf_json(end.item, end.template, leaf, source))
+                .expect("read_slice validated the fragment resolves")
         }
     }
+}
+
+/// The terminus of a section-qualified write-grammar hop chain walk.
+struct ChainEnd<'a> {
+    /// The chain's last traversed item.
+    item: &'a engine::parse::ParsedItem,
+    /// The repeatable template the chain bottoms out in: the item's own block for an
+    /// odd chain, the declared nested block for an even one.
+    template: &'a Repeatable,
+    /// Whether the chain ended on a nested-section hop (an even chain) — the terminus
+    /// is then `item`'s nested items under `template`, not `item` itself.
+    at_nested_section: bool,
+}
+
+/// Walk `hops` over the parsed `items` under `repeatable` per the write grammar: hops
+/// alternate item id, nested-section id, item id, … (starting at an item). Each item
+/// id is matched **within its parent's items** (parent-scoped — a same-anchor item
+/// under a different parent is never returned) and each nested-section id must name a
+/// `Leaf::Repeatable` declared in the current block (never treated as an item id —
+/// the engine's S1 rule). `None` when any hop names nothing (the caller then tries
+/// the trailing-leaf interpretation; a genuinely bad address never reaches here —
+/// `read_slice` blocked it).
+fn walk_write_chain<'a>(
+    repeatable: &'a Repeatable,
+    items: &'a [engine::parse::ParsedItem],
+    hops: &[&str],
+) -> Option<ChainEnd<'a>> {
+    let mut template = repeatable;
+    let mut scope = items;
+    let mut current = None;
+    let mut expect_item = true;
+    for hop in hops {
+        if expect_item {
+            let item = scope.iter().find(|it| &it.id == hop)?;
+            scope = &item.items;
+            current = Some(item);
+        } else {
+            template = template.block.iter().find_map(|leaf| match leaf {
+                Leaf::Repeatable { id, repeatable } if id == hop => Some(repeatable),
+                _ => None,
+            })?;
+        }
+        expect_item = !expect_item;
+    }
+    Some(ChainEnd {
+        item: current?,
+        template,
+        at_nested_section: expect_item,
+    })
+}
+
+/// One leaf's json value on `item`, resolved against the `template` its chain bottoms
+/// out in (the engine's `store::resolve_leaf` order): a **declared** slot's trimmed
+/// prose (declared-only — the block's `id-from` wins over a bare-prose slot), the
+/// template's `id-from` leaf → the item's heading (its stable id-source), or a
+/// per-item field shaped as in the item object. `None` for a leaf the template does
+/// not carry.
+fn leaf_json(
+    item: &engine::parse::ParsedItem,
+    template: &Repeatable,
+    leaf: &str,
+    source: &str,
+) -> Option<serde_json::Value> {
+    let declares_slot = template
+        .block
+        .iter()
+        .any(|l| matches!(l, Leaf::Slot { id, .. } if id == leaf));
+    if declares_slot && let Some(span) = item.slot_span(leaf) {
+        return Some(serde_json::Value::String(
+            span.slice(source).trim().to_string(),
+        ));
+    }
+    if template.id_from == leaf {
+        return Some(serde_json::Value::String(item.title.clone()));
+    }
+    item.fields
+        .iter()
+        .find(|f| f.key == leaf)
+        .map(|f| field_json(&f.value))
 }
 
 /// Split a [`Fragment`] into its ordered hop strings (section id first) — the read
@@ -1874,10 +1947,11 @@ fn items_json(
 
 /// One repeatable item as a json object of its leaves: the `id-from` leaf keyed by its
 /// id → the item's heading value (its stable id-source), each other field keyed by leaf
-/// id (scalar → string, list → array), each slot keyed by leaf id → its trimmed prose.
-/// A single bare-prose slot carries no leaf id in the parsed item, so the block names it
-/// ([`single_slot_leaf`]). Nested repeatable content is not serialized (the unpinned
-/// nested case; see [`fragment_json`]).
+/// id (scalar → string, list → array), each slot keyed by leaf id → its trimmed prose,
+/// and each declared **nested repeatable** keyed by its block id → the array of
+/// recursive item objects (M40, `design/doc-read-surface.md` → Nested repeatables join
+/// the pin). A single bare-prose slot carries no leaf id in the parsed item, so the
+/// block names it ([`single_slot_leaf`]).
 fn item_json(
     item: &engine::parse::ParsedItem,
     repeatable: &engine::schema::Repeatable,
@@ -1907,6 +1981,21 @@ fn item_json(
             leaf_id.to_string(),
             serde_json::Value::String(span.slice(source).trim().to_string()),
         );
+    }
+    // Nested repeatable groups join the item object: each declared nested block keys
+    // the item by its block id → the array of recursive item objects. The parse
+    // carries one physical nested list (`item.items` — a nested section is a purely
+    // logical schema hop), so it is the declared block's items. A flat block declares
+    // no nested repeatable and gains no key, so flat item json is byte-unchanged (the
+    // additive guard).
+    for leaf in &repeatable.block {
+        if let Leaf::Repeatable {
+            id,
+            repeatable: nested,
+        } = leaf
+        {
+            map.insert(id.clone(), items_json(&item.items, nested, source));
+        }
     }
     serde_json::Value::Object(map)
 }
