@@ -325,9 +325,10 @@ mod tests {
                 "validation.schema-completeness.inverse-cardinality.severity",
                 "advisory",
             ),
-            // schema-conformance (4 intrinsic + 2 tunable store-scope — M33
+            // schema-conformance (4 intrinsic + 3 tunable store-scope — M33
             // mention-resolves, M40 repeatable-populated + its `.exempt` string
-            // sibling, the pinned `doctype#section` steady-state tokens).
+            // sibling (the pinned `doctype#section` steady-state tokens) + M40
+            // surplus-sections-absent, the trailing-surplus raw-block scan).
             (
                 "validation.schema-conformance.field-value-conformant.severity",
                 "blocking",
@@ -355,6 +356,10 @@ mod tests {
             (
                 "validation.schema-conformance.required-slot-present.severity",
                 "blocking",
+            ),
+            (
+                "validation.schema-conformance.surplus-sections-absent.severity",
+                "advisory",
             ),
             // workflow-refs (10, intrinsic) + the M4 per-probe default (retained).
             (
@@ -596,8 +601,8 @@ mod tests {
 
     /// The shipped per-check severity surface reconciles to the
     /// [`design/validation.md`] Severity inventory (the single source of truth):
-    /// **30 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
-    /// (floored at `blocking`) + 12 tunable (no floor)** (`validation.md` → Severity
+    /// **31 per-check `validation.<probe>.<check>.severity` keys — 18 intrinsic
+    /// (floored at `blocking`) + 13 tunable (no floor)** (`validation.md` → Severity
     /// inventory). The M15 `checkpoint-marker-not-shadowed` row joined the intrinsic
     /// set (16 → 17); the M16 `owner-artifact.present` #5 gate joins it next (17 → 18);
     /// the M33 `schema-conformance.mention-resolves` row joins the **tunable** set
@@ -606,14 +611,16 @@ mod tests {
     /// guard, live since the long-horizon-study fix but shipped un-keyed, keyed +
     /// demoted to advisory here); the M40 `schema-conformance.repeatable-populated`
     /// row follows (11 → 12 — the hollow-adoption advisory; its sibling `….exempt`
-    /// **string** knob is not a severity key and stays outside this count). The 18
+    /// **string** knob is not a severity key and stays outside this count); its M40
+    /// sibling `schema-conformance.surplus-sections-absent` completes the wave
+    /// (12 → 13 — the trailing-surplus advisory). The 18
     /// intrinsic are exactly [`INTRINSIC_CHECK_KEYS`]; the tunable remainder is every
     /// other per-check key, including the three `doc-code.*` rows. Counted over the
     /// *embedded* bytes, so the count is the shipped surface — not a synthetic one.
     ///
     /// [`design/validation.md`]: ../../../design/validation.md
     #[test]
-    fn per_check_severity_surface_reconciles_to_the_30_18_12_inventory() {
+    fn per_check_severity_surface_reconciles_to_the_31_18_13_inventory() {
         let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
 
         // The per-check keys are the inventory rows: keyed by check, never by
@@ -628,8 +635,8 @@ mod tests {
             .collect();
         assert_eq!(
             per_check.len(),
-            30,
-            "the inventory totals 30 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
+            31,
+            "the inventory totals 31 checks (validation.md → Severity inventory); got:\n{per_check:#?}",
         );
 
         // 18 are floored at `blocking` (intrinsic) — exactly INTRINSIC_CHECK_KEYS.
@@ -640,12 +647,33 @@ mod tests {
         assert_eq!(intrinsic, 18, "18 intrinsic checks (floored at blocking)");
         assert_eq!(INTRINSIC_CHECK_KEYS.len(), 18);
 
-        // The remaining 12 are tunable (no floor) — 30 - 18.
+        // The remaining 13 are tunable (no floor) — 31 - 18.
         let tunable = per_check
             .iter()
             .filter(|k| knobs.floors().get(**k).is_none())
             .count();
-        assert_eq!(tunable, 12, "12 tunable checks (unfloored)");
+        assert_eq!(tunable, 13, "13 tunable checks (unfloored)");
+    }
+
+    /// (M40 F4 half 2) The `surplus-sections-absent` severity key is declared as
+    /// designed (`validation.md` → Hollow and surplus adoption): a **tunable
+    /// advisory** (no floor) — visibility over trailing surplus H2s the positional
+    /// parse never visits, never a gate.
+    #[test]
+    fn surplus_sections_absent_key_is_declared_tunable_advisory() {
+        let knobs = load_knobs(KNOBS_YAML).expect("knobs.yaml loads");
+
+        let key = "validation.schema-conformance.surplus-sections-absent.severity";
+        assert!(knobs.field(key).is_some(), "{key} is declared");
+        assert!(
+            knobs.floors().get(key).is_none(),
+            "the surplus-adoption advisory is tunable — no floor",
+        );
+        assert_eq!(
+            knobs.base_scalars().get(key).map(String::as_str),
+            Some("advisory"),
+            "advisory-by-default — visibility, never a gate",
+        );
     }
 
     /// (M40 F4 half 1) The `repeatable-populated` pair is declared as designed

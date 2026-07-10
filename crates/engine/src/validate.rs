@@ -504,16 +504,17 @@ pub fn validate_store_families(
     // direction, the blocking counterpart is the transform-transaction migration gate.
     findings.extend(schema_conformance_store(repo_root, schemas, versions));
 
-    // The M40 hollow-adoption advisory (`schema-conformance.repeatable-populated`,
-    // `validation.md` → Hollow and surplus adoption) — its **own** walk, appended after
-    // family 5 so the version-mismatch adjudication there stays intact, covering the
-    // placement instances family 5 skips ([`repeatable_populated_store`]). Exemptions
-    // ride the `….exempt` string knob (space-separated `doctype#section` tokens),
-    // read from the resolved cascade the CLI seeded from the pack `knobs.yaml`.
+    // The two M40 hollow-and-surplus advisories (`schema-conformance.
+    // {repeatable-populated, surplus-sections-absent}`, `validation.md` → Hollow and
+    // surplus adoption) — their **own** walk, appended after family 5 so the
+    // version-mismatch adjudication there stays intact, covering the placement
+    // instances family 5 skips ([`hollow_surplus_store`]). `repeatable-populated`
+    // exemptions ride the `….exempt` string knob (space-separated `doctype#section`
+    // tokens), read from the resolved cascade the CLI seeded from the pack `knobs.yaml`.
     let exempt = resolved
         .scalar("validation.schema-conformance.repeatable-populated.exempt")
         .unwrap_or("");
-    findings.extend(repeatable_populated_store(repo_root, schemas, exempt));
+    findings.extend(hollow_surplus_store(repo_root, schemas, exempt));
 
     Ok(ValidationReport::new(findings, resolved))
 }
@@ -638,10 +639,10 @@ fn schema_conformance_store(
     findings
 }
 
-/// The M40 hollow-adoption advisory's **own store walk** (`design/validation.md` →
-/// Hollow and surplus adoption): re-parse every committed instance and run
-/// [`repeatable_populated`] over it. A separate walk from [`schema_conformance_store`]
-/// — deliberately, twice over:
+/// The two M40 hollow-and-surplus advisories' **own store walk**
+/// (`design/validation.md` → Hollow and surplus adoption): re-parse every committed
+/// instance and run [`repeatable_populated`] + [`surplus_sections_absent`] over it.
+/// A separate walk from [`schema_conformance_store`] — deliberately, twice over:
 ///
 /// - **Placement coverage.** Family 5 walks only `location:`-bearing schemas, but the
 ///   headline hollow case (a zero-item roadmap) is a **placement** doctype
@@ -654,8 +655,10 @@ fn schema_conformance_store(
 ///   into its per-doc `doc_findings` would silently swallow that break.
 ///
 /// Advisory-only and report-only like every store family; an unparseable committed
-/// file is family 5's concern, not this advisory's (skipped here).
-fn repeatable_populated_store(
+/// file is family 5's concern, not these advisories' (skipped here — which also
+/// keeps [`surplus_sections_absent`] off a between-surplus doc, section-renamed's
+/// territory).
+fn hollow_surplus_store(
     repo_root: &Path,
     schemas: &BTreeMap<String, Schema>,
     exempt: &str,
@@ -671,6 +674,7 @@ fn repeatable_populated_store(
                 continue; // unparseable committed file: family 5's concern, not this one's.
             };
             let mut doc_findings = repeatable_populated(schema, &doc, exempt);
+            doc_findings.extend(surplus_sections_absent(schema, &source));
             if doc_findings.is_empty() {
                 continue;
             }
@@ -1383,6 +1387,81 @@ pub fn repeatable_populated(schema: &Schema, doc: &Document, exempt: &str) -> Ve
         ));
     }
     findings
+}
+
+/// The **`schema-conformance.surplus-sections-absent`** advisory (M40;
+/// `design/validation.md` → Hollow and surplus adoption): **trailing** H2 headings
+/// beyond the schema's body sections are invisible to the positional parse —
+/// body sections map positionally onto H2s and the parser never visits a trailing
+/// surplus (`implementation/parsing.md` → Surplus-section tolerance), so a
+/// byte-faithful adoption carries them silently. A raw-block scan
+/// ([`crate::parse::scan_blocks`]) closes the visibility gap: count the source's
+/// H2 headings against the schema's body-section count and emit one
+/// [`Severity::Advisory`] finding naming the surplus count. The parsed [`Document`]
+/// still **never carries surplus sections** — the advisory is visibility, never a
+/// structural admission (the surplus bytes stay on disk and survive splices
+/// untouched).
+///
+/// **Trailing only.** A surplus H2 *between* required sections shifts the
+/// positional mapping and is `conformance.section-renamed`'s territory (a
+/// parse-level block); this check stays inert there — when any of the first N H2s
+/// does not slug-match its positional section id, the scan yields nothing, so the
+/// two never double-fire.
+///
+/// Fire points are the store sweep ([`validate_store_families`]) and the CLI's
+/// adopt-time triage re-parse — **never** [`validate_task`] / the finalize gate
+/// (completeness, not integrity).
+pub fn surplus_sections_absent(schema: &Schema, source: &str) -> Vec<Finding> {
+    let body_ids: Vec<&str> = schema
+        .sections
+        .iter()
+        .filter(|s| !s.header)
+        .map(|s| s.id.as_str())
+        .collect();
+    let h2s: Vec<(String, usize)> = crate::parse::scan_blocks(source)
+        .into_iter()
+        .filter_map(|block| match block {
+            crate::parse::Block::Heading {
+                level: pulldown_cmark::HeadingLevel::H2,
+                text,
+                line,
+                ..
+            } => Some((text, line)),
+            _ => None,
+        })
+        .collect();
+    if h2s.len() <= body_ids.len() {
+        return Vec::new(); // no surplus (a missing section is section-missing's territory).
+    }
+    // Trailing only: when any of the first N H2s does not slug-match its positional
+    // section id, the surplus sits BETWEEN required sections and the parse trips
+    // `conformance.section-renamed` — this check must not double-fire.
+    if body_ids
+        .iter()
+        .zip(&h2s)
+        .any(|(id, (text, _))| crate::slug::slugify(text) != **id)
+    {
+        return Vec::new();
+    }
+    let surplus = &h2s[body_ids.len()..];
+    let (first_text, first_line) = &surplus[0];
+    vec![Finding::graded(
+        Severity::Advisory,
+        "schema-conformance.surplus-sections-absent",
+        format!(
+            "{} trailing surplus section heading(s) beyond the schema's {} body \
+             section(s), starting at `## {first_text}` — the positional parse never \
+             visits them, so the content is carried byte-faithful but unmanaged",
+            surplus.len(),
+            body_ids.len(),
+        ),
+        Some(Location::at(*first_line, 1)),
+        Some(
+            "fold the surplus content into a schema section or remove it — jigc \
+             never reads or splices it"
+                .to_string(),
+        ),
+    )]
 }
 
 /// Run the three synthetic checks over each item of a **repeatable** section's
@@ -3021,6 +3100,155 @@ Some notes.
 }
 
 #[cfg(test)]
+mod surplus_sections_tests {
+    //! (M40 F4 half 2) The pure `schema-conformance.surplus-sections-absent` check
+    //! (`design/validation.md` → Hollow and surplus adoption): **trailing** H2
+    //! headings beyond the schema's body sections yield one **advisory** finding
+    //! carrying the surplus count; a conformant doc stays inert; a surplus H2
+    //! *between* required sections is `conformance.section-renamed`'s territory and
+    //! never double-fires this check. Never a gate.
+
+    use super::*;
+    use crate::schema::load_schema;
+
+    /// A located doctype with one simple + one repeatable section — two body
+    /// sections for the positional H2 mapping.
+    const LOG_YAML: &[u8] = b"\
+type: log
+location: logs/
+id-from: title
+sections:
+  - id: intro
+    slot: { hint: One sentence. }
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: notes, slot: { hint: The notes. } }
+";
+
+    /// A conformant log — exactly the schema's two body-section H2s.
+    const CONFORMANT: &str = "\
+# Log
+
+## Intro
+Prose.
+
+## Entries
+
+### First  {#first}
+
+Some notes.
+";
+
+    /// The conformant log plus **two trailing** surplus H2s — the adoption-trial
+    /// shape (a `## Legacy planning notes` carried structurally silent).
+    const TRAILING_SURPLUS: &str = "\
+# Log
+
+## Intro
+Prose.
+
+## Entries
+
+### First  {#first}
+
+Some notes.
+
+## Legacy Planning Notes
+Old notes the positional parse never visits.
+
+## Scratch
+More.
+";
+
+    /// A surplus H2 **between** the required sections — it shifts the positional
+    /// mapping, so it is section-renamed's territory, not this check's.
+    const BETWEEN_SURPLUS: &str = "\
+# Log
+
+## Intro
+Prose.
+
+## Legacy Planning Notes
+Old notes.
+
+## Entries
+";
+
+    /// (The done-criterion) Two trailing surplus H2s fire exactly one advisory
+    /// carrying the surplus count, the `(schema-conformance,
+    /// surplus-sections-absent)` handle, and the first surplus heading's line —
+    /// while the doc still **parses clean** and the parsed [`Document`] carries
+    /// only the schema's sections (visibility, never structural admission).
+    #[test]
+    fn trailing_surplus_fires_one_advisory_with_the_surplus_count() {
+        let schema = load_schema(LOG_YAML).expect("log schema loads");
+
+        let doc =
+            parse_sections(&schema, TRAILING_SURPLUS).expect("a trailing surplus parses clean");
+        assert_eq!(
+            doc.sections.len(),
+            2,
+            "the parsed Document never carries surplus sections",
+        );
+
+        let findings = surplus_sections_absent(&schema, TRAILING_SURPLUS);
+        assert_eq!(findings.len(), 1, "one advisory per doc; got {findings:?}");
+        let finding = &findings[0];
+        assert_eq!(
+            finding.severity,
+            Severity::Advisory,
+            "visibility, never a gate"
+        );
+        assert_eq!(finding.probe, "schema-conformance");
+        assert_eq!(finding.check, "surplus-sections-absent");
+        assert_eq!(finding.code, "schema-conformance.surplus-sections-absent");
+        assert!(
+            finding.message.contains("2 trailing surplus"),
+            "the surplus count is in the message: {}",
+            finding.message,
+        );
+        let location = finding.location.as_ref().expect("located");
+        assert_eq!(
+            location.line, 12,
+            "located at the first surplus heading (`## Legacy Planning Notes`)",
+        );
+    }
+
+    /// A doc with exactly the schema's H2s stays inert — the omitting context.
+    #[test]
+    fn conformant_doc_stays_inert() {
+        let schema = load_schema(LOG_YAML).expect("log schema loads");
+        assert!(
+            surplus_sections_absent(&schema, CONFORMANT).is_empty(),
+            "no surplus, no finding",
+        );
+    }
+
+    /// (The done-criterion) A surplus H2 **between** required sections still trips
+    /// `conformance.section-renamed` at parse level and this check stays inert —
+    /// the two never double-fire on one doc.
+    #[test]
+    fn between_surplus_is_section_renamed_territory_never_a_double_fire() {
+        let schema = load_schema(LOG_YAML).expect("log schema loads");
+
+        let err = parse_sections(&schema, BETWEEN_SURPLUS)
+            .expect_err("a between-surplus breaks the positional mapping");
+        assert!(
+            err.iter().any(|f| f.code == "conformance.section-renamed"),
+            "the parse trips section-renamed: {err:?}",
+        );
+
+        assert!(
+            surplus_sections_absent(&schema, BETWEEN_SURPLUS).is_empty(),
+            "the raw-block scan stays inert on a between-surplus — no double fire",
+        );
+    }
+}
+
+#[cfg(test)]
 mod validate_task_tests {
     //! The task-scope sweep: `validate_task` resolves a working area's staged doc
     //! instances, runs `file-state` + `schema-conformance` over them, and aggregates
@@ -4321,6 +4549,103 @@ One sentence.
             vec!["docs/roadmap.md#milestones"],
             "the exempt `milestone-record#tasks` token suppresses its advisory; the \
              non-exempt roadmap still fires; got {:?}",
+            report.findings,
+        );
+    }
+
+    /// A committed spec carrying **one trailing** surplus H2 — parses clean, so
+    /// only the raw-block scan can see it.
+    const SURPLUS_SPEC: &str = "\
+# Surplus spec
+
+## Goal
+One sentence.
+
+## Criteria
+
+## Legacy Planning Notes
+Old notes the positional parse never visits.
+";
+
+    /// A committed spec with a surplus H2 **between** required sections — the
+    /// positional mapping shifts, so family 5's re-parse trips
+    /// `conformance.section-renamed` and the surplus advisory must stay quiet.
+    const BETWEEN_SPEC: &str = "\
+# Between spec
+
+## Goal
+One sentence.
+
+## Legacy Planning Notes
+Old notes.
+
+## Criteria
+";
+
+    /// (M40 F4 half 2, the done-criterion) The store sweep advises a committed
+    /// doc's **trailing** surplus H2 (advisory, addressed at the doc, the surplus
+    /// count in the message) — while a **between**-surplus doc surfaces through
+    /// family 5's `conformance.section-renamed` re-parse instead, with **zero**
+    /// surplus advisories (no double fire).
+    #[test]
+    fn store_sweep_advises_trailing_surplus_and_stays_quiet_on_between_surplus() {
+        let repo = TempRoot::new("surplus");
+        repo.commit("specs", "surplus", SURPLUS_SPEC);
+        repo.commit("specs", "between", BETWEEN_SPEC);
+
+        // Baseline both docs so the file↔CLI-state family stays quiet.
+        let mut record = FileStateRecord::new();
+        record.record("specs/surplus.md", hash_bytes(SURPLUS_SPEC.as_bytes()));
+        record.record("specs/between.md", hash_bytes(BETWEEN_SPEC.as_bytes()));
+
+        let seen = RefCell::new(Vec::new());
+        let report = validate_store_families(
+            repo.path(),
+            &schemas(),
+            &no_delta_resolved(),
+            &dangling_aware_invoker(&seen),
+            &[],
+            &EmptyStepSource,
+            &record,
+            &BTreeMap::new(),
+        )
+        .expect("store sweep runs");
+
+        let surplus: Vec<&Finding> = report
+            .findings
+            .iter()
+            .filter(|f| f.code == "schema-conformance.surplus-sections-absent")
+            .collect();
+        let addresses: Vec<&str> = surplus
+            .iter()
+            .filter_map(|f| f.location.as_ref().and_then(|l| l.address.as_deref()))
+            .collect();
+        assert_eq!(
+            addresses,
+            vec!["specs/surplus.md"],
+            "only the trailing-surplus doc fires — the between-surplus doc is \
+             section-renamed's territory; got {:?}",
+            report.findings,
+        );
+        assert_eq!(
+            surplus[0].severity,
+            Severity::Advisory,
+            "surplus adoption is visibility, never a gate: {:?}",
+            surplus[0],
+        );
+        assert!(
+            surplus[0].message.contains("1 trailing surplus"),
+            "the surplus count is in the message: {}",
+            surplus[0].message,
+        );
+
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.code == "conformance.section-renamed"
+                    && f.message.contains("specs/between.md")),
+            "the between-surplus doc surfaces through family 5's re-parse: {:?}",
             report.findings,
         );
     }

@@ -219,6 +219,7 @@ const CHECK_INVENTORY: &[(&str, &str)] = &[
     ("schema-conformance", "ref-resolves"),
     ("schema-conformance", "mention-resolves"),
     ("schema-conformance", "repeatable-populated"),
+    ("schema-conformance", "surplus-sections-absent"),
     ("schema-conformance", "required-slot-present"),
     ("schema-conformance", "required-field-present"),
     ("schema-conformance", "field-value-conformant"),
@@ -1026,11 +1027,11 @@ mod tests {
 
     /// Golden lock on the post-pass **membership** count. `CHECK_INVENTORY` is the
     /// `(probe, check)` set the M6 severity post-pass re-grades — a deliberate
-    /// **subset** of the **30** keyed `validation.<probe>.<check>.severity` checks
-    /// (`validation.md` → MVP check inventory, the single source of truth; the 30 is
+    /// **subset** of the **31** keyed `validation.<probe>.<check>.severity` checks
+    /// (`validation.md` → MVP check inventory, the single source of truth; the 31 is
     /// itself pinned over the embedded `knobs.yaml` by
-    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_30_18_12_inventory`).
-    /// It carries **27** rows = the 30 keyed checks **minus the 3 compose-time marker
+    /// `knobs::tests::per_check_severity_surface_reconciles_to_the_31_18_13_inventory`).
+    /// It carries **28** rows = the 31 keyed checks **minus the 3 compose-time marker
     /// checks** deliberately excluded from the post-pass (`spawn-marker-not-shadowed`,
     /// `checkpoint-marker-not-shadowed`, `fan-out-join-paired`) — the divergence the
     /// sibling `owner_artifact_present_is_a_check_inventory_row` test names
@@ -1041,16 +1042,18 @@ mod tests {
     /// demoted-to-advisory at M40 so the post-pass can re-promote it), so it too is a
     /// member (25 → 26); the M40 `schema-conformance.repeatable-populated` row is a
     /// store-scope + adopt-time advisory (the `mention-resolves` precedent — keyed so a
-    /// project can tune it), so it too is a member (26 → 27). By severity that is 15
-    /// intrinsic (18 keyed intrinsic − the 3 excluded) + 12 tunable. Pinning the length
+    /// project can tune it), so it too is a member (26 → 27); its M40 sibling
+    /// `schema-conformance.surplus-sections-absent` (the trailing-surplus raw-block
+    /// scan) follows the same precedent (27 → 28). By severity that is 15 intrinsic
+    /// (18 keyed intrinsic − the 3 excluded) + 13 tunable. Pinning the length
     /// makes any inventory add/remove trip the gate, forcing `validation.md` +
     /// `knobs.yaml` to move in lockstep.
     #[test]
     fn check_inventory_membership_count_is_stable() {
         assert_eq!(
             CHECK_INVENTORY.len(),
-            27,
-            "the post-pass membership set is 27 rows (30 keyed checks − 3 compose-time \
+            28,
+            "the post-pass membership set is 28 rows (31 keyed checks − 3 compose-time \
              marker checks); update validation.md → MVP check inventory in lockstep",
         );
 

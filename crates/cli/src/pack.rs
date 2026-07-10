@@ -1279,10 +1279,10 @@ mod tests {
         # not a project-overridable value, so it stays in defaults.yaml.
         # The `validation.*.severity` keys are the per-check severity surface; their
         # defaults + intrinsic-ness are governed by the single source of truth,
-        # validation.md → MVP check inventory (30 checks across 9 categories — pinned by
-        # engine::knobs per_check_severity_surface_reconciles_to_the_30_18_12_inventory).
-        # (The engine's CHECK_INVENTORY post-pass membership set is a 27-row subset of
-        # these 30 — it drops the 3 compose-time marker checks; see engine::result
+        # validation.md → MVP check inventory (31 checks across 9 categories — pinned by
+        # engine::knobs per_check_severity_surface_reconciles_to_the_31_18_13_inventory).
+        # (The engine's CHECK_INVENTORY post-pass membership set is a 28-row subset of
+        # these 31 — it drops the 3 compose-time marker checks; see engine::result
         # check_inventory_membership_count_is_stable.) The two
         # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
         # per-probe *defaults* (never a rename) so an M4-authored manifest still
@@ -1467,6 +1467,18 @@ mod tests {
         validation.schema-conformance.repeatable-populated.exempt:
           type: string
           default: "changelog#unreleased-changes milestone-record#tasks completion-record#findings"
+
+        # --- schema-conformance.surplus-sections-absent (1, tunable; advisory — M40) ---
+        # Surplus-adoption visibility: body sections map positionally onto H2s and the
+        # parser never visits a TRAILING surplus heading (the adoption trial adopted a
+        # surplus `## Legacy planning notes` clean), so the store sweep + the adopt-time
+        # triage annotate it — advisory, never a gate (validation.md → Hollow and surplus
+        # adoption). A surplus H2 BETWEEN required sections is
+        # conformance.section-renamed's territory instead; the two never double-fire.
+        validation.schema-conformance.surplus-sections-absent.severity:
+          type: enum
+          of: [blocking, warning, advisory]
+          default: advisory
 
         # --- override-default.* (3, tunable from M6; blocking-by-default) ---
         validation.override-default.target-exists.severity:
