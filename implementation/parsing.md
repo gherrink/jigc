@@ -108,6 +108,10 @@ When a human edits a file out-of-band, the re-parse must turn "doesn't match the
 | **auto-handled** | *none in MVP* — mint-on-import from the recorded id-source is post-MVP ([reconciliation.md](../design/reconciliation.md) → Auto-repair scope) |
 | **not a conformance concern** | slot prose (opaque — the determinism boundary); an empty *required* slot (a `finalize` integrity check, not a parse error) |
 
+## Surplus-section tolerance
+
+Body sections map **positionally** onto the doc's H2s (`parse.rs:256-283`), so surplus tolerance is asymmetric: a surplus H2 *between* required sections shifts the positional mapping and trips `conformance.section-renamed`, but a **trailing** surplus H2 (beyond the schema's last body section) is simply never visited — invisible to the parse, so a byte-faithful adoption carries it silently. M40's **`schema-conformance.surplus-section` advisory** ([validation.md](../design/validation.md) → Hollow and surplus adoption) is the detector that closes the visibility gap: a raw-block scan against the schema's section count, precisely because the positional parser has no seam that reaches the trailing blocks. The parsed `Doc` still **never carries surplus sections** — byte-faithful adoption keeps the bytes on disk (they survive splices untouched); the advisory is the *visibility*, not a structural admission.
+
 ## Round-trip guarantees
 
 The diff-clean contract, in two clauses:

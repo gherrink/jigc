@@ -53,7 +53,7 @@ The enforcement lever is **format**: the output stays prose / discursive — *ho
 - It has **no per-definition extractable key or delimiter** — a consumer cannot programmatically pull `single-task`'s `usage` out as a field. *Light prose section grouping* (an unkeyed transition like "The workflows you can compose here…") is permitted as a non-binding reading aid; what's forbidden is a stable per-definition handle.
 - It reads as **prose paragraphs** (a sentence/prose-density floor), not a list.
 
-Together these make depending on the output structurally unattractive. (Snapshot tests of the *bytes* are necessary-but-insufficient — a snapshot of a bulleted list passes a byte-snapshot happily while *failing* non-contractual; the format predicate is a separate, positive assertion.)
+Together these make depending on the output structurally unattractive. (Snapshot tests of the *bytes* are necessary-but-insufficient — a snapshot of a bulleted list passes a byte-snapshot happily while *failing* non-contractual; the format predicate is a separate, positive assertion.) The format predicate is also why the M40 **`jigc doc schema`** verb — a *structural* projection of the resolved schemas, machine-readable the day it ships — **cannot ride describe**: it ships as its own **separately-pinned, explicitly versioned** contract instead ([doc-read-surface.md](doc-read-surface.md) → Why json is a contract here).
 
 ## The authored fields (settled M11)
 
