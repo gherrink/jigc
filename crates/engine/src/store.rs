@@ -33,6 +33,7 @@ use crate::address::{Address, Fragment};
 use crate::finding::{Finding, Location, Severity};
 use crate::parse::{self, Document, ParsedItem};
 use crate::schema::Schema;
+use crate::write;
 
 /// The canonical on-disk path a committed `<type>:<slug>` instance lives at, when
 /// its schema declares a persisted home.
@@ -87,13 +88,17 @@ pub fn lexical_normalize(p: &Path) -> PathBuf {
 ///   repeatable section's rendered items;
 /// - **`#unit/item`** (a 2-hop fragment over a repeatable section) → that item
 ///   rendered;
-/// - **`#unit/item/leaf`** and deeper **`#unit/item/…/leaf`** nested paths → the
-///   addressed leaf — a slot's opaque prose byte-for-byte, the block's `id-from` leaf
-///   (the item's heading), a per-item field's rendered value, or a nested item rendered.
+/// - **deeper hops** → the **section-qualified write grammar** (the chain alternates
+///   `item, nested-section, item, …` — M40, one canonical address): a chain ending on
+///   a declared **nested section** slices to its nested items rendered, on an **item**
+///   to that item rendered complete, and a trailing **leaf** hop to the addressed leaf
+///   — a declared slot's opaque prose byte-for-byte, the block's `id-from` leaf (the
+///   item's heading), or a per-item field's rendered value (see [`slice_fragment`]).
 ///
 /// Every navigation hop is resolved over the already-parsed
 /// [`crate::parse::ParsedSection`]/[`ParsedItem`] span data — the writer's
-/// byte-stable inverse.
+/// byte-stable inverse (the nested-section hops are validated against the schema, the
+/// same walk the writer's locator uses).
 ///
 /// Every failure is a blocking [`Finding`] carrying a `route`: an unknown type, a
 /// transient (location-less) type, a missing file, an unparseable file, or a fragment
@@ -216,15 +221,26 @@ fn block(code: &str, message: String, address: &str, route: String) -> Finding {
 /// resolves to the criteria the implementer reads (`worked-examples.md` → flow 6).
 /// Zero items yields empty content (the absent-value case, not an error).
 ///
-/// **Further hops** navigate into the section's [`ParsedItem`] data: the second hop
-/// is a repeatable item id (that item, rendered), a third hop is that item's leaf —
-/// a **slot** (its opaque prose, byte-for-byte), the block's **`id-from`** leaf (the
-/// item's heading, its stable id-source), a per-item **field** (its rendered
-/// canonical value), or a nested item — and deeper hops recurse into nested items
-/// (the M22 multi-level shape) to the addressed leaf. Resolving the `id-from` leaf is
-/// the one place the read path consults a schema role (the block's declared `id-from`
-/// name); every other hop is structural over the parsed data. Each hop that names no
-/// existing section/item/leaf is a located block rather than a panic.
+/// **Further hops** resolve over the **section-qualified write grammar** (review
+/// finding S1, `design/changelog.md` — the one canonical address; M40,
+/// `design/doc-read-surface.md` → Nested repeatables join the pin): the chain
+/// alternates `item, nested-section, item, …`, shared verbatim from the writer via
+/// [`write::physical_item_chain`] — no second grammar. Two interpretations, tried
+/// in order:
+///
+/// 1. the **whole** hop chain is an item path — its terminus an **item** (odd chain,
+///    rendered complete via [`render_item`]) or a declared **nested section** (even
+///    chain — its nested items rendered, self-rooted like a section-level slice);
+/// 2. the chain **minus a trailing leaf hop** is an item path — the terminus is that
+///    **leaf** on the chain's item: a declared slot's opaque prose byte-for-byte,
+///    the item template's `id-from` leaf (the item's heading, its stable id-source
+///    — the one schema-role consult on the read path), or a per-item field's
+///    rendered canonical value.
+///
+/// Each hop that names no existing section/item/leaf is an **honest located block**
+/// — never a wrong node with exit 0 (the M40 rule): a mistyped nested-section
+/// segment is rejected, never treated as an item id, so the segment-less physical
+/// shortcut (`#releases/<id>/<gid>`) blocks exactly like the write side.
 fn slice_fragment(
     schema: &Schema,
     doc: &Document,
@@ -245,39 +261,71 @@ fn slice_fragment(
 
     // Section-level (no further hops): a slot section slices to its prose span; a
     // repeatable section (no slot) slices to its rendered items.
-    let Some((item_id, item_rest)) = rest.split_first() else {
+    if rest.is_empty() {
         return Ok(match &section.slot {
             Some(span) => span.slice(source).to_string(),
             None => render_items(&section.items, source),
         });
-    };
+    }
 
-    // A further hop resolves a repeatable item within the section, then navigates.
-    let Some(item) = section.items.iter().find(|it| it.id == *item_id) else {
-        return Err(block(
-            "store.no-such-item",
-            format!("`{address}` names no item `{item_id}` in section `{section_id}`"),
-            address,
-            "name an item that exists in the committed section".to_string(),
-        ));
-    };
-
-    // The section's declared `id-from` leaf name (the top-level repeatable), so a
-    // `#section/<item>/<id-from>` slice resolves to the item's heading — mirroring how
-    // the item object keys that leaf. Nested repeatables carry their own `id-from`, but
-    // nested content is out of the pinned read-surface contract, so it degrades.
-    let id_from = schema
-        .sections
-        .iter()
-        .find(|s| s.id == section_id)
-        .and_then(|s| match &s.body {
-            crate::schema::SectionBody::Repeatable { repeatable } => {
-                Some(repeatable.id_from.as_str())
-            }
-            crate::schema::SectionBody::Simple { .. } => None,
+    // 1. The whole chain as an item path: a valid chain of even length ends on a
+    //    nested-section segment (the alternation starts at an item), so it slices to
+    //    that item's nested items; an odd chain ends on the item itself. The parsed
+    //    children are the one physical nested list (a nested section is a purely
+    //    logical schema hop — its items render directly under the parent).
+    if let Some(physical) = write::physical_item_chain(schema, section_id, &rest) {
+        let item = descend_items(section, &physical, address)?;
+        return Ok(if rest.len().is_multiple_of(2) {
+            render_items(&item.items, source)
+        } else {
+            render_item(item, source)
         });
+    }
 
-    resolve_item_path(item, source, item_rest, id_from, address)
+    // 2. The chain minus a trailing leaf hop: the last hop addresses a leaf on the
+    //    chain's item, resolved against the item template the chain bottoms out in
+    //    (the same schema walk as the writer — `write::chain_repeatable`).
+    if rest.len() >= 2
+        && let (Some(physical), Some(template)) = (
+            write::physical_item_chain(schema, section_id, &rest[..rest.len() - 1]),
+            write::chain_repeatable(schema, section_id, &rest[..rest.len() - 1]),
+        )
+    {
+        let item = descend_items(section, &physical, address)?;
+        return resolve_leaf(item, template, source, rest[rest.len() - 1], address);
+    }
+
+    // Neither interpretation resolves. On a repeatable section the failure is a
+    // nested-section-position hop naming no declared nested repeatable at its level
+    // (S1: rejected, never treated as an item id) — locate the first offender. A
+    // simple section has no items, so any deeper hop is the plain item miss.
+    let is_repeatable = schema.sections.iter().any(|s| {
+        s.id == section_id && matches!(s.body, crate::schema::SectionBody::Repeatable { .. })
+    });
+    if is_repeatable {
+        let bad = rest
+            .iter()
+            .enumerate()
+            .skip(1)
+            .step_by(2)
+            .find(|(i, _)| write::physical_item_chain(schema, section_id, &rest[..=*i]).is_none())
+            .map_or(rest[rest.len() - 1], |(_, seg)| *seg);
+        return Err(block(
+            "store.no-such-section",
+            format!("`{address}` names no nested section `{bad}` in section `{section_id}`"),
+            address,
+            "qualify nested items with their declared nested-section id (the section-qualified write address)".to_string(),
+        ));
+    }
+    Err(block(
+        "store.no-such-item",
+        format!(
+            "`{address}` names no item `{}` in section `{section_id}`",
+            rest[0]
+        ),
+        address,
+        "name an item that exists in the committed section".to_string(),
+    ))
 }
 
 /// Split a [`Fragment`] into its section id and the remaining navigation hops, as
@@ -297,69 +345,97 @@ fn fragment_hops(fragment: &Fragment) -> (&str, Vec<&str>) {
     }
 }
 
-/// Navigate the remaining `hops` within a located repeatable `item`.
+/// Descend the parsed `section`'s items by the **physical** item-id chain (each id
+/// matched within its parent's items — parent-scoped, the model the write-side byte
+/// locator enforces on disk, so a same-anchor item under a different parent is never
+/// returned) to the addressed [`ParsedItem`]. An absent id at any level is an honest
+/// `store.no-such-item` block naming the missing id and its scope.
+fn descend_items<'a>(
+    section: &'a parse::ParsedSection,
+    physical: &[&str],
+    address: &str,
+) -> Result<&'a ParsedItem, Finding> {
+    let mut items = &section.items;
+    let mut scope = format!("section `{}`", section.id);
+    let mut found: Option<&ParsedItem> = None;
+    for id in physical {
+        let Some(item) = items.iter().find(|it| it.id == *id) else {
+            return Err(block(
+                "store.no-such-item",
+                format!("`{address}` names no item `{id}` in {scope}"),
+                address,
+                "name an item that exists in the committed doc".to_string(),
+            ));
+        };
+        scope = format!("item `{}`", item.id);
+        items = &item.items;
+        found = Some(item);
+    }
+    // The chain is non-empty by construction (every caller passes ≥1 hop); the
+    // defensive block keeps the read path panic-free regardless.
+    found.ok_or_else(|| {
+        block(
+            "store.no-such-item",
+            format!("`{address}` carries an empty item path"),
+            address,
+            "name an item that exists in the committed section".to_string(),
+        )
+    })
+}
+
+/// Resolve the trailing **leaf** hop on the chain's `item`, against the `template`
+/// (the [`crate::schema::Repeatable`]) its item chain bottoms out in: a **declared
+/// slot**'s opaque prose byte-for-byte, the template's **`id-from`** leaf → the
+/// item's heading (its stable id-source — the one schema-role consult on the read
+/// path, and it works at every nesting depth now that nested content is pinned), or
+/// a per-item **field**'s rendered canonical value.
 ///
-/// - **no hops** → the item rendered ([`render_item`]);
-/// - **one hop** → a nested item (rendered) when the id matches; else the addressed
-///   leaf — a **slot** (its prose byte-for-byte), the block's **`id-from`** leaf (the
-///   item's heading), or a per-item **field** (its rendered canonical value);
-/// - **deeper** → recurse into the named nested item (the M22 multi-level shape).
-///
-/// `id_from` is the block's declared `id-from` leaf name at *this* item's level (so a
-/// slice of that leaf resolves to the item's heading); it is `None` for nested items,
-/// whose content is out of the pinned read-surface contract.
-///
-/// A hop naming no existing nested item or leaf is a located block, never a panic.
-fn resolve_item_path(
+/// An unknown leaf is an honest `store.no-such-leaf` block — when it names a
+/// physical nested item, that is the segment-less shortcut, rejected with a route
+/// naming the declared nested section(s) (S1: never treated as an item id, matching
+/// the write-side semantics).
+fn resolve_leaf(
     item: &ParsedItem,
+    template: &crate::schema::Repeatable,
     source: &str,
-    hops: &[&str],
-    id_from: Option<&str>,
+    leaf: &str,
     address: &str,
 ) -> Result<String, Finding> {
-    let Some((head, tail)) = hops.split_first() else {
-        return Ok(render_item(item, source));
-    };
-
-    if tail.is_empty() {
-        // Leaf terminus: a nested item id renders that item; the addressed slot slices
-        // byte-for-byte over its opaque span; the declared `id-from` leaf resolves to the
-        // item's heading; a per-item field to its rendered canonical value.
-        if let Some(nested) = item.items.iter().find(|it| it.id == *head) {
-            return Ok(render_item(nested, source));
-        }
-        if let Some(span) = item.slot_span(head) {
-            return Ok(span.slice(source).to_string());
-        }
-        if id_from == Some(*head) {
-            return Ok(item.title.trim().to_string());
-        }
-        if let Some(field) = item.fields.iter().find(|f| f.key == *head) {
-            return Ok(field.value.render());
-        }
-        return Err(block(
-            "store.no-such-leaf",
-            format!("`{address}` names no leaf `{head}` on item `{}`", item.id),
-            address,
-            "name a leaf that exists in the committed item".to_string(),
-        ));
+    let declares_slot = template
+        .block
+        .iter()
+        .any(|l| matches!(l, crate::schema::Leaf::Slot { id, .. } if id == leaf));
+    if declares_slot && let Some(span) = item.slot_span(leaf) {
+        return Ok(span.slice(source).to_string());
     }
-
-    // A deeper path: `head` must name a nested item to recurse into. Nested items carry
-    // their own `id-from`, but nested content is unpinned, so pass `None` (its `id-from`
-    // leaf degrades rather than pinning an unpinned shape).
-    let Some(nested) = item.items.iter().find(|it| it.id == *head) else {
-        return Err(block(
-            "store.no-such-item",
-            format!(
-                "`{address}` names no nested item `{head}` on item `{}`",
-                item.id
-            ),
-            address,
-            "name a nested item that exists in the committed item".to_string(),
-        ));
+    if template.id_from == leaf {
+        return Ok(item.title.trim().to_string());
+    }
+    if let Some(field) = item.fields.iter().find(|f| f.key == leaf) {
+        return Ok(field.value.render());
+    }
+    let nested_ids: Vec<&str> = template
+        .block
+        .iter()
+        .filter_map(|l| match l {
+            crate::schema::Leaf::Repeatable { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    let route = if !nested_ids.is_empty() && item.items.iter().any(|it| it.id == leaf) {
+        format!(
+            "`{leaf}` is a nested item — address it through its declared nested section ({})",
+            nested_ids.join(", ")
+        )
+    } else {
+        "name a leaf that exists in the committed item".to_string()
     };
-    resolve_item_path(nested, source, tail, None, address)
+    Err(block(
+        "store.no-such-leaf",
+        format!("`{address}` names no leaf `{leaf}` on item `{}`", item.id),
+        address,
+        route,
+    ))
 }
 
 /// Render a list of repeatable items as a Content list for the store-read path:
@@ -775,9 +851,9 @@ A cold node loses its sessions; clients re-authenticate.
 
     /// (M39 inc-1 T1) A fragment naming a **missing section** still blocks with
     /// `store.no-such-section` + a route; a missing **item** blocks with
-    /// `store.no-such-item`; a missing **leaf** on a multi-slot-less item resolves the
-    /// single bare-prose slot (the `slot_span` contract) — so the miss surfaces only
-    /// where the parsed data has no such target.
+    /// `store.no-such-item` — every miss is an honest located block (M40 tightened
+    /// the leaf hop to the declared names only; see
+    /// `store_nested_read_misses_block_honestly`).
     #[test]
     fn store_read_misses_block_with_a_route() {
         let root = TempRoot::new("misses");
@@ -910,6 +986,136 @@ A cold node loses its sessions; clients re-authenticate.
 
         - session fixation on logout
         ");
+    }
+
+    /// GOLDEN (M40 inc-6 T2): the **section-qualified write address** resolves on read
+    /// — `#releases/<id>/changes` (the canonical nested address, review finding S1)
+    /// slices to the release's nested change-group items rendered, self-rooted at
+    /// `###` like every section-level slice. Before M40 this canonical address falsely
+    /// blocked (`store.no-such-leaf`) because the read path only spoke the physical
+    /// shortcut ([doc-read-surface.md](../../../design/doc-read-surface.md) → Nested
+    /// repeatables join the pin).
+    #[test]
+    fn store_slices_a_changelog_nested_section_via_the_write_address() {
+        let root = TempRoot::new("changelog-nested-section");
+        write_committed_changelog(root.path());
+
+        let address =
+            Address::parse("changelog:changelog#releases/1-0-0/changes").expect("valid address");
+        let rendered = read_slice(root.path(), &schemas(), &address)
+            .expect("the canonical nested-section address resolves on read");
+
+        insta::assert_snapshot!(rendered, @r"
+        ### Added
+
+        - initial release
+
+        ### Fixed
+
+        - session fixation on logout
+        ");
+    }
+
+    /// GOLDEN (M40 inc-6 T2): a nested **item** via the write grammar —
+    /// `#releases/<id>/changes/<gid>` — renders that change-group complete. Before
+    /// M40 the `changes` hop falsely blocked `store.no-such-item` (the false-block
+    /// defect the M40 pin kills).
+    #[test]
+    fn store_slices_a_changelog_nested_item_via_the_write_address() {
+        let root = TempRoot::new("changelog-nested-item");
+        write_committed_changelog(root.path());
+
+        let address = Address::parse("changelog:changelog#releases/1-0-0/changes/added")
+            .expect("valid address");
+        let rendered = read_slice(root.path(), &schemas(), &address)
+            .expect("the canonical nested-item address resolves on read");
+
+        insta::assert_snapshot!(rendered, @r"
+        ### Added
+
+        - initial release
+        ");
+    }
+
+    /// (M40 inc-6 T2) Nested **leaf** hops via the write grammar: the change-group's
+    /// slot bytes byte-for-byte (`…/changes/<gid>/notes`), the nested block's own
+    /// `id-from` leaf → the item's heading (`…/changes/<gid>/category`), and a
+    /// release-level field value through the same grammar (`…/<id>/date`).
+    #[test]
+    fn store_slices_changelog_nested_leaves_via_the_write_address() {
+        let root = TempRoot::new("changelog-nested-leaf");
+        write_committed_changelog(root.path());
+        let schemas = schemas();
+
+        let notes = Address::parse("changelog:changelog#releases/1-0-0/changes/added/notes")
+            .expect("valid address");
+        assert_eq!(
+            read_slice(root.path(), &schemas, &notes).expect("nested slot leaf resolves"),
+            "- initial release",
+            "the nested slot slice is the committed bytes, byte-for-byte",
+        );
+
+        let category = Address::parse("changelog:changelog#releases/1-0-0/changes/fixed/category")
+            .expect("valid address");
+        assert_eq!(
+            read_slice(root.path(), &schemas, &category).expect("nested id-from leaf resolves"),
+            "Fixed",
+            "the nested block's own id-from leaf resolves to the item's heading",
+        );
+
+        let date =
+            Address::parse("changelog:changelog#releases/1-1-0/date").expect("valid address");
+        assert_eq!(
+            read_slice(root.path(), &schemas, &date).expect("release field leaf resolves"),
+            "2026-07-01",
+            "a per-item field resolves to its rendered canonical value",
+        );
+    }
+
+    /// (M40 inc-6 T2) The nested read grammar's **honest blocks** — never a wrong
+    /// node with exit 0: a mistyped nested-section hop blocks `store.no-such-section`
+    /// (S1: never treated as an item id), an absent change-group id blocks
+    /// `store.no-such-item`, and the segment-less **physical shortcut**
+    /// (`#releases/<id>/<gid>`) blocks `store.no-such-leaf` with a route naming the
+    /// declared nested section — matching the write-side rejection semantics.
+    #[test]
+    fn store_nested_read_misses_block_honestly() {
+        let root = TempRoot::new("changelog-nested-misses");
+        write_committed_changelog(root.path());
+        let schemas = schemas();
+
+        let bad_hop =
+            Address::parse("changelog:changelog#releases/1-0-0/typo/added").expect("valid address");
+        let err = read_slice(root.path(), &schemas, &bad_hop)
+            .expect_err("a bad nested-section hop blocks");
+        assert_eq!(err.code, "store.no-such-section");
+        assert!(
+            err.message.contains("typo"),
+            "the block names the offending hop: {err:?}"
+        );
+        assert!(err.location.is_some(), "the block is located");
+        assert!(err.route.is_some(), "the block carries a route");
+
+        let absent_gid = Address::parse("changelog:changelog#releases/1-0-0/changes/removed")
+            .expect("valid address");
+        let err =
+            read_slice(root.path(), &schemas, &absent_gid).expect_err("an absent group id blocks");
+        assert_eq!(err.code, "store.no-such-item");
+        assert!(
+            err.message.contains("removed"),
+            "the block names the absent item: {err:?}"
+        );
+        assert!(err.route.is_some(), "the block carries a route");
+
+        let shortcut =
+            Address::parse("changelog:changelog#releases/1-0-0/added").expect("valid address");
+        let err = read_slice(root.path(), &schemas, &shortcut)
+            .expect_err("the segment-less physical shortcut blocks, never a wrong node");
+        assert_eq!(err.code, "store.no-such-leaf");
+        assert!(
+            err.route.as_deref().is_some_and(|r| r.contains("changes")),
+            "the shortcut's route names the declared nested section: {err:?}"
+        );
     }
 }
 

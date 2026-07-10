@@ -1405,7 +1405,11 @@ fn field_value_in_lines(
 /// nested-section segment is rejected, not silently treated as an item id). Returns the
 /// item-only chain (`["1-2-0", "added"]`), or `None` if a nested-section segment names no
 /// declared nested repeatable.
-fn physical_item_chain<'a>(
+///
+/// `pub(crate)` so the store read path ([`crate::store`]) resolves the *same*
+/// section-qualified grammar on `doc show` — one canonical address, no second grammar
+/// (M40, `design/doc-read-surface.md` → Nested repeatables join the pin).
+pub(crate) fn physical_item_chain<'a>(
     schema: &Schema,
     section_id: &str,
     chain: &[&'a str],
@@ -1817,7 +1821,11 @@ pub fn retitle_item(
 /// (`["1-2-0", "changes", "added"]` → the `changes` repeatable). The schema-side walk
 /// [`physical_item_chain`] / [`item_field_schema`] share. `None` if the section is not
 /// repeatable or a nested-section segment names no declared nested repeatable.
-fn chain_repeatable<'a>(
+///
+/// `pub(crate)` so the store read path ([`crate::store`]) resolves a trailing leaf hop
+/// against the item template the chain bottoms out in (its `id-from` + declared slots)
+/// — the same schema walk as the writer, no second grammar (M40).
+pub(crate) fn chain_repeatable<'a>(
     schema: &'a Schema,
     section_id: &str,
     item_ids: &[&str],
