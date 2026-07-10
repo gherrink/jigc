@@ -1169,9 +1169,9 @@ pub fn migration_review(
             );
             // The structural fidelity summary (`design/auto-migration.md` → Hardening #5):
             // a release-level delta naming the source releases the rewrite dropped, so a
-            // reviewer needn't eyeball that N of M releases survived. The canonical side is
-            // conformant (release versions read off its `### …` item headings); the foreign
-            // side is non-conformant, so it is a HEURISTIC version-scan. Negative guard
+            // reviewer needn't eyeball that N of M releases survived. Both sides are
+            // HEURISTIC version-scans over the whole text (the M40 calibration fix — a
+            // heading-only kept-set false-alarmed non-changelog doctypes). Negative guard
             // (DECISIONS C4, Framing A): display-only — labeled fuzzy, feeds no gate, no
             // agent logic, no structural decision; never a second structural authority.
             let dropped = dropped_release_versions(foreign, rewrites);
@@ -1210,21 +1210,19 @@ pub fn migration_review(
 
 /// The heuristic release-delta for the fidelity summary (`design/auto-migration.md` →
 /// Hardening #5): the version-like tokens scanned out of the `foreign` source that are
-/// absent from the conformant `rewrites`' release-item headings, sorted + de-duplicated
-/// for a stable display. Fuzzy by construction (the foreign side is non-conformant, so
-/// the scan can miss or invent a release); the result is **display-only** and feeds no
-/// structural decision (DECISIONS C4, Framing A).
+/// absent from the **whole** `rewrites` text, sorted + de-duplicated for a stable
+/// display. Fuzzy by construction (both sides are heuristic scans, so the delta can
+/// miss or invent a release); the result is **display-only** and feeds no structural
+/// decision (DECISIONS C4, Framing A).
 fn dropped_release_versions(foreign: &str, rewrites: &[(String, String)]) -> Vec<String> {
-    // The conformant side: release versions live on the `### …` item headings (an H3
-    // repeatable item — `### 1.0.0  {#100}`); a deeper `#### …` change-group heading and
-    // the H2 section headings carry no version token, so this naturally excludes them.
+    // The kept-set scans the WHOLE rewrite text (the M40 calibration fix,
+    // `design/auto-migration.md` → Hardening #5): a heading-only scan was a
+    // changelog-shaped assumption (there, releases *are* `### …` headings) that
+    // false-alarmed on every other doctype — a version token kept in body prose
+    // still read as "dropped". A kept token anywhere in the rewrite is kept.
     let mut kept: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for (_destination, rendered) in rewrites {
-        for line in rendered.lines() {
-            if let Some(title) = line.trim_start().strip_prefix("### ") {
-                kept.extend(scan_version_tokens(title));
-            }
-        }
+        kept.extend(scan_version_tokens(rendered));
     }
     let mut dropped: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     for token in scan_version_tokens(foreign) {
@@ -1237,8 +1235,10 @@ fn dropped_release_versions(foreign: &str, rewrites: &[(String, String)]) -> Vec
 
 /// Every maximal dotted-numeric run in `text` (e.g. `1.0.0`, `0.9`) — a deliberately
 /// fuzzy version-token scan: at least one `.` with a digit on each side, no leading or
-/// trailing/doubled dot. Dash-separated dates (`2021-06-01`) carry no `.` and so never
-/// match. Heuristic only — see [`dropped_release_versions`].
+/// doubled dot; a trailing dot is **trimmed**, not rejected (the M40 calibration fix:
+/// a sentence-final `since 1.5.` yields `1.5`, no longer an under-report). Dash-separated
+/// dates (`2021-06-01`) carry no `.` and so never match. Heuristic only — see
+/// [`dropped_release_versions`].
 fn scan_version_tokens(text: &str) -> Vec<String> {
     let bytes = text.as_bytes();
     let mut tokens = Vec::new();
@@ -1249,12 +1249,8 @@ fn scan_version_tokens(text: &str) -> Vec<String> {
             while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                 i += 1;
             }
-            let token = &text[start..i];
-            if token.contains('.')
-                && !token.starts_with('.')
-                && !token.ends_with('.')
-                && !token.contains("..")
-            {
+            let token = text[start..i].trim_end_matches('.');
+            if token.contains('.') && !token.starts_with('.') && !token.contains("..") {
                 tokens.push(token.to_string());
             }
         } else {
@@ -2720,5 +2716,56 @@ mod tests {
         let left_out = committed["left_out"].as_array().expect("left_out array");
         assert_eq!(left_out[0]["path"], "scratch.txt");
         assert_eq!(left_out[0]["kind"], "untracked");
+    }
+
+    /// The fidelity kept-set scans the **whole rewrite text**, not only `### ` headings
+    /// (`design/auto-migration.md` → Hardening #5, the M40 calibration fix): a prd-shaped
+    /// rewrite that keeps `2.0` in body prose — no `### ` item heading anywhere — must
+    /// report `(none)`, never a false "dropped 2.0" (the heading-only kept-set was a
+    /// changelog-shaped assumption that false-alarmed every other doctype).
+    #[test]
+    fn render_migration_review_fidelity_kept_set_scans_whole_rewrite_text() {
+        let foreign = "# Product Requirements\n\nTargets the 2.0 platform release.\n";
+        let rewrites = vec![(
+            "docs/prd/platform.md".to_string(),
+            "# Platform PRD\n\n## Context\n\nThis effort targets the 2.0 platform release.\n"
+                .to_string(),
+        )];
+
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+        let summary = out
+            .lines()
+            .find(|l| l.contains("source releases absent from the rewrite"))
+            .unwrap_or_else(|| panic!("the review must render the fidelity summary; got:\n{out}"));
+        assert!(
+            summary.contains("(none)"),
+            "2.0 kept in body prose is not dropped — the summary must be (none); got:\n{summary}",
+        );
+        assert!(
+            !summary.contains("2.0"),
+            "the kept 2.0 must not be reported as dropped; got:\n{summary}",
+        );
+    }
+
+    /// A trailing sentence-dot no longer makes a version token escape the scan
+    /// (Hardening #5, the M40 calibration fix): a foreign `since 1.5.` sentence yields a
+    /// reportable `1.5` (previously the whole `1.5.` token was rejected → under-report).
+    #[test]
+    fn render_migration_review_fidelity_scan_trims_trailing_sentence_dot() {
+        let foreign = "# Notes\n\nSupported since 1.5.\n";
+        let rewrites = vec![(
+            "docs/prd/notes.md".to_string(),
+            "# Notes PRD\n\n## Context\n\nNo version mentioned here.\n".to_string(),
+        )];
+
+        let out = migration_review(Format::Agent, "task-1", foreign, &rewrites);
+        let summary = out
+            .lines()
+            .find(|l| l.contains("source releases absent from the rewrite"))
+            .unwrap_or_else(|| panic!("the review must render the fidelity summary; got:\n{out}"));
+        assert!(
+            summary.trim_end().ends_with(": 1.5"),
+            "the dropped 1.5 is reported without the sentence dot; got:\n{summary}",
+        );
     }
 }
