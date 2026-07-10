@@ -272,18 +272,20 @@ fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
     );
 }
 
-/// (M40 inc-3 T5) The two-tier route's **unregistered** arm (`design/validation.md` → M40
-/// two-tier route): a never-adopted committed file under a doctype-basename dir — the
-/// adoption trial's `research/notes.md` shape, here the methodology `research` doctype
-/// composed `[dev ▸ methodology]` via `packs.yaml` — is a basename coincidence, not a
-/// tracked strand. It must still FIRE (emission is never gated on file-state membership;
-/// a fresh clone always lands in this arm), but as the looks-managed-but-unregistered
-/// advisory, and because no `migrate-research` workflow ships, the route falls back to
-/// "ignore, or route to a human" — never `jigc unmanage` (a proven no-op loop on a
-/// never-registered doc) and never a `jigc migrate` invocation that would hard-error.
+/// (M40 inc-3 T5; route flipped by M40 inc-7 T2) The two-tier route's **unregistered**
+/// arm (`design/validation.md` → M40 two-tier route): a never-adopted committed file
+/// under a doctype-basename dir — the adoption trial's `research/notes.md` shape, here
+/// the methodology `research` doctype composed `[dev ▸ methodology]` via `packs.yaml` —
+/// is a basename coincidence, not a tracked strand. It must still FIRE (emission is
+/// never gated on file-state membership; a fresh clone always lands in this arm), but
+/// as the looks-managed-but-unregistered advisory, and because `migrate-research` now
+/// SHIPS (the M40 methodology migrate workflows — this very file was its motivating
+/// example), the route names the real adoption verb `jigc migrate <path> --as research`
+/// — never `jigc unmanage` (a proven no-op loop on a never-registered doc) and never
+/// the ignore-or-human fallback that dead-ended here before the workflow existed.
 /// Exit stays 0 (report-only, un-keyed).
 #[test]
-fn validate_routes_never_adopted_basename_coincidence_to_ignore_or_human() {
+fn validate_routes_never_adopted_basename_coincidence_to_migrate_or_ignore() {
     let repo = TempDir::new("unregistered");
     git(repo.path(), &["init", "-q"]);
     git(repo.path(), &["config", "user.email", "test@example.com"]);
@@ -324,14 +326,14 @@ fn validate_routes_never_adopted_basename_coincidence_to_ignore_or_human() {
          advisory naming the path; stdout:\n{stdout}",
     );
     assert!(
-        stdout.contains("route it to a human"),
-        "with no `migrate-research` workflow shipped, the route must fall back to \
-         ignore-or-human; stdout:\n{stdout}",
+        stdout.contains("`jigc migrate old/research/notes.md --as research`"),
+        "with `migrate-research` shipped, the route must name the real adoption verb \
+         on the flagged path; stdout:\n{stdout}",
     );
     assert!(
-        !stdout.contains("jigc migrate"),
-        "no `migrate-research` workflow ships — the route must never command a verb that \
-         hard-errors; stdout:\n{stdout}",
+        !stdout.contains("route it to a human"),
+        "the ignore-or-human fallback is the workflow-less arm — it must not fire once \
+         `migrate-research` ships; stdout:\n{stdout}",
     );
     assert!(
         !stdout.contains("jigc unmanage"),

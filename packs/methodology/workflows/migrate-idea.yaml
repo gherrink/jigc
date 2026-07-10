@@ -1,0 +1,10 @@
+---
+when: migrate a foreign parked-idea note into a managed idea
+description: Migrate a foreign parked-idea note into a managed `idea` at `ideas/` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant parked-idea note (a someday/maybe file, a backlog entry kept as prose) and `jigc migrate <path> --as idea` is rewriting it into a managed idea. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: idea, as: idea}]
+---
+{{ include: step:author-migration-idea }}
+{{ include: step:finalize }}

@@ -1,0 +1,49 @@
+Migrate the foreign vision document into the managed `vision` singleton — the project's
+charter, homed directly at the repo-root `VISION.md`. Below is the foreign source the CLI
+staged for you (read-only context — you author the canonical record through the write
+verbs, you never edit this file or place anything yourself):
+
+{{ source }}
+
+Author the WHOLE canonical vision in ONE declarative batch payload — the CLI creates the
+fixed-slug singleton (`title: Vision` stays exactly as written; the CLI owns the
+placement at `VISION.md`) and places its three prose slots over a single staged buffer.
+Pipe the payload on stdin:
+
+jigc doc author vision --from-file - --task {{task.id}} <<'EOF'
+title: Vision
+sections:
+  - id: thesis
+    set:
+      thesis: "<<the core claim — what this project is and the one idea it descends from>>"
+  - id: invariants
+    set:
+      invariants: "<<what must stay true — the boundaries and commitments no change may violate>>"
+  - id: open-questions
+    set:
+      open-questions: "<<what is deliberately unsettled — the directions still open>>"
+EOF
+
+The `<<…>>` around each prose slot (`thesis`, `invariants`, `open-questions`) is REQUIRED
+literal wrapping — the `<<`/`>>` markers tell the CLI this is slot prose, they are NOT a
+fill-me placeholder to delete. Keep them; replace only the text BETWEEN them. (The
+`title: Vision` line takes the bare fixed value with no markers; wrapping it is rejected.)
+
+Map the foreign document's headings onto this fixed three-slot shape:
+
+  - the foreign Thesis / Mission / Purpose / What-this-is prose maps to the `thesis` slot;
+  - the foreign Principles / Invariants / Non-negotiables / Constraints heading maps to
+    the `invariants` slot (keep it one bullet per invariant);
+  - the foreign Open questions / Unknowns / Someday / Future-directions heading maps to
+    the `open-questions` slot.
+
+OMIT `grounded-in` — always, in migration. The vision schema carries an OPTIONAL
+`grounded-in` ref to managed `research` docs, but a foreign vision has no managed
+research in the store, so any authored ref would dangle and block finalize forever.
+Omitting it is legal (the ref is `0..*`); when the foreign text cites its evidence or
+research, fold that citation into the `open-questions` prose instead — never author it
+as a structural ref.
+
+Surplus foreign content with NO slot home is usually a live open question worth keeping:
+fold it into the `open-questions` slot as one bullet. Drop it ONLY when it is pure
+boilerplate (a badge block, a table of contents, a license footer).

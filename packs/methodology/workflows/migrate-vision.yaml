@@ -1,0 +1,10 @@
+---
+when: migrate a foreign vision document into the managed vision
+description: Migrate a foreign vision/charter document into the managed `vision` singleton at the repo-root `VISION.md` — the CLI stages the foreign bytes, the LLM rewrites them to canonical shape through the write verbs, and the task finalizes.
+usage: an existing project carries a non-conformant vision document (a free-form charter/thesis/direction file) and `jigc migrate <path> --as vision` is rewriting it into the managed vision. Off-router — only reached through the migrate verb.
+creates-task: true
+selectable: false
+allows-create: [{type: vision, as: vision}]
+---
+{{ include: step:author-migration-vision }}
+{{ include: step:finalize }}
