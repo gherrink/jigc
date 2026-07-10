@@ -427,6 +427,147 @@ fn approved_migration_commit_rejection_rolls_back_retire() {
     );
 }
 
+/// M40 F7 (design/finalize.md → M40 refinement item 1): a user who pre-staged the
+/// retirement themselves (`git rm <foreign>` before finalize) must land clean. `git rm`
+/// removes the path from the worktree AND the index while HEAD still carries it, so the
+/// old HEAD discriminator kept the pathspec and the stage-phase `git add` fataled with
+/// "did not match any files" (exit 1). Discriminated on the index instead, the pathspec
+/// is skipped and nothing is lost: the commit is whole-index, so the user's staged
+/// deletion rides the one migration commit alongside the promoted doc.
+#[test]
+fn approved_migration_with_pre_staged_git_rm_lands_one_commit() {
+    let repo = TempDir::new("prestaged");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+
+    // The user pre-stages the retirement: worktree file gone, deletion in the index.
+    git(repo.path(), &["rm", "-q", "HISTORY.md"]);
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    ok(out, "jigc task finalize --approve (pre-staged git rm)");
+
+    // Exactly one commit landed.
+    assert_eq!(
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        count_before + 1,
+        "the pre-staged migration finalize must land exactly one commit",
+    );
+
+    // The whole-index commit carries the user's staged deletion AND the promoted doc.
+    let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
+    assert!(
+        name_status.contains("D\tHISTORY.md"),
+        "the landed commit must carry the foreign deletion; name-status:\n{name_status}",
+    );
+    assert!(
+        name_status.contains("A\tCHANGELOG.md"),
+        "the landed commit must carry the promoted canonical doc; name-status:\n{name_status}",
+    );
+}
+
+/// The plain tracked-retire shape (no pre-staging — [`retire`] deletes the worktree file
+/// and `stage_migration` stages the deletion) must not regress under the index
+/// discriminator: the foreign is tracked-and-unmodified, so it is in the index either
+/// way, and the deletion still lands in the one migration commit.
+#[test]
+fn approved_migration_with_tracked_foreign_still_stages_the_deletion() {
+    let repo = TempDir::new("tracked");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    let count_before: u32 = git(repo.path(), &["rev-list", "--count", "HEAD"])
+        .parse()
+        .unwrap();
+
+    let out = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    ok(out, "jigc task finalize --approve (tracked foreign)");
+
+    assert_eq!(
+        git(repo.path(), &["rev-list", "--count", "HEAD"])
+            .parse::<u32>()
+            .unwrap(),
+        count_before + 1,
+        "the tracked-retire migration finalize must land exactly one commit",
+    );
+    let name_status = git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]);
+    assert!(
+        name_status.contains("D\tHISTORY.md"),
+        "the landed commit must carry the retired foreign deletion; name-status:\n{name_status}",
+    );
+    assert!(
+        name_status.contains("A\tCHANGELOG.md"),
+        "the landed commit must carry the promoted canonical doc; name-status:\n{name_status}",
+    );
+}
+
+/// M40 F7 dry-run/landed symmetry on the pre-staged shape: `predict_manifest` keeps the
+/// HEAD discriminator, and its forecast stays outcome-accurate *because the commit is
+/// whole-index* — the user's staged deletion lands regardless of the skipped stage
+/// pathspec. This pins that claim as a test rather than trusting it: the `--dry-run`
+/// forecast names the foreign as deleted, and the landed manifest carries the identical
+/// entry.
+#[test]
+fn pre_staged_dry_run_forecast_matches_the_landed_manifest() {
+    let repo = TempDir::new("dryrun");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    committed_staged_migration(repo.path(), home.path(), &pack);
+
+    git(repo.path(), &["rm", "-q", "HISTORY.md"]);
+
+    // A migration dry-run needs no `--approve` — it commits nothing.
+    let dry = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--dry-run"],
+    );
+    let dry_stdout = String::from_utf8_lossy(&dry.stdout).to_string();
+    ok(dry, "jigc task finalize --dry-run (pre-staged git rm)");
+    assert!(
+        dry_stdout.contains("  deleted HISTORY.md"),
+        "the dry-run forecast must name the pre-staged foreign as deleted; stdout:\n{dry_stdout}",
+    );
+
+    let landed = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["task", "finalize", TASK, "--approve"],
+    );
+    let landed_stdout = String::from_utf8_lossy(&landed.stdout).to_string();
+    ok(landed, "jigc task finalize --approve (pre-staged git rm)");
+    assert!(
+        landed_stdout.contains("  deleted HISTORY.md"),
+        "the landed manifest must carry the same deleted entry the forecast named; stdout:\n{landed_stdout}",
+    );
+    assert!(
+        git(repo.path(), &["show", "--name-status", "--format=", "HEAD"]).contains("D\tHISTORY.md"),
+        "the landed commit must actually carry the forecast deletion",
+    );
+}
+
 /// Review F3: an **untracked** foreign original (never committed at HEAD) + a seeded
 /// commit failure must still leave the foreign file byte-intact on disk. `git restore`
 /// alone cannot recover an untracked file — there are no committed bytes — so the retire

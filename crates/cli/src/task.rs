@@ -1508,11 +1508,15 @@ fn stage_migration(repo_root: &Path, plan: &engine::finalize::FinalizePlan) -> R
             .to_str()
             .with_context(|| format!("retirement path {retirement:?} is not valid UTF-8"))?;
         // [`retire`] has already deleted the original from the worktree. Stage that
-        // deletion only when the file was **tracked** at HEAD — a `git add` pathspec that
-        // matches nothing (an untracked-then-deleted foreign original) is a fatal error,
-        // whereas the blanket `git add --all` tolerated it. An untracked deletion needs no
-        // staging (it was never in the index), so skipping it is correct, not a loss.
-        if path_at_head(repo_root, spec) {
+        // deletion only when the path is still in the **index** (M40 F7,
+        // `design/finalize.md` → M40 refinement item 1) — a `git add` pathspec that
+        // matches nothing is a fatal error, whereas the blanket `git add --all`
+        // tolerated it. Two skip shapes, both lossless: an untracked foreign was never
+        // in the index (nothing to stage), and a user's pre-staged `git rm` already
+        // removed the index entry (the commit is whole-index, so the staged deletion
+        // lands regardless). A HEAD discriminator can't see the pre-staged shape — HEAD
+        // still carries the path — and kept the fatal pathspec.
+        if path_in_index(repo_root, spec) {
             pathspecs.push(spec.to_owned());
         }
     }
@@ -2468,6 +2472,20 @@ fn classify_landed_manifest(
         }
     }
     (included, left_out)
+}
+
+/// Whether `path` (repo-relative) is in the **index** (`git ls-files -- <path>` prints
+/// it). The staging discriminator for a retirement pathspec (M40 F7): a user who
+/// pre-staged the deletion (`git rm` before finalize) has removed the index entry —
+/// while HEAD still carries the path — so only the index tells the stage whether the
+/// pathspec would match anything.
+fn path_in_index(repo_root: &Path, path: &str) -> bool {
+    Command::new("git")
+        .args(["ls-files", "--", path])
+        .current_dir(repo_root)
+        .output()
+        .map(|out| out.status.success() && !out.stdout.is_empty())
+        .unwrap_or(false)
 }
 
 /// Whether `path` (repo-relative) exists at `HEAD` (`git cat-file -e HEAD:<path>`).
