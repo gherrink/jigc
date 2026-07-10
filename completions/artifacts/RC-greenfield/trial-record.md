@@ -1,6 +1,6 @@
 # RC greenfield trial 1 — project-kb (2026-07-06)
 
-**Status: counts as RC input** (human call, 2026-07-06 — [DECISIONS.md](../../../DECISIONS.md) → 2026-07-06 RC greenfield trial 1). This run is the greenfield arm of the two planned RC trials (keeper corpora); its invocation log joins the RC invocation-log analysis that feeds the 1.0.0 call. The adoption trial (existing project) is still owed.
+**Status: counts as RC input** (human call, 2026-07-06 — [DECISIONS.md](../../../DECISIONS.md) → 2026-07-06 RC greenfield trial 1). This run is the greenfield arm of the two planned RC trials (keeper corpora); its invocation log joins the RC invocation-log analysis that feeds the 1.0.0 call. The adoption trial (existing project) is still owed. *(Update 2026-07-10: the adoption trial's **migration half** ran 2026-07-09 on rc.3 — [../RC-adoption/trial-record.md](../RC-adoption/trial-record.md); its implementation half remains owed.)*
 
 ## Provenance
 
