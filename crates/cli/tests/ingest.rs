@@ -623,3 +623,60 @@ fn ingest_excludes_gitignored_candidates_and_includes_untracked_markdown() {
         "an untracked non-ignored candidate must appear in the triage report:\n{report}"
     );
 }
+
+/// M40 / F8 hardening — a **non-ASCII** `.md` filename (tracked or untracked) must not
+/// abort the scan. git's default `core.quotepath=true` C-quotes such paths in
+/// `ls-files` porcelain output (`"docs/r\303\251sum\303\251.md"`); consuming that
+/// quoted line as a literal path hard-fails the whole verb with zero verdicts. The
+/// candidate listing is NUL-terminated (`ls-files -z`), so both files classify as
+/// ordinary candidates under their real names.
+#[test]
+fn ingest_survives_non_ascii_candidate_filenames() {
+    let repo = TempDir::new("quotepath");
+    let home = TempDir::new("quotepath-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // One tracked (--cached arm) and one untracked (--others arm) non-ASCII filename —
+    // both quoted by `core.quotepath=true` porcelain output.
+    write(
+        repo.path(),
+        "docs/café.md",
+        "# café\n\nTracked prose with a non-ASCII name.\n",
+    );
+    git(repo.path(), &["add", "docs/café.md"]);
+    git(repo.path(), &["commit", "-q", "-m", "add café note"]);
+    write(
+        repo.path(),
+        "docs/résumé.md",
+        "# résumé\n\nUntracked prose with a non-ASCII name.\n",
+    );
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` must survive non-ASCII candidate filenames; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+
+    assert!(
+        report.contains("docs/café.md"),
+        "the tracked non-ASCII candidate must appear under its real name:\n{report}"
+    );
+    assert!(
+        report.contains("docs/résumé.md"),
+        "the untracked non-ASCII candidate must appear under its real name:\n{report}"
+    );
+    assert!(
+        !report.contains("\\303"),
+        "no C-quoted octal-escaped path may leak into the report:\n{report}"
+    );
+}

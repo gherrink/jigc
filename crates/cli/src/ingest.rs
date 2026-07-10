@@ -3,7 +3,7 @@
 //! Discover → classify → **adopt** → triage report. Locates the repo root +
 //! project layer, loads the persisted schemas + the committed edge index
 //! ([`index::load_committed`]) + the file-state record ([`FileStateRecord::load`]),
-//! computes the candidate set from git ([`git_candidates`] — `git ls-files --cached
+//! computes the candidate set from git ([`git_candidates`] — `git ls-files -z --cached
 //! --others --exclude-standard -- '*.md'`, M40 / F8) then runs the engine's
 //! [`engine::ingest::classify`] per candidate (in sorted candidate order), adopts
 //! every conformant `adoptable` candidate **register-only** (records it into the
@@ -155,7 +155,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
 
 /// Discover the sorted, deduped repo-relative `.md` candidate set from **git** (M40 /
 /// F8; `design/project-setup.md` → Flow-2 discovery, the M40 re-base paragraph):
-/// `git ls-files --cached --others --exclude-standard -- '*.md'` — tracked plus
+/// `git ls-files -z --cached --others --exclude-standard -- '*.md'` — tracked plus
 /// untracked-but-not-ignored, gitignored files excluded (the adoption trial listed
 /// `node_modules` `.md`s as 91% of the logged triage output). The internals prune
 /// stays on top of the git listing (`.jigc/AGENT.md` is deliberately un-gitignored,
@@ -165,10 +165,15 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
 /// filesystem walk ([`engine::ingest::discover_candidates`]) survives as engine-test
 /// substrate only.
 fn git_candidates(jigc_home: &Path) -> Result<Vec<String>> {
+    // `-z` NUL-terminates the listing so git never C-quotes a pathname — the default
+    // `core.quotepath=true` octal-escapes any non-ASCII byte in line-oriented output
+    // (`"docs/r\303\251sum\303\251.md"`), and consuming that quoted line as a literal
+    // path would abort the whole scan on an ordinary `café.md` (M40 F8 hardening).
     let listing = crate::task::git_capture(
         jigc_home,
         &[
             "ls-files",
+            "-z",
             "--cached",
             "--others",
             "--exclude-standard",
@@ -178,7 +183,8 @@ fn git_candidates(jigc_home: &Path) -> Result<Vec<String>> {
     )
     .context("could not enumerate the `.md` candidate set via `git ls-files`")?;
     let candidates: std::collections::BTreeSet<String> = listing
-        .lines()
+        .split('\0')
+        .filter(|rel| !rel.is_empty())
         .filter(|rel| {
             !rel.split('/')
                 .any(|component| component == ".jigc" || component == ".git")

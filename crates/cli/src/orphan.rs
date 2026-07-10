@@ -126,11 +126,15 @@ fn parent_basename(rel: &str) -> Option<&str> {
 /// with the freeze-exempt relocation path (`crate::relocate`), which walks the same committed
 /// truth to find the instances stranded at a supplied prior home.
 pub(crate) fn committed_markdown(repo_root: &Path) -> Vec<String> {
-    let Ok(listing) = crate::task::git_capture(repo_root, &["ls-files"]) else {
+    // `-z` NUL-terminates the listing so git never C-quotes a non-ASCII pathname
+    // (default `core.quotepath=true` — the same mis-parse the ingest candidate set
+    // hardened against, M40 F8); a quoted line would never match `record.get(rel)`
+    // or the location-basename discriminator.
+    let Ok(listing) = crate::task::git_capture(repo_root, &["ls-files", "-z"]) else {
         return Vec::new();
     };
     let mut out: Vec<String> = listing
-        .lines()
+        .split('\0')
         .filter(|l| l.ends_with(".md"))
         .map(str::to_string)
         .collect();
