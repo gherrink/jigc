@@ -30,6 +30,15 @@
 //!   6. the honest Flow-A-only bound — a foreign root `CHANGELOG.md` routes
 //!      `needs-reconcile` (auto-migration G1 is the separate later milestone).
 //!
+//! M40 A2 extends the acceptance with the nested **round-trip** arms
+//! (`design/doc-read-surface.md` → Nested repeatables join the pin): after finalize,
+//! every address the suite's `add-item` calls emitted reads back **verbatim** through
+//! the task-less `jigc doc show` in BOTH formats (plain and `--format json`) at every
+//! depth — section, nested array, nested item, nested leaf — and a wrong nested
+//! address (a bad nested-section segment, the segment-less physical shortcut, an
+//! absent group id) exits non-zero with the honest finding code, never a wrong node
+//! with exit 0.
+//!
 //! Byte-stability is asserted over the WHOLE committed document against the staged
 //! promote source (`git show HEAD:CHANGELOG.md == <task working area copy>`),
 //! never scoped to a filled subtree (the M13 cold-start discipline).
@@ -281,6 +290,178 @@ fn author_group(
     group
 }
 
+/// Assert `jigc doc show <addr>` reads back `plain` and — with `--format json` —
+/// `json`, verbatim (M40 A2: the addressed node round-trips in BOTH formats).
+fn assert_shows(repo: &Path, home: &Path, pack: &Path, addr: &str, plain: &str, json: &str) {
+    let got = ok_stdout(
+        run_jigc(repo, home, pack, &["doc", "show", addr], None),
+        &format!("doc show {addr}"),
+    );
+    assert_eq!(got, plain, "`doc show {addr}` (plain) reads back verbatim");
+    let got = ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["doc", "show", addr, "--format", "json"],
+            None,
+        ),
+        &format!("doc show {addr} --format json"),
+    );
+    assert_eq!(got, json, "`doc show {addr}` (json) reads back verbatim");
+}
+
+/// Assert `jigc doc show <addr>` BLOCKS honestly in BOTH formats: non-zero exit, the
+/// finding `code` + the located `detail` on stderr, and an EMPTY stdout — a wrong
+/// nested address never returns a node with exit 0 (the M40 rule).
+fn assert_show_blocks(repo: &Path, home: &Path, pack: &Path, addr: &str, code: &str, detail: &str) {
+    let plain = ["doc", "show", addr];
+    let json = ["doc", "show", addr, "--format", "json"];
+    for args in [&plain[..], &json[..]] {
+        let out = run_jigc(repo, home, pack, args, None);
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            !out.status.success(),
+            "`jigc {args:?}` must exit non-zero; stdout:\n{}\nstderr:\n{stderr}",
+            String::from_utf8_lossy(&out.stdout),
+        );
+        assert!(
+            stderr.contains(code) && stderr.contains(detail),
+            "`jigc {args:?}` must block with `{code}` naming {detail:?}; stderr:\n{stderr}",
+        );
+        assert!(
+            out.stdout.is_empty(),
+            "a blocked show emits NO node on stdout (never a wrong node); stdout:\n{}",
+            String::from_utf8_lossy(&out.stdout),
+        );
+    }
+}
+
+// ---- the A2 read-back goldens (spiked against the rebuilt binary; `<DATE1>`/
+// ---- `<DATE2>` interpolated — the `date` field is `set: on-create`) ----
+
+/// `doc show <rel1>` plain — the release item slice carries its field group + the
+/// nested change-groups (self-rooted at `###`, anchorless — the T1 fix).
+const REL1_ITEM_PLAIN: &str = "### 1.0.0
+
+<!-- fields -->
+- date: <DATE1>
+- link: https://example.com/compare/0.9.0...1.0.0
+
+#### added
+
+- OAuth device-code flow
+
+#### fixed
+
+- session fixation on logout";
+
+/// `doc show <rel2>` plain — no `link` line (the absent optional field), and the
+/// run-2 groups.
+const REL2_ITEM_PLAIN: &str = "### 1.1.0
+
+<!-- fields -->
+- date: <DATE2>
+
+#### changed
+
+- new config knob
+
+#### removed
+
+- deprecated endpoint dropped";
+
+/// `doc show <rel1> --format json` — the pinned recursive item object: the `changes`
+/// nested block keys the array of recursive item objects.
+const REL1_ITEM_JSON: &str = r#"{
+  "changes": [
+    {
+      "category": "added",
+      "notes": "- OAuth device-code flow"
+    },
+    {
+      "category": "fixed",
+      "notes": "- session fixation on logout"
+    }
+  ],
+  "date": "<DATE1>",
+  "link": "https://example.com/compare/0.9.0...1.0.0",
+  "title": "1.0.0"
+}"#;
+
+/// `doc show <rel2> --format json` — the absent optional `link` key is simply absent.
+const REL2_ITEM_JSON: &str = r#"{
+  "changes": [
+    {
+      "category": "changed",
+      "notes": "- new config knob"
+    },
+    {
+      "category": "removed",
+      "notes": "- deprecated endpoint dropped"
+    }
+  ],
+  "date": "<DATE2>",
+  "title": "1.1.0"
+}"#;
+
+/// `doc show changelog:changelog#releases --format json` — the section slice is the
+/// array of BOTH recursive release objects, in on-disk order.
+const RELEASES_SECTION_JSON: &str = r#"[
+  {
+    "changes": [
+      {
+        "category": "added",
+        "notes": "- OAuth device-code flow"
+      },
+      {
+        "category": "fixed",
+        "notes": "- session fixation on logout"
+      }
+    ],
+    "date": "<DATE1>",
+    "link": "https://example.com/compare/0.9.0...1.0.0",
+    "title": "1.0.0"
+  },
+  {
+    "changes": [
+      {
+        "category": "changed",
+        "notes": "- new config knob"
+      },
+      {
+        "category": "removed",
+        "notes": "- deprecated endpoint dropped"
+      }
+    ],
+    "date": "<DATE2>",
+    "title": "1.1.0"
+  }
+]"#;
+
+/// `doc show <rel1>/changes` plain — the nested ARRAY slices self-rooted (each group
+/// at `###`, like a section-level item list).
+const REL1_CHANGES_PLAIN: &str = "### added
+
+- OAuth device-code flow
+
+### fixed
+
+- session fixation on logout";
+
+/// `doc show <rel1>/changes --format json` — the canonical write address → the
+/// nested array of recursive item objects.
+const REL1_CHANGES_JSON: &str = r#"[
+  {
+    "category": "added",
+    "notes": "- OAuth device-code flow"
+  },
+  {
+    "category": "fixed",
+    "notes": "- session fixation on logout"
+  }
+]"#;
+
 /// The full Flow-24 acceptance: cold-create → warm-append byte-stable, both reds, in
 /// one continuous two-run e2e over a single repo (the proven flow-19 two-run shape).
 #[test]
@@ -362,7 +543,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
     );
 
     // Nested change-groups under the release (the Leaf::Repeatable authoring path).
-    author_group(
+    let g_added = author_group(
         repo,
         home,
         pack,
@@ -370,7 +551,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         "added",
         b"- OAuth device-code flow\n",
     );
-    author_group(
+    let g_fixed = author_group(
         repo,
         home,
         pack,
@@ -460,7 +641,7 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
         "add-item release 1.1.0",
     );
     // 1.1.0 authors a `changed` group but leaves the OPTIONAL `link` ABSENT this run.
-    author_group(repo, home, pack, &rel2, "changed", b"- new config knob\n");
+    let g_changed = author_group(repo, home, pack, &rel2, "changed", b"- new config knob\n");
 
     // ── RED 1: a half-authored NESTED entry (empty required `notes`) BLOCKS ──────────
     let removed = ok_stdout(
@@ -578,6 +759,127 @@ fn flow24_cold_create_then_warm_append_byte_stable_with_the_reds() {
             && committed2.contains("- deprecated endpoint dropped"),
         "the nested change-groups of both releases survive; committed:\n{committed2}",
     );
+
+    // ── M40 A2: the nested corpus ROUND-TRIPS — every emitted `add-item` address ─────
+    // reads back verbatim through the task-less `doc show`, plain AND json, at every
+    // depth. The `date` field is `set: on-create` (non-deterministic), so each
+    // release's stamp is read back through the already-pinned leaf slice and
+    // interpolated into the goldens; every other byte is matched verbatim.
+    let date_of = |rel: &str| {
+        let date = ok_stdout(
+            run_jigc(
+                repo,
+                home,
+                pack,
+                &["doc", "show", &format!("{rel}/date")],
+                None,
+            ),
+            &format!("doc show {rel}/date (plain leaf)"),
+        );
+        assert!(
+            !date.is_empty() && date.chars().all(|c| c.is_ascii_digit() || c == '-'),
+            "the date leaf reads back as the bare date value; got {date:?}",
+        );
+        date
+    };
+    let (date1, date2) = (date_of(&rel1), date_of(&rel2));
+    let dated = |golden: &str| golden.replace("<DATE1>", &date1).replace("<DATE2>", &date2);
+
+    // Section depth: `#releases` — plain is the two release items joined (fields +
+    // nested groups carried, the T1 fix); json is the array of recursive objects.
+    assert_shows(
+        repo,
+        home,
+        pack,
+        "changelog:changelog#releases",
+        &format!("{}\n\n{}", dated(REL1_ITEM_PLAIN), dated(REL2_ITEM_PLAIN)),
+        &dated(RELEASES_SECTION_JSON),
+    );
+    // Item depth: both emitted release addresses, verbatim.
+    assert_shows(
+        repo,
+        home,
+        pack,
+        &rel1,
+        &dated(REL1_ITEM_PLAIN),
+        &dated(REL1_ITEM_JSON),
+    );
+    assert_shows(
+        repo,
+        home,
+        pack,
+        &rel2,
+        &dated(REL2_ITEM_PLAIN),
+        &dated(REL2_ITEM_JSON),
+    );
+    // Nested-array depth: the canonical section-qualified write address (this is the
+    // address that falsely blocked `store.no-such-item` pre-M40).
+    assert_shows(
+        repo,
+        home,
+        pack,
+        &format!("{rel1}/changes"),
+        REL1_CHANGES_PLAIN,
+        REL1_CHANGES_JSON,
+    );
+    // Nested-item + nested-leaf depth: EVERY emitted nested-group address (run 1's
+    // two + run 2's two, `removed` being the empty-then-filled red-1 group) reads
+    // back as its own node — the deep leaf previously degraded to the ENCLOSING
+    // release item with exit 0 (the wrong-node defect).
+    for (group, category, notes) in [
+        (&g_added, "added", "- OAuth device-code flow"),
+        (&g_fixed, "fixed", "- session fixation on logout"),
+        (&g_changed, "changed", "- new config knob"),
+        (&removed, "removed", "- deprecated endpoint dropped"),
+    ] {
+        assert_shows(
+            repo,
+            home,
+            pack,
+            group,
+            &format!("### {category}\n\n{notes}"),
+            &format!("{{\n  \"category\": \"{category}\",\n  \"notes\": \"{notes}\"\n}}"),
+        );
+        assert_shows(
+            repo,
+            home,
+            pack,
+            &format!("{group}/notes"),
+            notes,
+            &format!("\"{notes}\""),
+        );
+    }
+
+    // ── M40 A2: a wrong nested address BLOCKS honestly in both formats — never a ─────
+    // wrong node with exit 0.
+    // A mistyped nested-section segment is rejected, never treated as an item id.
+    assert_show_blocks(
+        repo,
+        home,
+        pack,
+        &format!("{rel1}/wrong/added"),
+        "store.no-such-section",
+        "names no nested section `wrong`",
+    );
+    // The segment-less physical shortcut blocks with a route naming the declared
+    // nested section (S1: the one canonical address).
+    assert_show_blocks(
+        repo,
+        home,
+        pack,
+        &format!("{rel1}/added"),
+        "store.no-such-leaf",
+        "address it through its declared nested section (changes)",
+    );
+    // An absent group id under the declared nested section is the plain item miss.
+    assert_show_blocks(
+        repo,
+        home,
+        pack,
+        &format!("{rel1}/changes/security"),
+        "store.no-such-item",
+        "names no item `security`",
+    );
 }
 
 /// Bar 5: the `single-task` fold-in (`allows-create:[{type: changelog, as: change}]`)
@@ -686,6 +988,26 @@ fn flow24_single_task_fold_in_appends_an_unreleased_entry_and_promotes() {
             && committed.contains("### added  {#added}")
             && committed.contains("- OAuth login button on the sign-in page"),
         "the unreleased entry promoted through the create-gate; committed:\n{committed}",
+    );
+
+    // M40 A2: the emitted SINGLE-level group address reads back verbatim in both
+    // formats — the flat witness (no fields, no nested children), byte-identical to
+    // the pre-M40 flat slice shape (the M39-Inc-2 discipline).
+    assert_shows(
+        repo,
+        home,
+        pack,
+        &group,
+        "### added\n\n- OAuth login button on the sign-in page",
+        "{\n  \"category\": \"added\",\n  \"notes\": \"- OAuth login button on the sign-in page\"\n}",
+    );
+    assert_shows(
+        repo,
+        home,
+        pack,
+        &format!("{group}/notes"),
+        "- OAuth login button on the sign-in page",
+        "\"- OAuth login button on the sign-in page\"",
     );
 }
 
