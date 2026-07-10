@@ -295,6 +295,13 @@ fn apply_field_target(
     addr: &str,
     value: &str,
 ) -> Result<String, DocFailure> {
+    // The set-field id-from guard (`design/write-commands.md` → The set-field id-from
+    // guard): a heading-derived field is never written through `set-field` — living
+    // here, the per-leaf verb AND the `doc author` batch (via `apply_leaf`) inherit
+    // the reject in one place, killing the or-insert corruption shapes.
+    if let Some(finding) = id_from_field_guard(schema, &target, addr, value) {
+        return Err(DocFailure::Block(finding));
+    }
     Ok(match target {
         FieldTarget::Section { section, field } => set_field_validated(
             schema,
@@ -333,6 +340,102 @@ fn apply_field_target(
                 })?
         }
     })
+}
+
+/// The set-field id-from guard (`design/write-commands.md` → The set-field id-from
+/// guard; DECISIONS.md 2026-07-10 → M40 Settle #7). A repeatable item's `id-from`
+/// field is **heading-derived** — its value lives in the item heading line, not a
+/// field bullet — so `set-field` on it previously or-inserted a contradictory bullet
+/// under the heading (three live corruption shapes: non-reparseable wedging · silent
+/// divergence committed clean · a recovery trap loop). Rejected with a blocking
+/// finding whose route is **type-aware**: a plain-string id-from names
+/// `jigc doc retitle-item <item-addr>` (the heading verb, anchor frozen); an enum
+/// id-from names `remove-item` + `add-item` under the target category (a category
+/// change is an identity change — the [`retitle_enum_refusal`] route). Resolves the
+/// destination repeatable with the same navigation as that guard (section lookup /
+/// [`engine::write::nested_repeatable`]); a non-id-from field, a section-level
+/// target, or an unresolvable chain yields `None` — the inert path (the engine
+/// splice adjudicates presence/shape as before).
+fn id_from_field_guard(
+    schema: &Schema,
+    target: &FieldTarget,
+    addr: &str,
+    value: &str,
+) -> Option<Finding> {
+    use engine::schema::FieldType;
+
+    // The doc head (`<type>:<slug>`) the route addresses are rebuilt from.
+    let (doc, _) = addr.split_once('#')?;
+    let (repeatable, field, item_path, dest) = match target {
+        // No shipped simple section carries an id-from; the guard is item-scoped.
+        FieldTarget::Section { .. } => return None,
+        FieldTarget::Item {
+            section,
+            item,
+            field,
+        } => {
+            let body = &schema.sections.iter().find(|s| &s.id == section)?.body;
+            let SectionBody::Repeatable { repeatable } = body else {
+                return None;
+            };
+            (
+                repeatable.clone(),
+                field,
+                format!("{section}/{item}"),
+                format!("{doc}#{section}"),
+            )
+        }
+        FieldTarget::NestedItem {
+            section,
+            items,
+            field,
+        } => {
+            // `items` is the parent-scoped chain down to the item: parents ++
+            // [nested-section, item-id] (the [`field_target`] Deep contract).
+            let (_, rest) = items.split_last()?;
+            let (nested_section, parents) = rest.split_last()?;
+            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            let repeatable =
+                engine::write::nested_repeatable(schema, section, &parent_ids, nested_section)?;
+            (
+                repeatable,
+                field,
+                format!("{section}/{}", items.join("/")),
+                format!("{doc}#{section}/{}/{nested_section}", parents.join("/")),
+            )
+        }
+    };
+    if *field != repeatable.id_from {
+        return None;
+    }
+    // The type-aware route: enum id-from → identity change (remove + re-add under the
+    // target category); string (or heading-implicit) id-from → the retitle verb.
+    let declared = repeatable.block.iter().find_map(|leaf| match leaf {
+        engine::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
+        _ => None,
+    });
+    let route = if declared.is_some_and(|f| f.ty == FieldType::Enum) {
+        format!(
+            "run `jigc doc remove-item {doc}#{item_path}` then `jigc doc add-item {dest} \
+             --title \"{value}\"` under the target category, moving the prose in the \
+             same motion"
+        )
+    } else {
+        format!(
+            "run `jigc doc retitle-item {doc}#{item_path} --title \"{value}\"` — the \
+             heading retitles with its `{{#id}}` anchor frozen"
+        )
+    };
+    Some(Finding::graded(
+        Severity::Blocking,
+        "write.id-from-field",
+        format!(
+            "set-field rejected: `{field}` is the heading-derived id-from field of item \
+             `{item_path}` — its value lives in the item heading, not a field bullet"
+        ),
+        Some(Location::addressed(format!("{item_path}/{field}"), 1, 1)),
+        Some(route),
+    ))
 }
 
 /// `jigc doc set-slot <addr> --from-file <path|->` — splice slot prose (stdin/file).

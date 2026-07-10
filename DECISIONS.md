@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-10 — M40 Inc 2 T3: the set-field id-from guard mints `write.id-from-field`, one code, type-aware route
+
+`set-field` on a repeatable item's heading-derived `id-from` field rejects with the single write-time code `write.id-from-field` for both arms (not `write.identity-change` — the string arm is a wrong-verb reject, not an identity change; the defect class is one, only the **route** is type-aware: string → `doc retitle-item <item-addr>`, enum → `remove-item` + `add-item` under the target category, T2's route text). The guard lives in `apply_field_target`, so the per-leaf verb and the `doc author` batch inherit it in one place (executor-chosen per the T3 delegation).
+
 ## 2026-07-10 — M40 Inc 2 T2: the retitle-item enum refusal is `write.identity-change`, guard-before-presence
 
 The CLI verb's unconditional enum-id-from refusal mints the write-time code `write.identity-change` (not `ID_FROM_ENUM_CODE` — the new title may BE a legal member; the reject is about *identity*, not value conformance) and runs **before** any read/copy-in, so a categorically-refused address never moves bytes regardless of item presence (mirrors add-item's guard-first ordering). Route text: `remove-item <addr>` + `add-item <dest-repeatable> --title "<new>"`, moving the prose in the same motion. `retitle-item` shares `remove_item_target`'s item-address forms verbatim (executor-chosen per the T2 delegation).

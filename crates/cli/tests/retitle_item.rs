@@ -21,6 +21,12 @@
 //! Mirrors `arch_doc_acceptance.rs` (the shipped embedded pack, a real `git init`
 //! repo, the test-built `doc-code` probe for the arch-doc finalize) and
 //! `doc_remove_item.rs` (the shared item-address forms).
+//!
+//! T3 adds the **set-field id-from guard** tests (`design/write-commands.md` → The
+//! set-field id-from guard): `doc set-field` on a heading-derived (`id-from`) field
+//! rejects with a **type-aware route** — string id-from names `doc retitle-item`,
+//! enum id-from names `remove-item` + `add-item` — and moves no bytes (killing the
+//! or-insert corruption shapes). A non-id-from item field stays writable.
 
 use std::fs;
 use std::io::Write;
@@ -530,5 +536,263 @@ fn changelog_change_group_retitle_refuses_with_the_remove_add_route() {
         staged_doc(repo.path(), task, "changelog:changelog"),
         before,
         "the refused retitles left the staged changelog byte-identical",
+    );
+}
+
+/// T3 (1)+(3) — the set-field id-from guard, **string** arm: `doc set-field` on
+/// `…#components/<id>/title` (arch-doc's `id-from: title`, a string field) exits
+/// non-zero with a blocking finding whose route names `jigc doc retitle-item
+/// <item-addr>` — and the staged buffer is byte-unchanged (no or-inserted `title`
+/// bullet, the corruption shape dead). A **non-id-from** item field on the same item
+/// still sets fine — the guard is scoped to the heading-derived field, inert
+/// everywhere else.
+#[test]
+fn set_field_on_a_string_id_from_field_rejects_with_the_retitle_route() {
+    let repo = TempDir::new("guard-string-repo");
+    let home = TempDir::new("guard-string-home");
+    init_repo(repo.path());
+
+    let task = "document-the-cache-layer";
+    ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "start",
+                "--workflow",
+                "architecture-documentation",
+                "document the cache layer",
+            ],
+            None,
+        ),
+        "jigc start --workflow architecture-documentation",
+    );
+    ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "create", "arch-doc", "--title", "Cache layer"],
+            None,
+        ),
+        "jigc doc create arch-doc",
+    );
+    let item = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "add-item",
+                "arch-doc:cache-layer#components",
+                "--title",
+                "Session store",
+            ],
+            None,
+        ),
+        "jigc doc add-item …#components",
+    );
+    assert_eq!(item, "arch-doc:cache-layer#components/session-store");
+
+    let before = staged_doc(repo.path(), task, "arch-doc:cache-layer");
+
+    // (1) the heading-derived `title` field rejects with the retitle-item route.
+    let refused = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("{item}/title"),
+            "--value",
+            "Session vault",
+        ],
+        None,
+    );
+    assert!(
+        !refused.status.success(),
+        "set-field on a string id-from field must exit non-zero",
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr).to_string();
+    assert!(
+        stderr.contains("blocking"),
+        "the guard is a blocking finding; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(&format!(
+            "jigc doc retitle-item {item} --title \"Session vault\""
+        )),
+        "the route names `doc retitle-item` at the item address; stderr:\n{stderr}",
+    );
+
+    // No or-inserted `title` bullet: the staged buffer is byte-unchanged.
+    assert_eq!(
+        staged_doc(repo.path(), task, "arch-doc:cache-layer"),
+        before,
+        "the refused set-field left the staged arch-doc byte-identical",
+    );
+
+    // (3) a non-id-from item field on the SAME item still sets fine — the guard is
+    // inert off the heading-derived field.
+    set_field(
+        repo.path(),
+        home.path(),
+        &format!("{item}/implemented-by"),
+        "src/lib.rs#present_symbol",
+    );
+    assert!(
+        staged_doc(repo.path(), task, "arch-doc:cache-layer").contains("src/lib.rs#present_symbol"),
+        "the non-id-from item field landed",
+    );
+}
+
+/// T3 (2) — the set-field id-from guard, **enum** arm: `doc set-field` on a
+/// change-group's `category` (`id-from: category`, an enum) exits non-zero with the
+/// remove+add route — a category change is an identity change, so the route names
+/// `doc remove-item` on the item + `doc add-item` under the target category. Both
+/// guard arms are driven — the nested chain (`#releases/<v>/changes/<cat>/category`,
+/// the done-criterion form) and the top-level item (`#unreleased-changes/<cat>/
+/// category`) — and the staged file stays byte-unchanged (even for a member value:
+/// the reject is about identity, not value conformance).
+#[test]
+fn set_field_on_an_enum_id_from_field_rejects_with_the_remove_add_route() {
+    let repo = TempDir::new("guard-enum-repo");
+    let home = TempDir::new("guard-enum-home");
+    init_repo(repo.path());
+
+    let task = "record-the-change";
+    ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "record-change", "record the change"],
+            None,
+        ),
+        "jigc start --workflow record-change",
+    );
+    ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "create", "changelog", "--title", "Changelog"],
+            None,
+        ),
+        "jigc doc create changelog",
+    );
+    let staged_group = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#unreleased-changes",
+                "--title",
+                "Added",
+            ],
+            None,
+        ),
+        "add-item staged change-group",
+    );
+    let release = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "1-0-0",
+            ],
+            None,
+        ),
+        "add-item release",
+    );
+    let nested_group = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "add-item",
+                &format!("{release}/changes"),
+                "--title",
+                "Fixed",
+            ],
+            None,
+        ),
+        "add-item nested change-group",
+    );
+    assert_eq!(
+        nested_group,
+        "changelog:changelog#releases/1-0-0/changes/fixed"
+    );
+
+    let before = staged_doc(repo.path(), task, "changelog:changelog");
+
+    // (a) the nested chain — the done-criterion form.
+    let refused = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("{nested_group}/category"),
+            "--value",
+            "security",
+        ],
+        None,
+    );
+    assert!(
+        !refused.status.success(),
+        "set-field on a nested enum id-from field must exit non-zero",
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr).to_string();
+    assert!(
+        stderr.contains(&format!("jigc doc remove-item {nested_group}")),
+        "the route names `doc remove-item` on the item; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains(
+            "jigc doc add-item changelog:changelog#releases/1-0-0/changes --title \"security\""
+        ),
+        "the route names `doc add-item` under the target category; stderr:\n{stderr}",
+    );
+
+    // (b) the top-level item arm — the same guard through the `#section/<item>/<field>`
+    // form.
+    let refused_top = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "set-field",
+            &format!("{staged_group}/category"),
+            "--value",
+            "changed",
+        ],
+        None,
+    );
+    assert!(
+        !refused_top.status.success(),
+        "set-field on a top-level enum id-from field must exit non-zero",
+    );
+    let stderr_top = String::from_utf8_lossy(&refused_top.stderr).to_string();
+    assert!(
+        stderr_top.contains(&format!("jigc doc remove-item {staged_group}")),
+        "the top-level route names `doc remove-item` on the item; stderr:\n{stderr_top}",
+    );
+    assert!(
+        stderr_top.contains(
+            "jigc doc add-item changelog:changelog#unreleased-changes --title \"changed\""
+        ),
+        "the top-level route names `doc add-item` under the target category; stderr:\n{stderr_top}",
+    );
+
+    // The refusals moved no bytes — no contradictory `category` bullet or-inserted.
+    assert_eq!(
+        staged_doc(repo.path(), task, "changelog:changelog"),
+        before,
+        "the refused set-fields left the staged changelog byte-identical",
     );
 }
