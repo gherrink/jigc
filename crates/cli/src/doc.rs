@@ -421,13 +421,22 @@ fn id_from_field_guard(
     if *field != repeatable.id_from {
         return None;
     }
-    // The type-aware route: enum id-from → identity change (remove + re-add under the
-    // target category); string (or heading-implicit) id-from → the retitle verb.
+    // The type-aware route: milestone-record → the machine-maintained milestone verbs
+    // (NEVER `retitle-item`, which refuses on the record — the divergence-producing
+    // command must not be routed to); enum id-from → identity change (remove + re-add
+    // under the target category); string (or heading-implicit) id-from → the retitle
+    // verb.
     let declared = repeatable.block.iter().find_map(|leaf| match leaf {
         engine::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
         _ => None,
     });
-    let route = if declared.is_some_and(|f| f.ty == FieldType::Enum) {
+    let route = if schema.ty == crate::milestone::MILESTONE_RECORD_TYPE {
+        format!(
+            "the milestone-record is machine-maintained — `{field}` mirrors the \
+             sub-task's work-unit id and changes only through the milestone verbs \
+             (`jigc milestone add-task` / `jigc task finalize`), never a manual write"
+        )
+    } else if declared.is_some_and(|f| f.ty == FieldType::Enum) {
         format!(
             "run `jigc doc remove-item {doc}#{item_path}` then `jigc doc add-item {dest} \
              --title \"{value}\"` under the target category, moving the prose in the \
@@ -875,6 +884,38 @@ fn run_retitle_item(
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
+
+    // The **milestone-record refusal** (the A4.4 doc-level reslug guard's item-level
+    // mirror; `design/write-commands.md` → `jigc doc retitle-item` / Milestone-record
+    // reslug): the record is machine-maintained — a `tasks` item's heading IS the
+    // sub-task's work-unit id (`id-from: task-id`, a plain string, so the enum refusal
+    // below is inert here) — and a retitle would sever the committed record from its
+    // work unit while committing clean. Keyed on the doctype like the rename guard,
+    // CLI-side like its siblings, before any bytes are read or moved.
+    if schema.ty == crate::milestone::MILESTONE_RECORD_TYPE {
+        let item_path = match &target {
+            RemoveItemTarget::TopLevel { section, item } => format!("{section}/{item}"),
+            RemoveItemTarget::Nested { section, items } => {
+                format!("{section}/{}", items.join("/"))
+            }
+        };
+        return Err(DocFailure::Block(Finding::graded(
+            Severity::Blocking,
+            "write.machine-maintained",
+            format!(
+                "retitle-item rejected: item `{item_path}` lives in a milestone-record — \
+                 the record is machine-maintained and an item's heading IS the sub-task's \
+                 work-unit id, so a retitle would sever the record from its work unit"
+            ),
+            Some(Location::addressed(item_path, 1, 1)),
+            Some(
+                "leave the record to the milestone verbs — `jigc milestone add-task` \
+                 appends sub-tasks and `jigc task finalize` advances their status; no \
+                 manual retitle applies"
+                    .to_string(),
+            ),
+        )));
+    }
 
     if let Some(finding) = retitle_enum_refusal(&schema, &address, &target, addr, title) {
         return Err(DocFailure::Block(finding));
