@@ -2015,6 +2015,23 @@ mod cli_parse {
     }
 
     #[test]
+    fn doc_schema_parses_the_doctype_with_the_global_format() {
+        // `jigc doc schema <doctype>` — the third read surface (M40 F1). The global
+        // `--format json` selects the separately-pinned contract projection.
+        let schema = Cli::try_parse_from(["jigc", "doc", "schema", "adr", "--format", "json"])
+            .expect("`doc schema <doctype> --format json` parses");
+        assert_eq!(schema.format, Format::Json);
+        assert_eq!(
+            schema.command,
+            Command::Doc {
+                verb: DocCommand::Schema {
+                    doctype: "adr".to_string(),
+                },
+            }
+        );
+    }
+
+    #[test]
     fn start_help_runs_cleanly() {
         let err = Cli::try_parse_from(["jigc", "start", "--help"])
             .expect_err("--help short-circuits parsing");

@@ -23,7 +23,7 @@ use engine::compose::{WorkflowDef, load_workflow_def};
 use engine::field_block::Value;
 use engine::finding::{Finding, Location, Severity};
 use engine::packsource::{PackResourceKind, PackSource, ResourceId};
-use engine::schema::{Schema, SectionBody};
+use engine::schema::{FieldType, Leaf, Repeatable, Schema, SectionBody};
 use engine::state;
 use engine::write::{
     set_field_validated, set_item_field_or_insert, set_item_slot, set_nested_item_field_or_insert,
@@ -165,6 +165,16 @@ pub enum DocCommand {
         /// The doc address — `<type>:<slug>`, or a `#section`/item/leaf slice of it.
         addr: String,
     },
+    /// Project a doctype's **resolved** schema (the cascade-composed shape as loaded,
+    /// injected stamp field included) — the third read surface, next to `describe`
+    /// (the non-contractual menu) and `doc show` (the committed-content read).
+    /// `--format json` is the separately-pinned, explicitly versioned contract
+    /// (`contract-version: 1` — `design/doc-read-surface.md` → Why json is a contract
+    /// here); plain text is a non-contractual human listing. Task-less, like `show`.
+    Schema {
+        /// The doctype whose resolved schema to project (e.g. `adr`).
+        doctype: String,
+    },
 }
 
 /// A `doc` verb's failure: a write-time **block** (a structured [`Finding`],
@@ -221,6 +231,7 @@ impl DocCommand {
                 task,
             } => run_author(cwd, &doctype, &from_file, task.as_deref()),
             DocCommand::Show { addr } => run_show(cwd, &addr, format),
+            DocCommand::Schema { doctype } => run_schema(cwd, &doctype, format),
         };
         match result {
             Ok(()) => Outcome::success(),
@@ -1383,7 +1394,7 @@ fn apply_leaf(
 fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
     let address = parse_addr(addr)?;
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
-    let schemas = committed_schemas(&jigc_home)?;
+    let schemas = committed_schemas(make_pack().as_ref(), &jigc_home)?;
     match format {
         Format::Json => {
             let value = show_json(&jigc_home, &schemas, &address)?;
@@ -1404,12 +1415,290 @@ fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
 /// placement doctype homes at its literal file, docs-root inert). Reads the composed
 /// pack from cwd, so a `[dev ▸ methodology]` repo's `vision`/`milestone-record` resolve
 /// alongside the dev doctypes.
-fn committed_schemas(jigc_home: &Path) -> Result<BTreeMap<String, Schema>> {
-    let pack = make_pack();
+fn committed_schemas(pack: &dyn PackSource, jigc_home: &Path) -> Result<BTreeMap<String, Schema>> {
     let project_config = jigc_home.join(".jigc").join("config");
-    let resolved = crate::start::resolve_severity_cascade(pack.as_ref(), &project_config)?;
+    let resolved = crate::start::resolve_severity_cascade(pack, &project_config)?;
     let defs = crate::start::CascadeDefs::new(&resolved, &project_config);
-    defs.all_schemas(pack.as_ref())
+    defs.all_schemas(pack)
+}
+
+/// `jigc doc schema <doctype>` — project the doctype's **resolved** schema, the
+/// third read surface (`design/doc-read-surface.md` → Why json is a contract here;
+/// `design/introspection.md` — describe is the non-contractual menu, `doc show` the
+/// 1.0-pinned content read, `doc schema` this separately versioned structural
+/// projection). Task-less: it resolves the cascade schema set exactly as `doc show`
+/// does, then renders the schema **as loaded** — the injected dev-pack
+/// schema-version stamp field included — so the projection is what every other
+/// surface actually composes against, never the raw YAML. `--format json` is the
+/// pinned [`SchemaContract`]; plain text is a non-contractual listing. An unknown
+/// doctype blocks with a routed finding, exactly like a read-side `show` block.
+fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailure> {
+    let jigc_home = crate::ingest::require_project_layer(cwd)?;
+    let pack = make_pack();
+    let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
+    let Some(schema) = schemas.get(doctype) else {
+        return Err(DocFailure::Block(Finding::graded(
+            Severity::Blocking,
+            "store.unknown-type",
+            format!("unknown doctype `{doctype}`"),
+            Some(Location::addressed(doctype, 1, 1)),
+            Some("list the available doctypes with `jigc describe`".to_string()),
+        )));
+    };
+    // The pinned top-level `schema-version`: the doctype's freeze-manifest version
+    // when its owning pack declares one (the dev frozen set), else null (the
+    // manifest-less methodology doctypes) — never the stamp deriver's 1-fallback.
+    let schema_version = crate::pack::frozen_doctype_versions(pack.as_ref())
+        .get(doctype)
+        .copied();
+    match format {
+        Format::Json => println!("{}", render::json(&schema_contract(schema, schema_version))),
+        Format::Agent | Format::Human => print!("{}", schema_listing(schema, schema_version)),
+    }
+    Ok(())
+}
+
+/// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly
+/// versioned** contract (`design/doc-read-surface.md` → Why json is a contract
+/// here). The keys/structure are the pin (`contract-version` bumps on any
+/// structural change to this projection); the *values* track the resolved schemas
+/// as they evolve. Golden-pinned at ship (`crates/cli/tests/doc_schema.rs`).
+#[derive(serde::Serialize)]
+struct SchemaContract<'a> {
+    /// The projection's own version — 1 at ship.
+    #[serde(rename = "contract-version")]
+    contract_version: u32,
+    /// The doctype id.
+    #[serde(rename = "type")]
+    ty: &'a str,
+    /// The doctype's freeze-manifest schema-version, else null — always emitted.
+    #[serde(rename = "schema-version")]
+    schema_version: Option<u32>,
+    /// Every simple section's fields flattened (header front-matter + body field
+    /// groups), in schema-declared order.
+    fields: Vec<ContractField<'a>>,
+    /// One entry per slot section and per repeatable section, in schema-declared
+    /// order (a header/fields-only section contributes to `fields` alone).
+    sections: Vec<ContractSection<'a>>,
+}
+
+/// One field of the pinned projection: `{id, type, required, author-required,
+/// default?, set?}`. `required` is presence-in-a-conformant-instance — the author
+/// must supply it OR the CLI stamps it (`default:`/`set:`); `author-required` is
+/// the shared engine predicate ([`engine::validate::is_author_required`]) — the
+/// same authority the create skeleton pre-stamps from, so the mint and this
+/// projection can never drift apart (M40 Settle #4).
+#[derive(serde::Serialize)]
+struct ContractField<'a> {
+    id: &'a str,
+    #[serde(rename = "type")]
+    ty: &'a FieldType,
+    required: bool,
+    #[serde(rename = "author-required")]
+    author_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    set: Option<&'a str>,
+}
+
+/// One section of the pinned projection: `{id, kind: "slot"|"repeatable",
+/// optional?, item?}` — `optional` only on an optional slot section, `item` only
+/// on a repeatable.
+#[derive(serde::Serialize)]
+struct ContractSection<'a> {
+    id: &'a str,
+    kind: &'static str,
+    #[serde(skip_serializing_if = "is_false")]
+    optional: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    item: Option<ContractItem<'a>>,
+}
+
+/// A repeatable's item template `{fields, slots, nested}` — **recursive**: each
+/// nested repeatable carries its own item (`design/doc-read-surface.md`: the
+/// `item` object is recursive for nested repeatables).
+#[derive(serde::Serialize)]
+struct ContractItem<'a> {
+    fields: Vec<ContractField<'a>>,
+    slots: Vec<ContractSlot<'a>>,
+    nested: Vec<ContractNested<'a>>,
+}
+
+/// One item slot: `{id, optional?}`.
+#[derive(serde::Serialize)]
+struct ContractSlot<'a> {
+    id: &'a str,
+    #[serde(skip_serializing_if = "is_false")]
+    optional: bool,
+}
+
+/// One nested repeatable inside an item: `{id, item}` (the recursion point).
+#[derive(serde::Serialize)]
+struct ContractNested<'a> {
+    id: &'a str,
+    item: ContractItem<'a>,
+}
+
+/// serde `skip_serializing_if` helper for the skip-on-false optional markers.
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// Build the pinned [`SchemaContract`] over the resolved `schema`, deterministically
+/// in schema-declared order (fields, sections, and item leaves each walk the loaded
+/// definition top to bottom — no hash-container order ever reaches the output).
+fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContract<'_> {
+    let mut fields = Vec::new();
+    let mut sections = Vec::new();
+    for section in &schema.sections {
+        match &section.body {
+            SectionBody::Simple {
+                slot,
+                fields: declared,
+            } => {
+                fields.extend(declared.iter().map(contract_field));
+                if let Some(slot) = slot {
+                    sections.push(ContractSection {
+                        id: &section.id,
+                        kind: "slot",
+                        optional: slot.optional,
+                        item: None,
+                    });
+                }
+            }
+            SectionBody::Repeatable { repeatable } => sections.push(ContractSection {
+                id: &section.id,
+                kind: "repeatable",
+                optional: false,
+                item: Some(contract_item(repeatable)),
+            }),
+        }
+    }
+    SchemaContract {
+        contract_version: 1,
+        ty: &schema.ty,
+        schema_version,
+        fields,
+        sections,
+    }
+}
+
+/// Project one schema field into its pinned [`ContractField`].
+fn contract_field(field: &engine::schema::Field) -> ContractField<'_> {
+    let author_required = engine::validate::is_author_required(field);
+    ContractField {
+        id: &field.id,
+        ty: &field.ty,
+        required: author_required || field.default.is_some() || field.set.is_some(),
+        author_required,
+        default: field.default.as_deref(),
+        set: field.set.as_deref(),
+    }
+}
+
+/// Project a repeatable's item template, recursing into nested repeatables.
+fn contract_item(repeatable: &Repeatable) -> ContractItem<'_> {
+    let mut fields = Vec::new();
+    let mut slots = Vec::new();
+    let mut nested = Vec::new();
+    for leaf in &repeatable.block {
+        match leaf {
+            Leaf::Field(field) => fields.push(contract_field(field)),
+            Leaf::Slot { id, slot } => slots.push(ContractSlot {
+                id,
+                optional: slot.optional,
+            }),
+            Leaf::Repeatable { id, repeatable } => nested.push(ContractNested {
+                id,
+                item: contract_item(repeatable),
+            }),
+        }
+    }
+    ContractItem {
+        fields,
+        slots,
+        nested,
+    }
+}
+
+/// The plain (`agent`/`human`) schema listing — **non-contractual** presentation
+/// (only the `--format json` shape is the pin): the doctype + its version, then
+/// each field (`*` marks author-required) and each section, item leaves indented
+/// under their repeatable.
+fn schema_listing(schema: &Schema, schema_version: Option<u32>) -> String {
+    let contract = schema_contract(schema, schema_version);
+    let mut out = match contract.schema_version {
+        Some(version) => format!("doctype: {} (schema-version {version})\n", contract.ty),
+        None => format!("doctype: {}\n", contract.ty),
+    };
+    if !contract.fields.is_empty() {
+        out.push_str("fields (* = author-required):\n");
+        for field in &contract.fields {
+            push_field_line(&mut out, field, 1);
+        }
+    }
+    if !contract.sections.is_empty() {
+        out.push_str("sections:\n");
+        for section in &contract.sections {
+            out.push_str(&format!("  - {}: {}", section.id, section.kind));
+            if section.optional {
+                out.push_str(" (optional)");
+            }
+            out.push('\n');
+            if let Some(item) = &section.item {
+                push_item_lines(&mut out, item, 2);
+            }
+        }
+    }
+    out
+}
+
+/// Append one field's listing line at `depth` (two spaces per level).
+fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
+    out.push_str(&"  ".repeat(depth));
+    out.push_str(&format!("- {}: {}", field.id, field.ty_name()));
+    if let Some(default) = field.default {
+        out.push_str(&format!(" (default: {default})"));
+    }
+    if let Some(set) = field.set {
+        out.push_str(&format!(" (set: {set})"));
+    }
+    if field.author_required {
+        out.push_str(" *");
+    }
+    out.push('\n');
+}
+
+impl ContractField<'_> {
+    /// The field type's bare on-disk spelling (via its serde form — the engine
+    /// keeps the spelling private).
+    fn ty_name(&self) -> String {
+        match serde_json::to_value(self.ty) {
+            Ok(serde_json::Value::String(name)) => name,
+            _ => String::from("?"),
+        }
+    }
+}
+
+/// Append an item template's leaves at `depth`, recursing into nested repeatables.
+fn push_item_lines(out: &mut String, item: &ContractItem<'_>, depth: usize) {
+    for field in &item.fields {
+        push_field_line(out, field, depth);
+    }
+    for slot in &item.slots {
+        out.push_str(&"  ".repeat(depth));
+        out.push_str(&format!("- {}: slot", slot.id));
+        if slot.optional {
+            out.push_str(" (optional)");
+        }
+        out.push('\n');
+    }
+    for nested in &item.nested {
+        out.push_str(&"  ".repeat(depth));
+        out.push_str(&format!("- {}: repeatable\n", nested.id));
+        push_item_lines(out, &nested.item, depth + 1);
+    }
 }
 
 /// Build the pinned `--format json` value for `address` (`design/team-ready-state.md` →
