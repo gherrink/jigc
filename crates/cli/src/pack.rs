@@ -3075,5 +3075,94 @@ mod tests {
                 );
             }
         }
+
+        /// **Knob-surface parity — the whole-`knobs.yaml`-shadow drift guard (M40).**
+        /// In a methodology-primary project (`.jigc/config/packs.yaml` listing the
+        /// methodology pack) the methodology `knobs.yaml` whole-file-shadows dev's
+        /// (listed > base), so a dev-only knob key becomes **undeclared** there —
+        /// its pinned pack-default unreachable and the key unsettable (a
+        /// `scalar-set` on it hard-aborts `UndeclaredScalar`). That is exactly how
+        /// the M36–M40 dev-knob mints (`invocation-log`, `mention-resolves`,
+        /// `title-names-symbol`, `repeatable-populated.severity`/`.exempt`,
+        /// `surplus-sections-absent`) silently vanished from methodology-primary
+        /// projects, leaving `repeatable-populated.exempt`'s methodology tokens
+        /// (`milestone-record#tasks`, `completion-record#findings`) dead in the
+        /// only context they can apply. This test pins the recorded safety
+        /// condition (`multi-pack.md` → Per-kind collision behavior): the two knob
+        /// surfaces differ on **only**
+        /// - `default-workflow` — divergent by design (disjoint enums), and
+        /// - `docs-root` — dev-only by record: methodology doctypes land flat at
+        ///   their `location:` (`DECISIONS.md` 2026-07-04, M37 inc-4 T3).
+        ///
+        /// Every other dev knob must be declared **identically** (type/of/default/
+        /// floor) in the methodology pack, so the next dev-knob mint fails here
+        /// instead of drifting silently.
+        #[test]
+        fn methodology_knob_surface_mirrors_dev_except_recorded_divergences() {
+            use std::collections::BTreeSet;
+
+            let load = |pack: &EmbeddedPack, which: &str| {
+                engine::knobs::load_knobs(
+                    &pack
+                        .read(PackResourceKind::Config, &ResourceId::from("knobs"))
+                        .unwrap_or_else(|e| panic!("{which} knobs.yaml reads back: {e}")),
+                )
+                .unwrap_or_else(|e| panic!("{which} knobs.yaml loads: {e}"))
+            };
+            let dev = load(&EmbeddedPack::new(), "dev");
+            let methodology = load(&EmbeddedPack::methodology(), "methodology");
+
+            // The two recorded divergences — everything else must mirror.
+            const DEV_ONLY: &[&str] = &["docs-root"];
+            const DIVERGENT_DECL: &[&str] = &["default-workflow"];
+
+            let dev_keys: BTreeSet<&str> = dev.keys().collect();
+            let methodology_keys: BTreeSet<&str> = methodology.keys().collect();
+
+            let missing: Vec<&str> = dev_keys
+                .iter()
+                .filter(|k| !DEV_ONLY.contains(k) && !methodology_keys.contains(*k))
+                .copied()
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "dev knob keys missing from packs/methodology/config/knobs.yaml — a \
+                 methodology-primary project loses each to the whole-file shadow \
+                 (pinned default unreachable, key unsettable); mirror them (or record \
+                 a divergence here AND in multi-pack.md): {missing:?}",
+            );
+            let surplus: Vec<&str> = methodology_keys
+                .iter()
+                .filter(|k| !dev_keys.contains(*k))
+                .copied()
+                .collect();
+            assert!(
+                surplus.is_empty(),
+                "methodology declares knob keys the dev base lacks: {surplus:?}",
+            );
+
+            let dev_defaults = dev.base_scalars();
+            let methodology_defaults = methodology.base_scalars();
+            for key in dev_keys
+                .iter()
+                .filter(|k| !DEV_ONLY.contains(k) && !DIVERGENT_DECL.contains(k))
+            {
+                assert_eq!(
+                    dev.field(key),
+                    methodology.field(key),
+                    "knob `{key}`: type/of must be identical across the two packs",
+                );
+                assert_eq!(
+                    dev_defaults.get(*key),
+                    methodology_defaults.get(*key),
+                    "knob `{key}`: the pinned default must be identical across the two packs",
+                );
+                assert_eq!(
+                    dev.floors().get(*key),
+                    methodology.floors().get(*key),
+                    "knob `{key}`: the demotion-lock floor must be identical across the two packs",
+                );
+            }
+        }
     }
 }

@@ -8,14 +8,21 @@
 # not a project-overridable value, so it stays in defaults.yaml.
 # The `validation.*.severity` keys are the per-check severity surface; their
 # defaults + intrinsic-ness are governed by the single source of truth,
-# validation.md → MVP check inventory (27 checks across 9 categories — pinned by
-# engine::knobs per_check_severity_surface_reconciles_to_the_27_18_9_inventory).
-# (The engine's CHECK_INVENTORY post-pass membership set is a 24-row subset of
-# these 27 — it drops the 3 compose-time marker checks; see engine::result
+# validation.md → MVP check inventory (31 checks across 9 categories — pinned by
+# engine::knobs per_check_severity_surface_reconciles_to_the_31_18_13_inventory).
+# (The engine's CHECK_INVENTORY post-pass membership set is a 28-row subset of
+# these 31 — it drops the 3 compose-time marker checks; see engine::result
 # check_inventory_membership_count_is_stable.) The two
 # `validation.<probe>.severity` per-probe keys are retained from M4 as additive
 # per-probe *defaults* (never a rename) so an M4-authored manifest still
 # resolves; they sit alongside the per-check keys.
+# PARITY: in a methodology-primary project this file whole-file-shadows the dev
+# base's knobs.yaml (multi-pack.md → Per-kind collision behavior), so every dev
+# knob must be mirrored here **identically** except the two recorded
+# divergences — `default-workflow` (disjoint enums by design) and `docs-root`
+# (dev-only: methodology doctypes land flat at their `location:`, DECISIONS.md
+# 2026-07-04). Pinned by cli::pack
+# methodology_knob_surface_mirrors_dev_except_recorded_divergences.
 # See overrides.md → Scalar knobs / Soft-rejection; storage.md → Config layout.
 default-workflow:
   type: enum
@@ -32,6 +39,17 @@ default-workflow:
 finalize.fan-out.squash:
   type: bool
   default: "true"
+
+# --- invocation-log — the opt-in in-repo invocation log (M36) ---
+# When `true`, one JSONL record `{timestamp, argv, exit_code, duration_ms,
+# finding_codes}` is appended per `jigc` invocation to the gitignored
+# `.jigc/logs/invocations.jsonl` — a jigc-side friction/failure log so a real
+# external-repo RC run yields analyzable in-repo data. Default OFF (safe for an
+# adopter who didn't ask to be logged; the RC-trial protocol turns it on). A
+# tunable knob (no floor). See measurement.md → The in-repo invocation log.
+invocation-log:
+  type: bool
+  default: "false"
 
 # --- per-probe severity defaults (M4, retained — additive) ---
 validation.workflow-refs.severity:
@@ -150,6 +168,44 @@ validation.schema-completeness.inverse-cardinality.severity:
   of: [blocking, warning, advisory]
   default: advisory
 
+# --- schema-conformance.mention-resolves (1, tunable; advisory, store-scope only — M33) ---
+# The lighter, prose-embedded sibling of `ref-resolves`: an in-prose managed mention
+# `#<type>:<slug>` that names no committed doc is reported (never a per-task finalize
+# gate). Tunable (unfloored) and advisory by default — that placement is exactly what
+# "lighter than field-refs" means (validation.md → In-prose mention integrity).
+validation.schema-conformance.mention-resolves.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+
+# --- schema-conformance.repeatable-populated (1, tunable; advisory — M40) ---
+# Hollow-adoption visibility: a required repeatable section that parses zero
+# items is structurally silent (the adoption trial adopted a zero-item roadmap
+# clean), so the store sweep + the adopt-time triage annotate it — advisory,
+# never a gate (validation.md → Hollow and surplus adoption). The sibling
+# `.exempt` string knob carries space-separated `doctype#section` tokens where
+# zero items IS the steady state (the staging area, a valid just-created state,
+# a clean audit) — a matching token suppresses the finding entirely.
+validation.schema-conformance.repeatable-populated.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+validation.schema-conformance.repeatable-populated.exempt:
+  type: string
+  default: "changelog#unreleased-changes milestone-record#tasks completion-record#findings"
+
+# --- schema-conformance.surplus-sections-absent (1, tunable; advisory — M40) ---
+# Surplus-adoption visibility: body sections map positionally onto H2s and the
+# parser never visits a TRAILING surplus heading (the adoption trial adopted a
+# surplus `## Legacy planning notes` clean), so the store sweep + the adopt-time
+# triage annotate it — advisory, never a gate (validation.md → Hollow and surplus
+# adoption). A surplus H2 BETWEEN required sections is
+# conformance.section-renamed's territory instead; the two never double-fire.
+validation.schema-conformance.surplus-sections-absent.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
+
 # --- override-default.* (3, tunable from M6; blocking-by-default) ---
 validation.override-default.target-exists.severity:
   type: enum
@@ -174,10 +230,11 @@ validation.commit-rendering.line-limit-body.severity:
   of: [blocking, warning, advisory]
   default: advisory
 
-# --- doc-code.* (2, tunable; M10 — the pack-provided doc↔code probe) ---
-# blocking-by-default (a dangling anchor is a real integrity failure) but
-# cascade-tunable, NOT floored — a project may rationally demote to warning.
-# Unlike the floor-locked pack-probe-integrity.* meta-findings above.
+# --- doc-code.* (3, tunable; M10 ×2 + the M40 stale-heading guard) ---
+# symbol-exists / criterion-maps-to-test: blocking-by-default (a dangling
+# anchor is a real integrity failure) but cascade-tunable, NOT floored — a
+# project may rationally demote to warning. Unlike the floor-locked
+# pack-probe-integrity.* meta-findings above.
 validation.doc-code.symbol-exists.severity:
   type: enum
   of: [blocking, warning, advisory]
@@ -186,6 +243,15 @@ validation.doc-code.criterion-maps-to-test.severity:
   type: enum
   of: [blocking, warning, advisory]
   default: blocking
+# title-names-symbol: the stale-heading guard (a component title carrying a
+# compound identifier that is not its anchored symbol). Advisory-by-default —
+# the brand-name false-positive class (`WordPress`, `PostgreSQL`) has no valid
+# remedy under blocking; a strict project re-promotes it with one scalar-set
+# (validation.md → doc-code.title-names-symbol, the M40 demotion block).
+validation.doc-code.title-names-symbol.severity:
+  type: enum
+  of: [blocking, warning, advisory]
+  default: advisory
 
 # --- owner-artifact.present (1, intrinsic — the M16 #5 completion-half gate) ---
 # A finalize-time presence assertion: the `owner-artifact` owned-location path on a
