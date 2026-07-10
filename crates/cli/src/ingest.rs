@@ -3,7 +3,8 @@
 //! Discover → classify → **adopt** → triage report. Locates the repo root +
 //! project layer, loads the persisted schemas + the committed edge index
 //! ([`index::load_committed`]) + the file-state record ([`FileStateRecord::load`]),
-//! runs the engine's [`engine::ingest::discover_candidates`] then
+//! computes the candidate set from git ([`git_candidates`] — `git ls-files --cached
+//! --others --exclude-standard -- '*.md'`, M40 / F8) then runs the engine's
 //! [`engine::ingest::classify`] per candidate (in sorted candidate order), adopts
 //! every conformant `adoptable` candidate **register-only** (records it into the
 //! edge index + file-state baseline; it never moves or rewrites any candidate
@@ -33,7 +34,7 @@ use std::path::{Path, PathBuf};
 use engine::file_state::FileStateRecord;
 use engine::finding::{Finding, Location, Severity};
 use engine::index;
-use engine::ingest::{Verdict, classify, discover_candidates};
+use engine::ingest::{Verdict, classify};
 use engine::parse::parse_sections;
 use engine::schema::Schema;
 use engine::validate::schema_conformance;
@@ -63,7 +64,7 @@ pub struct TriageRow {
 }
 
 /// The triage report — the discovered candidates classified, in sorted candidate
-/// order (the deterministic report order [`discover_candidates`] yields).
+/// order (the deterministic report order [`git_candidates`] yields).
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct IngestReport {
     pub rows: Vec<TriageRow>,
@@ -97,7 +98,7 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     let mut record = FileStateRecord::load(&jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
 
-    let candidates = discover_candidates(&jigc_home, &schemas);
+    let candidates = git_candidates(&jigc_home)?;
     let mut rows = Vec::with_capacity(candidates.len());
     let mut adopted_any = false;
     for rel_path in candidates {
@@ -135,6 +136,41 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     }
 
     Ok(IngestReport { rows })
+}
+
+/// Discover the sorted, deduped repo-relative `.md` candidate set from **git** (M40 /
+/// F8; `design/project-setup.md` → Flow-2 discovery, the M40 re-base paragraph):
+/// `git ls-files --cached --others --exclude-standard -- '*.md'` — tracked plus
+/// untracked-but-not-ignored, gitignored files excluded (the adoption trial listed
+/// `node_modules` `.md`s as 91% of the logged triage output). The internals prune
+/// stays on top of the git listing (`.jigc/AGENT.md` is deliberately un-gitignored,
+/// so it *does* appear in `ls-files`), and the unsorted listing re-sorts + dedups
+/// through a `BTreeSet` (same-repo-in → same-verdicts-out). **No no-git fallback**:
+/// ingest hard-requires a git repo, so a `git` failure is a hard error — the engine's
+/// filesystem walk ([`engine::ingest::discover_candidates`]) survives as engine-test
+/// substrate only.
+fn git_candidates(jigc_home: &Path) -> Result<Vec<String>> {
+    let listing = crate::task::git_capture(
+        jigc_home,
+        &[
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "*.md",
+        ],
+    )
+    .context("could not enumerate the `.md` candidate set via `git ls-files`")?;
+    let candidates: std::collections::BTreeSet<String> = listing
+        .lines()
+        .filter(|rel| {
+            !rel.split('/')
+                .any(|component| component == ".jigc" || component == ".git")
+        })
+        .map(str::to_string)
+        .collect();
+    Ok(candidates.into_iter().collect())
 }
 
 /// Classify one candidate into a [`TriageRow`], re-deriving the routed finding for a

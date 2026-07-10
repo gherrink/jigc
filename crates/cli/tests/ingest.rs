@@ -452,3 +452,57 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
         "the non-conformant near-miss routes, never adopts:\n{report}",
     );
 }
+
+/// M40 / F8 — the candidate set is CLI-computed from `git ls-files --cached --others
+/// --exclude-standard -- '*.md'`: a **gitignored** `.md` (the adoption trial's
+/// `node_modules` funnel poison — 91% of the logged triage output) is absent from the
+/// triage report, while an **untracked non-ignored** `.md` still appears
+/// (`design/project-setup.md` → Flow-2 discovery, the M40 re-base paragraph).
+#[test]
+fn ingest_excludes_gitignored_candidates_and_includes_untracked_markdown() {
+    let repo = TempDir::new("gitignored");
+    let home = TempDir::new("gitignored-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // Gitignore `node_modules/` (appending — setup may have seeded a root
+    // `.gitignore`), then seed a gitignored candidate + an untracked non-ignored one.
+    let gitignore = repo.path().join(".gitignore");
+    let mut ignore_body = fs::read_to_string(&gitignore).unwrap_or_default();
+    ignore_body.push_str("node_modules/\n");
+    fs::write(&gitignore, ignore_body).expect("write .gitignore");
+    write(
+        repo.path(),
+        "node_modules/pkg/README.md",
+        "# pkg\n\nA dependency's readme — never a triage candidate.\n",
+    );
+    write(
+        repo.path(),
+        "docs/untracked-note.md",
+        NON_CONFORMANT_NEAR_MISS,
+    );
+
+    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    assert!(
+        out.status.success(),
+        "`jigc ingest` must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+
+    assert!(
+        !report.contains("node_modules/pkg/README.md"),
+        "a gitignored candidate must be absent from the triage report:\n{report}"
+    );
+    assert!(
+        report.contains("docs/untracked-note.md"),
+        "an untracked non-ignored candidate must appear in the triage report:\n{report}"
+    );
+}
