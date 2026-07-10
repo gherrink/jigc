@@ -908,18 +908,18 @@ fn parse_items(
         };
 
         // The item's per-item fields (sentinelled bullet group), against its block.
-        let item_fields = if item_template.has_fields {
-            read_field_group(
-                source,
-                blocks,
-                *content_start,
-                leaf_end,
-                &item_template.field_keys,
-                findings,
-            )
-        } else {
-            Vec::new()
-        };
+        // Read unconditionally — a template with NO declared bullet fields (e.g. the
+        // change-group: id-source heading + slot) still scans a stray sentinel, so an
+        // undeclared key spliced into such an item is an unknown-field break, not
+        // silently committed bytes (M40 triage; the simple-section path's discipline).
+        let item_fields = read_field_group(
+            source,
+            blocks,
+            *content_start,
+            leaf_end,
+            &item_template.field_keys,
+            findings,
+        );
 
         // Nested repeatables: each declared nested leaf parses its own items one
         // level deeper, within this item's region. The schema loader caps the depth
@@ -1079,7 +1079,6 @@ fn title_case(id: &str) -> String {
 /// under its own `#### <Leaf-Title>` sub-heading (M16).
 pub(crate) struct ItemTemplate {
     pub(crate) slot_ids: Vec<String>,
-    has_fields: bool,
     field_keys: Vec<String>,
     /// The block's nested repeatables, in schema block order (the M22 multi-level
     /// lift). Each parses its own items one level deeper within the parent item's
@@ -1108,10 +1107,8 @@ impl ItemTemplate {
                 } => nested.push(inner.clone()),
             }
         }
-        let has_fields = !field_keys.is_empty();
         ItemTemplate {
             slot_ids,
-            has_fields,
             field_keys,
             nested,
         }
@@ -2270,6 +2267,44 @@ sections:
         // The nested change-group is still reached.
         let nested_ids: Vec<&str> = release.items.iter().map(|i| i.id.as_str()).collect();
         assert_eq!(nested_ids, ["added"]);
+    }
+
+    /// (M40 triage) A stray `<!-- fields -->` group on a **field-less** nested item
+    /// (the change-group template: `category` is the heading-derived id-source,
+    /// `notes` is a slot — zero declared bullet fields) is an unknown-field break,
+    /// not silence. Before the fix the item's field-group scan was gated on the
+    /// template *declaring* fields, so an undeclared bullet written into such an
+    /// item (`set-field …/changes/added/title`) parsed clean and the corruption
+    /// committed; the scan now runs unconditionally — mirroring the simple-section
+    /// path, which already reads a stray sentinel against its (possibly empty)
+    /// declared keys.
+    #[test]
+    fn stray_field_group_on_field_less_nested_item_is_unknown_field() {
+        let src = "\
+# Changelog
+
+## Releases
+
+### 1.2.0  {#1-2-0}
+
+#### Added  {#added}
+
+- OAuth device-code flow
+
+<!-- fields -->
+- title: Changed
+";
+        let findings = parse_sections(&changelog_schema(), src)
+            .expect_err("a stray field group on a field-less nested item must not parse clean");
+        let finding = findings
+            .iter()
+            .find(|f| f.code == "conformance.unknown-field")
+            .unwrap_or_else(|| panic!("an unknown-field finding, got: {findings:?}"));
+        assert!(
+            finding.message.contains("`title`"),
+            "the finding names the undeclared key: {}",
+            finding.message
+        );
     }
 
     /// (T2, done-criterion (ii) — within one parent) Two `#added` change-groups

@@ -1055,3 +1055,124 @@ fn flow24_foreign_changelog_routes_needs_reconcile() {
         "a foreign changelog at the managed placement home routes needs-reconcile; report:\n{report}",
     );
 }
+
+/// M40 triage — an UNDECLARED field key written onto a NESTED item must block before
+/// commit, never corrupt the committed store silently. The change-group template
+/// declares NO bullet fields (`category` is the heading-derived id-source, `notes` a
+/// slot), so `set-field …/changes/added/title` splices a stray `- title: Changed`
+/// fields block after the notes prose. The write itself lands exit-0 — mirroring the
+/// top-level undeclared write, whose gate is also validate/finalize, not write time —
+/// but `task validate` must then fire `conformance.unknown-field` and `task finalize`
+/// must block, committing nothing.
+#[test]
+fn flow24_nested_undeclared_field_blocks_at_validate_and_finalize() {
+    let repo = TempDir::new("nested-undeclared");
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    init_repo(repo.path());
+    let (repo, home, pack) = (repo.path(), home.path(), pack.as_path());
+
+    ok_stdout(run_jigc(repo, home, pack, &["setup"], None), "jigc setup");
+    ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["start", "--workflow", "record-change", "cut 1.0.0"],
+            None,
+        ),
+        "jigc start --workflow record-change",
+    );
+    let task = "cut-100";
+
+    ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &["doc", "create", "changelog", "--title", "Changelog"],
+            None,
+        ),
+        "jigc doc create changelog",
+    );
+    let rel = ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "add-item",
+                "changelog:changelog#releases",
+                "--title",
+                "1.0.0",
+            ],
+            None,
+        ),
+        "add-item release 1.0.0",
+    );
+    let group = author_group(
+        repo,
+        home,
+        pack,
+        &rel,
+        "added",
+        b"- OAuth device-code flow\n",
+    );
+    fill_commit(repo, home, pack, task, "changelog", "cut 1.0.0");
+
+    // The undeclared write: `title` is not a declared field of the change-group block.
+    // It lands exit-0 (write-time behavior mirrors the top-level undeclared write).
+    ok_stdout(
+        run_jigc(
+            repo,
+            home,
+            pack,
+            &[
+                "doc",
+                "set-field",
+                &format!("{group}/title"),
+                "--value",
+                "Changed",
+            ],
+            None,
+        ),
+        "set-field nested undeclared `title` (exit-0 like its top-level dual)",
+    );
+    let staged = staged_changelog(repo, task);
+    assert!(
+        staged.contains("- title: Changed"),
+        "the stray fields block is in the staged bytes; staged:\n{staged}",
+    );
+
+    // `task validate` fires `conformance.unknown-field` naming the undeclared key.
+    let validate = run_jigc(repo, home, pack, &["task", "validate", task], None);
+    let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&validate.stdout),
+        String::from_utf8_lossy(&validate.stderr),
+    );
+    assert!(
+        !validate.status.success(),
+        "task validate must exit non-zero on the nested undeclared field; report:\n{report}",
+    );
+    assert!(
+        report.contains("conformance.unknown-field") && report.contains("`title`"),
+        "task validate must fire `conformance.unknown-field` naming `title`; report:\n{report}",
+    );
+
+    // `task finalize` blocks — the corrupted bytes never reach the committed store.
+    let before = head_count(repo);
+    let finalize = run_jigc(repo, home, pack, &["task", "finalize", task], None);
+    assert!(
+        !finalize.status.success(),
+        "task finalize must block on the nested undeclared field; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&finalize.stdout),
+        String::from_utf8_lossy(&finalize.stderr),
+    );
+    assert_eq!(
+        head_count(repo),
+        before,
+        "a blocked finalize commits nothing",
+    );
+}
