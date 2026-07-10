@@ -1936,6 +1936,28 @@ mod cli_parse {
             }
         );
 
+        let retitle_item = Cli::try_parse_from([
+            "jigc",
+            "doc",
+            "retitle-item",
+            "arch-doc:cache-layer#components/session-store",
+            "--title",
+            "Session vault",
+            "--task",
+            "move-cache",
+        ])
+        .expect("`doc retitle-item … --task <id>` parses");
+        assert_eq!(
+            retitle_item.command,
+            Command::Doc {
+                verb: DocCommand::RetitleItem {
+                    addr: "arch-doc:cache-layer#components/session-store".to_string(),
+                    title: "Session vault".to_string(),
+                    task: Some("move-cache".to_string()),
+                },
+            }
+        );
+
         // The selector is optional: omitting it parses, leaving `task: None`.
         let no_task = Cli::try_parse_from([
             "jigc",

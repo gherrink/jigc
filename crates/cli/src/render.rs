@@ -586,6 +586,8 @@ pub enum DocAck {
     Slot { address: String, chars: usize },
     /// A `remove-item` dropped the item at `address`.
     RemovedItem { address: String },
+    /// A `retitle-item` retitled the item at `address` (anchor frozen) to `title`.
+    RetitledItem { address: String, title: String },
 }
 
 /// Render a successful single-write `jigc doc` verb confirmation ([`DocAck`]) to the
@@ -605,11 +607,17 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             DocAck::RemovedItem { address } => json(&serde_json::json!({
                 "removed": "item", "address": address,
             })),
+            DocAck::RetitledItem { address, title } => json(&serde_json::json!({
+                "retitled": "item", "address": address, "title": title,
+            })),
         },
         Format::Agent | Format::Human => match ack {
             DocAck::Field { address, value } => format!("set {address} = {value}"),
             DocAck::Slot { address, chars } => format!("set slot {address} ({chars} chars)"),
             DocAck::RemovedItem { address } => format!("removed item {address}"),
+            DocAck::RetitledItem { address, title } => {
+                format!("retitled item {address} to {title:?} (anchor frozen)")
+            }
         },
     }
 }

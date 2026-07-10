@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-10 — M40 Inc 2 T2: the retitle-item enum refusal is `write.identity-change`, guard-before-presence
+
+The CLI verb's unconditional enum-id-from refusal mints the write-time code `write.identity-change` (not `ID_FROM_ENUM_CODE` — the new title may BE a legal member; the reject is about *identity*, not value conformance) and runs **before** any read/copy-in, so a categorically-refused address never moves bytes regardless of item presence (mirrors add-item's guard-first ordering). Route text: `remove-item <addr>` + `add-item <dest-repeatable> --title "<new>"`, moving the prose in the same motion. `retitle-item` shares `remove_item_target`'s item-address forms verbatim (executor-chosen per the T2 delegation).
+
 ## 2026-07-10 — M40 Inc 2 T1: `retitle_item`'s enum arm defers to the CLI guard
 
 The engine op type-checks the new title against the block-declared id-from field (`check_value` → `MalformedValue` for a non-member enum title) but does **not** refuse a member-to-member enum retitle — the unconditional enum-id-from refusal lives in T2's CLI guard, one authoritative refusal seam mirroring add-item's (executor-chosen per the T1 delegation). Empty/whitespace titles reject as `WrongShape` (a titleless heading has no defined round-trip); errors use `GenerateError` (the nested-write shapes), since the id-from re-validation needs `MalformedValue`.

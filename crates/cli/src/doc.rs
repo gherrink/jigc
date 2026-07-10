@@ -84,6 +84,24 @@ pub enum DocCommand {
         #[arg(long)]
         task: Option<String>,
     },
+    /// Retitle a repeatable item's heading with its `{#id}` anchor **frozen** — the
+    /// retitle-without-reslug invariant's verb at item level. Addresses the same item
+    /// forms as `remove-item`: top-level `<type>:<slug>#<section>/<id>` or the nested
+    /// section-qualified chain. An item whose id derives from an **enum** field
+    /// (e.g. a changelog change-group's `category`) refuses unconditionally — a
+    /// member change is an identity change — routing to `remove-item` + `add-item`
+    /// under the target category.
+    RetitleItem {
+        /// The item address — top-level `<type>:<slug>#<section>/<id>` or the nested
+        /// section-qualified chain `#<section>/<parent>/.../<nested-section>/<id>`.
+        addr: String,
+        /// The new heading title (the item's `{#id}` anchor stays frozen).
+        #[arg(long)]
+        title: String,
+        /// The active task to scope the write to (see `Create::task`).
+        #[arg(long)]
+        task: Option<String>,
+    },
     /// Set a field leaf's value (inline, adjudicated at write time). For a
     /// list-cardinality (`0..*`) ref, set ALL values in one call with the inline-list
     /// form `--value "[a, b, c]"` — repeated single-value calls replace the whole list
@@ -185,6 +203,9 @@ impl DocCommand {
             }
             DocCommand::RemoveItem { addr, task } => {
                 run_remove_item(cwd, &addr, task.as_deref(), format)
+            }
+            DocCommand::RetitleItem { addr, title, task } => {
+                run_retitle_item(cwd, &addr, &title, task.as_deref(), format)
             }
             DocCommand::SetField { addr, value, task } => {
                 run_set_field(cwd, &addr, &value, task.as_deref(), format)
@@ -685,7 +706,8 @@ enum RemoveItemTarget {
     Nested { section: String, items: Vec<String> },
 }
 
-/// Resolve the item a `remove-item` address targets. The two-hop `#section/id`
+/// Resolve the item a `remove-item` address targets (shared verbatim by
+/// `retitle-item`, whose addresses are the same item forms). The two-hop `#section/id`
 /// ([`Fragment::UnitLeaf`]) is a top-level item; a deeper section-qualified chain
 /// ([`Fragment::Deep`]) is a nested item — the leading hop is the section, every hop
 /// after it is the parent-scoped id chain down to the removed item. The CLI only
@@ -711,6 +733,149 @@ fn remove_item_target(address: &Address) -> Option<RemoveItemTarget> {
         // mix without the section-qualified chain is not a remove target.
         Fragment::Unit(_) | Fragment::UnitItem(_, _) | Fragment::UnitItemLeaf(_, _, _) => None,
     }
+}
+
+/// `jigc doc retitle-item <addr> --title "<new>"` — retitle a repeatable item's
+/// heading with its `{#id}` anchor **frozen** (the retitle-without-reslug invariant's
+/// verb at item level; `design/write-commands.md` → `jigc doc retitle-item`). Clones
+/// the `run_remove_item` shape — the address forms are the same item forms
+/// [`remove_item_target`] resolves — and hands the section-qualified chain to the
+/// engine [`engine::write::retitle_item`] heading-line splice.
+///
+/// The **unconditional enum-id-from refusal** runs first ([`retitle_enum_refusal`]):
+/// an item whose id derives from an enum field has its heading AS the enum member and
+/// its anchor EQUAL to it, so any member change is an identity change, not a retitle
+/// — refused with a blocking finding routing to `remove-item` + `add-item` under the
+/// target category (the Settle-decided route), before any bytes are read or moved.
+fn run_retitle_item(
+    cwd: &Path,
+    addr: &str,
+    title: &str,
+    task_id: Option<&str>,
+    format: Format,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
+    let address = parse_addr(addr)?;
+    let schema = task.schema(address.r#type.as_str())?;
+    let target =
+        remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
+
+    if let Some(finding) = retitle_enum_refusal(&schema, &address, &target, addr, title) {
+        return Err(DocFailure::Block(finding));
+    }
+
+    let path = staged_path(&task.dir, &address, &task.id)?;
+    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+
+    let edited = match &target {
+        RemoveItemTarget::TopLevel { section, item } => {
+            engine::write::retitle_item(&schema, &source, section, &[item.as_str()], title)
+        }
+        RemoveItemTarget::Nested { section, items } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            engine::write::retitle_item(&schema, &source, section, &item_ids, title)
+        }
+    }
+    .map_err(|e| {
+        block(
+            &engine::write::generate_error_finding(&e),
+            "retitle-item",
+            addr,
+        )
+    })?;
+
+    persist(&path, &edited)?;
+    // Confirm the retitled item address — the anchor (hence the address) is frozen,
+    // so the echoed address remains the one every follow-up write lands at.
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::RetitledItem {
+                address: addr.to_string(),
+                title: title.to_string(),
+            },
+        )
+    );
+    Ok(())
+}
+
+/// The unconditional enum-id-from refusal for `retitle-item` (`design/write-commands.md`
+/// → `jigc doc retitle-item`; DECISIONS.md 2026-07-10 → the REFUSE + remove/add settled
+/// fork). Resolves the repeatable the addressed item lives in — the section's own for a
+/// top-level item, the named nested one (via the engine's
+/// [`engine::write::nested_repeatable`], the [`id_from_enum_block`] navigation) for a
+/// chain — and refuses when its `id-from` field is an **enum**, *regardless of the new
+/// title* (unlike `add-item`'s membership test): the heading IS the member and the
+/// anchor equals it, so a member-to-member change is an identity change, not a retitle.
+/// The route names `doc remove-item` on the item + `doc add-item` under the target
+/// category, moving the prose in the same motion. A non-enum id-from (arch-doc's
+/// `title`, changelog's release `title`) yields `None` — the inert path.
+fn retitle_enum_refusal(
+    schema: &Schema,
+    address: &Address,
+    target: &RemoveItemTarget,
+    addr: &str,
+    title: &str,
+) -> Option<Finding> {
+    use engine::schema::FieldType;
+
+    // The repeatable the item lives in, its item path (for the finding address), and
+    // the add-item destination the route re-mints under.
+    let doc = format!("{}:{}", address.r#type.as_str(), address.slug.as_str());
+    let (repeatable, item_path, dest) = match target {
+        RemoveItemTarget::TopLevel { section, item } => {
+            let body = &schema.sections.iter().find(|s| &s.id == section)?.body;
+            let SectionBody::Repeatable { repeatable } = body else {
+                return None;
+            };
+            (
+                repeatable.clone(),
+                format!("{section}/{item}"),
+                format!("{doc}#{section}"),
+            )
+        }
+        RemoveItemTarget::Nested { section, items } => {
+            // `items` is the parent-scoped chain down to the item: parents ++
+            // [nested-section, item-id] (the [`remove_item_target`] contract).
+            let (_, rest) = items.split_last()?;
+            let (nested_section, parents) = rest.split_last()?;
+            let parent_ids: Vec<&str> = parents.iter().map(String::as_str).collect();
+            let repeatable =
+                engine::write::nested_repeatable(schema, section, &parent_ids, nested_section)?;
+            (
+                repeatable,
+                format!("{section}/{}", items.join("/")),
+                format!("{doc}#{section}/{}/{nested_section}", parents.join("/")),
+            )
+        }
+    };
+    let field = repeatable.block.iter().find_map(|leaf| match leaf {
+        engine::schema::Leaf::Field(f) if f.id == repeatable.id_from => Some(f),
+        _ => None,
+    })?;
+    if field.ty != FieldType::Enum {
+        return None;
+    }
+    Some(Finding::graded(
+        Severity::Blocking,
+        "write.identity-change",
+        format!(
+            "retitle-item rejected: item `{item_path}` derives its id from enum field \
+             `{}` — a member change is an identity change, not a retitle",
+            repeatable.id_from
+        ),
+        Some(Location::addressed(
+            format!("{item_path}/{}", repeatable.id_from),
+            1,
+            1,
+        )),
+        Some(format!(
+            "run `jigc doc remove-item {addr}` then `jigc doc add-item {dest} \
+             --title \"{title}\"` under the target category, moving the prose in the \
+             same motion"
+        )),
+    ))
 }
 
 /// One repeatable-block field leaf's create-time materialization, shared by the
