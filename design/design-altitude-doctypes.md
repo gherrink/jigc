@@ -90,7 +90,10 @@ sections:
 `prd` fixed→repeatable migration (M25 rework), this carries no debt: methodology is
 freeze-exempt (graduating a slot to a repeatable section later needs no version bump), and
 **no M37 consumer reads an individual invariant or question**. Prose is the minimal-*correct*
-cut, not a cheap one.
+cut, not a cheap one. *(M40 falsifies the no-version-bump half: with the methodology manifest
+landed, the deferred slot→repeatable graduation now costs a version bump + corpus migration —
+a priced cost of joining the version-gate world; [DECISIONS.md](../DECISIONS.md) → 2026-07-10
+M40 Settle.)*
 
 ### `research` — one-per-doc, append-only record (`docs/research/<slug>.md`)
 

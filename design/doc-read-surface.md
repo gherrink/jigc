@@ -10,7 +10,7 @@ Reads after the surfaces it consumes — the address grammar ([storage.md](stora
 
 ## The slice grammar — whole-doc, `#section`, item, leaf
 
-The `<ref>` is a doc address, optionally carrying a `#fragment` that names a sub-node. Four resolution depths, each serving the corresponding node:
+The `<ref>` is a doc address, optionally carrying a `#fragment` that names a sub-node. Six resolution depths (the two nested depths join the contract at M40 — nested repeatables, below), each serving the corresponding node:
 
 | Address | Resolves to |
 |---|---|
@@ -18,6 +18,8 @@ The `<ref>` is a doc address, optionally carrying a `#fragment` that names a sub
 | `type:slug#section` | one section — a **slot** section's prose, or a **repeatable** section's item array |
 | `type:slug#section/<item>` | one repeatable **item** object |
 | `type:slug#section/<item>/<leaf>` | one **leaf** — a slot's prose, a field's value, or the `id-from` leaf (the item's heading) |
+| `type:slug#section/<id>/<block>/<gid>` | one **nested item** object (M40 — a nested repeatable's member) |
+| `type:slug#section/<id>/<block>/<gid>/<leaf>` | one **nested leaf** (M40) |
 
 ## Plain text vs. `--format json`
 
@@ -55,4 +57,12 @@ Pinned once here; every doctype's json read conforms. The **milestone record is 
 
 ## Why json is a contract here (and describe's is the opposite)
 
-`jigc describe`'s output is deliberately **non-contractual** — format-hostile to parsing so nothing depends on it ([introspection.md](introspection.md) → Non-contractual by design). `jigc doc show --format json` is the deliberate inverse: its whole purpose is machine consumption (fresh-clone continuation re-derives milestone state from it), so it **is** a stable contract, pinned at 1.0. The two read surfaces sit on opposite sides of the same axis on purpose: describe is a menu you orient by, `doc show` is content you compute over. **A third surface joins at M40**: `jigc doc schema <doctype> --format json` — the structural projection that *cannot* ride describe (its format predicate forbids parseable structure) — ships as a **separately-pinned, explicitly versioned contract**: its own version field, golden-pinned at ship; the *values* track the schemas as they evolve, the *keys/structure* are the pin ([introspection.md](introspection.md)).
+`jigc describe`'s output is deliberately **non-contractual** — format-hostile to parsing so nothing depends on it ([introspection.md](introspection.md) → Non-contractual by design). `jigc doc show --format json` is the deliberate inverse: its whole purpose is machine consumption (fresh-clone continuation re-derives milestone state from it), so it **is** a stable contract, pinned at 1.0. The two read surfaces sit on opposite sides of the same axis on purpose: describe is a menu you orient by, `doc show` is content you compute over. **A third surface joins at M40**: `jigc doc schema <doctype> --format json` — the structural projection that *cannot* ride describe (its format predicate forbids parseable structure) — ships as a **separately-pinned, explicitly versioned contract**, pinned here:
+
+```json
+{ "contract-version": 1, "type": <doctype>, "schema-version": <the doctype's stamped version, else null>,
+  "fields":   [ { "id", "type", "required", "author-required", "default"?, "set"? }, … ],
+  "sections": [ { "id", "kind": "slot"|"repeatable", "optional"?, "item": { "fields", "slots", "nested" } }, … ] }
+```
+
+— the `item` object is **recursive** for nested repeatables (`nested` carries the inner blocks); `contract-version` bumps on any structural change to this projection (the *values* track the schemas as they evolve, the *keys/structure* are the pin); golden-pinned at ship ([introspection.md](introspection.md)).

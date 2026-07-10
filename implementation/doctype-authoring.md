@@ -19,7 +19,7 @@ Items marked **⚠ rc.4** describe today's behavior that the rc.4 wave changes (
 ## Freeze / versioning
 
 - [ ] **Frozen (dev) pack:** add the manifest entry (`type` + `schema-version` + `schema-hash` via `engine::manifest::schema_hash`) — pack-load asserts set-equality, so an unlisted shipped schema fails loudly; add `schema-snapshots/<ty>.v<k>.yaml`. Any later shape **or home** change = version bump + versioned corpus migration (location is inside the hash — the M38 changelog precedent).
-- [ ] **Methodology pack:** today no stamp, no freeze assert, no migrate-corpus arm — **a shape change strands committed instances silently.** ⚠ rc.4 (the versioning fork is **settled — build**, [DECISIONS.md](../DECISIONS.md) → 2026-07-10 M40 Settle): the methodology pack ships its **own** `schema-manifest.yaml` + `schema-snapshots/`, its persisted doctypes stamp-injected + freeze-asserted + migrate-corpus-owned ([corpus-migration.md](../design/corpus-migration.md) → The freeze-exempt sibling). A new methodology doctype then needs a manifest entry + snapshot **exactly like the frozen pack** (the bullet above applies verbatim); home changes version-gate, and `jigc relocate <ty> --from <prior>` covers only genuinely manifest-less doctypes.
+- [ ] **Methodology pack:** today no stamp, no freeze assert, no migrate-corpus arm — **a shape change strands committed instances silently.** ⚠ rc.4 (the versioning fork is **settled — build**, [DECISIONS.md](../DECISIONS.md) → 2026-07-10 M40 Settle): the methodology pack ships its **own** `schema-manifest.yaml` (`schema-snapshots/` starts absent at v1 — first populated at the first v1→v2 bump), its persisted doctypes stamp-injected + freeze-asserted + migrate-corpus-owned ([corpus-migration.md](../design/corpus-migration.md) → The freeze-exempt sibling). A new methodology doctype then needs a manifest entry **exactly like the frozen pack** (the bullet above applies verbatim); home changes version-gate, and `jigc relocate <ty> --from <prior>` covers only genuinely manifest-less doctypes.
 
 ## Authoring surface
 
@@ -31,7 +31,7 @@ Items marked **⚠ rc.4** describe today's behavior that the rc.4 wave changes (
 
 ## Free of charge — no registration, but verify
 
-`describe` · `doc show` (**unless** nested repeatables — write-only through JSON today, the changelog gap; ⚠ rc.4 pins nested groups into the JSON item object — or compound fields) · `rename` (location doctypes; placement singletons are retitle-only — the rule's design home is now [write-commands.md](../design/write-commands.md) → Placement singletons; ⚠ rc.4 adds the milestone-record committed-`status` guard exception) · `ingest` adoptability · docs-root relocation · `validate` conformance. ⚠ rc.4: **`jigc doc schema`** joins this verify list.
+`describe` · `doc show` (**unless** nested repeatables — write-only through JSON today, the changelog gap; ⚠ rc.4 pins nested groups into the JSON item object — or compound fields) · `rename` (location doctypes; placement singletons are retitle-only — the rule's design home is now [write-commands.md](../design/write-commands.md) → Placement singletons; ⚠ rc.4 adds the milestone-record exception — reslug refused always, keyed on the committed record; retitle stays legal — [write-commands.md](../design/write-commands.md) → Milestone-record reslug) · `ingest` adoptability · docs-root relocation · `validate` conformance. ⚠ rc.4: **`jigc doc schema`** joins this verify list.
 
 ## Tests (what the complete doctypes ship)
 
