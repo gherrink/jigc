@@ -812,6 +812,15 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                     out.push_str("  (adopted — indexed + baselined, no file moved)");
                 }
                 out.push('\n');
+                // The adopt-time triage annotations (M40 F4): one indented line per
+                // pinned-shape annotation ("adopted — structurally empty: 0 <items>" /
+                // "adopted — N surplus trailing sections") — fixed-advisory visibility,
+                // never a verdict flip; the same strings ride the JSON row.
+                for annotation in &row.annotations {
+                    out.push_str("  ");
+                    out.push_str(annotation);
+                    out.push('\n');
+                }
                 if let Some(finding) = &row.finding {
                     out.push_str("  ");
                     out.push_str(&finding_line(finding));
@@ -2065,6 +2074,7 @@ mod tests {
                         Some("reconcile decisions/auth-choice.md against the `adr` schema".into()),
                     )),
                     adopted: false,
+                    annotations: Vec::new(),
                 },
                 TriageRow {
                     file: "decisions/rate-limit.md".to_string(),
@@ -2072,6 +2082,12 @@ mod tests {
                     verdict: "adoptable",
                     finding: None,
                     adopted: true,
+                    // The two M40 adopt-time annotations, in their pinned shapes —
+                    // indented lines under the adopted row, and row-carried in JSON.
+                    annotations: vec![
+                        "adopted — structurally empty: 0 milestones".to_string(),
+                        "adopted — 2 surplus trailing sections".to_string(),
+                    ],
                 },
                 TriageRow {
                     file: "docs/notes.md".to_string(),
@@ -2079,6 +2095,7 @@ mod tests {
                     verdict: "unmanaged",
                     finding: None,
                     adopted: false,
+                    annotations: Vec::new(),
                 },
             ],
         };
@@ -2091,6 +2108,8 @@ mod tests {
           blocking · conformance.section-missing — required section heading `## context` is missing
           route: reconcile decisions/auth-choice.md against the `adr` schema
         adoptable decisions/rate-limit.md → adr  (adopted — indexed + baselined, no file moved)
+          adopted — structurally empty: 0 milestones
+          adopted — 2 surplus trailing sections
         unmanaged docs/notes.md → (parses against no schema — left untouched)
 
         What the verdicts above mean, and what to do next:
@@ -2124,6 +2143,10 @@ mod tests {
         assert!(json_out.contains("\"verdict\": \"needs-reconcile\""));
         assert!(json_out.contains("\"code\": \"conformance.section-missing\""));
         assert!(json_out.contains("\"adopted\": true"));
+        // The M40 adopt-time annotations are row-carried in the JSON projection too
+        // (every output format — the agent path is the dominant consumer).
+        assert!(json_out.contains("\"adopted — structurally empty: 0 milestones\""));
+        assert!(json_out.contains("\"adopted — 2 surplus trailing sections\""));
     }
 
     /// A report carrying only one verdict class names **only that verdict** in the
@@ -2140,6 +2163,7 @@ mod tests {
                 verdict: "unmanaged",
                 finding: None,
                 adopted: false,
+                annotations: Vec::new(),
             }],
         };
 

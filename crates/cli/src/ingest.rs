@@ -37,7 +37,7 @@ use engine::index;
 use engine::ingest::{Verdict, classify};
 use engine::parse::parse_sections;
 use engine::schema::Schema;
-use engine::validate::schema_conformance;
+use engine::validate::{repeatable_populated, schema_conformance, surplus_sections_absent};
 
 use crate::pack::make_pack;
 use crate::task::git_head;
@@ -61,6 +61,14 @@ pub struct TriageRow {
     /// schema-re-gated, indexed, and baselined (register-only). Always `false` for a
     /// `needs-reconcile` / `unmanaged` row; the render marks an adopted row distinctly.
     pub adopted: bool,
+    /// The adopt-time triage annotations (M40 F4, `design/project-setup.md` → Flow 2;
+    /// `design/validation.md` → Hollow and surplus adoption): the pinned shapes
+    /// *"adopted — structurally empty: 0 \<items\>"* / *"adopted — N surplus trailing
+    /// sections"*, computed for an `adoptable` row by re-parsing the in-hand source
+    /// against the matched schema. **Fixed-advisory** — an annotation never flips a
+    /// verdict, blocks adoption, or exits non-zero — and row-carried in EVERY output
+    /// format (the agent path is the dominant consumer). Empty for an un-annotated row.
+    pub annotations: Vec<String>,
 }
 
 /// The triage report — the discovered candidates classified, in sorted candidate
@@ -98,13 +106,20 @@ pub(crate) fn run(cwd: &Path) -> Result<IngestReport> {
     let mut record = FileStateRecord::load(&jigc_root)
         .with_context(|| format!("could not load the file-state record under {jigc_root:?}"))?;
 
+    // The `repeatable-populated` exemption knob — the same resolved value the store
+    // sweep reads, so the adopt-time annotation and the store advisory agree on which
+    // `doctype#section` tokens are a declared zero-item steady state.
+    let exempt = resolved
+        .scalar("validation.schema-conformance.repeatable-populated.exempt")
+        .unwrap_or("");
+
     let candidates = git_candidates(&jigc_home)?;
     let mut rows = Vec::with_capacity(candidates.len());
     let mut adopted_any = false;
     for rel_path in candidates {
         let bytes = read_candidate_bytes(&jigc_home, &rel_path)?;
         let source = String::from_utf8_lossy(&bytes).into_owned();
-        let mut row = classify_row(&rel_path, &source, &schemas);
+        let mut row = classify_row(&rel_path, &source, &schemas, exempt);
 
         // Adopt every `adoptable` candidate (schema-gated, register-only). The verdict
         // already named the conformant-at-location type; `adopt` re-gates over the same
@@ -176,23 +191,34 @@ fn git_candidates(jigc_home: &Path) -> Result<Vec<String>> {
 /// Classify one candidate into a [`TriageRow`], re-deriving the routed finding for a
 /// `needs-reconcile` verdict from the same `parse_sections` / `schema_conformance`
 /// substrate the engine reduced over (the engine discards it; the triage surface
-/// needs it).
-fn classify_row(rel_path: &str, source: &str, schemas: &[Schema]) -> TriageRow {
+/// needs it). An `adoptable` row additionally re-parses against the matched schema to
+/// compute its adopt-time annotations ([`adopt_annotations`]); `exempt` is the
+/// resolved `…repeatable-populated.exempt` knob value.
+fn classify_row(rel_path: &str, source: &str, schemas: &[Schema], exempt: &str) -> TriageRow {
     match classify(rel_path, source, schemas) {
-        Verdict::Adoptable { ty } => TriageRow {
-            file: rel_path.to_string(),
-            best_match: Some(ty),
-            verdict: "adoptable",
-            finding: None,
-            // The caller adopts the row (re-gate → index → baseline) and flips this.
-            adopted: false,
-        },
+        Verdict::Adoptable { ty } => {
+            let annotations = schemas
+                .iter()
+                .find(|s| s.ty == ty)
+                .map(|schema| adopt_annotations(schema, source, exempt))
+                .unwrap_or_default();
+            TriageRow {
+                file: rel_path.to_string(),
+                best_match: Some(ty),
+                verdict: "adoptable",
+                finding: None,
+                // The caller adopts the row (re-gate → index → baseline) and flips this.
+                adopted: false,
+                annotations,
+            }
+        }
         Verdict::Unmanaged => TriageRow {
             file: rel_path.to_string(),
             best_match: None,
             verdict: "unmanaged",
             finding: None,
             adopted: false,
+            annotations: Vec::new(),
         },
         Verdict::NeedsReconcile => {
             // Split the two needs-reconcile shapes the same way the engine's verdict
@@ -206,6 +232,7 @@ fn classify_row(rel_path: &str, source: &str, schemas: &[Schema]) -> TriageRow {
                     verdict: "needs-reconcile",
                     finding: Some(finding),
                     adopted: false,
+                    annotations: Vec::new(),
                 }
             } else {
                 let conformant = schemas.iter().find(|s| conforms(s, source));
@@ -217,10 +244,47 @@ fn classify_row(rel_path: &str, source: &str, schemas: &[Schema]) -> TriageRow {
                     verdict: "needs-reconcile",
                     finding: Some(finding),
                     adopted: false,
+                    annotations: Vec::new(),
                 }
             }
         }
     }
+}
+
+/// Compute an `adoptable` candidate's **adopt-time triage annotations** (M40 F4,
+/// `design/validation.md` → Hollow and surplus adoption): re-parse the in-hand source
+/// against the matched schema and run the two engine advisory checks —
+/// [`repeatable_populated`] (a required repeatable parsing zero items; suppressed per
+/// `doctype#section` token by the resolved `exempt` knob value) and
+/// [`surplus_sections_absent`] (trailing H2s beyond the schema's body sections) —
+/// mapping each finding to its pinned row-annotation shape: *"adopted — structurally
+/// empty: 0 \<items\>"* / *"adopted — N surplus trailing sections"*
+/// (`design/project-setup.md` → Flow 2). **Fixed-advisory**: the annotation is
+/// visibility only — it never flips the verdict, blocks the adopt, or exits non-zero.
+fn adopt_annotations(schema: &Schema, source: &str, exempt: &str) -> Vec<String> {
+    let Ok(doc) = parse_sections(schema, source) else {
+        // Defensive: an `adoptable` verdict already gated parse+conformance, so this
+        // branch is unreached in practice; an un-parseable doc simply has no annotation.
+        return Vec::new();
+    };
+    let mut annotations = Vec::new();
+    for finding in repeatable_populated(schema, &doc, exempt) {
+        // The engine addresses the finding at the hollow section's id — the `<items>`
+        // noun of the pinned shape (e.g. `0 milestones`).
+        let section = finding
+            .location
+            .and_then(|loc| loc.address)
+            .unwrap_or_default();
+        annotations.push(format!("adopted — structurally empty: 0 {section}"));
+    }
+    for finding in surplus_sections_absent(schema, source) {
+        // The engine's pinned message shape leads with the surplus count
+        // (`"{N} trailing surplus section heading(s) …"` — engine-tested), so the
+        // first token is the N of the pinned annotation shape.
+        let count = finding.message.split_whitespace().next().unwrap_or("1");
+        annotations.push(format!("adopted — {count} surplus trailing sections"));
+    }
+    annotations
 }
 
 /// Re-derive the routed finding for a **near-miss** (a doc under a schema's

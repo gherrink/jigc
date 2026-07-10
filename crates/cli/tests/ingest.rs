@@ -453,6 +453,123 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
     );
 }
 
+/// M40 / F4 (the ingest half) — **adopt-time triage annotations**, row-carried in
+/// ALL output formats (`design/project-setup.md` → Flow 2, the M40 triage-annotation
+/// vocabulary; `design/validation.md` → Hollow and surplus adoption). Adopting a
+/// zero-item roadmap (`docs/roadmap.md`, the placement singleton with an empty
+/// `milestones` repeatable) and a conformant adr carrying one surplus trailing H2
+/// annotates each triage row — the pinned shapes *"adopted — structurally empty:
+/// 0 milestones"* / *"adopted — 1 surplus trailing sections"* — in BOTH the human
+/// render and the `--format json` projection. Fixed-advisory: the annotated rows are
+/// still marked adopted (verdict unflipped, adoption not blocked) and the scan still
+/// exits 0.
+#[test]
+fn ingest_annotates_hollow_and_surplus_adoptions_in_human_and_json_output() {
+    let repo = TempDir::new("annotate");
+    let home = TempDir::new("annotate-home");
+    init_repo(repo.path());
+
+    let out = jigc(repo.path(), home.path(), &["setup"]);
+    assert!(
+        out.status.success(),
+        "`jigc setup` must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    // A structurally hollow roadmap at its literal placement home — exactly what the
+    // adoption trial adopted silent (the `roadmap#milestones` token is NOT exempt).
+    write(
+        repo.path(),
+        "docs/roadmap.md",
+        "# roadmap\n\n## Milestones\n",
+    );
+    // A conformant adr with one surplus trailing H2 — the positional parse never
+    // visits it, so the doc still classifies adoptable.
+    let surplus_adr = format!(
+        "{CONFORMANT_ADR}\n## Legacy planning notes\n\nOld notes, carried byte-faithful.\n"
+    );
+    write(repo.path(), "docs/decisions/legacy.md", &surplus_adr);
+    // A clean conformant adr — adopted with NO annotation (the omitting row).
+    write(repo.path(), "docs/decisions/rate-limit.md", CONFORMANT_ADR);
+
+    // ── the human render carries the pinned annotation shapes on adopted rows ─────
+    let out = jigc(repo.path(), home.path(), &["ingest", "--format", "human"]);
+    assert!(
+        out.status.success(),
+        "annotations are fixed-advisory — the scan still exits 0; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let report = String::from_utf8(out.stdout).expect("utf-8");
+    let row = |rel: &str| -> &str {
+        report
+            .lines()
+            .find(|l| l.contains(rel))
+            .unwrap_or_else(|| panic!("`{rel}` row must appear in the report:\n{report}"))
+    };
+    // Annotated rows are still adopted — the annotation never flips a verdict.
+    assert!(
+        row("docs/roadmap.md").contains("adoptable") && row("docs/roadmap.md").contains("adopted"),
+        "the hollow roadmap still adopts:\n{report}",
+    );
+    assert!(
+        row("docs/decisions/legacy.md").contains("adoptable")
+            && row("docs/decisions/legacy.md").contains("adopted"),
+        "the surplus-trailing adr still adopts:\n{report}",
+    );
+    assert!(
+        report.contains("adopted — structurally empty: 0 milestones"),
+        "the hollow-adoption annotation renders with its pinned shape:\n{report}",
+    );
+    assert!(
+        report.contains("adopted — 1 surplus trailing sections"),
+        "the surplus-adoption annotation renders with its pinned shape:\n{report}",
+    );
+
+    // ── the JSON projection carries the same annotations on the serialized rows ───
+    let out = jigc(repo.path(), home.path(), &["ingest", "--format", "json"]);
+    assert!(
+        out.status.success(),
+        "the json scan still exits 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let json: serde_json::Value =
+        serde_json::from_slice(&out.stdout).expect("`--format json` emits parseable JSON");
+    let rows = json["rows"].as_array().expect("a rows array");
+    let json_row = |rel: &str| -> &serde_json::Value {
+        rows.iter()
+            .find(|r| r["file"] == rel)
+            .unwrap_or_else(|| panic!("`{rel}` row must be serialized:\n{json}"))
+    };
+    let roadmap = json_row("docs/roadmap.md");
+    assert_eq!(
+        roadmap["adopted"], true,
+        "the annotated roadmap row is still marked adopted:\n{roadmap}",
+    );
+    assert_eq!(
+        roadmap["annotations"],
+        serde_json::json!(["adopted — structurally empty: 0 milestones"]),
+        "the hollow annotation is row-carried in the JSON projection:\n{roadmap}",
+    );
+    let adr = json_row("docs/decisions/legacy.md");
+    assert_eq!(
+        adr["adopted"], true,
+        "the annotated adr row is still marked adopted:\n{adr}",
+    );
+    assert_eq!(
+        adr["annotations"],
+        serde_json::json!(["adopted — 1 surplus trailing sections"]),
+        "the surplus annotation is row-carried in the JSON projection:\n{adr}",
+    );
+    // An un-annotated adopted row carries an empty annotations array (shape-uniform).
+    let clean = json_row("docs/decisions/rate-limit.md");
+    assert_eq!(
+        clean["annotations"],
+        serde_json::json!([]),
+        "a clean adopted row serializes an empty annotations array:\n{clean}",
+    );
+}
+
 /// M40 / F8 — the candidate set is CLI-computed from `git ls-files --cached --others
 /// --exclude-standard -- '*.md'`: a **gitignored** `.md` (the adoption trial's
 /// `node_modules` funnel poison — 91% of the logged triage output) is absent from the
