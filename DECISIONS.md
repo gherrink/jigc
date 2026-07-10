@@ -2,6 +2,10 @@
 
 Running log of what we decided and **why**, dated. Short and punchy — this rots if it gets heavy. The *current* architectural truth lives in `VISION.md` and `CLAUDE.md`; this file is the history and the reasoning, not a re-explanation.
 
+## 2026-07-10 — M40 Inc 3 T5: the unregistered tier mints `file-state.unregistered-doc`
+
+The two-tier orphan advisory's never-adopted arm gets its own check id, **`file-state.unregistered-doc`** (executor-chosen per the T5 delegation — the design pinned only "a looks-managed-but-unregistered advisory"), un-keyed/non-inventory like its `orphaned-doc` sibling; route text: migratable → *"adopt it with `jigc migrate <path> --as <doctype>`, or ignore it if it is not meant to be managed"*, else → *"ignore it if it is not meant to be managed, or route it to a human (no `migrate-<doctype>` workflow ships to adopt it)"*. One planner-note staleness corrected in passing: the migrate-route arm **does** pair live today — `migrate-adr`/`-spec`/`-prd`/`-arch-doc` shipped in M25 and those doctypes are location-bearing — so "no live pairing until Inc 7" holds only for the methodology doctypes.
+
 ## 2026-07-10 — M40 Inc 3 T4: triage annotations are the pinned strings themselves, byte-identical across formats
 
 `TriageRow.annotations` carries the pinned shapes (*"adopted — structurally empty: 0 \<items\>"* / *"adopted — N surplus trailing sections"*) as plain strings — the JSON row serializes the exact bytes the human/agent render prints (one vocabulary, no format skew), rendered as indented lines under the row with the base adopted marker kept (executor-chosen per the T4 delegation). The `<items>` noun is the hollow section's id from the engine finding's address; the surplus N is the leading count of the engine's pinned message.

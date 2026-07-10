@@ -141,12 +141,14 @@ pub(crate) fn committed_markdown(repo_root: &Path) -> Vec<String> {
 /// The committed `.md`s that **look like** managed docs (their immediate-parent dir
 /// basename matches some persisted doctype's resolved `location:` basename) yet fall
 /// **outside** that doctype's current resolved root — the `docs-root`-changed orphans.
-/// `schemas` must carry the `docs-root`-applied `location:` (the resolved roots).
-/// Address-sorted.
+/// Each hit carries the **matched doctype** (`schema.ty`) beside the path, the handle the
+/// M40 two-tier route needs to name `jigc migrate <path> --as <doctype>` on the
+/// unregistered tier ([`unregistered_route`]). `schemas` must carry the
+/// `docs-root`-applied `location:` (the resolved roots). Address-sorted.
 pub(crate) fn orphaned_docs<'a>(
     repo_root: &Path,
     schemas: impl IntoIterator<Item = &'a Schema>,
-) -> Vec<String> {
+) -> Vec<(String, String)> {
     let schemas: Vec<&Schema> = schemas.into_iter().collect();
     let mut hits = Vec::new();
     for rel in committed_markdown(repo_root) {
@@ -165,10 +167,32 @@ pub(crate) fn orphaned_docs<'a>(
         // basename matched), so it is the self-discovered prior home; stranded iff the doc is
         // no longer at the doctype's CURRENT home (directly under the current resolved root).
         if is_stranded(&rel, &Home::Location(parent.to_string()), &current) {
-            hits.push(rel);
+            let ty = schema.ty.clone();
+            hits.push((rel, ty));
         }
     }
     hits
+}
+
+/// The route for the **unregistered** tier of the two-tier orphan advisory (M40;
+/// `design/validation.md` → M40 two-tier route). A never-adopted basename-coincidence
+/// file is not a tracked strand, so `jigc unmanage` (a clean no-op on a never-registered
+/// doc — the adoption trial's proven no-op loop) is the wrong verb. When the
+/// `migrate-<doctype>` workflow ships (`migratable`), the route names the real adoption
+/// verb; when it does not, it falls back to ignore-or-human — never a command that
+/// hard-errors.
+pub(crate) fn unregistered_route(rel: &str, doctype: &str, migratable: bool) -> String {
+    if migratable {
+        format!(
+            "adopt it with `jigc migrate {rel} --as {doctype}`, or ignore it if it is not \
+             meant to be managed"
+        )
+    } else {
+        format!(
+            "ignore it if it is not meant to be managed, or route it to a human (no \
+             `migrate-{doctype}` workflow ships to adopt it)"
+        )
+    }
 }
 
 /// The committed managed docs currently under an **old** resolved root that a `docs-root`
@@ -300,6 +324,52 @@ mod tests {
         assert!(
             orphaned_docs(repo.path(), &schemas).is_empty(),
             "a placement root file, a sibling root .md, and a live decision are none orphaned",
+        );
+    }
+
+    /// (M40 inc-3 T5) `orphaned_docs` carries the matched doctype beside each stranded
+    /// path — the handle the two-tier route needs to name `jigc migrate <path> --as
+    /// <doctype>` on the unregistered tier.
+    #[test]
+    fn orphaned_docs_surfaces_the_matched_doctype() {
+        let repo = TempRepo::new();
+        repo.commit_file("old/decisions/cache.md", "# A decision\n");
+        let schemas = vec![adr_schema("docs/decisions/")];
+        assert_eq!(
+            orphaned_docs(repo.path(), &schemas),
+            vec![("old/decisions/cache.md".to_string(), "adr".to_string())],
+            "a stranded hit names both the path and the doctype whose basename matched",
+        );
+    }
+
+    /// (M40 inc-3 T5) The unregistered-tier route builder names the real adoption verb —
+    /// `jigc migrate <path> --as <doctype>` — when the `migrate-<doctype>` workflow ships,
+    /// with ignore as the alternative.
+    #[test]
+    fn unregistered_route_names_the_migrate_verb_when_the_workflow_ships() {
+        let route = unregistered_route("old/decisions/cache.md", "adr", true);
+        assert!(
+            route.contains("`jigc migrate old/decisions/cache.md --as adr`"),
+            "the migratable route must carry the verbatim migrate invocation; got: {route}",
+        );
+        assert!(
+            route.contains("ignore"),
+            "ignore stays an offered alternative; got: {route}",
+        );
+    }
+
+    /// (M40 inc-3 T5) Without a shipped `migrate-<doctype>` workflow the route falls back
+    /// to ignore-or-human — it must never command a verb that hard-errors.
+    #[test]
+    fn unregistered_route_falls_back_to_ignore_or_human_without_a_migrate_workflow() {
+        let route = unregistered_route("old/research/notes.md", "research", false);
+        assert!(
+            route.contains("route it to a human"),
+            "the fallback route offers the human hand-off; got: {route}",
+        );
+        assert!(
+            !route.contains("jigc migrate"),
+            "no shipped workflow → no migrate invocation in the route; got: {route}",
         );
     }
 

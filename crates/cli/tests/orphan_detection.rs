@@ -14,6 +14,15 @@
 //!   root (file-state re-keyed) and surfaces the move — the set still lands. (Auto-move is safe
 //!   because the prior home is recorded — the old resolved root.)
 //!
+//! The advisory is **two-tier** since M40 (`design/validation.md` → M40 two-tier route):
+//! emission never discriminates on `FileStateRecord` membership (a fresh clone still fires),
+//! but the finding does — a **registered** path is a genuine strand and keeps the stranded →
+//! `jigc unmanage`/relocate route (`file-state.orphaned-doc`); a **never-adopted** basename
+//! coincidence (the adoption trial's `research/notes.md`) is the looks-managed-but-unregistered
+//! advisory (`file-state.unregistered-doc`), routed migrate-or-ignore when the
+//! `migrate-<doctype>` workflow ships, else ignore-or-human — never `jigc unmanage`, a proven
+//! no-op loop on a never-registered doc.
+//!
 //! The `jigc` path comes from `CARGO_BIN_EXE_jigc`; the temp repo is a real `git init`;
 //! the `doc-code` probe (the `validate` pre-flight requires it) is the real binary built
 //! from the pack and selected via `JIGC_DOC_CODE_PROBE` (the `validate_command.rs` idiom).
@@ -50,6 +59,16 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.0);
     }
+}
+
+/// The on-disk methodology pack home (`<root>/packs/methodology`) — the literal directory a
+/// `.jigc/config/packs.yaml` entry names (the `flow_design_altitude.rs` harness shape).
+fn methodology_pack_tree() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("packs")
+        .join("methodology")
 }
 
 /// Build the pack's `doc-code` probe once (process-wide) and return its binary path.
@@ -173,9 +192,11 @@ fn orphan_lines(stdout: &str) -> Vec<&str> {
         .collect()
 }
 
-/// `jigc validate` after a `docs-root` re-point: the committed doc left at the old root
-/// surfaces `file-state.orphaned-doc` (exit 0), while README.md, ordinary prose, and a
-/// live doc at the current root never flag.
+/// `jigc validate` after a `docs-root` re-point: the committed doc left at the old root —
+/// **registered** in the file-state record (it was adopted before the out-of-band re-point;
+/// the M40 two-tier's genuine-strand arm) — surfaces `file-state.orphaned-doc` (exit 0)
+/// with the existing stranded → `jigc unmanage`/relocate route, while README.md, ordinary
+/// prose, and a live doc at the current root never flag.
 #[test]
 fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
     let repo = TempDir::new("validate");
@@ -192,6 +213,18 @@ fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
         "scalar:\n  docs-root: archive\n",
     )
     .expect("re-point docs-root via a direct manifest edit");
+
+    // Two-tier discriminator (M40): the record carries the stranded doc's key, so this is
+    // a REGISTERED strand — the tier that keeps the stranded route. (The never-adopted
+    // sibling arm is `validate_routes_never_adopted_basename_coincidence_to_ignore_or_human`
+    // below.) The hash value is irrelevant to the tier — membership is the discriminator.
+    let state_dir = repo.path().join(".jigc").join("state");
+    fs::create_dir_all(&state_dir).expect("mk state dir");
+    fs::write(
+        state_dir.join("file-state.json"),
+        "{\n  \"hashes\": {\n    \"docs/decisions/cache.md\": \"deadbeef\"\n  }\n}\n",
+    )
+    .expect("seed the file-state record with the stranded doc's key");
 
     let out = jigc(repo.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
@@ -224,6 +257,90 @@ fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
             .any(|l| l.contains("archive/decisions/live.md")),
         "a live doc under the CURRENT resolved root must never flag as an orphan; \
          orphan lines:\n{lines:?}",
+    );
+
+    // The registered tier keeps the stranded → unmanage/relocate route, and never the
+    // unregistered sibling's code — a recorded path is a genuine strand, not a coincidence.
+    assert!(
+        stdout.contains("jigc unmanage"),
+        "a REGISTERED strand keeps the stranded → `jigc unmanage`/relocate route; \
+         stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("file-state.unregistered-doc"),
+        "a file-state-recorded strand must not fire the unregistered tier; stdout:\n{stdout}",
+    );
+}
+
+/// (M40 inc-3 T5) The two-tier route's **unregistered** arm (`design/validation.md` → M40
+/// two-tier route): a never-adopted committed file under a doctype-basename dir — the
+/// adoption trial's `research/notes.md` shape, here the methodology `research` doctype
+/// composed `[dev ▸ methodology]` via `packs.yaml` — is a basename coincidence, not a
+/// tracked strand. It must still FIRE (emission is never gated on file-state membership;
+/// a fresh clone always lands in this arm), but as the looks-managed-but-unregistered
+/// advisory, and because no `migrate-research` workflow ships, the route falls back to
+/// "ignore, or route to a human" — never `jigc unmanage` (a proven no-op loop on a
+/// never-registered doc) and never a `jigc migrate` invocation that would hard-error.
+/// Exit stays 0 (report-only, un-keyed).
+#[test]
+fn validate_routes_never_adopted_basename_coincidence_to_ignore_or_human() {
+    let repo = TempDir::new("unregistered");
+    git(repo.path(), &["init", "-q"]);
+    git(repo.path(), &["config", "user.email", "test@example.com"]);
+    git(repo.path(), &["config", "user.name", "Test"]);
+    fs::write(repo.path().join("README.md"), "# The project\n").expect("write readme");
+    fs::create_dir_all(repo.path().join("old/research")).expect("mk old/research");
+    fs::write(
+        repo.path().join("old/research/notes.md"),
+        "# Loose notes\n\nNever adopted through any jigc verb.\n",
+    )
+    .expect("write the never-adopted foreign file");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "initial"]);
+    // The project layer + the [dev ▸ methodology] composition (the research doctype).
+    fs::create_dir_all(repo.path().join(".jigc/config")).expect("create project layer");
+    fs::write(
+        repo.path().join(".jigc/config/packs.yaml"),
+        format!("packs:\n  - {}\n", methodology_pack_tree().display()),
+    )
+    .expect("write packs.yaml naming the methodology pack");
+    // NO file-state record — the never-adopted arm (also the fresh-clone shape).
+
+    let out = jigc(repo.path(), &["validate"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        out.status.success(),
+        "`jigc validate` with only an unregistered advisory must exit 0 (report-only); \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+
+    assert!(
+        stdout
+            .lines()
+            .any(|l| l.contains("file-state.unregistered-doc")
+                && l.contains("old/research/notes.md")),
+        "a never-adopted basename coincidence must fire the looks-managed-but-unregistered \
+         advisory naming the path; stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("route it to a human"),
+        "with no `migrate-research` workflow shipped, the route must fall back to \
+         ignore-or-human; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("jigc migrate"),
+        "no `migrate-research` workflow ships — the route must never command a verb that \
+         hard-errors; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("jigc unmanage"),
+        "`unmanage` on a never-registered doc is a proven no-op loop — the stranded route \
+         is wrong for this arm; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("file-state.orphaned-doc"),
+        "the registered-strand code must not fire for a never-adopted file; stdout:\n{stdout}",
     );
 }
 

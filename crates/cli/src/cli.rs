@@ -765,26 +765,60 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
     // re-point. The engine's file-state twin only sees docs it has a `FileStateRecord`
     // for; this fills the coverage hole by enumerating `git ls-files` (committed truth
     // that survives a fresh clone) matched on the location-directory basename — never a
-    // bare `.md` match (`README.md` stays unflagged). Report-only + **un-keyed**:
-    // `(file-state, orphaned-doc)` is not a `CHECK_INVENTORY` row and does not match
-    // `validation_store_exit_flips`, so the exit stays 0. CLI-side because the engine
-    // ships domain-empty and never shells to git for tracked status.
-    for rel in crate::orphan::orphaned_docs(&jigc_home, schemas.values()) {
-        report.findings.push(engine::finding::Finding::graded(
-            engine::finding::Severity::Advisory,
-            "file-state.orphaned-doc",
-            format!(
-                "committed doc `{rel}` sits outside the resolved doctype roots — a \
-                 `docs-root` change likely stranded it (it looks managed but resolves \
-                 under no doctype location)"
-            ),
-            Some(engine::finding::Location::addressed(rel, 1, 1)),
-            Some(
-                "move it under the current resolved root (re-point `docs-root` to cover \
-                 it) or drop it with `jigc unmanage`"
-                    .to_string(),
-            ),
-        ));
+    // bare `.md` match (`README.md` stays unflagged).
+    //
+    // **Two-tier since M40** (`design/validation.md` → M40 two-tier route): the classify
+    // heuristic is unchanged and emission is NEVER gated on `FileStateRecord` membership
+    // (a fresh clone still fires — the M36 never-silent property), but the *finding*
+    // discriminates on it:
+    //  - **registered** (the record knows the path) → a genuine strand:
+    //    `file-state.orphaned-doc` + the existing relocate / `jigc unmanage` route;
+    //  - **unregistered** (never adopted) → the looks-managed-but-unregistered advisory
+    //    `file-state.unregistered-doc`, routed `jigc migrate <path> --as <doctype>`-or-
+    //    ignore when that workflow ships (the `migrate.rs` prefix idiom), else
+    //    ignore-or-human — `unmanage` on a never-registered doc is a proven no-op loop
+    //    (the adoption trial's `research/notes.md`), and a route must never command a
+    //    verb that hard-errors.
+    // Both tiers stay report-only + **un-keyed**: neither code is a `CHECK_INVENTORY`
+    // row nor matches `validation_store_exit_flips`, so the exit stays 0. CLI-side
+    // because the engine ships domain-empty and never shells to git for tracked status.
+    for (rel, doctype) in crate::orphan::orphaned_docs(&jigc_home, schemas.values()) {
+        let finding = if record.get(&rel).is_some() {
+            engine::finding::Finding::graded(
+                engine::finding::Severity::Advisory,
+                "file-state.orphaned-doc",
+                format!(
+                    "committed doc `{rel}` sits outside the resolved doctype roots — a \
+                     `docs-root` change likely stranded it (it looks managed but resolves \
+                     under no doctype location)"
+                ),
+                Some(engine::finding::Location::addressed(rel, 1, 1)),
+                Some(
+                    "move it under the current resolved root (re-point `docs-root` to cover \
+                     it) or drop it with `jigc unmanage`"
+                        .to_string(),
+                ),
+            )
+        } else {
+            let migrate_workflow = format!("migrate-{doctype}");
+            let migratable = pack
+                .list(engine::packsource::PackResourceKind::Workflows)
+                .iter()
+                .any(|id| *id == engine::packsource::ResourceId::from(migrate_workflow.as_str()));
+            let route = crate::orphan::unregistered_route(&rel, &doctype, migratable);
+            engine::finding::Finding::graded(
+                engine::finding::Severity::Advisory,
+                "file-state.unregistered-doc",
+                format!(
+                    "committed doc `{rel}` looks managed (it sits under a `{doctype}`-style \
+                     directory) but was never adopted — a basename coincidence or an \
+                     un-ingested foreign doc, not a tracked strand"
+                ),
+                Some(engine::finding::Location::addressed(rel, 1, 1)),
+                Some(route),
+            )
+        };
+        report.findings.push(finding);
     }
     Ok(report)
 }
