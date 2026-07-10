@@ -1623,6 +1623,8 @@ pub fn add_nested_item(
             ),
         })?;
 
+    // The mint-side anchor-injection reject, as top-level [`add_item`]'s.
+    reject_anchor_in_title(title)?;
     let id = crate::slug::slugify(title);
     if id.is_empty() {
         return Err(GenerateError::UnslugableTitle {
@@ -1739,8 +1741,10 @@ pub fn remove_nested_item(
 /// a member-to-member change is an identity change, not a retitle — is the CLI
 /// guard's, mirroring `add-item`'s.) The anchor is read from the located heading
 /// via [`anchor_of`], never re-derived from the new title. An empty/whitespace
-/// title, an absent item/section, or a non-conformant source →
-/// [`GenerateError::WrongShape`] (the existing nested-write error shapes).
+/// title, a title embedding the `{#` anchor pattern (which would out-shadow the
+/// frozen anchor on re-parse — [`reject_anchor_in_title`]), an absent item/section,
+/// or a non-conformant source → [`GenerateError::WrongShape`] (the existing
+/// nested-write error shapes).
 pub fn retitle_item(
     schema: &Schema,
     source: &str,
@@ -1754,6 +1758,9 @@ pub fn retitle_item(
             what: "retitle title is empty".to_string(),
         });
     }
+    // The anchor-injection reject: a title embedding `{#…}` would out-shadow the
+    // frozen `{#id}` on re-parse — the reslug-hijack this verb's contract forbids.
+    reject_anchor_in_title(title)?;
     // The id-from re-validation (see doc comment): resolved against the repeatable
     // block the chain bottoms out in, before any bytes move.
     if let Some(repeatable) = chain_repeatable(schema, section_id, item_ids)
@@ -2057,6 +2064,27 @@ fn item_own_leaf_region(blocks: &[Block], region: Range<usize>) -> Range<usize> 
 /// parser's `level_num`, used by the parent-scoped locator to compare item depths.
 fn level_num_of(level: HeadingLevel) -> usize {
     level as usize
+}
+
+/// Reject an item title carrying the `{#` anchor pattern, as
+/// [`GenerateError::WrongShape`]. Item identity is CLI-minted and frozen — the parser
+/// reads a heading's **first** `{#…}` as the item's anchor ([`anchor_of`] mirrors it),
+/// so a title embedding `{#…}` would, once spliced/rendered, silently *replace* the
+/// item's identity with the injected slug: the frozen anchor dies, every inbound
+/// address dangles, and `render(parse(out)) == out` breaks. Titles are LLM-owned
+/// prose (the determinism boundary), so this input class is agent-reachable — every
+/// title-taking write primitive fails closed here before any bytes move.
+fn reject_anchor_in_title(title: &str) -> Result<(), GenerateError> {
+    if title.contains("{#") {
+        return Err(GenerateError::WrongShape {
+            what: format!(
+                "title {title:?} contains the anchor pattern \"{{#\" — a title cannot \
+                 embed a {{#id}} anchor (item anchors are CLI-minted and frozen; an \
+                 identity change goes through remove-item + add-item)"
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Re-scan a `### …` heading's raw source for its `{#id}` anchor, returning the inner
@@ -2392,6 +2420,9 @@ pub fn add_item(
     // Mint the item anchor from the id-source (the title) via slugify. `slugify` is
     // total: a title with no slug-able content maps to `""`, which would emit a
     // malformed empty `{#}` anchor — reject it here (the only place it can be caught).
+    // A title embedding `{#…}` would out-shadow the minted anchor on re-parse — the
+    // anchor-injection reject ([`reject_anchor_in_title`]).
+    reject_anchor_in_title(title)?;
     let id = crate::slug::slugify(title);
     if id.is_empty() {
         return Err(GenerateError::UnslugableTitle {
@@ -4071,6 +4102,35 @@ title: Auth flow
                 "title {title:?} should be UnslugableTitle, got {err:?}"
             );
         }
+    }
+
+    /// `add-item` with a title carrying the `{#` anchor pattern is rejected as
+    /// [`GenerateError::WrongShape`]: rendered, `### Evil {#other} title  {#minted}`
+    /// would be re-read by the parser with `{#other}` (the FIRST `{#…}`) as the item's
+    /// identity — not the minted anchor — so the emitted item address dangles and
+    /// `render(parse(out)) == out` breaks (the retitle-item anchor-injection hole's
+    /// mint-side twin; M40 blocking finding).
+    #[test]
+    fn add_item_anchor_syntax_title_is_rejected() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        let err = add_item(
+            &spec_schema(),
+            src,
+            "criteria",
+            "Evil {#other-anchor} title",
+            Some("x"),
+            &[],
+        )
+        .expect_err("an anchor-carrying title must not mint");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
     }
 
     /// `add-item` into an **empty trailing** repeatable section (the `criteria`
@@ -8048,6 +8108,26 @@ OAuth device-code flow.
         assert_byte_stable(&schema, &out_other);
     }
 
+    /// A nested `add-item` with a title carrying the `{#` anchor pattern is rejected
+    /// as [`GenerateError::WrongShape`] — the same anchor-injection reject as
+    /// top-level [`add_item`], through the nested mint path (M40 blocking finding).
+    #[test]
+    fn nested_add_item_anchor_syntax_title_is_rejected() {
+        let schema = changelog_schema();
+        let err = add_nested_item(
+            &schema,
+            TWO_PARENT_TWO_LEVEL,
+            "releases",
+            &["1-2-0"],
+            "changes",
+            "Evil {#added} group",
+            None,
+            &[],
+        )
+        .expect_err("an anchor-carrying nested title must not mint");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
+    }
+
     /// A nested `set-field` (insert-absent) on `1-2-0/added/ticket` lands on exactly
     /// that nested item's field group and leaves `1-3-0/added` byte-untouched; the
     /// result round-trips byte-stable.
@@ -8556,6 +8636,27 @@ OAuth device-code flow.
         let schema = arch_doc_schema();
         let err = retitle_item(&schema, ARCH_DOC, "components", &["working-area"], "  ")
             .expect_err("an empty title is rejected");
+        assert!(matches!(err, GenerateError::WrongShape { .. }));
+    }
+
+    /// A new title carrying the `{#` anchor pattern is rejected as
+    /// [`GenerateError::WrongShape`] before any bytes move — spliced, the parser would
+    /// re-read the heading's FIRST `{#…}` as the item's identity, so
+    /// `### Evil {#other} title  {#frozen}` silently reslug-hijacks the frozen anchor
+    /// (every inbound address to `{#frozen}` dangles) and breaks
+    /// `render(parse(out)) == out`. Titles are LLM-owned prose, so this input class is
+    /// agent-reachable (M40 blocking finding: the anchor-injection hole).
+    #[test]
+    fn anchor_syntax_title_is_rejected() {
+        let schema = arch_doc_schema();
+        let err = retitle_item(
+            &schema,
+            ARCH_DOC,
+            "components",
+            &["working-area"],
+            "Evil {#other-anchor} title",
+        )
+        .expect_err("an anchor-carrying title must not splice");
         assert!(matches!(err, GenerateError::WrongShape { .. }));
     }
 }

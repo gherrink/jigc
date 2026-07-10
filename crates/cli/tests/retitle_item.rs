@@ -391,6 +391,126 @@ fn committed_arch_doc_component_retitles_with_the_anchor_frozen() {
     );
 }
 
+/// The anchor-injection reject (M40 blocking finding): a `--title` carrying the `{#`
+/// anchor pattern must exit **non-zero** with a blocking finding and move **no
+/// bytes** — spliced, `### Evil {#other-anchor} title  {#session-store}` would be
+/// re-read with `{#other-anchor}` as the item's identity, silently reslug-hijacking
+/// the frozen anchor with exit 0 (every inbound `#components/session-store` address
+/// dead, the hijacked id live, the corruption committed clean at finalize). After the
+/// reject, the frozen address must still be LIVE (a clean retitle at the same address
+/// lands) — the exact evidence sequence, run through the real binary. `add-item`'s
+/// mint path takes the same reject.
+#[test]
+fn anchor_syntax_title_is_refused_and_the_frozen_address_stays_live() {
+    let repo = TempDir::new("inject-repo");
+    let home = TempDir::new("inject-home");
+    init_repo(repo.path());
+    commit_arch_doc(repo.path(), home.path());
+
+    let task = "retitle-the-store";
+    ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "retitle the store"],
+            None,
+        ),
+        "jigc start (inject task)",
+    );
+
+    let addr = "arch-doc:cache-layer#components/session-store";
+    let staged_path = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join("arch-doc:cache-layer.md");
+
+    // (1) The injection attempt refuses: non-zero, blocking, no bytes moved (the
+    // reject stages nothing — the committed doc is the only copy).
+    let refused = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "retitle-item",
+            addr,
+            "--title",
+            "Evil {#other-anchor} title",
+        ],
+        None,
+    );
+    assert!(
+        !refused.status.success(),
+        "retitle-item with an anchor-syntax title must exit non-zero; stdout:\n{}",
+        String::from_utf8_lossy(&refused.stdout),
+    );
+    let stderr = String::from_utf8_lossy(&refused.stderr).to_string();
+    assert!(
+        stderr.contains("blocking"),
+        "the reject is a blocking finding; stderr:\n{stderr}",
+    );
+    if staged_path.is_file() {
+        let committed = fs::read_to_string(
+            repo.path()
+                .join("docs")
+                .join("architecture")
+                .join("cache-layer.md"),
+        )
+        .expect("read the committed arch-doc");
+        assert_eq!(
+            staged_doc(repo.path(), task, "arch-doc:cache-layer"),
+            committed,
+            "the refused retitle moved no bytes against the committed doc",
+        );
+    }
+
+    // (2) The frozen address is still live: a clean retitle at the SAME address lands
+    // (in the broken build this exits 1 `item not present` — the anchor was hijacked).
+    let stdout = ok_stdout(
+        jigc(
+            repo.path(),
+            home.path(),
+            &["doc", "retitle-item", addr, "--title", "Clean title"],
+            None,
+        ),
+        "jigc doc retitle-item (clean, after the reject)",
+    );
+    assert!(
+        stdout.contains(addr),
+        "the frozen address still resolves; got:\n{stdout}",
+    );
+    assert!(
+        staged_doc(repo.path(), task, "arch-doc:cache-layer")
+            .contains("### Clean title  {#session-store}"),
+        "the clean retitle landed over the FROZEN anchor",
+    );
+
+    // (3) `add-item` refuses the same input class at mint time.
+    let refused_add = jigc(
+        repo.path(),
+        home.path(),
+        &[
+            "doc",
+            "add-item",
+            "arch-doc:cache-layer#components",
+            "--title",
+            "Evil {#injected} component",
+        ],
+        None,
+    );
+    assert!(
+        !refused_add.status.success(),
+        "add-item with an anchor-syntax title must exit non-zero; stdout:\n{}",
+        String::from_utf8_lossy(&refused_add.stdout),
+    );
+    assert!(
+        !staged_doc(repo.path(), task, "arch-doc:cache-layer").contains("{#injected}"),
+        "no injected anchor was minted",
+    );
+}
+
 /// Half (2) — the **unconditional** enum-id-from refusal: `retitle-item` on a
 /// changelog change-group (`id-from: category`, an enum) exits non-zero with a
 /// blocking finding routing to `doc remove-item` + `doc add-item` under the target
