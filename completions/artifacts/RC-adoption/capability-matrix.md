@@ -61,7 +61,7 @@ OK = works · GAP = hole · N-A = by design · superscripts = footnotes
 
 ## Draft "adding a new doctype" checklist
 
-Derived from what the complete doctypes (spec, arch-doc, vision, dogfood-record) actually ship. Destined home: `implementation/doctype-authoring.md` (rc.4).
+Derived from what the complete doctypes (spec, arch-doc, vision, dogfood-record) actually ship. **Graduated 2026-07-10 → [implementation/doctype-authoring.md](../../../implementation/doctype-authoring.md) — that is the living copy (maintained, rc.4-annotated); this section stays as the frozen audit snapshot.**
 
 **Schema file** (`<pack>/schemas/<ty>.yaml`):
 - [ ] `type`, `description:` **and** `usage:` (describe weaves both; absent both → dropped from the menu).
