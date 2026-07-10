@@ -190,6 +190,77 @@ fn the_three_running_doctypes_load_through_the_binary_describe_projection() {
 }
 
 #[test]
+fn fresh_doc_create_mints_the_title_cased_h1_for_each_running_singleton() {
+    // M40 inc-5 T1 (A4.3): the three running singletons declare `display-title`
+    // (the `vision`/`changelog` precedent), so a fresh mint's H1 reads title-cased
+    // (`# Roadmap` / `# Decisions Log` / `# Deferral Ledger`), never the lowercase
+    // slug. Mint-only: `display-title` has no validate consumer, so committed
+    // lowercase-H1 corpora stay conformant. Proven over the real binary — the
+    // asserted bytes are the exact staged file `doc create` emitted, and the
+    // deliberately mismatched `--title` pins that the schema knob (never the
+    // explicit title) drives a singleton's H1 (engine `state.rs` mint rule).
+    let repo = TempDir::new("display-title");
+    init_repo(repo.path());
+    let home = TempDir::new("display-title-home");
+    let pack = methodology_pack_tree();
+
+    let setup = run_jigc(repo.path(), home.path(), &pack, &["setup"]);
+    assert!(
+        setup.status.success(),
+        "`JIGC_PACK_DIR=<methodology> jigc setup` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&setup.stderr),
+    );
+    // The `planning` workflow gates creation of all three running singletons.
+    let start = run_jigc(
+        repo.path(),
+        home.path(),
+        &pack,
+        &["start", "--workflow", "planning", "mint the running docs"],
+    );
+    assert!(
+        start.status.success(),
+        "`jigc start --workflow planning` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&start.stderr),
+    );
+    let task = "mint-the-running-docs";
+
+    for (ty, display) in [
+        ("roadmap", "Roadmap"),
+        ("decisions-log", "Decisions Log"),
+        ("deferral-ledger", "Deferral Ledger"),
+    ] {
+        let out = run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &["doc", "create", ty, "--title", "Decoy Title"],
+        );
+        assert!(
+            out.status.success(),
+            "`jigc doc create {ty}` must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&out.stderr),
+        );
+        let staged_path = repo
+            .path()
+            .join(".jigc")
+            .join("tasks")
+            .join(task)
+            .join("docs")
+            .join(format!("{ty}:{ty}.md"));
+        let staged = fs::read_to_string(&staged_path)
+            .unwrap_or_else(|e| panic!("read the staged {ty} mint at {staged_path:?}: {e}"));
+        assert!(
+            staged.lines().any(|l| l == format!("# {display}")),
+            "a fresh `{ty}` mint carries the title-cased H1 `# {display}`; got:\n{staged}",
+        );
+        assert!(
+            staged.lines().all(|l| l != format!("# {ty}")),
+            "a fresh `{ty}` mint must not carry the lowercase slug H1 `# {ty}`; got:\n{staged}",
+        );
+    }
+}
+
+#[test]
 fn roadmap_schema_is_a_singleton_with_a_milestones_repeatable_and_two_slots() {
     let schema = load_schema(&methodology_schema_bytes("roadmap.yaml"))
         .expect("roadmap.yaml loads engine-native");

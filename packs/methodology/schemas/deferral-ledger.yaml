@@ -15,10 +15,15 @@
 # (`entries`): the multi-word title-case reparse defect is deferred — this routes
 # around it. Engine-native types only. See design/methodology-docs.md → The four
 # doctypes; Relations (none managed, by deliberate bound).
+#
+# `display-title: Deferral Ledger` (M40 A4.3, the `vision` precedent): the H1 reads
+# `# Deferral Ledger`, not the lowercase slug `# deferral-ledger`. Mint-only —
+# committed lowercase-H1 corpora stay conformant.
 type: deferral-ledger
 placement: { file: docs/deferral-ledger.md }
 singleton: true
 id-from: title
+display-title: Deferral Ledger
 description: The running ledger of deferred decisions and parked ideas, each keyed to the milestone trigger that resurfaces it.
 usage: the planning loop reaches Settle and a decision is deferred or an idea parked rather than made now, so it needs a durable owed-and-when record.
 

@@ -13,10 +13,15 @@
 # `arch-doc`/`prd` did. Engine-native types only (no pack field-types declared).
 # See design/methodology-docs.md → The four doctypes (singleton/own-location;
 # the one-level decomposition-slot bound; no managed per-entry ref).
+#
+# `display-title: Roadmap` (M40 A4.3, the `vision` precedent): the H1 reads
+# `# Roadmap`, not the lowercase slug `# roadmap`. Mint-only — committed
+# lowercase-H1 corpora stay conformant.
 type: roadmap
 placement: { file: docs/roadmap.md }
 singleton: true
 id-from: title
+display-title: Roadmap
 description: The running milestone spine — each milestone with what it proves and the prose decomposition of its increments.
 usage: the planning loop reaches Decompose and a milestone's breakdown is worth recording on the durable roadmap.
 

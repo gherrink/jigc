@@ -12,10 +12,15 @@
 # defect is deferred — this routes around it. No managed per-entry ref (entries
 # cross-reference in prose; the methodology pack composes alone). Engine-native
 # types only. See design/methodology-docs.md → The four doctypes.
+#
+# `display-title: Decisions Log` (M40 A4.3, the `vision` precedent): the H1 reads
+# `# Decisions Log`, not the lowercase slug `# decisions-log`. Mint-only —
+# committed lowercase-H1 corpora stay conformant.
 type: decisions-log
 placement: { file: docs/decisions-log.md }
 singleton: true
 id-from: title
+display-title: Decisions Log
 description: The running log of decisions made — each with the date it was settled and the reasoning behind it.
 usage: the planning loop reaches Settle (or completion reaches triage) and a decision is made worth preserving with its rationale, dated, on the record.
 
