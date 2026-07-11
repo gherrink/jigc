@@ -25,11 +25,16 @@
 //!    exposed and no re-trim is needed),
 //! 8. apply a char-length backstop — on a mid-word cut, retreat to the last
 //!    complete word (via the final `-`); a single long word with no `-` still
-//!    hard-truncates to a filesystem-safe length (the `NAME_MAX` backstop).
+//!    hard-truncates to a filesystem-safe length (the `NAME_MAX` backstop),
+//! 9. re-drop any leading/trailing stopword the char cap of step 8 *exposes* —
+//!    the retreat to a complete word can uncover an edge stopword step 6 never
+//!    saw — so mint output never ends (or starts) on filler.
 //!
 //! The output always matches `^[a-z0-9-]*$` with no leading, trailing, or
-//! doubled `-`, and the function is idempotent: `slugify(slugify(x)) ==
-//! slugify(x)`.
+//! doubled `-`, and the function is **idempotent by construction**:
+//! `slugify(slugify(x)) == slugify(x)`. Step 9 is what secures this — without a
+//! post-cap edge-stopword drop, the step-8 char cap could leave a fresh trailing
+//! stopword that a second pass would strip.
 
 /// Cap on slug length, in **words** (dash-separated segments). A minted slug
 /// keeps at most the first `MAX_WORDS` words of its id-source and drops the
@@ -126,7 +131,14 @@ pub fn slugify(id_source: &str) -> String {
 
     // 8: char-length backstop — bound a single long word (which the word cap
     // leaves untouched) to a filesystem-safe length.
-    cap_chars(&capped)
+    let bounded = cap_chars(&capped);
+
+    // 9: the char cap can truncate at a word boundary that leaves a *fresh*
+    // trailing (or, after a doc-level cut, leading) edge stopword step 6 never
+    // saw, so re-drop edge stopwords here. This makes `slugify` idempotent by
+    // construction: mint output carries no edge stopword and is always a fixed
+    // point of a second pass.
+    drop_edge_stopwords(&bounded)
 }
 
 /// Transliterate a single non-ASCII char to its ASCII lowercase skeleton, or
@@ -175,7 +187,8 @@ fn collapse_dashes(s: &str) -> String {
 }
 
 /// Cap a collapsed, trimmed slug at the first [`MAX_WORDS`] dash-separated
-/// words, then drop any leading/trailing [`EDGE_STOPWORDS`] the cap exposes.
+/// words, then drop any leading/trailing [`EDGE_STOPWORDS`] the cap exposes (via
+/// [`drop_edge_stopwords`]).
 ///
 /// The input is already collapsed and edge-trimmed, so splitting on `-` yields
 /// clean, non-empty words; joining back with `-` always lands on a word
@@ -186,7 +199,22 @@ fn collapse_dashes(s: &str) -> String {
 /// fallback). A slug already within the cap with content at both edges is
 /// returned unchanged.
 fn cap_words(s: &str) -> String {
-    let mut words: Vec<&str> = s.split('-').take(MAX_WORDS).collect();
+    drop_edge_stopwords(&s.split('-').take(MAX_WORDS).collect::<Vec<_>>().join("-"))
+}
+
+/// Drop any leading/trailing [`EDGE_STOPWORDS`] from a collapsed, trimmed slug,
+/// greedily at each edge, leaving medial stopwords untouched.
+///
+/// Run twice on the [`slugify`] path: once inside [`cap_words`] (so a leading
+/// stopword frees a word slot before the cap counts words), and once as the
+/// final step after [`cap_chars`] (so an edge stopword the char cap *exposes* at
+/// the truncation boundary is dropped too). The second pass is what makes
+/// `slugify` idempotent: its output never carries an edge stopword, so a re-run
+/// is a no-op. Input is already collapsed/edge-trimmed, so splitting on `-`
+/// yields clean non-empty words and joining back can never leave a leading,
+/// trailing, or doubled `-`; an all-stopword input strips to `""`.
+fn drop_edge_stopwords(s: &str) -> String {
+    let mut words: Vec<&str> = s.split('-').collect();
     while words.first().is_some_and(|w| EDGE_STOPWORDS.contains(w)) {
         words.remove(0);
     }
@@ -435,6 +463,36 @@ mod tests {
             }
         }
         collapse_dashes(&out)
+    }
+
+    /// Regression (M41 Inc8 F5 reconciliation): the char backstop (step 8) can
+    /// truncate at a word boundary that exposes a **fresh** trailing edge
+    /// stopword the word-cap pass (step 6) never saw — so the edge-stopword drop
+    /// must also run *after* the char cap, or `slugify` is non-idempotent. This
+    /// pins the two deterministic cases the (flaky) `idempotent` proptest shrank
+    /// to.
+    #[test]
+    fn idempotent_when_char_cap_exposes_edge_stopword() {
+        // The proptest shrink: the 50-char cap lops the final word, leaving a
+        // trailing `-a` edge stopword a second pass would otherwise drop.
+        let shrink = "Aa0-0a0AAaaÀ0aaA0Aa A_A0aaÀA0aA0AAaaA0ßaÀaAaaA0A0a";
+        let once = slugify(shrink);
+        assert_eq!(slugify(&once), once, "shrink not idempotent: {once:?}");
+        assert!(
+            !once.ends_with("-a"),
+            "char cap left a fresh trailing edge stopword: {once:?}"
+        );
+
+        // A readable case: ≤5 words within the word cap (no trailing stopword at
+        // the word level), but the char cap retreats past a long final word to
+        // land on the medial `to` — exposing it as the new trailing edge.
+        let readable = "reticulate splines to abcdefghijklmnopqrstuvwxyzabcd";
+        let out = slugify(readable);
+        assert_eq!(slugify(&out), out, "readable not idempotent: {out:?}");
+        assert!(
+            !out.ends_with("-to"),
+            "char cap left a fresh trailing edge stopword: {out:?}"
+        );
     }
 
     proptest! {
