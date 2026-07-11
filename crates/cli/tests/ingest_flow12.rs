@@ -294,7 +294,12 @@ fn flow12_four_candidate_repo_classified_and_routed_through_the_binary() {
         "needs-reconcile",
         "{report}"
     );
-    assert_eq!(verdict_for("docs/notes.md"), "unmanaged", "{report}");
+    // The unmanaged candidate collapses into a per-directory count line (V9, M41 Inc
+    // 8) rather than a per-file row.
+    assert!(
+        report.contains("unmanaged docs/ — 1 file(s)"),
+        "the unmanaged `docs/notes.md` must collapse into a `docs/` count line:\n{report}"
+    );
 
     // A needs-reconcile row renders a routed finding — blocking + a route.
     assert!(

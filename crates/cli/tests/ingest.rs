@@ -224,13 +224,15 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
         "needs-reconcile",
         "report:\n{report}"
     );
-    assert_eq!(
-        verdict_for("docs/notes.md"),
-        "unmanaged",
-        "report:\n{report}"
+    // The unmanaged candidate collapses into a per-directory count line (V9, M41 Inc
+    // 8) — no per-file row — so its verdict reads from the collapsed `docs/` summary.
+    assert!(
+        report.contains("unmanaged docs/ — 1 file(s)"),
+        "the unmanaged `docs/notes.md` must collapse into a `docs/` count line:\n{report}"
     );
 
-    // Sorted candidate order: the four flow-12 rows appear in lexicographic path order.
+    // Sorted candidate order: the itemized rows appear in lexicographic path order,
+    // and the collapsed unmanaged summary follows every itemized row.
     let pos = |rel: &str| {
         report
             .find(rel)
@@ -241,12 +243,12 @@ fn ingest_classifies_the_four_candidates_in_sorted_order_with_routed_findings() 
         "rows must be in sorted candidate order:\n{report}"
     );
     assert!(
-        pos("docs/decisions/rate-limit.md") < pos("docs/notes.md"),
+        pos("docs/decisions/rate-limit.md") < pos("docs/old-adr.md"),
         "rows must be in sorted candidate order:\n{report}"
     );
     assert!(
-        pos("docs/notes.md") < pos("docs/old-adr.md"),
-        "rows must be in sorted candidate order:\n{report}"
+        pos("docs/old-adr.md") < pos("unmanaged docs/ — 1 file(s)"),
+        "the collapsed unmanaged summary follows the itemized rows:\n{report}"
     );
 
     // (b) At least one needs-reconcile row carries a routed finding — blocking
@@ -299,9 +301,12 @@ fn ingest_discovers_a_nested_subdirectory_doc() {
     );
     let report = String::from_utf8(out.stdout).expect("utf-8");
 
+    // The nested doc is unmanaged (freeform near-miss outside every location) → it
+    // collapses into a `docs/sub/` per-directory count (V9); the directory's presence
+    // proves the scan recursed two levels deep to reach it.
     assert!(
-        report.contains("docs/sub/x.md"),
-        "a nested docs/sub/x.md must appear in `jigc ingest` output:\n{report}",
+        report.contains("unmanaged docs/sub/ — 1 file(s)"),
+        "a nested docs/sub/ must appear in `jigc ingest` output (recursion reached it):\n{report}",
     );
 }
 
@@ -377,9 +382,12 @@ fn ingest_adopts_only_the_conformant_at_location_doc_and_persists_register_only(
         !row("docs/old-adr.md").contains("adopted"),
         "the wrong-location row must NOT render an adopt-confirmation:\n{report}",
     );
+    // The unmanaged doc collapses into a `docs/` count line (V9) — never adopted; the
+    // collapsed summary carries no adopt-confirmation marker (the structural
+    // non-adoption is re-proven against the index + baseline below).
     assert!(
-        !row("docs/notes.md").contains("adopted"),
-        "the unmanaged row must NOT render an adopt-confirmation:\n{report}",
+        report.contains("unmanaged docs/ — 1 file(s) parse against no schema (left untouched)"),
+        "the unmanaged row must collapse into a `docs/` count with no adopt-confirmation:\n{report}",
     );
 
     // ── (a) the conformant-at-location adr adopts: index + baseline gain it ───────
@@ -605,7 +613,9 @@ fn ingest_excludes_gitignored_candidates_and_includes_untracked_markdown() {
         NON_CONFORMANT_NEAR_MISS,
     );
 
-    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    // Read the full-row JSON contract: the text arm collapses unmanaged rows into
+    // per-directory counts (V9), so per-file inclusion/exclusion reads from JSON.
+    let out = jigc(repo.path(), home.path(), &["ingest", "--format", "json"]);
     assert!(
         out.status.success(),
         "`jigc ingest` must succeed; stdout:\n{}\nstderr:\n{}",
@@ -658,7 +668,9 @@ fn ingest_survives_non_ascii_candidate_filenames() {
         "# résumé\n\nUntracked prose with a non-ASCII name.\n",
     );
 
-    let out = jigc(repo.path(), home.path(), &["ingest"]);
+    // Read the full-row JSON contract: the text arm collapses these unmanaged rows
+    // into a per-directory count (V9), so the per-file real-name check reads from JSON.
+    let out = jigc(repo.path(), home.path(), &["ingest", "--format", "json"]);
     assert!(
         out.status.success(),
         "`jigc ingest` must survive non-ASCII candidate filenames; stdout:\n{}\nstderr:\n{}",

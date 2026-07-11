@@ -939,7 +939,23 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                 "jigc ingest — {} candidate(s) classified  (sorted — deterministic report order)\n\n",
                 report.rows.len(),
             );
+            // V9 (M41 Inc 8): the `unmanaged` rows are the noise floor — a
+            // 220-candidate adoption scan is mostly unmanaged, so one text line per
+            // file blows the report up. Collapse them into per-directory counts keyed
+            // on the directory (a `BTreeMap` — sorted, order-invariant output), keeping
+            // the actionable `adoptable` / `needs-reconcile` rows itemized. The JSON
+            // arm above stays full-rows (the tooling contract).
+            let mut unmanaged_by_dir: std::collections::BTreeMap<String, usize> =
+                std::collections::BTreeMap::new();
             for row in &report.rows {
+                if row.verdict == "unmanaged" {
+                    let dir = match row.file.rfind('/') {
+                        Some(i) => row.file[..=i].to_string(),
+                        None => "./".to_string(),
+                    };
+                    *unmanaged_by_dir.entry(dir).or_insert(0) += 1;
+                    continue;
+                }
                 out.push_str(row.verdict);
                 out.push(' ');
                 out.push_str(&row.file);
@@ -970,6 +986,15 @@ pub fn ingest(format: Format, report: &IngestReport) -> String {
                     out.push_str("  ");
                     out.push_str(&finding_line(finding));
                 }
+            }
+            // The collapsed unmanaged summary — one line per directory, in sorted
+            // directory order (deterministic, independent of row-encounter order).
+            for (dir, count) in &unmanaged_by_dir {
+                out.push_str("unmanaged ");
+                out.push_str(dir);
+                out.push_str(&format!(
+                    " — {count} file(s) parse against no schema (left untouched)\n"
+                ));
             }
             // The verdict legend (#9c — less-terse triage): one line per verdict class
             // **actually present**, each stating why a row classified that way and the
@@ -2252,7 +2277,7 @@ mod tests {
         adoptable decisions/rate-limit.md → adr  (adopted — indexed + baselined, no file moved)
           adopted — structurally empty: 0 milestones
           adopted — 2 surplus trailing sections
-        unmanaged docs/notes.md → (parses against no schema — left untouched)
+        unmanaged docs/ — 1 file(s) parse against no schema (left untouched)
 
         What the verdicts above mean, and what to do next:
           adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
@@ -2332,6 +2357,97 @@ mod tests {
             "no rows → no legend heading; got:\n{agent}",
         );
         assert!(agent.ends_with(ROUTING_FOOTER));
+    }
+
+    /// V9 (M41 Inc 8): the text arm collapses `unmanaged` rows into per-directory
+    /// count lines (not one line per file — a 220-candidate report must stay
+    /// agent-readable), keeps a non-unmanaged row itemized, and the JSON arm still
+    /// emits every row (the tooling contract is unchanged).
+    #[test]
+    fn render_ingest_collapses_unmanaged_into_per_directory_counts() {
+        use crate::ingest::{IngestReport, TriageRow};
+
+        let unmanaged = |file: &str| TriageRow {
+            file: file.to_string(),
+            best_match: None,
+            verdict: "unmanaged",
+            finding: None,
+            adopted: false,
+            annotations: Vec::new(),
+        };
+        let report = IngestReport {
+            rows: vec![
+                TriageRow {
+                    file: "decisions/keep.md".to_string(),
+                    best_match: Some("adr".to_string()),
+                    verdict: "adoptable",
+                    finding: None,
+                    adopted: true,
+                    annotations: Vec::new(),
+                },
+                unmanaged("docs/a.md"),
+                unmanaged("docs/b.md"),
+                unmanaged("docs/c.md"),
+                unmanaged("src/x.md"),
+                unmanaged("src/y.md"),
+            ],
+        };
+
+        let agent = ingest(Format::Agent, &report);
+        insta::assert_snapshot!(agent, @r"
+        jigc ingest — 6 candidate(s) classified  (sorted — deterministic report order)
+
+        adoptable decisions/keep.md → adr  (adopted — indexed + baselined, no file moved)
+        unmanaged docs/ — 3 file(s) parse against no schema (left untouched)
+        unmanaged src/ — 2 file(s) parse against no schema (left untouched)
+
+        What the verdicts above mean, and what to do next:
+          adoptable — conformant at its managed location; adopted register-only (indexed + baselined, the file stays in place).
+          unmanaged — matches no managed schema; left as-is — bring it under management with `jigc migrate <path> --as <doctype>`.
+        — jigc · run `jigc start` for orientation; all writes through `jigc`.
+        ");
+        // No per-file unmanaged line survives in the text arm (the blow-up we fixed).
+        assert!(
+            !agent.contains("docs/a.md") && !agent.contains("src/y.md"),
+            "unmanaged rows must not itemize per file in text; got:\n{agent}",
+        );
+        // The actionable non-unmanaged row stays itemized.
+        assert!(agent.contains("adoptable decisions/keep.md → adr"));
+
+        // JSON keeps every row (tooling contract): all five unmanaged paths present.
+        let json_out = ingest(Format::Json, &report);
+        for f in [
+            "docs/a.md",
+            "docs/b.md",
+            "docs/c.md",
+            "src/x.md",
+            "src/y.md",
+        ] {
+            assert!(
+                json_out.contains(f),
+                "JSON must emit every unmanaged row; missing {f} in:\n{json_out}",
+            );
+        }
+        assert!(!json_out.contains(ROUTING_FOOTER));
+
+        // Order-invariant: the same rows fed with the unmanaged rows in reverse
+        // relative order render byte-identical text (per-directory aggregation is
+        // keyed on the directory, never row-encounter order).
+        let reversed = IngestReport {
+            rows: vec![
+                report.rows[0].clone(),
+                unmanaged("src/y.md"),
+                unmanaged("src/x.md"),
+                unmanaged("docs/c.md"),
+                unmanaged("docs/b.md"),
+                unmanaged("docs/a.md"),
+            ],
+        };
+        assert_eq!(
+            ingest(Format::Agent, &reversed),
+            agent,
+            "per-directory counts must be order-invariant",
+        );
     }
 
     /// The successful-setup summary names each installed target **and what it is for**

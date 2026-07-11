@@ -537,11 +537,17 @@ fn rc_trial_layout_places_vision_and_changelog_at_root() {
             "the {kind} managed doc `{path}` ingests as adopted (not unmanaged / needs-reconcile); row:\n{row}",
         );
     }
+    // The sibling root files stay unmanaged — collapsed into the root `./` per-directory
+    // count (V9); never itemized as an adopted / needs-reconcile (managed) row.
+    let census = ok_stdout(jigc(repo, home, &["ingest"], None), "jigc ingest");
+    assert!(
+        census.contains("unmanaged ./ —"),
+        "the sibling root files collapse into an unmanaged `./` count (a literal placement home owns one path, not a dir-glob); got:\n{census}",
+    );
     for path in ["README.md", "CLAUDE.md"] {
-        let row = ingest_row(repo, home, path);
         assert!(
-            row.contains("unmanaged"),
-            "the sibling root `{path}` stays unmanaged (a literal placement home owns one path, not a dir-glob); row:\n{row}",
+            !census.contains(path),
+            "the sibling root `{path}` stays unmanaged (collapsed, never swept into management); got:\n{census}",
         );
     }
 
@@ -584,12 +590,16 @@ fn rc_trial_layout_places_vision_and_changelog_at_root() {
         );
     }
     // The unmanaged siblings are still unmanaged (a drifted managed doc's re-route does not
-    // sweep an unrelated root `.md` into management).
+    // sweep an unrelated root `.md` into management) — still collapsed into the `./` count.
+    let census = ok_stdout(jigc(repo, home, &["ingest"], None), "jigc ingest");
+    assert!(
+        census.contains("unmanaged ./ —"),
+        "the sibling root files stay collapsed into an unmanaged `./` count after the OOB drift; got:\n{census}",
+    );
     for path in ["README.md", "CLAUDE.md"] {
-        let row = ingest_row(repo, home, path);
         assert!(
-            row.contains("unmanaged"),
-            "the sibling root `{path}` stays unmanaged after the OOB drift; row:\n{row}",
+            !census.contains(path),
+            "the sibling root `{path}` stays unmanaged after the OOB drift; got:\n{census}",
         );
     }
 }
