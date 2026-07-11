@@ -99,6 +99,12 @@
 
 Mapped to verified findings in [findings-verification.md](findings-verification.md): V1 · V3+V6+V11 (one problem under the keystone-verb framing) · V15.
 
+**On the machine surface (verbatim addendum, same agent, relayed 2026-07-11):**
+
+> jigc's output protocol is prose written for an LLM to read, which is lovely for one document and expensive for forty. --format json currently returns {"text": "<the same prose>"} — a wrapper, not a contract. If you want jigc used for migrations at scale rather than only steady-state authoring, make JSON emit real data: task id, doc slug, item id, findings. That's a critique of the machine surface, not a claim that jigc is CLI-only.
+
+This is finding V2 / Settle fork 1 of the M41 charter. The human's own trial observation reinforces it: the agent ran `--format json` heavily and ended up writing a Python driver around the prose.
+
 ## Related standing item (not this run's finding)
 
 The `~/ideas/project-kb` greenfield repo's `.jigc/AGENT.md` still carries the pre-A4 exit-code table; re-running `jigc setup` there would refresh it but also re-add the allow permits + deny floor into `.claude/settings.json` (deliberately deleted there) — the refresh and the permission write are bundled until `ideas/adapter-permission-model.md` lands. Standing operational note, owed to that idea's de-parking.
