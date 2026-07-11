@@ -1628,7 +1628,7 @@ pub fn add_nested_item(
         })?;
 
     // The mint-side anchor-injection reject, as top-level [`add_item`]'s.
-    reject_anchor_in_title(title)?;
+    reject_malformed_title(title)?;
     let id = crate::slug::slugify(title);
     if id.is_empty() {
         return Err(GenerateError::UnslugableTitle {
@@ -1745,8 +1745,9 @@ pub fn remove_nested_item(
 /// a member-to-member change is an identity change, not a retitle — is the CLI
 /// guard's, mirroring `add-item`'s.) The anchor is read from the located heading
 /// via [`anchor_of`], never re-derived from the new title. An empty/whitespace
-/// title, a title embedding the `{#` anchor pattern (which would out-shadow the
-/// frozen anchor on re-parse — [`reject_anchor_in_title`]), an absent item/section,
+/// title, a title carrying a control character (which would split the heading
+/// line) or embedding the `{#` anchor pattern (which would out-shadow the frozen
+/// anchor on re-parse) — both [`reject_malformed_title`] — an absent item/section,
 /// or a non-conformant source → [`GenerateError::WrongShape`] (the existing
 /// nested-write error shapes).
 pub fn retitle_item(
@@ -1764,7 +1765,7 @@ pub fn retitle_item(
     }
     // The anchor-injection reject: a title embedding `{#…}` would out-shadow the
     // frozen `{#id}` on re-parse — the reslug-hijack this verb's contract forbids.
-    reject_anchor_in_title(title)?;
+    reject_malformed_title(title)?;
     // The id-from re-validation (see doc comment): resolved against the repeatable
     // block the chain bottoms out in, before any bytes move.
     if let Some(repeatable) = chain_repeatable(schema, section_id, item_ids)
@@ -2074,15 +2075,34 @@ fn level_num_of(level: HeadingLevel) -> usize {
     level as usize
 }
 
-/// Reject an item title carrying the `{#` anchor pattern, as
-/// [`GenerateError::WrongShape`]. Item identity is CLI-minted and frozen — the parser
-/// reads a heading's **first** `{#…}` as the item's anchor ([`anchor_of`] mirrors it),
-/// so a title embedding `{#…}` would, once spliced/rendered, silently *replace* the
-/// item's identity with the injected slug: the frozen anchor dies, every inbound
-/// address dangles, and `render(parse(out)) == out` breaks. Titles are LLM-owned
-/// prose (the determinism boundary), so this input class is agent-reachable — every
+/// The title-shape floor: reject an item title that would corrupt the heading it
+/// splices into, as [`GenerateError::WrongShape`]. Two input classes fail here:
+/// a **control character** (newline/tab/…), which would split the single heading
+/// line and strand the `{#id}` anchor as prose; and the **`{#` anchor pattern** —
+/// item identity is CLI-minted and frozen, and the parser reads a heading's
+/// **first** `{#…}` as the item's anchor ([`anchor_of`] mirrors it), so a title
+/// embedding `{#…}` would, once spliced/rendered, silently *replace* the item's
+/// identity with the injected slug: the frozen anchor dies, every inbound address
+/// dangles, and `render(parse(out)) == out` breaks. Titles are LLM-owned prose
+/// (the determinism boundary), so both input classes are agent-reachable — every
 /// title-taking write primitive fails closed here before any bytes move.
-fn reject_anchor_in_title(title: &str) -> Result<(), GenerateError> {
+fn reject_malformed_title(title: &str) -> Result<(), GenerateError> {
+    // The single-line floor: an item heading renders as `{hashes} {title}  {{#id}}`
+    // on ONE line, so a control character (newline/tab/…) in the title would splice
+    // a multi-line heading that strands the frozen/minted `{#id}` anchor on a prose
+    // line — identity lost, `render(parse(out)) == out` broken. Rejected here
+    // unconditionally because the id-from `check_value` re-validation only fires
+    // when the repeatable's block *declares* its id-from leaf, and the loader never
+    // requires that declaration (M40 completion finding).
+    if title.chars().any(|c| c.is_control()) {
+        return Err(GenerateError::WrongShape {
+            what: format!(
+                "title {title:?} contains a control character — a title renders on \
+                 the single heading line, so a newline/tab would split the heading \
+                 and strand its {{#id}} anchor"
+            ),
+        });
+    }
     if title.contains("{#") {
         return Err(GenerateError::WrongShape {
             what: format!(
@@ -2429,8 +2449,8 @@ pub fn add_item(
     // total: a title with no slug-able content maps to `""`, which would emit a
     // malformed empty `{#}` anchor — reject it here (the only place it can be caught).
     // A title embedding `{#…}` would out-shadow the minted anchor on re-parse — the
-    // anchor-injection reject ([`reject_anchor_in_title`]).
-    reject_anchor_in_title(title)?;
+    // anchor-injection reject ([`reject_malformed_title`]).
+    reject_malformed_title(title)?;
     let id = crate::slug::slugify(title);
     if id.is_empty() {
         return Err(GenerateError::UnslugableTitle {
@@ -4139,6 +4159,34 @@ title: Auth flow
         )
         .expect_err("an anchor-carrying title must not mint");
         assert!(matches!(err, GenerateError::WrongShape { .. }));
+    }
+
+    /// `add-item` with a title carrying a control character (newline/tab) is rejected
+    /// as [`GenerateError::WrongShape`] before any bytes move: the item heading renders
+    /// as `### <title>  {#id}` on ONE line, so `"A\nB"` would splice a two-line heading
+    /// that pushes the minted `{#id}` anchor onto a prose line — identity lost,
+    /// `render(parse(out)) == out` broken. No `check_value` runs on the mint-side title
+    /// (only `reject_malformed_title` + slugify), so this reject is the only defense
+    /// (M40 completion finding: the control-char-title hole, mint side).
+    #[test]
+    fn add_item_control_char_title_is_rejected() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+";
+        for title in ["A\nB", "A\tB"] {
+            let err = add_item(&spec_schema(), src, "criteria", title, Some("x"), &[])
+                .expect_err("a control-char title must not splice a multi-line heading");
+            assert!(
+                matches!(err, GenerateError::WrongShape { .. }),
+                "title {title:?} should be WrongShape, got {err:?}"
+            );
+        }
     }
 
     /// `add-item` into an **empty trailing** repeatable section (the `criteria`
@@ -9634,6 +9682,47 @@ OAuth device-code flow.
         )
         .expect_err("an anchor-carrying title must not splice");
         assert!(matches!(err, GenerateError::WrongShape { .. }));
+    }
+
+    /// A new title carrying a control character (newline/tab) is rejected as
+    /// [`GenerateError::WrongShape`] before any bytes move — even on a schema whose
+    /// repeatable declares NO block leaf matching its `id-from` (legal: the loader
+    /// never cross-checks `Repeatable.id_from` against the block), where the id-from
+    /// `check_value` re-validation has no field to fire against. Without the shared
+    /// [`reject_malformed_title`] floor, `"A\nB"` would splice a TWO-LINE heading whose
+    /// second line carries the frozen `{#id}` anchor as prose — identity lost,
+    /// `render(parse(out)) == out` broken (M40 completion finding: the
+    /// control-char-title hole, retitle side).
+    #[test]
+    fn control_char_title_is_rejected_without_declared_id_from() {
+        let yaml = b"\
+type: notes
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: heading
+      block:
+        - { id: body, slot: { hint: \"The note body.\" } }
+";
+        let schema = crate::schema::load_schema(yaml).expect("undeclared-id-from schema loads");
+        let src = "\
+# Notes
+
+## Entries
+
+### First note  {#first-note}
+
+Body text.
+";
+        for title in ["A\nB", "A\tB"] {
+            let err = retitle_item(&schema, src, "entries", &["first-note"], title)
+                .expect_err("a control-char title must not splice a multi-line heading");
+            assert!(
+                matches!(err, GenerateError::WrongShape { .. }),
+                "title {title:?} should be WrongShape, got {err:?}"
+            );
+        }
     }
 }
 
