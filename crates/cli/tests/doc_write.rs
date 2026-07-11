@@ -961,3 +961,142 @@ fn malformed_item_field_date_blocks_at_the_set_field_verb() {
         "the item-field-edited changelog is byte-stable across parse → render",
     );
 }
+
+/// Read the staged `<type>:<slug>` instance path in the task working area.
+fn staged_doc_path(repo: &Path, task: &str, doctype: &str, slug: &str) -> PathBuf {
+    repo.join(".jigc")
+        .join("tasks")
+        .join(task)
+        .join("docs")
+        .join(format!("{doctype}:{slug}.md"))
+}
+
+/// Findings-as-data on the write path (`design/command-output-contract.md` §2): a
+/// `set-field` over a staged doc that carries a **trailing surplus H2** beyond its
+/// schema's body sections reports the `schema-conformance.surplus-sections-absent`
+/// advisory in its `--format json` DocAck `findings[]` — with the stable
+/// `key.target = <type>:<slug>#<surplus-heading>` and a non-null route (the route
+/// floor). The surplus reaches the staged buffer the realistic way: an out-of-band
+/// trailing `## …` on the staged instance (a copied-in adopted doc carries one the
+/// same way), which the positional parse never visits, so the byte-faithful write
+/// carries it forward and the pure `(schema, staged-buffer)` check surfaces it.
+#[test]
+fn write_ack_reports_a_trailing_surplus_section_as_a_keyed_routed_finding() {
+    let (repo, home) = started_repo("record the cache decision");
+    let task = "record-the-cache-decision";
+    let create = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Cache strategy"],
+        None,
+    );
+    assert!(
+        create.status.success(),
+        "`jigc doc create adr` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    // Append a trailing surplus H2 to the staged instance — beyond the schema's body
+    // sections, so the positional parse never visits it (the adopted-doc shape).
+    let staged = staged_doc_path(repo.path(), task, "adr", "cache-strategy");
+    let mut source = fs::read_to_string(&staged).expect("read staged adr");
+    source.push_str("\n## Extra thoughts\n\nSome trailing prose the schema never declares.\n");
+    fs::write(&staged, &source).expect("append surplus to staged adr");
+
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            "adr:cache-strategy#supersedes",
+            "--value",
+            "[adr:old-a, adr:old-b]",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "a `set-field` over a surplus-carrying doc must still exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("set-field json ack parses");
+    // The ack carries exactly one finding — the surplus advisory — with the stable
+    // key.target in URI normal form and a routed, non-null direction.
+    let findings = ack["findings"].as_array().expect("findings is an array");
+    assert_eq!(
+        findings.len(),
+        1,
+        "exactly the surplus advisory rides the ack; got:\n{stdout}"
+    );
+    let finding = &findings[0];
+    assert_eq!(
+        finding["code"], "schema-conformance.surplus-sections-absent",
+        "the write-ack finding is the surplus advisory; got:\n{stdout}"
+    );
+    assert_eq!(
+        finding["key"]["code"], "schema-conformance.surplus-sections-absent",
+        "the stable key carries the code; got:\n{stdout}"
+    );
+    assert_eq!(
+        finding["key"]["target"], "adr:cache-strategy#extra-thoughts",
+        "the stable key.target is the URI normal form <type>:<slug>#<surplus-heading>; got:\n{stdout}"
+    );
+    assert!(
+        finding["route"].is_string(),
+        "the advisory carries a non-null repair route (the route floor); got:\n{stdout}"
+    );
+}
+
+/// The negative arm (the omitting context): a clean `set-field` over a schema-conformant
+/// staged doc — no surplus — emits `findings: []`, and **completeness** advisories
+/// (`repeatable-populated` over a fresh empty repeatable, `required-slot` over the
+/// unfilled slots) are **not** emitted (`command-output-contract.md` §2 — completeness
+/// stays store-scope; `findings: []` means "no intrinsic single-doc advisory," not
+/// "validated"). A fresh spec has an empty `criteria` repeatable + unfilled slots, so an
+/// empty `findings[]` here proves those never leak onto the write path.
+#[test]
+fn clean_write_reports_no_findings_and_omits_completeness() {
+    let (repo, home) = started_repo_on("plan", "plan the auth flow");
+    let created = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "spec", "--title", "Auth flow"],
+        None,
+    );
+    assert!(
+        created.status.success(),
+        "`jigc doc create spec` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-slot",
+            "spec:auth-flow#goal",
+            "--from-file",
+            "-",
+            "--format",
+            "json",
+        ],
+        Some(b"A single-sign-on auth flow.\n"),
+    );
+    assert!(
+        out.status.success(),
+        "a clean `set-slot` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("set-slot json ack parses");
+    assert_eq!(
+        ack["findings"],
+        serde_json::json!([]),
+        "a clean write emits findings:[] — no surplus, and completeness stays store-scope; got:\n{stdout}"
+    );
+}

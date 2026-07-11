@@ -298,6 +298,12 @@ fn run_set_field(
     let edited = apply_field_target(&schema, &source, target, addr, value)?;
 
     persist(&path, &edited)?;
+    let findings = write_ack_findings(
+        &schema,
+        &edited,
+        address.r#type.as_str(),
+        address.slug.as_str(),
+    );
     // Confirm the landed value — the positive ack the silent verb was missing.
     println!(
         "{}",
@@ -307,6 +313,7 @@ fn run_set_field(
                 address: addr.to_string(),
                 target: ack_target,
                 value: value_json,
+                findings,
             },
         )
     );
@@ -502,6 +509,12 @@ fn run_set_slot(
     let edited = apply_slot_target(&schema, &source, target, addr, &prose)?;
 
     persist(&path, &edited)?;
+    let findings = write_ack_findings(
+        &schema,
+        &edited,
+        address.r#type.as_str(),
+        address.slug.as_str(),
+    );
     // Confirm the spliced prose by length — the slot bytes are too large to echo.
     println!(
         "{}",
@@ -511,6 +524,7 @@ fn run_set_slot(
                 address: addr.to_string(),
                 target: ack_target,
                 chars: prose.chars().count(),
+                findings,
             },
         )
     );
@@ -581,6 +595,12 @@ fn run_add_item(
         apply_add_item_target(&schema, &source, target, addr, title, task.is_migration()?)?;
 
     persist(&path, &edited)?;
+    let findings = write_ack_findings(
+        &schema,
+        &edited,
+        address.r#type.as_str(),
+        address.slug.as_str(),
+    );
     // The minted item address — the next address an agent fills the item's slot/field
     // at (the same slugify the engine mints the `{#id}` from, never re-spelled).
     let ack_address = format!(
@@ -596,6 +616,7 @@ fn run_add_item(
             &render::DocAck::AddedItem {
                 address: ack_address,
                 target: ack_target,
+                findings,
             },
         )
     );
@@ -847,6 +868,12 @@ fn run_remove_item(
     };
 
     persist(&path, &edited)?;
+    let findings = write_ack_findings(
+        &schema,
+        &edited,
+        address.r#type.as_str(),
+        address.slug.as_str(),
+    );
     // Confirm the removed item address — the positive ack the silent verb was missing.
     println!(
         "{}",
@@ -855,6 +882,7 @@ fn run_remove_item(
             &render::DocAck::RemovedItem {
                 address: addr.to_string(),
                 target: ack_target,
+                findings,
             },
         )
     );
@@ -982,6 +1010,12 @@ fn run_retitle_item(
     })?;
 
     persist(&path, &edited)?;
+    let findings = write_ack_findings(
+        &schema,
+        &edited,
+        address.r#type.as_str(),
+        address.slug.as_str(),
+    );
     // Confirm the retitled item address — the anchor (hence the address) is frozen,
     // so the echoed address remains the one every follow-up write lands at.
     println!(
@@ -992,6 +1026,7 @@ fn run_retitle_item(
                 address: addr.to_string(),
                 target: item_ack_target(&address, &target),
                 title: title.to_string(),
+                findings,
             },
         )
     );
@@ -1341,6 +1376,9 @@ fn run_create(
     .map_err(|f| block(&f, "create", type_name))?;
     // A whole-doc create carries only the target head (`doctype`+`slug`) — contract §2.
     let target = whole_doc_ack_target(&created.address)?;
+    // `create` mints the schema-generated skeleton (only the declared sections, any
+    // in-location squatter blank-seeded), so it is structurally surplus-free — its
+    // `findings` are always empty (`design/command-output-contract.md` §2).
     println!(
         "{}",
         render::doc_ack(
@@ -1348,6 +1386,7 @@ fn run_create(
             &render::DocAck::Created {
                 address: created.address,
                 target,
+                findings: Vec::new(),
             },
         )
     );
@@ -1435,6 +1474,7 @@ fn run_author(
     persist(&created.path, &buffer)?;
     // A whole-doc author carries only the target head (`doctype`+`slug`) — like create.
     let target = whole_doc_ack_target(&created.address)?;
+    let findings = write_ack_findings(schema, &buffer, &target.doctype, &target.slug);
     println!(
         "{}",
         render::doc_ack(
@@ -1442,6 +1482,7 @@ fn run_author(
             &render::DocAck::Authored {
                 address: created.address,
                 target,
+                findings,
             },
         )
     );
@@ -2169,6 +2210,35 @@ fn field_json(value: &Value) -> serde_json::Value {
                 .collect(),
         ),
     }
+}
+
+/// The intrinsic single-doc advisories a successful managed-write reports as data on its
+/// [`render::DocAck`] (`design/command-output-contract.md` §2 — findings-as-data on write):
+/// the `schema-conformance.surplus-sections-absent` check — the one pure-function advisory
+/// that takes just `(schema, staged-buffer)`, needs no index or subprocess, and is
+/// authoring-stage-agnostic (an undeclared trailing section is an anomaly at *any* stage).
+/// Computed from the just-persisted `edited` buffer; each finding's [`Location::address`]
+/// fragment (the surplus heading's slug) is flipped to the write's URI target
+/// (`<type>:<slug>#<fragment>`) so its derived `key.target` reads in URI normal form
+/// (`command-output-contract.md` → the stable finding key), the same `path→URI` flip the
+/// store-scope `attribute_to_doc` installs. **Completeness** (`repeatable-populated`,
+/// `required-slot`) + the cross-doc / subprocess families are deliberately excluded — they
+/// answer "is the *corpus* complete," which one mid-authoring write cannot adjudicate — so
+/// `findings: []` means "no intrinsic single-doc advisory," not "validated."
+fn write_ack_findings(schema: &Schema, edited: &str, doctype: &str, slug: &str) -> Vec<Finding> {
+    let mut findings = engine::validate::surplus_sections_absent(schema, edited);
+    let identity = format!("{doctype}:{slug}");
+    for finding in &mut findings {
+        let uri = match finding.location.as_ref().and_then(|l| l.address.as_deref()) {
+            Some(fragment) => format!("{identity}#{fragment}"),
+            None => identity.clone(),
+        };
+        match &mut finding.location {
+            Some(location) => location.address = Some(uri),
+            None => finding.location = Some(Location::addressed(uri, 1, 1)),
+        }
+    }
+    findings
 }
 
 /// Stamp the doc head (`doctype` + `slug`) of a write-ack's decomposed `target`

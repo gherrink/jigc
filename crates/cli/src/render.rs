@@ -579,6 +579,13 @@ fn landed_summary(landed: &Landed) -> String {
 /// structured object on JSON. The plain-happy-path doc surface carries **no** routing
 /// footer (the `create` / `add-item` sibling verbs emit a bare line too — only the
 /// composed reading surfaces carry the footer).
+///
+/// Every variant carries `findings` — the **intrinsic single-doc advisories** the write
+/// reports as data (`design/command-output-contract.md` §2 — findings-as-data on write;
+/// today the `schema-conformance.surplus-sections-absent` check computed from the staged
+/// buffer after persist). It projects into the JSON ack's `findings[]` (empty on a clean
+/// write); completeness + cross-doc families stay store-scope, so `findings: []` means "no
+/// intrinsic single-doc advisory," not "validated."
 pub enum DocAck {
     /// A `set-field` landed `value` at `address`/`target`. `value` is the written field
     /// value shaped as `doc show`'s `fields` project it (scalar → string, list → array).
@@ -586,33 +593,52 @@ pub enum DocAck {
         address: String,
         target: AckTarget,
         value: serde_json::Value,
+        findings: Vec<Finding>,
     },
     /// A `set-slot` spliced `chars` characters of prose at `address`/`target`.
     Slot {
         address: String,
         target: AckTarget,
         chars: usize,
+        findings: Vec<Finding>,
     },
     /// A `remove-item` dropped the item at `address`/`target`.
-    RemovedItem { address: String, target: AckTarget },
+    RemovedItem {
+        address: String,
+        target: AckTarget,
+        findings: Vec<Finding>,
+    },
     /// A `retitle-item` retitled the item at `address`/`target` (anchor frozen) to `title`.
     RetitledItem {
         address: String,
         target: AckTarget,
         title: String,
+        findings: Vec<Finding>,
     },
     /// A `create` minted a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`, no fragment); its effect is the whole created doc, read back via
     /// `doc show` (so no per-op effect key — `design/command-output-contract.md` §2).
-    Created { address: String, target: AckTarget },
+    Created {
+        address: String,
+        target: AckTarget,
+        findings: Vec<Finding>,
+    },
     /// An `add-item` minted the item at `address`/`target`. `target.item` is the **minted**
     /// leaf-most id (the new item, not the bare section — the contract's "add-item's target
     /// is the new item"); its effect is that item, read back via `doc show` (no effect key).
-    AddedItem { address: String, target: AckTarget },
+    AddedItem {
+        address: String,
+        target: AckTarget,
+        findings: Vec<Finding>,
+    },
     /// An `author` authored a whole doc at `address`/`target`. The target is the head only
     /// (`doctype`+`slug`), like [`DocAck::Created`]; its effect is the whole authored doc,
     /// read back via `doc show` (no effect key).
-    Authored { address: String, target: AckTarget },
+    Authored {
+        address: String,
+        target: AckTarget,
+        findings: Vec<Finding>,
+    },
 }
 
 /// The decomposed write address a [`DocAck`] carries in `--format json` — the same
@@ -644,30 +670,54 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
         Format::Json => match ack {
             // The command-output contract (`design/command-output-contract.md` §2):
             // `op` + the decomposed `target` + the op's retained effect key +
-            // `findings: []` (empty this increment; Inc 3 populates it).
-            DocAck::Field { target, value, .. } => json(&serde_json::json!({
-                "op": "set-field", "target": target, "value": value, "findings": [],
+            // `findings` (the intrinsic single-doc advisories, `[]` on a clean write —
+            // each projects the pinned findings envelope via `Finding`'s `Serialize`).
+            DocAck::Field {
+                target,
+                value,
+                findings,
+                ..
+            } => json(&serde_json::json!({
+                "op": "set-field", "target": target, "value": value, "findings": findings,
             })),
-            DocAck::Slot { target, chars, .. } => json(&serde_json::json!({
-                "op": "set-slot", "target": target, "chars": chars, "findings": [],
+            DocAck::Slot {
+                target,
+                chars,
+                findings,
+                ..
+            } => json(&serde_json::json!({
+                "op": "set-slot", "target": target, "chars": chars, "findings": findings,
             })),
-            DocAck::RemovedItem { target, .. } => json(&serde_json::json!({
-                "op": "remove-item", "target": target, "removed": true, "findings": [],
+            DocAck::RemovedItem {
+                target, findings, ..
+            } => json(&serde_json::json!({
+                "op": "remove-item", "target": target, "removed": true, "findings": findings,
             })),
-            DocAck::RetitledItem { target, title, .. } => json(&serde_json::json!({
-                "op": "retitle-item", "target": target, "title": title, "findings": [],
+            DocAck::RetitledItem {
+                target,
+                title,
+                findings,
+                ..
+            } => json(&serde_json::json!({
+                "op": "retitle-item", "target": target, "title": title, "findings": findings,
             })),
             // `create` / `add-item` / `author` join the envelope: `op` + the decomposed
-            // `target` + `findings: []`. No per-op effect key — their effect is the whole
+            // `target` + `findings`. No per-op effect key — their effect is the whole
             // doc / the new item, read back via `doc show` (contract §2).
-            DocAck::Created { target, .. } => json(&serde_json::json!({
-                "op": "create", "target": target, "findings": [],
+            DocAck::Created {
+                target, findings, ..
+            } => json(&serde_json::json!({
+                "op": "create", "target": target, "findings": findings,
             })),
-            DocAck::AddedItem { target, .. } => json(&serde_json::json!({
-                "op": "add-item", "target": target, "findings": [],
+            DocAck::AddedItem {
+                target, findings, ..
+            } => json(&serde_json::json!({
+                "op": "add-item", "target": target, "findings": findings,
             })),
-            DocAck::Authored { target, .. } => json(&serde_json::json!({
-                "op": "author", "target": target, "findings": [],
+            DocAck::Authored {
+                target, findings, ..
+            } => json(&serde_json::json!({
+                "op": "author", "target": target, "findings": findings,
             })),
         },
         Format::Agent | Format::Human => match ack {
