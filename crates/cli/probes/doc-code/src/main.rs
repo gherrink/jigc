@@ -186,7 +186,9 @@ impl Finding {
     /// symlink — uncheckable under the engine's path-local change-set scoping (the citation
     /// resolves through the link target, not the named path), so surfaced as uncheckable
     /// rather than silently followed. Mirrors `unsupported-language`: distinct check-id,
-    /// advisory, un-keyed/informational, route-less.
+    /// advisory, un-keyed/informational, carrying the informational "no action needed"
+    /// route the floor mandates for an uncheckable-by-design outcome (`validation.md`
+    /// → An informational route).
     fn symlink_anchor(anchor: &TargetAnchor, file: &str) -> Self {
         Self {
             severity: Severity::Advisory,
@@ -202,7 +204,11 @@ impl Finding {
                 line: 1,
                 col: 1,
             }),
-            route: None,
+            route: Some(
+                "no action needed — the anchor is uncheckable by design (path-locality is \
+                 not guaranteed through a symlink)"
+                    .to_string(),
+            ),
         }
     }
 
@@ -226,7 +232,11 @@ impl Finding {
                 line: 1,
                 col: 1,
             }),
-            route: None,
+            route: Some(
+                "no action needed — the citation is uncheckable by design (no shipped \
+                 grammar for this file)"
+                    .to_string(),
+            ),
         }
     }
 
@@ -454,6 +464,16 @@ deploy() {
         assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
         assert_eq!(findings[0].code, "doc-code.symlink-anchor");
         assert!(matches!(findings[0].severity, Severity::Advisory));
+        // An uncheckable-by-design advisory routes the informational no-op, never null
+        // (validation.md → the floor rule "every finding routes").
+        assert!(
+            findings[0]
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("no action needed")),
+            "symlink-anchor advisory must carry the informational route, got {:?}",
+            findings[0].route,
+        );
     }
 
     #[test]
@@ -484,6 +504,16 @@ deploy() {
         assert_eq!(perl.len(), 1);
         assert_eq!(perl[0].severity, Severity::Advisory);
         assert_eq!(perl[0].check, "unsupported-language");
+        // An uncheckable-by-design advisory routes the informational no-op, never null
+        // (validation.md → the floor rule "every finding routes").
+        assert!(
+            perl[0]
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("no action needed")),
+            "unsupported-language advisory must carry the informational route, got {:?}",
+            perl[0].route,
+        );
     }
 
     #[test]
