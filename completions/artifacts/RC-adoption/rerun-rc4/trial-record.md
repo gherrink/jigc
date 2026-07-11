@@ -93,6 +93,12 @@
 >
 > The gates fired four times in this session and were right every time — the bad anchor, the unstaged replacement, the symbol-drift advisories, the discharged ledger entry. I didn't have to trust myself, and given that I was authoring 40 documents about a codebase whose own documentation had been confidently lying for months, that was worth more than any convenience feature you could add.
 
+**Fold-back priorities (verbatim addendum, same agent, relayed 2026-07-11):**
+
+> The three things I'd carry into the fold-back, in order: fix the folding-YAML templates (silent data corruption), fix doc author's payload discoverability (it's the keystone verb and it's the one that breaks), and fix the advisory noise floor (or the gates die of neglect). Everything else on my list is a papercut by comparison.
+
+Mapped to verified findings in [findings-verification.md](findings-verification.md): V1 · V3+V6+V11 (one problem under the keystone-verb framing) · V15.
+
 ## Related standing item (not this run's finding)
 
 The `~/ideas/project-kb` greenfield repo's `.jigc/AGENT.md` still carries the pre-A4 exit-code table; re-running `jigc setup` there would refresh it but also re-add the allow permits + deny floor into `.claude/settings.json` (deliberately deleted there) — the refresh and the permission write are bundled until `ideas/adapter-permission-model.md` lands. Standing operational note, owed to that idea's de-parking.
