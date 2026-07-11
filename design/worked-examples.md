@@ -2622,3 +2622,66 @@ $ jigc validate
 4. **`doc schema` serves the pinned contract (F1).** `jigc doc schema adr --format json` returns contract-version 2 (the M41 rc.5 bump adding per-field `of` enum members + the field→section mapping) with the doctype's frozen `schema-version: 2`, the loader-injected `schema-version` stamp field rendered `author-required: false`, and the four adr sections in schema order with `options` flagged optional. (The byte-verbatim goldens live in `doc_schema.rs`.)
 5. **A methodology migration lands the root vision (F2/F10).** `jigc migrate old-vision.md --as vision` under `[dev ▸ methodology]` composes the batch-author guidance; the approved finalize lands exactly one commit writing the managed singleton at the repo-root literal `VISION.md` (the placement home, `# Vision` display-H1) and retiring the foreign original.
 6. **The stamped corpus validates clean (A1).** A committed unstamped (v0) methodology doc — frozen by the M40 methodology manifest — is detected + routed `migrate` by `jigc validate`; `jigc migrate-corpus` appends exactly the `schema-version: 1` stamp line (bytes otherwise unchanged); the re-validate runs clean — no `schema-conformance` finding, no `migrate` route left.
+
+## 42. The M41 rc.5 wave, end-to-end — folded-slot fidelity · the driver contract · the stable finding key · schema read · a value-remap · the first real-binary Vue proof · the optional-scalar clear (M41)
+
+The M41 rc.5 wave answers the RC adoption rerun trial's (rc.4) verified findings ([completions/artifacts/RC-adoption/rerun-rc4/trial-record.md](../completions/artifacts/RC-adoption/rerun-rc4/trial-record.md)) — increments 1–8 prove each feature per-feature; this flow is the **composite acceptance** tying them into seven done-picture arms over the real binary (`crates/cli/tests/flow42_acceptance.rs`). Every arm re-exercises a design of record owned elsewhere and not restated here: the fold-safe migration slot templates in [auto-migration.md](auto-migration.md) (V1); the pinned `--format json` of composed output, write-acks, and findings — task id, decomposed `target`, findings-as-data, and the stable `(code, target)` key + the advisory-route floor — in [command-output-contract.md](command-output-contract.md) (F1, F2/finding-key) and [validation.md](validation.md) (→ the advisory-route floor); the schema projection in [doc-read-surface.md](doc-read-surface.md) (V3/V6, the `doc schema` surface joined by the enum-members + field→section keys); the enum-member value-remap kind in [corpus-migration.md](corpus-migration.md) (F4); symbol-granular Vue in the code-anchor gate in [validation.md](validation.md) (→ Multi-language resolution / Vue addressable units) + [ideas/multi-language-doc-code.md](../ideas/multi-language-doc-code.md) (F3); the `--unset` verb in [write-commands.md](write-commands.md) (V5). The **Vue arm is the wave's one genuinely first-covered-here proof** — the prior increments proved the SFC `<script>` extract at the probe-unit level, and this is its first drive through the real finalize gate. Arms V1, F1, F2, V3/V6, F3, V5 run the embedded dev pack; arm F4 composes `[dev ▸ methodology]`. Notation illustrative.
+
+### The walk — seven arms, one wave
+
+```text
+# ── Arm V1 · a fold-safe migration slot template round-trips multi-line prose intact. ──
+$ jigc migrate docs/adr/0001-fidelity.md --as adr     # the composed `doc author` skeleton's slots are `|-` block scalars
+$ jigc doc author adr --from-file - --task migrate-adr-docs-adr-0001   # a multi-paragraph + bulleted body filled in
+$ jigc task finalize migrate-adr-docs-adr-0001 --approve
+# the committed decisions/…md keeps every `\n` — a folding flow scalar would collapse the bullets to one line
+
+# ── Arm F1 · the driver contract: `start` carries `task`; a write-ack decomposes `target`. ──
+$ jigc start --format json "add rate limiter"         # the router arm (creates-task: false)
+> { "task": null, "text": … }                          # `task` present-and-null, no id minted
+$ jigc start --format json --workflow single-task "add rate limiter"
+> { "task": "add-rate-limiter", "text": … }            # a work-mint carries the id structurally
+$ jigc doc set-field commit:add-rate-limiter#type --value feat --format json
+> { "op": "set-field", "target": { "doctype": "commit", "slug": "add-rate-limiter",
+>     "section": "header", "leaf": "type" }, "value": "feat", "findings": [] }
+
+# ── Arm F2 (finding-key) · a `0..*` two-dangling-ref sweep fans two uniquely-keyed findings. ──
+$ jigc validate --format json    # over a committed adr with `supersedes: [adr:ghost-one, adr:ghost-two]`
+> { "findings": [
+>     { "code": "schema-conformance.ref-resolves",
+>       "key": { "code": "…ref-resolves", "target": "adr:shared-redis-session-cache#supersedes/ghost-one" },
+>       "route": "fix the reference, create the target in this task, or drop the field", … },
+>     { …, "key": { …, "target": "adr:shared-redis-session-cache#supersedes/ghost-two" }, "route": … } ],
+>   "report_only": true }                              # two DISTINCT keys; EVERY finding routes (never null); exit 0
+
+# ── Arm V3/V6 · the schema read surface projects enum members + field→section. ──
+$ jigc doc schema adr --format json
+> { "contract-version": 2, …,
+>   "fields": [ { "id": "status", "of": ["proposed","accepted","superseded"], …, "section": "status" }, … ] }
+
+# ── Arm F4 · the first methodology v1→v2 value-remap, byte-faithful.  [dev ▸ methodology] ──
+$ jigc migrate-corpus       # over a committed v1 docs/deferral-ledger.md carrying `kind: D` + `kind: I`
+> corpus migration: 1 migrated …                       # `D`→`Decision`, `I`→`Idea`, stamp 1→2, every other byte preserved —
+>                                                       #   byte-faithful to the real v2 canonical oracle
+
+# ── Arm F3 · the first real-binary Vue proof: a fabricated `.vue` script symbol blocks. ──
+$ jigc doc set-field arch-doc:app-shell#components/layout/implemented-by --value src/AppLayout.vue#DoesNotExist
+$ jigc task finalize document-the-app-shell
+> … doc-code.symbol-exists … BLOCKED                   # the SFC's <script setup> is parsed under the vendored TS grammar
+$ jigc doc set-field arch-doc:app-shell#components/layout/implemented-by --value src/AppLayout.vue#useCounter
+$ jigc task finalize document-the-app-shell            # a real composable resolves — the SAME finalize passes
+
+# ── Arm V5 · `--unset` clears an optional scalar and the doc re-conforms. ──
+$ jigc doc set-field adr:anchor-decision#status/cites-code --unset --format json
+> { "op": "set-field", "unset": true, … }              # the `cites-code:` line is gone; a follow-up write re-populates it
+```
+
+### What it asserts (the M41-wave acceptance bar — flow42_acceptance.rs)
+
+1. **Folded-slot template fidelity (V1).** A foreign ADR migrates through `jigc migrate --as adr`; the composed author skeleton's `|-` block-scalar slots keep a multi-paragraph + bulleted body's line breaks through the `jigc doc author` → finalize round-trip — the committed prose carries the body verbatim (a folding flow scalar would collapse the breaks). The task id is parsed from the emitted `--task <id>` verb, never reconstructed.
+2. **The driver contract (F1).** `jigc start --format json` carries `task` — present-and-`null` on the `creates-task: false` router arm, the minted slug on a work-workflow — and a `jigc doc set-field --format json` write-ack decomposes its address into `op` + `target{doctype, slug, section, leaf}` + a literal empty `findings` envelope.
+3. **The stable finding key + the advisory-route floor (F2/finding-key).** A committed adr whose `0..*` `supersedes` carries two dangling targets fans exactly two `schema-conformance.ref-resolves` findings with **distinct** `(code, target)` keys (`adr:<slug>#supersedes/<to-slug>` — one keyed finding per dangling target), and **every** finding the store sweep emits carries a non-null `route` (the V15 / Fork-2 floor). Store-scope `validate` is report-only, so it exits 0 with the blocking content findings present.
+4. **The schema read surface (V3/V6).** `jigc doc schema adr --format json` (contract-version 2) projects the enum members (`of`) on the `status` field and the top-level field→owning-`section` mapping.
+5. **The first methodology v1→v2 value-remap (F4).** `jigc migrate-corpus` remaps a committed v1 `deferral-ledger`'s `kind: D` → `kind: Decision` (and `I` → `Idea`) byte-faithful to a real v2 canonical oracle — the enum rename + the stamp bump `1`→`2` are the whole delta; every other byte is preserved.
+6. **The first real-binary Vue proof (F3).** A committed arch-doc component whose `implemented-by` anchor names a **fabricated** `.vue` script symbol **blocks** at the finalize gate (`doc-code.symbol-exists`, exit non-zero — the SFC's `<script setup>` is extracted and parsed under the vendored TypeScript grammar); re-pointed at a **real** composable (`useCounter`), the same finalize passes.
+7. **The optional-scalar clear (V5).** `jigc doc set-field <addr> --unset` clears an optional adr header scalar (`cites-code`) — the field line is gone and the ack names the clear (`unset: true`) — and the doc re-conforms: a follow-up `set-field` over the now-absent field lands.
