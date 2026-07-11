@@ -13,6 +13,12 @@ repeated single-value calls would keep only the last). One ADR is the list of on
 
 jigc doc set-field arch-doc:<slug>#cites --value '[adr:<slug-a>, adr:<slug-b>]' --task {{task.id}}
 
+Committed-first ordering: every cited ADR must already be committed before this
+task — arch-doc's `allows-create` cannot mint an ADR in-task, so a `cites`
+pointing at an uncommitted or absent decision has nothing to resolve against and
+a dangling `cites` blocks finalize forever. Cite only committed ADRs; record and
+commit the decision first, then cite it here.
+
 Then add one component per architectural piece. For each, mint the item, write
 its responsibility in prose, and anchor it to the code that implements it (a
 `path#symbol` finalize re-checks against the working tree):

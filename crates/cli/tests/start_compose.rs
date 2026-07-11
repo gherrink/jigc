@@ -1211,6 +1211,17 @@ fn form_d_architecture_documentation_mints_and_emits_the_create_gate_author_slot
         "author-arch-doc must carry the doc-level `cites` set-field guidance; got:\n{stdout}",
     );
 
+    // V10 (M41 inc 8): the ordinary authoring path warns on committed-first ordering,
+    // mirroring the migration sibling — a cited ADR must ALREADY be committed before
+    // this task, arch-doc's `allows-create` cannot mint an ADR in-task, and a dangling
+    // `cites` blocks finalize forever. The warning composes into the emitted step text.
+    assert!(
+        stdout.contains("already be committed")
+            && stdout.contains("cannot mint an ADR in-task")
+            && stdout.contains("blocks finalize forever"),
+        "author-arch-doc must carry the committed-first / dangling-cites-blocks-finalize warning; got:\n{stdout}",
+    );
+
     // The per-component item verbs compose: add-item mints a component, then its
     // description slot + implemented-by code-anchor field are set on the item leaf.
     assert!(
