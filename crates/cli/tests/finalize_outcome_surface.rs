@@ -763,6 +763,42 @@ fn landed_finalize_emits_findings() {
     );
 }
 
+/// The advisory-route floor on the pinned `--format json` findings envelope
+/// (`design/command-output-contract.md` → §route: "always present … never null";
+/// `design/validation.md` → The advisory-route floor). The absorb scenario emits the
+/// two file-state informational advisories — `reconciliation.absorb` and
+/// `file-state.baseline-adopt` — and each must carry an explicit **informational**
+/// route *value*, not `route: null`. (The earlier route-floor sweep routed only the
+/// two `index.rs` constructors; these file-state constructors were missed, leaving the
+/// floor violated on the JSON contract surface.)
+#[test]
+fn landed_finalize_advisories_carry_a_route() {
+    let stdout = landed_finalize_after_oob(Some("json"));
+    let findings = parse_envelope(&stdout, "absorbed landed finalize (json)");
+
+    for f in &findings {
+        if f["severity"] == "advisory" {
+            assert!(
+                !f["route"].is_null(),
+                "the advisory-route floor: no advisory carries `route: null` on the \
+                 pinned json envelope; offender:\n{f}\nfull envelope:\n{stdout}",
+            );
+        }
+    }
+
+    // The two file-state informational advisories are present and routed.
+    for code in ["reconciliation.absorb", "file-state.baseline-adopt"] {
+        let finding = findings
+            .iter()
+            .find(|f| f["code"] == code)
+            .unwrap_or_else(|| panic!("the json envelope must carry `{code}`; got:\n{stdout}"));
+        assert!(
+            finding["route"].as_str().is_some(),
+            "`{code}` must carry an informational route string, not null; got:\n{finding}",
+        );
+    }
+}
+
 /// Mint + fill + land a commit-only task in `repo`, returning the finalize output
 /// for the caller's exit-code/stream assertions. The fill is clean (in-sync seeded)
 /// so the landed envelope is the deterministic positive signal; each task writes

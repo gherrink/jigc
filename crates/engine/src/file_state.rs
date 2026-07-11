@@ -128,7 +128,8 @@ impl FileStateRecord {
 /// - **`UNKNOWN`** (no recorded hash — first run / fresh checkout) → **baseline-adopt**:
 ///   the current on-disk content *is* the baseline. The probe records the hash on
 ///   `record` and emits an informational `file-state.baseline-adopt` finding
-///   ([`Severity::Advisory`], no route). Absent-hash is not drift.
+///   ([`Severity::Advisory`], an informational "no action needed" route — the
+///   advisory-route floor, never null). Absent-hash is not drift.
 /// - **recorded + matching** → no finding (the file is `IN_SYNC`).
 /// - **recorded + differing** → **drift**: a `file-state.hash-matches` finding —
 ///   blocking by default ([`Severity::Blocking`], the severity-inventory default),
@@ -625,16 +626,18 @@ fn drift_store_finding(path: &str) -> Finding {
 /// hash, surfaced by [`detect_committed_store`]. A distinct *not-yet-tracked*
 /// outcome — neither drift nor silent-clean — so a read-only twin that cannot adopt
 /// a baseline (the mutating path's UNKNOWN resolution) never falsely reports an
-/// untracked doc as clean. Advisory + no route: informational on a fresh /
-/// pre-baseline store, it does not flip the exit code (`validation.md` → Completing
-/// the envelope: UNKNOWN (un-baselined) ≠ clean).
+/// untracked doc as clean. Advisory + an **informational route** (the advisory-route
+/// floor — every finding routes, never `null`; the no-op is reified as an explicit
+/// route value, not an absence): informational on a fresh / pre-baseline store, it
+/// does not flip the exit code (`validation.md` → Completing the envelope: UNKNOWN
+/// (un-baselined) ≠ clean; the advisory-route floor).
 fn unbaselined_finding(path: &str) -> Finding {
     Finding::graded(
         Severity::Advisory,
         "file-state.un-baselined",
         format!("committed doc `{path}` is not yet baselined in the file-state record"),
         Some(Location::addressed(path, 1, 1)),
-        None,
+        Some("no action needed — the doc is baselined on its next author or finalize".to_string()),
     )
 }
 
@@ -837,15 +840,17 @@ fn rename_weak_finding(path: &str, from: &str) -> Finding {
 }
 
 /// The advisory **absorb** finding (`reconciliation.md` → OOB edit → absorb: "external
-/// edit absorbed: `<doc>`"). Informational, no route — a clean external edit is honored,
-/// not a problem to repair; the absorb already re-hashed + updated the edge index.
+/// edit absorbed: `<doc>`"). Informational — a clean external edit is honored, not a
+/// problem to repair; the absorb already re-hashed + updated the edge index. Carries an
+/// **informational route** (the advisory-route floor — every finding routes, never
+/// `null`; the no-op is an explicit route value, not an absence).
 fn absorb_finding(path: &str) -> Finding {
     Finding::graded(
         Severity::Advisory,
         "reconciliation.absorb",
         format!("external edit absorbed: `{path}`"),
         Some(Location::addressed(path, 1, 1)),
-        None,
+        Some("no action needed — the external edit was absorbed into the baseline".to_string()),
     )
 }
 
@@ -916,15 +921,17 @@ fn conflict_block_finding(path: &str) -> Finding {
 }
 
 /// The informational baseline-adopt finding (`reconciliation.md` → Baseline
-/// adoption: "baseline adopted: `<doc>`"). Advisory, no route — first encounter
-/// is the normal case, not a problem to repair.
+/// adoption: "baseline adopted: `<doc>`"). Advisory — first encounter is the normal
+/// case, not a problem to repair. Carries an **informational route** (the advisory-route
+/// floor — every finding routes, never `null`; the no-op is an explicit route value,
+/// not an absence).
 fn baseline_adopt_finding(path: &str) -> Finding {
     Finding::graded(
         Severity::Advisory,
         "file-state.baseline-adopt",
         format!("baseline adopted: `{path}`"),
         Some(Location::addressed(path, 1, 1)),
-        None,
+        Some("no action needed — the baseline was adopted on first encounter".to_string()),
     )
 }
 
@@ -1319,7 +1326,13 @@ Referrers must point at the new decision.
         let f = &findings[0];
         assert_eq!(f.code, "file-state.baseline-adopt");
         assert_eq!(f.severity, Severity::Advisory);
-        assert_eq!(f.route, None, "baseline adoption is not a repair");
+        assert!(
+            f.route
+                .as_deref()
+                .is_some_and(|r| r.contains("no action needed")),
+            "baseline adoption carries an informational route (the advisory-route floor, \
+             never null); a first encounter is not a repair: {f:?}"
+        );
 
         // The record IS advanced to the conformant doc's hash.
         assert_eq!(
@@ -2167,7 +2180,14 @@ sections: []
         let adopt = &findings[0];
         assert_eq!(adopt.code, "file-state.baseline-adopt");
         assert_eq!(adopt.severity, Severity::Advisory);
-        assert_eq!(adopt.route, None, "baseline adoption is not a repair");
+        assert!(
+            adopt
+                .route
+                .as_deref()
+                .is_some_and(|r| r.contains("no action needed")),
+            "baseline adoption carries an informational route (the advisory-route floor, \
+             never null); a first encounter is not a repair: {adopt:?}"
+        );
         assert_eq!(
             record.get(PATH),
             Some(hash_bytes(original).as_str()),
