@@ -1147,7 +1147,11 @@ enum AnchorRead {
 /// Re-scan a heading's raw source for a trailing `{#id}` anchor and validate it as a
 /// slug. We re-scan the literal `{#…}` (rather than trust pulldown's lenient anchor
 /// recovery) so a malformed anchor like `{#Bad Id}` is detected as malformed, not
-/// silently truncated. A well-formed anchor matches `slug::slugify(id) == id`.
+/// silently truncated. A well-formed anchor is any valid slug — [`crate::slug::is_slug`],
+/// the *recognition* predicate. (It must **not** re-use `slugify(id) == id`: since the
+/// F5 edge-stopword drop, `slugify` no longer round-trips every valid slug — a frozen id
+/// like `a-0` or `a-plugin-surface` is a valid slug but not a `slugify` fixed point — and
+/// an anchor is a frozen identity to be *recognized*, never re-normalized.)
 fn extract_anchor(raw: &str) -> AnchorRead {
     let first_line = raw.lines().next().unwrap_or("");
     let Some((_, after)) = first_line.split_once("{#") else {
@@ -1159,7 +1163,7 @@ fn extract_anchor(raw: &str) -> AnchorRead {
     if inner.is_empty() {
         return AnchorRead::Missing;
     }
-    if crate::slug::slugify(inner) == inner {
+    if crate::slug::is_slug(inner) {
         AnchorRead::Ok(inner.to_string())
     } else {
         AnchorRead::Malformed(inner.to_string())
@@ -2093,6 +2097,44 @@ Body.
             .find(|f| f.code == "conformance.item-anchor-malformed")
             .expect("a malformed-anchor finding");
         insta::assert_debug_snapshot!("malformed_anchor", f);
+    }
+
+    /// Regression golden (F5): a valid slug that is **not** a `slugify` fixed
+    /// point — `{#a-0}`, a leading-article id — is a well-formed frozen anchor and
+    /// must be *recognized*, never flagged malformed. Before the F5 edge-stopword
+    /// drop, `extract_anchor` used `slugify(id) == id`; F5 broke that equivalence,
+    /// so the recognizer is `is_slug`. A committed doc carrying such an anchor must
+    /// keep parsing (identity is frozen; it is never re-normalized on read).
+    #[test]
+    fn stopword_edge_anchor_is_recognized_not_malformed() {
+        let src = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### A criterion  {#a-0}
+Body.
+";
+        let inst =
+            parse_sections(&spec_schema(), src).expect("a valid stopword-edge anchor must parse");
+        let criteria = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "criteria")
+            .expect("criteria section");
+        assert_eq!(
+            criteria
+                .items
+                .iter()
+                .map(|i| i.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a-0"],
+            "the leading-article anchor is read verbatim as the frozen id"
+        );
     }
 
     /// Conformance golden: a trailing bullet *field group* with no `<!-- fields -->`

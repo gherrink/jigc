@@ -688,9 +688,11 @@ fn set_slot_and_field_target_the_addressed_item_leaf() {
             String::from_utf8_lossy(&created.stderr)
         );
 
-        // Two criteria items A + B (each carries a `statement` slot + a `maps-to-test`
-        // field — identically-keyed leaves the item hop must disambiguate).
-        for title in ["Criterion A", "Criterion B"] {
+        // Two criteria items Alpha + Beta (each carries a `statement` slot + a
+        // `maps-to-test` field — identically-keyed leaves the item hop must
+        // disambiguate). Trailing non-stopword labels keep the minted item ids
+        // stable under the F5 edge-stopword drop (a trailing `A` would slug away).
+        for title in ["Criterion Alpha", "Criterion Beta"] {
             let out = run_doc(
                 repo.path(),
                 home.path(),
@@ -706,9 +708,9 @@ fn set_slot_and_field_target_the_addressed_item_leaf() {
 
         // The targeted item + the untouched sibling.
         let (target, other) = if target_is_b {
-            ("criterion-b", "criterion-a")
+            ("criterion-beta", "criterion-alpha")
         } else {
-            ("criterion-a", "criterion-b")
+            ("criterion-alpha", "criterion-beta")
         };
         let statement = b"The targeted item's statement, set through the item hop.\n";
         let anchor = "`crates/x.rs#f`";

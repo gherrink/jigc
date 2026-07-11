@@ -690,7 +690,7 @@ fn finalize_passes_when_staged_symbol_has_unrelated_unstaged_hunk() {
     let home = TempDir::new("g4-hunk-home");
     init_repo(repo.path());
 
-    let task = "cite-a-symbol-with-a";
+    let task = "cite-a-symbol-with-hunk";
     stage_citing_task(repo.path(), home.path(), task, "hunk-cite", "hunk_symbol");
 
     // Write + stage the cited symbol.

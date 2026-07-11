@@ -521,8 +521,9 @@ fn scenario_4_superseding_decision_resolves_slice_and_passes_edge_walk() {
         "A single in-memory node keeps session lookups sub-millisecond and avoids a network hop.";
     commit_prior_adr(repo.path(), home.path(), PRIOR_DECISION);
 
-    // Task 2: supersede it.
-    let task = "move-the-session-cache-to";
+    // Task 2: supersede it. The trailing stopword `to` the 5-word cap exposes is
+    // dropped by the F5 edge-stopword rule, so the minted task id ends at `cache`.
+    let task = "move-the-session-cache";
     let start = jigc(
         repo.path(),
         home.path(),
@@ -829,7 +830,8 @@ fn scenario_6_conformant_oob_edit_to_committed_adr_absorbs() {
         &["start", "--workflow", "single-task", "a fresh second task"],
     );
     assert_ok(&start, "`jigc start` after an OOB edit");
-    let task = "a-fresh-second-task";
+    // The leading stopword `a` is dropped by the F5 edge-stopword rule.
+    let task = "fresh-second-task";
     fill_commit(repo.path(), home.path(), task);
 
     let val = jigc(repo.path(), home.path(), &["task", "validate", task]);

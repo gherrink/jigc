@@ -266,7 +266,7 @@ fn superseding_decision_slices_the_prior_committed_adr_and_passes_the_edge_walk(
     commit_prior_adr(repo.path(), home.path());
 
     // ── Task 2: supersede it ─────────────────────────────────────────────────────
-    let task = "move-the-session-cache-to";
+    let task = "move-the-session-cache";
     let out = jigc(
         repo.path(),
         home.path(),

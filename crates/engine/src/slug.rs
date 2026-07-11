@@ -18,12 +18,14 @@
 //! 3. map spaces and `_` to `-`,
 //! 4. strip every remaining char outside `[a-z0-9-]`,
 //! 5. collapse runs of `-` and trim leading/trailing `-`,
-//! 6. cap at the first ~5 words (dash-separated), dropping the rest,
+//! 6. cap at the first ~5 words (dash-separated), dropping the rest, then drop
+//!    any leading/trailing stopwords (`the`/`a`/`of`…) the cap leaves at an
+//!    edge — a medial stopword is untouched,
 //! 7. (the word cap always cuts on a `-` boundary, so no trailing `-` is
 //!    exposed and no re-trim is needed),
-//! 8. apply a char-length backstop — truncate to a filesystem-safe length,
-//!    trimming any `-` the cut exposes (bounds a single long word, which the
-//!    word cap leaves untouched).
+//! 8. apply a char-length backstop — on a mid-word cut, retreat to the last
+//!    complete word (via the final `-`); a single long word with no `-` still
+//!    hard-truncates to a filesystem-safe length (the `NAME_MAX` backstop).
 //!
 //! The output always matches `^[a-z0-9-]*$` with no leading, trailing, or
 //! doubled `-`, and the function is idempotent: `slugify(slugify(x)) ==
@@ -47,6 +49,15 @@ const MAX_WORDS: usize = 5;
 /// far below it, so multi-word behaviour is unchanged.
 const MAX_CHARS: usize = 50;
 
+/// Conservative English **edge-stopword** set — articles plus the short
+/// prepositions — dropped when the word cap leaves one at the leading or
+/// trailing edge of a minted slug (`DECISIONS.md` 2026-07-11 → Fork 5: drop
+/// leading/trailing `the`/`a`/`of`…). A *medial* stopword is untouched (it
+/// carries meaning between two content words, e.g. `add-a-rate-limiter`). The
+/// set is deliberately small: the slug is a legibility aid, so we trim only the
+/// filler that reads as noise at an edge, never content.
+const EDGE_STOPWORDS: &[&str] = &["a", "an", "the", "of", "to", "in", "on", "at", "by", "for"];
+
 /// Apply the **deterministic collision suffix** to a base slug: `1` keeps the bare
 /// `slug`, `2` yields `<slug>-2`, `3` yields `<slug>-3`, … (`design/structural-grammar.md`
 /// → IDs: provenance and minting → "the lower-task-id instance keeps the bare slug; each
@@ -63,11 +74,15 @@ pub fn suffixed(slug: &str, nth: usize) -> String {
 
 /// Whether `s` is a **well-formed slug**: a non-empty `[a-z0-9-]` string with no
 /// leading, trailing, or doubled `-`. This is the *recognition* predicate — the
-/// grammar a minted or authored slug must match — and the dual of [`slugify`]'s
-/// *normalization*: every non-empty `slugify(x)` satisfies `is_slug`, and a
-/// fixed point of `slugify` is exactly a valid slug. The length cap is *not*
-/// enforced here (a cap is a mint-time concern; a ref pointing at an existing
-/// slug must recognize it whatever its length).
+/// grammar a minted or authored slug must match — and the *recognizer* paired
+/// with [`slugify`]'s *normalization*: every non-empty `slugify(x)` satisfies
+/// `is_slug`. The converse does **not** hold: a valid slug need not be a
+/// `slugify` fixed point — the mint-time word cap and the F5 edge-stopword drop
+/// mean `is_slug("a-0")` yet `slugify("a-0") == "0"`. So a *recognition* site
+/// (an authored anchor, a ref body, a frozen id read back from disk) must use
+/// `is_slug`, never `slugify(x) == x`, which would reject valid frozen ids. The
+/// length/word caps are *not* enforced here (they are mint-time concerns; a ref
+/// pointing at an existing slug must recognize it whatever its length).
 ///
 /// Used by the write-time `ref` shape check to validate the `<slug>` body of a
 /// `<type>:<slug>` reference (`design/auto-migration.md` → Write-time ref-shape
@@ -160,29 +175,57 @@ fn collapse_dashes(s: &str) -> String {
 }
 
 /// Cap a collapsed, trimmed slug at the first [`MAX_WORDS`] dash-separated
-/// words, dropping the rest.
+/// words, then drop any leading/trailing [`EDGE_STOPWORDS`] the cap exposes.
 ///
 /// The input is already collapsed and edge-trimmed, so splitting on `-` yields
-/// clean, non-empty words; joining the first `MAX_WORDS` back with `-` always
-/// lands on a word boundary and can never leave a leading, trailing, or doubled
-/// `-`. A slug already within the cap is returned unchanged.
+/// clean, non-empty words; joining back with `-` always lands on a word
+/// boundary and can never leave a leading, trailing, or doubled `-`. The
+/// stopword drop is greedy at each edge (so `the guide of` → `guide`) and never
+/// touches a medial stopword (`add a rate-limiter` → `add-a-rate-limiter`); an
+/// all-stopword input strips to `""` (the caller supplies the type-name
+/// fallback). A slug already within the cap with content at both edges is
+/// returned unchanged.
 fn cap_words(s: &str) -> String {
-    s.split('-').take(MAX_WORDS).collect::<Vec<_>>().join("-")
+    let mut words: Vec<&str> = s.split('-').take(MAX_WORDS).collect();
+    while words.first().is_some_and(|w| EDGE_STOPWORDS.contains(w)) {
+        words.remove(0);
+    }
+    while words.last().is_some_and(|w| EDGE_STOPWORDS.contains(w)) {
+        words.pop();
+    }
+    words.join("-")
 }
 
-/// Char-length backstop: truncate a slug to at most [`MAX_CHARS`] characters,
-/// then trim any `-` the cut exposed at the end.
+/// Char-length backstop: bound a slug to at most [`MAX_CHARS`] characters,
+/// retreating to the last **complete** word when the cut lands mid-word.
 ///
-/// Applied after [`cap_words`], this is the final ceiling that bounds a single
-/// long word (which has no `-` for the word cap to cut on). The prior steps
-/// guarantee the input is pure ASCII (`[a-z0-9-]`), so the `MAX_CHARS`-th char
-/// boundary is also a byte boundary — but we cut on `char_indices` regardless so
-/// the truncation can never split a multibyte char. A slug already within the
-/// cap is returned unchanged.
+/// Applied after [`cap_words`], this is the final ceiling that bounds a slug
+/// whose words (or single word) overrun the filesystem-safe length. When the
+/// `MAX_CHARS` cut falls mid-word, we retreat to the previous `-` boundary so
+/// the slug ends on a whole word (`…-outputs-contract` → `…-outputs`, never the
+/// mid-word lop `…-contrac`). A *single* long word has no `-` to retreat to, so
+/// it hard-truncates at `MAX_CHARS` — the `NAME_MAX` backstop that keeps a
+/// pathological single-word intent from overrunning `<slug>.md`. The prior
+/// steps guarantee pure ASCII (`[a-z0-9-]`), so the `MAX_CHARS`-th char boundary
+/// is also a byte boundary — but we cut on `char_indices` regardless so the
+/// truncation can never split a multibyte char. A slug already within the cap
+/// is returned unchanged.
 fn cap_chars(s: &str) -> String {
     match s.char_indices().nth(MAX_CHARS) {
         None => s.to_string(),
-        Some((byte_idx, _)) => s[..byte_idx].trim_end_matches('-').to_string(),
+        Some((byte_idx, _)) => {
+            let truncated = &s[..byte_idx];
+            if s[byte_idx..].starts_with('-') || truncated.ends_with('-') {
+                // The cut lands on a word boundary: the last kept word is whole.
+                truncated.trim_end_matches('-').to_string()
+            } else if let Some(dash) = truncated.rfind('-') {
+                // Mid-word cut: retreat to the last complete word.
+                truncated[..dash].to_string()
+            } else {
+                // A single long word with no `-`: hard-truncate (NAME_MAX floor).
+                truncated.to_string()
+            }
+        }
     }
 }
 
@@ -203,7 +246,7 @@ mod tests {
             ("underscore-to-dash", "add_rate_limiter"),
             ("case-fold", "AddRateLimiter"),
             ("strip-punctuation", "Add a rate-limiter!"),
-            ("collapse-dashes", "a---b__ c"),
+            ("collapse-dashes", "x---b__ c"),
             ("trim-edges", "  -hello-  "),
             ("ligatures", "Æsop & œuvre"),
             ("sharp-s", "Straße"),
@@ -218,6 +261,14 @@ mod tests {
                 "cap-one-long-word",
                 "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious",
             ),
+            // F5: leading + trailing stopword dropped, medial stopword kept.
+            ("edge-stopwords-medial-kept", "a node the app a"),
+            // V7: a mid-word char-cap cut retreats to the last complete word
+            // (no `contrac` mid-lop).
+            (
+                "word-boundary-retreat",
+                "backwards-compatible-serialization-outputs-contract",
+            ),
         ];
         let table: Vec<String> = cases
             .iter()
@@ -229,7 +280,7 @@ mod tests {
         underscore-to-dash: "add_rate_limiter" -> "add-rate-limiter"
         case-fold: "AddRateLimiter" -> "addratelimiter"
         strip-punctuation: "Add a rate-limiter!" -> "add-a-rate-limiter"
-        collapse-dashes: "a---b__ c" -> "a-b-c"
+        collapse-dashes: "x---b__ c" -> "x-b-c"
         trim-edges: "  -hello-  " -> "hello"
         ligatures: "Æsop & œuvre" -> "aesop-oeuvre"
         sharp-s: "Straße" -> "strasse"
@@ -238,6 +289,8 @@ mod tests {
         non-latin-dropped: "日本語 test" -> "test"
         cap-to-five-words: "this is a very long intent that should be truncated at a word boundary" -> "this-is-a-very-long"
         cap-one-long-word: "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious" -> "supercalifragilisticexpialidocioussupercalifragili"
+        edge-stopwords-medial-kept: "a node the app a" -> "node-the-app"
+        word-boundary-retreat: "backwards-compatible-serialization-outputs-contract" -> "backwards-compatible-serialization-outputs"
         "#);
     }
 
@@ -263,15 +316,44 @@ mod tests {
     }
 
     /// The word cap: an intent with more than [`MAX_WORDS`] words caps to the
-    /// first [`MAX_WORDS`], at a `-` boundary, still a valid slug.
+    /// first [`MAX_WORDS`], at a `-` boundary, still a valid slug. The trailing
+    /// stopword the cap exposes (`to`) is then dropped by the F5 edge-stopword
+    /// rule.
     #[test]
     fn caps_to_five_words() {
         let out = slugify("move the session cache to a shared redis cluster");
-        assert_eq!(out, "move-the-session-cache-to");
+        assert_eq!(out, "move-the-session-cache");
         assert!(
             out.split('-').count() <= MAX_WORDS,
             "over word cap: {out:?}"
         );
+    }
+
+    /// V7 char-cap word-boundary retreat: a single long compound whose
+    /// [`MAX_CHARS`] cut lands mid-word retreats to the last **complete** word
+    /// (via the final `-`), never a mid-word lop like `contrac`. The result is
+    /// still a valid slug within the char backstop.
+    #[test]
+    fn char_cap_retreats_to_complete_word() {
+        // 51 chars, 5 dash words; the 50-char cut lands inside the last word
+        // `contract` → old behaviour lopped it to `contrac`.
+        let out = slugify("backwards-compatible-serialization-outputs-contract");
+        assert_eq!(out, "backwards-compatible-serialization-outputs");
+        assert!(is_slug(&out), "retreat output not a slug: {out:?}");
+        assert!(out.chars().count() <= MAX_CHARS, "over char cap: {out:?}");
+        assert!(!out.contains("contrac"), "mid-word lop survived: {out:?}");
+    }
+
+    /// F5 edge-stopword drop: a leading **and** a trailing article are both
+    /// dropped at the word cap, while a **medial** article is untouched.
+    #[test]
+    fn edge_stopwords_dropped_medial_kept() {
+        // leading `a` + trailing `a` drop; medial `the` stays.
+        assert_eq!(slugify("a node the app a"), "node-the-app");
+        // the canonical `a`/`the` articles at either edge.
+        assert_eq!(slugify("the guide of"), "guide");
+        // a medial article is preserved.
+        assert_eq!(slugify("Add a rate-limiter!"), "add-a-rate-limiter");
     }
 
     /// The deterministic collision suffix: the first instance (`nth == 1`) keeps the

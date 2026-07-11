@@ -260,7 +260,7 @@ fn implement_from_spec_arc_slices_criteria_and_passes_the_implements_edge_walk()
     commit_spec_with_criterion(repo.path(), home.path());
 
     // ── Task 2: implement-from-spec mints on the spec-bearing HEAD ────────────────
-    let task = "enforce-the-rate-limit-at";
+    let task = "enforce-the-rate-limit";
     let mint = jigc(
         repo.path(),
         home.path(),

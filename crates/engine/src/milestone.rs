@@ -2748,9 +2748,9 @@ Context without any acceptance criteria.
         // whose `supersedes` GUESSES A's slug — a cross-area ref. Inserted in reverse-id
         // order so insertion order diverges from id order.
         add_task(root.path(), &milestone.id, "B area", "single-task").expect("b adds");
-        add_task(root.path(), &milestone.id, "A area", "single-task").expect("a adds");
+        add_task(root.path(), &milestone.id, "Apex area", "single-task").expect("a adds");
 
-        let a_dir = root.path().join("tasks").join("a-area");
+        let a_dir = root.path().join("tasks").join("apex-area");
         stage_doc(
             &a_dir,
             "adr",
@@ -3042,10 +3042,10 @@ Context without any acceptance criteria.
         // Five sub-tasks, **inserted in an order that is neither id nor reverse-id**
         // order, so insertion / read_dir order diverges from the canonical id order.
         // Id-sorted, the areas are:
-        //   [a-area, b-area, evict-area, low-strategy, zed-strategy]
+        //   [apex-area, b-area, evict-area, low-strategy, zed-strategy]
         for intent in [
             "Zed strategy",
-            "A area",
+            "Apex area",
             "Evict area",
             "Low strategy",
             "B area",
@@ -3072,11 +3072,11 @@ Context without any acceptance criteria.
             crate::state::Provenance::Created,
         );
 
-        // --- Overlap 2: a cross-area ref. `a-area` creates `adr:lru-eviction`;
-        // `b-area` creates `adr:b-decision` whose `supersedes` GUESSES `a-area`'s
+        // --- Overlap 2: a cross-area ref. `apex-area` creates `adr:lru-eviction`;
+        // `b-area` creates `adr:b-decision` whose `supersedes` GUESSES `apex-area`'s
         // slug — resolvable only inside a sibling area → blocking ref-resolves.
         stage_doc(
-            &root.path().join("tasks").join("a-area"),
+            &root.path().join("tasks").join("apex-area"),
             "adr",
             "lru-eviction",
             &adr_superseding("LRU eviction", "adr:lru-eviction"),
@@ -3115,7 +3115,7 @@ Context without any acceptance criteria.
         assert_eq!(
             id_order,
             vec![
-                "a-area".to_string(),
+                "apex-area".to_string(),
                 "b-area".to_string(),
                 "evict-area".to_string(),
                 "low-strategy".to_string(),

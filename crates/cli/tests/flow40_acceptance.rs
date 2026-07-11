@@ -673,7 +673,8 @@ fn long_intent_caps_slug_and_form_vision_advises_on_empty_research() {
     let slug_home = TempDir::new("slug-home");
     git_init(slug_repo.path());
 
-    // A 9-word intent caps to its first 5 words at a `-` boundary.
+    // A 9-word intent caps to its first 5 words at a `-` boundary; the F5
+    // edge-stopword rule then drops the trailing stopword (`to`) the cap exposes.
     let long = "move the session cache to a shared redis cluster";
     assert_ok(
         &jigc(
@@ -684,7 +685,7 @@ fn long_intent_caps_slug_and_form_vision_advises_on_empty_research() {
         ),
         "`jigc start --workflow single-task <long intent>`",
     );
-    let capped = "move-the-session-cache-to";
+    let capped = "move-the-session-cache";
     assert!(
         slug_repo.path().join(".jigc/tasks").join(capped).is_dir(),
         "the long intent must mint under the ≤5-word capped slug `{capped}`",

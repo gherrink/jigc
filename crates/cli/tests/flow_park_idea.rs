@@ -221,7 +221,7 @@ fn park_idea_composes_creates_authors_and_finalizes() {
 
     // (2) Create + author + finalize. The create-gate admits `idea` (the workflow's
     // `allows-create: [{type: idea, as: idea}]`).
-    let task = "a-cache-warming-pass";
+    let task = "cache-warming-pass";
     let create = jigc(
         repo.path(),
         home.path(),
@@ -354,7 +354,7 @@ fn create_idea_pre_stamps_the_author_required_trigger_line() {
                 "--title",
                 "Warm The Cache On Boot",
                 "--task",
-                "a-cache-warming-pass",
+                "cache-warming-pass",
             ],
             None,
         ),
@@ -365,7 +365,7 @@ fn create_idea_pre_stamps_the_author_required_trigger_line() {
         .path()
         .join(".jigc")
         .join("tasks")
-        .join("a-cache-warming-pass")
+        .join("cache-warming-pass")
         .join("docs")
         .join("idea:warm-the-cache-on-boot.md");
     let body = fs::read_to_string(&staged).expect("read the staged idea skeleton");
