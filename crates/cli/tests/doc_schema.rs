@@ -6,11 +6,15 @@
 //! 2026-07-10 → M40 Settle #3).
 //!
 //! The load-bearing contract this pins is the **separately-pinned, explicitly
-//! versioned `--format json` shape** — `contract-version: 1`, golden-pinned at
-//! ship: `{ contract-version, type, schema-version-or-null, fields, sections }`
-//! with per-field `{id, type, required, author-required, default?, set?}` and
-//! per-section `{id, kind, optional?, item: {fields, slots, nested}}`, the `item`
-//! object **recursive** for nested repeatables. The three witnesses:
+//! versioned `--format json` shape** — `contract-version: 2` (the M41 rc.5 bump:
+//! per-field `of` enum members + the field→section mapping joined the projection),
+//! golden-pinned at ship:
+//! `{ contract-version, type, schema-version-or-null, fields, sections }` with
+//! per-field `{id, type, of?, required, author-required, default?, set?, section?}`
+//! (`of` = the enum members, universal across depths; `section` = the owning
+//! simple-section id, top-level fields only) and per-section
+//! `{id, kind, optional?, item: {fields, slots, nested}}`, the `item` object
+//! **recursive** for nested repeatables. The three witnesses:
 //!
 //! - **dogfood-record** — a methodology doctype, frozen at schema-version 1 since
 //!   Inc 5 (A1, the methodology `schema-manifest.yaml`): the loader-injected stamp
@@ -121,106 +125,130 @@ fn stdout_of(out: &std::process::Output) -> String {
     String::from_utf8(out.stdout.clone()).expect("utf-8 stdout")
 }
 
-// ---- the pinned `--format json` goldens (contract-version 1, byte-verbatim) ----
+// ---- the pinned `--format json` goldens (contract-version 2, byte-verbatim) ----
 
 /// dogfood-record — methodology, frozen v1 (M40 A1): `schema-version` 1 with the
 /// loader-injected stamp field appended; the 14 meta fields stay author-required
 /// (no default, no set, no optional/pack exemption).
 const DOGFOOD_RECORD_JSON: &str = r#"{
-  "contract-version": 1,
+  "contract-version": 2,
   "type": "dogfood-record",
   "schema-version": 1,
   "fields": [
     {
       "id": "case",
       "type": "enum",
+      "of": [
+        "pilot",
+        "existing-docs",
+        "greenfield"
+      ],
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "binary-sha",
       "type": "string",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "adapter-writes",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "oob-edits",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "drift-caught",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "validate-blocks",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "halts-expected",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "halts-unplanned",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "fix-rounds",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "audit-findings",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "seeded-oob",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "seeded-blocks",
       "type": "int",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "verdict",
       "type": "enum",
+      "of": [
+        "green",
+        "red"
+      ],
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "owner-artifact",
       "type": "owned-location",
       "required": true,
-      "author-required": true
+      "author-required": true,
+      "section": "meta"
     },
     {
       "id": "schema-version",
       "type": "int",
       "required": true,
       "author-required": false,
-      "set": "schema-version"
+      "set": "schema-version",
+      "section": "meta"
     }
   ],
   "sections": [
@@ -234,7 +262,7 @@ const DOGFOOD_RECORD_JSON: &str = r#"{
 /// changelog — schema-version 2 (the M38 relocation bump), the loader-injected
 /// stamp field in `fields`, and the RECURSIVE nested `item` (releases → changes).
 const CHANGELOG_JSON: &str = r#"{
-  "contract-version": 1,
+  "contract-version": 2,
   "type": "changelog",
   "schema-version": 2,
   "fields": [
@@ -243,7 +271,8 @@ const CHANGELOG_JSON: &str = r#"{
       "type": "int",
       "required": true,
       "author-required": false,
-      "set": "schema-version"
+      "set": "schema-version",
+      "section": "meta"
     }
   ],
   "sections": [
@@ -255,6 +284,14 @@ const CHANGELOG_JSON: &str = r#"{
           {
             "id": "category",
             "type": "enum",
+            "of": [
+              "added",
+              "changed",
+              "deprecated",
+              "removed",
+              "fixed",
+              "security"
+            ],
             "required": true,
             "author-required": true
           }
@@ -301,6 +338,14 @@ const CHANGELOG_JSON: &str = r#"{
                 {
                   "id": "category",
                   "type": "enum",
+                  "of": [
+                    "added",
+                    "changed",
+                    "deprecated",
+                    "removed",
+                    "fixed",
+                    "security"
+                  ],
                   "required": true,
                   "author-required": true
                 }
@@ -324,42 +369,52 @@ const CHANGELOG_JSON: &str = r#"{
 /// false), the injected stamp, and an `optional:` slot section. Schema-version 2:
 /// the M36 `options`-slot migration bumped adr past v1.
 const ADR_JSON: &str = r#"{
-  "contract-version": 1,
+  "contract-version": 2,
   "type": "adr",
   "schema-version": 2,
   "fields": [
     {
       "id": "status",
       "type": "enum",
+      "of": [
+        "proposed",
+        "accepted",
+        "superseded"
+      ],
       "required": true,
       "author-required": false,
-      "default": "proposed"
+      "default": "proposed",
+      "section": "status"
     },
     {
       "id": "date",
       "type": "date",
       "required": true,
       "author-required": false,
-      "set": "on-create"
+      "set": "on-create",
+      "section": "status"
     },
     {
       "id": "supersedes",
       "type": "ref",
       "required": false,
-      "author-required": false
+      "author-required": false,
+      "section": "status"
     },
     {
       "id": "cites-code",
       "type": "code-anchor",
       "required": false,
-      "author-required": false
+      "author-required": false,
+      "section": "status"
     },
     {
       "id": "schema-version",
       "type": "int",
       "required": true,
       "author-required": false,
-      "set": "schema-version"
+      "set": "schema-version",
+      "section": "status"
     }
   ],
   "sections": [
@@ -403,7 +458,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     assert_eq!(
         dogfood.trim_end(),
         DOGFOOD_RECORD_JSON,
-        "the dogfood-record schema json is the pinned contract-version-1 shape",
+        "the dogfood-record schema json is the pinned contract-version-2 shape",
     );
 
     // (2) dogfood-record — the Proves line, asserted behaviorally (not just bytes):
@@ -411,7 +466,7 @@ fn doc_schema_json_is_the_pinned_contract() {
     //     fields plus the injected stamp, every meta field author-required.
     let value: serde_json::Value =
         serde_json::from_str(&dogfood).expect("the emitted contract parses as json");
-    assert_eq!(value["contract-version"], 1, "the contract is versioned");
+    assert_eq!(value["contract-version"], 2, "the contract is versioned");
     assert_eq!(
         value["schema-version"], 1,
         "a manifest-frozen methodology doctype reports schema-version 1",
@@ -457,6 +512,28 @@ fn doc_schema_json_is_the_pinned_contract() {
         stdout_of(&out).trim_end(),
         ADR_JSON,
         "the adr schema json is the pinned shape (ref/pack/default/set fields)",
+    );
+}
+
+/// The plain (`--format agent`/`human`) listing mirrors the `of` enum members so
+/// an agent orienting by the non-contractual listing still sees the legal values —
+/// the text mirror of the pinned json's `of` (M41 rc.5).
+#[test]
+fn doc_schema_plain_listing_shows_enum_members() {
+    let repo = TempDir::new("repo");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+
+    let out = jigc(
+        repo.path(),
+        home.path(),
+        &["doc", "schema", "adr", "--format", "agent"],
+    );
+    assert_ok(&out, "`jigc doc schema adr --format agent`");
+    let listing = stdout_of(&out);
+    assert!(
+        listing.contains("status: enum") && listing.contains("[proposed|accepted|superseded]"),
+        "the plain listing shows an enum field's members; got:\n{listing}",
     );
 }
 

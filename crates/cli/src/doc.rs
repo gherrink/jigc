@@ -173,7 +173,7 @@ pub enum DocCommand {
     /// injected stamp field included) — the third read surface, next to `describe`
     /// (the non-contractual menu) and `doc show` (the committed-content read).
     /// `--format json` is the separately-pinned, explicitly versioned contract
-    /// (`contract-version: 1` — `design/doc-read-surface.md` → Why json is a contract
+    /// (`contract-version: 2` — `design/doc-read-surface.md` → Why json is a contract
     /// here); plain text is a non-contractual human listing. Task-less, like `show`.
     Schema {
         /// The doctype whose resolved schema to project (e.g. `adr`).
@@ -1614,7 +1614,8 @@ fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailur
 /// as they evolve. Golden-pinned at ship (`crates/cli/tests/doc_schema.rs`).
 #[derive(serde::Serialize)]
 struct SchemaContract<'a> {
-    /// The projection's own version — 1 at ship.
+    /// The projection's own version — 2 since M41 rc.5 (the `of`/`section` field
+    /// keys joined the projection; bumps on any structural change to these keys).
     #[serde(rename = "contract-version")]
     contract_version: u32,
     /// The doctype id.
@@ -1631,17 +1632,24 @@ struct SchemaContract<'a> {
     sections: Vec<ContractSection<'a>>,
 }
 
-/// One field of the pinned projection: `{id, type, required, author-required,
-/// default?, set?}`. `required` is presence-in-a-conformant-instance — the author
-/// must supply it OR the CLI stamps it (`default:`/`set:`); `author-required` is
-/// the shared engine predicate ([`engine::validate::is_author_required`]) — the
-/// same authority the create skeleton pre-stamps from, so the mint and this
-/// projection can never drift apart (M40 Settle #4).
+/// One field of the pinned projection: `{id, type, of?, required, author-required,
+/// default?, set?, section?}`. `required` is presence-in-a-conformant-instance —
+/// the author must supply it OR the CLI stamps it (`default:`/`set:`);
+/// `author-required` is the shared engine predicate
+/// ([`engine::validate::is_author_required`]) — the same authority the create
+/// skeleton pre-stamps from, so the mint and this projection can never drift apart
+/// (M40 Settle #4). `of` carries an `enum`'s legal members (universal across
+/// depths, so an agent reads the legal values without a failed-write probe);
+/// `section` names the field's owning simple-section — **top-level only** (an item
+/// field carries its section structurally, under `sections[].item`) (M41 rc.5,
+/// V3+V6+V11 the `doc author` discoverability cluster).
 #[derive(serde::Serialize)]
 struct ContractField<'a> {
     id: &'a str,
     #[serde(rename = "type")]
     ty: &'a FieldType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    of: Option<&'a [String]>,
     required: bool,
     #[serde(rename = "author-required")]
     author_required: bool,
@@ -1649,6 +1657,8 @@ struct ContractField<'a> {
     default: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     set: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    section: Option<&'a str>,
 }
 
 /// One section of the pinned projection: `{id, kind: "slot"|"repeatable",
@@ -1706,7 +1716,14 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
                 slot,
                 fields: declared,
             } => {
-                fields.extend(declared.iter().map(contract_field));
+                fields.extend(declared.iter().map(|field| {
+                    // A top-level field carries its owning simple-section id; an item
+                    // field carries its section structurally (`contract_item` leaves
+                    // `section: None`).
+                    let mut field = contract_field(field);
+                    field.section = Some(&section.id);
+                    field
+                }));
                 if let Some(slot) = slot {
                     sections.push(ContractSection {
                         id: &section.id,
@@ -1725,7 +1742,7 @@ fn schema_contract(schema: &Schema, schema_version: Option<u32>) -> SchemaContra
         }
     }
     SchemaContract {
-        contract_version: 1,
+        contract_version: 2,
         ty: &schema.ty,
         schema_version,
         fields,
@@ -1739,10 +1756,13 @@ fn contract_field(field: &engine::schema::Field) -> ContractField<'_> {
     ContractField {
         id: &field.id,
         ty: &field.ty,
+        of: field.of.as_deref(),
         required: author_required || field.default.is_some() || field.set.is_some(),
         author_required,
         default: field.default.as_deref(),
         set: field.set.as_deref(),
+        // Set by `schema_contract` for a top-level field; item fields stay None.
+        section: None,
     }
 }
 
@@ -1807,6 +1827,9 @@ fn schema_listing(schema: &Schema, schema_version: Option<u32>) -> String {
 fn push_field_line(out: &mut String, field: &ContractField<'_>, depth: usize) {
     out.push_str(&"  ".repeat(depth));
     out.push_str(&format!("- {}: {}", field.id, field.ty_name()));
+    if let Some(members) = field.of {
+        out.push_str(&format!(" [{}]", members.join("|")));
+    }
     if let Some(default) = field.default {
         out.push_str(&format!(" (default: {default})"));
     }

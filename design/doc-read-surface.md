@@ -60,9 +60,9 @@ Pinned once here; every doctype's json read conforms. The **milestone record is 
 `jigc describe`'s output is deliberately **non-contractual** — format-hostile to parsing so nothing depends on it ([introspection.md](introspection.md) → Non-contractual by design). `jigc doc show --format json` is the deliberate inverse: its whole purpose is machine consumption (fresh-clone continuation re-derives milestone state from it), so it **is** a stable contract, pinned at 1.0. The two read surfaces sit on opposite sides of the same axis on purpose: describe is a menu you orient by, `doc show` is content you compute over. **A third surface joins at M40**: `jigc doc schema <doctype> --format json` — the structural projection that *cannot* ride describe (its format predicate forbids parseable structure) — ships as a **separately-pinned, explicitly versioned contract**, pinned here:
 
 ```json
-{ "contract-version": 1, "type": <doctype>, "schema-version": <the doctype's stamped version, else null>,
-  "fields":   [ { "id", "type", "required", "author-required", "default"?, "set"? }, … ],
+{ "contract-version": 2, "type": <doctype>, "schema-version": <the doctype's stamped version, else null>,
+  "fields":   [ { "id", "type", "of"?, "required", "author-required", "default"?, "set"?, "section"? }, … ],
   "sections": [ { "id", "kind": "slot"|"repeatable", "optional"?, "item": { "fields", "slots", "nested" } }, … ] }
 ```
 
-— the `item` object is **recursive** for nested repeatables (`nested` carries the inner blocks); `contract-version` bumps on any structural change to this projection (the *values* track the schemas as they evolve, the *keys/structure* are the pin); golden-pinned at ship ([introspection.md](introspection.md)).
+— the `item` object is **recursive** for nested repeatables (`nested` carries the inner blocks); a field's `of` carries an `enum`'s legal members (universal across depths — an agent reads the legal values from the contract, no failed-write probe), and `section` names the owning simple-section id (**top-level fields only** — an item field carries its section structurally, under `sections[].item`); `contract-version` bumps on any structural change to this projection — **no additive carve-out** (the M41 rc.5 addition of the `of`/`section` keys bumped it **1→2**) — the *values* track the schemas as they evolve, the *keys/structure* are the pin; golden-pinned at ship ([introspection.md](introspection.md)).

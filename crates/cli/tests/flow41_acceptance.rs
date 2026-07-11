@@ -24,8 +24,9 @@
 //!       lands, and finalize re-commits the doc with its inbound addresses intact.
 //!
 //!   (4) **`doc schema` (F1).** The read surface returns the separately-pinned
-//!       contract-version-1 json shape for a frozen doctype — versioned, fields with
-//!       the injected stamp, the optional `options` slot flagged.
+//!       contract json shape for a frozen doctype (contract-version 2 since M41
+//!       rc.5) — versioned, fields with the injected stamp, the optional `options`
+//!       slot flagged.
 //!
 //!   (5) **a methodology migration (F2).** `jigc migrate old-vision.md --as vision`
 //!       lands the managed singleton at the repo-root literal `VISION.md` (the
@@ -623,13 +624,13 @@ fn retitle_item_round_trips_with_the_anchor_and_inbound_addresses_intact() {
 // ─────────────────── Arm 4 — the pinned `doc schema` contract ───────────────────
 
 /// **Arm 4 (F1).** `jigc doc schema adr --format json` returns the separately-pinned
-/// contract-version-1 shape: the contract version stamped, the doctype's frozen
-/// `schema-version` carried, the loader-injected `schema-version` stamp field
-/// rendered non-author-required, and the optional `options` slot flagged. (The
-/// byte-verbatim goldens live in `doc_schema.rs`; this arm asserts the contract
-/// markers behaviorally through the real binary.)
+/// contract shape (contract-version 2 since M41 rc.5): the contract version stamped,
+/// the doctype's frozen `schema-version` carried, the loader-injected
+/// `schema-version` stamp field rendered non-author-required, and the optional
+/// `options` slot flagged. (The byte-verbatim goldens live in `doc_schema.rs`; this
+/// arm asserts the contract markers behaviorally through the real binary.)
 #[test]
-fn doc_schema_returns_the_pinned_contract_version_1_shape() {
+fn doc_schema_returns_the_pinned_contract_shape() {
     let repo = TempDir::new("schema");
     let home = TempDir::new("home");
     git_init(repo.path());
@@ -645,7 +646,7 @@ fn doc_schema_returns_the_pinned_contract_version_1_shape() {
         serde_json::from_str(&stdout_of(&out)).expect("the emitted contract parses as json");
 
     assert_eq!(
-        value["contract-version"], 1,
+        value["contract-version"], 2,
         "the projection carries the pinned contract version",
     );
     assert_eq!(value["type"], "adr", "the projection names the doctype");
