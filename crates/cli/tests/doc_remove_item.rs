@@ -531,7 +531,40 @@ fn remove_item_prints_a_success_confirmation() {
     );
     let ack: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("remove-item json ack parses");
-    assert_eq!(ack["address"], addr);
+    // The command-output contract (`design/command-output-contract.md` §2): `op` + the
+    // address decomposed into `target{doctype, slug, section, item}` (a top-level item
+    // reaches section+item, no leaf) + the `removed` effect key + `findings: []`.
+    assert_eq!(ack["op"], "remove-item");
+    assert_eq!(ack["target"]["doctype"], "changelog");
+    assert_eq!(ack["target"]["slug"], slug.as_str());
+    assert_eq!(ack["target"]["section"], "releases");
+    assert_eq!(ack["target"]["item"], "2-0-0");
+    assert!(
+        ack["target"]["leaf"].is_null(),
+        "a remove-item target reaches no leaf; got:\n{stdout}"
+    );
+    assert_eq!(ack["removed"], true);
+    assert_eq!(ack["findings"], serde_json::json!([]));
+
+    // A **nested** remove keys `item` on the leaf-most item id — the flat 5-key target
+    // shape holds at nested depth (`releases/<v>/changes/<cat>` → `item: <cat>`), the
+    // top section under `section` and the leaf-most change-group under `item`.
+    let fx = provision(&["3-1-0"]);
+    let slug = &fx.slug;
+    let nested = format!("changelog:{slug}#releases/3-1-0/changes/added");
+    let stdout = ok_stdout(
+        fx.run(&["doc", "remove-item", &nested, "--format", "json"], None),
+        "nested remove-item json ack",
+    );
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("nested remove-item json ack parses");
+    assert_eq!(ack["op"], "remove-item");
+    assert_eq!(ack["target"]["section"], "releases");
+    assert_eq!(
+        ack["target"]["item"], "added",
+        "the nested target keys `item` on the leaf-most change-group id; got:\n{stdout}"
+    );
+    assert_eq!(ack["findings"], serde_json::json!([]));
 }
 
 #[test]

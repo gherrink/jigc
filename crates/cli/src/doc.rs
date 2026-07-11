@@ -281,6 +281,13 @@ fn run_set_field(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
+    // The decomposed ack target (before `target` is consumed by the apply) + the written
+    // value shaped through the same scalar/list grammar the read path re-parses it with,
+    // so a write-ack and a `doc show` read-back agree on shape (a `0..*` bracket-list
+    // value → a JSON array; `design/command-output-contract.md` §2).
+    let ack_target = field_ack_target(&address, &target);
+    let value_json = field_json(&engine::field_block::parse_value(value));
+
     let edited = apply_field_target(&schema, &source, target, addr, value)?;
 
     persist(&path, &edited)?;
@@ -291,7 +298,8 @@ fn run_set_field(
             format,
             &render::DocAck::Field {
                 address: addr.to_string(),
-                value: value.to_string(),
+                target: ack_target,
+                value: value_json,
             },
         )
     );
@@ -481,6 +489,9 @@ fn run_set_slot(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
+    // The decomposed ack target, before `target` is consumed by the apply.
+    let ack_target = slot_ack_target(&address, &target);
+
     let edited = apply_slot_target(&schema, &source, target, addr, &prose)?;
 
     persist(&path, &edited)?;
@@ -491,6 +502,7 @@ fn run_set_slot(
             format,
             &render::DocAck::Slot {
                 address: addr.to_string(),
+                target: ack_target,
                 chars: prose.chars().count(),
             },
         )
@@ -785,6 +797,9 @@ fn run_remove_item(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
+    // The decomposed ack target, before `target` is consumed by the removal match.
+    let ack_target = item_ack_target(&address, &target);
+
     let edited = match target {
         RemoveItemTarget::TopLevel { section, item } => {
             engine::write::remove_item(&schema, &source, &section, &item).map_err(|e| {
@@ -817,6 +832,7 @@ fn run_remove_item(
             format,
             &render::DocAck::RemovedItem {
                 address: addr.to_string(),
+                target: ack_target,
             },
         )
     );
@@ -952,6 +968,7 @@ fn run_retitle_item(
             format,
             &render::DocAck::RetitledItem {
                 address: addr.to_string(),
+                target: item_ack_target(&address, &target),
                 title: title.to_string(),
             },
         )
@@ -2106,6 +2123,75 @@ fn field_json(value: &Value) -> serde_json::Value {
                 .collect(),
         ),
     }
+}
+
+/// Stamp the doc head (`doctype` + `slug`) of a write-ack's decomposed `target`
+/// (`design/command-output-contract.md` §2). The per-verb builders below supply the
+/// section/item/leaf depth from their already-resolved write-target enums (no address
+/// re-parse); this shared constructor reads the head off the parsed `address`.
+fn ack_target(
+    address: &Address,
+    section: Option<String>,
+    item: Option<String>,
+    leaf: Option<String>,
+) -> render::AckTarget {
+    render::AckTarget {
+        doctype: address.r#type.as_str().to_string(),
+        slug: address.slug.as_str().to_string(),
+        section,
+        item,
+        leaf,
+    }
+}
+
+/// The decomposed ack target of a resolved `set-field` write: the field id is the leaf;
+/// an item-scoped write carries the **leaf-most** item id under `item` (the flat 5-key
+/// shape holds at nested depth — the field/slot-vs-section split is read off the resolved
+/// target, never hop count).
+fn field_ack_target(address: &Address, target: &FieldTarget) -> render::AckTarget {
+    let (section, item, leaf) = match target {
+        FieldTarget::Section { section, field } => (section.clone(), None, field.clone()),
+        FieldTarget::Item {
+            section,
+            item,
+            field,
+        } => (section.clone(), Some(item.clone()), field.clone()),
+        FieldTarget::NestedItem {
+            section,
+            items,
+            field,
+        } => (section.clone(), items.last().cloned(), field.clone()),
+    };
+    ack_target(address, Some(section), item, Some(leaf))
+}
+
+/// The decomposed ack target of a resolved `set-slot` write: a section-level slot reaches
+/// only the section; an item-level slot carries the leaf-most item id + the slot leaf.
+fn slot_ack_target(address: &Address, target: &SlotTarget) -> render::AckTarget {
+    let (section, item, leaf) = match target {
+        SlotTarget::Section(section) => (section.clone(), None, None),
+        SlotTarget::Item {
+            section,
+            item,
+            leaf,
+        } => (section.clone(), Some(item.clone()), Some(leaf.clone())),
+        SlotTarget::NestedItem {
+            section,
+            items,
+            leaf,
+        } => (section.clone(), items.last().cloned(), Some(leaf.clone())),
+    };
+    ack_target(address, Some(section), item, leaf)
+}
+
+/// The decomposed ack target of a resolved `remove-item` / `retitle-item` write (both
+/// resolve through [`RemoveItemTarget`]): section + the leaf-most item id, no leaf.
+fn item_ack_target(address: &Address, target: &RemoveItemTarget) -> render::AckTarget {
+    let (section, item) = match target {
+        RemoveItemTarget::TopLevel { section, item } => (section.clone(), Some(item.clone())),
+        RemoveItemTarget::Nested { section, items } => (section.clone(), items.last().cloned()),
+    };
+    ack_target(address, Some(section), item, None)
 }
 
 /// The active task: its working-area directory + the embedded pack to resolve

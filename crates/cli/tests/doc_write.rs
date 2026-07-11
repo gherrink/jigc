@@ -261,8 +261,17 @@ fn set_field_prints_a_success_confirmation() {
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     let ack: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("set-field json ack parses");
-    assert_eq!(ack["address"], format!("commit:{task}#type"));
+    // The command-output contract (`design/command-output-contract.md` §2): `op` +
+    // the address decomposed into `target{doctype, slug, section?, item?, leaf?}` (the
+    // depth ladder doc show mirrors) + the retained `value` effect key + `findings: []`.
+    assert_eq!(ack["op"], "set-field");
+    assert_eq!(ack["target"]["doctype"], "commit");
+    assert_eq!(ack["target"]["slug"], task);
+    assert_eq!(ack["target"]["section"], "header");
+    assert_eq!(ack["target"]["leaf"], "type");
+    // A scalar field projects as a string (the shape doc show's `fields` use).
     assert_eq!(ack["value"], "fix");
+    assert_eq!(ack["findings"], serde_json::json!([]));
 }
 
 #[test]
@@ -315,11 +324,80 @@ fn set_slot_prints_a_success_confirmation() {
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     let ack: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("set-slot json ack parses");
-    assert_eq!(ack["address"], format!("commit:{task}#summary"));
+    // The command-output contract §2: `op` + decomposed `target` (a section-level
+    // slot reaches only the section, so `item`/`leaf` are absent) + the retained
+    // `chars` effect key + `findings: []`.
+    assert_eq!(ack["op"], "set-slot");
+    assert_eq!(ack["target"]["doctype"], "commit");
+    assert_eq!(ack["target"]["slug"], task);
+    assert_eq!(ack["target"]["section"], "summary");
+    assert!(
+        ack["target"]["item"].is_null(),
+        "a section-level slot reaches no item; got:\n{stdout}"
+    );
+    assert!(
+        ack["target"]["leaf"].is_null(),
+        "a section-level slot reaches no leaf; got:\n{stdout}"
+    );
     assert!(
         ack["chars"].is_number(),
         "json ack carries a char count; got:\n{stdout}"
     );
+    assert_eq!(ack["findings"], serde_json::json!([]));
+}
+
+#[test]
+fn set_field_list_cardinality_value_projects_as_a_json_array() {
+    // The command-output contract §2: a `set-field` ack's `value` is shaped exactly as
+    // doc show's `fields` project it — a scalar → string, a **list-cardinality** value →
+    // a JSON array. `adr.supersedes` is a `0..*` ref, authored via the inline bracket
+    // form; the ack must carry `value` as an array, not the opaque bracket string.
+    let (repo, home) = started_repo("record the cache decision");
+    // Create an ADR in-task (single-task's gate `allows-create` an adr as the decision).
+    let create = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "adr", "--title", "Cache strategy"],
+        None,
+    );
+    assert!(
+        create.status.success(),
+        "`jigc doc create adr` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "set-field",
+            "adr:cache-strategy#supersedes",
+            "--value",
+            "[adr:old-a, adr:old-b]",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "a list-cardinality `set-field` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("set-field json ack parses");
+    assert_eq!(ack["op"], "set-field");
+    assert_eq!(ack["target"]["doctype"], "adr");
+    assert_eq!(ack["target"]["slug"], "cache-strategy");
+    assert_eq!(ack["target"]["section"], "status");
+    assert_eq!(ack["target"]["leaf"], "supersedes");
+    assert_eq!(
+        ack["value"],
+        serde_json::json!(["adr:old-a", "adr:old-b"]),
+        "a list-cardinality field projects as a JSON array; got:\n{stdout}"
+    );
+    assert_eq!(ack["findings"], serde_json::json!([]));
 }
 
 #[test]

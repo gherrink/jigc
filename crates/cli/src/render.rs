@@ -580,14 +580,46 @@ fn landed_summary(landed: &Landed) -> String {
 /// footer (the `create` / `add-item` sibling verbs emit a bare line too — only the
 /// composed reading surfaces carry the footer).
 pub enum DocAck {
-    /// A `set-field` landed `value` at `address`.
-    Field { address: String, value: String },
-    /// A `set-slot` spliced `chars` characters of prose at `address`.
-    Slot { address: String, chars: usize },
-    /// A `remove-item` dropped the item at `address`.
-    RemovedItem { address: String },
-    /// A `retitle-item` retitled the item at `address` (anchor frozen) to `title`.
-    RetitledItem { address: String, title: String },
+    /// A `set-field` landed `value` at `address`/`target`. `value` is the written field
+    /// value shaped as `doc show`'s `fields` project it (scalar → string, list → array).
+    Field {
+        address: String,
+        target: AckTarget,
+        value: serde_json::Value,
+    },
+    /// A `set-slot` spliced `chars` characters of prose at `address`/`target`.
+    Slot {
+        address: String,
+        target: AckTarget,
+        chars: usize,
+    },
+    /// A `remove-item` dropped the item at `address`/`target`.
+    RemovedItem { address: String, target: AckTarget },
+    /// A `retitle-item` retitled the item at `address`/`target` (anchor frozen) to `title`.
+    RetitledItem {
+        address: String,
+        target: AckTarget,
+        title: String,
+    },
+}
+
+/// The decomposed write address a [`DocAck`] carries in `--format json` — the same
+/// depth ladder `doc show`'s `#fragment` projects (`design/command-output-contract.md`
+/// §2): `doctype` + `slug` always; `section`/`item`/`leaf` present exactly when the
+/// address reaches that depth (a section-level slot carries only `section`; a
+/// section-item write adds `item`; a leaf write adds `leaf`). A nested write flattens to
+/// the leaf-most item id under `item` (the pinned flat 5-key shape). Absent hops are
+/// omitted from the JSON, not emitted null.
+#[derive(Serialize)]
+pub struct AckTarget {
+    pub doctype: String,
+    pub slug: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub section: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leaf: Option<String>,
 }
 
 /// Render a successful single-write `jigc doc` verb confirmation ([`DocAck`]) to the
@@ -598,27 +630,46 @@ pub enum DocAck {
 pub fn doc_ack(format: Format, ack: &DocAck) -> String {
     match format {
         Format::Json => match ack {
-            DocAck::Field { address, value } => json(&serde_json::json!({
-                "set": "field", "address": address, "value": value,
+            // The command-output contract (`design/command-output-contract.md` §2):
+            // `op` + the decomposed `target` + the op's retained effect key +
+            // `findings: []` (empty this increment; Inc 3 populates it).
+            DocAck::Field { target, value, .. } => json(&serde_json::json!({
+                "op": "set-field", "target": target, "value": value, "findings": [],
             })),
-            DocAck::Slot { address, chars } => json(&serde_json::json!({
-                "set": "slot", "address": address, "chars": chars,
+            DocAck::Slot { target, chars, .. } => json(&serde_json::json!({
+                "op": "set-slot", "target": target, "chars": chars, "findings": [],
             })),
-            DocAck::RemovedItem { address } => json(&serde_json::json!({
-                "removed": "item", "address": address,
+            DocAck::RemovedItem { target, .. } => json(&serde_json::json!({
+                "op": "remove-item", "target": target, "removed": true, "findings": [],
             })),
-            DocAck::RetitledItem { address, title } => json(&serde_json::json!({
-                "retitled": "item", "address": address, "title": title,
+            DocAck::RetitledItem { target, title, .. } => json(&serde_json::json!({
+                "op": "retitle-item", "target": target, "title": title, "findings": [],
             })),
         },
         Format::Agent | Format::Human => match ack {
-            DocAck::Field { address, value } => format!("set {address} = {value}"),
-            DocAck::Slot { address, chars } => format!("set slot {address} ({chars} chars)"),
-            DocAck::RemovedItem { address } => format!("removed item {address}"),
-            DocAck::RetitledItem { address, title } => {
+            DocAck::Field { address, value, .. } => {
+                format!("set {address} = {}", ack_value_display(value))
+            }
+            DocAck::Slot { address, chars, .. } => format!("set slot {address} ({chars} chars)"),
+            DocAck::RemovedItem { address, .. } => format!("removed item {address}"),
+            DocAck::RetitledItem { address, title, .. } => {
                 format!("retitled item {address} to {title:?} (anchor frozen)")
             }
         },
+    }
+}
+
+/// The agent-text display of a shaped ack value: a scalar → its bare string, a list →
+/// the inline `[a, b]` form (the on-disk authoring shape), so the terse confirmation
+/// reads naturally where the JSON ack carries the structured `value`.
+fn ack_value_display(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(elems) => {
+            let parts: Vec<String> = elems.iter().map(ack_value_display).collect();
+            format!("[{}]", parts.join(", "))
+        }
+        other => other.to_string(),
     }
 }
 

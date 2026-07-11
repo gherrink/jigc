@@ -143,8 +143,11 @@ pub fn parse(block: &str) -> Result<FieldBlock, FieldBlockError> {
     Ok(FieldBlock { fields })
 }
 
-/// Classify a trimmed raw value: an inline-flow list `[ … ]`, else a scalar.
-fn parse_value(raw: &str) -> Value {
+/// Classify a trimmed raw value: an inline-flow list `[ … ]`, else a scalar. Public so
+/// a write-ack can project a just-written value through the same scalar/list grammar the
+/// read path parses it back with (the `doc show` field shape — `design/command-output-
+/// contract.md` §2), without re-reading the persisted doc.
+pub fn parse_value(raw: &str) -> Value {
     if let Some(inner) = raw.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
         let inner = inner.trim();
         if inner.is_empty() {
