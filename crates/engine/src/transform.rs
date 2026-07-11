@@ -101,6 +101,7 @@ use crate::schema::{Schema, SectionBody};
 use crate::schema_diff::SchemaChange;
 use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError, SpliceError};
+use std::collections::BTreeMap;
 
 /// A failure applying a classified diff to one instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -206,6 +207,19 @@ pub fn transform(
             SchemaChange::AddedOptionalField { section, field } => {
                 out = apply_added_field(new_schema, &out, section, field)?;
             }
+            SchemaChange::ValueRemapped {
+                section,
+                field,
+                map,
+            } => {
+                // The first **parameterized** transform kind: remap each committed value of
+                // the enum `field` through the authored old→new `map` (an enum rename is
+                // unrecoverable from the schema pair, so the CLI supplies the map — the
+                // determinism boundary holds: a deterministic input, not an LLM call). A
+                // committed value the map does not cover blocks loudly (`Unsupported`),
+                // never a silent no-op (`corpus-migration.md` → the value-remap kind).
+                out = apply_value_remap(new_schema, &out, section, field, map)?;
+            }
             SchemaChange::Relocated { .. } => {
                 // A file move, not a content edit: the instance bytes are byte-identical
                 // at the new home, so the in-content fold is a **no-op** (the
@@ -282,6 +296,89 @@ fn apply_added_field(
         Ok(write::insert_field(
             new_schema, source, section, &new_field,
         )?)
+    }
+}
+
+/// Apply a `value-remapped` change: remap every committed value of the enum `field` in
+/// `section` through the authored old→new `map`, byte-stably.
+///
+/// The section may be **simple** (one field value, spliced via [`write::set_field`]) or
+/// **repeatable** (one value per item, spliced via [`write::set_item_field`] — the
+/// present-field value-span splice). Parse is structural (it reads the field bullet
+/// regardless of enum membership), so the doc re-parses cleanly under the v2 schema even
+/// while it still carries v1 member values (`corpus-migration.md` → the value-remap kind).
+///
+/// A committed value the `map` does not cover — or a list-valued enum (out of the narrow
+/// bound) — surfaces [`TransformError::Unsupported`]: an uncovered value blocks loudly,
+/// never a silent no-op. A field/section the instance omits is a byte no-op (nothing to
+/// remap).
+fn apply_value_remap(
+    schema: &Schema,
+    source: &str,
+    section: &str,
+    field: &str,
+    map: &BTreeMap<String, String>,
+) -> Result<String, TransformError> {
+    fn unsupported(section: &str) -> TransformError {
+        TransformError::Unsupported {
+            kind: "value-remapped",
+            section: section.to_string(),
+        }
+    }
+    let sec = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section)
+        .ok_or_else(|| unsupported(section))?;
+
+    let doc = parse_sections(schema, source).map_err(|_| unsupported(section))?;
+    let Some(parsed) = doc.sections.iter().find(|s| s.id == section) else {
+        // The instance omits the section — nothing to remap.
+        return Ok(source.to_string());
+    };
+
+    match &sec.body {
+        SectionBody::Simple { .. } => {
+            let Some(f) = parsed.fields.iter().find(|f| f.key == field) else {
+                // The field is absent in this instance — nothing to remap.
+                return Ok(source.to_string());
+            };
+            let new_value = remap_value(&f.value, map).ok_or_else(|| unsupported(section))?;
+            Ok(write::set_field(
+                schema, source, section, field, &new_value,
+            )?)
+        }
+        SectionBody::Repeatable { .. } => {
+            // Collect (item id, remapped value) from the initial parse, then splice each via
+            // the present-field item write path. Item ids are stable under a value-span
+            // splice (the enum field is never the id-from — an enum id-from item is
+            // reslug-refused), so a fresh `set_item_field` locates each item after the prior
+            // splice.
+            let mut edits: Vec<(String, String)> = Vec::new();
+            for item in &parsed.items {
+                if let Some(f) = item.fields.iter().find(|f| f.key == field) {
+                    let new_value =
+                        remap_value(&f.value, map).ok_or_else(|| unsupported(section))?;
+                    edits.push((item.id.clone(), new_value));
+                }
+            }
+            let mut out = source.to_string();
+            for (item_id, new_value) in edits {
+                out = write::set_item_field(schema, &out, section, &item_id, field, &new_value)?;
+            }
+            Ok(out)
+        }
+    }
+}
+
+/// Look up a committed scalar value in the authored old→new `map`. An **uncovered** value
+/// — or a non-scalar (list-valued) enum, out of the narrow bound — yields `None`, which the
+/// driver surfaces as [`TransformError::Unsupported`] (blocks loudly, never a silent
+/// no-op).
+fn remap_value(value: &Value, map: &BTreeMap<String, String>) -> Option<String> {
+    match value {
+        Value::Scalar(v) => map.get(v).cloned(),
+        Value::List(_) => None,
     }
 }
 
@@ -406,7 +503,7 @@ mod tests {
     use crate::schema::load_schema;
     use crate::schema_diff::schema_diff;
     use crate::validate::schema_conformance;
-    use crate::write::{Instance, SectionContent, instance_from_source, render};
+    use crate::write::{Instance, ItemContent, SectionContent, instance_from_source, render};
 
     /// Parse `out` against `schema` and assert it carries **zero** conformance
     /// findings — the `conformance_for` clean half of the done-criterion.
@@ -1585,6 +1682,300 @@ sections:
 
         let again = transform(&v1, &v2, &src, &diff).expect("re-run");
         assert_eq!(again, out, "the combined fold is deterministic");
+    }
+
+    // ---- (h) the value-remapped kind: an enum member rename, both field shapes ----
+
+    /// v1: a `ledger` with a repeatable `entries` section whose item block carries an
+    /// enum `kind` over `[D, I]` (the deferral-ledger shape) plus a `body` slot.
+    fn ledger_v1() -> Schema {
+        load_schema(
+            b"\
+type: ledger
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [D, I] }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        )
+        .expect("ledger v1 loads")
+    }
+
+    /// v2: the `kind` enum members are **renamed** to `[Decision, Idea]` — everything
+    /// else byte-identical (the deferral-ledger v1→v2 bump, synthetically).
+    fn ledger_v2() -> Schema {
+        load_schema(
+            b"\
+type: ledger
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea] }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        )
+        .expect("ledger v2 loads")
+    }
+
+    /// A canonical v0-shaped `ledger` with two entries — one `kind: D`, one `kind: I` —
+    /// built through [`render`] so the input is the exact byte-stable form a
+    /// first-touch-canonicalized corpus doc has.
+    fn ledger_v0_doc() -> String {
+        let inst = Instance {
+            title: "Deferral Ledger".to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items: vec![
+                    ItemContent {
+                        id: "cache-the-index".to_string(),
+                        title: "Cache the index".to_string(),
+                        slot: Some("Deferred until the store scope lands.".to_string()),
+                        fields: vec![Field {
+                            key: "kind".to_string(),
+                            value: Value::Scalar("D".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    ItemContent {
+                        id: "a-plugin-surface".to_string(),
+                        title: "A plugin surface".to_string(),
+                        slot: Some("Parked until a real external domain earns it.".to_string()),
+                        fields: vec![Field {
+                            key: "kind".to_string(),
+                            value: Value::Scalar("I".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+        };
+        render(&ledger_v1(), &inst)
+    }
+
+    #[test]
+    fn value_remap_on_a_repeatable_item_field_remaps_every_item_byte_faithful() {
+        let v1 = ledger_v1();
+        let v2 = ledger_v2();
+        let src = ledger_v0_doc();
+
+        // The real classifier emits the value-remapped change carrying an **empty** map;
+        // the driver is exercised on the emitted classification, with the CLI-supplied map
+        // threaded in (T3's channel, modeled here).
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::ValueRemapped {
+                section: "entries".to_string(),
+                field: "kind".to_string(),
+                map: BTreeMap::new(),
+            }]
+        );
+        let map = BTreeMap::from([
+            ("D".to_string(), "Decision".to_string()),
+            ("I".to_string(), "Idea".to_string()),
+        ]);
+        let changes = vec![SchemaChange::ValueRemapped {
+            section: "entries".to_string(),
+            field: "kind".to_string(),
+            map,
+        }];
+
+        let out = transform(&v1, &v2, &src, &changes).expect("value-remap transform succeeds");
+
+        // (c) conforms against v2 (the remapped members are now in the enum), (a)
+        // round-trips byte-identical.
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // (b) every item's `kind` is remapped; ids/titles/body prose are byte-preserved.
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let entries = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "entries")
+            .expect("entries present");
+        let kind_of = |item_id: &str| {
+            entries
+                .items
+                .iter()
+                .find(|i| i.id == item_id)
+                .and_then(|i| i.fields.iter().find(|f| f.key == "kind"))
+                .map(|f| f.value.clone())
+        };
+        assert_eq!(
+            kind_of("cache-the-index"),
+            Some(Value::Scalar("Decision".to_string()))
+        );
+        assert_eq!(
+            kind_of("a-plugin-surface"),
+            Some(Value::Scalar("Idea".to_string()))
+        );
+        let body_of = |item_id: &str| {
+            entries
+                .items
+                .iter()
+                .find(|i| i.id == item_id)
+                .and_then(|i| i.slot.clone())
+        };
+        assert_eq!(
+            body_of("cache-the-index").as_deref(),
+            Some("Deferred until the store scope lands.")
+        );
+        assert_eq!(
+            body_of("a-plugin-surface").as_deref(),
+            Some("Parked until a real external domain earns it.")
+        );
+
+        // (d) determinism.
+        let again = transform(&v1, &v2, &src, &changes).expect("re-run succeeds");
+        assert_eq!(again, out, "value-remap transform is deterministic");
+    }
+
+    /// v1: a `note` with a header `meta` carrying an enum `status` over `[open, closed]`.
+    fn status_v1() -> Schema {
+        load_schema(
+            b"\
+type: note
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed] }
+  - id: body
+    slot: { hint: \"the note body\" }
+",
+        )
+        .expect("status v1 loads")
+    }
+
+    /// v2: the `status` enum members are **renamed** to `[active, archived]`.
+    fn status_v2() -> Schema {
+        load_schema(
+            b"\
+type: note
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [active, archived] }
+  - id: body
+    slot: { hint: \"the note body\" }
+",
+        )
+        .expect("status v2 loads")
+    }
+
+    /// A canonical v0-shaped `note` carrying `status: open` + body prose.
+    fn status_v0_doc() -> String {
+        let inst = Instance {
+            title: "A note".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "meta".to_string(),
+                    fields: vec![Field {
+                        key: "status".to_string(),
+                        value: Value::Scalar("open".to_string()),
+                    }],
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "body".to_string(),
+                    slot: Some("The note body, untouched by the remap.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&status_v1(), &inst)
+    }
+
+    #[test]
+    fn value_remap_on_a_simple_field_remaps_the_value_byte_faithful() {
+        let v1 = status_v1();
+        let v2 = status_v2();
+        let src = status_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::ValueRemapped {
+                section: "meta".to_string(),
+                field: "status".to_string(),
+                map: BTreeMap::new(),
+            }]
+        );
+        let map = BTreeMap::from([
+            ("open".to_string(), "active".to_string()),
+            ("closed".to_string(), "archived".to_string()),
+        ]);
+        let changes = vec![SchemaChange::ValueRemapped {
+            section: "meta".to_string(),
+            field: "status".to_string(),
+            map,
+        }];
+
+        let out = transform(&v1, &v2, &src, &changes).expect("simple value-remap succeeds");
+
+        // (c) conforms against v2, (a) round-trips byte-identical.
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // (b) the field value is remapped; the body prose is byte-preserved.
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let status = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "meta")
+            .and_then(|s| s.fields.iter().find(|f| f.key == "status"))
+            .map(|f| f.value.clone());
+        assert_eq!(status, Some(Value::Scalar("active".to_string())));
+        let body = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "body")
+            .and_then(|s| s.slot.clone());
+        assert_eq!(
+            body.as_deref(),
+            Some("The note body, untouched by the remap.")
+        );
+
+        // (d) determinism.
+        let again = transform(&v1, &v2, &src, &changes).expect("re-run succeeds");
+        assert_eq!(again, out, "simple value-remap is deterministic");
+    }
+
+    /// An **uncovered** committed value (the map does not include `open`) surfaces
+    /// [`TransformError::Unsupported`] — it blocks loudly, never a silent no-op (a value the
+    /// authored map cannot carry must halt the migration, not drop the entry).
+    #[test]
+    fn value_remap_over_an_uncovered_value_surfaces_unsupported() {
+        let v1 = status_v1();
+        let v2 = status_v2();
+        let src = status_v0_doc(); // carries `status: open`
+
+        // The map covers `closed` but NOT the committed `open` value.
+        let map = BTreeMap::from([("closed".to_string(), "archived".to_string())]);
+        let changes = vec![SchemaChange::ValueRemapped {
+            section: "meta".to_string(),
+            field: "status".to_string(),
+            map,
+        }];
+
+        assert_eq!(
+            transform(&v1, &v2, &src, &changes),
+            Err(TransformError::Unsupported {
+                kind: "value-remapped",
+                section: "meta".to_string(),
+            }),
+            "an uncovered committed value blocks loudly"
+        );
     }
 
     // ---- the deferred branches block, never silently drop ----

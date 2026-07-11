@@ -15,8 +15,8 @@
 //! data-losing, none a supported transform) are **not** classified here; the
 //! conformance detector and the transform gate adjudicate those.
 
-use crate::schema::{Field, Schema, SectionBody};
-use std::collections::HashMap;
+use crate::schema::{Field, Leaf, Schema, SectionBody};
+use std::collections::{BTreeMap, HashMap};
 
 /// One classified change between an old and a new [`Schema`], by kind.
 ///
@@ -47,6 +47,28 @@ pub enum SchemaChange {
         section: String,
         /// The field whose cardinality changed.
         field: String,
+    },
+
+    /// An **enum member rename**: a field present in both schemas whose `enum` `of:`
+    /// member set changed (`[D, I]` → `[Decision, Idea]`) — the **first parameterized
+    /// transform kind**. Applies to a **simple** field (`write::set_field`) and a
+    /// **repeatable-item** field (`write::set_item_field`).
+    ///
+    /// The old→new `map` is **authored** — a CLI-supplied migration input — because an
+    /// enum rename is *unrecoverable from the schema pair alone*: the classifier sees only
+    /// *that* the member set changed, never *which* old value maps onto *which* new one. So
+    /// the classifier emits this variant carrying an **empty** map (it detects the delta);
+    /// the CLI fills the map before the driver folds it (`design/corpus-migration.md` → the
+    /// value-remap kind, the structural-auto vs value-semantic-authored distinction). The
+    /// determinism *boundary* holds — the map is a deterministic CLI input, not an LLM call.
+    ValueRemapped {
+        /// The section carrying the enum field.
+        section: String,
+        /// The enum field whose member set was renamed.
+        field: String,
+        /// The authored old→new value map (**empty** as emitted by the classifier; the CLI
+        /// supplies the mapping before the driver applies it).
+        map: BTreeMap<String, String>,
     },
 
     /// A wholly-new **optional** slot section in `v2` — an added `## Heading` whose
@@ -197,9 +219,57 @@ fn diff_section(id: &str, old: &SectionBody, new: &SectionBody, out: &mut Vec<Sc
             }
             diff_fields(id, old_fields, new_fields, out);
         }
+        // Both repeatable: the only supported change is an **enum member rename** on an
+        // item-block field (`value-remapped`). Every other item-block change (an added
+        // leaf, a card widen, a nested-repeatable edit) stays unclassified — the narrow
+        // minimalism bound (`design/corpus-migration.md` → the value-remap kind).
+        (
+            SectionBody::Repeatable {
+                repeatable: old_rep,
+            },
+            SectionBody::Repeatable {
+                repeatable: new_rep,
+            },
+        ) => {
+            diff_item_fields(id, &old_rep.block, &new_rep.block, out);
+        }
         // Any other shape change (repeatable→simple, slotless simple→repeatable,
         // removed leaves) is breaking/unsupported — not classified here.
         _ => {}
+    }
+}
+
+/// `true` iff `old`/`new` are the same enum field whose member set was **renamed** — both
+/// declare an `of:` set and the two sets differ. The classifier detects only *that* the
+/// members changed (a [`SchemaChange::ValueRemapped`]); the old→new mapping is authored by
+/// the CLI (an enum rename is unrecoverable from the schema pair alone).
+fn enum_members_renamed(old: &Field, new: &Field) -> bool {
+    old.of.is_some() && new.of.is_some() && old.of != new.of
+}
+
+/// Diff a repeatable section's **item-block Field leaves** (matching by id): classify an
+/// enum member rename on each field present in both blocks. Narrow by design — only the
+/// `value-remapped` kind is emitted; non-`Field` leaves (slots, nested repeatables) and
+/// non-enum field changes are left unclassified.
+fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
+    let old_by_id: HashMap<&str, &Field> = old
+        .iter()
+        .filter_map(|leaf| match leaf {
+            Leaf::Field(f) => Some((f.id.as_str(), f.as_ref())),
+            _ => None,
+        })
+        .collect();
+    for leaf in new {
+        if let Leaf::Field(field) = leaf
+            && let Some(prev) = old_by_id.get(field.id.as_str())
+            && enum_members_renamed(prev, field)
+        {
+            out.push(SchemaChange::ValueRemapped {
+                section: section.to_owned(),
+                field: field.id.clone(),
+                map: BTreeMap::new(),
+            });
+        }
     }
 }
 
@@ -235,6 +305,13 @@ fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<Schema
                     out.push(SchemaChange::WidenedCardinality {
                         section: section.to_owned(),
                         field: field.id.clone(),
+                    });
+                }
+                if enum_members_renamed(prev, field) {
+                    out.push(SchemaChange::ValueRemapped {
+                        section: section.to_owned(),
+                        field: field.id.clone(),
+                        map: BTreeMap::new(),
                     });
                 }
             }
@@ -642,6 +719,107 @@ sections:
                 },
             ]
         );
+    }
+
+    // ---- the value-remapped kind (an enum member rename), both field shapes ----
+
+    /// `value-remapped`: an enum `of:` member rename on a **simple** field
+    /// (`[open, closed]` → `[pending, resolved]`) classifies to **exactly**
+    /// `[ValueRemapped{section, field}]` carrying an **empty** map (the classifier detects
+    /// only the delta; the CLI supplies the mapping) — red today (`diff_fields` inspects
+    /// only `card`, so the delta classified to `[]`).
+    #[test]
+    fn enum_rename_on_a_simple_field_classifies_to_value_remapped() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed] }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [pending, resolved] }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::ValueRemapped {
+                section: "meta".to_owned(),
+                field: "status".to_owned(),
+                map: BTreeMap::new(),
+            }]
+        );
+    }
+
+    /// `value-remapped`: an enum `of:` member rename on a **repeatable-item** field
+    /// (the deferral-ledger `kind` shape: `[D, I]` → `[Decision, Idea]`) classifies to
+    /// **exactly** `[ValueRemapped{section, field}]` — red today (`diff_section` drops
+    /// `(Repeatable, Repeatable)` through the `_ => {}` catch-all, so the delta was `[]`).
+    /// The item's `id-from` field is untouched, so it is the *only* change.
+    #[test]
+    fn enum_rename_on_a_repeatable_item_field_classifies_to_value_remapped() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: reason
+      block:
+        - { id: reason, type: string }
+        - { id: kind, type: enum, of: [D, I] }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: reason
+      block:
+        - { id: reason, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea] }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::ValueRemapped {
+                section: "entries".to_owned(),
+                field: "kind".to_owned(),
+                map: BTreeMap::new(),
+            }]
+        );
+    }
+
+    /// An **unchanged** repeatable section (an item-block enum field whose members did not
+    /// move) still yields the **empty** diff — the new `(Repeatable, Repeatable)` branch
+    /// diffs, never emits on mere presence (the inert-when-unchanged guard for the omitting
+    /// context, over the item-block path).
+    #[test]
+    fn unchanged_repeatable_section_yields_the_empty_diff() {
+        let s = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: reason
+      block:
+        - { id: reason, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea] }
+",
+        );
+        assert_eq!(schema_diff(&s, &s), vec![]);
     }
 
     /// The classifier **diffs**, never emits on mere presence: a schema carrying both a
