@@ -97,7 +97,10 @@ pub fn binary_mismatch_finding(jigc_home: &Path) -> Option<Finding> {
              align versions or re-run `jigc setup`"
         ),
         None,
-        None,
+        Some(format!(
+            "align the running jigc to {recorded}, or re-run `jigc setup` to re-stamp \
+             the store at {running}"
+        )),
     ))
 }
 

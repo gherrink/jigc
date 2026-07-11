@@ -207,6 +207,44 @@ fn validate_advisory_on_binary_mismatch_exits_zero() {
     );
 }
 
+/// The advisory-route floor (`design/validation.md` → The advisory-route floor): a
+/// `store-version.binary-mismatch` advisory is a `Severity::Advisory` finding, so it is
+/// inside the floor and MUST carry a non-null `route` on the pinned `--format json`
+/// surface. Its message names a real action (align versions / re-run `jigc setup`), so the
+/// route is a repair route, never `null`.
+#[test]
+fn binary_mismatch_advisory_carries_a_route() {
+    let repo = TempDir::new("mismatch-route");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+
+    let stamp = repo.path().join(".jigc").join("version");
+    fs::write(&stamp, "jigc-version: 0.0.1-test\n").expect("rewrite the stamp");
+
+    let out = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "a binary-mismatch advisory must NOT gate `jigc validate --format json` (exit 0); \
+         stdout:\n{stdout}\nstderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let report: serde_json::Value =
+        serde_json::from_str(&stdout).expect("`jigc validate --format json` emits JSON");
+    let findings = report["findings"]
+        .as_array()
+        .expect("the report carries a findings array");
+    let mismatch = findings
+        .iter()
+        .find(|f| f["code"] == "store-version.binary-mismatch")
+        .expect("the mismatch advisory is present in the JSON report");
+    assert!(
+        mismatch["route"].is_string(),
+        "an advisory finding must carry a non-null route (the advisory-route floor); got:\n{mismatch:#}",
+    );
+}
+
 /// A **matching** stamp (the store written by this very build) and an **absent** stamp (a
 /// pre-M36 hand-built store) each emit **no** `store-version.binary-mismatch` finding, and
 /// `jigc validate` exits 0.
