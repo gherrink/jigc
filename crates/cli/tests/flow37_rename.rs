@@ -1270,6 +1270,60 @@ fn store_scope_oob_rename_flips_exit_and_report_only() {
     );
 }
 
+/// V12 (M41 inc-8) — **bare-slug discoverability**: `jigc rename foo --to "X"` (an old
+/// address with no `:`) exits non-zero and the emitted stderr is *actionable* — it carries
+/// a concrete `<type>:<slug>` example **and** the `jigc describe` pointer, not just the
+/// abstract form. Drives the real binary so the stderr an operator would actually see is the
+/// contract.
+#[test]
+fn rename_bare_slug_errors_with_example_and_describe_pointer() {
+    let repo = TempDir::new("bare-slug");
+    seed_store(repo.path());
+
+    let out = jigc(repo.path(), &["rename", "foo", "--to", "X"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        !out.status.success(),
+        "a bare-slug rename (no `:`) must exit non-zero; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("<type>:<slug>"),
+        "the error must name the address form; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("adr:"),
+        "the error must carry a concrete `<type>:<slug>` example; stderr:\n{stderr}",
+    );
+    assert!(
+        stderr.contains("jigc describe"),
+        "the error must point at `jigc describe`; stderr:\n{stderr}",
+    );
+}
+
+/// V12 (M41 inc-8) — the clap surface advertises the address form: `jigc rename --help`
+/// shows the positional `value_name` as the `<type>:<slug>` address, not the misleading
+/// bare `<old-slug>`.
+#[test]
+fn rename_help_shows_address_form_value_name() {
+    let out = Command::new(env!("CARGO_BIN_EXE_jigc"))
+        .args(["rename", "--help"])
+        .output()
+        .expect("run the jigc binary");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "`jigc rename --help` must exit 0; stdout:\n{stdout}",
+    );
+    assert!(
+        stdout.contains("<type:slug>"),
+        "the help must advertise the address-form value_name `<type:slug>`; stdout:\n{stdout}",
+    );
+    assert!(
+        !stdout.contains("OLD_SLUG"),
+        "the misleading derived `OLD_SLUG` value_name must be gone; stdout:\n{stdout}",
+    );
+}
+
 /// Component B (T2) — **content drift stays report-only / exit 0**: a committed store with
 /// only an out-of-band *content* edit (a `file-state.hash-matches` drift) — no rename —
 /// keeps `jigc validate --format json` at **exit 0** with `report_only: true`. The

@@ -531,13 +531,19 @@ fn introduced_dangles<'a>(
         .collect()
 }
 
-/// Split a `<type>:<slug>` address into its parts. Rejects a missing `:` or an empty half.
+/// Split a `<type>:<slug>` address into its parts. Rejects a missing `:` or an empty half —
+/// both bail sites carry an actionable route (a concrete example + the `jigc describe`
+/// pointer at the doctype surface), since a bare slug (`foo`) is the natural first guess.
 fn parse_addr(addr: &str) -> Result<(String, String)> {
-    let (ty, slug) = addr
-        .split_once(':')
-        .ok_or_else(|| anyhow!("`{addr}` is not a `<type>:<slug>` address"))?;
+    let malformed = || {
+        anyhow!(
+            "`{addr}` is not a `<type>:<slug>` address — e.g. `adr:single-node-cache`\n  \
+             route: run `jigc describe` for the doctype surface"
+        )
+    };
+    let (ty, slug) = addr.split_once(':').ok_or_else(malformed)?;
     if ty.is_empty() || slug.is_empty() {
-        bail!("`{addr}` is not a `<type>:<slug>` address");
+        return Err(malformed());
     }
     Ok((ty.to_string(), slug.to_string()))
 }
@@ -713,9 +719,14 @@ mod tests {
     #[test]
     fn parse_addr_rejects_malformed() {
         assert!(parse_addr("adr:slug").is_ok());
-        assert!(parse_addr("noslug").is_err());
-        assert!(parse_addr(":slug").is_err());
-        assert!(parse_addr("adr:").is_err());
+        // Both bail sites (missing `:` and empty half) carry the actionable route: a
+        // concrete `<type>:<slug>` example and the `jigc describe` pointer.
+        for bad in ["noslug", ":slug", "adr:"] {
+            let msg = parse_addr(bad).unwrap_err().to_string();
+            assert!(msg.contains("<type>:<slug>"), "form: {msg}");
+            assert!(msg.contains("adr:"), "example: {msg}");
+            assert!(msg.contains("jigc describe"), "describe pointer: {msg}");
+        }
     }
 
     fn schema_map(yamls: &[&str]) -> BTreeMap<String, Schema> {

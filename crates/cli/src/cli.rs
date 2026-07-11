@@ -196,7 +196,7 @@ pub enum Command {
         path: String,
     },
 
-    /// Rename a managed doc — `jigc rename <old-slug> --to "<New Title>"` is the
+    /// Rename a managed doc — `jigc rename <type>:<slug> --to "<New Title>"` is the
     /// CLI-owned identity refactor: it derives the new slug from the title, repoints
     /// every persisted referrer old→new, rewrites the moved doc's H1, `git mv`s it, and
     /// commits as one atomic transaction (rolling back cleanly on any failure). `--to` is
@@ -204,6 +204,7 @@ pub enum Command {
     Rename {
         /// The `<type>:<slug>` address of the doc to rename (e.g.
         /// `adr:single-node-cache`).
+        #[arg(value_name = "type:slug")]
         old_slug: String,
 
         /// The new title — the moved doc's H1, and the slug source unless `--slug`
