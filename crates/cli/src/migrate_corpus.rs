@@ -53,6 +53,7 @@ use engine::packsource::PackSource;
 use engine::schema::{SCHEMA_VERSION_FIELD, Schema, SectionBody};
 use engine::schema_diff::{SchemaChange, schema_diff};
 use engine::transform::{CorpusDoc, CorpusMigration, DocOutcome, migrate_corpus};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// One doctype's migration job: its current shape (`to`, stamp-injected) and its current
@@ -228,7 +229,16 @@ pub(crate) fn migrate_committed_corpus(
                 // migrated by the verb).
                 Some(k) => match crate::pack::load_prior_schema(pack, &dt.ty, k) {
                     Ok(from) => {
-                        let changes = per_doc_changes(&schema_diff(&from, &to), &source, false);
+                        // The v1→v2 path is the only one that can surface a `ValueRemapped`
+                        // (an enum member rename needs two *different* declared enum sets;
+                        // the stamp-absent path diffs `strip_stamp(to)` against `to`, whose
+                        // members are identical). The classifier emits the variant with an
+                        // **empty** map (it detects only *that* the members moved); the CLI
+                        // supplies the authored old→new map before the fold.
+                        let changes = enrich_value_remaps(
+                            per_doc_changes(&schema_diff(&from, &to), &source, false),
+                            &dt.ty,
+                        );
                         // The stamp is value-bumped `k → current` **post-fold** (it already
                         // exists, so it is a `set_field` value splice, not an add-field) — on
                         // the gated v2 bytes, which are guaranteed to conform to `to` (the
@@ -395,6 +405,59 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
         })
         .cloned()
         .collect()
+}
+
+/// Fill each emitted [`SchemaChange::ValueRemapped`]'s authored old→new map from the
+/// CLI-supplied remap table ([`authored_remap`], keyed by doctype/section/field). The
+/// classifier emits the variant with an **empty** map — it detects only *that* the enum
+/// members moved (`[D, I]` → `[Decision, Idea]`), never *which* old value maps onto *which*
+/// new one, an assignment unrecoverable from the schema pair alone. The CLI supplies that
+/// semantic choice as a deterministic migration input — the `with_stamp_default` precedent
+/// for a value-source the classifier emits blank; the determinism *boundary* holds (a fixed
+/// table, not an LLM call) (`design/corpus-migration.md` → the structural-auto /
+/// value-semantic-authored distinction).
+///
+/// A rename with **no authored entry** keeps the empty map, so the engine driver blocks the
+/// doc loudly on its first committed value (`TransformError::Unsupported`) — never a silent
+/// strand: a schema bump that omits its map is surfaced, not swallowed
+/// ([`DECISIONS.md`] → 2026-07-11 M41 Settle Fork 4).
+fn enrich_value_remaps(changes: Vec<SchemaChange>, ty: &str) -> Vec<SchemaChange> {
+    changes
+        .into_iter()
+        .map(|change| match change {
+            SchemaChange::ValueRemapped {
+                section,
+                field,
+                map,
+            } if map.is_empty() => {
+                let map = authored_remap(ty, &section, &field).unwrap_or(map);
+                SchemaChange::ValueRemapped {
+                    section,
+                    field,
+                    map,
+                }
+            }
+            other => other,
+        })
+        .collect()
+}
+
+/// The CLI-authored old→new value maps for enum-member renames — keyed by
+/// `(doctype, section, field)`. An enum rename is a semantic choice the schema pair cannot
+/// recover, so the mapping is declared here (the migration input the classifier emits
+/// blank), not derived. Returns `None` for any (doctype, section, field) with no authored
+/// rename, leaving the classifier's empty map — the driver then blocks that doc loudly.
+///
+/// The one authored entry: the M41 F4 `deferral-ledger` `entries.kind` rename `D`→`Decision`
+/// / `I`→`Idea` (the first methodology v1→v2 migration).
+fn authored_remap(ty: &str, section: &str, field: &str) -> Option<BTreeMap<String, String>> {
+    match (ty, section, field) {
+        ("deferral-ledger", "entries", "kind") => Some(BTreeMap::from([
+            ("D".to_string(), "Decision".to_string()),
+            ("I".to_string(), "Idea".to_string()),
+        ])),
+        _ => None,
+    }
 }
 
 /// Whether `source` carries a body section heading (`## …`) matching `section_id` under the
