@@ -379,7 +379,7 @@ mod tests {
             Severity::Blocking,
             "schema-conformance.ref-resolves",
             "forward-ref integrity — target does not resolve",
-            Some(Location::addressed("adr:cache#supersedes/ghost", 1, 1)),
+            Some(Location::addressed("adr:cache#supersedes/adr:ghost", 1, 1)),
             None,
         );
         let json = serde_json::to_value(&finding).expect("serializes");
@@ -387,7 +387,7 @@ mod tests {
             json["key"],
             serde_json::json!({
                 "code": "schema-conformance.ref-resolves",
-                "target": "adr:cache#supersedes/ghost"
+                "target": "adr:cache#supersedes/adr:ghost"
             }),
             "an addressed finding's key.target is its URI address",
         );

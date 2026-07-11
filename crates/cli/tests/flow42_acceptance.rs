@@ -585,7 +585,7 @@ fn commit_base_adr(repo: &Path, home: &Path) -> PathBuf {
 
 /// **Arm F2 (finding-key).** A committed adr whose `0..*` `supersedes` carries two dangling
 /// targets fans **two** blocking `schema-conformance.ref-resolves` findings, each with a
-/// **distinct** `(code, target)` key (`adr:<slug>#supersedes/<to-slug>` — a `0..*` ref fans
+/// **distinct** `(code, target)` key (`adr:<slug>#supersedes/<type>:<to-slug>` — a `0..*` ref fans
 /// one keyed finding per dangling target, `command-output-contract.md` → the stable finding
 /// key), and **every** finding the store sweep emits carries a non-null `route` (the V15 /
 /// Fork-2 advisory-route floor — never `null`). Store-scope `validate` is report-only, so it
@@ -653,8 +653,8 @@ fn two_dangling_ref_sweep_emits_two_uniquely_keyed_findings_every_advisory_route
     assert_eq!(
         keys,
         [
-            "adr:shared-redis-session-cache#supersedes/ghost-one".to_string(),
-            "adr:shared-redis-session-cache#supersedes/ghost-two".to_string()
+            "adr:shared-redis-session-cache#supersedes/adr:ghost-one".to_string(),
+            "adr:shared-redis-session-cache#supersedes/adr:ghost-two".to_string()
         ]
         .into_iter()
         .collect(),

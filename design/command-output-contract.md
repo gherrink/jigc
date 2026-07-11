@@ -76,7 +76,7 @@ The key is **`(code, target)`**:
 | Family (`code`) | Emits today | Flip? | Fragment (collision-freedom) | `target` |
 |---|---|---|---|---|
 | `doc-code.*` | `type:slug#field` (anchor in msg) | — | — (one per anchor field) | `type:slug#field` |
-| `ref-resolves` | `type:slug` (`edge.from`); relation+target in msg (`index.rs:823`) | — | `#<relation>/<to-slug>` — a `0..*` ref fans **one finding per dangling target** | `type:slug#<relation>/<to-slug>` |
+| `ref-resolves` | `type:slug` (`edge.from`); relation+target in msg (`index.rs:823`) | — | `#<relation>/<type>:<to-slug>` — the target's **full identity** (`edge.to`), so a `0..*` ref fans **one finding per dangling target** and the key stays unambiguous even if a relation's targets span two doctypes | `type:slug#<relation>/<type>:<to-slug>` |
 | `mention-resolves` | `type:slug` (`from`); token in msg | — | `#<token>` — **one keyed finding per `(doc, token)`** (all occurrences of a token in a doc collapse to one; occurrence index is unstable under edits — pinned, not left open) | `type:slug#<token>` |
 | `schema-completeness.inverse-cardinality` | `type:slug` = the deficient **target** doc; relation in msg (`index.rs:775`) | — | `#<relation>` — a doc can be below-min on **several** inverse relations (**not** one-per-doc, the code loops per ref field) | `type:slug#<relation>` |
 | `schema-conformance.required-field-present` / `field-value-conformant` | `location: None` → bare doc (`validate.rs:1747,1775,1157`) | path→URI | `#<section>/<field>` — several missing/invalid fields per doc collide otherwise | `type:slug#<section>/<field>` |

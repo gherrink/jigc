@@ -841,15 +841,15 @@ fn committed_reachable(to: &str, repo_root: &Path, schemas: &BTreeMap<String, Sc
 }
 
 /// A blocking `schema-conformance.ref-resolves` [`Finding`] for a dangling forward
-/// edge — located at the source doc's identity **plus a `#<relation>/<to-slug>` fragment**,
+/// edge — located at the source doc's identity **plus a `#<relation>/<type>:<to-slug>` fragment**,
 /// naming the three routing options. The fragment makes the finding's stable
 /// `(code, target)` key collision-free: a `0..*` ref with several dangling targets fans one
 /// keyed finding per dangling target ([command-output-contract.md](../../../design/command-output-contract.md)
 /// → the stable finding key), rather than colliding on the bare source identity.
 fn dangling(edge: &Edge) -> Finding {
-    // `#<relation>/<to-slug>` — the target's slug alone (never the full `<type>:<slug>`), so
-    // two dangling targets of one relation yield distinct keys.
-    let to_slug = edge.to.split_once(':').map_or(edge.to.as_str(), |(_, s)| s);
+    // `#<relation>/<type>:<to-slug>` — the target's **full identity** (`edge.to`), so the key
+    // names its subject unambiguously and collision-freedom holds without assuming a relation's
+    // targets never span two doctypes (a 1.0-pinned stable key must identify unambiguously).
     Finding::graded(
         Severity::Blocking,
         "schema-conformance.ref-resolves",
@@ -863,7 +863,7 @@ fn dangling(edge: &Edge) -> Finding {
             to = edge.to,
         ),
         Some(Location::addressed(
-            format!("{}#{}/{to_slug}", edge.from, edge.relation),
+            format!("{}#{}/{}", edge.from, edge.relation, edge.to),
             1,
             1,
         )),
@@ -1632,7 +1632,7 @@ Slightly higher write latency for resilience.
 
     /// (M41 Inc-3 T1, the done-criterion) A **`0..*` ref with two dangling targets** fans
     /// **two** blocking `ref-resolves` findings, each with a **distinct** stable
-    /// `(code, target)` key — `adr:<from>#supersedes/<to-slug>` — so a driver dedupes them
+    /// `(code, target)` key — `adr:<from>#supersedes/<type>:<to-slug>` — so a driver dedupes them
     /// apart rather than collapsing two real breaks onto one bare-source key
     /// (`command-output-contract.md` → the stable finding key: `ref-resolves` fans one keyed
     /// finding per dangling target).
@@ -1676,7 +1676,7 @@ Slightly higher write latency for resilience.
             "two dangling targets fan two findings, got {findings:?}"
         );
         let keys: Vec<crate::finding::FindingKey> = findings.iter().map(Finding::key).collect();
-        // Both are `ref-resolves`, distinguished only by their `#supersedes/<to-slug>`.
+        // Both are `ref-resolves`, distinguished only by their `#supersedes/<type>:<to-slug>`.
         assert!(
             keys.iter()
                 .all(|k| k.code == "schema-conformance.ref-resolves"),
@@ -1687,12 +1687,12 @@ Slightly higher write latency for resilience.
         assert_eq!(
             targets,
             [
-                Some("adr:shared-redis-session-cache#supersedes/ghost-one".to_string()),
-                Some("adr:shared-redis-session-cache#supersedes/ghost-two".to_string()),
+                Some("adr:shared-redis-session-cache#supersedes/adr:ghost-one".to_string()),
+                Some("adr:shared-redis-session-cache#supersedes/adr:ghost-two".to_string()),
             ]
             .into_iter()
             .collect(),
-            "each dangling target gets a distinct #supersedes/<to-slug> key: {keys:?}",
+            "each dangling target gets a distinct #supersedes/<type>:<to-slug> key: {keys:?}",
         );
         // The two keys are genuinely distinct (the collision the fragment prevents).
         assert_ne!(keys[0].target, keys[1].target, "keys must not collide");
