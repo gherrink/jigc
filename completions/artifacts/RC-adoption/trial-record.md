@@ -2,6 +2,8 @@
 
 **Status: counts as RC input — migration half only** (human call, 2026-07-10 — [DECISIONS.md](../../../DECISIONS.md) → 2026-07-10 RC adoption-migration trial). This run is the *migration* half of the planned existing-project adoption trial: a full GSD→jigc corpus migration, **no implementation job**. The adoption trial's *implementation half* (real dev work driven through jigc in the migrated repo) is **still owed before the 1.0.0 call**, and its log analysis with it.
 
+> **Rerun on rc.4 (2026-07-11):** the migration half was re-run from a fresh copy of the original repo (corrected directory name `project-alpha-2.0`) on the installed 1.0.0-rc.4, with a different, multi-agent method — record, log analysis, and the 14 verified findings live in [rerun-rc4/](rerun-rc4/trial-record.md). The implementation half is running in that same repo.
+
 ## Provenance
 
 - **Repo:** `~/ideas/project-alpha-2.0` (directory name carries the typo) — an existing GSD-managed project (`.planning/`, 215 files), agent-driven migration on the human's direction.
