@@ -211,9 +211,16 @@ impl DocCommand {
                 title,
                 slug,
                 task,
-            } => run_create(cwd, &r#type, &title, slug.as_deref(), task.as_deref()),
+            } => run_create(
+                cwd,
+                &r#type,
+                &title,
+                slug.as_deref(),
+                task.as_deref(),
+                format,
+            ),
             DocCommand::AddItem { addr, title, task } => {
-                run_add_item(cwd, &addr, &title, task.as_deref())
+                run_add_item(cwd, &addr, &title, task.as_deref(), format)
             }
             DocCommand::RemoveItem { addr, task } => {
                 run_remove_item(cwd, &addr, task.as_deref(), format)
@@ -233,7 +240,7 @@ impl DocCommand {
                 doctype,
                 from_file,
                 task,
-            } => run_author(cwd, &doctype, &from_file, task.as_deref()),
+            } => run_author(cwd, &doctype, &from_file, task.as_deref(), format),
             DocCommand::Show { addr } => run_show(cwd, &addr, format),
             DocCommand::Schema { doctype } => run_schema(cwd, &doctype, format),
         };
@@ -555,6 +562,7 @@ fn run_add_item(
     addr: &str,
     title: &str,
     task_id: Option<&str>,
+    format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let address = parse_addr(addr)?;
@@ -565,17 +573,31 @@ fn run_add_item(
     let path = staged_path(&task.dir, &address, &task.id)?;
     let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
 
+    // The decomposed ack target, before `target` is consumed by the apply: `section` +
+    // the **minted** leaf-most item id (the new item — contract §2).
+    let ack_target = add_item_ack_target(&address, &target, title);
+
     let (edited, minted_path) =
         apply_add_item_target(&schema, &source, target, addr, title, task.is_migration()?)?;
 
     persist(&path, &edited)?;
     // The minted item address — the next address an agent fills the item's slot/field
     // at (the same slugify the engine mints the `{#id}` from, never re-spelled).
-    println!(
+    let ack_address = format!(
         "{}:{}#{}",
         address.r#type.as_str(),
         address.slug.as_str(),
         minted_path,
+    );
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::AddedItem {
+                address: ack_address,
+                target: ack_target,
+            },
+        )
     );
     Ok(())
 }
@@ -1285,6 +1307,7 @@ fn run_create(
     title: &str,
     slug_override: Option<&str>,
     task_id: Option<&str>,
+    format: Format,
 ) -> Result<(), DocFailure> {
     if let Some(slug) = slug_override
         && !engine::slug::is_slug(slug)
@@ -1316,7 +1339,18 @@ fn run_create(
         slug_override,
     )
     .map_err(|f| block(&f, "create", type_name))?;
-    println!("{}", created.address);
+    // A whole-doc create carries only the target head (`doctype`+`slug`) — contract §2.
+    let target = whole_doc_ack_target(&created.address)?;
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::Created {
+                address: created.address,
+                target,
+            },
+        )
+    );
     Ok(())
 }
 
@@ -1338,6 +1372,7 @@ fn run_author(
     doctype: &str,
     from_file: &str,
     task_id: Option<&str>,
+    format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
     let payload = read_handoff(from_file)?;
@@ -1398,7 +1433,18 @@ fn run_author(
     }
     // Persist once: the single write the batch promises.
     persist(&created.path, &buffer)?;
-    println!("{}", created.address);
+    // A whole-doc author carries only the target head (`doctype`+`slug`) — like create.
+    let target = whole_doc_ack_target(&created.address)?;
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::Authored {
+                address: created.address,
+                target,
+            },
+        )
+    );
     Ok(())
 }
 
@@ -2182,6 +2228,39 @@ fn slot_ack_target(address: &Address, target: &SlotTarget) -> render::AckTarget 
         } => (section.clone(), items.last().cloned(), Some(leaf.clone())),
     };
     ack_target(address, Some(section), item, leaf)
+}
+
+/// The decomposed ack target of an `add-item` mint (`design/command-output-contract.md`
+/// §2): `section` = the top-level section, `item` = the **minted** leaf-most id
+/// (`slugify(title)`, the same anchor the engine mints — the *new* item, per the contract's
+/// "add-item's target is the new item, not the bare section"), no leaf. Borrows `target`
+/// before the apply consumes it.
+fn add_item_ack_target(
+    address: &Address,
+    target: &AddItemTarget,
+    title: &str,
+) -> render::AckTarget {
+    let section = match target {
+        AddItemTarget::TopLevel { section } | AddItemTarget::Nested { section, .. } => {
+            section.clone()
+        }
+    };
+    ack_target(
+        address,
+        Some(section),
+        Some(engine::slug::slugify(title)),
+        None,
+    )
+}
+
+/// The decomposed ack target of a freshly created/authored **whole doc** (`create`/`author`):
+/// just the head — `doctype` + `slug`, no section/item/leaf — parsed off the minted
+/// `<type>:<slug>` address (`design/command-output-contract.md` §2: a whole-doc write carries
+/// only the target head). The address just came from `create_gated`, so the parse is
+/// infallible in practice; a malformed one funnels through the shared orchestration error.
+fn whole_doc_ack_target(address: &str) -> Result<render::AckTarget, DocFailure> {
+    let parsed = parse_addr(address)?;
+    Ok(ack_target(&parsed, None, None, None))
 }
 
 /// The decomposed ack target of a resolved `remove-item` / `retitle-item` write (both

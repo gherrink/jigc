@@ -388,6 +388,55 @@ fn batch_author_round_trips_and_matches_the_per_leaf_chain() {
     );
 }
 
+#[test]
+fn doc_author_emits_the_json_envelope() {
+    // The command-output contract (`design/command-output-contract.md` §2): `author` joins
+    // the ack envelope — `op: author` + the decomposed `target` (a **whole-doc** write, so
+    // the head only — `doctype`+`slug`, no section/item/leaf) + `findings: []`. Before this
+    // task `author` printed a **bare address string** (invalid JSON), outside the envelope.
+    let home = TempDir::new("home");
+    let pack = dev_pack();
+    let repo = TempDir::new("author-json");
+    ready_repo(repo.path(), home.path(), &pack, "author json");
+
+    let stdout = ok_stdout(
+        run_jigc(
+            repo.path(),
+            home.path(),
+            &pack,
+            &[
+                "doc",
+                "author",
+                "changelog",
+                "--from-file",
+                "-",
+                "--format",
+                "json",
+            ],
+            Some(PAYLOAD.as_bytes()),
+        ),
+        "jigc doc author changelog --format json",
+    );
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("author json ack parses");
+    assert_eq!(ack["op"], "author");
+    assert_eq!(ack["target"]["doctype"], "changelog");
+    assert_eq!(ack["target"]["slug"], "changelog");
+    assert!(
+        ack["target"]["section"].is_null(),
+        "a whole-doc author reaches no section; got:\n{stdout}"
+    );
+    assert!(
+        ack["target"]["item"].is_null(),
+        "a whole-doc author reaches no item; got:\n{stdout}"
+    );
+    assert!(
+        ack["target"]["leaf"].is_null(),
+        "a whole-doc author reaches no leaf; got:\n{stdout}"
+    );
+    assert_eq!(ack["findings"], serde_json::json!([]));
+}
+
 /// A payload whose leaves all parse cleanly but whose **last** leaf is a structural
 /// reject: a first release authors fully (create + add-item + nested add-item + slot,
 /// all over the in-memory buffer), then an `add-item` into an undeclared section

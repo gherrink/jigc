@@ -431,6 +431,105 @@ fn set_slot_from_stdin_stages_the_prose() {
 }
 
 #[test]
+fn doc_create_emits_the_json_envelope() {
+    // The command-output contract (`design/command-output-contract.md` §2): `create` joins
+    // the ack envelope — `op: create` + the decomposed `target` (a **whole-doc** write, so
+    // the head only — `doctype`+`slug`, no section/item/leaf) + `findings: []`. Before this
+    // task `create` printed a **bare address string** (invalid JSON), outside the envelope.
+    let (repo, home) = started_repo("record the cache decision");
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "create",
+            "adr",
+            "--title",
+            "Cache strategy",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "`jigc doc create --format json` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("create json ack parses");
+    assert_eq!(ack["op"], "create");
+    assert_eq!(ack["target"]["doctype"], "adr");
+    assert_eq!(ack["target"]["slug"], "cache-strategy");
+    assert!(
+        ack["target"]["section"].is_null(),
+        "a whole-doc create reaches no section; got:\n{stdout}"
+    );
+    assert!(
+        ack["target"]["item"].is_null(),
+        "a whole-doc create reaches no item; got:\n{stdout}"
+    );
+    assert!(
+        ack["target"]["leaf"].is_null(),
+        "a whole-doc create reaches no leaf; got:\n{stdout}"
+    );
+    assert_eq!(ack["findings"], serde_json::json!([]));
+}
+
+#[test]
+fn doc_add_item_emits_the_json_envelope_keyed_on_the_minted_item() {
+    // The command-output contract §2: `add-item` joins the envelope — `op: add-item` + the
+    // decomposed `target` whose `item` is the **minted** id (the new item, not the bare
+    // section) + `findings: []`. Before this task `add-item` printed a bare address string.
+    let (repo, home) = started_repo_on("plan", "plan the auth flow");
+    let created = run_doc(
+        repo.path(),
+        home.path(),
+        &["create", "spec", "--title", "Auth flow"],
+        None,
+    );
+    assert!(
+        created.status.success(),
+        "`jigc doc create spec` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let out = run_doc(
+        repo.path(),
+        home.path(),
+        &[
+            "add-item",
+            "spec:auth-flow#criteria",
+            "--title",
+            "Rate limit holds",
+            "--format",
+            "json",
+        ],
+        None,
+    );
+    assert!(
+        out.status.success(),
+        "`jigc doc add-item --format json` must exit 0; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+    let ack: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("add-item json ack parses");
+    assert_eq!(ack["op"], "add-item");
+    assert_eq!(ack["target"]["doctype"], "spec");
+    assert_eq!(ack["target"]["slug"], "auth-flow");
+    assert_eq!(ack["target"]["section"], "criteria");
+    assert_eq!(
+        ack["target"]["item"], "rate-limit-holds",
+        "`add-item`'s target.item is the minted item id; got:\n{stdout}"
+    );
+    assert!(
+        ack["target"]["leaf"].is_null(),
+        "an add-item mint reaches no leaf; got:\n{stdout}"
+    );
+    assert_eq!(ack["findings"], serde_json::json!([]));
+}
+
+#[test]
 fn malformed_field_value_blocks_with_a_routed_finding() {
     let (repo, home) = started_repo("add rate limiter");
     let task = "add-rate-limiter";

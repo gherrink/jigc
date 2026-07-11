@@ -601,6 +601,18 @@ pub enum DocAck {
         target: AckTarget,
         title: String,
     },
+    /// A `create` minted a whole doc at `address`/`target`. The target is the head only
+    /// (`doctype`+`slug`, no fragment); its effect is the whole created doc, read back via
+    /// `doc show` (so no per-op effect key — `design/command-output-contract.md` §2).
+    Created { address: String, target: AckTarget },
+    /// An `add-item` minted the item at `address`/`target`. `target.item` is the **minted**
+    /// leaf-most id (the new item, not the bare section — the contract's "add-item's target
+    /// is the new item"); its effect is that item, read back via `doc show` (no effect key).
+    AddedItem { address: String, target: AckTarget },
+    /// An `author` authored a whole doc at `address`/`target`. The target is the head only
+    /// (`doctype`+`slug`), like [`DocAck::Created`]; its effect is the whole authored doc,
+    /// read back via `doc show` (no effect key).
+    Authored { address: String, target: AckTarget },
 }
 
 /// The decomposed write address a [`DocAck`] carries in `--format json` — the same
@@ -645,6 +657,18 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             DocAck::RetitledItem { target, title, .. } => json(&serde_json::json!({
                 "op": "retitle-item", "target": target, "title": title, "findings": [],
             })),
+            // `create` / `add-item` / `author` join the envelope: `op` + the decomposed
+            // `target` + `findings: []`. No per-op effect key — their effect is the whole
+            // doc / the new item, read back via `doc show` (contract §2).
+            DocAck::Created { target, .. } => json(&serde_json::json!({
+                "op": "create", "target": target, "findings": [],
+            })),
+            DocAck::AddedItem { target, .. } => json(&serde_json::json!({
+                "op": "add-item", "target": target, "findings": [],
+            })),
+            DocAck::Authored { target, .. } => json(&serde_json::json!({
+                "op": "author", "target": target, "findings": [],
+            })),
         },
         Format::Agent | Format::Human => match ack {
             DocAck::Field { address, value, .. } => {
@@ -655,6 +679,12 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             DocAck::RetitledItem { address, title, .. } => {
                 format!("retitled item {address} to {title:?} (anchor frozen)")
             }
+            // Agent-text is the bare address the verbs printed before joining the envelope
+            // (byte-identical): the minted doc address (`create`/`author`) or the minted
+            // item address (`add-item`) — the next address an agent drives.
+            DocAck::Created { address, .. }
+            | DocAck::AddedItem { address, .. }
+            | DocAck::Authored { address, .. } => address.clone(),
         },
     }
 }
