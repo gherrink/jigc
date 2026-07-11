@@ -4920,11 +4920,13 @@ fn check_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
     }
 }
 
-/// The opaque-scalar floor shared by `string` / `ref` (and any pack type lacking a
-/// shape check): non-empty and single-line (no control char — newline/tab/… would
-/// inject a second field line when spliced onto its `- key: value` line). Deeper
-/// adjudication is a `finalize` / pack concern.
-fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
+/// The writable-scalar floor every scalar value must clear regardless of type:
+/// non-empty and single-line (no control char — a newline/tab/… would inject a second
+/// field line when spliced onto its `- key: value` line). Shared by the opaque floor
+/// and by `check_ref` (which strips the bracket-list wrapper *after* this floor but
+/// declines the opaque floor's non-ref bracket reject — a `ref` is exactly the type
+/// `[…]` is a valid form for).
+fn check_writable_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
     if value.is_empty() {
         Err(format!("{:?} must not be empty", field.id))
     } else if value.chars().any(|c| c.is_control()) {
@@ -4935,6 +4937,27 @@ fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+/// The opaque-scalar floor shared by `string` / `owned-location` (and any pack type
+/// lacking a shape check): the writable-scalar floor, **plus** the N2 non-ref bracket
+/// reject. A `[…]`-wrapped value is the inline-list / `[]` ref-clear idiom, valid only
+/// on a `ref` field (which recognizes and strips the wrapper before reaching here). On
+/// a non-ref scalar it is the ref-clear footgun misapplied — splicing it verbatim would
+/// write literal `[]` garbage — so it is rejected, routed to the real clear verb.
+/// Deeper adjudication is a `finalize` / pack concern.
+fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
+    check_writable_scalar(field, value)?;
+    // N2: a `[…]` wrapper on a non-ref scalar is not a clear (only a list-cardinality
+    // ref clears via `[]`). Route to the verb that actually clears a field.
+    if value.starts_with('[') && value.ends_with(']') {
+        return Err(format!(
+            "{:?} is not a list-cardinality ref, so a `[…]` value is not a clear; to \
+             clear an optional field, use `jigc doc set-field <addr> --unset`",
+            field.id
+        ));
+    }
+    Ok(())
 }
 
 /// The `ref` write-time *shape* check: the opaque floor (non-empty + single-line)
@@ -4953,8 +4976,11 @@ fn check_opaque_scalar(field: &SchemaField, value: &str) -> Result<(), String> {
 /// *resolves* against the edge index, and forward cardinality — is the finalize-time
 /// probe (`design/auto-migration.md` → Write-time ref-shape check).
 fn check_ref(field: &SchemaField, value: &str) -> Result<(), String> {
-    // Floor first: non-empty + single-line (control chars rejected).
-    check_opaque_scalar(field, value)?;
+    // Floor first: non-empty + single-line (control chars rejected). The *writable*
+    // floor, not the opaque floor — a `ref` is exactly the type the `[…]` bracket form
+    // is valid for, so it declines the opaque floor's N2 non-ref bracket reject and
+    // recognizes the wrapper below instead (the in-task reorder N2 depends on).
+    check_writable_scalar(field, value)?;
     // Inline-flow bracket-list `[e1, e2, …]`: validate each element's ref shape. An
     // empty list `[]` carries no edges (clean). The bracket wrapper is what
     // distinguishes the list form from the rejected unbracketed comma form.
@@ -5846,6 +5872,72 @@ Each service drops its local limiter.
         assert!(check_value(&anchor, &scalar("crates/engine/src/validate.rs#")).is_err());
         assert!(check_value(&anchor, &scalar("#validate_task")).is_err());
         assert!(check_value(&anchor, &scalar("a.rs#one#two")).is_err());
+    }
+
+    /// N2: a `[…]`-wrapped value is the inline-list / `[]` ref-clear idiom — valid ONLY
+    /// on a `ref` field (which recognizes and strips the bracket wrapper before the
+    /// opaque floor). On a **non-ref** scalar (`string` / `code-anchor` / other pack
+    /// type / `owned-location`) it is the ref-clear footgun misapplied: splicing it
+    /// verbatim would write literal `[]` garbage. It is rejected at the opaque floor,
+    /// and the reject routes to the real clear verb (`--unset`). The `ref` accept-path
+    /// is unaffected (the in-task `check_ref` reorder) — the coupling this test guards.
+    #[test]
+    fn bracket_value_rejects_on_non_ref_scalar() {
+        use crate::schema::{Field as SField, FieldType};
+        let field = |ty: FieldType| SField {
+            id: "f".into(),
+            ty,
+            of: None,
+            default: None,
+            set: None,
+            to: None,
+            card: None,
+            inverse: None,
+            inverse_card: None,
+            check: None,
+            optional: false,
+            title_names_symbol: false,
+        };
+
+        // A `string` field: both the empty `[]` clear and a `[a, b]` list form are the
+        // misapplied idiom — rejected, routing to `--unset`.
+        let name = field(FieldType::String);
+        let empty = check_value(&name, &scalar("[]")).expect_err("`[]` on a string rejects");
+        assert!(
+            empty.contains("--unset"),
+            "the reject routes to the clear verb; got: {empty}"
+        );
+        assert!(check_value(&name, &scalar("[adr:a, adr:b]")).is_err());
+        // A normal non-bracket string still passes — no over-rejection.
+        assert!(check_value(&name, &scalar("anything goes")).is_ok());
+        // A string that merely *contains* brackets (not a `[…]` wrapper) still passes.
+        assert!(check_value(&name, &scalar("a [note] here")).is_ok());
+
+        // `owned-location` (engine-native, opaque floor): `[]` rejects; a path passes.
+        let loc = field(FieldType::OwnedLocation);
+        assert!(check_value(&loc, &scalar("[]")).is_err());
+        assert!(check_value(&loc, &scalar("docs/roadmap.md")).is_ok());
+
+        // `code-anchor` (a pack-declared type on the opaque floor): `[]` rejects; a
+        // real anchor still passes.
+        let anchor = field(FieldType::Pack(crate::schema::PackFieldType {
+            name: "code-anchor".into(),
+            adjudicator: Some("doc-code".into()),
+            check: Some("symbol-exists".into()),
+        }));
+        assert!(check_value(&anchor, &scalar("[]")).is_err());
+        assert!(check_value(&anchor, &scalar("src/foo.rs#bar")).is_ok());
+
+        // The `ref` accept-path is unaffected: `[]` clears, `[a, b]` list-replaces.
+        let r = SField {
+            to: Some("adr".into()),
+            ..field(FieldType::Ref)
+        };
+        assert!(check_value(&r, &scalar("[]")).is_ok());
+        assert!(check_value(&r, &scalar("[adr:a, adr:b]")).is_ok());
+        // A bracket ref form carrying a control char still rejects (the floor guard
+        // survives the reorder — a trailing-newline element must not splice a 2nd line).
+        assert!(check_value(&r, &scalar("[adr:a\nadr:b]")).is_err());
     }
 
     /// (b) The only-intended-target gate rejects a buffer whose byte-diff escapes the
