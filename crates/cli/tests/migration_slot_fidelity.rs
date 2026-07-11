@@ -1,20 +1,31 @@
-//! M41 Increment 1, T1 — slot-prose fidelity across the shipped author-migration
-//! templates (V1: the folding-YAML silent-corruption class).
+//! M41 Increment 1, T1 — slot-prose fidelity across **every** shipped
+//! author-migration template (V1: the folding-YAML silent-corruption class).
 //!
-//! Drives the SHIPPED `adr` (dev pack) + `research` (methodology pack) migrate-guidance
-//! payload skeletons through the built `jigc` binary — `migrate` composes the guidance,
-//! the skeleton is extracted verbatim (the extract-the-skeleton coupling), and a
-//! **multi-paragraph + bulleted** body is substituted into every `<<…>>` slot before it
-//! is piped to `jigc doc author`. The committed slot prose must keep its paragraph break
-//! and its per-bullet line breaks (`\n` intact).
+//! For each slot-bearing migrate-guidance template — the five dev-pack doctypes
+//! (`adr` / `prd` / `spec` / `arch-doc` / `changelog`) and the six methodology-pack
+//! doctypes (`research` / `vision` / `idea` / `roadmap` / `decisions-log` /
+//! `deferral-ledger`) — this drives the SHIPPED payload skeleton through the built
+//! `jigc` binary: `migrate` composes the guidance, the heredoc skeleton is extracted
+//! verbatim (the extract-the-skeleton coupling), a **multi-paragraph + bulleted** body
+//! is substituted into every `<<…>>` slot, and the filled payload is piped to
+//! `jigc doc author`. The **staged** canonical doc that `author` writes must keep the
+//! slot prose's paragraph break and its per-bullet line breaks (`\n` intact).
+//!
+//! WHY THE STAGED BUFFER (not a finalize round-trip): the fold happens at YAML-parse
+//! time inside `doc author` — the staged buffer is the exact, canonical bytes `author`
+//! emits, so reading it observes the property at its source. It also makes the coverage
+//! **uniform**: it needs none of each doctype's finalize preconditions (arch-doc's
+//! in-store `cites` edge, the required-slot / enum gates, the per-doctype committed
+//! home), so one parametrized arm covers every template — adding a future template is
+//! one row.
 //!
 //! COUPLING (the red obligation): the substitution is shape-agnostic — it injects the
 //! same multi-line body regardless of the template's YAML wrapping. Against a
 //! **flow-scalar** template (`key: "<<…>>"`) YAML folds the bullets onto one line and
-//! collapses the blank line — the committed prose loses the body verbatim (RED). Against
+//! collapses the blank line — the staged prose loses the body verbatim (RED). Against
 //! the **block-scalar** flip (`key: |-` then an indented `<<…>>`) the newlines survive
 //! (GREEN). A hand-authored block-scalar payload would pass without the template fix and
-//! is not valid proof — this test's payload IS the shipped skeleton, filled.
+//! is not valid proof — each arm's payload IS the shipped skeleton, filled.
 
 use std::fs;
 use std::io::Write;
@@ -142,21 +153,31 @@ fn ok_stdout(out: std::process::Output, what: &str) -> String {
         .to_owned()
 }
 
-/// Extract the `doc author <doctype> --from-file -` heredoc payload skeleton from the
-/// composed migrate guidance (between the `<<'EOF'` opener and the standalone `EOF`
-/// terminator) — the agent-facing artifact the LLM fills + pipes, byte-for-byte.
-fn extract_author_skeleton(composed: &str, doctype: &str) -> String {
+/// Locate the `doc author <doctype> --from-file - --task … <<'EOF'` heredoc opener in
+/// the composed migrate guidance, returning `(the skeleton between the opener and the
+/// standalone `EOF`, the `--task` id the opener names)` — both extracted verbatim from
+/// the agent-facing artifact the LLM fills + pipes.
+fn extract_author_skeleton(composed: &str, doctype: &str) -> (String, String) {
     let opener = format!("doc author {doctype} --from-file");
     let mut lines = composed.lines();
+    let mut task = None;
     for line in lines.by_ref() {
         if line.contains(&opener) && line.contains("<<'EOF'") {
+            task = line
+                .split("--task ")
+                .nth(1)
+                .and_then(|rest| rest.split_whitespace().next())
+                .map(str::to_owned);
             break;
         }
     }
+    let task = task.unwrap_or_else(|| {
+        panic!("no `--task` id on the `doc author {doctype}` opener:\n{composed}")
+    });
     let mut body = String::new();
     for line in lines {
         if line == "EOF" {
-            return body;
+            return (body, task);
         }
         body.push_str(line);
         body.push('\n');
@@ -210,6 +231,9 @@ fn fill_slots(skeleton: &str) -> String {
 }
 
 /// Apply the `(placeholder, value)` field replacements, then fill every slot with `BODY`.
+/// The replacements fill only the inline fields `doc author` *validates* at write time
+/// (enums, dates, the `cites` ref shape) so the author call reaches the slot-render path;
+/// free-text placeholders (titles) are left as-is — the skeleton drives verbatim.
 fn fill_payload(skeleton: &str, fields: &[(&str, &str)]) -> String {
     let mut filled = skeleton.to_owned();
     for (from, to) in fields {
@@ -222,179 +246,273 @@ fn fill_payload(skeleton: &str, fields: &[(&str, &str)]) -> String {
     fill_slots(&filled)
 }
 
-#[test]
-fn adr_slot_prose_survives_multi_paragraph_and_bullets() {
-    let repo = TempDir::new("adr");
+/// The pack a template ships in — selects how the repo is configured before `migrate`.
+#[derive(Clone, Copy)]
+enum Pack {
+    /// Dev pack, selected by `JIGC_PACK_DIR`; `jigc setup` installs it before migrate.
+    Dev,
+    /// Methodology pack, composed over the embedded dev base by a `packs.yaml` entry.
+    Methodology,
+}
+
+/// Recursively find the staged canonical doc whose file name is `<doctype>:*.md` under
+/// the task working area (skipping the auto-provisioned `commit:*.md`).
+fn find_staged_doc(dir: &Path, prefix: &str) -> Option<PathBuf> {
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_staged_doc(&path, prefix) {
+                return Some(found);
+            }
+        } else if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && name.starts_with(prefix)
+            && name.ends_with(".md")
+        {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// The property, once per template: author the SHIPPED skeleton (slots filled with the
+/// multi-paragraph + bulleted `BODY`) through the real binary, then assert the staged
+/// canonical doc keeps every paragraph break and per-bullet line break verbatim.
+fn assert_slot_prose_fold_safe(
+    doctype: &str,
+    pack: Pack,
+    foreign_name: &str,
+    foreign_content: &str,
+    fields: &[(&str, &str)],
+) {
+    let repo = TempDir::new(doctype);
     let home = TempDir::new("home");
-    let pack = dev_pack();
     init_repo(repo.path());
 
-    // A committed foreign ADR at the off-canonical `docs/adr/` path.
-    let rel = "docs/adr/0001-fidelity.md";
-    fs::create_dir_all(repo.path().join("docs").join("adr")).expect("create docs/adr/");
-    fs::write(
-        repo.path().join(rel),
-        "# 1. A decision\n\n## Status\n\nAccepted\n\n## Context\n\nForces.\n\n\
-## Decision\n\nWe chose.\n\n## Consequences\n\nTradeoffs.\n",
-    )
-    .expect("write foreign adr");
-    git(repo.path(), &["add", rel]);
-    git(repo.path(), &["commit", "-q", "-m", "track foreign adr"]);
+    let pack_dir: Option<PathBuf> = match pack {
+        Pack::Dev => Some(dev_pack()),
+        Pack::Methodology => {
+            fs::write(
+                repo.path().join(".jigc").join("config").join("packs.yaml"),
+                format!("packs:\n  - {}\n", methodology_pack_tree().display()),
+            )
+            .expect("write packs.yaml naming the methodology pack");
+            None
+        }
+    };
+    let pack_ref = pack_dir.as_deref();
 
-    ok_stdout(
-        run_jigc(repo.path(), home.path(), Some(&pack), &["setup"], None),
-        "jigc setup",
-    );
+    // A committed foreign source `migrate --as <doctype>` can stage as read-only context.
+    let foreign_path = repo.path().join(foreign_name);
+    if let Some(parent) = foreign_path.parent() {
+        fs::create_dir_all(parent).expect("create foreign source parent dir");
+    }
+    fs::write(&foreign_path, foreign_content).expect("write foreign source");
+    git(repo.path(), &["add", foreign_name]);
+    git(repo.path(), &["commit", "-q", "-m", "track foreign source"]);
+
+    if matches!(pack, Pack::Dev) {
+        ok_stdout(
+            run_jigc(repo.path(), home.path(), pack_ref, &["setup"], None),
+            "jigc setup",
+        );
+    }
+
     let composed = ok_stdout(
         run_jigc(
             repo.path(),
             home.path(),
-            Some(&pack),
-            &["migrate", rel, "--as", "adr"],
+            pack_ref,
+            &["migrate", foreign_name, "--as", doctype],
             None,
         ),
-        "jigc migrate --as adr",
+        &format!("jigc migrate --as {doctype}"),
     );
 
-    let skeleton = extract_author_skeleton(&composed, "adr");
-    let payload = fill_payload(
-        &skeleton,
-        &[
-            (
-                "\"<the decision, as a short noun phrase>\"",
-                "Fidelity Probe Decision",
-            ),
-            ("\"<proposed | accepted | superseded>\"", "accepted"),
-        ],
+    let (skeleton, task) = extract_author_skeleton(&composed, doctype);
+    // Every `<<…>>` slot in the shipped skeleton gets `BODY`; the staged doc must carry
+    // `BODY` back once per slot. Counting (not `contains`) is what makes a MULTI-slot
+    // template red-capable: were a single slot a folding flow scalar, only that slot's
+    // copy would be corrupted while the others still matched — a bare `contains` would
+    // pass. A slot count of zero would be a vacuous assertion, so guard it.
+    let slots = skeleton.matches("<<").count();
+    assert!(
+        slots > 0,
+        "the `{doctype}` skeleton carries no `<<…>>` slot:\n{skeleton}"
     );
+    let payload = fill_payload(&skeleton, fields);
 
-    let task = engine::slug::slugify("migrate-adr-docs-adr-0001-fidelity");
     ok_stdout(
         run_jigc(
             repo.path(),
             home.path(),
-            Some(&pack),
-            &["doc", "author", "adr", "--from-file", "-", "--task", &task],
+            pack_ref,
+            &[
+                "doc",
+                "author",
+                doctype,
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
             Some(payload.as_bytes()),
         ),
-        "jigc doc author adr",
+        &format!("jigc doc author {doctype}"),
     );
 
-    let approve = run_jigc(
-        repo.path(),
-        home.path(),
-        Some(&pack),
-        &["task", "finalize", &task, "--approve"],
-        None,
-    );
-    assert!(
-        approve.status.success(),
-        "finalize --approve on the filled adr migration must land; stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&approve.stdout),
-        String::from_utf8_lossy(&approve.stderr),
-    );
-
-    let committed = fs::read_to_string(
-        repo.path()
-            .join("docs")
-            .join("decisions")
-            .join("fidelity-probe-decision.md"),
-    )
-    .expect("the committed adr is on disk");
-    assert!(
-        committed.contains(BODY),
-        "the committed adr slot prose must keep its paragraph break + per-bullet line \
-         breaks verbatim (a folding flow scalar collapses them); committed:\n{committed}",
+    let task_docs = repo
+        .path()
+        .join(".jigc")
+        .join("tasks")
+        .join(&task)
+        .join("docs");
+    let staged = find_staged_doc(&task_docs, &format!("{doctype}:")).unwrap_or_else(|| {
+        panic!("no staged `{doctype}:*.md` under the task working area {task_docs:?}")
+    });
+    let staged_doc = fs::read_to_string(&staged).expect("read the staged canonical doc");
+    let survived = staged_doc.matches(BODY).count();
+    assert_eq!(
+        survived, slots,
+        "every one of the {slots} `{doctype}` slot(s) must keep its paragraph break + \
+         per-bullet line breaks verbatim (a folding flow scalar collapses them); only \
+         {survived} survived — staged {staged:?}:\n{staged_doc}",
     );
 }
 
+/// One `#[test]` per slot-bearing author-migration template — the fold-safety table.
+/// A new template is one added row.
+macro_rules! fold_safe_cases {
+    ($( $name:ident : $doctype:literal , $pack:expr , $foreign:literal , $content:literal ,
+        [ $( ($from:literal , $to:literal) ),* $(,)? ] ; )*) => {
+        $(
+            #[test]
+            fn $name() {
+                assert_slot_prose_fold_safe(
+                    $doctype,
+                    $pack,
+                    $foreign,
+                    $content,
+                    &[ $( ($from, $to) ),* ],
+                );
+            }
+        )*
+    };
+}
+
+fold_safe_cases! {
+    // ---- dev pack ----
+    adr_slot_prose_fold_safe: "adr", Pack::Dev,
+        "docs/adr/0001-fidelity.md",
+        "# 1. A decision\n\n## Status\n\nAccepted\n\n## Context\n\nForces.\n\n\
+## Decision\n\nWe chose.\n\n## Consequences\n\nTradeoffs.\n",
+        [("\"<proposed | accepted | superseded>\"", "accepted")];
+
+    prd_slot_prose_fold_safe: "prd", Pack::Dev,
+        "old-prd.md",
+        "# Some PRD\n\n## Vision\n\nDo the thing.\n\n## Requirements\n\n- must A\n",
+        [];
+
+    spec_slot_prose_fold_safe: "spec", Pack::Dev,
+        "old-spec.md",
+        "# Some spec\n\n## Goal\n\nDeliver it.\n\n## Acceptance Criteria\n\n- does A\n",
+        [];
+
+    arch_doc_slot_prose_fold_safe: "arch-doc", Pack::Dev,
+        "old-arch.md",
+        "# The subsystem\n\n## Overview\n\nWhat it owns.\n\n## Components\n\n### A part\n\nDoes work.\n",
+        // `cites` is a well-formed but out-of-store ref: author checks ref *shape*;
+        // dangling-ref resolution is a finalize gate, not an author gate.
+        [("\"[adr:<slug-of-a-cited-decision>]\"", "\"[adr:some-decision]\"")];
+
+    changelog_slot_prose_fold_safe: "changelog", Pack::Dev,
+        "old-changelog.md",
+        "# Changelog\n\n## 1.0.0\n\n### Added\n\n- a feature\n",
+        [
+            ("\"<historical-date>\"", "2020-01-01"),
+            ("\"<category>\"", "added"),
+            ("\"<version>\"", "1.0.0"),
+        ];
+
+    // ---- methodology pack ----
+    research_slot_prose_fold_safe: "research", Pack::Methodology,
+        "old-notes.md",
+        "# Spreadsheet pain notes\n\nUsers re-import hourly.\n",
+        [("\"<historical-date>\"", "2020-01-01")];
+
+    vision_slot_prose_fold_safe: "vision", Pack::Methodology,
+        "old-vision.md",
+        "# Vision\n\n## Thesis\n\nThe claim.\n\n## Invariants\n\n- one\n\n## Open questions\n\n- q\n",
+        [];
+
+    idea_slot_prose_fold_safe: "idea", Pack::Methodology,
+        "old-idea.md",
+        "# A parked idea\n\nSome shaped direction worth keeping.\n",
+        [("\"<historical-date>\"", "2020-01-01")];
+
+    roadmap_slot_prose_fold_safe: "roadmap", Pack::Methodology,
+        "old-roadmap.md",
+        "# Roadmap\n\n## M1 — the first milestone\n\nGoal: ship it.\n",
+        [];
+
+    decisions_log_slot_prose_fold_safe: "decisions-log", Pack::Methodology,
+        "old-decisions.md",
+        "# Decisions\n\n## 2020-01-01 chose X\n\nBecause reasons.\n",
+        [("\"<historical-date>\"", "2020-01-01")];
+
+    deferral_ledger_slot_prose_fold_safe: "deferral-ledger", Pack::Methodology,
+        "old-deferrals.md",
+        "# Deferrals\n\n## An owed thing\n\nDeferred until later.\n",
+        [
+            ("\"<historical-date>\"", "2020-01-01"),
+            ("\"<Decision-or-Idea>\"", "Decision"),
+        ];
+}
+
+/// The `completion-record` template is **deliberately absent** from the fold-safety
+/// table: it carries **zero prose slots** — every `set:` value is an inline field
+/// (`verdict` / `owner-artifact` / `severity` / `disposition` / `evidence`), so there is
+/// no `<<…>>` slot to fold. This test pins that exclusion to the shipped skeleton: if a
+/// future revision adds a prose slot, the assertion fails and the template must join the
+/// table above.
 #[test]
-fn research_slot_prose_survives_multi_paragraph_and_bullets() {
-    let repo = TempDir::new("research");
+fn completion_record_has_no_prose_slots_so_is_excluded() {
+    let repo = TempDir::new("completion-record");
     let home = TempDir::new("home");
     init_repo(repo.path());
-    // Compose the methodology pack over the embedded dev base.
     fs::write(
         repo.path().join(".jigc").join("config").join("packs.yaml"),
         format!("packs:\n  - {}\n", methodology_pack_tree().display()),
     )
     .expect("write packs.yaml naming the methodology pack");
 
-    let rel = "old-notes.md";
+    let rel = "old-close.md";
+    // A verdict-bearing source: `completion-record` migration refuses an outcome-less doc.
     fs::write(
         repo.path().join(rel),
-        "# Spreadsheet pain notes\n\nUsers re-import hourly.\n",
+        "# M1 close\n\nMilestone M1 shipped — all criteria met and the audit passed.\n",
     )
-    .expect("write foreign research note");
+    .expect("write foreign close record");
     git(repo.path(), &["add", rel]);
-    git(repo.path(), &["commit", "-q", "-m", "track foreign notes"]);
+    git(
+        repo.path(),
+        &["commit", "-q", "-m", "track foreign close record"],
+    );
 
     let composed = ok_stdout(
         run_jigc(
             repo.path(),
             home.path(),
             None,
-            &["migrate", rel, "--as", "research"],
+            &["migrate", rel, "--as", "completion-record"],
             None,
         ),
-        "jigc migrate --as research",
+        "jigc migrate --as completion-record",
     );
 
-    let skeleton = extract_author_skeleton(&composed, "research");
-    let payload = fill_payload(
-        &skeleton,
-        &[
-            (
-                "\"<the investigation, as a short noun phrase>\"",
-                "Fidelity Probe Research",
-            ),
-            ("\"<historical-date>\"", "2020-01-01"),
-        ],
-    );
-
-    let task = "migrate-research-old-notes";
-    ok_stdout(
-        run_jigc(
-            repo.path(),
-            home.path(),
-            None,
-            &[
-                "doc",
-                "author",
-                "research",
-                "--from-file",
-                "-",
-                "--task",
-                task,
-            ],
-            Some(payload.as_bytes()),
-        ),
-        "jigc doc author research",
-    );
-
-    let approve = run_jigc(
-        repo.path(),
-        home.path(),
-        None,
-        &["task", "finalize", task, "--approve"],
-        None,
-    );
+    let (skeleton, _task) = extract_author_skeleton(&composed, "completion-record");
     assert!(
-        approve.status.success(),
-        "finalize --approve on the filled research migration must land; stdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&approve.stdout),
-        String::from_utf8_lossy(&approve.stderr),
-    );
-
-    let committed = fs::read_to_string(
-        repo.path()
-            .join("research")
-            .join("fidelity-probe-research.md"),
-    )
-    .expect("the committed research doc is on disk");
-    assert!(
-        committed.contains(BODY),
-        "the committed research slot prose must keep its paragraph break + per-bullet line \
-         breaks verbatim (a folding flow scalar collapses them); committed:\n{committed}",
+        !skeleton.contains("<<"),
+        "completion-record is excluded from the fold-safety table on the premise that it \
+         carries no `<<…>>` prose slot; the shipped skeleton now does — add it to the table:\n{skeleton}",
     );
 }
