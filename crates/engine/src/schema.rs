@@ -529,6 +529,29 @@ pub enum SchemaError {
         /// The (1-based) nesting depth that breached the cap.
         depth: usize,
     },
+
+    /// A single block declares **more than one** nested repeatable. The parse
+    /// model carries one undifferentiated nested item list per item
+    /// (`ParsedItem::items` — heading depth alone cannot attribute an `H(n+1)`
+    /// item to one of two sibling nested sections), so a second nested group in
+    /// the same block is unrepresentable: its items would be silently unioned
+    /// with the first group's under **every** declared block id on the read
+    /// surfaces. Rejected loudly at load, naming the block and both nested ids
+    /// (the freeze-assert sibling pattern). Nesting stays **depth**-general
+    /// (the H6 cap); breadth per block is capped at 1
+    /// (`design/structural-grammar.md` → Repetition).
+    #[error(
+        "block `{block}` declares more than one nested repeatable (`{first}`, `{second}`): \
+         at most one nested repeatable per block is supported"
+    )]
+    MultipleNestedRepeatables {
+        /// The id of the block (section or nested-repeatable leaf) declaring both.
+        block: String,
+        /// The first declared nested repeatable's id.
+        first: String,
+        /// The second declared nested repeatable's id.
+        second: String,
+    },
 }
 
 /// The maximum repeatable nesting depth: a section is `##`, so a repeatable at
@@ -673,7 +696,8 @@ pub fn load_schema_with_types(
             // its block walks recursively, resolving nested field types and
             // enforcing the H6 depth cap.
             SectionBody::Repeatable { repeatable } => {
-                resolve_block(&mut repeatable.block, 1, pack_types)?;
+                let owner = section.id.clone();
+                resolve_block(&mut repeatable.block, &owner, 1, pack_types)?;
             }
         }
     }
@@ -681,23 +705,43 @@ pub fn load_schema_with_types(
 }
 
 /// Recursively resolve every field type in a repeatable block and enforce the
-/// [`MAX_NESTING_DEPTH`] cap. `depth` is the (1-based) nesting depth of the
-/// items this block templates — top-level repeatable items are depth 1, a
-/// nested repeatable's items depth 2, and so on. A block whose own depth
-/// exceeds the cap is a typed [`SchemaError::NestingTooDeep`].
+/// two structural caps: the [`MAX_NESTING_DEPTH`] **depth** cap and the
+/// one-nested-repeatable-per-block **breadth** cap
+/// ([`SchemaError::MultipleNestedRepeatables`]). `owner` is the id of the
+/// block's declaring unit (the section, or the nested-repeatable leaf), used to
+/// name the offender. `depth` is the (1-based) nesting depth of the items this
+/// block templates — top-level repeatable items are depth 1, a nested
+/// repeatable's items depth 2, and so on. A block whose own depth exceeds the
+/// cap is a typed [`SchemaError::NestingTooDeep`].
 fn resolve_block(
     block: &mut [Leaf],
+    owner: &str,
     depth: usize,
     pack_types: &[PackTypeDecl],
 ) -> Result<(), SchemaError> {
     if depth > MAX_NESTING_DEPTH {
         return Err(SchemaError::NestingTooDeep { depth });
     }
+    // Breadth guard: at most ONE nested repeatable per block. The parsed item
+    // carries a single undifferentiated nested list, so a second sibling group
+    // would be silently unioned with the first — reject it loudly at load.
+    let mut nested_ids = block.iter().filter_map(|leaf| match leaf {
+        Leaf::Repeatable { id, .. } => Some(id.as_str()),
+        _ => None,
+    });
+    if let (Some(first), Some(second)) = (nested_ids.next(), nested_ids.next()) {
+        return Err(SchemaError::MultipleNestedRepeatables {
+            block: owner.to_owned(),
+            first: first.to_owned(),
+            second: second.to_owned(),
+        });
+    }
     for leaf in block {
         match leaf {
             Leaf::Field(field) => resolve_field_type(field, pack_types)?,
-            Leaf::Repeatable { repeatable, .. } => {
-                resolve_block(&mut repeatable.block, depth + 1, pack_types)?;
+            Leaf::Repeatable { id, repeatable } => {
+                let owner = id.clone();
+                resolve_block(&mut repeatable.block, &owner, depth + 1, pack_types)?;
             }
             Leaf::Slot { .. } => {}
         }
@@ -1773,6 +1817,45 @@ sections:
                           - { id: d, type: string }
 ";
         load_schema(yaml).expect("4-level nesting (deepest items at H6) loads");
+    }
+
+    /// (M40 audit fix) A block declaring **two** nested repeatables is rejected
+    /// at load with a typed [`SchemaError::MultipleNestedRepeatables`] naming
+    /// the block and both nested ids. The parse model carries one
+    /// undifferentiated nested item list per item (`ParsedItem::items`), so a
+    /// second sibling nested group is physically unrepresentable — its items
+    /// would be silently unioned with the first group's under every declared
+    /// block id. Depth stays general (the H6 cap); breadth per block is 1.
+    #[test]
+    fn two_nested_repeatables_in_one_block_is_a_typed_breadth_error() {
+        let yaml = b"\
+type: twin
+sections:
+  - id: releases
+    repeatable:
+      id-from: version
+      block:
+        - { id: version, type: string }
+        - id: added
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+        - id: fixed
+          repeatable:
+            id-from: title
+            block:
+              - { id: title, type: string }
+";
+        let err = load_schema(yaml).expect_err("two nested repeatables per block errors");
+        assert!(
+            matches!(
+                &err,
+                SchemaError::MultipleNestedRepeatables { block, first, second }
+                    if block == "releases" && first == "added" && second == "fixed"
+            ),
+            "expected MultipleNestedRepeatables naming `releases`/`added`/`fixed`, got {err:?}",
+        );
     }
 
     /// The exact pre-`include` (inline, duplicated) form of the `changelog`
