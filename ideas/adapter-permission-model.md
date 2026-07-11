@@ -18,3 +18,7 @@ Setup writes a fixed permission surface into `.claude/settings.json` regardless 
 ## Trigger
 
 The adoption trial or the first external adopter hitting a floor-blocked legitimate command; or the multi-assistant adapter milestone (a second profile forces the permission model to generalize anyway).
+
+## Standing operational debt keyed to this idea (2026-07-11)
+
+`~/ideas/project-kb`'s `.jigc/AGENT.md` still carries the pre-M40-A4 exit-code table. Re-running `jigc setup` there would refresh it **but also re-add the allow permits + deny floor into `.claude/settings.json`** — a permissions block the human deleted there on purpose. The refresh and the permission write are bundled precisely because this idea is unbuilt; at pickup, unbundle them (or refresh-and-re-delete that repo in the same motion).
