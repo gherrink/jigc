@@ -118,7 +118,7 @@ pub fn read_slice(
             "store.unknown-type",
             format!("unknown doctype `{type_name}` for `{address_str}`"),
             &address_str,
-            "list the available doctypes with `jigc doc types`".to_string(),
+            "list the available doctypes with `jigc describe`".to_string(),
         ));
     };
 
@@ -799,6 +799,57 @@ A cold node loses its sessions; clients re-authenticate.
         assert!(
             route.contains("jigc task diff <id>"),
             "route names the staged-doc read: {route}"
+        );
+    }
+
+    /// (V13) An unknown doctype blocks `store.unknown-type` and its route names the
+    /// real discovery verb `jigc describe` — never a nonexistent `doc types`
+    /// subcommand (mirrors the `doc create`/`author` remediation precedent).
+    #[test]
+    fn store_unknown_type_route_names_jigc_describe() {
+        let root = TempRoot::new("unknown-type");
+        let address = Address::parse("wormhole:whatever#decision").expect("valid address");
+        let err =
+            read_slice(root.path(), &schemas(), &address).expect_err("an unknown doctype blocks");
+
+        assert_eq!(err.code, "store.unknown-type");
+        let route = err.route.expect("the block carries a route");
+        assert!(
+            route.contains("jigc describe"),
+            "route names the real discovery verb: {route}"
+        );
+        assert!(
+            !route.contains(&["jigc doc", "types"].join(" ")),
+            "route must not name the nonexistent subcommand: {route}"
+        );
+    }
+
+    /// (V13 grep-guard) No engine source names the nonexistent `doc types`
+    /// subcommand — the two former sites (`store.rs`, `milestone.rs`) route to
+    /// `jigc describe` and must stay that way. Walks `crates/engine/src/**/*.rs`.
+    #[test]
+    fn no_engine_source_names_the_nonexistent_doc_types_subcommand() {
+        // Built at runtime so this guard's own body doesn't match itself.
+        let needle = ["jigc doc", "types"].join(" ");
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut stack = vec![src];
+        let mut offenders = Vec::new();
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("read engine src dir") {
+                let path = entry.expect("dir entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs") {
+                    let text = std::fs::read_to_string(&path).expect("read rs file");
+                    if text.contains(&needle) {
+                        offenders.push(path.display().to_string());
+                    }
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "engine source still names the nonexistent `{needle}`: {offenders:?}"
         );
     }
 

@@ -357,7 +357,7 @@ fn read_spec_criteria(
             "store.unknown-type",
             format!("unknown doctype `{type_name}` for `{spec_addr}`"),
             spec_addr,
-            "list the available doctypes with `jigc doc types`".to_string(),
+            "list the available doctypes with `jigc describe`".to_string(),
         ));
     };
 
@@ -2155,6 +2155,27 @@ Context without any acceptance criteria.
             read_task_list(&milestone.dir).expect("read list").tasks,
             Vec::<String>::new(),
             "an unknown spec appends nothing"
+        );
+    }
+
+    /// (V13) The spec-slice read (`read_spec_criteria`) blocks `store.unknown-type`
+    /// on an unknown doctype and its route names `jigc describe` — the real
+    /// discovery verb — never a nonexistent `doc types` subcommand.
+    #[test]
+    fn read_spec_criteria_unknown_type_route_names_jigc_describe() {
+        let root = TempRoot::new("spec-slice-unknown-type");
+        let err = read_spec_criteria(root.path(), &schemas(), "wormhole:whatever")
+            .expect_err("an unknown doctype blocks");
+
+        assert_eq!(err.code, "store.unknown-type");
+        let route = err.route.expect("the block carries a route");
+        assert!(
+            route.contains("jigc describe"),
+            "route names the real discovery verb: {route}"
+        );
+        assert!(
+            !route.contains(&["jigc doc", "types"].join(" ")),
+            "route must not name the nonexistent subcommand: {route}"
         );
     }
 

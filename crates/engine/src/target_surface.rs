@@ -419,10 +419,12 @@ pub fn collect_repeatable(
                             ),
                             Some(Location::addressed(title_address, 1, 1)),
                             Some(format!(
-                                "run `jigc doc retitle-item {ty}:{slug}#{}/{} --title \
-                                 \"<new title>\"` — the heading retitles with its \
-                                 `{{#id}}` anchor frozen (a descriptive title that drops \
-                                 the stale symbol also clears this)",
+                                "start a task (`jigc start \"<intent>\"`), then run \
+                                 `jigc doc retitle-item {ty}:{slug}#{}/{} --title \
+                                 \"<new title>\"` within it — `retitle-item` needs an \
+                                 active task, and the heading retitles with its `{{#id}}` \
+                                 anchor frozen (a descriptive title that drops the stale \
+                                 symbol also clears this)",
                                 section.id, item.id
                             )),
                         ));
@@ -954,6 +956,13 @@ sections:
                 "jigc doc retitle-item arch-doc:core-public-api#components/commentblockparser"
             ),
             "the route names `jigc doc retitle-item` at the item address; got: {route}"
+        );
+        // (V8) The check fires task-less on `jigc validate`, but `retitle-item`
+        // bails "no active task" — so the route must first carry the minting step
+        // (`jigc start`), else it commands a verb no context can perform.
+        assert!(
+            route.contains("jigc start"),
+            "the route carries the task-minting step so the retitle is performable; got: {route}"
         );
 
         // Control: when the title DOES name the symbol, no finding.
