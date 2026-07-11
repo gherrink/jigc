@@ -1,6 +1,6 @@
 # RC adoption trial — migration-half rerun on rc.4 — project-alpha-2.0 (2026-07-11)
 
-**Status: RC input, migration half rerun** — the full GSD→jigc migration re-run from a fresh copy of the original repo (directory renamed to the corrected spelling `project-alpha-2.0`), this time on the installed **1.0.0-rc.4**. The implementation half of the adoption trial is **in progress** in the same repo (smaller dev workflows, invocation log still ON) and gets its own record + log analysis when done; the 1.0.0 call waits on it.
+**Status: RC input, migration half rerun** — the full GSD→jigc migration re-run from a fresh copy of the original repo (directory renamed to the corrected spelling `project-alpha-2.0`), this time on the installed **1.0.0-rc.4**. Informal smaller workflows continue in the same repo on rc.4 for **bug discovery only** (invocation log still ON, appending to the live log — anything they surface joins the next analysis); the **formal implementation half is re-sequenced to run on rc.5** ([DECISIONS.md](../../../DECISIONS.md) → 2026-07-11 rerun + rc.5 charter) and gets its own record + log analysis; the 1.0.0 call waits on it.
 
 ## Provenance
 
