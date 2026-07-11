@@ -32,12 +32,12 @@ Validation is **the determinism boundary applied to correctness**: the CLI-owned
 
 ## Findings
 
-A finding is `{ target, probe, severity, message, route? }`:
+A finding is `{ target, probe, severity, message, route }`:
 
 - **target** — the address it concerns (`spec:auth-flow#criteria/rate-limit`)
 - **probe** — who raised it · **severity** — engine-assigned via cascade · **message** — human-readable (always present)
-- **route** — an *optional* repair direction the engine **never executes**. **As built, `route` is a free `Option<String>`** (a human-readable prose direction; the pinned `Finding` JSON envelope). The tagged-union form below — `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}` · `none` — is the **aspirational** target shape; promoting `route` to it is a deferred cross-cutting result-contract change (it would re-shape the pinned golden and every route producer), **not** assumed by any current probe (M5's `override-default` emits a `String` route):
-  `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}` · `none`
+- **route** — a repair direction the engine **never executes**, **always present** (the advisory-route floor below — never `null`). **As built, `route` is a `String`** (a human-readable prose direction; the pinned `Finding` JSON envelope). The tagged-union form below — `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}` — is the **aspirational** target shape; promoting `route` to it is a deferred cross-cutting result-contract change (it would re-shape the pinned golden and every route producer), **not** assumed by any current probe (M5's `override-default` emits a `String` route):
+  `fill-leaf {address}` · `run-command {command-ref}` · `reconcile {target}`
 
 ```text
 { target:   spec:auth-flow#criteria/rate-limit,
@@ -47,7 +47,16 @@ A finding is `{ target, probe, severity, message, route? }`:
   route:    fill-leaf spec:auth-flow#criteria/rate-limit/maps-to-test }
 ```
 
-Because findings are **navigable state**, a `fix-drift` workflow can `fan-out` over `{{store.findings}}` and route each to its repair — *validate → compose a repair workflow → agent authors the fix → re-validate*. The loop closes while the engine still only **detects and routes**. The route is a *direction*, not a guarantee the repair is correct or complete — the agent still reasons and authors — and `none` is fine where there's no mechanical route.
+Because findings are **navigable state**, a `fix-drift` workflow can `fan-out` over `{{store.findings}}` and route each to its repair — *validate → compose a repair workflow → agent authors the fix → re-validate*. The loop closes while the engine still only **detects and routes**. The route is a *direction*, not a guarantee the repair is correct or complete — the agent still reasons and authors.
+
+### The advisory-route floor
+
+**Every finding carries a route — two kinds, never `null`** (M41 Fork 2 / V15; the contract owner is [command-output-contract.md](command-output-contract.md) → §route). This **supersedes** the earlier "route is optional / `none` is fine where there's no mechanical route" model: the no-op case is reified as an explicit route *value*, not a null.
+
+- A **repair route** names an action — **mechanical** (`run jigc …`) *or* a **non-mechanical human** one (`correct or drop the mention`, `author a referrer` — a real fix jigc cannot execute). The two route-less advisories the engine emitted — `schema-conformance.mention-resolves` (a dangling in-prose mention) and `schema-completeness.inverse-cardinality` (a below-minimum completeness obligation) — carry human repair routes, not the no-op.
+- An **informational route** (`no action needed …`) marks a genuine no-op — an uncheckable-by-design outcome (e.g. `doc-code.unsupported-language`) or a pure routing note (a `file-state` baseline-adopt / absorb).
+
+The floor rule is "every finding **routes**," **not** "every route is 'no action needed'" — flattening the two would tell an agent a dangling mention needs no action, a regression. This honors the earlier rationale (a null was tolerated only where there is no *mechanical* route) by reifying that case as an explicit informational route rather than an absence. (Honest bound: a purely-positional parser *conformance* diagnostic — a `Severity::Blocking` finding raised before an address resolves — is the parser's own floor and is out of this advisory-route scope; [finding.rs](../crates/engine/src/finding.rs)'s pinned envelope keeps its `route: null`.)
 
 ## Scope = effective state
 

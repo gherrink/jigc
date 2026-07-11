@@ -664,8 +664,12 @@ fn is_mention_token_byte(b: u8) -> bool {
 /// An **advisory** `schema-conformance.mention-resolves` [`Finding`] for an in-prose
 /// managed mention that names no committed doc — located at the source doc's identity,
 /// naming the dangling `<type>:<slug>` so the operator knows which mention to fix.
-/// Carries no route: the fix is the prose author's (correct or drop the mention), not a
-/// structural repair (mirroring [`below_inverse_minimum`]'s no-route advisory).
+/// Carries a **repair route** (the human `route` kind — a real fix jigc cannot execute):
+/// the prose author corrects or drops the mention. This is the advisory-route floor —
+/// every finding routes, never `null`, and a dangling mention is a genuine repair, not the
+/// informational "no action needed" ([command-output-contract.md] → §route, two kinds;
+/// [validation.md] → the advisory-route floor; mirroring [`below_inverse_minimum`]'s
+/// author-a-referrer repair route).
 fn dangling_mention(from: &str, mention: &str) -> Finding {
     // `#<token>` — one keyed finding per `(doc, token)`; the caller collapses all
     // occurrences of a token in a doc to one (occurrence index is unstable under edits), so
@@ -680,7 +684,9 @@ fn dangling_mention(from: &str, mention: &str) -> Finding {
              committed doc (the renamed/deleted-doc case); correct or drop the mention",
         ),
         Some(Location::addressed(format!("{from}#{mention}"), 1, 1)),
-        None,
+        Some(format!(
+            "correct or drop the `#{mention}` mention in `{from}`"
+        )),
     )
 }
 
@@ -766,7 +772,11 @@ pub(crate) fn committed_slugs(repo_root: &Path, location: &str) -> Vec<String> {
 /// An **advisory** `schema-completeness.inverse-cardinality` [`Finding`] for a target doc
 /// below its inverse-card minimum — located at the deficient target's identity, naming the
 /// inverse relation (when declared) so the operator knows which obligation is unmet. Carries
-/// no route: the fix is *another task's* job (author a referrer), not a structural repair.
+/// a **repair route** (the human `route` kind — a real fix jigc cannot execute): author a
+/// `<relation>` referrer of the target. This is the advisory-route floor — every finding
+/// routes, never `null`, and an unmet completeness obligation is a genuine (another-task)
+/// repair, not the informational "no action needed" ([command-output-contract.md] → §route,
+/// two kinds; [validation.md] → the advisory-route floor).
 fn below_inverse_minimum(
     target: &str,
     relation: &str,
@@ -790,7 +800,7 @@ fn below_inverse_minimum(
              below the inverse-card minimum of {min}",
         ),
         Some(Location::addressed(format!("{target}#{relation}"), 1, 1)),
-        None,
+        Some(format!("author a `{relation}` referrer of `{target}`")),
     )
 }
 
@@ -1247,6 +1257,130 @@ Slightly higher write latency for resilience.
         assert!(
             !EdgeIndex::path_in(jigc.path()).exists(),
             "the index is gone after invalidation"
+        );
+    }
+
+    /// A minimal `prd` doctype (the `derived-from` target) + a `spec` carrying the
+    /// `derived-from → prd` inverse-card `1..*` obligation, alongside `adr` — the
+    /// schema map the advisory-route-floor corpus drives.
+    fn route_floor_schemas() -> BTreeMap<String, Schema> {
+        const PRD_YAML: &[u8] = b"\
+type: prd
+location: prds/
+id-from: title
+sections:
+  - id: overview
+    slot: { hint: The product requirement. }
+";
+        const SPEC_YAML: &[u8] = b"\
+type: spec
+location: specs/
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: prd, card: \"0..1\", inverse: has-specs, inverse-card: \"1..*\" }
+  - id: goal
+    slot: { hint: One sentence. }
+";
+        let types = crate::schema::dev_pack_field_types();
+        let mut m = schemas(); // adr
+        m.insert(
+            "prd".to_string(),
+            crate::schema::load_schema_with_types(PRD_YAML, &types).expect("prd fixture loads"),
+        );
+        m.insert(
+            "spec".to_string(),
+            crate::schema::load_schema_with_types(SPEC_YAML, &types).expect("spec fixture loads"),
+        );
+        m
+    }
+
+    /// A committed ADR whose Decision slot carries a **dangling managed mention**
+    /// `#adr:ghost` (`adr` is a known doctype; `decisions/ghost.md` is never committed).
+    const ADR_WITH_DANGLING_MENTION: &str = "\
+---
+status: accepted
+date: 2026-07-11
+---
+
+# Note with a mention
+
+## Context
+Some context.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+This supersedes the prior approach; see #adr:ghost for the record.
+
+## Consequences
+None.
+";
+
+    /// A committed PRD with **zero inbound `derived-from` edges** — below the
+    /// `1..*` inverse-card minimum.
+    const PRD_UNREFERENCED: &str = "\
+# Real product requirement
+
+## Overview
+The product must do the thing.
+";
+
+    /// The **advisory-route floor** (`command-output-contract.md` → §route; `validation.md`
+    /// → the advisory-route floor): a store sweep over a corpus carrying a dangling mention
+    /// **and** a below-inverse-min doc emits **no finding with `route: null`**, and the
+    /// dangling-mention finding's route names a **repair** action (human: correct or drop the
+    /// mention), never the informational "no action needed". Drives the emitted findings of
+    /// the two store families whose constructors carried no route.
+    #[test]
+    fn store_advisories_all_carry_a_route_and_the_mention_route_is_a_repair() {
+        let root = TempRoot::new("route-floor");
+        let schemas = route_floor_schemas();
+        std::fs::create_dir_all(root.path().join("decisions")).expect("mk decisions/");
+        std::fs::write(
+            root.path().join("decisions/note.md"),
+            ADR_WITH_DANGLING_MENTION,
+        )
+        .expect("write adr");
+        std::fs::create_dir_all(root.path().join("prds")).expect("mk prds/");
+        std::fs::write(root.path().join("prds/real.md"), PRD_UNREFERENCED).expect("write prd");
+
+        let committed = rebuild_committed(root.path(), &schemas, "route-floor");
+        let mut findings = inverse_cardinality_store(&committed, root.path(), &schemas);
+        findings.extend(mention_resolves_store(root.path(), &schemas));
+
+        // The corpus produces exactly the two families under test.
+        assert!(
+            findings
+                .iter()
+                .any(|f| f.code == "schema-completeness.inverse-cardinality"),
+            "the unreferenced PRD must surface a below-inverse-min advisory: {findings:?}",
+        );
+        let mention = findings
+            .iter()
+            .find(|f| f.code == "schema-conformance.mention-resolves")
+            .expect("the dangling mention must surface a mention-resolves advisory");
+
+        // The floor: no advisory carries `route: null`.
+        for f in &findings {
+            assert!(
+                f.route.is_some(),
+                "every advisory carries a route (the floor, never null): {f:?}",
+            );
+        }
+
+        // The mention route is a REPAIR action, not the informational no-op.
+        let route = mention.route.as_deref().expect("mention carries a route");
+        assert!(
+            route.contains("correct") && route.contains("drop"),
+            "the dangling-mention route names the repair (correct or drop the mention): {route:?}",
+        );
+        assert!(
+            !route.contains("no action needed"),
+            "a dangling mention is a real fix, never the informational 'no action needed': {route:?}",
         );
     }
 }
