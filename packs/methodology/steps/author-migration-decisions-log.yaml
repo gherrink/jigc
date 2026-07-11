@@ -19,7 +19,8 @@ sections:
       - title: "<the decision>"   # one entry per foreign decision, oldest first
         set:
           date: "<historical-date>" # PER ENTRY — the date rule below; OMIT this key when THIS entry is dateless
-          why: "<<why this was decided — the reasoning, in a sentence or two>>"
+          why: |-
+            <<why this was decided — the reasoning, in a sentence or two>>
 EOF
 
 The `<<…>>` around the `why` slot value is REQUIRED literal wrapping — the `<<`/`>>`

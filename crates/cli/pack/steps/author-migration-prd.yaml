@@ -13,18 +13,22 @@ title: "<the prd's subject, as a short noun phrase>"
 sections:
   - id: vision
     set:
-      vision: "<<the product vision — the outcome, in a sentence or two>>"
+      vision: |-
+        <<the product vision — the outcome, in a sentence or two>>
   - id: requirements
     items:
       - title: "<a short label for this requirement>"
         set:
-          statement: "<<the requirement, in a sentence or two>>"
+          statement: |-
+            <<the requirement, in a sentence or two>>
       - title: "<a short label for the next requirement>"
         set:
-          statement: "<<the next requirement, in a sentence or two>>"
+          statement: |-
+            <<the next requirement, in a sentence or two>>
   - id: context
     set:
-      context: "<<why it is needed and the constraints that shape it>>"
+      context: |-
+        <<why it is needed and the constraints that shape it>>
 EOF
 
 The `<<…>>` around each prose slot (`vision`, `context`, each requirement `statement`) is

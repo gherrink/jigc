@@ -133,10 +133,12 @@ pub enum DocCommand {
     /// Author a whole instance from one declarative payload — the doctype-general
     /// batch verb. Applies the equivalent `create` plus N `add-item` / `set-slot` /
     /// `set-field` over a single buffer, persisting once. In the payload, a slot
-    /// value must be wrapped in literal `<<…>>` markers (`summary: "<<the prose>>"`)
-    /// — required syntax that tags the value as slot prose, not a fill-me
-    /// placeholder to delete; an inline field takes a bare value (wrapping one is
-    /// rejected).
+    /// value is a YAML block scalar wrapped in literal `<<…>>` markers (`summary: |`
+    /// then, indented beneath it, `<<the prose>>`) — required syntax that tags the
+    /// value as slot prose, not a fill-me placeholder to delete; the block scalar
+    /// keeps multi-paragraph and bulleted prose intact where a quoted flow scalar
+    /// would fold the line breaks. An inline field takes a bare value (wrapping one
+    /// is rejected).
     ///
     /// Reach for `author` to write a whole instance in one shot (a migration, or any
     /// many-leaf doc) — it collapses what would be a `create` + N follow-up calls.

@@ -19,16 +19,19 @@ sections:
       cites: "[adr:<slug-of-a-cited-decision>]"
   - id: overview
     set:
-      overview: "<<what this part of the system is and the boundary it owns>>"
+      overview: |-
+        <<what this part of the system is and the boundary it owns>>
   - id: components
     items:
       - title: "<the first component's name>"
         set:
-          description: "<<this component's responsibility, in prose>>"
+          description: |-
+            <<this component's responsibility, in prose>>
           implemented-by: "<path>#<symbol>"
       - title: "<another component's name>"
         set:
-          description: "<<this component's responsibility, in prose>>"
+          description: |-
+            <<this component's responsibility, in prose>>
 EOF
 
 The `<<…>>` around each prose slot (`overview`, each component `description`) is REQUIRED

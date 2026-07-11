@@ -16,13 +16,16 @@ sections:
       status: "<proposed | accepted | superseded>"
   - id: context
     set:
-      context: "<<the forces at play that made the decision necessary>>"
+      context: |-
+        <<the forces at play that made the decision necessary>>
   - id: decision
     set:
-      decision: "<<what we decided, in a sentence or two>>"
+      decision: |-
+        <<what we decided, in a sentence or two>>
   - id: consequences
     set:
-      consequences: "<<the tradeoffs and follow-on effects>>"
+      consequences: |-
+        <<the tradeoffs and follow-on effects>>
 EOF
 
 The `<<…>>` around each prose slot (`context`, `decision`, `consequences`) is REQUIRED

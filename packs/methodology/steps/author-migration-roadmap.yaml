@@ -17,8 +17,10 @@ sections:
     items:
       - title: "<milestone>"   # one item per foreign milestone, in the foreign order
         set:
-          proves: "<<what this milestone proves — the capability it converts from planned to demonstrated>>"
-          decomposition: "<<the milestone's breakdown, as prose — each increment's deliverable and the tasks that build it, one level>>"
+          proves: |-
+            <<what this milestone proves — the capability it converts from planned to demonstrated>>
+          decomposition: |-
+            <<the milestone's breakdown, as prose — each increment's deliverable and the tasks that build it, one level>>
 EOF
 
 The `<<…>>` around each slot value (`proves`, `decomposition`) is REQUIRED literal

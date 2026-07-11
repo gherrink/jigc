@@ -17,7 +17,8 @@ sections:
       date: "<historical-date>" # see the date rule below — OMIT this key when dateless
   - id: description
     set:
-      description: "<<the shaped direction — what it is and why it might be worth doing>>"
+      description: |-
+        <<the shaped direction — what it is and why it might be worth doing>>
 EOF
 
 The `<<…>>` around the `description` slot value is REQUIRED literal wrapping — the

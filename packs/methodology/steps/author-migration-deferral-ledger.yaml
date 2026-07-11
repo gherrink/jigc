@@ -21,7 +21,8 @@ sections:
           kind: "<D-or-I>"          # the two-letter mapping rule below
           trigger: "<what resurfaces it>"
           date: "<historical-date>" # PER ENTRY — the date rule below; OMIT this key when THIS entry is dateless
-          body: "<<what is owed and why it was deferred — the decision or parked idea, in prose>>"
+          body: |-
+            <<what is owed and why it was deferred — the decision or parked idea, in prose>>
 EOF
 
 The `<<…>>` around the `body` slot value is REQUIRED literal wrapping — the `<<`/`>>`

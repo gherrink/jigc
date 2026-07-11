@@ -15,13 +15,16 @@ title: Vision
 sections:
   - id: thesis
     set:
-      thesis: "<<the core claim — what this project is and the one idea it descends from>>"
+      thesis: |-
+        <<the core claim — what this project is and the one idea it descends from>>
   - id: invariants
     set:
-      invariants: "<<what must stay true — the boundaries and commitments no change may violate>>"
+      invariants: |-
+        <<what must stay true — the boundaries and commitments no change may violate>>
   - id: open-questions
     set:
-      open-questions: "<<what is deliberately unsettled — the directions still open>>"
+      open-questions: |-
+        <<what is deliberately unsettled — the directions still open>>
 EOF
 
 The `<<…>>` around each prose slot (`thesis`, `invariants`, `open-questions`) is REQUIRED

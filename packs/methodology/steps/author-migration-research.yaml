@@ -17,13 +17,16 @@ sections:
       date: "<historical-date>" # see the date rule below — OMIT this key when dateless
   - id: question
     set:
-      question: "<<the question this research set out to answer>>"
+      question: |-
+        <<the question this research set out to answer>>
   - id: findings
     set:
-      findings: "<<what was found — the evidence and what it shows>>"
+      findings: |-
+        <<what was found — the evidence and what it shows>>
   - id: sources
     set:
-      sources: "<<where the evidence came from — links, references, prior art>>"
+      sources: |-
+        <<where the evidence came from — links, references, prior art>>
 EOF
 
 The `<<…>>` around each prose slot (`question`, `findings`, `sources`) is REQUIRED

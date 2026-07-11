@@ -23,7 +23,8 @@ sections:
             items:
               - title: "<category>"  # one of the six members below — the group's id
                 set:
-                  notes: "<<- one bullet per change in this category>>"
+                  notes: |-
+                    <<- one bullet per change in this category>>
 EOF
 
 The `<<…>>` around a slot value (`notes`) is REQUIRED literal wrapping — the `<<`/`>>`
@@ -63,4 +64,5 @@ map+merge rule, the staging area rather than a release:
     items:
       - title: "<category>"
         set:
-          notes: "<<- one bullet per staged change in this category>>"
+          notes: |-
+            <<- one bullet per staged change in this category>>

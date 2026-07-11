@@ -13,18 +13,22 @@ title: "<the spec's subject, as a short noun phrase>"
 sections:
   - id: goal
     set:
-      goal: "<<what this spec delivers — the outcome, in a sentence or two>>"
+      goal: |-
+        <<what this spec delivers — the outcome, in a sentence or two>>
   - id: context
     set:
-      context: "<<why it is needed and the constraints that shape it>>"
+      context: |-
+        <<why it is needed and the constraints that shape it>>
   - id: criteria
     items:
       - title: "<a short label for this criterion>"
         set:
-          statement: "<<the criterion, testably phrased>>"
+          statement: |-
+            <<the criterion, testably phrased>>
       - title: "<a short label for the next criterion>"
         set:
-          statement: "<<the next criterion, testably phrased>>"
+          statement: |-
+            <<the next criterion, testably phrased>>
 EOF
 
 The `<<…>>` around each prose slot (`goal`, `context`, each criterion `statement`) is
