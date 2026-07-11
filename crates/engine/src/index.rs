@@ -549,9 +549,16 @@ pub fn mention_resolves_store(
             let Ok(doc) = crate::parse::parse_sections(schema, &source) else {
                 continue; // unparseable committed file: skip — not this check's gate.
             };
+            // One keyed finding per `(doc, token)`: a token repeated across slots (or within
+            // one) collapses to a single finding — occurrence index is unstable under edits,
+            // so it is not part of the stable key ([command-output-contract.md] → the stable
+            // finding key). `seen` dedupes in first-encounter order (document order).
+            let mut seen = std::collections::BTreeSet::new();
             for span in slot_spans(&doc) {
                 for mention in scan_mentions(span.slice(&source), schemas) {
-                    if !committed_reachable(&mention, repo_root, schemas) {
+                    if !committed_reachable(&mention, repo_root, schemas)
+                        && seen.insert(mention.clone())
+                    {
                         findings.push(dangling_mention(&from, &mention));
                     }
                 }
@@ -660,6 +667,11 @@ fn is_mention_token_byte(b: u8) -> bool {
 /// Carries no route: the fix is the prose author's (correct or drop the mention), not a
 /// structural repair (mirroring [`below_inverse_minimum`]'s no-route advisory).
 fn dangling_mention(from: &str, mention: &str) -> Finding {
+    // `#<token>` — one keyed finding per `(doc, token)`; the caller collapses all
+    // occurrences of a token in a doc to one (occurrence index is unstable under edits), so
+    // the token fragment keeps distinct dangling mentions in one doc from colliding
+    // ([command-output-contract.md](../../../design/command-output-contract.md) → the stable
+    // finding key: mention → `#<token>`, one per `(doc, token)`).
     Finding::graded(
         Severity::Advisory,
         "schema-conformance.mention-resolves",
@@ -667,7 +679,7 @@ fn dangling_mention(from: &str, mention: &str) -> Finding {
             "schema-conformance — in-prose mention `#{mention}` in `{from}` resolves to no \
              committed doc (the renamed/deleted-doc case); correct or drop the mention",
         ),
-        Some(Location::addressed(from.to_string(), 1, 1)),
+        Some(Location::addressed(format!("{from}#{mention}"), 1, 1)),
         None,
     )
 }
@@ -765,6 +777,11 @@ fn below_inverse_minimum(
     let inverse_phrase = inverse
         .map(|i| format!(" (its `{i}` inverse)"))
         .unwrap_or_default();
+    // `#<relation>` — a doc can be below-min on several inverse relations (the caller loops
+    // per ref field), so the relation fragment keeps each finding's `(code, target)` key
+    // distinct rather than colliding on the bare target identity
+    // ([command-output-contract.md](../../../design/command-output-contract.md) → the stable
+    // finding key: inverse-cardinality is per-relation, not one-per-doc).
     Finding::graded(
         Severity::Advisory,
         "schema-completeness.inverse-cardinality",
@@ -772,7 +789,7 @@ fn below_inverse_minimum(
             "schema-completeness — `{target}` has {count} inbound `{relation}` edge(s){inverse_phrase}, \
              below the inverse-card minimum of {min}",
         ),
-        Some(Location::addressed(target.to_string(), 1, 1)),
+        Some(Location::addressed(format!("{target}#{relation}"), 1, 1)),
         None,
     )
 }
@@ -814,8 +831,15 @@ fn committed_reachable(to: &str, repo_root: &Path, schemas: &BTreeMap<String, Sc
 }
 
 /// A blocking `schema-conformance.ref-resolves` [`Finding`] for a dangling forward
-/// edge — located at the source doc's identity, naming the three routing options.
+/// edge — located at the source doc's identity **plus a `#<relation>/<to-slug>` fragment**,
+/// naming the three routing options. The fragment makes the finding's stable
+/// `(code, target)` key collision-free: a `0..*` ref with several dangling targets fans one
+/// keyed finding per dangling target ([command-output-contract.md](../../../design/command-output-contract.md)
+/// → the stable finding key), rather than colliding on the bare source identity.
 fn dangling(edge: &Edge) -> Finding {
+    // `#<relation>/<to-slug>` — the target's slug alone (never the full `<type>:<slug>`), so
+    // two dangling targets of one relation yield distinct keys.
+    let to_slug = edge.to.split_once(':').map_or(edge.to.as_str(), |(_, s)| s);
     Finding::graded(
         Severity::Blocking,
         "schema-conformance.ref-resolves",
@@ -828,7 +852,11 @@ fn dangling(edge: &Edge) -> Finding {
             relation = edge.relation,
             to = edge.to,
         ),
-        Some(Location::addressed(edge.from.clone(), 1, 1)),
+        Some(Location::addressed(
+            format!("{}#{}/{to_slug}", edge.from, edge.relation),
+            1,
+            1,
+        )),
         Some("fix the reference, create the target in this task, or drop the field".to_string()),
     )
 }
@@ -1466,6 +1494,74 @@ Slightly higher write latency for resilience.
             !task.path().join("index").join("edges.json").exists(),
             "the working overlay is never persisted"
         );
+    }
+
+    /// (M41 Inc-3 T1, the done-criterion) A **`0..*` ref with two dangling targets** fans
+    /// **two** blocking `ref-resolves` findings, each with a **distinct** stable
+    /// `(code, target)` key — `adr:<from>#supersedes/<to-slug>` — so a driver dedupes them
+    /// apart rather than collapsing two real breaks onto one bare-source key
+    /// (`command-output-contract.md` → the stable finding key: `ref-resolves` fans one keyed
+    /// finding per dangling target).
+    #[test]
+    fn dangling_list_ref_keys_each_target_distinctly() {
+        let repo = TempRoot::new("dangle-list-repo");
+        let task = TempRoot::new("dangle-list-task");
+        // A `0..*` supersedes with two targets, both absent from the store and this task.
+        let body = "\
+---
+status: accepted
+date: 2026-05-30
+supersedes: [adr:ghost-one, adr:ghost-two]
+---
+
+# Shared redis session cache
+
+## Context
+A single node is a single point of failure.
+
+## Options
+Alternatives were weighed and rejected.
+
+## Decision
+Replicate the session cache across nodes.
+
+## Consequences
+Slightly higher write latency for resilience.
+";
+        let docs = task.path().join(DOCS_DIR);
+        std::fs::create_dir_all(&docs).expect("mk docs/");
+        std::fs::write(docs.join("adr:shared-redis-session-cache.md"), body).expect("stage B");
+
+        let committed = rebuild_committed(repo.path(), &schemas(), "HEAD");
+        let overlay = overlay_working(&committed, task.path(), &schemas());
+        let findings = ref_resolves(&overlay, repo.path(), task.path(), &schemas());
+
+        assert_eq!(
+            findings.len(),
+            2,
+            "two dangling targets fan two findings, got {findings:?}"
+        );
+        let keys: Vec<crate::finding::FindingKey> = findings.iter().map(Finding::key).collect();
+        // Both are `ref-resolves`, distinguished only by their `#supersedes/<to-slug>`.
+        assert!(
+            keys.iter()
+                .all(|k| k.code == "schema-conformance.ref-resolves"),
+            "both carry the ref-resolves code: {keys:?}",
+        );
+        let targets: std::collections::BTreeSet<Option<String>> =
+            keys.iter().map(|k| k.target.clone()).collect();
+        assert_eq!(
+            targets,
+            [
+                Some("adr:shared-redis-session-cache#supersedes/ghost-one".to_string()),
+                Some("adr:shared-redis-session-cache#supersedes/ghost-two".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            "each dangling target gets a distinct #supersedes/<to-slug> key: {keys:?}",
+        );
+        // The two keys are genuinely distinct (the collision the fragment prevents).
+        assert_ne!(keys[0].target, keys[1].target, "keys must not collide");
     }
 }
 

@@ -277,7 +277,10 @@ pub fn parse_sections(schema: &Schema, source: &str) -> Result<Document, Vec<Fin
             findings.push(Finding::blocking(
                 "conformance.section-missing",
                 format!("required section heading `## {}` is missing", section.id),
-                Location::at(1, 1),
+                // `#<section>` fragment so the store-scope path→URI flip
+                // ([`crate::validate`] `attribute_to_doc`) keys each missing section
+                // distinctly (`command-output-contract.md` → section-missing → `#<section>`).
+                Location::addressed(section.id.clone(), 1, 1),
             ));
             continue;
         };

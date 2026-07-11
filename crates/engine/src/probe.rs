@@ -452,6 +452,10 @@ mod tests {
               "probe": "doc-code",
               "check": "symbol-exists",
               "code": "doc-code.symbol-exists",
+              "key": {
+                "code": "doc-code.symbol-exists",
+                "target": "adr:single-node-cache#status/cites-code"
+              },
               "message": "anchor `crates/engine/src/missing.rs#nope` resolves to no symbol",
               "location": {
                 "address": "adr:single-node-cache#status/cites-code",

@@ -2805,8 +2805,9 @@ Context without any acceptance criteria.
                 .location
                 .as_ref()
                 .and_then(|l| l.address.as_deref())
-                == Some("adr:cache-strategy"),
-            "the block is located at B's authoring doc: {:?}",
+                == Some("adr:cache-strategy#supersedes/lru-eviction"),
+            "the block is located at B's authoring doc + the `#<relation>/<to-slug>` \
+             fragment (the stable finding key): {:?}",
             cross[0]
         );
 

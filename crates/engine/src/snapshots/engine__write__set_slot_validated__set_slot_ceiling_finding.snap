@@ -7,6 +7,10 @@ expression: "serde_json::to_string_pretty(&finding).unwrap()"
   "probe": "write",
   "check": "slot-heading-depth",
   "code": "write.slot-heading-depth",
+  "key": {
+    "code": "write.slot-heading-depth",
+    "target": null
+  },
   "message": "heading at schema-reserved depth `##` in slot prose at line 3; use `####` or rephrase",
   "location": {
     "line": 3,

@@ -601,7 +601,7 @@ fn schema_conformance_store(
                         doc_findings.push(version_mismatch_break(stamp, current));
                     }
                     route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
-                    attribute_to_doc(&mut doc_findings, &rel_key);
+                    attribute_to_doc(&mut doc_findings, &format!("{ty}:{slug}"), &rel_key);
                     findings.extend(doc_findings);
                 }
                 Err(mut parse_findings) => {
@@ -630,7 +630,7 @@ fn schema_conformance_store(
                             &rel_key,
                         );
                     }
-                    attribute_to_doc(&mut parse_findings, &rel_key);
+                    attribute_to_doc(&mut parse_findings, &format!("{ty}:{slug}"), &rel_key);
                     findings.extend(parse_findings);
                 }
             }
@@ -665,7 +665,9 @@ fn hollow_surplus_store(
 ) -> Vec<Finding> {
     let mut findings = Vec::new();
     for (ty, schema) in schemas {
-        for (_identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
+        // `identity` is the `<type>:<slug>` URI (a placement doctype's `<type>:<type>`
+        // singleton included) the path→URI flip keys on — no longer discarded.
+        for (identity, path) in crate::index::committed_instances(repo_root, ty, schema) {
             let Ok(mut source) = std::fs::read_to_string(&path) else {
                 continue; // read race: skip; the next sweep re-checks.
             };
@@ -683,7 +685,7 @@ fn hollow_surplus_store(
                 .unwrap_or(&path)
                 .to_string_lossy()
                 .into_owned();
-            attribute_to_doc(&mut doc_findings, &rel_key);
+            attribute_to_doc(&mut doc_findings, &identity, &rel_key);
             findings.extend(doc_findings);
         }
     }
@@ -1122,39 +1124,47 @@ fn conformance_for(
         Ok(doc) => schema_conformance(schema, source, &doc),
         Err(parse_findings) => parse_findings,
     };
-    attribute_to_doc(&mut findings, rel_key);
+    // Identity is the staged `<type>:<slug>.md` filename minus its extension — the URI the
+    // path→URI flip keys on (never the `docs/<type>:<slug>.md` working-area path).
+    let identity = filename.strip_suffix(".md").unwrap_or(filename);
+    attribute_to_doc(&mut findings, identity, rel_key);
     findings
 }
 
-/// Thread the owning doc's `rel_key` into every `schema-conformance` / `conformance.*`
-/// finding so each names the doc it came from — never a sibling's (`design/validation.md`
-/// → Findings: `target` is the address the finding concerns). The bare per-instance checks
-/// emit doc-less messages and fragment-only / absent addresses (`section/item/leaf` or
-/// `None`), so a multi-doc sweep produces indistinguishable findings; this post-pass
-/// attributes each in place:
+/// Thread the owning doc's `identity` + `rel_key` into every `schema-conformance` /
+/// `conformance.*` finding so each names the doc it came from — never a sibling's
+/// (`design/validation.md` → Findings: `target` is the address the finding concerns). The
+/// bare per-instance checks emit doc-less messages and fragment-only / absent addresses
+/// (`section/field`, `section/item/leaf`, or `None`), so a multi-doc sweep produces
+/// indistinguishable findings; this post-pass attributes each in place:
 ///
-/// - **message** — prefixed with `` `<rel_key>`:  `` so the rendered `severity · code —
-///   message` line an operator reads names the doc.
-/// - **`Location.address`** — the JSON `target` channel: a fragment-bearing address becomes
-///   `<rel_key>#<fragment>`; a fragment-less or location-less finding is addressed at the
-///   bare `<rel_key>`. **`line`/`col` are preserved** — attribution never moves the source
-///   coordinate the check raised.
+/// - **message** — prefixed with `` `<rel_key>`:  `` (the filesystem path) so the rendered
+///   `severity · code — message` line an operator reads names the on-disk doc.
+/// - **`Location.address`** — the JSON `target` channel, in **URI normal form**
+///   (`command-output-contract.md` → the stable finding key): the **`path→URI` flip** — a
+///   fragment-bearing address becomes `<identity>#<fragment>`, a fragment-less or
+///   location-less finding is addressed at the bare `<identity>` (`<type>:<slug>`, the
+///   addressing grammar that survives rename), **not** the `<location>/<slug>.md`
+///   filesystem path it emitted before. **`line`/`col` are preserved** — attribution never
+///   moves the source coordinate the check raised. The derived `key.target`
+///   ([`Finding::key`]) reads through this URI address.
 ///
 /// The single helper both the task-scope [`conformance_for`] and the store-scope
-/// [`schema_conformance_store`] apply to their parse arms (reuse-proven — both callers hold
-/// `rel_key`). The task-scope `unknown-type` arm and the store `route`-labeler already carry
-/// `rel_key`, so they are left untouched.
-fn attribute_to_doc(findings: &mut [Finding], rel_key: &str) {
+/// [`schema_conformance_store`] / [`hollow_surplus_store`] apply to their parse arms
+/// (reuse-proven — every caller holds the `<type>:<slug>` identity, including a **placement**
+/// doctype's `<type>:<type>` singleton identity, so the flip resolves placement docs too).
+/// The task-scope `unknown-type` arm and the store `route`-labeler already carry `rel_key`,
+/// so they are left untouched.
+fn attribute_to_doc(findings: &mut [Finding], identity: &str, rel_key: &str) {
     for finding in findings {
         finding.message = format!("`{rel_key}`: {}", finding.message);
+        let uri = match finding.location.as_ref().and_then(|l| l.address.as_deref()) {
+            Some(fragment) => format!("{identity}#{fragment}"),
+            None => identity.to_string(),
+        };
         match &mut finding.location {
-            Some(location) => {
-                location.address = Some(match &location.address {
-                    Some(fragment) => format!("{rel_key}#{fragment}"),
-                    None => rel_key.to_string(),
-                });
-            }
-            None => finding.location = Some(Location::addressed(rel_key, 1, 1)),
+            Some(location) => location.address = Some(uri),
+            None => finding.location = Some(Location::addressed(uri, 1, 1)),
         }
     }
 }
@@ -1455,7 +1465,14 @@ pub fn surplus_sections_absent(schema: &Schema, source: &str) -> Vec<Finding> {
             surplus.len(),
             body_ids.len(),
         ),
-        Some(Location::at(*first_line, 1)),
+        // `#<surplus-heading>` (the first surplus H2's slug) so the flip keys this advisory
+        // distinctly from a same-doc section/field finding (`command-output-contract.md` →
+        // surplus → `#<surplus-heading>`); `line` stays the first surplus heading's.
+        Some(Location::addressed(
+            crate::slug::slugify(first_text),
+            *first_line,
+            1,
+        )),
         Some(
             "fold the surplus content into a schema section or remove it — jigc \
              never reads or splices it"
@@ -1744,7 +1761,14 @@ fn check_field(
                         "required field `{}` is missing from section `{}`",
                         declared.id, section.id
                     ),
-                    None,
+                    // `#<section>/<field>` so several missing/invalid fields in one doc key
+                    // distinctly under the path→URI flip (`command-output-contract.md` →
+                    // schema-conformance → `#<section>/<field>`).
+                    Some(Location::addressed(
+                        format!("{}/{}", section.id, declared.id),
+                        1,
+                        1,
+                    )),
                 ));
             }
         }
@@ -1772,7 +1796,13 @@ fn check_field_value(
         findings.push(blocking_conformance(
             "schema-conformance.field-value-conformant",
             format!("field `{}` in section `{}`: {why}", declared.id, section.id),
-            None,
+            // `#<section>/<field>` so several invalid fields in one doc key distinctly under
+            // the path→URI flip (`command-output-contract.md` → schema-conformance).
+            Some(Location::addressed(
+                format!("{}/{}", section.id, declared.id),
+                1,
+                1,
+            )),
         ));
     }
 }
@@ -4493,9 +4523,9 @@ One sentence.
             .collect();
         assert_eq!(
             addresses,
-            vec!["docs/roadmap.md#milestones", "specs/hollow.md#criteria"],
+            vec!["roadmap:roadmap#milestones", "spec:hollow#criteria"],
             "the placement roadmap AND the located spec each surface one hollow \
-             advisory, addressed at their section; got {:?}",
+             advisory, addressed at their URI identity + section; got {:?}",
             report.findings,
         );
         for finding in &hollow {
@@ -4557,7 +4587,7 @@ One sentence.
             .collect();
         assert_eq!(
             addresses,
-            vec!["docs/roadmap.md#milestones"],
+            vec!["roadmap:roadmap#milestones"],
             "the exempt `milestone-record#tasks` token suppresses its advisory; the \
              non-exempt roadmap still fires; got {:?}",
             report.findings,
@@ -4633,7 +4663,7 @@ Old notes.
             .collect();
         assert_eq!(
             addresses,
-            vec!["specs/surplus.md"],
+            vec!["spec:surplus#legacy-planning-notes"],
             "only the trailing-surplus doc fires — the between-surplus doc is \
              section-renamed's territory; got {:?}",
             report.findings,
@@ -6291,7 +6321,9 @@ mod attribution_tests {
     //! [`schema_conformance_store`] loci. The bare per-instance checks emit doc-less messages
     //! and fragment-only / absent addresses, so a multi-doc sweep would otherwise produce
     //! findings indistinguishable across sibling docs. The `line`/`col` the check raised is
-    //! preserved verbatim; only the `message` prefix and the `Location.address` gain `rel_key`.
+    //! preserved verbatim; the `message` prefix gains the `rel_key` filesystem path, while
+    //! the `Location.address` gains the doc's **URI identity** (`<type>:<slug>`, the path→URI
+    //! flip — `command-output-contract.md` → the stable finding key), not the path.
 
     use super::*;
     use crate::parse::parse_sections;
@@ -6363,6 +6395,7 @@ title: {title}
             let source = empty_slot_note(slug, pad);
             let filename = format!("note:{slug}.md");
             let rel_key = format!("docs/note:{slug}.md");
+            let identity = format!("note:{slug}");
             let sibling = if slug == "alpha" { "beta" } else { "alpha" };
 
             let bare = bare_finding(&source);
@@ -6385,8 +6418,8 @@ title: {title}
             let loc = f.location.as_ref().expect("attributed finding is located");
             assert_eq!(
                 loc.address.as_deref(),
-                Some(rel_key.as_str()),
-                "the address names the owning doc (slot break carries no fragment)",
+                Some(identity.as_str()),
+                "the address names the owning doc's URI identity (slot break carries no fragment)",
             );
             assert!(
                 !loc.address.as_deref().unwrap().contains(sibling),
@@ -6436,6 +6469,7 @@ title: {title}
 
         for (slug, source) in [("alpha", &alpha), ("beta", &beta)] {
             let rel_key = format!("notes/{slug}.md");
+            let identity = format!("note:{slug}");
             let sibling_key = if slug == "alpha" { "beta" } else { "alpha" };
             let bare_loc = bare_finding(source).location.expect("bare located");
 
@@ -6452,8 +6486,8 @@ title: {title}
             let loc = f.location.as_ref().expect("attributed finding is located");
             assert_eq!(
                 loc.address.as_deref(),
-                Some(rel_key.as_str()),
-                "the address names the owning doc",
+                Some(identity.as_str()),
+                "the address names the owning doc's URI identity",
             );
             assert_eq!(
                 (loc.line, loc.col),

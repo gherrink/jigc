@@ -19,8 +19,16 @@
 //!
 //! ```json
 //! { "severity": "blocking", "probe": "…", "check": "…", "code": "…",
+//!   "key": { "code": "…", "target": "…" },
 //!   "message": "…", "location": { "line": 1, "col": 1 }, "route": null }
 //! ```
+//!
+//! `key` is the **stable per-instance identity** `(code, target)` a driver dedupes on
+//! ([command-output-contract.md](../../../design/command-output-contract.md) → The stable
+//! finding key). It is **derived** — from the finding's `code` and its
+//! [`Location::address`] — never a stored field, so it can never drift from the address
+//! the finding carries; the `Serialize` impl computes it at projection time. `target` is
+//! `null` for a finding raised before an address resolves.
 //!
 //! `probe` / `check` are the **structured severity handle** the M6 post-pass keys on
 //! ([validation.md](../../../design/validation.md) → Severity assignment — the M6
@@ -122,6 +130,24 @@ impl Location {
     }
 }
 
+/// The **stable per-instance identity** of a [`Finding`] — the `(code, target)` pair a
+/// driver dedupes/tracks a finding across sweeps by, and a future acknowledge-ledger keys
+/// on ([command-output-contract.md](../../../design/command-output-contract.md) → The
+/// stable finding key). Unlike a [`Location`]'s `line`/`col` (which churn under edits and
+/// are a convenience pointer only), the key is stable: `target` is the finding's
+/// URI-normal-form address (`<type>:<slug>[#<fragment>]`), which survives reorder/retitle
+/// and changes only through `jigc rename`. Derived — never stored — from a finding's `code`
+/// and its [`Location::address`] ([`Finding::key`]), so it cannot drift from the address the
+/// finding carries.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FindingKey {
+    /// The dotted finding id (`<probe>.<check>`) — per-code dedup granularity.
+    pub code: String,
+    /// The stable address the finding concerns, in URI normal form; `null` for a finding
+    /// raised before an address resolves (a purely-positional conformance diagnostic).
+    pub target: Option<String>,
+}
+
 /// The one envelope every problem surfaces through: a [`Severity`], a stable
 /// machine `code`, a human-readable `message`, an optional [`Location`], and an
 /// optional `route` directing the agent's next action.
@@ -136,7 +162,11 @@ impl Location {
 ///
 /// Inc-2 produces only conformance findings: [`Severity::Blocking`], a `code` and a
 /// located `message`, `route` typically `None` at parse scope.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// `Serialize` is hand-written (not derived) so the projection can carry the derived
+/// [`FindingKey`] as a `key` field without storing it — see [`Finding::key`].
+/// `Deserialize` is derived and ignores the extra `key` field on the wire.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 pub struct Finding {
     /// How serious this finding is.
     pub severity: Severity,
@@ -177,7 +207,43 @@ fn split_code(code: &str) -> (String, String) {
     }
 }
 
+impl Serialize for Finding {
+    /// Project the pinned findings envelope, deriving the stable [`FindingKey`] as the
+    /// `key` field right after `code`
+    /// ([command-output-contract.md](../../../design/command-output-contract.md) → the
+    /// findings envelope). Hand-written rather than derived so `key` is computed at
+    /// projection time from `code` + [`Location::address`] — a single source of truth that
+    /// cannot drift from the address the finding carries.
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut st = serializer.serialize_struct("Finding", 8)?;
+        st.serialize_field("severity", &self.severity)?;
+        st.serialize_field("probe", &self.probe)?;
+        st.serialize_field("check", &self.check)?;
+        st.serialize_field("code", &self.code)?;
+        st.serialize_field("key", &self.key())?;
+        st.serialize_field("message", &self.message)?;
+        st.serialize_field("location", &self.location)?;
+        st.serialize_field("route", &self.route)?;
+        st.end()
+    }
+}
+
 impl Finding {
+    /// The **stable per-instance key** `(code, target)` — `target` derived from this
+    /// finding's [`Location::address`] (the URI-normal-form address a `path→URI` flip
+    /// installs; `None` before an address resolves). Never stored, so it always tracks the
+    /// carried address; serialized as the envelope's `key` field.
+    pub fn key(&self) -> FindingKey {
+        FindingKey {
+            code: self.code.clone(),
+            target: self.location.as_ref().and_then(|l| l.address.clone()),
+        }
+    }
+
     /// A blocking conformance finding at a [`Location`], with no route — the
     /// inc-2 parser's only producer. `probe` / `check` derive from the `code`'s
     /// `<prefix>.<suffix>` split ([`split_code`]).
@@ -289,6 +355,10 @@ mod tests {
           "probe": "conformance",
           "check": "heading-missing",
           "code": "conformance.heading-missing",
+          "key": {
+            "code": "conformance.heading-missing",
+            "target": null
+          },
           "message": "required section heading `## Decision` is missing",
           "location": {
             "line": 1,
@@ -297,6 +367,30 @@ mod tests {
           "route": null
         }
         "#);
+    }
+
+    /// The stable key carries the finding's URI `target` when it has one: an addressed
+    /// finding projects `key.target` = its [`Location::address`], derived (not stored) so
+    /// it always tracks the address a `path→URI` flip installs. Pins the `{code, target}`
+    /// shape the driver dedupes on (`command-output-contract.md` → the stable finding key).
+    #[test]
+    fn finding_key_carries_the_uri_target() {
+        let finding = Finding::graded(
+            Severity::Blocking,
+            "schema-conformance.ref-resolves",
+            "forward-ref integrity — target does not resolve",
+            Some(Location::addressed("adr:cache#supersedes/ghost", 1, 1)),
+            None,
+        );
+        let json = serde_json::to_value(&finding).expect("serializes");
+        assert_eq!(
+            json["key"],
+            serde_json::json!({
+                "code": "schema-conformance.ref-resolves",
+                "target": "adr:cache#supersedes/ghost"
+            }),
+            "an addressed finding's key.target is its URI address",
+        );
     }
 
     /// The exempt-code handle (`validation.md` → Severity inventory: membership is the
