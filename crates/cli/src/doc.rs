@@ -144,6 +144,24 @@ pub enum DocCommand {
     /// many-leaf doc) — it collapses what would be a `create` + N follow-up calls.
     /// Use `create` then `set-slot`/`set-field`/`add-item` for incremental,
     /// one-leaf-at-a-time authoring instead.
+    ///
+    /// Payload shape (YAML; `--from-file`), mirroring the document's structure:
+    ///
+    ///     title: <the create id-source>
+    ///     sections:
+    ///       - id: <section-id>
+    ///         set:                    # doc-level leaves: fields + slots
+    ///           status: accepted      # inline field — a bare value
+    ///           summary: |
+    ///             <<the slot prose>>   # slot — <<…>>-wrapped block scalar
+    ///         items:                  # repeatable rows under this section
+    ///           - title: <item id-source>
+    ///             set:
+    ///               date: 2026-07-11
+    ///             sections:           # nested repeatable level, parented by the item
+    ///               - id: <nested-section-id>
+    ///                 set: { note: <<inline slot>> }
+    #[command(verbatim_doc_comment)]
     Author {
         /// The doctype to author (e.g. `changelog`) — minted through the create-gate.
         doctype: String,
