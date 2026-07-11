@@ -1947,7 +1947,8 @@ mod cli_parse {
             Command::Doc {
                 verb: DocCommand::SetField {
                     addr: "commit:move-cache#type".to_string(),
-                    value: "feat".to_string(),
+                    value: Some("feat".to_string()),
+                    unset: false,
                     task: Some("move-cache".to_string()),
                 },
             }
@@ -2012,10 +2013,51 @@ mod cli_parse {
             Command::Doc {
                 verb: DocCommand::SetField {
                     addr: "commit:x#type".to_string(),
-                    value: "feat".to_string(),
+                    value: Some("feat".to_string()),
+                    unset: false,
                     task: None,
                 },
             }
+        );
+
+        // `--unset` parses (no `--value`), leaving `value: None`.
+        let unset = Cli::try_parse_from([
+            "jigc",
+            "doc",
+            "set-field",
+            "adr:pick-redis#cites-code",
+            "--unset",
+        ])
+        .expect("`doc set-field … --unset` parses");
+        assert_eq!(
+            unset.command,
+            Command::Doc {
+                verb: DocCommand::SetField {
+                    addr: "adr:pick-redis#cites-code".to_string(),
+                    value: None,
+                    unset: true,
+                    task: None,
+                },
+            }
+        );
+
+        // Exactly one of `--value`/`--unset`: both together conflict, neither is rejected.
+        assert!(
+            Cli::try_parse_from([
+                "jigc",
+                "doc",
+                "set-field",
+                "adr:x#cites-code",
+                "--value",
+                "y",
+                "--unset",
+            ])
+            .is_err(),
+            "`--value` and `--unset` are mutually exclusive"
+        );
+        assert!(
+            Cli::try_parse_from(["jigc", "doc", "set-field", "adr:x#cites-code"]).is_err(),
+            "one of `--value`/`--unset` is required"
         );
     }
 

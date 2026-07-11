@@ -1167,6 +1167,185 @@ pub fn remove_item(
     Ok(splice(source, start..span.end, ""))
 }
 
+/// `set-field --unset` (header / simple-body field present): remove the field's line
+/// from `section_id`, leaving every other byte intact — the byte-stable **splice-remove**
+/// primitive (no prior one existed: [`remove_item`] deletes whole item blocks,
+/// [`set_field`] splices/inserts a value). Two shapes, mirroring [`set_field_validated`]'s
+/// header-vs-body split:
+/// - a **header** field is a front-matter `key: value` line → the whole physical line is
+///   removed (the surviving front-matter stays in schema order);
+/// - a **simple body** field is a `- key: value` bullet in the trailing `<!-- fields -->`
+///   group → [`unset_group_field`] removes just that bullet, **dropping the whole group**
+///   (sentinel + its leading blank line) when it was the group's only field.
+///
+/// The eligibility guard (author-required / defaulted / `set:`-stamped fields are refused)
+/// lives in [`unset_field_validated`]; this raw primitive only performs the byte edit. An
+/// absent section / field, or a non-conformant source → [`SpliceError::NotPresent`] /
+/// [`SpliceError::NotConformant`].
+pub fn unset_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    field_key: &str,
+) -> Result<String, SpliceError> {
+    let doc = parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let section = doc
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or_else(|| SpliceError::NotPresent {
+            what: format!("section {section_id:?}"),
+        })?;
+    if !section.fields.iter().any(|f| f.key == field_key) {
+        return Err(SpliceError::NotPresent {
+            what: format!("field {field_key:?} in section {section_id:?}"),
+        });
+    }
+    let schema_section = schema
+        .sections
+        .iter()
+        .find(|s| s.id == section_id)
+        .ok_or(SpliceError::NotConformant)?;
+    if schema_section.header {
+        // Front-matter: remove the whole `key: value` physical line.
+        let content = front_matter_content(source).ok_or_else(|| SpliceError::NotPresent {
+            what: format!("front-matter for section {section_id:?}"),
+        })?;
+        let line = locate_field_line(source, content, field_key, false).ok_or_else(|| {
+            SpliceError::NotPresent {
+                what: format!("field {field_key:?} line"),
+            }
+        })?;
+        Ok(splice(source, line, ""))
+    } else {
+        // Simple body section: remove the bullet from its trailing field group.
+        let blocks = parse::scan_blocks(source);
+        let present = present_body_sections(schema, source);
+        let region = section_region(&blocks, source, section_id, &present).ok_or_else(|| {
+            SpliceError::NotPresent {
+                what: format!("section {section_id:?} body"),
+            }
+        })?;
+        unset_group_field(source, &blocks, region, field_key)
+    }
+}
+
+/// `set-field --unset` (repeatable item field present): remove `field_key`'s bullet from
+/// the item addressed by `item_ids` (its parent-scoped id chain — `["1-2-0"]` for a
+/// top-level item, `["1-2-0", "added"]` for a nested one), scoped to that item's OWN leaf
+/// region ([`item_own_leaf_region`]) so a sibling's or a nested child's identically-keyed
+/// bullet is out of range (the wrong-item / swallow-child guards [`set_item_field`] uses).
+/// Drops the whole `<!-- fields -->` group when it clears the item's only field, else
+/// splices out just that bullet. The eligibility guard lives in
+/// [`unset_item_field_validated`]. An absent item / field, or a non-conformant source →
+/// [`SpliceError::NotPresent`] / [`SpliceError::NotConformant`].
+pub fn unset_item_field(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    field_key: &str,
+) -> Result<String, SpliceError> {
+    // Re-parse for conformance (the surgical splice only runs over a conformant buffer).
+    parse::parse_sections(schema, source).map_err(|_| SpliceError::NotConformant)?;
+    let blocks = parse::scan_blocks(source);
+    let region = locate_item_path(schema, source, section_id, item_ids).ok_or_else(|| {
+        SpliceError::NotPresent {
+            what: format!("item {item_ids:?} in section {section_id:?}"),
+        }
+    })?;
+    let leaf_region = item_own_leaf_region(&blocks, region);
+    unset_group_field(source, &blocks, leaf_region, field_key)
+}
+
+/// Remove the `field_key` bullet from the sentinelled field group inside `region` (a
+/// section body region or an item's own-leaf region), byte-stable against the canonical
+/// writer form. When `field_key` is the group's **only** field, the whole group is
+/// dropped — the blank line before the sentinel, the `<!-- fields -->` sentinel line, and
+/// the bullet — leaving the body terminated by a single `\n` (the no-field canonical
+/// form); otherwise just that bullet's physical line is spliced out, the sentinel and
+/// sibling bullets untouched. No field group in `region`, or no such bullet →
+/// [`SpliceError::NotPresent`].
+fn unset_group_field(
+    source: &str,
+    blocks: &[Block],
+    region: Range<usize>,
+    field_key: &str,
+) -> Result<String, SpliceError> {
+    let (list_range, items) =
+        field_group_list(blocks, region.clone()).ok_or_else(|| SpliceError::NotPresent {
+            what: format!("field group for field {field_key:?}"),
+        })?;
+    if !field_key_in_list(blocks, source, &items, field_key) {
+        return Err(SpliceError::NotPresent {
+            what: format!("field {field_key:?} bullet"),
+        });
+    }
+    if items.len() == 1 {
+        // The group's only field: drop the whole group. `append_field_group` always
+        // emits exactly `\n\n<!-- fields -->` before the sentinel, so removing one of the
+        // two leading `\n` (at `sentinel.start - 1`) through the last bullet's newline
+        // (`list_range.end`) leaves the body terminated by a single `\n` — byte-identical
+        // to the canonical no-field form.
+        let sentinel =
+            field_sentinel_in(blocks, region).ok_or_else(|| SpliceError::NotPresent {
+                what: format!("field-group sentinel for field {field_key:?}"),
+            })?;
+        Ok(splice(source, (sentinel.start - 1)..list_range.end, ""))
+    } else {
+        // A surviving sibling keeps the group: remove just this bullet's physical line
+        // (scoped to the bullet list so a `- …:`-looking prose line is never matched).
+        let line = locate_field_line(source, list_range, field_key, true).ok_or_else(|| {
+            SpliceError::NotPresent {
+                what: format!("field {field_key:?} bullet line"),
+            }
+        })?;
+        Ok(splice(source, line, ""))
+    }
+}
+
+/// The **whole physical line** span (line start through its terminating `\n`, inclusive)
+/// of the `key: value` line whose key matches `key`, within byte `region` — the removal
+/// analogue of [`locate_field_value`] (which returns only the value span). `bullet` strips
+/// a leading `- ` marker before reading the key. `None` if no such line exists in `region`.
+fn locate_field_line(
+    source: &str,
+    region: Range<usize>,
+    key: &str,
+    bullet: bool,
+) -> Option<Range<usize>> {
+    let text = &source[region.clone()];
+    let mut line_start = region.start;
+    for line in text.split_inclusive('\n') {
+        let mut rest = line.trim_end_matches('\n');
+        if bullet {
+            rest = rest
+                .strip_prefix("- ")
+                .or_else(|| rest.strip_prefix('-'))
+                .unwrap_or(rest);
+        }
+        if let Some((line_key, _)) = rest.trim_start().split_once(':')
+            && line_key.trim() == key
+        {
+            return Some(line_start..line_start + line.len());
+        }
+        line_start += line.len();
+    }
+    None
+}
+
+/// The `<!-- fields -->` sentinel block range inside `region`, if present.
+fn field_sentinel_in(blocks: &[Block], region: Range<usize>) -> Option<Range<usize>> {
+    blocks.iter().find_map(|b| match b {
+        Block::FieldSentinel { range }
+            if range.start >= region.start && range.start < region.end =>
+        {
+            Some(range.clone())
+        }
+        _ => None,
+    })
+}
+
 /// `set-item-field` (item field present): replace the **value** bytes of `field_key`
 /// on the repeatable item `item_id` in `section_id`, scoped to that item's OWN byte
 /// region — so neither a sibling item's identically-keyed field (the wrong-item write
@@ -5068,6 +5247,125 @@ pub fn set_field_validated(
             Ok(edited)
         }
     }
+}
+
+/// The gated `set-field --unset` (header / simple-body field): apply the eligibility
+/// guard, then the byte-stable [`unset_field`] splice-remove, then re-parse the result.
+/// Returns the buffer to persist, or a blocking [`Finding`] (and **no** buffer) — an
+/// ineligible field, an unknown/absent field, or a non-reparseable result.
+///
+/// The determinism boundary is unmoved: the agent decides *which* optional field to
+/// clear; the CLI/engine owns the byte removal.
+pub fn unset_field_validated(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    field_key: &str,
+) -> Result<String, Finding> {
+    let field = field_schema(schema, section_id, field_key).ok_or_else(|| {
+        Finding::blocking(
+            "write.unknown-field",
+            format!("no field {field_key:?} declared in section {section_id:?}"),
+            Location::at(1, 1),
+        )
+    })?;
+    if let Some(finding) = unset_eligibility_finding(field) {
+        return Err(finding);
+    }
+    let edited =
+        unset_field(schema, source, section_id, field_key).map_err(|e| splice_error_finding(&e))?;
+    reparse_or_reject(schema, &edited)?;
+    Ok(edited)
+}
+
+/// The gated `set-field --unset` (repeatable item field): the item-addressed sibling of
+/// [`unset_field_validated`] — same eligibility guard + re-parse, over [`unset_item_field`].
+/// `item_ids` is the parent-scoped id chain (single-level or nested).
+pub fn unset_item_field_validated(
+    schema: &Schema,
+    source: &str,
+    section_id: &str,
+    item_ids: &[&str],
+    field_key: &str,
+) -> Result<String, Finding> {
+    let field = item_field_schema(schema, section_id, item_ids, field_key).ok_or_else(|| {
+        Finding::blocking(
+            "write.unknown-field",
+            format!(
+                "no field {field_key:?} declared on item {item_ids:?} in section {section_id:?}"
+            ),
+            Location::at(1, 1),
+        )
+    })?;
+    if let Some(finding) = unset_eligibility_finding(field) {
+        return Err(finding);
+    }
+    let edited = unset_item_field(schema, source, section_id, item_ids, field_key)
+        .map_err(|e| splice_error_finding(&e))?;
+    reparse_or_reject(schema, &edited)?;
+    Ok(edited)
+}
+
+/// The `--unset` eligibility guard: a field may be cleared only when its **absence is a
+/// conformant state** — i.e. it is neither author-required, nor defaulted, nor
+/// `set:`-derived. Returns a routed blocking [`Finding`] for an ineligible field, `None`
+/// when the unset is allowed.
+///
+/// The roadmap shorthand "author-required / set-stamped" is insufficient: `status` is
+/// **not** author-required ([`crate::validate::is_author_required`] returns `false` for a
+/// defaulted field), yet clearing it drops a value the schema guarantees present — so the
+/// guard keys on `default.is_some()` too. The **`set:`** arm covers the engine-injected
+/// `schema-version` stamp (unsetting it would corrupt the freeze gate) and the
+/// `set: on-create` date deriver alike.
+fn unset_eligibility_finding(field: &SchemaField) -> Option<Finding> {
+    if let Some(set) = field.set.as_deref() {
+        let why = if set == crate::schema::SCHEMA_VERSION_SET {
+            "the engine-injected schema-version stamp (unsetting it would corrupt the freeze gate)"
+                .to_string()
+        } else {
+            format!("CLI-derived (`set: {set}`)")
+        };
+        return Some(Finding::block(
+            "write.unset-ineligible",
+            format!(
+                "write rejected: field {:?} is {why} and cannot be unset",
+                field.id
+            ),
+            "leave it in place — the CLI owns its value".to_string(),
+        ));
+    }
+    if crate::validate::is_author_required(field) || field.default.is_some() {
+        return Some(Finding::block(
+            "write.unset-ineligible",
+            format!(
+                "write rejected: field {:?} is required (or defaulted) and cannot be unset",
+                field.id
+            ),
+            "to change it, set a new value with `jigc doc set-field <addr> --value <value>`"
+                .to_string(),
+        ));
+    }
+    None
+}
+
+/// Re-parse `edited` against `schema`, mapping a parse failure to the blocking
+/// `write.non-reparseable` finding — the (a) half of [`validate_after`], shared by the
+/// generation paths whose edit is not a single located span (the `--unset` splice-remove,
+/// the absent-field generate arms).
+fn reparse_or_reject(schema: &Schema, edited: &str) -> Result<(), Finding> {
+    if let Err(findings) = parse::parse_sections(schema, edited) {
+        let detail = findings
+            .into_iter()
+            .next()
+            .map(|f| f.message)
+            .unwrap_or_else(|| "the edited buffer no longer conforms".to_string());
+        return Err(Finding::blocking(
+            "write.non-reparseable",
+            format!("write rejected: result does not re-parse ({detail})"),
+            Location::at(1, 1),
+        ));
+    }
+    Ok(())
 }
 
 /// The gated `set-slot`: the full write-time local adjudication for a slot prose
@@ -10144,5 +10442,205 @@ Captures and settles a charge.
             ),
             Err(SpliceError::NotPresent { .. })
         ));
+    }
+}
+
+#[cfg(test)]
+mod unset {
+    //! `set-field --unset` — the byte-stable field-line splice-remove (V5). Removing an
+    //! optional header line / a body-or-item field bullet must round-trip byte-stable
+    //! (`render(parse(x)) == x`); the last field of a group drops the `<!-- fields -->`
+    //! sentinel, a surviving sibling keeps it; author-required / defaulted / `set:`-stamped
+    //! fields are refused by the eligibility guard.
+
+    use super::*;
+    use crate::schema::Schema;
+
+    const ADR_YAML: &[u8] = include_bytes!("../../cli/pack/schemas/adr.yaml");
+
+    fn adr_schema() -> Schema {
+        crate::schema::load_schema_with_types(ADR_YAML, &crate::schema::dev_pack_field_types())
+            .expect("adr.yaml loads")
+    }
+
+    /// An ADR whose optional `cites-code` header field is present (last front-matter line).
+    const ADR_WITH_CITES: &str = "\
+---
+status: proposed
+date: 2026-05-23
+cites-code: src/gateway.rs#RateLimiter
+---
+
+# Rate-limit at the gateway
+
+## Context
+
+Per-client limits were enforced ad hoc.
+
+## Options
+
+Alternatives were weighed and rejected.
+
+## Decision
+
+Centralize rate limiting at the gateway.
+
+## Consequences
+
+Each service drops its local limiter.
+";
+
+    /// A spec-shaped schema whose repeatable item template carries two optional item
+    /// fields (`weight`, `owner`) — the field-group last-vs-non-last surface at item level.
+    fn item_field_schema() -> Schema {
+        let yaml = b"\
+type: spec
+id-from: title
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: title, type: string }
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"x\" } }
+        - { id: weight, type: int, optional: true }
+        - { id: owner, type: string, optional: true }
+";
+        crate::schema::load_schema_with_types(yaml, &crate::schema::dev_pack_field_types())
+            .expect("item-field spec schema loads")
+    }
+
+    /// A canonical single-item spec whose item carries both optional fields.
+    const ITEM_TWO_FIELDS: &str = "\
+---
+title: Auth flow
+---
+
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit}
+
+The gateway rejects the 101st request.
+
+<!-- fields -->
+- weight: 3
+- owner: platform
+";
+
+    /// Assert `out` round-trips byte-stable through the canonical writer.
+    fn assert_byte_stable(schema: &Schema, out: &str) {
+        let reparsed = instance_from_source(schema, out).expect("result conforms");
+        assert_eq!(
+            render(schema, &reparsed),
+            out,
+            "the unset result must be byte-stable under the canonical writer"
+        );
+    }
+
+    #[test]
+    fn unset_header_field_is_byte_stable_and_reparses() {
+        // The input is canonical.
+        assert_byte_stable(&adr_schema(), ADR_WITH_CITES);
+        let out = unset_field(&adr_schema(), ADR_WITH_CITES, "status", "cites-code")
+            .expect("cites-code present");
+        assert!(!out.contains("cites-code"), "the cleared line is gone");
+        assert!(out.contains("status: proposed"), "siblings survive");
+        assert!(out.contains("date: 2026-05-23"), "siblings survive");
+        assert_byte_stable(&adr_schema(), &out);
+        // The cleared field is absent from the re-parsed instance.
+        let reparsed = instance_from_source(&adr_schema(), &out).expect("conforms");
+        let header = reparsed.sections.iter().find(|s| s.id == "status").unwrap();
+        assert!(header.fields.iter().all(|f| f.key != "cites-code"));
+    }
+
+    #[test]
+    fn unset_middle_header_field_keeps_surrounding_lines() {
+        // Removing a *middle* front-matter line (raw primitive; no eligibility guard)
+        // leaves the lines above and below byte-intact.
+        let out =
+            unset_field(&adr_schema(), ADR_WITH_CITES, "status", "date").expect("date present");
+        assert!(!out.contains("date:"), "the middle line is gone");
+        assert!(out.contains("status: proposed"));
+        assert!(out.contains("cites-code: src/gateway.rs#RateLimiter"));
+        assert_byte_stable(&adr_schema(), &out);
+    }
+
+    #[test]
+    fn unset_last_item_field_drops_the_sentinel_byte_stable() {
+        let schema = item_field_schema();
+        assert_byte_stable(&schema, ITEM_TWO_FIELDS);
+        // Clear `weight` (a surviving sibling remains → sentinel kept).
+        let one = unset_item_field(
+            &schema,
+            ITEM_TWO_FIELDS,
+            "criteria",
+            &["rate-limit"],
+            "weight",
+        )
+        .expect("weight present");
+        assert!(
+            one.contains("<!-- fields -->"),
+            "sentinel kept with a sibling"
+        );
+        assert!(one.contains("- owner: platform"), "sibling kept");
+        assert!(!one.contains("- weight: 3"), "cleared bullet gone");
+        assert_byte_stable(&schema, &one);
+        // Clear the now-only field `owner` → the whole group (sentinel + leading blank)
+        // drops, leaving the slot prose terminated by a single newline.
+        let none = unset_item_field(&schema, &one, "criteria", &["rate-limit"], "owner")
+            .expect("owner present");
+        assert!(
+            !none.contains("<!-- fields -->"),
+            "sentinel dropped with the last field"
+        );
+        assert!(!none.contains("- owner"), "cleared bullet gone");
+        assert!(
+            none.contains("The gateway rejects the 101st request.\n"),
+            "slot prose survives, one trailing newline"
+        );
+        assert_byte_stable(&schema, &none);
+    }
+
+    #[test]
+    fn unset_absent_field_is_not_present() {
+        // `supersedes` is declared but absent from the fixture → NotPresent, never a
+        // corruption.
+        assert!(matches!(
+            unset_field(&adr_schema(), ADR_WITH_CITES, "status", "supersedes"),
+            Err(SpliceError::NotPresent { .. })
+        ));
+    }
+
+    #[test]
+    fn validated_unset_clears_an_optional_header_scalar() {
+        let out = unset_field_validated(&adr_schema(), ADR_WITH_CITES, "status", "cites-code")
+            .expect("cites-code is eligible + present");
+        assert!(!out.contains("cites-code"));
+        assert_byte_stable(&adr_schema(), &out);
+    }
+
+    #[test]
+    fn validated_unset_rejects_a_defaulted_field() {
+        // `status` carries `default: proposed` — clearing it drops a guaranteed value.
+        let finding = unset_field_validated(&adr_schema(), ADR_WITH_CITES, "status", "status")
+            .expect_err("a defaulted field cannot be unset");
+        assert_eq!(finding.code, "write.unset-ineligible");
+        assert!(finding.route.is_some(), "the guard reject carries a route");
+    }
+
+    #[test]
+    fn validated_unset_rejects_a_set_derived_field() {
+        // `date` carries `set: on-create` — a CLI-derived value, refused (the same arm the
+        // engine-injected schema-version stamp is refused by).
+        let finding = unset_field_validated(&adr_schema(), ADR_WITH_CITES, "status", "date")
+            .expect_err("a set-derived field cannot be unset");
+        assert_eq!(finding.code, "write.unset-ineligible");
+        assert!(finding.route.is_some());
     }
 }

@@ -595,6 +595,13 @@ pub enum DocAck {
         value: serde_json::Value,
         findings: Vec<Finding>,
     },
+    /// A `set-field --unset` cleared the field at `address`/`target` (its line/bullet
+    /// removed). No `value` key — the effect is the field's absence, read back via `doc show`.
+    UnsetField {
+        address: String,
+        target: AckTarget,
+        findings: Vec<Finding>,
+    },
     /// A `set-slot` spliced `chars` characters of prose at `address`/`target`.
     Slot {
         address: String,
@@ -680,6 +687,12 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             } => json(&serde_json::json!({
                 "op": "set-field", "target": target, "value": value, "findings": findings,
             })),
+            // `--unset` shares the `set-field` op, with `unset: true` in place of a value.
+            DocAck::UnsetField {
+                target, findings, ..
+            } => json(&serde_json::json!({
+                "op": "set-field", "target": target, "unset": true, "findings": findings,
+            })),
             DocAck::Slot {
                 target,
                 chars,
@@ -724,6 +737,7 @@ pub fn doc_ack(format: Format, ack: &DocAck) -> String {
             DocAck::Field { address, value, .. } => {
                 format!("set {address} = {}", ack_value_display(value))
             }
+            DocAck::UnsetField { address, .. } => format!("unset {address}"),
             DocAck::Slot { address, chars, .. } => format!("set slot {address} ({chars} chars)"),
             DocAck::RemovedItem { address, .. } => format!("removed item {address}"),
             DocAck::RetitledItem { address, title, .. } => {

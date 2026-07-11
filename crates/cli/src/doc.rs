@@ -112,9 +112,14 @@ pub enum DocCommand {
         addr: String,
         /// The new value (inline — fields are short + escaping-safe). A
         /// list-cardinality (`0..*`) ref takes the inline-list form `"[a, b, c]"` to
-        /// set multiple values in one call.
+        /// set multiple values in one call. Exactly one of `--value` / `--unset` is
+        /// required.
+        #[arg(long, conflicts_with = "unset", required_unless_present = "unset")]
+        value: Option<String>,
+        /// Clear the field entirely — remove its line/bullet (an optional field re-conforms
+        /// absent). Refused for author-required / defaulted / CLI-`set:` fields.
         #[arg(long)]
-        value: String,
+        unset: bool,
         /// The active task to scope the write to (see `Create::task`).
         #[arg(long)]
         task: Option<String>,
@@ -246,8 +251,25 @@ impl DocCommand {
             DocCommand::RetitleItem { addr, title, task } => {
                 run_retitle_item(cwd, &addr, &title, task.as_deref(), format)
             }
-            DocCommand::SetField { addr, value, task } => {
-                run_set_field(cwd, &addr, &value, task.as_deref(), format)
+            DocCommand::SetField {
+                addr,
+                value,
+                unset,
+                task,
+            } => {
+                if unset {
+                    run_unset_field(cwd, &addr, task.as_deref(), format)
+                } else {
+                    // `value` is `Some` whenever `--unset` is absent (clap's
+                    // `required_unless_present`), so a bare `--value` is safe to unwrap.
+                    run_set_field(
+                        cwd,
+                        &addr,
+                        &value.unwrap_or_default(),
+                        task.as_deref(),
+                        format,
+                    )
+                }
             }
             DocCommand::SetSlot {
                 addr,
@@ -313,7 +335,8 @@ fn run_set_field(
     let ack_target = field_ack_target(&address, &target);
     let value_json = field_json(&engine::field_block::parse_value(value));
 
-    let edited = apply_field_target(&schema, &source, target, addr, value)?;
+    let edited = apply_field_target(&schema, &source, target, addr, value)
+        .map_err(|e| repoint_empty_value(e, addr, value))?;
 
     persist(&path, &edited)?;
     let findings = write_ack_findings(
@@ -395,6 +418,100 @@ fn apply_field_target(
                 })?
         }
     })
+}
+
+/// `jigc doc set-field <addr> --unset` — clear a field: remove its line/bullet (an
+/// optional field re-conforms absent). The `--unset` sibling of [`run_set_field`], routed
+/// here when the flag is set. The eligibility guard (author-required / defaulted / `set:`
+/// fields refused) lives in the engine's `unset_*_validated`.
+fn run_unset_field(
+    cwd: &Path,
+    addr: &str,
+    task_id: Option<&str>,
+    format: Format,
+) -> Result<(), DocFailure> {
+    let task = ActiveTask::resolve(cwd, task_id)?;
+    let address = parse_addr(addr)?;
+    let schema = task.schema(address.r#type.as_str())?;
+    let target = field_target(&schema, &address)
+        .with_context(|| format!("no field addressed by `{addr}`"))?;
+
+    let path = staged_path(&task.dir, &address, &task.id)?;
+    let source = task.read_or_copy_in(&path, &schema, &address, addr)?;
+
+    let ack_target = field_ack_target(&address, &target);
+    let edited = apply_unset_target(&schema, &source, target, addr)?;
+
+    persist(&path, &edited)?;
+    let findings = write_ack_findings(
+        &schema,
+        &edited,
+        address.r#type.as_str(),
+        address.slug.as_str(),
+    );
+    println!(
+        "{}",
+        render::doc_ack(
+            format,
+            &render::DocAck::UnsetField {
+                address: addr.to_string(),
+                target: ack_target,
+                findings,
+            },
+        )
+    );
+    Ok(())
+}
+
+/// Apply a resolved `--unset` (field removal) to `source`, dispatching by target kind to
+/// the engine's byte-stable splice-remove — the `--unset` counterpart to
+/// [`apply_field_target`]. An ineligible-field / absent-field engine [`Finding`] surfaces
+/// through the shared block envelope (its guard route preserved, a routeless splice error
+/// given the generic retry route).
+fn apply_unset_target(
+    schema: &Schema,
+    source: &str,
+    target: FieldTarget,
+    addr: &str,
+) -> Result<String, DocFailure> {
+    let map = |f: &Finding| block(f, "set-field", addr);
+    Ok(match target {
+        FieldTarget::Section { section, field } => {
+            engine::write::unset_field_validated(schema, source, &section, &field)
+                .map_err(|f| map(&f))?
+        }
+        FieldTarget::Item {
+            section,
+            item,
+            field,
+        } => engine::write::unset_item_field_validated(schema, source, &section, &[&item], &field)
+            .map_err(|f| map(&f))?,
+        FieldTarget::NestedItem {
+            section,
+            items,
+            field,
+        } => {
+            let item_ids: Vec<&str> = items.iter().map(String::as_str).collect();
+            engine::write::unset_item_field_validated(schema, source, &section, &item_ids, &field)
+                .map_err(|f| map(&f))?
+        }
+    })
+}
+
+/// Repoint an empty-`--value` write reject at the `--unset` verb: `--value ""` is the
+/// clear-a-field footgun (the opaque-scalar floor rejects an empty string), so its route
+/// names `jigc doc set-field <addr> --unset` — the actual way to clear a field. A
+/// non-empty value, or a non-block failure, is passed through untouched.
+fn repoint_empty_value(failure: DocFailure, addr: &str, value: &str) -> DocFailure {
+    if value.is_empty()
+        && let DocFailure::Block(mut finding) = failure
+    {
+        finding.route = Some(format!(
+            "to clear a field, use `jigc doc set-field {addr} --unset` (an empty value is not a clear)"
+        ));
+        return DocFailure::Block(finding);
+    }
+    failure
 }
 
 /// The set-field id-from guard (`design/write-commands.md` → The set-field id-from
