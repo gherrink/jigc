@@ -7561,7 +7561,7 @@ mod methodology_roundtrip {
             prop::collection::vec(
                 (
                     scalar_value(),
-                    prop::sample::select(vec!["D", "I"]),
+                    prop::sample::select(vec!["Decision", "Idea"]),
                     scalar_value(),
                     date_value(),
                     section_prose(),

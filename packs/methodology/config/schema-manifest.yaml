@@ -16,8 +16,9 @@
 # work-doc/design-altitude doctypes (stamp-injected, migrate-corpus-owned —
 # `jigc relocate` now refuses them) plus the transient `commit` shadow (listed
 # for the strict set-equality assert, stamp-excluded: no `location:`/`placement:`).
-# `schema-snapshots/` starts ABSENT at v1 (the dev precedent ships snapshots only
-# for migrated doctypes; first populated at the first methodology v1→v2 bump).
+# `schema-snapshots/` was ABSENT at v1 and is first populated by the M41 F4
+# `deferral-ledger` v1→v2 rename (the D/I → Decision/Idea enum-member remap — the
+# first methodology v1→v2 bump; `schema-snapshots/deferral-ledger.v1.yaml` sources it).
 #
 # `schema-version` is the doctype's own version (v1 at the freeze); `schema-hash`
 # is engine::manifest::schema_hash of its resolved definition. Regenerate a hash
@@ -34,8 +35,8 @@ doctypes:
     schema-version: 1
     schema-hash: 8845359c1d4f62bc02cbaa092bd2c6b834f39900f86373176e1aa7c266a0b068
   - type: deferral-ledger
-    schema-version: 1
-    schema-hash: 901d1191c3badce007452215d866199e3d222fcaef0a4eaeb2f41972f810e378
+    schema-version: 2
+    schema-hash: bce2e38368129d078ae9d3b7fd8b6b8dfa61456996e489b62d9a9fda023b10f5
   - type: dogfood-record
     schema-version: 1
     schema-hash: e7980a7e5308270993ee923c8b56a8150b6f0577165960ab413558a679c8f768

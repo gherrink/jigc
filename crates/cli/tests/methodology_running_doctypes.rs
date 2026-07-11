@@ -316,14 +316,16 @@ fn deferral_ledger_schema_is_a_singleton_with_a_kind_enum_and_an_on_create_date(
     let (id_from, block) = repeatable_block(&schema, "entries");
     assert_eq!(id_from, "title");
 
-    // `kind` is an enum over exactly the D/I members (deferred decision vs parked
-    // idea) — the declared leaf the done-criterion names.
+    // `kind` is an enum over exactly the Decision/Idea members (deferred decision vs
+    // parked idea) — the declared leaf the done-criterion names. M41 F4 renamed the
+    // two-letter `D`/`I` members to the spelled-out `Decision`/`Idea` (the first
+    // methodology v1→v2 migration; deferral-ledger schema-version 2).
     let kind = block_field(block, "kind").expect("the entry carries a `kind` field");
     assert_eq!(kind.ty, FieldType::Enum, "`kind` is an enum");
     assert_eq!(
         kind.of.as_deref(),
-        Some(["D", "I"].map(String::from).as_slice()),
-        "`kind` enumerates exactly the D/I members",
+        Some(["Decision", "Idea"].map(String::from).as_slice()),
+        "`kind` enumerates exactly the Decision/Idea members",
     );
 
     // `trigger` is a plain string (a milestone work-unit, NOT a managed ref).

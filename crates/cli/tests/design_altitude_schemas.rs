@@ -169,7 +169,7 @@ fn describe_narrates_research_and_idea_under_dev_methodology() {
     );
 
     // `idea` — the one-per-doc parked shaped direction (coexists with
-    // `deferral-ledger.kind=I`). Same woven-prose proof.
+    // `deferral-ledger.kind=Idea`). Same woven-prose proof.
     assert!(
         stdout.contains(
             "idea is One shaped-but-unscheduled direction, with the trigger that would bring it back."

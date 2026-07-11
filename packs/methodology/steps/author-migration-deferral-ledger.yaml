@@ -18,7 +18,7 @@ sections:
     items:
       - title: "<what is owed>"
         set:
-          kind: "<D-or-I>"          # the two-letter mapping rule below
+          kind: "<Decision-or-Idea>" # the mapping rule below
           trigger: "<what resurfaces it>"
           date: "<historical-date>" # PER ENTRY — the date rule below; OMIT this key when THIS entry is dateless
           body: |-
@@ -36,8 +36,8 @@ Re-author every DEFERRAL from the foreign record, oldest first, as one item unde
 
   - `kind` MUST be one of the two enum members, mapped by what the entry holds open:
     the foreign entry defers a CHOICE (a decision consciously not made yet — an open
-    fork, a "decide X when Y") → `D`; the foreign entry parks a THING (an idea,
-    direction, or feature kept for later) → `I`. There is no third member.
+    fork, a "decide X when Y") → `Decision`; the foreign entry parks a THING (an idea,
+    direction, or feature kept for later) → `Idea`. There is no third member.
   - `trigger` is REQUIRED — what resurfaces this entry. The foreign entry names a
     resurface condition or trigger milestone → transcribe it; it names NONE → derive
     the trigger from the entry's own subject ("a concrete need for <the subject>

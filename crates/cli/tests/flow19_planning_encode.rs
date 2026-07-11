@@ -403,7 +403,7 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
         repo.path(),
         home.path(),
         "defer the alpha cleanup",
-        "D",
+        "Decision",
         "M-Beta",
         b"The alpha cleanup is owed to M-Beta.\n",
     );
@@ -496,7 +496,7 @@ fn flow19_two_run_cold_create_then_warm_append_repromotes_byte_stable() {
         repo.path(),
         home.path(),
         "park the beta idea",
-        "I",
+        "Idea",
         "M-Gamma",
         b"The beta idea is parked for M-Gamma.\n",
     );

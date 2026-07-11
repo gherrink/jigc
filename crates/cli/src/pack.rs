@@ -1774,8 +1774,9 @@ mod tests {
     /// shipped schemas — the nine persisted work-doc/design-altitude doctypes plus
     /// the transient `commit` shadow (the freeze assert is strict set-equality; the
     /// dev precedent lists its transient `commit`) — every one frozen at
-    /// schema-version 1 (the v1 baseline; `schema-snapshots/` starts absent), with
-    /// every recomputed hash matching. A methodology schema-shape change that bumps
+    /// schema-version 1 (the v1 baseline) except `deferral-ledger`, bumped to 2 by the
+    /// M41 F4 `kind` rename (which populates `schema-snapshots/deferral-ledger.v1.yaml`),
+    /// with every recomputed hash matching. A methodology schema-shape change that bumps
     /// no version fails **here, loudly**, at build time.
     #[test]
     fn methodology_schema_manifest_matches_the_frozen_doctype_set() {
@@ -1809,7 +1810,10 @@ mod tests {
             .expect("config/schema-manifest.yaml parses as a freeze manifest");
 
         // The frozen set is exactly the ten shipped methodology schemas, each at
-        // schema-version 1 (the crystallizing v1 baseline).
+        // schema-version 1 (the crystallizing v1 baseline) except `deferral-ledger`,
+        // bumped to 2 by the M41 F4 v1→v2 `kind` enum-member rename (D/I → Decision/Idea
+        // — the first methodology v1→v2 migration; `design/corpus-migration.md` → the
+        // structural-auto / value-semantic-authored distinction).
         let mut declared: Vec<&str> = manifest.doctypes.iter().map(|e| e.ty.as_str()).collect();
         declared.sort_unstable();
         assert_eq!(
@@ -1829,9 +1833,10 @@ mod tests {
             "the methodology freeze manifest must enumerate exactly the ten shipped schemas",
         );
         for entry in &manifest.doctypes {
+            let expected = if entry.ty == "deferral-ledger" { 2 } else { 1 };
             assert_eq!(
-                entry.schema_version, 1,
-                "methodology doctype `{}` is frozen at schema-version 1",
+                entry.schema_version, expected,
+                "methodology doctype `{}` is frozen at schema-version {expected}",
                 entry.ty,
             );
         }
@@ -3389,9 +3394,10 @@ sections:
             );
         }
 
-        /// The embedded methodology `Dir` carries **only** the four resource dirs
-        /// (`workflows/`, `schemas/`, `steps/`, `config/`) — never a `target/` /
-        /// build subtree. The methodology tree is pure YAML data, so an embed that
+        /// The embedded methodology `Dir` carries **only** the resource dirs
+        /// (`workflows/`, `schemas/`, `steps/`, `config/`, and — since the M41 F4
+        /// v1→v2 `deferral-ledger` rename — `schema-snapshots/`) — never a `target/`
+        /// / build subtree. The methodology tree is pure YAML data, so an embed that
         /// swept a build tree would re-introduce the M20 bloat. Guards that the
         /// `include_dir!` root holds no `target/`, mirroring
         /// `embedded_pack_carries_no_probes_directory` for the dev pack.
@@ -3407,8 +3413,11 @@ sections:
                 .collect();
             for name in &top_level {
                 assert!(
-                    matches!(*name, "workflows" | "schemas" | "steps" | "config"),
-                    "the methodology Dir must hold only the four resource dirs; saw `{name}` \
+                    matches!(
+                        *name,
+                        "workflows" | "schemas" | "steps" | "config" | "schema-snapshots"
+                    ),
+                    "the methodology Dir must hold only the resource dirs; saw `{name}` \
                      among {top_level:?}",
                 );
             }

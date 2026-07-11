@@ -1,6 +1,6 @@
 # idea — the methodology pack's one-per-doc parked shaped direction (M37 inc-3 / T1;
 # design/design-altitude-doctypes.md §2). A shaped-but-unscheduled direction with the
-# trigger that would bring it back. Coexists with `deferral-ledger.kind=I` (unchanged):
+# trigger that would bring it back. Coexists with `deferral-ledger.kind=Idea`:
 # the ledger holds owed *decisions*, `idea` holds shaped *directions* — two distinct
 # homes. Mints fresh per document (`id-from: title`, `location: ideas/`).
 #

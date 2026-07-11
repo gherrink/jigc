@@ -1,0 +1,37 @@
+# deferral-ledger.v1 — the prior (pre-rename) shape of the `deferral-ledger`
+# doctype: the `entries.kind` enum over the two-letter members `[D, I]` (a deferred
+# decision `D` vs a parked idea `I`), everything else — the `docs/deferral-ledger.md`
+# placement, `singleton: true`, `id-from: title`, `display-title: Deferral Ledger`,
+# and every other leaf — IDENTICAL to the current (v2) shape. This is the EXACT
+# committed v1 form a real `docs/deferral-ledger.md` had before the M41 F4 rename.
+#
+# Diffed against the current (v2) deferral-ledger shape it classifies as exactly
+# `[ValueRemapped { entries/kind, {D→Decision, I→Idea} }]` — the enum-member rename
+# is unrecoverable from the schema pair alone (which old member maps to which new
+# one is a semantic choice), so `jigc migrate-corpus` applies the AUTHORED old→new
+# map to remap each committed `kind` value byte-faithfully, value-bumps the stamp
+# 1→2, and preserves every slot value. The FIRST methodology v1→v2 migration.
+#
+# The `adr.v1.yaml`/`changelog.v1.yaml` precedent (the embedded pack's
+# `load_prior_schema` sourcing): a full, real, reviewable prior-schema snapshot —
+# the determinism boundary in its strongest form (two genuine declared schemas
+# diffed, never a hand-written migration recipe). See corpus-migration.md →
+# Prior-schema sourcing + the structural-auto / value-semantic-authored distinction.
+type: deferral-ledger
+placement: { file: docs/deferral-ledger.md }
+singleton: true
+id-from: title
+display-title: Deferral Ledger
+description: The running ledger of deferred decisions and parked ideas, each keyed to the milestone trigger that resurfaces it.
+usage: the planning loop reaches Settle and a decision is deferred or an idea parked rather than made now, so it needs a durable owed-and-when record.
+
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: kind, type: enum, of: [D, I] }
+        - { id: trigger, type: string }
+        - { id: date, type: date, set: on-create }
+        - { id: body, slot: { hint: "What is owed and why it was deferred — the decision or parked idea, in prose." } }

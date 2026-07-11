@@ -5,7 +5,8 @@
 # home), so a re-`create` deterministically targets the same committed file — the
 # premise the planning workflow's idempotent-create rests on. One repeatable
 # `entries` section; each entry pairs a `kind` (a
-# decision `D` deferred vs an idea `I` parked) with the `trigger` milestone that
+# `Decision` deferred vs an `Idea` parked — M41 F4 renamed the two-letter `D`/`I`
+# members to these spelled-out forms, deferral-ledger schema-version 2) with the `trigger` milestone that
 # resurfaces it, the `date` it was logged (CLI-derived on create), and a `body`
 # prose slot for the deferral itself.
 #
@@ -33,7 +34,7 @@ sections:
       id-from: title
       block:
         - { id: title, type: string }
-        - { id: kind, type: enum, of: [D, I] }
+        - { id: kind, type: enum, of: [Decision, Idea] }
         - { id: trigger, type: string }
         - { id: date, type: date, set: on-create }
         - { id: body, slot: { hint: "What is owed and why it was deferred — the decision or parked idea, in prose." } }
