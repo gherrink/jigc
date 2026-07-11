@@ -316,7 +316,21 @@ fn check_anchors(snapshot: &EffectiveStateSnapshot) -> Vec<Finding> {
             else {
                 return Some(Finding::unsupported_language(anchor, file));
             };
-            if !resolve::symbol_exists(&src, symbol, grammar) {
+            // Vue is the one grammar whose resolution is not a plain `symbol_exists` over the
+            // raw source: a `.vue` file is an HTML-ish SFC envelope, so its symbols resolve via
+            // a union of the extracted `<script>` symbols and a **filename-component unit** (the
+            // idiomatic `AppLayout.vue` ⇒ `AppLayout` component name). Every other grammar
+            // resolves the raw source directly.
+            let resolved = if grammar == resolve::Grammar::Vue {
+                let file_stem = std::path::Path::new(file)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or_default();
+                resolve::symbol_exists_vue(&src, symbol, file_stem)
+            } else {
+                resolve::symbol_exists(&src, symbol, grammar)
+            };
+            if !resolved {
                 // The symbol is absent — the floor of every `#symbol` check, including
                 // `criterion-maps-to-test` (whose predicate is symbol existence + is-a-test).
                 return Some(Finding::dangling_symbol(anchor, file, symbol));
@@ -647,6 +661,79 @@ def test_rate_limit():
         assert_eq!(gone[0].severity, Severity::Blocking);
         assert_eq!(gone[0].check, "symbol-exists");
         assert_eq!(gone[0].code, "doc-code.symbol-exists");
+    }
+
+    // A real Vue single-file component: an idiomatic `<script setup>` composable, a plain
+    // `<script>` with an `export default { name: ... }`, and template/style/SFC-macro names
+    // that must NOT resolve as script symbols.
+    const APP_LAYOUT_VUE: &str = "\
+<template>
+  <div class=\"layout-class\">{{ templateOnlyName }}</div>
+</template>
+
+<script>
+export default {
+  name: 'AppLayout',
+};
+
+function plainScriptFn() {
+  return 1;
+}
+</script>
+
+<script setup>
+defineProps(['title']);
+
+function useCounter() {
+  return 0;
+}
+
+const setupConst = 1;
+</script>
+
+<style scoped>
+.layout-class {
+  color: red;
+}
+</style>
+";
+
+    #[test]
+    fn vue_fabricated_symbol_blocks_not_advises() {
+        // The flagship red→green: a fabricated Vue symbol must BLOCK ("cannot claim code that
+        // doesn't exist"), not finalize clean as an `unsupported-language` advisory (the pre-M41
+        // behavior — `.vue` mapped to no grammar).
+        let findings = check_one("AppLayout.vue", APP_LAYOUT_VUE, "DoesNotExist");
+        assert_eq!(findings.len(), 1, "exactly one finding, got {findings:?}");
+        assert_eq!(findings[0].severity, Severity::Blocking);
+        assert_eq!(findings[0].check, "symbol-exists");
+        assert_eq!(findings[0].code, "doc-code.symbol-exists");
+    }
+
+    #[test]
+    fn vue_filename_component_and_script_symbols_resolve() {
+        // AppLayout.vue#AppLayout resolves via the filename-component addressable unit (the
+        // component name lives only as a string in `name:`, never as a citable script symbol);
+        // #useCounter resolves as a `<script setup>` composable; #plainScriptFn resolves from the
+        // plain `<script>` block (both blocks extracted).
+        for symbol in ["AppLayout", "useCounter", "plainScriptFn"] {
+            assert!(
+                check_one("AppLayout.vue", APP_LAYOUT_VUE, symbol).is_empty(),
+                "expected `{symbol}` to resolve (no finding)"
+            );
+        }
+    }
+
+    #[test]
+    fn vue_template_style_macro_names_block() {
+        // A name living only in `<template>`, a scoped-`<style>` class, an SFC compiler macro
+        // (`defineProps`), or a macro argument (`title`) is NOT an addressable unit — each blocks.
+        for symbol in ["templateOnlyName", "layout-class", "defineProps", "title"] {
+            let findings = check_one("AppLayout.vue", APP_LAYOUT_VUE, symbol);
+            assert_eq!(findings.len(), 1, "{symbol}: expected one blocking finding");
+            assert_eq!(findings[0].severity, Severity::Blocking, "{symbol}");
+            assert_eq!(findings[0].check, "symbol-exists", "{symbol}");
+        }
     }
 
     #[test]

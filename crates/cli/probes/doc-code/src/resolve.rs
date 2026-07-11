@@ -74,6 +74,20 @@ pub enum Grammar {
     /// so they do not resolve. Reached by [`grammar_for`] via the `.yaml` / `.yml` extension
     /// (extension-only — no docker-compose filename special-casing).
     Yaml,
+    /// Vue single-file components (`.vue`). A `.vue` file is **not** a plain source tree — it is
+    /// an HTML-ish envelope of `<template>` / `<script>` / `<style>` blocks — so resolution is a
+    /// two-part **union** ([`symbol_exists_vue`]): the **`<script>` / `<script setup>` blocks** are
+    /// string-extracted ([`extract_vue_script`]) and their symbols resolved under the vendored
+    /// TypeScript grammar (`language()` → `LANGUAGE_TYPESCRIPT`, `item_names` → [`is_ts_citable`] —
+    /// the TS allowlist verbatim), **unioned** with a **filename-component unit** (a `.vue` whose
+    /// file stem equals the symbol resolves — the idiomatic `AppLayout.vue` ⇒ `AppLayout` component
+    /// name, which lives only as a string in `name:` / is inferred by the compiler, never as a
+    /// citable script symbol). Template refs, scoped-`<style>` classes, and SFC compiler macros
+    /// (`defineProps` / `defineEmits`) are **not** addressable units — they never appear as a citable
+    /// declaration in the extracted script. Reached by [`grammar_for`] via the `.vue` extension; it
+    /// is the first grammar whose resolution is not a plain [`symbol_exists`] over the raw source
+    /// (a source transform + a non-AST filename unit), so its dispatch is [`symbol_exists_vue`].
+    Vue,
 }
 
 impl Grammar {
@@ -89,6 +103,8 @@ impl Grammar {
             Grammar::Bash => tree_sitter_bash::LANGUAGE.into(),
             Grammar::Css => tree_sitter_css::LANGUAGE.into(),
             Grammar::Yaml => tree_sitter_yaml::LANGUAGE.into(),
+            // Vue resolves its extracted `<script>` under the vendored TypeScript grammar.
+            Grammar::Vue => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
         }
     }
 }
@@ -182,9 +198,11 @@ fn with_root(src: &str, grammar: Grammar, f: impl FnOnce(Node) -> bool) -> bool 
 /// TypeScript grammar parses JSX with errors); `.js`/`.jsx`/`.mjs`/`.cjs`→JavaScript (one
 /// grammar — JSX parses natively, no TSX-style split); `.css`→CSS; `.yaml`/`.yml`→YAML
 /// (extension-only — no `compose.yaml`/`docker-compose.yml` filename special-casing, so this
-/// resolves a `#key` on *any* YAML, not just docker-compose). An extension with no shipped
-/// grammar yields `None` and the caller emits the `unsupported-language` advisory (M27 shipped
-/// it, replacing M10's silent skip).
+/// resolves a `#key` on *any* YAML, not just docker-compose); `.vue`→**Vue** (the SFC grammar —
+/// its symbols resolve through [`symbol_exists_vue`], not a plain [`symbol_exists`], since a
+/// `.vue` file needs its `<script>` extracted and a filename-component unit unioned in). An
+/// extension with no shipped grammar yields `None` and the caller emits the `unsupported-language`
+/// advisory (M27 shipped it, replacing M10's silent skip).
 pub fn grammar_for(path: &Path) -> Option<Grammar> {
     match path.extension().and_then(|e| e.to_str())? {
         "rs" => Some(Grammar::Rust),
@@ -196,6 +214,7 @@ pub fn grammar_for(path: &Path) -> Option<Grammar> {
         "sh" | "bash" => Some(Grammar::Bash),
         "css" => Some(Grammar::Css),
         "yaml" | "yml" => Some(Grammar::Yaml),
+        "vue" => Some(Grammar::Vue),
         _ => None,
     }
 }
@@ -249,7 +268,11 @@ fn item_names(node: &Node, src: &str, grammar: Grammar) -> Vec<String> {
         Grammar::Rust => true,
         // JavaScript reuses the TS allowlist verbatim — identical node-kinds and
         // value-position semantics; the TS-only kinds never appear in a JS AST.
-        Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript => is_ts_citable(node),
+        // Vue reuses the TS allowlist over its extracted `<script>` (parsed under the TS
+        // grammar) — the script-symbol half of its two-part unit ([`symbol_exists_vue`]).
+        Grammar::TypeScript | Grammar::Tsx | Grammar::JavaScript | Grammar::Vue => {
+            is_ts_citable(node)
+        }
         Grammar::Python => is_py_citable(node),
         Grammar::Php => is_php_citable(node),
         Grammar::Bash => is_bash_citable(node),
@@ -424,6 +447,59 @@ fn strip_matched_quotes(text: &str) -> &str {
         }
     }
     text
+}
+
+/// Resolve `symbol` against a Vue single-file component `src` — the two-part **union** the Vue
+/// grammar dispatches to ([`Grammar::Vue`]). A `.vue` file is an HTML-ish envelope, not a plain
+/// source tree, so a symbol resolves when **either**:
+///
+/// - it equals `file_stem` — the **filename-component unit** (`AppLayout.vue` ⇒ `AppLayout`, the
+///   idiomatic component name, which lives only as a string in `name:` / is compiler-inferred and
+///   is *not* a citable script symbol), **or**
+/// - it resolves as a script symbol in the extracted `<script>` / `<script setup>` blocks
+///   ([`extract_vue_script`]), parsed under the TypeScript grammar with the TS allowlist.
+///
+/// Template refs, scoped-`<style>` classes, and SFC compiler macros never reach the extracted
+/// script as a citable declaration, so they do not resolve. A `.vue` with no `<script>` (or hostile
+/// input) yields an empty extracted script → the script half resolves `false` without panic.
+pub fn symbol_exists_vue(src: &str, symbol: &str, file_stem: &str) -> bool {
+    file_stem == symbol || symbol_exists(&extract_vue_script(src), symbol, Grammar::Vue)
+}
+
+/// Concatenate the inner text of every `<script …>…</script>` block in a Vue SFC `src` (both the
+/// plain `<script>` and the `<script setup>` block, in source order, newline-joined) — the source
+/// transform behind [`symbol_exists_vue`]. A simple, panic-free string scan (no HTML parse): each
+/// block runs from the `>` closing its opening tag to the next `</script>`. A truncated / absent
+/// block (no opening tag, no `>`, no closing `</script>`) is simply skipped, so empty / hostile
+/// input yields an empty string rather than a crash. Tag matching is ASCII-case-insensitive; the
+/// matched delimiters are ASCII, so every slice lands on a UTF-8 char boundary (non-ASCII script
+/// bodies pass through untouched).
+fn extract_vue_script(src: &str) -> String {
+    let mut out = String::new();
+    let mut rest = src;
+    while let Some(open) = find_ci(rest, "<script") {
+        let after_kw = &rest[open + "<script".len()..];
+        let Some(gt) = after_kw.find('>') else { break };
+        let inner = &after_kw[gt + 1..];
+        let Some(close) = find_ci(inner, "</script>") else {
+            break;
+        };
+        out.push_str(&inner[..close]);
+        out.push('\n');
+        rest = &inner[close + "</script>".len()..];
+    }
+    out
+}
+
+/// The byte index of the first ASCII-case-insensitive occurrence of `needle` in `haystack`, or
+/// `None`. `needle` is ASCII (the SFC tag delimiters), so a match consists only of ASCII bytes and
+/// the returned index lands on a UTF-8 char boundary — safe to slice `haystack` at.
+fn find_ci(haystack: &str, needle: &str) -> Option<usize> {
+    let (hb, nb) = (haystack.as_bytes(), needle.as_bytes());
+    if nb.is_empty() || hb.len() < nb.len() {
+        return None;
+    }
+    (0..=hb.len() - nb.len()).find(|&i| hb[i..i + nb.len()].eq_ignore_ascii_case(nb))
 }
 
 #[cfg(test)]
@@ -1345,6 +1421,114 @@ seq:
         }
     }
 
+    // A real Vue single-file component exercising both `<script>` blocks (plain + setup), the
+    // filename-component unit, and every over-match negative: a plain-`<script>` function, a
+    // `<script setup>` composable and a top-level `const`, an `export default { name }`, plus the
+    // negatives — a name only in `<template>`, a scoped-`<style>` class, an SFC compiler macro
+    // (`defineProps`) and its argument, and the component name that lives ONLY as a `name:` string.
+    const VUE: &str = "\
+<template>
+  <div class=\"layout-class\">{{ templateOnlyName }}</div>
+</template>
+
+<script lang=\"ts\">
+export default {
+  name: 'AppLayout',
+};
+
+function plainScriptFn(): number {
+  return 1;
+}
+</script>
+
+<script setup lang=\"ts\">
+defineProps(['title']);
+
+function useCounter(): number {
+  return 0;
+}
+
+const setupConst = 1;
+</script>
+
+<style scoped>
+.layout-class {
+  color: red;
+}
+</style>
+";
+
+    #[test]
+    fn vue_dispatches_by_extension() {
+        // The activation: the `.vue` extension maps to the Vue grammar.
+        let path = std::path::PathBuf::from("src/components/AppLayout.vue");
+        assert_eq!(grammar_for(&path), Some(Grammar::Vue));
+    }
+
+    #[test]
+    fn extract_vue_script_concatenates_both_blocks_only() {
+        // Both `<script>` blocks are extracted (setup + plain); template / style content is not.
+        let script = extract_vue_script(VUE);
+        assert!(script.contains("plainScriptFn"), "plain <script> extracted");
+        assert!(script.contains("useCounter"), "<script setup> extracted");
+        assert!(
+            !script.contains("templateOnlyName"),
+            "template not extracted"
+        );
+        assert!(!script.contains("layout-class"), "style not extracted");
+    }
+
+    #[test]
+    fn vue_filename_component_unit_resolves() {
+        // The filename-component unit: `AppLayout.vue#AppLayout` resolves even though `AppLayout`
+        // is only a string in `name:` (never a citable script symbol) — the stem matches.
+        assert!(symbol_exists_vue(VUE, "AppLayout", "AppLayout"));
+        // ...and does NOT resolve when the stem differs and it is not a script symbol.
+        assert!(!symbol_exists_vue(VUE, "AppLayout", "Other"));
+    }
+
+    #[test]
+    fn vue_resolves_script_symbols_from_both_blocks() {
+        // A symbol in either the plain `<script>` or the `<script setup>` block resolves (both
+        // extracted, parsed under the TS allowlist) — a `<script setup>` composable included.
+        for sym in ["plainScriptFn", "useCounter", "setupConst"] {
+            assert!(
+                symbol_exists_vue(VUE, sym, "AppLayout"),
+                "expected `{sym}` to resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn vue_non_script_names_do_not_resolve() {
+        // A name only in `<template>` / `<style>`, an SFC compiler macro (`defineProps`, a call —
+        // not a declaration), and a macro argument are NOT addressable units — none resolves.
+        for sym in ["templateOnlyName", "layout-class", "defineProps", "title"] {
+            assert!(
+                !symbol_exists_vue(VUE, sym, "AppLayout"),
+                "expected `{sym}` to NOT resolve"
+            );
+        }
+    }
+
+    #[test]
+    fn vue_hostile_input_does_not_panic() {
+        // The panic-free property carries to Vue: empty / no-`<script>` / unterminated-`<script` /
+        // BOM / non-ASCII source resolves to false without a crash (extract + resolve both robust).
+        let bom = "\u{feff}<script>export function f() {}</script>";
+        for src in [
+            "",
+            "no script here",
+            "<script",
+            "<script setup>function",
+            "<script>function ☃() { let π = 1; }</script>",
+            bom,
+        ] {
+            let _ = extract_vue_script(src);
+            let _ = symbol_exists_vue(src, "x", "stem");
+        }
+    }
+
     /// Every addressable-unit name the extractor yields over `src` under `grammar`, at any
     /// nesting — the same full-tree walk [`symbol_exists`] resolves over, but collecting the
     /// names instead of matching one. Drives the `:`-reservation guard below.
@@ -1379,7 +1563,14 @@ export function Button() {
     return <div className=\"btn\">click</div>;
 }
 ";
-        let cases: [(&str, &str, Grammar); 9] = [
+        // Vue's addressable units are its extracted-`<script>` symbols (the TS allowlist, over the
+        // extracted script) unioned with the filename-component stem. The stem is not an
+        // extractor-yielded unit (it is added in `symbol_exists_vue`, not `item_names`) and is a
+        // file stem — `:`-free by construction; so feeding the extracted script exercises the only
+        // extractor path Vue has, consciously (not skipped), and its TS-transitive units are the
+        // same `:`-free set the TypeScript case already pins.
+        let vue_script = extract_vue_script(VUE);
+        let cases: [(&str, &str, Grammar); 10] = [
             ("Rust", NESTED, Grammar::Rust),
             ("TypeScript", TS, Grammar::TypeScript),
             ("TSX", tsx, Grammar::Tsx),
@@ -1389,6 +1580,7 @@ export function Button() {
             ("bash", BASH, Grammar::Bash),
             ("CSS", CSS, Grammar::Css),
             ("YAML", YAML, Grammar::Yaml),
+            ("Vue", &vue_script, Grammar::Vue),
         ];
         for (lang, src, grammar) in cases {
             let names = all_unit_names(src, grammar);
