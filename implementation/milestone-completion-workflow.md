@@ -17,7 +17,7 @@ The evidence: the first milestone's external audit found a reachable parser pani
 
 1. **Audit** — two **independent, adversarial** passes, run in parallel:
    - **Code review** — a read-only agent that **did not build the milestone and cannot edit or commit** (so it cannot certify its own work), reviewing the whole milestone diff for correctness bugs, invariant violations, and *scope honesty* (inert/dead features, stubs-as-done, `pub`-but-only-called-from-tests, tautological tests, creep). Severity-ranked findings with file:line evidence.
-   - **End-to-end tests** — an agent that drives the **real binary** through the milestone's [worked-example](../design/worked-examples.md) flows in throwaway repos — *not* trusting the builders' own tests. Per-scenario pass/fail with concrete repro for each failure.
+   - **End-to-end tests** — an agent that drives the **real binary** through the milestone's [worked-example](../design/worked-examples.md) flows in throwaway repos — *not* trusting the builders' own tests. Per-scenario pass/fail with concrete repro for each failure. **Probe *misuse* shapes, not only the done-picture arms**: undeclared fields, wrong addresses, pre-staged git state, the command the flows *don't* specify — the acceptance flows encode intended use, and a gate blindness lives exactly off that path (M40: the wave's only genuine audit finding — an undeclared nested field committing silently past 1,676 green tests — came from a misuse probe no worked example named).
 
    Run them concurrently (the reviewer reads committed history; the e2e author writes test files but does not commit — no contention). Output: ranked findings + a green/red verdict on whether the milestone's deliverable genuinely holds.
 
