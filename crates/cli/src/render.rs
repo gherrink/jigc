@@ -1512,6 +1512,7 @@ mod tests {
     #[test]
     fn render_composed_agent_text_ends_with_routing_footer() {
         let view = ComposedWorkflow {
+            task: Some("add-rate-limiter".to_string()),
             text: "Reason about the change.\nRun: `jigc task finalize add-rate-limiter`\n"
                 .to_string(),
         };

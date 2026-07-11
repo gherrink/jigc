@@ -783,7 +783,12 @@ pub(crate) fn compose_migrate_in_repo(
     {
         return Err(finding_to_err(located));
     }
-    result
+    // The verb already minted the off-router task, so its id is the in-hand handle
+    // surfaced in `--format json` (`command-output-contract.md` §1).
+    result.map(|composed| ComposedWorkflow {
+        task: Some(task_id.to_string()),
+        ..composed
+    })
 }
 
 /// The milestone-feeding compose seam — compose the no-task `workflow_id` over an
@@ -972,11 +977,17 @@ fn compose_core(
     // the `author-vision` advisory (route to `do-research` first); all else drops it.
     let advise_research = warrants_research_advisory(&def, &store);
 
+    // The producer's in-hand task id, threaded onto the composed view so
+    // `--format json` surfaces it structurally (`command-output-contract.md` §1):
+    // the freshly minted id on the work-minting arm, `None` on the
+    // `creates-task: false` compose arm.
+    let task_id: Option<String>;
     let ctx = if should_provision_commit_doc(&def) {
         // Mint the task (reads HEAD). Minting after the definition loads so a
         // malformed pack never leaves a task dir behind. The `--slug` override, when
         // present, drives the minted id verbatim (validated inside `mint_in_repo`).
         let minted = mint_in_repo(repo_root, intent, workflow_id, slug_override)?;
+        task_id = Some(minted.id.clone());
         // Workflow-provisioned instance — a `creates-task` work-workflow
         // provisions the task's commit doc (the sink of its
         // `<<author: {{task.commit#summary}}>>` slot), so the agent only fills
@@ -1001,6 +1012,7 @@ fn compose_core(
         // only via the re-run command's agent marker, never a resolved data-value;
         // any `task.*` reference here is the blocking
         // `workflow-refs.task-ref-in-no-task-workflow` conformance error.
+        task_id = None;
         ComposeContext {
             task: None,
             catalog: selectable,
@@ -1058,6 +1070,7 @@ fn compose_core(
     };
     let composed = compose::compose(&def, &filled, &commands, &ctx).map_err(finding_to_err)?;
     Ok(ComposedWorkflow {
+        task: task_id,
         text: resolve_research_advisory(composed.text, advise_research),
     })
 }
@@ -1756,6 +1769,9 @@ fn compose_task_workflow(
     let composed = compose::compose_with_store(&def, &filled, &commands, &ctx, Some(&store))
         .map_err(finding_to_err)?;
     Ok(ComposedWorkflow {
+        // Resume / reenter re-composes the given task, so its id is the in-hand handle
+        // surfaced in `--format json` (`command-output-contract.md` §1).
+        task: Some(id.to_string()),
         text: resolve_research_advisory(composed.text, advise_research),
     })
 }

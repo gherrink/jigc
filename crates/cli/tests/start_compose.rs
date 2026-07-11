@@ -868,6 +868,56 @@ fn bare_intent_router_json_format_carries_no_footer() {
             .is_some_and(|t| t.contains("- single-task —")),
         "the JSON view's `text` must carry the composed router catalog; got:\n{stdout}",
     );
+    // The command-output contract (`command-output-contract.md` §1): the composed
+    // JSON always carries a `task` key; on the `creates-task: false` router arm it is
+    // `null` (no task minted). Present-and-null, not merely absent.
+    let obj = value.as_object().expect("the composed JSON is an object");
+    assert!(
+        obj.contains_key("task"),
+        "the composed JSON must carry a `task` key; got:\n{stdout}",
+    );
+    assert!(
+        value["task"].is_null(),
+        "the router (creates-task: false) arm mints no task, so `task` must be null; got:\n{stdout}",
+    );
+}
+
+#[test]
+fn form_d_single_task_json_format_carries_the_minted_task_id() {
+    let repo = TempDir::new("compose-json-task");
+    init_repo(repo.path());
+    let home = TempDir::new("home");
+
+    // Form D over the `creates-task: true` `single-task` mints `add-rate-limiter`
+    // (the slug of "add rate limiter"); the composed JSON must surface that minted id
+    // structurally in `task`, retiring the prose scrape (`command-output-contract.md`
+    // §1).
+    let out = run_start(
+        repo.path(),
+        home.path(),
+        &[
+            "--format",
+            "json",
+            "--workflow",
+            "single-task",
+            "add rate limiter",
+        ],
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
+
+    assert!(
+        out.status.success(),
+        "`--format json --workflow single-task \"<intent>\"` must exit 0; got {:?}\nstderr:\n{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+    let value: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("must be valid JSON ({e}); got:\n{stdout}"));
+    assert_eq!(
+        value["task"].as_str(),
+        Some("add-rate-limiter"),
+        "a work-minting compose must carry the minted task id in `task`; got:\n{stdout}",
+    );
 }
 
 #[test]

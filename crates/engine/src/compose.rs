@@ -1986,6 +1986,14 @@ fn body_segments(body: &str) -> Vec<BodySegment> {
 /// type it is `Serialize`/`Deserialize` (the renderer / JSON contract).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComposedWorkflow {
+    /// The minted / re-composed task id this workflow belongs to, or `None` on a
+    /// non-minting compose (orient, a `creates-task: false` router selection). The
+    /// engine composes structure only and holds no id in hand, so it builds this
+    /// `None`; the CLI sets it from the producer's in-hand id (a fresh mint, or the
+    /// given id on resume / reenter / migrate). Surfaced in `--format json` as the
+    /// `task` key — the handle every subsequent call requires, retiring the prose
+    /// scrape (`design/command-output-contract.md` §1).
+    pub task: Option<String>,
     /// The full ordered four-class emitted text, every placeholder resolved.
     pub text: String,
 }
@@ -2072,7 +2080,10 @@ pub fn compose_with_store(
         text.push_str(emitted.trim_end_matches('\n'));
         text.push('\n');
     }
-    Ok(ComposedWorkflow { text })
+    // The engine composes structure only — no task id in hand — so `task` is `None`;
+    // the CLI producer sets it from its minted / given id (`command-output-contract.md`
+    // §1). The order below matches the pinned `{ "task", "text" }` JSON shape.
+    Ok(ComposedWorkflow { task: None, text })
 }
 
 /// The engine-native `workflow-refs` probe: validate a workflow definition + its
