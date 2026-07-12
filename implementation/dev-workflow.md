@@ -15,6 +15,8 @@ The loop is shaped as named, ordered steps on purpose: each maps onto a future j
    - `cargo clippy --all-targets -- -D warnings`
    - `cargo test`
    - `cargo build`
+
+   **A green gate does not prove a proptest-guarded invariant holds** (see *A proptest is not a gate*, below). If your change touches behavior an existing property test guards, **pin the invariant with a deterministic case in the same commit** — and if you mean to *retire* an invariant, reconcile its proptest explicitly and state a rationale you have actually checked.
 6. **Commit** — one logical change, conventional message. One task = one focused concern = one commit.
 
 ## Why this shape
@@ -24,3 +26,4 @@ Two framing notes, not extra steps:
 - **One task, one concern.** The unit of work is a single focused thing — the smallest change with its own observable done-criteria. Keeping tasks small is what keeps the loop honest (a vague "make it work" task has no red step).
 - **The loop is jigc in miniature.** Scope ≈ `jigc start` / compose, Gate ≈ `jigc task validate`, Commit ≈ `jigc task finalize` (one task → one commit, [finalize.md](../design/finalize.md)). Running it by hand is deliberate dogfooding — the friction we hit informs the real `single-task` workflow we're building.
 - **One agent when orchestrated.** Run as a workflow, a single agent carries this whole per-task loop (scope → commit) and yields the one commit — the [increment workflow](increment-workflow.md) → Orchestration spawns one such agent per task.
+- **A proptest is not a gate** (M41, 2026-07-11 — [DECISIONS.md](../DECISIONS.md)). `cargo test` runs the property/fuzz suites over **random** inputs, so a green gate means *"no counterexample was sampled this run,"* not *"the invariant holds."* An invariant guarded **only** by a proptest is therefore not gate-enforced: a change can break it, pass its own increment's gate, and surface runs later (or in the wild) once a run happens to sample the counterexample — which is exactly what happened to `slugify`'s idempotency in M41 (an edge-stopword change broke "a slug is a fixed point of normalization," passed its increment green, and was caught two increments later when the shrink seed persisted and made the failure deterministic). Two obligations follow: **(1)** a load-bearing invariant gets a **deterministic** case alongside its proptest — the proptest explores, the point test *enforces*; **(2)** an invariant is never retired by silence — if a change means to drop one, say so, reconcile the test in the same commit, and check the rationale (M41's break shipped a rationale that was demonstrably false, which is what let the un-reconciled proptest stand). Randomized coverage is a *finder*, not a *fence*.
