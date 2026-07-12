@@ -1,0 +1,12 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+verdict: green
+owner-artifact: completions/artifacts/M40/
+---
+
+# M40
+
+## Findings

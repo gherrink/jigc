@@ -1,0 +1,21 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+# Decisions Log
+
+## Entries
+
+### Deterministic fences  {#deterministic-fences}
+
+A proptest samples; a point test enforces. Both ship, and the point test is the gate.
+
+<!-- fields -->
+- date: 2026-07-11
+
+### Frozen schemas  {#frozen-schemas}
+
+The methodology pack is manifest-governed, version-gated exactly like the dev pack.
+
+<!-- fields -->
+- date: 2026-07-12

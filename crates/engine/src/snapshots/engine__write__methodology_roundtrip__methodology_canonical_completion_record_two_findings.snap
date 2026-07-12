@@ -1,0 +1,26 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+verdict: green
+owner-artifact: completions/artifacts/M41/
+---
+
+# M41
+
+## Findings
+
+### Ref key  {#ref-key}
+
+<!-- fields -->
+- severity: advisory
+- disposition: fixed
+- evidence: crates/engine/src/validate.rs
+
+### Slot fidelity  {#slot-fidelity}
+
+<!-- fields -->
+- severity: blocking
+- disposition: contested
+- evidence: crates/cli/tests/migrate_methodology.rs

@@ -1,0 +1,21 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+date: 2026-07-05
+---
+
+# Context compilers
+
+## Question
+
+What do the existing context tools actually assemble, and when?
+
+## Findings
+
+None assemble just-in-time from a managed corpus; all of them ship static rules.
+
+## Sources
+
+The GSD harness, Spec-Kit, and the Cursor rules format.

@@ -1,0 +1,23 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+grounded-in: [research:context-compilers, research:agent-drift]
+---
+
+# Vision
+
+## Thesis
+
+Take every structural operation away from the LLM and give it to the CLI.
+
+Leave the LLM only the prose.
+
+## Invariants
+
+The CLI core makes no LLM calls, and the LLM writes only through the CLI.
+
+## Open Questions
+
+Whether a third-party pack-authoring API ever earns its keep.

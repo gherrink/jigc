@@ -1,0 +1,25 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+# Deferral Ledger
+
+## Entries
+
+### Abandon path  {#abandon-path}
+
+The milestone abandon path was never designed, so a committed record can lie.
+
+<!-- fields -->
+- kind: Decision
+- trigger: M42
+- date: 2026-07-12
+
+### Store validate  {#store-validate}
+
+A schema-version-aware store validate for placement doctypes, parked until asked for.
+
+<!-- fields -->
+- kind: Idea
+- trigger: M43
+- date: 2026-07-12

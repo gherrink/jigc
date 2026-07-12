@@ -1,0 +1,24 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+base: 1492317c0ffee1234567890abcdef1234567890
+status: active
+---
+
+# M42
+
+## Tasks
+
+### fence-roundtrip  {#fence-roundtrip}
+
+<!-- fields -->
+- intent: Fence the methodology round-trip with deterministic cases.
+- status: joined
+
+### fence-slug  {#fence-slug}
+
+<!-- fields -->
+- intent: Pin the slug composition deterministically.
+- status: active

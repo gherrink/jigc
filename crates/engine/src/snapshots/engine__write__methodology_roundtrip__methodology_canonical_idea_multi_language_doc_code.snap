@@ -1,0 +1,14 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+trigger: M43
+date: 2026-07-12
+---
+
+# Multi language doc code
+
+## Description
+
+The anchor gate is symbol-blind outside Rust. The tier-one slice is the Vue SFC arm.

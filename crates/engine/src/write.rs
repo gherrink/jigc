@@ -8321,6 +8321,495 @@ mod methodology_roundtrip {
             prop_assert_eq!(changed, format!("{key}: {new_value}"));
         }
     }
+
+    // ========================================================================
+    // The DETERMINISTIC fence (the proptests above are the finder).
+    //
+    // `cargo test` runs the two `proptest!` blocks over RANDOM inputs, so a green
+    // gate means "no counterexample was sampled this run" — not "the invariant
+    // holds" (dev-workflow → Gate: *A proptest is not a gate*; the M41 `slugify`
+    // idempotency break). The #1-risk round-trip over the NINE shipped methodology
+    // schemas was proptest-only here, with deterministic backup for just four
+    // doctypes and only externally (`crates/cli/tests/migrate_methodology.rs`).
+    //
+    // The table below is that fence, uniform across all nine and sitting beside the
+    // invariant it guards. One row per canonical fixture, hand-authored in the
+    // frozen byte form the writer emits; a future doctype is one row. Per row:
+    //   1. `render(parse(src)) == src` — byte-identical, plus an insta golden of
+    //      the rendered bytes so a canonical-form drift reads as a reviewable diff.
+    //   2. The **absent** arm of every optional shape — `vision.grounded-in` at
+    //      zero refs (the empty `---\n---` fence pair) and the EMPTY repeatable
+    //      (the fresh-mint shape) for all five repeatable-bearing doctypes. The
+    //      un-sampled shapes.
+    //   3. ≥2 items in every populated repeatable, so item ordering and `{#id}`
+    //      anchor emission are pinned (both `roadmap` leaves filled; both
+    //      `deferral-ledger.kind` enum members exercised).
+    //   4. The canonicalization ledger (BOM + doubled trailing newline) and the
+    //      LF/CRLF **parsed-shape equality** — the only guard on the front-matter
+    //      field-drop class for these nine types (`parse.rs`'s deterministic
+    //      `crlf_front_matter_parses_every_field` pins `adr` alone).
+    // ========================================================================
+
+    /// The nine shipped **persisted** methodology doctypes. `commit` is excluded:
+    /// it is transient (its sink is the git message, no `location`/`placement`), so
+    /// it has no on-disk round-trip to fence — `render_commit_message` is its
+    /// contract, golden-tested separately.
+    const PERSISTED_METHODOLOGY_DOCTYPES: [&str; 9] = [
+        "roadmap",
+        "deferral-ledger",
+        "decisions-log",
+        "completion-record",
+        "dogfood-record",
+        "vision",
+        "research",
+        "idea",
+        "milestone-record",
+    ];
+
+    /// One canonical fixture: a doctype, a snapshot-stable name, and the exact
+    /// frozen bytes.
+    struct Fixture {
+        /// Names the insta golden and the failing row.
+        name: &'static str,
+        /// The methodology doctype id — selects the shipped schema.
+        ty: &'static str,
+        /// The canonical document bytes, hand-authored in the writer's frozen form
+        /// (`---` fences, `# H1`, `## Section`, `### Item  {#id}` with the two-space
+        /// anchor gap, `<!-- fields -->`-sentinelled field groups, exactly one
+        /// trailing `\n`).
+        src: &'static str,
+    }
+
+    /// The fixture table — every shipped persisted methodology doctype, each in its
+    /// populated form and (where it has one) its absent-optional / empty-repeatable
+    /// form.
+    fn methodology_fixtures() -> Vec<Fixture> {
+        vec![
+            // `roadmap` — the multi-slot repeatable item: each milestone renders
+            // BOTH leaves (`#### Proves` / `#### Decomposition`) as sub-headings.
+            Fixture {
+                name: "roadmap_two_milestones",
+                ty: "roadmap",
+                src: "\
+# Roadmap
+
+## Milestones
+
+### Milestone 41  {#milestone-41}
+
+#### Proves
+
+The rc.5 wave closes the holes the adoption trial surfaced.
+
+#### Decomposition
+
+Nine increments: fold-safe templates, the composed task id, the driver contract.
+
+### Milestone 42  {#milestone-42}
+
+#### Proves
+
+The rc.6 wave closes the store-validate and abandon-path holes.
+
+#### Decomposition
+
+Six clusters, one increment each, risk-first.
+",
+            },
+            // The fresh-singleton EMPTY repeatable: a bare `## Milestones`.
+            Fixture {
+                name: "roadmap_empty",
+                ty: "roadmap",
+                src: "\
+# Roadmap
+
+## Milestones
+",
+            },
+            // `deferral-ledger` — slot-then-fields items; both `kind` enum members
+            // (`Decision` / `Idea`, the M41 F4 value-remap targets) exercised.
+            Fixture {
+                name: "deferral_ledger_two_entries",
+                ty: "deferral-ledger",
+                src: "\
+# Deferral Ledger
+
+## Entries
+
+### Abandon path  {#abandon-path}
+
+The milestone abandon path was never designed, so a committed record can lie.
+
+<!-- fields -->
+- kind: Decision
+- trigger: M42
+- date: 2026-07-12
+
+### Store validate  {#store-validate}
+
+A schema-version-aware store validate for placement doctypes, parked until asked for.
+
+<!-- fields -->
+- kind: Idea
+- trigger: M43
+- date: 2026-07-12
+",
+            },
+            Fixture {
+                name: "deferral_ledger_empty",
+                ty: "deferral-ledger",
+                src: "\
+# Deferral Ledger
+
+## Entries
+",
+            },
+            // `decisions-log` — slot-then-one-field items.
+            Fixture {
+                name: "decisions_log_two_entries",
+                ty: "decisions-log",
+                src: "\
+# Decisions Log
+
+## Entries
+
+### Deterministic fences  {#deterministic-fences}
+
+A proptest samples; a point test enforces. Both ship, and the point test is the gate.
+
+<!-- fields -->
+- date: 2026-07-11
+
+### Frozen schemas  {#frozen-schemas}
+
+The methodology pack is manifest-governed, version-gated exactly like the dev pack.
+
+<!-- fields -->
+- date: 2026-07-12
+",
+            },
+            Fixture {
+                name: "decisions_log_empty",
+                ty: "decisions-log",
+                src: "\
+# Decisions Log
+
+## Entries
+",
+            },
+            // `completion-record` — a two-field header plus FIELDS-ONLY (slotless)
+            // items: the heading is followed directly by the field group.
+            Fixture {
+                name: "completion_record_two_findings",
+                ty: "completion-record",
+                src: "\
+---
+verdict: green
+owner-artifact: completions/artifacts/M41/
+---
+
+# M41
+
+## Findings
+
+### Ref key  {#ref-key}
+
+<!-- fields -->
+- severity: advisory
+- disposition: fixed
+- evidence: crates/engine/src/validate.rs
+
+### Slot fidelity  {#slot-fidelity}
+
+<!-- fields -->
+- severity: blocking
+- disposition: contested
+- evidence: crates/cli/tests/migrate_methodology.rs
+",
+            },
+            // The clean-audit EMPTY repeatable, header still populated.
+            Fixture {
+                name: "completion_record_clean_audit",
+                ty: "completion-record",
+                src: "\
+---
+verdict: green
+owner-artifact: completions/artifacts/M40/
+---
+
+# M40
+
+## Findings
+",
+            },
+            // `dogfood-record` — the census's widest header (14 front-matter fields),
+            // then a prose slot. The field-drop class's loudest CRLF canary.
+            Fixture {
+                name: "dogfood_record_greenfield",
+                ty: "dogfood-record",
+                src: "\
+---
+case: greenfield
+binary-sha: 1492317
+adapter-writes: 412
+oob-edits: 7
+drift-caught: 5
+validate-blocks: 3
+halts-expected: 2
+halts-unplanned: 1
+fix-rounds: 4
+audit-findings: 6
+seeded-oob: 1
+seeded-blocks: 1
+verdict: green
+owner-artifact: dogfood/artifacts/greenfield-one/
+---
+
+# Greenfield run one
+
+## Judgment
+
+The loop held: every seeded out-of-band edit was caught and every seeded block fired.
+
+The one unplanned halt was a route-less advisory, not a determinism break.
+",
+            },
+            // `vision` — the ref-list header PRESENT: an inline-flow `[a, b]` value.
+            Fixture {
+                name: "vision_grounded",
+                ty: "vision",
+                src: "\
+---
+grounded-in: [research:context-compilers, research:agent-drift]
+---
+
+# Vision
+
+## Thesis
+
+Take every structural operation away from the LLM and give it to the CLI.
+
+Leave the LLM only the prose.
+
+## Invariants
+
+The CLI core makes no LLM calls, and the LLM writes only through the CLI.
+
+## Open Questions
+
+Whether a third-party pack-authoring API ever earns its keep.
+",
+            },
+            // The ABSENT-optional arm: `grounded-in` is `card: 0..*`, so zero refs
+            // OMIT the field entirely — an empty `---\n---` fence pair. The classic
+            // un-sampled shape, and the reason this arm is spelled out.
+            Fixture {
+                name: "vision_ungrounded",
+                ty: "vision",
+                src: "\
+---
+---
+
+# Vision
+
+## Thesis
+
+Take every structural operation away from the LLM and give it to the CLI.
+
+## Invariants
+
+The CLI core makes no LLM calls.
+
+## Open Questions
+
+Whether a third-party pack-authoring API ever earns its keep.
+",
+            },
+            // `research` — one header field, three prose slots.
+            Fixture {
+                name: "research_context_compilers",
+                ty: "research",
+                src: "\
+---
+date: 2026-07-05
+---
+
+# Context compilers
+
+## Question
+
+What do the existing context tools actually assemble, and when?
+
+## Findings
+
+None assemble just-in-time from a managed corpus; all of them ship static rules.
+
+## Sources
+
+The GSD harness, Spec-Kit, and the Cursor rules format.
+",
+            },
+            // `idea` — two header fields, one prose slot.
+            Fixture {
+                name: "idea_multi_language_doc_code",
+                ty: "idea",
+                src: "\
+---
+trigger: M43
+date: 2026-07-12
+---
+
+# Multi language doc code
+
+## Description
+
+The anchor gate is symbol-blind outside Rust. The tier-one slice is the Vue SFC arm.
+",
+            },
+            // `milestone-record` — `id-from: task-id`, so the item heading text IS
+            // the task-id slug (not a slugified prose title) and the id-source field
+            // is elided from the field group, exactly as `title` is elsewhere.
+            Fixture {
+                name: "milestone_record_two_tasks",
+                ty: "milestone-record",
+                src: "\
+---
+base: 1492317c0ffee1234567890abcdef1234567890
+status: active
+---
+
+# M42
+
+## Tasks
+
+### fence-roundtrip  {#fence-roundtrip}
+
+<!-- fields -->
+- intent: Fence the methodology round-trip with deterministic cases.
+- status: joined
+
+### fence-slug  {#fence-slug}
+
+<!-- fields -->
+- intent: Pin the slug composition deterministically.
+- status: active
+",
+            },
+            // The fresh-record EMPTY repeatable (a milestone minted before its first
+            // sub-task is spawned).
+            Fixture {
+                name: "milestone_record_fresh",
+                ty: "milestone-record",
+                src: "\
+---
+base: a3c26dcfeedfacefeedfacefeedfacefeedface0
+status: active
+---
+
+# M43
+
+## Tasks
+",
+            },
+        ]
+    }
+
+    /// The table ranges over **every** shipped persisted methodology doctype — the
+    /// fence is only a fence if nothing falls outside it. A tenth persisted doctype
+    /// (or a rename) fails here until it earns a row.
+    #[test]
+    fn every_persisted_methodology_doctype_has_a_deterministic_fixture() {
+        let covered: std::collections::BTreeSet<&str> =
+            methodology_fixtures().iter().map(|fx| fx.ty).collect();
+        let shipped: std::collections::BTreeSet<&str> =
+            PERSISTED_METHODOLOGY_DOCTYPES.iter().copied().collect();
+        assert_eq!(
+            covered, shipped,
+            "every persisted methodology doctype needs a deterministic round-trip fixture"
+        );
+    }
+
+    /// **The fence.** For every canonical fixture: `render(parse(src)) == src`,
+    /// byte-identical — the #1-risk round-trip, deterministically, over the shipped
+    /// methodology schemas. The insta golden pins the rendered bytes so a
+    /// canonical-form drift reads as a diff before the equality assert names it.
+    #[test]
+    fn methodology_canonical_fixtures_round_trip_byte_identically() {
+        for fx in methodology_fixtures() {
+            let schema = schema_for(fx.ty);
+            let instance = instance_from_source(&schema, fx.src).unwrap_or_else(|findings| {
+                panic!(
+                    "the canonical {} fixture {:?} must parse: {findings:?}",
+                    fx.ty, fx.name
+                )
+            });
+            let rendered = render(&schema, &instance);
+            insta::assert_snapshot!(format!("methodology_canonical_{}", fx.name), rendered);
+            assert_eq!(
+                rendered, fx.src,
+                "render(parse(x)) == x must hold byte-identically for the {} fixture {:?}",
+                fx.ty, fx.name
+            );
+        }
+    }
+
+    /// **The ledger + CRLF fence.** For every canonical fixture, under BOTH line
+    /// endings: the no-op write of the already-canonical doc is byte-identical, and
+    /// a BOM + doubled-trailing-newline perturbation canonicalizes back to exactly
+    /// the canonical form (EOL preserved — a CRLF doc never normalizes to LF).
+    ///
+    /// Then the clause a parse-ok check cannot make: the LF and CRLF forms parse to
+    /// the SAME structure — same sections, same field keys, same item anchors. This
+    /// is the only deterministic guard on the front-matter field-drop class for
+    /// these nine doctypes (the CRLF metadata-scan defect the M40 census surfaced
+    /// dropped every front-matter field after the first while still parsing "ok" —
+    /// `dogfood_record_greenfield`'s 14-field header is the loud canary).
+    #[test]
+    fn methodology_canonical_fixtures_canonicalize_from_the_ledger_deviations() {
+        for fx in methodology_fixtures() {
+            let schema = schema_for(fx.ty);
+
+            for eol in ["\n", "\r\n"] {
+                let canonical = with_eol(fx.src, eol);
+
+                assert_eq!(
+                    first_touch_canonicalize(&canonical),
+                    canonical,
+                    "the no-op write of the canonical {} fixture {:?} must be byte-identical under {eol:?}",
+                    fx.ty,
+                    fx.name
+                );
+
+                let perturbed = format!("\u{feff}{canonical}{eol}{eol}");
+                assert_eq!(
+                    first_touch_canonicalize(&perturbed),
+                    canonical,
+                    "the ledger deviations (BOM, doubled trailing newline) must canonicalize back to the canonical {} fixture {:?} under {eol:?}",
+                    fx.ty,
+                    fx.name
+                );
+            }
+
+            let lf = parse_sections(&schema, fx.src).unwrap_or_else(|f| {
+                panic!("the {} fixture {:?} parses under LF: {f:?}", fx.ty, fx.name)
+            });
+            let crlf_src = with_eol(fx.src, "\r\n");
+            let crlf = parse_sections(&schema, &crlf_src).unwrap_or_else(|f| {
+                panic!(
+                    "the {} fixture {:?} parses under CRLF: {f:?}",
+                    fx.ty, fx.name
+                )
+            });
+            assert_eq!(
+                parsed_shape(&lf),
+                parsed_shape(&crlf),
+                "the EOL projection must not change the parsed structure of the {} fixture {:?} \
+                 (the front-matter field-drop class)",
+                fx.ty,
+                fx.name
+            );
+        }
+    }
 }
 
 #[cfg(test)]

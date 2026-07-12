@@ -1,0 +1,27 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+# Roadmap
+
+## Milestones
+
+### Milestone 41  {#milestone-41}
+
+#### Proves
+
+The rc.5 wave closes the holes the adoption trial surfaced.
+
+#### Decomposition
+
+Nine increments: fold-safe templates, the composed task id, the driver contract.
+
+### Milestone 42  {#milestone-42}
+
+#### Proves
+
+The rc.6 wave closes the store-validate and abandon-path holes.
+
+#### Decomposition
+
+Six clusters, one increment each, risk-first.

@@ -1,0 +1,28 @@
+---
+source: crates/engine/src/write.rs
+expression: rendered
+---
+---
+case: greenfield
+binary-sha: 1492317
+adapter-writes: 412
+oob-edits: 7
+drift-caught: 5
+validate-blocks: 3
+halts-expected: 2
+halts-unplanned: 1
+fix-rounds: 4
+audit-findings: 6
+seeded-oob: 1
+seeded-blocks: 1
+verdict: green
+owner-artifact: dogfood/artifacts/greenfield-one/
+---
+
+# Greenfield run one
+
+## Judgment
+
+The loop held: every seeded out-of-band edit was caught and every seeded block fired.
+
+The one unplanned halt was a route-less advisory, not a determinism break.
