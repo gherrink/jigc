@@ -14,6 +14,8 @@ Side effects that come free: output size roughly halves on re-compose (the trial
 
 Fold-in from the same trial: the **two-step routing redundancy** — `jigc start "<intent>"` prints the workflow list, then you re-run with `--workflow`; since the first call already accepts `--workflow` and the SessionStart hook already showed the menu, the intent-only form added little. A state-aware surface should also reconsider what the *first* compose needs to print.
 
+**2026-07-12 update — the trigger fired, three ways, on the implementation-half trial** ([trial-record](../completions/artifacts/RC-adoption/impl-rc5/trial-record.md) → Probe 3): (a) the sharpest instance yet — after `task bind spec` succeeded, re-compose still printed the full **pick-a-spec gate block** *plus* the caption "The spec's criteria — empty until you bind a spec and re-compose:" directly above the fully-populated criteria: static text actively asserting the opposite of store state, read as "the bind silently failed" (the trial's #1-ranked bug); (b) "satisfied gates keep talking" generally; (c) "everything-at-once" — the first compose dumps implement + commit fields + trailers + changelog + ADR + verify + finalize guidance before a line of code exists ("stage it: tell me what to do now"). The bind-gate *contradiction* is fix-shaped (chartered with the rc.6 wave); the general done/pending render stays this idea.
+
 ## Trigger
 
-Next milestone planning (the post-RC fix wave) — pairs naturally with [doc-read-surface](doc-read-surface.md); or the adoption trial reproducing the skip-a-printed-instruction moment.
+Next milestone planning (the post-RC fix wave) — pairs naturally with [doc-read-surface](doc-read-surface.md); or the adoption trial reproducing the skip-a-printed-instruction moment. *(Fired 2026-07-12 — see above; the minimal contradiction-fix is chartered, the full state-aware render is the remaining idea.)*

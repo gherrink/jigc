@@ -20,6 +20,8 @@ Turns "context compiler" from a metaphor into a measurable property. The read-pa
 
 The trial surfaced the same cost on the *per-invocation* axis: the agent chained many `jigc` commands in one row and the accumulated output flooded its context with unwanted/unrequired data ([trial-record](../completions/artifacts/RC-greenfield/trial-record.md) → A7). Compose payload is one emitter; the sum of every ack, advisory, and re-printed template across a 30-command session is the other. Levers on this face: terser acks where they're still verbose, suppressing re-prints (largely [state-aware-compose](state-aware-compose.md)'s job), and possibly a minimal-output format tier below `agent`. Any budget/accounting mechanism built here should count both faces.
 
+**2026-07-12 datum (implementation-half trial):** a single `jigc task diff` emitted **187,851 bytes** — 4× the whole trial's next-largest output ([trial-record](../completions/artifacts/RC-adoption/impl-rc5/trial-record.md) → Log analysis). The fd-tee measures; nothing bounds. First concrete ceiling candidate on the invocation-output face.
+
 ## Trigger
 
 A measurement run or real dogfood shows composed-view size is a material cost — or a large corpus makes a composed slice overflow a model's practical budget. *(The invocation-output face has a live data source now: the RC invocation logs record per-command usage — the analysis can measure output volume per session.)*
