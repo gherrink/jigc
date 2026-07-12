@@ -297,11 +297,34 @@ mod tests {
                 "word-boundary-retreat",
                 "backwards-compatible-serialization-outputs-contract",
             ),
+            // Transliteration-nasty inputs: the composition `is_slug(slugify(x))`
+            // is only interesting where the *transliterator* — not the caller —
+            // introduces characters the recognizer rejects. A lone combining mark
+            // has no base to attach to; the punctuation dashes and the uppercase
+            // Đ/ẞ transliterate *toward* the two shapes `is_slug` forbids (an edge
+            // dash, an upper-case byte).
+            ("combining-mark-alone", "\u{0301}"),
+            ("transliterates-to-dash", "–—‒"),
+            ("transliterates-to-uppercase", "Đorđe ẞ"),
         ];
         let table: Vec<String> = cases
             .iter()
             .map(|(label, input)| format!("{label}: {input:?} -> {:?}", slugify(input)))
             .collect();
+
+        // The **composition** — the clause neither `golden_table`'s input→output
+        // pairs nor `is_slug_recognizes_well_formed_slugs` pins on its own: every
+        // value `slugify` produces is one `is_slug` accepts (or empty — the total
+        // function's one sanctioned escape, which callers handle). Asserted here,
+        // deterministically, beside the table it ranges over: a proptest that
+        // *samples* this is a finder, not a fence (dev-workflow → Gate).
+        for (label, input) in &cases {
+            let out = slugify(input);
+            assert!(
+                out.is_empty() || is_slug(&out),
+                "slugify({input:?}) [{label}] produced {out:?}, which is_slug rejects"
+            );
+        }
         insta::assert_snapshot!(table.join("\n"), @r#"
         transliterate: "café" -> "cafe"
         space-to-dash: "Add rate limiter" -> "add-rate-limiter"
@@ -319,6 +342,9 @@ mod tests {
         cap-one-long-word: "supercalifragilisticexpialidocioussupercalifragilisticexpialidocious" -> "supercalifragilisticexpialidocioussupercalifragili"
         edge-stopwords-medial-kept: "a node the app a" -> "node-the-app"
         word-boundary-retreat: "backwards-compatible-serialization-outputs-contract" -> "backwards-compatible-serialization-outputs"
+        combining-mark-alone: "\u{301}" -> ""
+        transliterates-to-dash: "–—‒" -> ""
+        transliterates-to-uppercase: "Đorđe ẞ" -> "ore"
         "#);
     }
 
