@@ -123,6 +123,14 @@ pub enum TransformError {
         /// The section the change concerns.
         section: String,
     },
+    /// The **empty-diff backstop** fired: the schema pair moved its conformance-relevant
+    /// structural projection but classified **no transform kind**
+    /// ([`SchemaChange::Unclassified`]). There are no bytes to fold — the repair is to
+    /// *build the transform kind*, not to migrate — so the driver refuses rather than
+    /// folding the doc to a silent no-op-then-restamp (`design/corpus-migration.md` → The
+    /// empty-diff backstop). The CLI refuses earlier, at classification; this arm is the
+    /// engine-side guarantee that an unclassified change can never be silently ignored.
+    Unclassified,
 }
 
 impl From<GenerateError> for TransformError {
@@ -227,6 +235,20 @@ pub fn transform(
                 // re-key are the CLI migrate-corpus move-arm's concern (T2), applied
                 // outside this per-doc content transform (`corpus-migration.md` →
                 // Relocation).
+            }
+            SchemaChange::PresentationOnly => {
+                // A delta **outside** the conformance-relevant projection (a hint reword, a
+                // `default:`/`set:`/`inverse:`/`check:` edit): a committed doc's bytes cannot
+                // violate it, so there is nothing to splice — the instance folds **byte-
+                // identical** and the doc restamps at the new version (the widened-cardinality
+                // sibling: classify, then fold to zero bytes; `corpus-migration.md` → The
+                // structural projection).
+            }
+            SchemaChange::Unclassified => {
+                // The backstop: the projection moved with no kind to apply. There are no
+                // deterministic bytes to write, and folding it as a no-op would restamp the
+                // doc at a version it does not conform to — the silent strand. Refuse.
+                return Err(TransformError::Unclassified);
             }
             SchemaChange::DisplayTitleChanged { to } => {
                 // Rewrite the `# H1` line to the new display text (`# changelog` →
@@ -1979,6 +2001,118 @@ sections:
     }
 
     // ---- the deferred branches block, never silently drop ----
+
+    // ---- the structural projection: `PresentationOnly` folds to zero bytes; `Unclassified`
+    // ---- refuses (the empty-diff backstop)
+
+    /// A change **outside the conformance-relevant projection** — here a slot hint reword and
+    /// a `default:` add on an existing field — classifies `[PresentationOnly]` through the
+    /// **real classifier** and folds **byte-identical**: the committed doc is untouched, still
+    /// conformant and byte-stable under v2, and the migration goes on to restamp it. Without
+    /// this, the backstop would refuse a hint typo fix — an unshippable frozen doctype.
+    #[test]
+    fn presentation_only_folds_byte_identical_and_the_doc_still_conforms() {
+        let v1 = doca_v1();
+        // v2: the `derived-from` leaf gains a `default:`, and the body slot's hint is reworded
+        // — the projection (section set/order, slot presence, field set/type/of/card/optional)
+        // is **identical**.
+        let v2 = load_schema(
+            b"\
+type: doca
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: derived-from, type: ref, to: doca, card: \"0..1\", default: \"doca:root\" }
+  - id: body
+    slot: { hint: \"the body prose, in full sentences\" }
+",
+        )
+        .expect("doca v2-presentation loads");
+        let src = doca_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::PresentationOnly],
+            "an out-of-projection delta names itself (never the empty diff)"
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("presentation-only transform succeeds");
+        assert_eq!(out, src, "a presentation-only change folds to zero bytes");
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // Determinism, and the corpus fold commits it (so the CLI reaches the restamp).
+        assert_eq!(transform(&v1, &v2, &src, &diff).expect("re-run"), out);
+        let corpus = [CorpusDoc {
+            id: "doca-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, None, "a byte no-op kind never blocks");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Migrated {
+                id: "doca-a".to_string(),
+                v2: src.clone(),
+            }],
+            "the doc migrates (byte-identical) — it restamps, it does not strand"
+        );
+    }
+
+    /// **The empty-diff backstop, engine side.** A pair whose projection moved with no
+    /// expressible kind (a **removed section**) classifies `[Unclassified]`, and the driver
+    /// **refuses** it — never a silent fold-to-no-op, which would restamp a doc that fails its
+    /// own gate. The corpus fold therefore halts on it, leaving the doc byte-identical v0.
+    #[test]
+    fn unclassified_refuses_the_transform_and_halts_the_corpus_fold() {
+        let v1 = note_v1(); // vision + success slots
+        let v2 = load_schema(
+            b"\
+type: note
+sections:
+  - id: vision
+    slot: { hint: \"the vision\" }
+",
+        )
+        .expect("note v2-removed-section loads");
+        let src = note_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::Unclassified],
+            "a projection move with no kind names itself"
+        );
+
+        assert_eq!(
+            transform(&v1, &v2, &src, &diff),
+            Err(TransformError::Unclassified),
+            "the driver refuses an unclassified change (it cannot be silently ignored)"
+        );
+
+        let corpus = [CorpusDoc {
+            id: "note-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, Some(0), "the fold halts on the refusal");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Untouched {
+                id: "note-a".to_string(),
+                v0: src.clone(),
+            }],
+            "the doc stays byte-identical v0 — no bytes, no stamp"
+        );
+    }
 
     /// The **prose-needing field** sub-case (a new required *field*, not a slot — T4
     /// mints only slots) is surfaced as [`TransformError::Unsupported`], not silently

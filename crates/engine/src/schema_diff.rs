@@ -131,6 +131,42 @@ pub enum SchemaChange {
         /// The new H1 display text.
         to: String,
     },
+
+    /// A change **outside the conformance-relevant structural projection** — a delta a
+    /// committed doc's bytes *cannot* violate, so it is a **byte no-op** (the
+    /// [`Self::WidenedCardinality`] / [`Self::Relocated`] shape: classify → fold to zero
+    /// bytes → restamp → ship). It is emitted rather than dropped because the empty-diff
+    /// backstop below requires **every** real change to name itself: without this kind an
+    /// authoring-hint typo fix or a `default:` add would be an *unclassified* change and
+    /// would be **falsely refused, i.e. unshippable** (`design/corpus-migration.md` → The
+    /// structural projection).
+    ///
+    /// **The name is narrower than the extent** (kept for continuity with the Settle
+    /// record): read it as *outside-the-projection* — it covers presentation (`description`
+    /// / `usage` / a slot's `hint`) **and** semantics (`default` / `set` / `inverse` /
+    /// `inverse-card` / `check` / `title-names-symbol`) alike, because the property that
+    /// matters is not "is it cosmetic" but "**can a committed doc's bytes violate it**" —
+    /// and for these, they cannot. The enumeration lives in [`erase_out_of_projection`].
+    PresentationOnly,
+
+    /// **The empty-diff backstop**: the doctype's conformance-relevant structural projection
+    /// **moved**, but no transform kind classified it (`design/corpus-migration.md` → The
+    /// empty-diff backstop — no silent bump). An unclassified change is *not* a no-op: the
+    /// migration would stamp the corpus at the new version while leaving every instance
+    /// non-conformant — **silently**, the exact strand both M41 and M42 paid to learn.
+    ///
+    /// So it names itself, and the consumer must **refuse**: [`crate::transform::transform`]
+    /// surfaces [`crate::transform::TransformError::Unclassified`] (never a silent skip), and
+    /// `jigc migrate-corpus` — the only surface that loads the prior snapshot this diff needs
+    /// — **refuses the migration** at classification time and routes to *build the transform
+    /// kind first*. It is a **migration refusal, not a build error**: a bumped version + a
+    /// recomputed hash passes the pack-load freeze assert clean, so the author learns at the
+    /// migration run.
+    ///
+    /// **Bound (by design):** the backstop catches an *otherwise-empty* diff. A projection
+    /// move that rides **alongside** a classified kind is not caught here — which is why each
+    /// named shape gets its own kind rather than relying on this signal.
+    Unclassified,
 }
 
 /// Classify every supported change from `v1` to `v2` into a deterministic,
@@ -168,7 +204,95 @@ pub fn schema_diff(v1: &Schema, v2: &Schema) -> Vec<SchemaChange> {
             None => added_section(&section.id, &section.body, &mut out),
         }
     }
+
+    // THE RESIDUAL — the empty-diff backstop and its false-refusal guard
+    // (`design/corpus-migration.md` → The empty-diff backstop / The structural projection).
+    // Reached only when **no kind classified**, because a classified kind already satisfies
+    // the backstop's requirement that a real change name itself (the accepted bound: the
+    // backstop catches an *otherwise-empty* diff, which is why each named shape carries its
+    // own kind). Two cases remain, and they are opposites:
+    //
+    // - the **conformance-relevant projection moved** with nothing to apply ⇒ an unclassified
+    //   change: refuse (an empty diff is NOT a no-op — the caller would stamp-bump a corpus
+    //   that fails its own gate);
+    // - the projection is **identical** but the schemas differ ⇒ the delta lies entirely
+    //   outside the projection (a hint reword, a `default:` add, an `inverse:`/`check:` edit):
+    //   a byte no-op that must still be *named*, or the backstop would refuse it and a frozen
+    //   doctype could never fix a typo in an authoring hint.
+    //
+    // Identical schemas fall through both, yielding the empty diff (nothing changed at all).
+    if out.is_empty() {
+        if erase_out_of_projection(v1) != erase_out_of_projection(v2) {
+            out.push(SchemaChange::Unclassified);
+        } else if v1 != v2 {
+            out.push(SchemaChange::PresentationOnly);
+        }
+    }
     out
+}
+
+/// The schema's **conformance-relevant structural projection** — a clone with every
+/// *out-of-projection* key erased, so two schemas' projections compare equal exactly when no
+/// committed doc's bytes can tell them apart (`design/corpus-migration.md` → The structural
+/// projection: the enumerated table).
+///
+/// **The enumeration is stated as its complement, deliberately.** The design's table lists the
+/// projection (the section set · their ordering · slot presence · requiredness · the field set ·
+/// a field's type, incl. a `ref`'s `to:` · enum members · cardinality) *and* the keys outside it
+/// (`description` · `usage` · a slot's `hint` · `default` · `set` · `inverse` · `inverse-card` ·
+/// `check` · `title-names-symbol`). Erasing the **outside** set — rather than rebuilding the
+/// inside one — makes every schema key that exists now or is **added later** part of the
+/// projection **by default**: an un-swept new key then refuses loudly (a false *refusal*, which
+/// an author sees at the migration run) instead of silently stranding a corpus (a false *ship*,
+/// which nobody sees). That is the safe direction of the very failure this backstop exists to
+/// close — the un-enumerated sibling (`DECISIONS.md` → 2026-07-13 M42 Inc 5 T1).
+fn erase_out_of_projection(schema: &Schema) -> Schema {
+    let mut out = schema.clone();
+    // Doctype-level authored prose (`describe` projects it; no instance byte carries it).
+    out.description = None;
+    out.usage = None;
+    for section in &mut out.sections {
+        match &mut section.body {
+            SectionBody::Simple { slot, fields } => {
+                if let Some(slot) = slot {
+                    slot.hint = None;
+                }
+                for field in fields {
+                    erase_field(field);
+                }
+            }
+            SectionBody::Repeatable { repeatable } => erase_block(&mut repeatable.block),
+        }
+    }
+    out
+}
+
+/// Erase the out-of-projection keys of a repeatable item block's leaves — the **second locus**
+/// (the item block is where the work-doc family's content lives), recursing into a nested
+/// repeatable so no leaf escapes the projection at any depth.
+fn erase_block(block: &mut [Leaf]) {
+    for leaf in block {
+        match leaf {
+            Leaf::Slot { slot, .. } => slot.hint = None,
+            Leaf::Field(field) => erase_field(field),
+            Leaf::Repeatable { repeatable, .. } => erase_block(&mut repeatable.block),
+        }
+    }
+}
+
+/// Erase one field's out-of-projection keys: the mint-time value sources (`default` / `set` — a
+/// doc lacking the value already conforms), the derived back-edge metadata (`inverse` /
+/// `inverse-card` — a store advisory, never a per-doc conformance break), and the `doc-code`
+/// selectors (`check` / `title-names-symbol` — adjudicated against *code*, not the doc's bytes).
+/// What survives is exactly what a committed doc's bytes can violate: the id, the type (incl. a
+/// `ref`'s `to:`), the enum members, the cardinality, and the requiredness flag.
+fn erase_field(field: &mut Field) {
+    field.default = None;
+    field.set = None;
+    field.inverse = None;
+    field.inverse_card = None;
+    field.check = None;
+    field.title_names_symbol = false;
 }
 
 /// A doctype's declared home: its `placement.file` literal (a placement doctype) else
@@ -820,6 +944,198 @@ sections:
 ",
         );
         assert_eq!(schema_diff(&s, &s), vec![]);
+    }
+
+    // ---- the structural projection: outside it → `PresentationOnly`; moved-but-unclassified
+    // ---- → `Unclassified` (the empty-diff backstop)
+
+    /// A **hint reword** (a slot's authoring guidance) — plus the doctype-level `description:`
+    /// / `usage:` prose — classifies to **exactly** `[PresentationOnly]`: the delta is outside
+    /// the conformance-relevant projection (a committed doc's bytes cannot violate an authoring
+    /// hint), so it must *name itself* and fold to zero bytes. Red today: it diffs to `[]`,
+    /// which the backstop would then refuse — making a typo fix in a hint **unshippable**.
+    #[test]
+    fn a_hint_and_prose_reword_classifies_presentation_only() {
+        let v1 = load(
+            b"\
+type: t
+description: \"A thing.\"
+usage: \"Reach for it sometimes.\"
+sections:
+  - id: rationale
+    slot: { hint: \"why\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+description: \"A thing, precisely.\"
+usage: \"Reach for it when a decision is warranted.\"
+sections:
+  - id: rationale
+    slot: { hint: \"why this decision\" }
+",
+        );
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
+    }
+
+    /// A **`default:` add** on a field present in both schemas classifies to **exactly**
+    /// `[PresentationOnly]` — a mint-time value source, not a conformance constraint: a
+    /// committed doc lacking the value already conforms, so the change adds no bytes to the
+    /// corpus. Red today: `diff_fields` inspects only `card`/`of` for an existing leaf, so
+    /// this moved the hash and diffed to `[]`.
+    #[test]
+    fn a_default_add_on_an_existing_field_classifies_presentation_only() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed] }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: status, type: enum, of: [open, closed], default: open }
+",
+        );
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
+    }
+
+    /// An **`inverse:` / `check:` edit** classifies to **exactly** `[PresentationOnly]`: the
+    /// inverse names a *derived back-edge* (a store advisory, never a per-doc conformance
+    /// break) and `check:` selects the `doc-code` predicate, adjudicated against **code**, not
+    /// the doc's bytes. Neither can make a conformant doc non-conformant.
+    #[test]
+    fn an_inverse_and_check_edit_classifies_presentation_only() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"0..1\", inverse: referred-by }
+      - { id: anchor, type: string, check: symbol-exists }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: meta
+    header: true
+    fields:
+      - { id: rel, type: ref, to: t, card: \"0..1\", inverse: refers-to-me, inverse-card: \"0..*\" }
+      - { id: anchor, type: string, check: criterion-maps-to-test }
+",
+        );
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
+    }
+
+    /// The projection erasure reaches **inside a repeatable item block** too (the second
+    /// locus): a hint reword + a `title-names-symbol` flip on an item-block leaf classifies to
+    /// **exactly** `[PresentationOnly]`, never the empty diff and never a refusal.
+    #[test]
+    fn an_out_of_projection_edit_inside_an_item_block_classifies_presentation_only() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: anchor, type: string }
+        - { id: note, slot: { hint: \"the note\" } }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: anchor, type: string, title-names-symbol: true }
+        - { id: note, slot: { hint: \"one note per entry\" } }
+",
+        );
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::PresentationOnly]);
+    }
+
+    /// **The empty-diff backstop.** A pair whose *conformance-relevant* projection moved but
+    /// for which **no transform kind exists** — a **removed section** — must **not** diff to
+    /// `[]`: it classifies [`SchemaChange::Unclassified`], which refuses the migration instead
+    /// of stamp-bumping a corpus that fails its own gate. Red today: the section-diff loops
+    /// `v2`'s sections, so a section only `v1` declares is invisible and the pair diffs `[]`.
+    #[test]
+    fn a_removed_section_does_not_diff_to_empty_it_classifies_unclassified() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: retired
+    slot: { hint: \"a section v2 drops\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+",
+        );
+        assert_eq!(schema_diff(&v1, &v2), vec![SchemaChange::Unclassified]);
+    }
+
+    /// The backstop **does not fire on a change that classifies**: the shipped kinds still
+    /// emit exactly themselves (here the flagship `adr` v1→v2 `options` shape, whose projection
+    /// genuinely moved) — no `Unclassified`, no stray `PresentationOnly` riding alongside.
+    /// The inert-when-classified guard: the backstop is the *residual*, not an extra emission.
+    #[test]
+    fn a_classified_change_never_also_emits_the_backstop_signal() {
+        let v1 = load(
+            b"\
+type: t
+description: \"A thing.\"
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+",
+        );
+        // The projection moves (an added optional section) **and** an out-of-projection key
+        // moves (the description) — the kind classifies, so the residual never fires.
+        let v2 = load(
+            b"\
+type: t
+description: \"A thing, reworded.\"
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: options
+    slot: { hint: \"options considered\", optional: true }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::AddedOptionalSection {
+                section: "options".to_owned(),
+            }]
+        );
     }
 
     /// The classifier **diffs**, never emits on mere presence: a schema carrying both a

@@ -435,16 +435,34 @@ pub(crate) fn migrate_committed_corpus(
                 // migrated by the verb).
                 Some(k) => match crate::pack::load_prior_schema(pack, &dt.ty, k) {
                     Ok(from) => {
+                        let diff = schema_diff(&from, &to);
+                        // THE EMPTY-DIFF BACKSTOP (`design/corpus-migration.md` → The empty-diff
+                        // backstop — no silent bump). The classifier signals a schema pair whose
+                        // conformance-relevant projection **moved** with **no transform kind** to
+                        // apply. An empty diff is not a no-op: migrating anyway folds zero bytes,
+                        // value-bumps the stamp, and lands the corpus at *v2 failing its own
+                        // gate* — silently. So the migration is **refused** here, at
+                        // classification, on the **raw** diff (before `per_doc_changes` filters
+                        // it) and never through the fold's halt path — whose `prose_needing_route`
+                        // ("author the prose, then re-run") would be a lie: there is no prose to
+                        // author, and re-running changes nothing. The route names the real repair:
+                        // build the transform kind first. This verb is the only surface that loads
+                        // the prior snapshot the diff needs, which is why the refusal lives here —
+                        // a *migration refusal*, not a build error.
+                        if diff.contains(&SchemaChange::Unclassified) {
+                            let route =
+                                unclassifiable_change_route(&rel_key, &dt.ty, k, dt.version);
+                            report.blocked.push((rel_key, route));
+                            continue;
+                        }
                         // The v1→v2 path is the only one that can surface a `ValueRemapped`
                         // (an enum member rename needs two *different* declared enum sets;
                         // the stamp-absent path diffs `strip_stamp(to)` against `to`, whose
                         // members are identical). The classifier emits the variant with an
                         // **empty** map (it detects only *that* the members moved); the CLI
                         // supplies the authored old→new map before the fold.
-                        let changes = enrich_value_remaps(
-                            per_doc_changes(&schema_diff(&from, &to), &source, false),
-                            &dt.ty,
-                        );
+                        let changes =
+                            enrich_value_remaps(per_doc_changes(&diff, &source, false), &dt.ty);
                         // The stamp is value-bumped `k → current` **post-fold** (it already
                         // exists, so it is a `set_field` value splice, not an add-field) — on
                         // the gated v2 bytes, which are guaranteed to conform to `to` (the
@@ -841,6 +859,27 @@ fn missing_snapshot_route(rel_key: &str, ty: &str, stamp: u32) -> String {
         "blocked — `{rel_key}` is stamped schema-version {stamp}, below current, but no prior-schema \
          snapshot `schema-snapshots/{ty}.v{stamp}.yaml` is shipped to source the migration from; \
          ship the snapshot, then re-run `jigc migrate-corpus`"
+    )
+}
+
+/// The **empty-diff backstop**'s route: the doctype's conformance-relevant structural shape
+/// moved between `from` and `to`, but the schema-diff classifies **no transform kind** for that
+/// change, so the doc cannot be migrated (`design/corpus-migration.md` → The empty-diff backstop
+/// — no silent bump).
+///
+/// The repair is **not** a migration instruction — there is nothing an operator or agent can do
+/// to this doc. It is a **build** instruction, aimed at the pack author who bumped the schema:
+/// build the missing transform kind, then re-run. Refusing beats the alternative the backstop
+/// exists to kill — folding zero bytes, bumping the stamp, and stranding the whole corpus at a
+/// version it does not conform to.
+fn unclassifiable_change_route(rel_key: &str, ty: &str, from: u32, to: u32) -> String {
+    format!(
+        "blocked — `{ty}` changed its conformance-relevant structure between schema-version \
+         {from} and {to}, but the schema-diff classifies no transform kind for that change, so \
+         `{rel_key}` cannot be migrated (an empty diff is not a no-op: migrating would stamp the \
+         doc {to} while leaving it non-conformant). This is a schema-authoring gap, not a doc \
+         problem: build the transform kind for the change in `crates/engine/src/schema_diff.rs` + \
+         `crates/engine/src/transform.rs`, then re-run `jigc migrate-corpus`"
     )
 }
 
@@ -1504,6 +1543,123 @@ sections:
             "the authored prose survives; got:\n{flipped}"
         );
         assert_conformant_and_stable(&to, &flipped);
+    }
+
+    /// The v1 prior shape of the `ledger` doctype: a `vision` slot **and** a `retired` slot the
+    /// v2 shape drops — a projection move (a removed section) with **no transform kind**.
+    fn ledger_v1_yaml() -> &'static str {
+        "\
+type: ledger
+location: ledgers/
+id-from: title
+sections:
+  - id: vision
+    slot: { hint: \"v\" }
+  - id: retired
+    slot: { hint: \"a section v2 drops\" }
+"
+    }
+
+    /// The v2 current shape of the `ledger` doctype: `retired` is **gone**. The classifier can
+    /// express no kind for a section removal, so the pair trips the empty-diff backstop.
+    fn ledger_v2_yaml() -> &'static [u8] {
+        b"\
+type: ledger
+location: ledgers/
+id-from: title
+sections:
+  - id: vision
+    slot: { hint: \"v\" }
+"
+    }
+
+    /// **THE EMPTY-DIFF BACKSTOP, through the verb core.** A below-version doc (stamp `1`,
+    /// current `2`) whose v1→v2 pair moved the conformance-relevant projection but classifies
+    /// **no transform kind** is **refused**: reported `blocked` with a route that names the
+    /// real repair — *build the transform kind* — with its bytes **untouched** and its stamp
+    /// **still `1`**.
+    ///
+    /// Red before the backstop: the pair diffed to `[]`, the fold "migrated" the doc as a
+    /// no-op, the post-fold value-bump stamped it `2`, and the corpus landed at **v2 failing
+    /// its own gate, silently** — the strand class both M41 and M42 paid to learn
+    /// (`design/corpus-migration.md` → The empty-diff backstop — no silent bump). This is the
+    /// only surface that loads the prior snapshot the diff needs, so it is where the refusal
+    /// fires — a **migration refusal, not a build error**.
+    #[test]
+    fn below_version_unclassifiable_change_is_refused_with_the_build_the_kind_route() {
+        let repo = TempDir::new("backstop");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("ledger", 1, ledger_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(ledger_v2_yaml());
+        let from =
+            crate::pack::load_prior_schema(&pack, "ledger", 1).expect("the ledger.v1 snapshot");
+
+        // A conformant, v1-stamped committed doc carrying the section v2 drops.
+        let v1 = render(
+            &from,
+            &Instance {
+                title: "Open Ledger".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "vision".to_string(),
+                        slot: Some("The ledger holds.".to_string()),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "retired".to_string(),
+                        slot: Some("Prose the v2 shape has no home for.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        write_doc(repo.path(), "ledgers/open-ledger.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        )
+        .expect("the run completes — the refusal is a routed block, not a run failure");
+
+        assert!(
+            report.migrated.is_empty() && report.already_current.is_empty(),
+            "an unclassifiable change never migrates and is never called current: {report:?}"
+        );
+        assert_eq!(
+            report.blocked.len(),
+            1,
+            "the doc is blocked, routed: {:?}",
+            report.blocked
+        );
+        assert_eq!(report.blocked[0].0, "ledgers/open-ledger.md");
+        let route = &report.blocked[0].1;
+        assert!(
+            route.contains("no transform kind") && route.contains("build the transform kind"),
+            "the route names the real repair (build the kind first), not a migration \
+             instruction; got: {route}"
+        );
+
+        // The bytes are untouched and the stamp is STILL 1 — no silent bump.
+        let after = fs::read_to_string(repo.path().join("ledgers/open-ledger.md")).expect("read");
+        assert_eq!(after, v1, "the refused doc is byte-identical");
+        assert!(
+            after.contains("schema-version: 1") && !after.contains("schema-version: 2"),
+            "the stamp did NOT bump over an unclassified change; got:\n{after}"
+        );
     }
 
     /// The v1 prior shape of the `card` doctype: a single **fixed-slot** `body` section — the
