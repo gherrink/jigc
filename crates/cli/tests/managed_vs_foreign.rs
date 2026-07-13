@@ -23,10 +23,11 @@
 //!   detect case — stays **managed**: it is routed at the corpus migration and is **never**
 //!   called unadopted (the parse-against-a-shipped-prior arm is what separates it from a
 //!   foreign file).
-//! - **(managed, stale — T2)** a **v1-stamped** ADR under the v2 manifest surfaces the
+//! - **(managed, stale — Inc 3 T2)** a **v1-stamped** ADR under the v2 manifest surfaces the
 //!   version-currency break `schema-conformance.schema-version-current` (blocking, its own check
 //!   id, at the doc's URI) routed at **`jigc migrate-corpus`** — and that verb clears it, the
-//!   corpus re-validating clean. Exit stays 0 (Increment 4 flips it).
+//!   corpus re-validating clean.
+//!
 //! - **(fresh clone)** a clone of a managed repo — no `.jigc/state`, so **no** file-state
 //!   record at all — still reads its committed docs as **managed**: no adoption advisory,
 //!   nothing blocking.
@@ -37,6 +38,29 @@
 //!   stays stale. The discriminator is the machine handle T2 minted — the
 //!   `schema-conformance.schema-version-current` finding in the same report — so a store on a
 //!   divergent binary with a **current** corpus keeps the plain align-or-re-stamp route.
+//!
+//! **Increment 4, T2 — the exit flips on the managed arm.** The store sweep's report-only rule
+//! keeps every *content* finding at exit 0 (the masking-trap rationale, conceded in full), but an
+//! **unmigrated managed corpus** meets the exit-flipping class's own criterion — *the sweep could
+//! not produce a trustworthy result*: every other family is adjudicating docs against a schema
+//! they were never written to. So `render::validation_store_exit_flips` gains
+//! `schema-conformance.schema-version-current` as its **third** exception, and the JSON
+//! `report_only` field + the human/agent trailer follow the *same* predicate, by construction
+//! (`design/validation.md` → Exit semantics — the third exception and its two pinned conditions).
+//! The arms above/below pin every half of that contract:
+//!
+//! - a stale **v1-stamped** ADR and an **unstamped v0-era** managed doc each exit **non-zero**,
+//!   with `report_only: false` and a trailer naming **`jigc migrate-corpus`**;
+//! - the **stock brownfield** repo (the foreign arm above) still exits **0** — the "managed arm
+//!   only" condition, proven rather than re-implemented: the code is *emitted* only on the managed
+//!   arm, so keying the exit on the code **is** the condition;
+//! - a **migrated** corpus exits **0** (detect → fix → clean, end to end);
+//! - a **v2-stamped ADR with an invalid `status` enum** raises its **blocking**
+//!   `schema-conformance.field-value-conformant` and still exits **0** — ordinary content drift,
+//!   report-only, the masking trap the per-code key exists to avoid; and
+//! - the **pre-commit hook** is unaffected — it keys on the *findings* in `validate --format
+//!   json`, never the exit code, and always exits 0 outside the M35 rename block, so a commit over
+//!   a stale corpus still lands.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -247,6 +271,36 @@ Keep sessions in a single in-memory node.
 A cold node loses its sessions.
 ";
 
+/// A **current-shape but non-conformant** ADR: the v2 shape, stamped `schema-version: 2` — so the
+/// corpus is *migrated* — carrying an out-of-enum `status`. Ordinary **content drift**: it raises
+/// a blocking `schema-conformance.field-value-conformant` and must **stay exit-0** (Inc 4 T2 — the
+/// masking-trap guard the per-code exit key exists to preserve).
+const ADR_V2_BAD_STATUS: &str = "\
+---
+status: rejected
+date: 2026-06-25
+schema-version: 2
+---
+
+# Cache sessions in memory
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+
+## Consequences
+
+A cold node loses its sessions.
+";
+
 /// Commit an ADR body at the `adr` doctype's canonical home.
 fn commit_adr(repo: &Path, body: &str) {
     let dir = repo.join("docs").join("decisions");
@@ -256,18 +310,82 @@ fn commit_adr(repo: &Path, body: &str) {
     git(repo, &["commit", "-q", "-m", "seed adr"]);
 }
 
-/// The findings of `jigc validate --format json`, plus the exit code.
-fn validate_findings(repo: &Path, home: &Path) -> (i32, Vec<serde_json::Value>) {
+/// The whole `jigc validate --format json` envelope, plus the exit code.
+fn validate_json(repo: &Path, home: &Path) -> (i32, serde_json::Value) {
     let out = jigc(repo, home, &["validate", "--format", "json"]);
     let stdout = String::from_utf8(out.stdout).expect("utf-8 stdout");
     let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|err| {
         panic!("`jigc validate --format json` must emit JSON ({err}):\n{stdout}")
     });
+    (out.status.code().expect("an exit code"), json)
+}
+
+/// The findings of `jigc validate --format json`, plus the exit code.
+fn validate_findings(repo: &Path, home: &Path) -> (i32, Vec<serde_json::Value>) {
+    let (code, json) = validate_json(repo, home);
     let findings = json["findings"]
         .as_array()
         .expect("the report carries a `findings` array")
         .clone();
-    (out.status.code().expect("an exit code"), findings)
+    (code, findings)
+}
+
+/// The `report_only` field of the store envelope — the JSON half of the exit contract, which
+/// must agree with the exit code by construction (both read one predicate).
+fn report_only(repo: &Path, home: &Path) -> bool {
+    let (_, json) = validate_json(repo, home);
+    json["report_only"]
+        .as_bool()
+        .expect("the store envelope carries a `report_only` bool")
+}
+
+/// The default (agent-format) `jigc validate` stdout — the trailer half of the exit contract.
+fn validate_text(repo: &Path, home: &Path) -> (i32, String) {
+    let out = jigc(repo, home, &["validate"]);
+    (
+        out.status.code().expect("an exit code"),
+        String::from_utf8(out.stdout).expect("utf-8 stdout"),
+    )
+}
+
+/// Assert the three surfaces of the exit contract agree on the **unmigrated-corpus** verdict:
+/// exit non-zero, `report_only: false`, and a trailer that says so **and** names the verb that
+/// fixes it (`jigc migrate-corpus`) — never the report-only sentence, which for this finding
+/// claims a task-scope gate that does not exist.
+fn assert_unmigrated_corpus_verdict(repo: &Path, home: &Path) {
+    let (code, findings) = validate_findings(repo, home);
+    assert_eq!(
+        by_code(&findings, "schema-conformance.schema-version-current").len(),
+        1,
+        "the precondition of this arm — one version-currency break; got: {findings:#?}",
+    );
+    assert_ne!(
+        code, 0,
+        "an unmigrated MANAGED corpus flips the exit — every other family is adjudicating docs \
+         against a schema they were never written to, so the sweep is not trustworthy",
+    );
+    assert!(
+        !report_only(repo, home),
+        "the JSON `report_only` reads the same predicate as the exit code — it must say false",
+    );
+
+    let (text_code, text) = validate_text(repo, home);
+    assert_eq!(
+        text_code, code,
+        "the agent view exits the same way the JSON one does",
+    );
+    assert!(
+        text.contains("jigc migrate-corpus"),
+        "the trailer names the verb that clears it, verbatim; got:\n{text}",
+    );
+    assert!(
+        text.contains("non-zero"),
+        "the trailer states the exit it actually takes; got:\n{text}",
+    );
+    assert!(
+        !text.contains("report-only at store scope (exit 0)"),
+        "the report-only trailer would print `exit 0` while the tool exits {code}; got:\n{text}",
+    );
 }
 
 /// Every finding of `code` in the report.
@@ -348,7 +466,17 @@ fn a_foreign_changelog_at_the_placement_home_is_an_adoption_case_not_an_unmigrat
         !route.contains("migrate-corpus"),
         "a foreign file is NOT an unmigrated corpus — the route must not name `migrate-corpus`; got: {route}",
     );
+
+    // **The exit flip's "managed arm only" condition (Inc 4 T2), proven rather than
+    // re-implemented.** `schema-conformance.schema-version-current` is emitted only on the
+    // managed arm, so keying the exit predicate on that code *is* the condition — and this is
+    // the arm that would break if it were not: a stock brownfield repo that has only ever run
+    // `jigc setup` must not see `jigc validate` go non-zero.
     assert_eq!(code, 0, "the brownfield first-run stays exit 0");
+    assert!(
+        report_only(repo.path(), home.path()),
+        "and says so in the envelope — the adoption advisory is report-only",
+    );
 }
 
 /// (managed, v0-era) An **unstamped** ADR in the shipped **prior (v1)** shape is a genuinely
@@ -362,7 +490,7 @@ fn an_unstamped_v0_era_managed_doc_still_reads_as_managed() {
     setup_repo(repo.path(), home.path());
     commit_adr(repo.path(), ADR_V0_ERA);
 
-    let (code, findings) = validate_findings(repo.path(), home.path());
+    let (_, findings) = validate_findings(repo.path(), home.path());
 
     assert!(
         by_code(&findings, "schema-conformance.unadopted-instance").is_empty(),
@@ -380,7 +508,10 @@ fn an_unstamped_v0_era_managed_doc_still_reads_as_managed() {
         !routed_at_migration.is_empty(),
         "the stale managed doc routes at the corpus migration; got: {findings:#?}",
     );
-    assert_eq!(code, 0, "the store sweep is report-only here");
+
+    // The unstamped v0-era corpus is *unmigrated*, so the sweep is untrustworthy and the exit
+    // flips (Inc 4 T2) — the second managed arm, alongside the below-version stamp.
+    assert_unmigrated_corpus_verdict(repo.path(), home.path());
 }
 
 /// (managed, stale — the version-currency break) A committed **v1-stamped** ADR under the **v2**
@@ -402,8 +533,8 @@ fn a_stale_v1_stamped_adr_surfaces_the_version_currency_break_and_migrate_corpus
     commit_adr(repo.path(), ADR_STALE_V1);
 
     // 1. DETECT — the version-currency break, its own code, blocking, at the doc's URI,
-    //    routed at `jigc migrate-corpus`; the sweep still exits 0 (Increment 4 flips it).
-    let (code, findings) = validate_findings(repo.path(), home.path());
+    //    routed at `jigc migrate-corpus`; and (Inc 4 T2) the sweep exits **non-zero**.
+    let (_, findings) = validate_findings(repo.path(), home.path());
     let stale = by_code(&findings, "schema-conformance.schema-version-current");
     assert_eq!(
         stale.len(),
@@ -433,7 +564,7 @@ fn a_stale_v1_stamped_adr_surfaces_the_version_currency_break_and_migrate_corpus
         by_code(&findings, "schema-conformance.unadopted-instance").is_empty(),
         "a stale MANAGED doc is never an adoption case; got: {findings:#?}",
     );
-    assert_eq!(code, 0, "the store sweep stays report-only here (exit 0)");
+    assert_unmigrated_corpus_verdict(repo.path(), home.path());
 
     // 2. MIGRATE — the routed verb, run verbatim as the finding names it.
     let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
@@ -459,6 +590,99 @@ fn a_stale_v1_stamped_adr_surfaces_the_version_currency_break_and_migrate_corpus
         "the migrated corpus blocks nothing; got: {blocking:#?}",
     );
     assert_eq!(code, 0, "a migrated corpus exits 0");
+    assert!(
+        report_only(repo.path(), home.path()),
+        "and the envelope is back to report-only",
+    );
+}
+
+/// (migrated, but non-conformant — the masking-trap guard) A **v2-stamped** ADR — a *migrated*
+/// corpus — carrying an out-of-enum `status` raises its **blocking**
+/// `schema-conformance.field-value-conformant` and **still exits 0**.
+///
+/// This is the arm the whole per-code key exists for. The version break is emitted through the
+/// same `schema-conformance.*` family as this one, and until M42 wore the *same check id*; a
+/// predicate keyed on `field-value-conformant` (or on a route-string prefix) would flip the exit
+/// here too — turning `jigc validate` into a gate over **pre-existing content drift a commit did
+/// not cause**, which is precisely the masking trap the report-only rule exists to prevent
+/// (`design/validation.md` → Exit semantics — the report-only rationale, conceded in full).
+#[test]
+fn an_invalid_enum_on_a_migrated_adr_blocks_but_never_flips_the_store_exit() {
+    let repo = TempDir::new("bad-enum");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_V2_BAD_STATUS);
+
+    let (code, findings) = validate_findings(repo.path(), home.path());
+
+    let value_break = by_code(&findings, "schema-conformance.field-value-conformant");
+    assert_eq!(
+        value_break.len(),
+        1,
+        "an out-of-enum `status` raises exactly one value-conformance break; got: {findings:#?}",
+    );
+    assert_eq!(
+        value_break[0]["severity"].as_str(),
+        Some("blocking"),
+        "and it is blocking — a finalize/task-scope verdict: {:#?}",
+        value_break[0],
+    );
+    assert!(
+        by_code(&findings, "schema-conformance.schema-version-current").is_empty(),
+        "the corpus is MIGRATED — no version-currency break; got: {findings:#?}",
+    );
+
+    assert_eq!(
+        code, 0,
+        "ordinary content drift stays report-only at store scope — a blocking `blocking` finding \
+         must NOT flip the store exit, or `jigc validate` gates on drift the commit never caused",
+    );
+    assert!(
+        report_only(repo.path(), home.path()),
+        "and the envelope says report-only",
+    );
+    let (_, text) = validate_text(repo.path(), home.path());
+    assert!(
+        text.contains("report-only at store scope (exit 0)"),
+        "the report-only trailer stands for content findings; got:\n{text}",
+    );
+}
+
+/// (the pre-commit hook is unaffected) The warn-only backstop keys on the **findings** in
+/// `jigc validate --format json`, never on the exit code, and always exits 0 outside the M35
+/// rename block. Asserted, not assumed: over a corpus stale enough that the hook's own sweep now
+/// exits **non-zero**, an ordinary commit still lands.
+#[test]
+fn the_pre_commit_hook_still_lets_a_commit_land_over_an_exit_flipping_stale_corpus() {
+    let repo = TempDir::new("hook-stale");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_STALE_V1);
+
+    // The committed store is now stale — the hook's own `jigc validate` exits non-zero.
+    let (code, _) = validate_findings(repo.path(), home.path());
+    assert_ne!(
+        code, 0,
+        "the precondition: the sweep the hook runs exits non-zero"
+    );
+
+    // An ordinary, unrelated commit — with the probe resolvable, so the hook runs the *real*
+    // sweep rather than bailing on a missing probe.
+    fs::write(repo.path().join("note.txt"), "unrelated\n").expect("write file");
+    git(repo.path(), &["add", "note.txt"]);
+    let out = Command::new("git")
+        .args(["commit", "-q", "-m", "an unrelated change"])
+        .current_dir(repo.path())
+        .env("HOME", home.path())
+        .env("JIGC_DOC_CODE_PROBE", doc_code_probe())
+        .output()
+        .expect("run git commit");
+    assert!(
+        out.status.success(),
+        "the warn-only hook keys on findings, never the exit code — a commit over a stale corpus \
+         must still land; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
 }
 
 /// Rewrite the committed binary-provenance stamp to a **different** build, so the store reads
@@ -528,12 +752,15 @@ fn a_stale_stamp_over_a_stale_corpus_routes_at_migrate_corpus_and_setup_alone_is
         Some("advisory"),
         "the provenance stamp never gates: {mismatch:#?}",
     );
-    assert_eq!(code, 0, "the binary-mismatch advisory never flips the exit");
     assert_eq!(
         by_code(&findings, "schema-conformance.schema-version-current").len(),
         1,
         "the stale corpus is the precondition of this arm; got: {findings:#?}",
     );
+    // The exit is non-zero here because the **corpus** is unmigrated (Inc 4 T2), never because
+    // of the advisory — the sibling arm below (a divergent binary over a *current* corpus) is
+    // what pins that the provenance advisory itself never flips the exit.
+    assert_ne!(code, 0, "the unmigrated corpus flips the exit");
 
     // 2. Run `jigc setup` — the verb the OLD route named — and re-validate.
     let out = jigc(repo.path(), home.path(), &["setup"]);
@@ -557,9 +784,10 @@ fn a_stale_stamp_over_a_stale_corpus_routes_at_migrate_corpus_and_setup_alone_is
         "the CORPUS is still stale after a bare re-stamp — the all-clear was never real; \
          got: {after:#?}",
     );
-    assert_eq!(
+    assert_ne!(
         code, 0,
-        "the store sweep stays report-only here (Inc 4 flips it)"
+        "and the exit stays non-zero after the bare re-stamp — the false all-clear is now false \
+         to a machine too, not just to a reader (Inc 4 T2)",
     );
 }
 

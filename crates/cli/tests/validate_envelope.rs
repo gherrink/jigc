@@ -500,9 +500,13 @@ fn validate_honors_project_schema_location_shadow_in_store_sweep() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
+    // The exit is non-zero because the hand-committed fixture ADR is unstamped — the corpus is
+    // *unmigrated*, the M42 third exit-flipping exception (`design/validation.md` → Exit
+    // semantics) — never because of the un-baselined advisory this arm is about.
     assert!(
-        out.status.success(),
-        "a content-only sweep (an un-baselined doc) must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+        stdout.contains("schema-conformance.schema-version-current"),
+        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(
         stdout.contains("file-state.un-baselined") && stdout.contains("docs/adrs/cache.md"),

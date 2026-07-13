@@ -283,20 +283,22 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
 /// (M26 shakedown #10b) — and (b) it carries a **report-only clarification** so the
 /// exit-code contract is unambiguous from the output. The store sweep is detect-and-report:
 /// content findings are *listed on `blocking · …` lines* (the doc's **cascade** severity —
-/// what would gate at `finalize`) yet the run **exits 0**; only a `pack-probe-integrity.*`
-/// meta-finding exits non-zero (`design/validation.md` → Severity — report-only, with one
-/// exit-code exception). Without a trailer a human eyeballing `blocking`, or a script
+/// what would gate at `finalize`) yet the run **exits 0**; only the three exit-flipping
+/// exceptions go non-zero (`design/validation.md` → Exit semantics — report-only, with three
+/// exit-flipping exceptions). Without a trailer a human eyeballing `blocking`, or a script
 /// chaining `jigc validate && deploy`, misreads a report-only store finding as a gate
 /// failure. So the agent/human view appends a [`store_trailer`] naming where these findings
 /// actually gate, and the JSON adds a machine-readable `report_only` (+ `scope`) signal —
-/// the per-finding severity token is left untouched (it is meaningful) and the exit-code
-/// contract is unchanged.
+/// the per-finding severity token is left untouched (it is meaningful).
 pub fn validation_store(format: Format, report: &ValidationReport) -> String {
-    // The two exit-non-zero exceptions (`validation.md` → Exit semantics): a
+    // The three exit-non-zero exceptions (`validation.md` → Exit semantics): a
     // `pack-probe-integrity.*` meta-finding (the probe could not be trusted, so the sweep
-    // cannot claim a result) and a `reconciliation.rename` finding (an out-of-band `git mv`,
-    // a structural-identity event this commit introduced). Either flips `report_only` false;
-    // the trailer distinguishes the two wordings. The exit decision is the shared
+    // cannot claim a result), a `reconciliation.rename` finding (an out-of-band `git mv`,
+    // a structural-identity event this commit introduced), and — M42 — a version-currency
+    // break (the corpus is below its manifest version, so *every other family* adjudicated
+    // docs against a schema they were never written to: the same untrustworthy-sweep
+    // criterion as the crashed probe). Any of the three flips `report_only` false; the
+    // trailer distinguishes the three wordings. The exit decision is the shared
     // [`validation_store_exit_flips`] both this renderer's `report_only` field and
     // `run_validate_store`'s exit code key on, so all three stay truthful in lockstep.
     let probe_unreliable = report
@@ -307,6 +309,10 @@ pub fn validation_store(format: Format, report: &ValidationReport) -> String {
         .findings
         .iter()
         .any(|f| f.code == "reconciliation.rename");
+    let unmigrated_corpus = report
+        .findings
+        .iter()
+        .any(|f| f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE);
     match format {
         Format::Json => {
             let mut value = serde_json::to_value(report).expect("validation report serializes");
@@ -323,7 +329,7 @@ pub fn validation_store(format: Format, report: &ValidationReport) -> String {
             json(&value)
         }
         Format::Agent | Format::Human => {
-            let trailer = store_trailer(report, probe_unreliable, oob_rename);
+            let trailer = store_trailer(report, probe_unreliable, oob_rename, unmigrated_corpus);
             validation_scoped(
                 format,
                 report,
@@ -334,30 +340,54 @@ pub fn validation_store(format: Format, report: &ValidationReport) -> String {
     }
 }
 
-/// Whether the store-scope sweep's exit flips non-zero — the **two exit-flipping
+/// Whether the store-scope sweep's exit flips non-zero — the **three exit-flipping
 /// exceptions** to the report-only stance (`validation.md` → Exit semantics): a
-/// `pack-probe-integrity.*` meta-finding (the probe could not be trusted) or a
+/// `pack-probe-integrity.*` meta-finding (the probe could not be trusted), a
 /// `reconciliation.rename` finding (an out-of-band `git mv` — a structural-identity event
-/// this commit introduced). The single source of truth shared by the dispatcher's exit
-/// code ([`crate::cli`]'s `run_validate_store`), the JSON `report_only` field, and the
-/// human/agent trailer, so all three stay truthful in lockstep.
+/// this commit introduced), or (M42) an [`engine::validate::SCHEMA_VERSION_CURRENT_CODE`]
+/// break — a **managed** committed instance below its doctype's manifest version, i.e. an
+/// **unmigrated corpus**, where every other family adjudicated docs against a schema they
+/// were never written to. All three meet the class's own recorded criterion: *the sweep
+/// could not produce a trustworthy result*. The report-only rule for **content** findings is
+/// untouched — an invalid enum, a malformed date, a dangling ref keep their codes and their
+/// exit 0.
+///
+/// **The "managed arm only" condition needs no extra test here**: `SCHEMA_VERSION_CURRENT_CODE`
+/// is emitted *only* on the managed arm of the fifth family's discriminator (a foreign squatter
+/// at a placement home takes the advisory `schema-conformance.unadopted-instance` instead), so
+/// keying on the code **is** the condition — a stock brownfield repo that has only run `jigc
+/// setup` stays exit-0 (`crates/cli/tests/managed_vs_foreign.rs`, the foreign arm).
+///
+/// The single source of truth shared by the dispatcher's exit code ([`crate::cli`]'s
+/// `run_validate_store`), the JSON `report_only` field, and the human/agent trailer, so all
+/// three stay truthful in lockstep.
 pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
-    report
-        .findings
-        .iter()
-        .any(|f| f.probe == "pack-probe-integrity" || f.code == "reconciliation.rename")
+    report.findings.iter().any(|f| {
+        f.probe == "pack-probe-integrity"
+            || f.code == "reconciliation.rename"
+            || f.code == engine::validate::SCHEMA_VERSION_CURRENT_CODE
+    })
 }
 
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
-/// exit-0-with-`blocking`-findings is unambiguous. Three cases, matching the two
+/// exit-0-with-`blocking`-findings is unambiguous. Four cases, matching the three
 /// exit-flipping exceptions (`validation.md` → Exit semantics): for the
 /// `pack-probe-integrity.*` exception (`probe_unreliable`) it says the sweep could not
 /// complete and exits non-zero; for a store-scope `reconciliation.rename` (`oob_rename`,
-/// M35) it says an out-of-band rename was detected and the sweep exits non-zero; otherwise
-/// the content findings are **report-only** at store scope (exit 0) and it names where they
-/// actually gate. Probe-unreliability dominates (it taints the whole result). Ends with a
-/// newline so the caller appends the routing footer on its own line.
-fn store_trailer(report: &ValidationReport, probe_unreliable: bool, oob_rename: bool) -> String {
+/// M35) it says an out-of-band rename was detected and the sweep exits non-zero; for a
+/// version-currency break (`unmigrated_corpus`, M42) it says the corpus is unmigrated — so
+/// every other finding in the report was adjudicated against the wrong schema — and names
+/// `jigc migrate-corpus`, the verb that clears it; otherwise the content findings are
+/// **report-only** at store scope (exit 0) and it names where they actually gate.
+/// Probe-unreliability dominates (it taints the whole result); the unmigrated corpus is next
+/// (it taints every *content* verdict below it). Ends with a newline so the caller appends
+/// the routing footer on its own line.
+fn store_trailer(
+    report: &ValidationReport,
+    probe_unreliable: bool,
+    oob_rename: bool,
+    unmigrated_corpus: bool,
+) -> String {
     if probe_unreliable {
         "pack-probe-integrity finding(s) present — the sweep could not complete and exits \
          non-zero; the store result is not trustworthy.\n"
@@ -365,6 +395,11 @@ fn store_trailer(report: &ValidationReport, probe_unreliable: bool, oob_rename: 
     } else if oob_rename {
         "out-of-band rename detected — a structural-identity change this commit introduced; \
          the sweep exits non-zero (revert the `git mv` or adopt it via `jigc rename`).\n"
+            .to_string()
+    } else if unmigrated_corpus {
+        "the committed corpus is below its schema-version — every other finding above was \
+         adjudicated against a schema those docs were never written to, so the sweep exits \
+         non-zero; run `jigc migrate-corpus`, then re-validate.\n"
             .to_string()
     } else {
         let n = report.findings.len();

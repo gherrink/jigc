@@ -406,13 +406,18 @@ fn store_validate_reports_clean_absence_then_resolves_via_setup_extract() {
         "`jigc setup` must extract a doc-code sibling beside the installed jigc",
     );
 
-    // --- (ii) after setup: the valid store exits 0 with no doc-code content finding,
-    //     resolved purely via the setup-extracted sibling (no override).
+    // --- (ii) after setup: the sweep RUNS (no probe-missing operational error) and surfaces no
+    //     doc-code content finding over the valid-anchor store, resolved purely via the
+    //     setup-extracted sibling (no override). The discriminator against (i) is the probe
+    //     error, not the exit code: this fixture's ADR is unstamped, so the corpus is unmigrated
+    //     and the sweep exits non-zero on the M42 version-currency break regardless
+    //     (`design/validation.md` → Exit semantics — the third exception).
     let after_valid = jigc(&jigc_bin, valid.path(), home.path(), &["validate"]);
     let after_valid_out = rendered(&after_valid);
-    assert_ok(
-        &after_valid,
-        &format!("after setup, validate over a valid-anchor store; got:\n{after_valid_out}"),
+    assert!(
+        !String::from_utf8_lossy(&after_valid.stderr).contains("`doc-code` probe not found"),
+        "after setup, the probe resolves via the extracted sibling — no probe-missing error; \
+         got:\n{after_valid_out}",
     );
     assert!(
         !after_valid_out.contains("doc-code"),

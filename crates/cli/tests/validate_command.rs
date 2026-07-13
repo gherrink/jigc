@@ -205,10 +205,16 @@ fn seed_clean_store(repo: &Path) {
     fs::create_dir_all(repo.join(".jigc").join("config")).expect("create project layer");
 }
 
-/// The clean path: a committed store whose every cited symbol exists → `jigc validate`
-/// exits 0 and renders the clean report with no `doc-code` content finding in stdout.
+/// The doc↔code-clean path: a committed store whose every cited symbol exists → `jigc validate`
+/// renders the report with **no `doc-code` content finding**.
+///
+/// The store is doc↔code clean but *version*-stale: this fixture's docs are hand-committed and
+/// unstamped, so since M42 the sweep exits **non-zero** on the version-currency break (the third
+/// exit-flipping exception — `design/validation.md` → Exit semantics). Asserted, not glossed:
+/// the flip is the corpus's staleness, never a doc↔code verdict. (A genuinely clean — migrated —
+/// store exiting 0 is pinned in `managed_vs_foreign.rs`.)
 #[test]
-fn validate_clean_store_exits_zero_with_no_content_finding() {
+fn validate_doc_code_clean_store_surfaces_no_content_finding() {
     let repo = TempDir::new("clean");
     seed_clean_store(repo.path());
 
@@ -216,12 +222,13 @@ fn validate_clean_store_exits_zero_with_no_content_finding() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        out.status.success(),
-        "`jigc validate` over a clean store must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+        !stdout.contains("doc-code"),
+        "a doc↔code-clean store must surface no doc-code content finding; stdout:\n{stdout}",
     );
     assert!(
-        !stdout.contains("doc-code"),
-        "a clean store must surface no doc-code content finding; stdout:\n{stdout}",
+        stdout.contains("schema-conformance.schema-version-current") && !out.status.success(),
+        "the unstamped fixture corpus is unmigrated, so the sweep exits non-zero on the \
+         version-currency break — and on nothing else; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 }
 
@@ -300,12 +307,14 @@ fn build_crasher(dir: &Path) -> PathBuf {
 /// cited symbol** in the working tree — the over-time drift an unrelated `task validate` /
 /// `finalize` would *not* catch. `jigc validate` surfaces the now-stale anchor as a
 /// `doc-code.*` content finding keyed on that anchor's address, and — because this is
-/// content-only (no `pack-probe-integrity.*` meta-finding) — **exits 0** (detect-and-
-/// report, the `jigc ingest` precedent; `design/validation.md` → Severity → the one
-/// exit-code exception). A blocking *content* finding must still exit 0: the exit rule keys
-/// on `pack-probe-integrity` directly, never on `has_blocking()`.
+/// content-only, it contributes **no exit flip of its own** (detect-and-report, the `jigc ingest`
+/// precedent; `design/validation.md` → Exit semantics): the exit rule keys on the probe id /
+/// check id directly, never on `has_blocking()`. *(This fixture's docs are unstamped, so the
+/// sweep nevertheless exits non-zero on the M42 version-currency break — the corpus is
+/// unmigrated. The doc↔code finding's exit-0-ness is pinned over a migrated corpus in
+/// `managed_vs_foreign.rs`; asserted here so the two causes are never conflated.)*
 #[test]
-fn validate_stale_anchor_surfaces_finding_and_exits_zero() {
+fn validate_stale_anchor_surfaces_finding_without_flipping_the_exit_itself() {
     let repo = TempDir::new("stale");
     seed_clean_store(repo.path());
 
@@ -323,9 +332,9 @@ fn validate_stale_anchor_surfaces_finding_and_exits_zero() {
     let stderr = String::from_utf8_lossy(&out.stderr);
 
     assert!(
-        out.status.success(),
-        "a content-only sweep (a stale anchor, no probe-integrity meta-finding) must exit 0 \
-         (detect-and-report); stdout:\n{stdout}\nstderr:\n{stderr}",
+        stdout.contains("schema-conformance.schema-version-current") && !out.status.success(),
+        "the unstamped fixture corpus is unmigrated, so the exit flips on the version-currency \
+         break — the stale anchor itself contributes no flip; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(
         stdout.contains("doc-code.symbol-exists")
@@ -337,31 +346,26 @@ fn validate_stale_anchor_surfaces_finding_and_exits_zero() {
         !stdout.contains("pack-probe-integrity"),
         "a healthy probe yields no pack-probe-integrity meta-finding; stdout:\n{stdout}",
     );
-    // The content finding is reported on a `blocking · …` line yet the run exits 0, so the
-    // output must clarify it is report-only at store scope and name where it actually gates —
-    // otherwise a human eyeballing `blocking` (or a script chaining `jigc validate && deploy`)
-    // misreads it (`design/validation.md` → Severity — report-only).
+    // The trailer must match the exit the tool actually takes. Over this (unmigrated) corpus that
+    // is the M42 version-currency case: it says the sweep exits non-zero and names the verb that
+    // clears it — never the report-only sentence, which would print `exit 0` while exiting 1.
+    // (The report-only trailer's own case is pinned over a migrated corpus in
+    // `managed_vs_foreign.rs`.)
     assert!(
-        stdout.contains("report-only at store scope (exit 0)")
-            && stdout.contains("jigc task validate")
-            && stdout.contains("jigc task finalize"),
-        "a content-only store sweep must clarify its findings are report-only (exit 0) and \
-         where they gate; stdout:\n{stdout}",
+        stdout.contains("jigc migrate-corpus") && !stdout.contains("report-only at store scope"),
+        "an unmigrated corpus must carry the version-currency trailer, not the report-only one; \
+         stdout:\n{stdout}",
     );
 
-    // The `--format json` surface carries a machine-readable report-only signal.
+    // The `--format json` surface carries the same signal, from the same predicate.
     let out = jigc(repo.path(), &["validate", "--format", "json"]);
-    assert!(
-        out.status.success(),
-        "`jigc validate --format json` over a content-only store must exit 0",
-    );
     let value: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("`--format json` emits valid JSON");
     assert_eq!(value["scope"], "store");
     assert_eq!(
         value["report_only"],
-        serde_json::Value::Bool(true),
-        "a content-only store sweep is report-only; json:\n{value}",
+        serde_json::Value::Bool(false),
+        "an unmigrated corpus is not report-only — the exit flips; json:\n{value}",
     );
 }
 

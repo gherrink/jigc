@@ -361,17 +361,18 @@ fn structural_v1_to_v2_migration_runs_through_the_real_binary() {
     let prd_before = fs::read_to_string(prd_path(repo.path(), "cache-prd")).expect("read prd");
     let adr_before = fs::read_to_string(adr_path(repo.path(), "alpha-decision")).expect("read adr");
 
-    // 1. DETECT — the version-aware store sweep routes every below-version doc `migrate`
-    //    (report-only, exit 0). Both fixed-slot prd docs are structurally non-conformant under
-    //    v2 and route `migrate`. The widened adr is otherwise structurally conformant, but it is
-    //    stamped v1 under a manifest bumped to v2, so the version-mismatch break flags it too
-    //    (`doc_findings.is_empty() && stamp < current` → below-version): all THREE docs route
-    //    `migrate` here, and the verb migrates each of them below.
+    // 1. DETECT — the version-aware store sweep routes every below-version doc `migrate`, and
+    //    (M42) **exits non-zero**: an unmigrated corpus is the third exit-flipping exception
+    //    (`design/validation.md` → Exit semantics). Both fixed-slot prd docs are structurally
+    //    non-conformant under v2 and route `migrate`. The widened adr is otherwise structurally
+    //    conformant, but it is stamped v1 under a manifest bumped to v2, so the version-currency
+    //    break flags it too (`doc_findings.is_empty() && stamp < current` → below-version): all
+    //    THREE docs route `migrate` here, and the verb migrates each of them below.
     let detect = jigc(repo.path(), home.path(), pack.path(), &["validate"]);
     let detect_out = String::from_utf8_lossy(&detect.stdout);
     assert!(
-        detect.status.success(),
-        "`jigc validate` over a below-version corpus stays report-only (exit 0); \
+        !detect.status.success(),
+        "`jigc validate` over a below-version corpus exits non-zero; \
          stdout:\n{detect_out}",
     );
     assert_eq!(

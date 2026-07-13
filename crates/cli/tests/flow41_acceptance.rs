@@ -858,9 +858,16 @@ fn stamped_corpus_validate_runs_clean_over_migrate_corpus_output() {
     git(repo.path(), &["add", research_rel]);
     git(repo.path(), &["commit", "-q", "-m", "seed v0 research"]);
 
-    // DETECT — `jigc validate` reports the stranded v0 doc, routed `migrate`, exit 0.
+    // DETECT — `jigc validate` reports the stranded v0 doc, routed `migrate`, and (M42) exits
+    // **non-zero**: an unmigrated corpus is the third exit-flipping exception
+    // (`design/validation.md` → Exit semantics). The re-validate below pins the other half —
+    // once migrated, the same sweep is back to exit 0.
     let detect = jigc(repo.path(), home.path(), &["validate"], None);
-    assert_ok(&detect, "`jigc validate` over the v0 corpus (report-only)");
+    assert!(
+        !detect.status.success(),
+        "`jigc validate` over the v0 corpus exits non-zero; stdout:\n{}",
+        stdout_of(&detect),
+    );
     let detect_out = stdout_of(&detect);
     assert!(
         detect_out.contains("route: migrate"),

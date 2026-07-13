@@ -344,17 +344,19 @@ fn rename_repoints_referrers_moves_file_and_commits_once() {
         "git log --follow must trace the renamed doc through the move; got:\n{follow}",
     );
 
-    // The store is clean: `jigc validate` exits 0 with zero ref-resolves findings.
+    // The referential store is clean: `jigc validate` reports zero ref-resolves findings. (Its
+    // exit is non-zero — this suite's fixtures are v1-stamped under the v2 `adr` manifest, so the
+    // corpus is unmigrated: the M42 exit-flipping exception, unrelated to the rename.)
     let v = jigc(repo.path(), &["validate"]);
     let vout = String::from_utf8_lossy(&v.stdout);
     let verr = String::from_utf8_lossy(&v.stderr);
     assert!(
-        v.status.success(),
-        "`jigc validate` must exit 0 after the rename; stdout:\n{vout}\nstderr:\n{verr}",
+        !vout.contains("ref-resolves"),
+        "no dangling ref may remain after the rename; stdout:\n{vout}\nstderr:\n{verr}",
     );
     assert!(
-        !vout.contains("ref-resolves"),
-        "no dangling ref may remain after the rename; stdout:\n{vout}",
+        !vout.contains("reconciliation.rename"),
+        "the adopted rename leaves no out-of-band rename finding behind; stdout:\n{vout}",
     );
 }
 
@@ -1324,13 +1326,21 @@ fn rename_help_shows_address_form_value_name() {
     );
 }
 
-/// Component B (T2) — **content drift stays report-only / exit 0**: a committed store with
-/// only an out-of-band *content* edit (a `file-state.hash-matches` drift) — no rename —
-/// keeps `jigc validate --format json` at **exit 0** with `report_only: true`. The
-/// exit-flip is scoped to the rename structural-identity event; every other content finding
-/// stays the load-bearing read-only/never-gates stance (`validation.md` → Exit semantics).
+/// Component B (T2) — **content drift contributes no exit-flipping finding**: a committed store
+/// with only an out-of-band *content* edit (a `file-state.hash-matches` drift) — no rename —
+/// raises **no** exit-flipping code of its own. The exit-flip class is scoped to the rename
+/// structural-identity event (M35), the untrustworthy probe, and the unmigrated corpus (M42);
+/// every other content finding keeps the load-bearing read-only/never-gates stance
+/// (`validation.md` → Exit semantics).
+///
+/// **This suite's fixture ADRs are stamped `schema-version: 1` under the v2 `adr` manifest**, so
+/// the corpus is *unmigrated* and the sweep itself exits non-zero on the M42 version-currency
+/// break. The claim this arm owns is therefore asserted where it is expressible and exact: the
+/// **set** of exit-flipping codes in the report is *exactly* the version-currency break — the
+/// content drift adds none. (The end-to-end "blocking content finding, migrated corpus → exit 0"
+/// case is pinned in `managed_vs_foreign.rs`.)
 #[test]
-fn store_scope_content_drift_stays_report_only_exit_zero() {
+fn store_scope_content_drift_raises_no_exit_flipping_finding() {
     let repo = TempDir::new("content-drift-exit");
     seed_store(repo.path());
     baseline_file_state(repo.path(), MANAGED_DOCS);
@@ -1346,12 +1356,9 @@ fn store_scope_content_drift_stays_report_only_exit_zero() {
     let out = jigc(repo.path(), &["validate", "--format", "json"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        out.status.success(),
-        "content-only drift must keep the store sweep at exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
-    );
 
-    let value: serde_json::Value = serde_json::from_str(&stdout).expect("validate emits JSON");
+    let value: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|_| panic!("validate emits JSON; stdout:\n{stdout}\nstderr:\n{stderr}"));
     let codes: Vec<&str> = value["findings"]
         .as_array()
         .expect("findings array")
@@ -1366,9 +1373,22 @@ fn store_scope_content_drift_stays_report_only_exit_zero() {
         !codes.contains(&"reconciliation.rename"),
         "a content edit (no move) must not surface a rename finding; codes: {codes:?}",
     );
-    assert_eq!(
-        value["report_only"],
-        serde_json::Value::Bool(true),
-        "a content-only drift sweep stays report-only; json:\n{stdout}",
+
+    // The exit-flipping codes present are *exactly* the unmigrated-corpus break — the content
+    // drift raises none. (`pack-probe-integrity.*` findings would show as `probe`, not `code`;
+    // none are present here, and a rename is excluded above.)
+    let flipping: Vec<&str> = codes
+        .iter()
+        .copied()
+        .filter(|c| {
+            *c == "reconciliation.rename" || *c == "schema-conformance.schema-version-current"
+        })
+        .collect();
+    assert!(
+        flipping
+            .iter()
+            .all(|c| *c == "schema-conformance.schema-version-current"),
+        "the ONLY exit-flipping finding may be the version-currency break (this fixture corpus is \
+         v1-stamped under the v2 manifest); codes: {codes:?}",
     );
 }

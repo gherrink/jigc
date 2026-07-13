@@ -201,12 +201,15 @@ fn migrate_corpus_stamps_the_v0_dogfood_then_revalidates_clean() {
     // The v0 corpus: a committed ADR with NO schema-version stamp, otherwise conformant.
     commit_adr(repo.path(), "alpha-decision", "Alpha decision", None);
 
-    // 1. DETECT — `jigc validate` reports the stranded v0 doc, routed `migrate`, exit 0.
+    // 1. DETECT — `jigc validate` reports the stranded v0 doc, routed `migrate`, and (M42)
+    //    **exits non-zero**: an unmigrated corpus is the third exit-flipping exception, since
+    //    every other family in the sweep adjudicated docs against a schema they were never
+    //    written to (`design/validation.md` → Exit semantics — the third exception).
     let detect = jigc(repo.path(), home.path(), &["validate"]);
     let detect_out = String::from_utf8_lossy(&detect.stdout);
     assert!(
-        detect.status.success(),
-        "`jigc validate` over a v0 corpus stays report-only (exit 0); stdout:\n{detect_out}",
+        !detect.status.success(),
+        "`jigc validate` over a v0 corpus exits non-zero; stdout:\n{detect_out}",
     );
     assert_eq!(
         count(&detect_out, "route: migrate"),
@@ -520,10 +523,13 @@ fn migrate_corpus_completes_an_interrupted_relocation() {
     );
 }
 
-/// The `jigc validate --format json` findings over `repo`, asserting the sweep succeeded.
+/// The `jigc validate --format json` findings over `repo`. The **exit code is not asserted**
+/// here: since M42 an unmigrated corpus flips the store sweep's exit non-zero (the third
+/// exit-flipping exception), and the whole point of the callers below is to read the findings
+/// over exactly such a corpus. A run that could not sweep at all emits no JSON, so the parse
+/// below is the "the sweep ran" guard.
 fn validate_findings(repo: &Path, home: &Path) -> Vec<serde_json::Value> {
     let out = jigc(repo, home, &["validate", "--format", "json"]);
-    assert_ok(&out, "`jigc validate --format json`");
     let report: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("`jigc validate` emits valid JSON");
     report["findings"]

@@ -1121,7 +1121,12 @@ pub const SCHEMA_VERSION_CURRENT_CODE: &str = "schema-conformance.schema-version
 /// named verbatim — rather than the generic [`route_schema_conformance`] label the doc's *other*
 /// findings take, and leads with the same `migrate` classification token. `Severity::Blocking`
 /// like every conformance break; *blocking* is a task/finalize verdict, so under the store sweep
-/// it is reported, never a gate (the exit flip is M42 Increment 4's, keyed on this code).
+/// it is reported, never a gate — but it is the one content finding whose presence **flips
+/// `jigc validate`'s exit non-zero** (M42, the third exit-flipping exception): an unmigrated
+/// corpus means every other family in the sweep adjudicated docs against a schema they were
+/// never written to, so the *result* is untrustworthy. The CLI's exit predicate keys on this
+/// code (`crates/cli/src/render.rs` → `validation_store_exit_flips`), which is why the fact
+/// needed its own id at all.
 ///
 /// The stamp stays **author-exempt** (`is_author_required` untouched) — version-currency is a
 /// store-scope corpus rule, never an authoring obligation, so task/finalize scope is unaffected.

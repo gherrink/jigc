@@ -229,9 +229,13 @@ fn validate_flags_orphaned_doc_after_docs_root_repoint_only() {
     let out = jigc(repo.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // The orphan advisory is report-only and flips nothing. The exit here is non-zero for an
+    // unrelated, honest reason: the hand-committed fixture doc is unstamped, so the corpus is
+    // *unmigrated* — the M42 third exit-flipping exception (`design/validation.md` → Exit
+    // semantics). Pinned explicitly so the flip is never mistaken for the advisory gating.
     assert!(
-        out.status.success(),
-        "`jigc validate` with only an orphan advisory must exit 0 (report-only); \
+        stdout.contains("schema-conformance.schema-version-current"),
+        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 

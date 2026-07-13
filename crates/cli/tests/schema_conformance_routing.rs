@@ -253,11 +253,14 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // Report-only: a content-only sweep exits 0 even with blocking-severity findings.
+    // M42: two of the three ADRs are below their manifest version, so the corpus is unmigrated
+    // and the sweep exits **non-zero** (the third exit-flipping exception — `design/validation.md`
+    // → Exit semantics). The *structural* breaks below remain report-only: they contribute no
+    // exit flip of their own (the `gamma` doc is at-version and blocking, and the migrated-corpus
+    // arm in `managed_vs_foreign.rs` pins that such a break alone still exits 0).
     assert!(
-        out.status.success(),
-        "a schema-conformance break must not gate `jigc validate` (exit 0); \
-         stdout:\n{stdout}\nstderr:\n{stderr}",
+        !out.status.success(),
+        "an unmigrated corpus flips `jigc validate`'s exit; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 
     // Each of the three non-conformant ADRs surfaces exactly one required-field-present.
@@ -312,10 +315,12 @@ fn store_sweep_attributes_each_conformance_finding_to_its_own_doc() {
     let out = jigc(repo.path(), home.path(), &["validate"]);
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
+    // Both ADRs are stamped v1 under the v2 manifest, so this corpus is unmigrated and the sweep
+    // exits non-zero (M42's third exit-flipping exception); attribution — what this arm owns —
+    // is unaffected.
     assert!(
-        out.status.success(),
-        "a schema-conformance break must not gate `jigc validate` (exit 0); \
-         stdout:\n{stdout}\nstderr:\n{stderr}",
+        !out.status.success(),
+        "an unmigrated corpus flips `jigc validate`'s exit; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 
     // The `blocking · code — message` message lines (the route line, which already names the

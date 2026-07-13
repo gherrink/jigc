@@ -304,8 +304,14 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
     // ordinary value break) — routed at `jigc migrate-corpus`, the verb that fixes it below.
     // Presence, not set-equality: the store sweep's other families may legitimately raise their
     // own findings against the same doc.
+    // The exit is **non-zero** here (M42 Inc-4 T2): the corpus is unmigrated, the third
+    // exit-flipping exception. The JSON report is still emitted — that is what this reads.
     let validate_before = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
-    assert_ok(&validate_before, "`jigc validate` (before)");
+    assert!(
+        !validate_before.status.success(),
+        "`jigc validate` over the unmigrated ledger corpus exits non-zero; stdout:\n{}",
+        String::from_utf8_lossy(&validate_before.stdout),
+    );
     let before: serde_json::Value =
         serde_json::from_slice(&validate_before.stdout).expect("validate emits valid JSON");
     let routed: Vec<&serde_json::Value> = before["findings"]

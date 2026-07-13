@@ -221,8 +221,10 @@ fn count(haystack: &str, needle: &str) -> usize {
 
 /// (dangling) A committed ADR whose `## Decision` slot prose carries a managed mention
 /// `#adr:does-not-exist` naming no committed doc surfaces **exactly one** advisory
-/// `schema-conformance.mention-resolves` finding at store scope; `jigc validate` still
-/// exits 0 (report-only).
+/// `schema-conformance.mention-resolves` finding at store scope. (The sweep's exit is
+/// non-zero — this fixture's hand-committed ADR is unstamped, so the corpus is unmigrated:
+/// the M42 exit-flipping exception, asserted below so it is never read as the advisory
+/// gating the sweep.)
 #[test]
 fn store_sweep_surfaces_dangling_managed_mention() {
     let repo = TempDir::new("dangling");
@@ -242,11 +244,20 @@ fn store_sweep_surfaces_dangling_managed_mention() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // Advisory, report-only: a content-only sweep exits 0.
-    assert!(
-        out.status.success(),
-        "an advisory mention finding must not gate `jigc validate` (exit 0); \
+    // The exit is non-zero — but **not** because of the mention advisory. This fixture's ADRs are
+    // hand-committed and unstamped, so the corpus is *unmigrated*: the M42 third exit-flipping
+    // exception (`design/validation.md` → Exit semantics), pinned explicitly here so the flip is
+    // never mistaken for an advisory gating the sweep. That a content finding never flips the
+    // exit on its own is pinned over a *current* corpus in `managed_vs_foreign.rs`.
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        1,
+        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
+    );
+    assert!(
+        !out.status.success(),
+        "an unmigrated corpus flips the exit; stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert_eq!(
         count(&stdout, "schema-conformance.mention-resolves"),
@@ -290,9 +301,14 @@ fn store_sweep_passes_external_and_resolving_mentions() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    assert!(
-        out.status.success(),
-        "a content-only sweep must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    // Same as above: the two hand-committed ADRs are unstamped, so the corpus is unmigrated and
+    // the exit flips on the version-currency break — never on a mention finding, of which this
+    // arm must surface exactly zero.
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        2,
+        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(
         !stdout.contains("schema-conformance.mention-resolves"),

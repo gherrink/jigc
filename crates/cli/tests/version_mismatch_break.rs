@@ -15,10 +15,14 @@
 //!
 //! - an **unstamped (v0)**, otherwise-conformant ADR is **reported** with a
 //!   `schema-conformance.schema-version-current` finding routed at `jigc migrate-corpus`, and
-//!   `jigc validate` still **exits 0** (report-only at store scope — the CLI keys non-zero exit
-//!   on `pack-probe-integrity` only; the M42 Increment-4 flip keys on the code pinned here).
+//!   `jigc validate` **exits non-zero** — the M42 Increment-4 exit flip, keyed on that code
+//!   (`design/validation.md` → Exit semantics — the third exception): an unmigrated corpus means
+//!   every other family adjudicated docs against a schema they were never written to, so the
+//!   sweep could not produce a trustworthy result. *(Until M42 this arm asserted exit **0** — the
+//!   false green a CI pipeline would have bound as "unmigrated == green".)*
 //! - a **current-stamped** store surfaces **no** version finding and exits 0 (the
-//!   false-positive guard).
+//!   false-positive guard — and the proof the flip is keyed on the version break, not on the
+//!   sweep running at all).
 //!
 //! **The check id is pinned here (M42).** The M34 build wrote the break as a *reuse* of
 //! `schema-conformance.field-value-conformant` over the stamp field; M42 retracts that — a stale
@@ -196,10 +200,10 @@ fn count(haystack: &str, needle: &str) -> usize {
 /// (the headline case) An ingested + baselined v0 corpus ADR (**no** schema-version stamp,
 /// **no** schema shadow, otherwise conformant) is *reported* by `jigc validate` with a
 /// `schema-conformance.schema-version-current` break routed at `jigc migrate-corpus` — emission,
-/// not annotation — and the sweep still exits 0. This is the case a labeler-only path leaves
-/// silent (its own dogfood).
+/// not annotation — and (M42 Increment 4) the sweep **exits non-zero**. This is the case a
+/// labeler-only path leaves silent (its own dogfood).
 #[test]
-fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_zero() {
+fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_nonzero() {
     let repo = TempDir::new("v0");
     let home = TempDir::new("home");
     setup_repo(repo.path(), home.path());
@@ -212,10 +216,12 @@ fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_zero() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // Report-only: a content-only sweep exits 0 even with blocking-severity findings.
+    // M42: the version break is the **third exit-flipping exception** — an unmigrated corpus
+    // makes the whole sweep untrustworthy, so it exits non-zero. (Ordinary content findings
+    // stay report-only / exit 0 — pinned in `managed_vs_foreign.rs`.)
     assert!(
-        out.status.success(),
-        "a store-scope version-mismatch break must not gate `jigc validate` (exit 0); \
+        !out.status.success(),
+        "an unmigrated corpus flips `jigc validate`'s exit non-zero; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
 
@@ -242,8 +248,10 @@ fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_zero() {
     );
     assert_eq!(
         count(&stdout, "jigc migrate-corpus"),
-        1,
-        "the route names the verb that upgrades a managed corpus, verbatim; stdout:\n{stdout}",
+        2,
+        "the verb that upgrades a managed corpus is named verbatim twice — once on the finding's \
+         route, once in the M42 exit-flipping trailer that explains the non-zero exit; \
+         stdout:\n{stdout}",
     );
 }
 

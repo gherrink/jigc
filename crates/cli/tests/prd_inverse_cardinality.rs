@@ -17,8 +17,9 @@
 //!
 //! - **(below minimum)** — a committed PRD with **zero** inbound `derived-from` edges
 //!   surfaces **exactly one** advisory `schema-completeness.inverse-cardinality`
-//!   finding at store scope, naming the deficient PRD; `jigc validate` still exits 0
-//!   (advisory, report-only).
+//!   finding at store scope, naming the deficient PRD (advisory, report-only — it never
+//!   flips the sweep's exit; the fixture corpus is unstamped, so the exit *does* flip on the
+//!   M42 version-currency break, asserted below so the two are never conflated).
 //! - **(at minimum)** — a committed PRD with **≥1** inbound `derived-from` edge (a
 //!   committed spec deriving from it) surfaces **none**.
 //! - **(never a per-task gate)** — with a deficient PRD committed, a `jigc task
@@ -239,7 +240,8 @@ fn count(haystack: &str, needle: &str) -> usize {
 
 /// (below minimum) A committed PRD with zero inbound `derived-from` edges surfaces
 /// **exactly one** advisory `schema-completeness.inverse-cardinality` finding at store
-/// scope, naming the deficient PRD; `jigc validate` still exits 0 (report-only).
+/// scope, naming the deficient PRD. (The sweep exits non-zero on the unstamped fixture corpus
+/// — the M42 version-currency break — never on the advisory; both are asserted below.)
 #[test]
 fn store_sweep_surfaces_inverse_cardinality_for_prd_with_no_specs() {
     let repo = TempDir::new("below");
@@ -251,10 +253,14 @@ fn store_sweep_surfaces_inverse_cardinality_for_prd_with_no_specs() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // Advisory, report-only: a content-only sweep exits 0.
-    assert!(
-        out.status.success(),
-        "an advisory completeness finding must not gate `jigc validate` (exit 0); \
+    // The exit is non-zero — the hand-committed fixture PRD is unstamped, so the corpus is
+    // *unmigrated*: the M42 third exit-flipping exception (`design/validation.md` → Exit
+    // semantics), never the advisory below. That an advisory content finding does not flip the
+    // exit on its own is pinned over a *current* corpus in `managed_vs_foreign.rs`.
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        1,
+        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
          stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert_eq!(
@@ -283,9 +289,13 @@ fn store_sweep_emits_no_inverse_cardinality_when_prd_has_a_spec() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
 
-    assert!(
-        out.status.success(),
-        "a content-only sweep must exit 0; stdout:\n{stdout}\nstderr:\n{stderr}",
+    // As above, the exit flips on the unmigrated fixture corpus (two unstamped docs now), never
+    // on a completeness finding — of which this arm must surface exactly zero.
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        2,
+        "the v0-era fixture corpus is unmigrated — the reason the exit flips; \
+         stdout:\n{stdout}\nstderr:\n{stderr}",
     );
     assert!(
         !stdout.contains("schema-completeness.inverse-cardinality"),

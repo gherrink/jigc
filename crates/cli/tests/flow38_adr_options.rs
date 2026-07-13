@@ -214,15 +214,16 @@ fn adr_options_v1_to_v2_migration_runs_through_the_shipped_binary() {
         "the seed ADR is v1-stamped and carries no Options section; got:\n{before}",
     );
 
-    // 1. DETECT — the version-aware store sweep routes the below-version ADR `migrate`
-    //    (report-only, exit 0). The doc is otherwise structurally conformant (an absent
-    //    optional section conforms), but it is stamped v1 under a manifest bumped to v2, so
-    //    the version-mismatch break flags it.
+    // 1. DETECT — the version-aware store sweep routes the below-version ADR `migrate` and
+    //    (M42) **exits non-zero**: an unmigrated corpus is the third exit-flipping exception
+    //    (`design/validation.md` → Exit semantics). The doc is otherwise structurally conformant
+    //    (an absent optional section conforms), but it is stamped v1 under a manifest bumped to
+    //    v2, so the version-currency break flags it.
     let detect = jigc(repo.path(), home.path(), &["validate"]);
     let detect_out = String::from_utf8_lossy(&detect.stdout);
     assert!(
-        detect.status.success(),
-        "`jigc validate` over a below-version corpus stays report-only (exit 0); \
+        !detect.status.success(),
+        "`jigc validate` over a below-version corpus exits non-zero; \
          stdout:\n{detect_out}",
     );
     assert!(
