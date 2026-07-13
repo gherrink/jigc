@@ -19,6 +19,7 @@ use engine::introspect::{DefinitionKind, Description};
 use engine::milestone::JoinOutcome;
 use engine::result::{NextStep, Orientation, OrientationView, ResolutionTree, ValidationReport};
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 /// The one-line routing footer appended to every agent-text / human CLI output.
 /// Self-reinforcing: every CLI call re-shows the routing pointer, so context
@@ -290,7 +291,11 @@ pub fn validation(format: Format, report: &ValidationReport) -> String {
 /// failure. So the agent/human view appends a [`store_trailer`] naming where these findings
 /// actually gate, and the JSON adds a machine-readable `report_only` (+ `scope`) signal —
 /// the per-finding severity token is left untouched (it is meaningful).
-pub fn validation_store(format: Format, report: &ValidationReport) -> String {
+pub fn validation_store(
+    format: Format,
+    report: &ValidationReport,
+    unbaselined: &BTreeSet<String>,
+) -> String {
     // The three exit-non-zero exceptions (`validation.md` → Exit semantics): a
     // `pack-probe-integrity.*` meta-finding (the probe could not be trusted, so the sweep
     // cannot claim a result), a `reconciliation.rename` finding (an out-of-band `git mv`,
@@ -329,7 +334,13 @@ pub fn validation_store(format: Format, report: &ValidationReport) -> String {
             json(&value)
         }
         Format::Agent | Format::Human => {
-            let trailer = store_trailer(report, probe_unreliable, oob_rename, unmigrated_corpus);
+            let trailer = store_trailer(
+                report,
+                probe_unreliable,
+                oob_rename,
+                unmigrated_corpus,
+                unbaselined,
+            );
             validation_scoped(
                 format,
                 report,
@@ -391,6 +402,11 @@ pub(crate) fn validation_store_exit_flips(report: &ValidationReport) -> bool {
 ///
 /// `schema-conformance.schema-version-current` gates nowhere either, but never reaches the
 /// report-only branch: it flips the exit and takes its own trailer case (above).
+///
+/// **This list is necessary but not sufficient** — it answers *"can any task-scope path emit this
+/// **code**?"*, while the claim the trailer makes is about a **finding**: *does a gate exist for
+/// **this** finding?* [`gates_at_task`] asks the second question; the per-doc conformance families
+/// need the baseline discriminator on top of this list.
 const GATES_NOWHERE: &[&str] = &[
     "schema-conformance.mention-resolves",
     "schema-conformance.repeatable-populated",
@@ -402,6 +418,54 @@ const GATES_NOWHERE: &[&str] = &[
     "file-state.unregistered-doc",
     "store-version.binary-mismatch",
 ];
+
+/// Whether a **gate exists for this finding** — the criterion the report-only trailer's claim
+/// actually asserts (`validation.md` → The trailer must not claim a gate that does not exist,
+/// M42). Two conditions, and the second is why the code-level [`GATES_NOWHERE`] list alone is not
+/// enough:
+///
+/// 1. **The code reaches no task-scope path at all** ([`GATES_NOWHERE`]) — store-scope-only by
+///    construction, so neither `jigc task validate` nor the `finalize` preflight can ever see it.
+///
+/// 2. **The finding is a per-doc conformance break over an *un-baselined* committed doc.** The
+///    store sweep parses every committed instance itself, so it raises `conformance.*` (the
+///    `parse_sections` `Err` arm) and `schema-conformance.*` findings **directly over committed
+///    docs**. `engine::validate::validate_task` never does: it parses only the task's **staged**
+///    instances, and routes the *committed* store through
+///    `file_state::reconcile_committed_store`, which grades a nonconformant committed file by
+///    **baseline membership** —
+///    - **baselined** (a recorded hash) and drifted → **blocking** `reconciliation.conformance-block`:
+///      a real gate. The claim stands.
+///    - **un-baselined** (no record — a fresh clone, a brownfield adoption, any hand-authored
+///      corpus, i.e. the dominant `jigc validate` corpus) → **advisory**
+///      `reconciliation.conformance-block` (`conformance_advisory_finding` — *routed, not
+///      recorded*). Nothing gates on it, ever. The claim is a lie.
+///
+///    So the discriminator is `FileStateRecord` membership — the same one M40's two-tier orphan
+///    route keys on. `unbaselined` carries the `<type>:<slug>` identities of the committed
+///    instances with no record entry, and a store-scope per-doc finding is addressed at exactly
+///    that identity (`attribute_to_doc` rewrites its address to `<identity>` or
+///    `<identity>#<fragment>`), so the two join on the address's identity part.
+///
+/// A finding addressed at nothing, or at a doc that is not a committed instance, takes no
+/// suppression — the conservative direction: the claim is only ever *withdrawn* on a proof that
+/// no gate exists, never granted on the absence of one.
+fn gates_at_task(finding: &Finding, unbaselined: &BTreeSet<String>) -> bool {
+    if GATES_NOWHERE.contains(&finding.code.as_str()) {
+        return false;
+    }
+    let per_doc_conformance = finding.code.starts_with("conformance.")
+        || finding.code.starts_with("schema-conformance.")
+        || finding.code.starts_with("schema-completeness.");
+    if !per_doc_conformance {
+        return true;
+    }
+    let Some(address) = finding.location.as_ref().and_then(|l| l.address.as_deref()) else {
+        return true;
+    };
+    let identity = address.split('#').next().unwrap_or(address);
+    !unbaselined.contains(identity)
+}
 
 /// The store-scope clarifying trailer appended after the findings (`jigc validate`), so
 /// exit-0-with-`blocking`-findings is unambiguous. Four cases, matching the three
@@ -419,16 +483,19 @@ const GATES_NOWHERE: &[&str] = &[
 ///
 /// **The report-only branch claims a gate only where one exists (M42).** Its blanket sentence
 /// — *"these gate at `jigc task validate` / `jigc task finalize`"* — is **false** for every
-/// [`GATES_NOWHERE`] code: those findings are emitted by no task-scope path, so no gate can
-/// ever see them, and a stock brownfield repo (whose only finding is the adoption advisory)
-/// was told to go look for a gate that will never fire. The branch now counts the findings
-/// that *do* carry a task-scope gate and scopes the claim to them: all → the original
-/// sentence; none → no gate claim at all; mixed → how many, and that the rest gate nowhere.
+/// [`GATES_NOWHERE`] code (emitted by no task-scope path, so no gate can ever see them: a stock
+/// brownfield repo, whose only finding is the adoption advisory, was told to go look for a gate
+/// that will never fire) **and** for a per-doc conformance break over an **un-baselined**
+/// committed doc (at task scope the reconciler grades that doc *advisory*, never blocking — the
+/// dominant `jigc validate` corpus). [`gates_at_task`] decides per finding; this branch counts
+/// the findings that *do* carry a gate and scopes the claim to them: all → the original sentence;
+/// none → no gate claim at all; mixed → how many, and that the rest gate nowhere.
 fn store_trailer(
     report: &ValidationReport,
     probe_unreliable: bool,
     oob_rename: bool,
     unmigrated_corpus: bool,
+    unbaselined: &BTreeSet<String>,
 ) -> String {
     if probe_unreliable {
         "pack-probe-integrity finding(s) present — the sweep could not complete and exits \
@@ -448,7 +515,7 @@ fn store_trailer(
         let gating = report
             .findings
             .iter()
-            .filter(|f| !GATES_NOWHERE.contains(&f.code.as_str()))
+            .filter(|f| gates_at_task(f, unbaselined))
             .count();
         if gating == 0 {
             format!(
@@ -2859,7 +2926,11 @@ mod tests {
     fn render_validation_store_clean_line_is_store_scoped() {
         let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
 
-        let clean = validation_store(Format::Agent, &ValidationReport::new(Vec::new(), &resolved));
+        let clean = validation_store(
+            Format::Agent,
+            &ValidationReport::new(Vec::new(), &resolved),
+            &BTreeSet::new(),
+        );
         insta::assert_snapshot!(clean, @r"
         no findings — the committed store validates clean
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
@@ -2892,16 +2963,19 @@ mod tests {
             )],
             &resolved,
         );
-        let agent = validation_store(Format::Agent, &content);
+        let agent = validation_store(Format::Agent, &content, &BTreeSet::new());
         insta::assert_snapshot!(agent, @r"
         blocking · doc-code.symbol-exists — cited symbol `evict_lru` not found
         1 finding(s) — report-only at store scope (exit 0); these gate at `jigc task validate` / `jigc task finalize`.
         — jigc · run `jigc start` for orientation; all writes through `jigc`.
         ");
-        assert_eq!(validation_store(Format::Human, &content), agent);
+        assert_eq!(
+            validation_store(Format::Human, &content, &BTreeSet::new()),
+            agent
+        );
 
         // JSON carries the machine-readable report-only signal + the scope tag.
-        let json_out = validation_store(Format::Json, &content);
+        let json_out = validation_store(Format::Json, &content, &BTreeSet::new());
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["scope"], "store");
         assert_eq!(value["report_only"], serde_json::Value::Bool(true));
@@ -2923,7 +2997,7 @@ mod tests {
             )],
             &resolved,
         );
-        let agent = validation_store(Format::Agent, &probe);
+        let agent = validation_store(Format::Agent, &probe, &BTreeSet::new());
         assert!(
             agent.contains("the sweep could not complete and exits"),
             "the probe-integrity path must be distinguished from a report-only content \
@@ -2933,7 +3007,7 @@ mod tests {
             !agent.contains("report-only at store scope"),
             "the probe-integrity trailer must not claim report-only: {agent}",
         );
-        let json_out = validation_store(Format::Json, &probe);
+        let json_out = validation_store(Format::Json, &probe, &BTreeSet::new());
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["report_only"], serde_json::Value::Bool(false));
 
@@ -2951,7 +3025,7 @@ mod tests {
             )],
             &resolved,
         );
-        let agent = validation_store(Format::Agent, &rename);
+        let agent = validation_store(Format::Agent, &rename, &BTreeSet::new());
         assert!(
             agent.contains("exits non-zero"),
             "the rename trailer must announce the exits-non-zero contract: {agent}",
@@ -2960,7 +3034,7 @@ mod tests {
             !agent.contains("report-only at store scope"),
             "the rename trailer must not claim report-only: {agent}",
         );
-        let json_out = validation_store(Format::Json, &rename);
+        let json_out = validation_store(Format::Json, &rename, &BTreeSet::new());
         let value: serde_json::Value = serde_json::from_str(&json_out).expect("valid JSON");
         assert_eq!(value["report_only"], serde_json::Value::Bool(false));
     }
@@ -3006,7 +3080,7 @@ mod tests {
             &resolved,
         );
 
-        let agent = validation_store(Format::Agent, &gate_nowhere);
+        let agent = validation_store(Format::Agent, &gate_nowhere, &BTreeSet::new());
         assert!(
             !agent.contains("jigc task validate") && !agent.contains("jigc task finalize"),
             "every finding here gates nowhere — the trailer must not name a gate: {agent}",
@@ -3033,7 +3107,7 @@ mod tests {
             )],
             &resolved,
         );
-        let agent = validation_store(Format::Agent, &gating);
+        let agent = validation_store(Format::Agent, &gating, &BTreeSet::new());
         assert!(
             agent.contains("these gate at `jigc task validate` / `jigc task finalize`"),
             "a doc-code break DOES gate at the task boundary — say so: {agent}",
@@ -3053,7 +3127,7 @@ mod tests {
             ],
             &resolved,
         );
-        let agent = validation_store(Format::Agent, &mixed);
+        let agent = validation_store(Format::Agent, &mixed, &BTreeSet::new());
         assert!(
             agent.contains("1 of them gate at `jigc task validate` / `jigc task finalize`"),
             "the claim covers the gating finding only: {agent}",
@@ -3061,6 +3135,99 @@ mod tests {
         assert!(
             agent.contains("the rest are store-scope advisories that gate nowhere"),
             "and disowns the gate for the store-scope-only one: {agent}",
+        );
+    }
+
+    /// **The criterion is per *finding*, not per *code*** (M42 Inc 4 — the correction to T3;
+    /// `validation.md` → The trailer must not claim a gate that does not exist).
+    ///
+    /// The code-level [`GATES_NOWHERE`] list asks *"can any task-scope path emit this code?"* —
+    /// and for the store sweep's per-doc conformance breaks the answer is *"yes, over a **staged**
+    /// doc"*, which says **nothing** about the **committed** doc this finding is actually
+    /// addressed at. `engine::validate::validate_task` routes the committed store through
+    /// `file_state::reconcile_committed_store`, which grades it by **baseline membership**:
+    ///
+    /// - **un-baselined** (no `FileStateRecord` entry — a fresh clone, a brownfield adoption, any
+    ///   hand-authored corpus) → **advisory** `reconciliation.conformance-block`. It gates
+    ///   nowhere, permanently, and the trailer must not send the reader to a gate for it.
+    /// - **baselined** → the drift really does reach the **blocking** arm. The claim stands, and
+    ///   suppressing it here would be the opposite lie.
+    ///
+    /// One and the same finding, both ways — so the test cannot pass by keying on the code, which
+    /// is what the shipped criterion did. (The end-to-end proof, on the corpus a real repo
+    /// produces, is `crates/cli/tests/managed_vs_foreign.rs`.)
+    #[test]
+    fn render_validation_store_gate_claim_turns_on_the_docs_baseline_not_on_the_code() {
+        use engine::finding::{Finding, Location, Severity};
+
+        let resolved = crate::cascade_util::no_delta_resolved().expect("resolves");
+
+        // Exactly what the store sweep emits over a committed ADR missing `## Consequences`:
+        // the parse-failure arm's `conformance.*` break, attributed to the doc's identity, plus
+        // family 3's un-baselined advisory for the same doc.
+        let report = || {
+            ValidationReport::new(
+                vec![
+                    Finding::graded(
+                        Severity::Blocking,
+                        "conformance.section-missing",
+                        "`docs/decisions/cache-it.md`: required section heading \
+                         `## consequences` is missing",
+                        Some(Location::addressed("adr:cache-it", 1, 1)),
+                        None,
+                    ),
+                    Finding::graded(
+                        Severity::Advisory,
+                        "file-state.un-baselined",
+                        "committed doc `docs/decisions/cache-it.md` is not yet baselined",
+                        Some(Location::addressed("docs/decisions/cache-it.md", 1, 1)),
+                        Some("no action needed".to_string()),
+                    ),
+                ],
+                &resolved,
+            )
+        };
+
+        // (i) UN-BASELINED — the dominant `jigc validate` corpus. No gate exists for either
+        // finding, so the trailer names none.
+        let unbaselined: BTreeSet<String> = ["adr:cache-it".to_string()].into_iter().collect();
+        let agent = validation_store(Format::Agent, &report(), &unbaselined);
+        assert!(
+            !agent.contains("jigc task validate") && !agent.contains("jigc task finalize"),
+            "at task scope this committed doc is graded ADVISORY by the reconciler — the \
+             conformance break gates nowhere, and the trailer must not claim it does: {agent}",
+        );
+        assert!(
+            agent.contains("2 finding(s)") && agent.contains("gates nowhere"),
+            "and it states the truth for both: {agent}",
+        );
+
+        // (ii) BASELINED — the same finding, the same code, the opposite verdict: the drift
+        // reaches the reconciler's blocking arm, so the gate is real and the claim stands.
+        let agent = validation_store(Format::Agent, &report(), &BTreeSet::new());
+        assert!(
+            agent.contains("1 of them gate at `jigc task validate` / `jigc task finalize`"),
+            "a baselined doc's drift DOES block at the task boundary — withdrawing the claim \
+             here would be the opposite lie: {agent}",
+        );
+
+        // (iii) The address joins on the doc identity, fragment and all — a finding addressed at
+        // a *slice* of the un-baselined doc is the same doc.
+        let sliced = ValidationReport::new(
+            vec![Finding::graded(
+                Severity::Blocking,
+                "schema-conformance.field-value-conformant",
+                "`docs/decisions/cache-it.md`: `status` is not one of the enum members",
+                Some(Location::addressed("adr:cache-it#header/status", 1, 1)),
+                None,
+            )],
+            &resolved,
+        );
+        let agent = validation_store(Format::Agent, &sliced, &unbaselined);
+        assert!(
+            !agent.contains("jigc task validate"),
+            "the identity is the address up to the `#` — a sliced address is the same doc: \
+             {agent}",
         );
     }
 

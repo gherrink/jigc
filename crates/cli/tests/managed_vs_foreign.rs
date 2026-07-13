@@ -244,6 +244,35 @@ Keep sessions in a single in-memory node.
 A cold node loses its sessions.
 ";
 
+/// A **fully-migrated but structurally broken** ADR: the v2 shape, stamped `schema-version: 2`
+/// — so the corpus is **current** and no version-currency break fires — with `## Consequences`
+/// **removed**. It fails to *parse* under the current shape, so the store family's
+/// **parse-failure** arm surfaces its `conformance.*` findings **directly** (`crates/engine/
+/// src/validate.rs`, the `parse_sections` `Err` arm). At **task** scope the very same committed
+/// doc is never adjudicated by that path at all — it goes through the file-state reconciler,
+/// which grades it by **baseline membership**.
+const ADR_V2_MISSING_CONSEQUENCES: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 2
+---
+
+# Cache sessions in memory
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Options
+
+A distributed cache was weighed and rejected on latency.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+";
+
 /// A **current, conformant** ADR: the v2 shape, stamped `schema-version: 2`.
 const ADR_CURRENT: &str = "\
 ---
@@ -890,4 +919,262 @@ fn a_fresh_clone_of_a_managed_repo_still_reads_its_docs_as_managed() {
         "a conformant, stamped corpus blocks nothing on a fresh clone; got: {blocking:#?}",
     );
     assert_eq!(code, 0, "a clean clone exits 0");
+}
+
+/// (Inc 4 T3 — the gate claim over a **committed doc's** conformance break) The report-only
+/// trailer's sentence *"these gate at `jigc task validate` / `jigc task finalize`"* is **false**
+/// for a `conformance.*` finding the store sweep raises over an **un-baselined** committed doc —
+/// and un-baselined is the state of **every** committed doc in a fresh clone (`.jigc/state/` is
+/// gitignored), in a brownfield adoption, and in any hand-authored corpus: the dominant `jigc
+/// validate` corpus.
+///
+/// The two scopes adjudicate the same file through **different paths**:
+///
+/// - **store**: the fifth family parses the committed doc itself, so a parse failure surfaces its
+///   `conformance.*` findings **directly** (`crates/engine/src/validate.rs`, the `Err` arm);
+/// - **task**: `validate_task` parses only the task's *staged* instances. The committed doc goes
+///   through `file_state::reconcile_committed_store`, whose **UNKNOWN** arm (no baseline recorded)
+///   grades a nonconformant file **advisory** (`conformance_advisory_finding` — *routed, not
+///   recorded*), never blocking.
+///
+/// So the finding gates **nowhere, permanently**, while the trailer sends the reader to a gate
+/// that will never see it. Driven through the real binary, over the corpus a fresh clone actually
+/// produces — and the emitted bytes are read verbatim, not reconstructed.
+#[test]
+fn a_conformance_break_on_an_un_baselined_committed_doc_gates_nowhere_and_the_trailer_says_so() {
+    let repo = TempDir::new("unbaselined-gate-claim");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_V2_MISSING_CONSEQUENCES);
+
+    // The precondition: a v2-STAMPED (fully migrated) doc — so this is not the unmigrated-corpus
+    // branch — whose missing `## Consequences` raises a blocking `conformance.*` parse finding,
+    // report-only at exit 0.
+    let (code, findings) = validate_findings(repo.path(), home.path());
+    assert!(
+        by_code(&findings, "schema-conformance.schema-version-current").is_empty(),
+        "the corpus is MIGRATED — this is the report-only branch, not the unmigrated one; \
+         got: {findings:#?}",
+    );
+    let missing = by_code(&findings, "conformance.section-missing");
+    assert_eq!(
+        missing.len(),
+        1,
+        "the removed `## Consequences` raises one section-missing break; got: {findings:#?}",
+    );
+    assert_eq!(
+        missing[0]["severity"].as_str(),
+        Some("blocking"),
+        "and it renders `blocking` — which is exactly why the gate claim must be true: {:#?}",
+        missing[0],
+    );
+    assert_eq!(
+        by_code(&findings, "file-state.un-baselined").len(),
+        1,
+        "the doc is UN-BASELINED — the state of every committed doc in a fresh clone, and the \
+         discriminator this fix turns on; got: {findings:#?}",
+    );
+    assert_eq!(code, 0, "content drift stays report-only at store scope");
+
+    // The gate the trailer claims does not exist: at task scope the SAME doc is advisory.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "prove the gate"],
+        ),
+        "`jigc start`",
+    );
+    let task = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "prove-the-gate", "--format", "json"],
+    );
+    let task_findings = findings_of(&task);
+    assert!(
+        by_code(&task_findings, "conformance.section-missing").is_empty(),
+        "no task-scope path emits the store sweep's `conformance.*` code over a COMMITTED doc — \
+         the committed store is adjudicated by the reconciler, not the parser; got: \
+         {task_findings:#?}",
+    );
+    let block = by_code(&task_findings, "reconciliation.conformance-block");
+    assert_eq!(
+        block.len(),
+        1,
+        "the reconciler is the only task-scope path that sees it; got: {task_findings:#?}",
+    );
+    assert_eq!(
+        block[0]["severity"].as_str(),
+        Some("advisory"),
+        "and on an UN-BASELINED doc it is ADVISORY — routed, not recorded, and gating nothing: \
+         {:#?}",
+        block[0],
+    );
+
+    // Therefore the trailer must not claim a gate for it.
+    let (_, text) = validate_text(repo.path(), home.path());
+    assert!(
+        !text.contains("jigc task validate") && !text.contains("jigc task finalize"),
+        "every finding here gates nowhere — the trailer must not send the reader to a gate that \
+         will never fire; got:\n{text}",
+    );
+    assert!(
+        text.contains("report-only at store scope (exit 0)"),
+        "it is still the report-only branch, and still names the exit; got:\n{text}",
+    );
+    assert!(
+        text.contains("gates nowhere"),
+        "and states what is actually true of it; got:\n{text}",
+    );
+}
+
+/// (Inc 4 T3 — the **non-vacuous half**) The fix must not silence the claim where the gate is
+/// real. A doc jigc has **baselined** (its hash is in `.jigc/state/file-state.json`) and that is
+/// then broken **out of band** takes the reconciler's `DRIFTED` arm, where a nonconformant file is
+/// **blocking** `reconciliation.conformance-block` — a genuine `jigc task validate` / `jigc task
+/// finalize` gate. The trailer keeps the sentence for it, and the gate is proven to fire, through
+/// the real binary.
+#[test]
+fn a_conformance_break_on_a_baselined_committed_doc_really_does_gate_and_the_trailer_keeps_it() {
+    let repo = TempDir::new("baselined-gate-claim");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_CURRENT);
+
+    // Baseline the committed ADR the way jigc really does: the **finalize** preflight's
+    // committed-store reconcile adopts the conformant doc (its UNKNOWN + conformant arm) and
+    // finalize **persists** the swept record into gitignored `.jigc/state/file-state.json`.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "seed the baseline"],
+        ),
+        "`jigc start`",
+    );
+    fill_commit_doc(repo.path(), home.path(), "seed-the-baseline");
+    fs::write(repo.path().join("limiter.rs"), "// a rate limiter\n").expect("write code change");
+    git(repo.path(), &["add", "limiter.rs"]);
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["task", "finalize", "seed-the-baseline"],
+        ),
+        "`jigc task finalize`",
+    );
+
+    // Break it out of band — the drift the reconciler blocks on.
+    let adr = repo
+        .path()
+        .join("docs")
+        .join("decisions")
+        .join("cache-sessions-in-memory.md");
+    fs::write(&adr, ADR_V2_MISSING_CONSEQUENCES).expect("break the baselined ADR");
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-q", "-m", "break the adr"]);
+
+    // The store sweep raises the same `conformance.*` break — but this doc IS baselined.
+    let (_, findings) = validate_findings(repo.path(), home.path());
+    assert_eq!(
+        by_code(&findings, "conformance.section-missing").len(),
+        1,
+        "the same store-scope break; got: {findings:#?}",
+    );
+    assert!(
+        by_code(&findings, "file-state.un-baselined").is_empty(),
+        "and the doc is BASELINED — the discriminator's other side; got: {findings:#?}",
+    );
+
+    // The gate is real: task scope blocks on it.
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "single-task", "prove the gate"],
+        ),
+        "`jigc start`",
+    );
+    let task = jigc(
+        repo.path(),
+        home.path(),
+        &["task", "validate", "prove-the-gate", "--format", "json"],
+    );
+    let task_findings = findings_of(&task);
+    let block = by_code(&task_findings, "reconciliation.conformance-block");
+    assert_eq!(
+        block.len(),
+        1,
+        "the drifted baselined doc reaches the reconciler's blocking arm; got: {task_findings:#?}",
+    );
+    assert_eq!(
+        block[0]["severity"].as_str(),
+        Some("blocking"),
+        "and it BLOCKS — the gate the trailer names really exists here: {:#?}",
+        block[0],
+    );
+
+    // So the trailer keeps the claim.
+    let (_, text) = validate_text(repo.path(), home.path());
+    assert!(
+        text.contains("jigc task validate") && text.contains("jigc task finalize"),
+        "the gate exists for this finding — suppressing the claim here would be the opposite \
+         lie; got:\n{text}",
+    );
+}
+
+/// Assert a `jigc` invocation succeeded.
+fn assert_ok(out: &std::process::Output, what: &str) {
+    assert!(
+        out.status.success(),
+        "{what} must succeed; stderr:\n{}",
+        String::from_utf8_lossy(&out.stderr),
+    );
+}
+
+/// Fill `task`'s commit doc conformantly, so `jigc task finalize` clears the gate and lands its
+/// commit — the only path that **persists** the file-state record (the baseline this arm needs).
+fn fill_commit_doc(repo: &Path, home: &Path, task: &str) {
+    assert_ok(
+        &jigc(
+            repo,
+            home,
+            &[
+                "doc",
+                "set-field",
+                &format!("commit:{task}#type"),
+                "--value",
+                "docs",
+            ],
+        ),
+        "`jigc doc set-field type`",
+    );
+    let summary = repo.join("summary.txt");
+    fs::write(&summary, "seed the file-state baseline\n").expect("write the slot prose");
+    assert_ok(
+        &jigc(
+            repo,
+            home,
+            &[
+                "doc",
+                "set-slot",
+                &format!("commit:{task}#summary"),
+                "--from-file",
+                summary.to_str().expect("utf-8 path"),
+            ],
+        ),
+        "`jigc doc set-slot summary`",
+    );
+    fs::remove_file(&summary).expect("remove the scratch prose file");
+}
+
+/// The `findings` array of a `--format json` validation envelope.
+fn findings_of(out: &std::process::Output) -> Vec<serde_json::Value> {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let json: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|err| panic!("`--format json` must emit JSON ({err}):\n{stdout}"));
+    json["findings"]
+        .as_array()
+        .expect("the report carries a `findings` array")
+        .clone()
 }

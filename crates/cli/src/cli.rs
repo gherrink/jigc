@@ -689,8 +689,14 @@ fn run_validate_store(format: Format) -> Outcome {
         }
     };
     match validate_store_in_repo(&cwd) {
-        Ok(report) => {
-            println!("{}", render::validation_store(format, &report));
+        Ok(StoreSweep {
+            report,
+            unbaselined,
+        }) => {
+            println!(
+                "{}",
+                render::validation_store(format, &report, &unbaselined)
+            );
             // The exit rule honors the **three** exit-flipping exceptions (`validation.md` →
             // Exit semantics — report-only, with three exit-flipping exceptions): (1) a
             // `pack-probe-integrity.*` meta-finding means the probe could not be trusted (it
@@ -718,6 +724,56 @@ fn run_validate_store(format: Format) -> Outcome {
     }
 }
 
+/// One store sweep's result: the [`engine::result::ValidationReport`] **and** the set of
+/// committed-doc identities the file-state record has **not** baselined — the discriminator the
+/// report-only trailer's gate claim keys on ([`render::validation_store`]; `validation.md` → The
+/// trailer must not claim a gate that does not exist).
+///
+/// The set rides alongside the report rather than inside it because it is not a *finding*: it is
+/// the store-scope fact that decides, per finding, whether a task-scope gate exists for the doc it
+/// is addressed at. It is derived here — the one place that holds the loaded record, the resolved
+/// schemas, and the repo root at once.
+struct StoreSweep {
+    report: engine::result::ValidationReport,
+    /// `<type>:<slug>` identities (the address a store-scope per-doc finding carries) of the
+    /// committed instances with **no** `FileStateRecord` entry.
+    unbaselined: std::collections::BTreeSet<String>,
+}
+
+/// The `<type>:<slug>` identities of every committed instance the file-state record has **not**
+/// baselined (M42 Inc 4 — `validation.md` → The trailer must not claim a gate that does not
+/// exist). The same `record.get(<repo-relative path>)` membership test M40's two-tier orphan
+/// route (below) already discriminates on — and the key is the enumerator's own path, never a
+/// path re-derived from the identity (a placement doctype's case-preserved literal home does not
+/// round-trip through slug derivation).
+///
+/// Un-baselined is **not** a defect — it is the state of every committed doc in a fresh clone
+/// (`.jigc/state/` is gitignored), in a brownfield adoption, and in any hand-authored corpus. It
+/// is load-bearing here for one reason only: at **task** scope a committed doc is adjudicated by
+/// `file_state::reconcile_committed_store`, whose UNKNOWN arm grades a nonconformant file
+/// **advisory** (*routed, not recorded*) — so the store sweep's `conformance.*` /
+/// `schema-conformance.*` break over it gates **nowhere**, and the trailer must not say it gates.
+fn unbaselined_identities(
+    repo_root: &Path,
+    schemas: &std::collections::BTreeMap<String, engine::schema::Schema>,
+    record: &engine::file_state::FileStateRecord,
+) -> std::collections::BTreeSet<String> {
+    let mut unbaselined = std::collections::BTreeSet::new();
+    for (ty, schema) in schemas {
+        for (identity, path) in engine::index::committed_instances(repo_root, ty, schema) {
+            let key = path
+                .strip_prefix(repo_root)
+                .unwrap_or(&path)
+                .to_string_lossy()
+                .into_owned();
+            if record.get(&key).is_none() {
+                unbaselined.insert(identity);
+            }
+        }
+    }
+    unbaselined
+}
+
 /// Locate the repo + project layer from `cwd`, **pre-flight the `doc-code` probe**, then
 /// build the resolved schemas (keyed by doctype) + severity cascade and run the
 /// committed-store sweep against the production `doc-code` invoker. The pre-flight bails
@@ -725,7 +781,7 @@ fn run_validate_store(format: Format) -> Outcome {
 /// operational error, never N per-anchor crash meta-findings. Mirrors `run_ingest`'s
 /// locate preamble + `task.rs`'s `schemas()` / `resolve_severity_cascade` idiom; the
 /// engine stays domain-empty (the CLI feeds the pack in).
-fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport> {
+fn validate_store_in_repo(cwd: &Path) -> Result<StoreSweep> {
     let jigc_home = require_project_layer(cwd)?;
     require_doc_code_probe()?;
     let pack = crate::pack::make_pack();
@@ -872,7 +928,15 @@ fn validate_store_in_repo(cwd: &Path) -> Result<engine::result::ValidationReport
         };
         report.findings.push(finding);
     }
-    Ok(report)
+
+    // The gate-claim discriminator (M42 Inc 4): which of the committed docs this sweep just
+    // adjudicated carry no file-state baseline. Derived from the same `record` + `schemas` the
+    // families ran against, so the trailer's claim and the sweep's verdicts describe one store.
+    let unbaselined = unbaselined_identities(&jigc_home, &schemas, &record);
+    Ok(StoreSweep {
+        report,
+        unbaselined,
+    })
 }
 
 /// The store sweep's **probe pre-flight**: resolve the `doc-code` probe program (the
