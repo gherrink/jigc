@@ -226,6 +226,14 @@ fn count(haystack: &str, needle: &str) -> usize {
 /// unstamped (v0), one stamped below the current version (0 < 2), one at the current version
 /// (2) — each surface a `required-field-present` break. The two below-current/absent docs
 /// route `migrate`; the at-version doc routes `corrupt`. `jigc validate` still exits 0.
+///
+/// **The two below-version docs each also carry the version-currency break** (M42 Inc-3 T2):
+/// `schema-conformance.schema-version-current` is emitted **unconditionally** on a below-version
+/// managed doc, not only on an otherwise-clean one — the old *"only when the doc has no other
+/// findings"* guard existed solely to stop the reused `field-value-conformant` id from
+/// double-reporting, and it left exactly this doc (stale **and** structurally broken — the
+/// commonest kind) with no machine-readable staleness fact. The at-version doc carries none: its
+/// break is corruption, not staleness.
 #[test]
 fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
     let repo = TempDir::new("route");
@@ -260,13 +268,23 @@ fn store_sweep_routes_below_version_migrate_and_at_version_corrupt() {
          required-field-present finding; stdout:\n{stdout}",
     );
 
-    // The two below-current / stamp-absent docs route `migrate`; the at-version doc routes
-    // `corrupt`. The route lines are the emitted bytes an operator reads.
+    // Each below-version doc ALSO carries its version-currency break — emitted unconditionally,
+    // alongside the structural one; the at-version doc carries none (corruption, not staleness).
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        2,
+        "the unstamped (v0) and below-version (0) ADRs must each surface the version-currency \
+         break even though they already carry a structural break; stdout:\n{stdout}",
+    );
+
+    // The two below-current / stamp-absent docs route `migrate` — on both of their findings;
+    // the at-version doc routes `corrupt`. The route lines are the emitted bytes an operator
+    // reads.
     assert_eq!(
         count(&stdout, "route: migrate"),
-        2,
-        "the unstamped (v0) and below-version (0) ADRs must each route `migrate`; \
-         stdout:\n{stdout}",
+        4,
+        "the unstamped (v0) and below-version (0) ADRs must route `migrate` on each of their \
+         two findings (the structural break + the version-currency break); stdout:\n{stdout}",
     );
     assert_eq!(
         count(&stdout, "route: corrupt"),

@@ -23,6 +23,10 @@
 //!   detect case — stays **managed**: it is routed at the corpus migration and is **never**
 //!   called unadopted (the parse-against-a-shipped-prior arm is what separates it from a
 //!   foreign file).
+//! - **(managed, stale — T2)** a **v1-stamped** ADR under the v2 manifest surfaces the
+//!   version-currency break `schema-conformance.schema-version-current` (blocking, its own check
+//!   id, at the doc's URI) routed at **`jigc migrate-corpus`** — and that verb clears it, the
+//!   corpus re-validating clean. Exit stays 0 (Increment 4 flips it).
 //! - **(fresh clone)** a clone of a managed repo — no `.jigc/state`, so **no** file-state
 //!   record at all — still reads its committed docs as **managed**: no adoption advisory,
 //!   nothing blocking.
@@ -165,6 +169,33 @@ const ADR_V0_ERA: &str = "\
 ---
 status: accepted
 date: 2026-06-25
+---
+
+# Cache sessions in memory
+
+## Context
+
+Session lookups must stay sub-millisecond.
+
+## Decision
+
+Keep sessions in a single in-memory node.
+
+## Consequences
+
+A cold node loses its sessions.
+";
+
+/// A **stale managed** ADR: the shipped **prior (v1)** shape, stamped `schema-version: 1`
+/// while the `adr` manifest is at 2 — the commonest stale doc in a real corpus, and the one
+/// that does **not parse** under the current (v2) shape (the optional `## Options` slot makes
+/// `## Decision` read as a renamed section), so it lands in the store family's **parse-failure**
+/// arm.
+const ADR_STALE_V1: &str = "\
+---
+status: accepted
+date: 2026-06-25
+schema-version: 1
 ---
 
 # Cache sessions in memory
@@ -330,6 +361,84 @@ fn an_unstamped_v0_era_managed_doc_still_reads_as_managed() {
         "the stale managed doc routes at the corpus migration; got: {findings:#?}",
     );
     assert_eq!(code, 0, "the store sweep is report-only here");
+}
+
+/// (managed, stale — the version-currency break) A committed **v1-stamped** ADR under the **v2**
+/// manifest is a *managed* doc the corpus migration can upgrade, and the sweep now says so **as
+/// data**: exactly one **blocking** `schema-conformance.schema-version-current` (M42 — its own
+/// check id, the fact the Inc-4 exit predicate keys on), addressed at the doc's `<type>:<slug>`
+/// URI and routed at the verb that actually fixes it, `jigc migrate-corpus`. Running that verb
+/// **clears** it — detect → fix → re-validate clean, on the real binary.
+///
+/// Red before this task, and *loudly*: this ADR is in the prior shape, so it does not parse
+/// under v2 — the store family's **parse-failure** arm emitted only routed `conformance.*`
+/// parse findings and **zero** `schema-conformance.*` findings. The commonest stale doc in a
+/// real corpus carried **no machine-readable staleness fact at all**.
+#[test]
+fn a_stale_v1_stamped_adr_surfaces_the_version_currency_break_and_migrate_corpus_clears_it() {
+    let repo = TempDir::new("stale-managed");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_adr(repo.path(), ADR_STALE_V1);
+
+    // 1. DETECT — the version-currency break, its own code, blocking, at the doc's URI,
+    //    routed at `jigc migrate-corpus`; the sweep still exits 0 (Increment 4 flips it).
+    let (code, findings) = validate_findings(repo.path(), home.path());
+    let stale = by_code(&findings, "schema-conformance.schema-version-current");
+    assert_eq!(
+        stale.len(),
+        1,
+        "a v1-stamped ADR under the v2 manifest surfaces exactly one version-currency break; \
+         got: {findings:#?}",
+    );
+    let finding = stale[0];
+    assert_eq!(
+        finding["severity"].as_str(),
+        Some("blocking"),
+        "the version-currency break is blocking: {finding:#?}",
+    );
+    assert_eq!(
+        finding["key"]["target"].as_str(),
+        Some("adr:cache-sessions-in-memory"),
+        "it is addressed at the managed doc's URI — unique per instance: {finding:#?}",
+    );
+    let route = finding["route"]
+        .as_str()
+        .expect("the break carries a route");
+    assert!(
+        route.contains("jigc migrate-corpus"),
+        "the route names the verb that upgrades a managed corpus, verbatim; got: {route}",
+    );
+    assert!(
+        by_code(&findings, "schema-conformance.unadopted-instance").is_empty(),
+        "a stale MANAGED doc is never an adoption case; got: {findings:#?}",
+    );
+    assert_eq!(code, 0, "the store sweep stays report-only here (exit 0)");
+
+    // 2. MIGRATE — the routed verb, run verbatim as the finding names it.
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    assert!(
+        migrate.status.success(),
+        "`jigc migrate-corpus` must succeed; stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&migrate.stdout),
+        String::from_utf8_lossy(&migrate.stderr),
+    );
+
+    // 3. RE-VALIDATE — the loop closes: the break is gone, nothing blocks, exit 0.
+    let (code, after) = validate_findings(repo.path(), home.path());
+    assert!(
+        by_code(&after, "schema-conformance.schema-version-current").is_empty(),
+        "the migrated doc carries no version-currency break; got: {after:#?}",
+    );
+    let blocking: Vec<_> = after
+        .iter()
+        .filter(|f| f["severity"].as_str() == Some("blocking"))
+        .collect();
+    assert!(
+        blocking.is_empty(),
+        "the migrated corpus blocks nothing; got: {blocking:#?}",
+    );
+    assert_eq!(code, 0, "a migrated corpus exits 0");
 }
 
 /// (fresh clone) A **clone of a managed repo** carries **no `.jigc/state`** (it is gitignored

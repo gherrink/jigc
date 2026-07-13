@@ -14,10 +14,18 @@
 //! asserts:
 //!
 //! - an **unstamped (v0)**, otherwise-conformant ADR is **reported** with a
-//!   `schema-conformance.*` finding routed `migrate`, and `jigc validate` still **exits 0**
-//!   (report-only at store scope — the CLI keys non-zero exit on `pack-probe-integrity` only).
+//!   `schema-conformance.schema-version-current` finding routed at `jigc migrate-corpus`, and
+//!   `jigc validate` still **exits 0** (report-only at store scope — the CLI keys non-zero exit
+//!   on `pack-probe-integrity` only; the M42 Increment-4 flip keys on the code pinned here).
 //! - a **current-stamped** store surfaces **no** version finding and exits 0 (the
 //!   false-positive guard).
+//!
+//! **The check id is pinned here (M42).** The M34 build wrote the break as a *reuse* of
+//! `schema-conformance.field-value-conformant` over the stamp field; M42 retracts that — a stale
+//! stamp and an invalid enum value are different facts, and the reuse makes the version break
+//! indistinguishable to any machine consumer (`design/validation.md` → the retraction). The
+//! headline detect case below is unchanged in *behaviour*; what it now pins is **which fact** the
+//! report states.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -187,8 +195,9 @@ fn count(haystack: &str, needle: &str) -> usize {
 
 /// (the headline case) An ingested + baselined v0 corpus ADR (**no** schema-version stamp,
 /// **no** schema shadow, otherwise conformant) is *reported* by `jigc validate` with a
-/// `schema-conformance.*` break routed `migrate` — emission, not annotation — and the sweep
-/// still exits 0. This is the case a labeler-only path leaves silent (its own dogfood).
+/// `schema-conformance.schema-version-current` break routed at `jigc migrate-corpus` — emission,
+/// not annotation — and the sweep still exits 0. This is the case a labeler-only path leaves
+/// silent (its own dogfood).
 #[test]
 fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_zero() {
     let repo = TempDir::new("v0");
@@ -211,18 +220,30 @@ fn store_sweep_reports_unstamped_v0_doc_as_migrate_and_exits_zero() {
     );
 
     // The unstamped doc surfaces exactly one schema-conformance break (the version break),
-    // emitted even though the doc is otherwise structurally clean.
+    // emitted even though the doc is otherwise structurally clean — and it is the version-
+    // currency code, not a reused value-conformance one (M42: the fact must be distinguishable).
     assert_eq!(
         count(&stdout, "schema-conformance."),
         1,
         "an unstamped v0 ADR must surface exactly one schema-conformance break; \
          stdout:\n{stdout}",
     );
-    // And it routes `migrate` — the emitted bytes an operator reads.
+    assert_eq!(
+        count(&stdout, "schema-conformance.schema-version-current"),
+        1,
+        "the v0 break is the version-currency break, under its own check id; stdout:\n{stdout}",
+    );
+    // And it routes `migrate`, naming the verb that fixes it — the emitted bytes an operator
+    // reads.
     assert_eq!(
         count(&stdout, "route: migrate"),
         1,
         "the unstamped (v0) ADR's version break must route `migrate`; stdout:\n{stdout}",
+    );
+    assert_eq!(
+        count(&stdout, "jigc migrate-corpus"),
+        1,
+        "the route names the verb that upgrades a managed corpus, verbatim; stdout:\n{stdout}",
     );
 }
 

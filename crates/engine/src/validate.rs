@@ -637,27 +637,25 @@ fn schema_conformance_store(
                     let mut doc_findings = schema_conformance(schema, &source, &doc);
                     let stamp = read_schema_version_stamp(&doc);
                     let current = versions.get(ty).copied();
-                    // Version-mismatch is itself a surfaced break (M34 Inc-3): a committed
-                    // persisted doc of a *versioned* doctype whose stamp is absent (the v0
-                    // corpus state) or below the manifest `current` is non-conformant on its
-                    // schema-version field. `route_schema_conformance` only *labels* findings
-                    // that already exist, so an OTHERWISE-conformant below/absent doc — the
-                    // pure-stamp v0 corpus, the M34 dogfood's headline case — would be silent
-                    // (`schema_conformance` returns nothing → exit 0). Emit one
-                    // `schema-conformance.*` break for that doc so the detect-half is not blind
-                    // to its own dogfood; a doc that already carries structural breaks is **not**
-                    // double-reported (those keep their own findings and already route migrate).
-                    // The stamp stays author-exempt (`is_author_required` untouched) —
-                    // version-currency is a store-scope corpus rule, never an authoring
-                    // obligation, so task/finalize scope is unaffected (`design/validation.md` →
-                    // Version-mismatch is itself a surfaced break; DECISIONS 2026-06-25).
-                    if doc_findings.is_empty()
-                        && let Some(current) = current
+                    route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
+                    // Version-currency is itself a surfaced break (M34 Inc-3), and since M42 it
+                    // is **its own check id**, emitted **unconditionally** on every below-version
+                    // managed instance — never only on an otherwise-clean one. The old
+                    // `doc_findings.is_empty()` guard existed solely because the break reused
+                    // `field-value-conformant` and would have double-reported alongside a real
+                    // value break; with a distinct code there is no double-report, and the guard
+                    // was actively harmful — a stale doc that *also* carries structural findings
+                    // (the commonest kind) would leave any consumer of the staleness fact with
+                    // nothing to key on. `route_schema_conformance` above only *labels* findings
+                    // that already exist, so emission — not annotation — is what closes the
+                    // silent-drift hole for the pure-stamp v0 corpus, the M34 dogfood's own
+                    // headline case (`design/validation.md` → Version-currency is itself a
+                    // surfaced break; the retraction of the no-new-check-id pin).
+                    if let Some(current) = current
                         && stamp.is_none_or(|s| s < current)
                     {
-                        doc_findings.push(version_mismatch_break(stamp, current));
+                        doc_findings.push(version_currency_break(stamp, current, &rel_key));
                     }
-                    route_schema_conformance(&mut doc_findings, stamp, current, &rel_key);
                     attribute_to_doc(&mut doc_findings, &identity, &rel_key);
                     findings.extend(doc_findings);
                 }
@@ -686,6 +684,14 @@ fn schema_conformance_store(
                             Some(current),
                             &rel_key,
                         );
+                        // The version-currency break rides this arm too (M42) — and it is the
+                        // arm that most needs it: a below-version doc of a structurally-changed
+                        // doctype (a v1-stamped ADR under the v2 `options` shape — the commonest
+                        // stale doc in a real corpus) fails to PARSE, so before M42 it emitted
+                        // only routed `conformance.*` parse findings and **zero**
+                        // `schema-conformance.*` — the staleness fact, the one thing a machine
+                        // consumer must key on, was not in the report at all.
+                        parse_findings.push(version_currency_break(stamp, current, &rel_key));
                     }
                     attribute_to_doc(&mut parse_findings, &identity, &rel_key);
                     findings.extend(parse_findings);
@@ -1066,16 +1072,33 @@ fn schema_version_from_front_matter(source: &str) -> Option<u32> {
     })
 }
 
-/// Build the **version-mismatch** `schema-conformance.*` break for an otherwise-conformant
-/// committed doc of a versioned doctype whose schema-version stamp is **absent** (the v0
-/// corpus state) or **below** its doctype's manifest `current` — the load-bearing M34 case a
-/// labeler-only path leaves silent (`design/validation.md` → Version-mismatch is itself a
-/// surfaced break; DECISIONS 2026-06-25). Reuses the existing `field-value-conformant` id over
-/// the stamp field (no new check id, no knob — the stamp's value, or its absence, is not the
-/// conformant current value); the caller's [`route_schema_conformance`] then labels it
-/// `migrate`. Carries `Severity::Blocking` like every conformance break, but *blocking* is a
-/// task/finalize verdict — under the store sweep it is reported, never a gate.
-fn version_mismatch_break(stamp: Option<u32>, current: u32) -> Finding {
+/// The check id of the **version-currency** break — a *managed* committed instance whose
+/// schema-version stamp is below its doctype's manifest version (M42).
+pub const SCHEMA_VERSION_CURRENT_CODE: &str = "schema-conformance.schema-version-current";
+
+/// Build the **version-currency** break for a committed doc of a versioned doctype, classified
+/// **managed**, whose schema-version stamp is **absent** (the v0 corpus state) or **below** its
+/// doctype's manifest `current` — the load-bearing M34 case a labeler-only path leaves silent
+/// (`design/validation.md` → Version-currency is itself a surfaced break; DECISIONS 2026-06-25).
+///
+/// **Its own check id** (M42), retracting the M34 pin that reused `field-value-conformant` over
+/// the stamp field: a stale stamp and an invalid enum value are *different facts with different
+/// consequences*, and under the reuse the version break is **indistinguishable to any machine
+/// consumer** — including the exit predicate, which sees only `(probe, code)`. Reusing the
+/// value-conformance id was always a category error (the stamp is not a field whose *value* the
+/// author got wrong — it is a fact about which schema the whole doc was written against); it
+/// merely cost nothing until something needed to **act** on the distinction
+/// (`design/validation.md` → the retraction, with its rationale engaged).
+///
+/// It carries **its own route** — `jigc migrate-corpus`, the verb that upgrades a managed corpus,
+/// named verbatim — rather than the generic [`route_schema_conformance`] label the doc's *other*
+/// findings take, and leads with the same `migrate` classification token. `Severity::Blocking`
+/// like every conformance break; *blocking* is a task/finalize verdict, so under the store sweep
+/// it is reported, never a gate (the exit flip is M42 Increment 4's, keyed on this code).
+///
+/// The stamp stays **author-exempt** (`is_author_required` untouched) — version-currency is a
+/// store-scope corpus rule, never an authoring obligation, so task/finalize scope is unaffected.
+fn version_currency_break(stamp: Option<u32>, current: u32, rel_key: &str) -> Finding {
     let field = crate::schema::SCHEMA_VERSION_FIELD;
     let message = match stamp {
         None => format!(
@@ -1086,7 +1109,17 @@ fn version_mismatch_break(stamp: Option<u32>, current: u32) -> Finding {
             "field `{field}` is schema-version {s}, below the current schema-version {current}"
         ),
     };
-    blocking_conformance("schema-conformance.field-value-conformant", message, None)
+    let route = format!(
+        "migrate — `{rel_key}` is a managed doc below the current schema-version {current}; run \
+         `jigc migrate-corpus` to upgrade it"
+    );
+    Finding::graded(
+        Severity::Blocking,
+        SCHEMA_VERSION_CURRENT_CODE,
+        message,
+        None,
+        Some(route),
+    )
 }
 
 /// Label each `schema-conformance.*` finding over a non-conformant committed doc with its
@@ -6025,21 +6058,23 @@ Effects.
         );
     }
 
-    /// (M34 Inc-3) **Version-mismatch is itself a surfaced break** — *emitted*, not only
-    /// routed. A committed persisted doc of a *versioned* doctype whose schema-version stamp
-    /// is **absent** (the v0 corpus state) or **below** the manifest `current` is
-    /// non-conformant on its stamp **even when otherwise structurally clean**, so the fifth
-    /// family EMITS one `schema-conformance.*` finding for it — the pure-stamp v0 dogfood a
-    /// labeler-only path leaves silent (`design/validation.md` → Version-mismatch is itself a
-    /// surfaced break; DECISIONS 2026-06-25). A doc stamped **at** `current` stays clean. The
-    /// emitted break routes `migrate`. Store-scope, report-only.
+    /// (M34 Inc-3; the code minted at M42 Inc-3 T2) **Version-currency is itself a surfaced
+    /// break** — *emitted*, not only routed. A committed persisted doc of a *versioned* doctype
+    /// whose schema-version stamp is **absent** (the v0 corpus state) or **below** the manifest
+    /// `current` is non-conformant on its stamp **even when otherwise structurally clean**, so
+    /// the fifth family EMITS one finding for it — the pure-stamp v0 dogfood a labeler-only path
+    /// leaves silent (`design/validation.md` → Version-currency is itself a surfaced break;
+    /// DECISIONS 2026-06-25). A doc stamped **at** `current` stays clean. The break carries
+    /// **its own check id** — [`SCHEMA_VERSION_CURRENT_CODE`], no longer the reused
+    /// `field-value-conformant` (M42: the fact must be distinguishable to a machine consumer) —
+    /// and routes `migrate`, naming `jigc migrate-corpus`. Store-scope, report-only.
     #[test]
     fn store_sweep_emits_version_mismatch_break_for_below_or_absent_stamp() {
         let schemas = stamped_schemas();
         let versions: BTreeMap<String, u32> = [("adr".to_string(), 1u32)].into_iter().collect();
 
         // Run the store sweep over a single committed, baselined ADR `body`, returning the
-        // `field-value-conformant` findings it surfaces over the schema-version stamp.
+        // version-currency findings it surfaces over the schema-version stamp.
         let version_findings = |tag: &str, body: &str| -> Vec<Finding> {
             let repo = TempRoot::new(tag);
             repo.commit("decisions", "doc", body);
@@ -6063,7 +6098,7 @@ Effects.
             report
                 .findings
                 .into_iter()
-                .filter(|f| f.code == "schema-conformance.field-value-conformant")
+                .filter(|f| f.code == SCHEMA_VERSION_CURRENT_CODE)
                 .collect()
         };
 
@@ -6079,8 +6114,8 @@ Effects.
             absent[0]
                 .route
                 .as_deref()
-                .is_some_and(|r| r.starts_with("migrate")),
-            "the stamp-absent version break must route migrate, got {:?}",
+                .is_some_and(|r| r.starts_with("migrate") && r.contains("jigc migrate-corpus")),
+            "the stamp-absent version break must route migrate at the corpus migration, got {:?}",
             absent[0].route,
         );
 

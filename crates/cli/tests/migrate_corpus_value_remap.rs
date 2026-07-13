@@ -299,9 +299,11 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
 
     // --- the detect side: the stale placement doc IS routed at the verb (M42 Inc-2 T1) ---
     // Family 5 enumerates through `index::committed_instances`, so a below-version PLACEMENT
-    // doc raises its blocking schema-conformance break routed `migrate` — at the doc
-    // `migrate-corpus` then fixes below. Presence, not set-equality: the store sweep's other
-    // families may legitimately raise their own findings against the same doc.
+    // doc raises its blocking version-currency break — `schema-conformance.schema-version-current`
+    // (M42 Inc-3 T2: its own check id, so the staleness fact is machine-distinguishable from an
+    // ordinary value break) — routed at `jigc migrate-corpus`, the verb that fixes it below.
+    // Presence, not set-equality: the store sweep's other families may legitimately raise their
+    // own findings against the same doc.
     let validate_before = jigc(repo.path(), home.path(), &["validate", "--format", "json"]);
     assert_ok(&validate_before, "`jigc validate` (before)");
     let before: serde_json::Value =
@@ -312,20 +314,21 @@ fn migrate_corpus_remaps_the_deferral_ledger_kind_byte_faithful() {
         .iter()
         .filter(|f| {
             f["severity"] == "blocking"
-                && f["code"]
-                    .as_str()
-                    .is_some_and(|c| c.starts_with("schema-conformance."))
+                && f["code"].as_str() == Some("schema-conformance.schema-version-current")
                 && f["key"]["target"]
                     .as_str()
                     .is_some_and(|t| t.starts_with("deferral-ledger:deferral-ledger"))
-                && f["route"]
-                    .as_str()
-                    .is_some_and(|r| r.starts_with("migrate") && r.contains("deferral-ledger.md"))
+                && f["route"].as_str().is_some_and(|r| {
+                    r.starts_with("migrate")
+                        && r.contains("deferral-ledger.md")
+                        && r.contains("jigc migrate-corpus")
+                })
         })
         .collect();
     assert!(
         !routed.is_empty(),
-        "the below-version placement deferral-ledger is DETECTED and routed `migrate`; got: {}",
+        "the below-version placement deferral-ledger is DETECTED, surfaces the version-currency \
+         break, and is routed at `jigc migrate-corpus`; got: {}",
         before["findings"],
     );
     // The same sweep's file↔CLI-state twin now SEES the placement doc too (M42 Inc-2 T2):

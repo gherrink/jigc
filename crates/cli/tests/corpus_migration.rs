@@ -585,6 +585,26 @@ fn validate_detects_the_stale_placement_changelog_then_migrate_clears_it() {
         "the stale placement-home changelog raises a blocking schema-conformance finding; \
          got findings: {before:#?}",
     );
+    // Among them, exactly one is the **version-currency** break under its own check id (M42
+    // Inc-3 T2) — the machine-readable staleness fact, routed at the verb that fixes it.
+    let version_currency: Vec<_> = stale
+        .iter()
+        .filter(|f| f["code"].as_str() == Some("schema-conformance.schema-version-current"))
+        .collect();
+    assert_eq!(
+        version_currency.len(),
+        1,
+        "the stale placement changelog surfaces exactly one version-currency break; \
+         got findings: {before:#?}",
+    );
+    assert!(
+        version_currency[0]["route"]
+            .as_str()
+            .is_some_and(|r| r.contains("jigc migrate-corpus")),
+        "the version-currency break names the verb that upgrades a managed corpus, verbatim; \
+         got: {:#?}",
+        version_currency[0],
+    );
     for finding in &stale {
         let route = finding["route"]
             .as_str()
