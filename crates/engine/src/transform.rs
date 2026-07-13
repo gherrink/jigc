@@ -97,7 +97,7 @@
 
 use crate::field_block::{Field, Value};
 use crate::parse::parse_sections;
-use crate::schema::{Schema, SectionBody};
+use crate::schema::{Leaf, Schema, SectionBody};
 use crate::schema_diff::SchemaChange;
 use crate::validate::schema_conformance;
 use crate::write::{self, GenerateError, SpliceError};
@@ -271,6 +271,9 @@ pub fn transform(
             SchemaChange::AddedOptionalField { section, field } => {
                 out = apply_added_field(new_schema, &out, section, field)?;
             }
+            SchemaChange::AddedItemField { section, field } => {
+                out = apply_added_item_field(new_schema, &out, section, field)?;
+            }
             SchemaChange::ValueRemapped {
                 section,
                 field,
@@ -375,6 +378,81 @@ fn apply_added_field(
             new_schema, source, section, &new_field,
         )?)
     }
+}
+
+/// Splice an `added-item-field` change: place the new leaf `field` of the **repeatable** section
+/// `section` on every committed item, carrying its **deterministic** value.
+///
+/// The splice runs through [`write::set_item_field_or_insert`] — the **insert-capable** primitive,
+/// which generates the absent `- key: value` bullet (and adjudicates the value against its declared
+/// type before touching bytes). [`write::set_item_field`] is *update-only*: it refuses an absent
+/// bullet with `SpliceError::NotPresent`, i.e. on **every item, by definition of this kind** (it is
+/// the right primitive for [`SchemaChange::ValueRemapped`], which overwrites an *existing* bullet).
+///
+/// An item that **already carries** the bullet is **skipped**, never overwritten: its value is
+/// authored and conformant, so re-writing it would destroy committed data (**No-data-loss**) — and
+/// the skip is what makes the fold **idempotent** (the T2 re-run lesson, at the item locus; a
+/// whole-change filter in the CLI cannot express it, because one doc can hold items of both kinds).
+///
+/// Two sub-cases carry **no** static default, mirroring [`apply_added_field`]:
+/// - **`optional:` with no default** — an item without the bullet already conforms and inventing an
+///   empty one would fabricate a value: a byte **no-op**.
+/// - **a `set`-derived leaf with no default** — its value is the caller-supplied deriver's (the
+///   `with_stamp_default` thread); unbuilt at the item locus, so it is surfaced as
+///   [`TransformError::Unsupported`] rather than silently dropped.
+fn apply_added_item_field(
+    new_schema: &Schema,
+    source: &str,
+    section: &str,
+    field: &str,
+) -> Result<String, TransformError> {
+    let unsupported = || TransformError::Unsupported {
+        kind: "added-item-field",
+        section: section.to_string(),
+    };
+    let sec = new_schema
+        .sections
+        .iter()
+        .find(|s| s.id == section)
+        .ok_or_else(unsupported)?;
+    let SectionBody::Repeatable { repeatable } = &sec.body else {
+        return Err(unsupported());
+    };
+    let decl = repeatable
+        .block
+        .iter()
+        .find_map(|leaf| match leaf {
+            Leaf::Field(f) if f.id == field => Some(f.as_ref()),
+            _ => None,
+        })
+        .ok_or_else(unsupported)?;
+
+    let value = match &decl.default {
+        Some(default) => default.clone(),
+        None if decl.optional => return Ok(source.to_string()),
+        None => return Err(unsupported()),
+    };
+
+    // Collect the target item ids from the initial parse, then splice each in turn. Item ids are
+    // stable under a field insert (the id-from leaf is untouched), so a fresh
+    // `set_item_field_or_insert` re-locates each item after the prior splice.
+    let doc = parse_sections(new_schema, source).map_err(|_| unsupported())?;
+    let Some(parsed) = doc.sections.iter().find(|s| s.id == section) else {
+        // The instance omits the section — no items, nothing to place.
+        return Ok(source.to_string());
+    };
+    let targets: Vec<String> = parsed
+        .items
+        .iter()
+        .filter(|item| !item.fields.iter().any(|f| f.key == field))
+        .map(|item| item.id.clone())
+        .collect();
+
+    let mut out = source.to_string();
+    for item_id in targets {
+        out = write::set_item_field_or_insert(new_schema, &out, section, &item_id, field, &value)?;
+    }
+    Ok(out)
 }
 
 /// Apply a `value-remapped` change: remap every committed value of the enum `field` in
@@ -2595,5 +2673,299 @@ sections:
                 section: "vision".to_string()
             })
         );
+    }
+
+    // ---- (g) the added-item-field kind: the three arms, at the repeatable locus (T7) ----
+
+    /// v1 of a `deferrals`: one repeatable `entries` section whose item block is an id-from
+    /// `title`, a `trigger` field and a `body` prose slot (the shipped `deferral-ledger` shape).
+    fn deferrals_v1() -> Schema {
+        load_schema(
+            b"\
+type: deferrals
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        )
+        .expect("deferrals v1 loads")
+    }
+
+    /// v2 grows the item block a **defaulted** `kind` enum — the deterministic arm: the value is
+    /// spliced into every item.
+    fn deferrals_v2_defaulted() -> Schema {
+        load_schema(
+            b"\
+type: deferrals
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea], default: Decision }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        )
+        .expect("deferrals v2 (defaulted) loads")
+    }
+
+    /// A canonical v0-shaped `deferrals` carrying **two** entries (so "every item" is a real claim,
+    /// not a sample of one), each with a `trigger` field + body prose. `kind` fields, if any, are
+    /// supplied by the caller (the already-carries fixture renders under v2).
+    fn deferrals_doc(schema: &Schema, kinds: [Option<&str>; 2]) -> String {
+        let item = |id: &str, title: &str, trigger: &str, body: &str, kind: Option<&str>| {
+            let mut fields = vec![Field {
+                key: "trigger".to_string(),
+                value: Value::Scalar(trigger.to_string()),
+            }];
+            if let Some(kind) = kind {
+                fields.push(Field {
+                    key: "kind".to_string(),
+                    value: Value::Scalar(kind.to_string()),
+                });
+            }
+            ItemContent {
+                id: id.to_string(),
+                title: title.to_string(),
+                slot: Some(body.to_string()),
+                fields,
+                ..Default::default()
+            }
+        };
+        let inst = Instance {
+            title: "Deferral Ledger".to_string(),
+            sections: vec![SectionContent {
+                id: "entries".to_string(),
+                items: vec![
+                    item(
+                        "the-freeze-exempt-floor",
+                        "The freeze-exempt floor",
+                        "M39",
+                        "Owed: a detect+route floor for freeze-exempt doctypes.",
+                        kinds[0],
+                    ),
+                    item(
+                        "the-abandon-path",
+                        "The abandon path",
+                        "M42",
+                        "Parked: what a milestone's abandon path commits.",
+                        kinds[1],
+                    ),
+                ],
+                ..Default::default()
+            }],
+        };
+        render(schema, &inst)
+    }
+
+    /// **The deterministic arm.** A `default:`-carrying field added to a repeatable item block
+    /// classifies `[AddedItemField]` and the driver splices the value into **every** item —
+    /// byte-stable, conformant, every prior byte preserved, deterministic. Red before T7: the
+    /// classifier emitted `[]`, so the stamp flipped and the declared default silently never
+    /// landed ("migrated by accident").
+    #[test]
+    fn added_item_field_with_a_default_splices_the_value_into_every_item() {
+        let v1 = deferrals_v1();
+        let v2 = deferrals_v2_defaulted();
+        let src = deferrals_doc(&v1, [None, None]);
+        assert!(
+            !src.contains("kind:"),
+            "the pre-bump doc carries no kind bullet; got:\n{src}"
+        );
+
+        // The real classifier emits the kind; the driver is exercised on the emitted
+        // classification, never a hand-built list.
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedItemField {
+                section: "entries".to_string(),
+                field: "kind".to_string(),
+            }]
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("added-item-field transform succeeds");
+
+        // (c) conforms against v2, (a) round-trips byte-identical.
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+
+        // (b) EVERY item carries the defaulted value; every prior field/slot byte survives.
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let entries = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "entries")
+            .expect("entries present");
+        assert_eq!(entries.items.len(), 2);
+        for item in &entries.items {
+            assert_eq!(
+                item.fields
+                    .iter()
+                    .find(|f| f.key == "kind")
+                    .map(|f| f.value.clone()),
+                Some(Value::Scalar("Decision".to_string())),
+                "every item carries the default; item {:?} does not",
+                item.id
+            );
+        }
+        assert_eq!(
+            out.replace("- kind: Decision\n", ""),
+            src,
+            "the migration adds the defaulted bullet to each item — nothing else"
+        );
+
+        // (d) determinism.
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run succeeds");
+        assert_eq!(again, out, "the item-field splice is deterministic");
+    }
+
+    /// **The optional-no-default arm — classified, and ZERO bytes written.** An item without the
+    /// bullet **already conforms**, so there is nothing deterministic to place, and inventing an
+    /// empty bullet would fabricate a value. The kind still *names itself* (the backstop requires
+    /// that of every real change) and folds byte-identical.
+    #[test]
+    fn added_optional_item_field_with_no_default_writes_zero_bytes() {
+        let v1 = deferrals_v1();
+        let v2 = load_schema(
+            b"\
+type: deferrals
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: owner, type: string, optional: true }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        )
+        .expect("deferrals v2 (optional) loads");
+        let src = deferrals_doc(&v1, [None, None]);
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedItemField {
+                section: "entries".to_string(),
+                field: "owner".to_string(),
+            }]
+        );
+
+        let out =
+            transform(&v1, &v2, &src, &diff).expect("the optional arm is a no-op, not a block");
+        assert_eq!(
+            out, src,
+            "an optional item field with no default adds no bytes (no fabricated bullet)"
+        );
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+    }
+
+    /// **The required-no-default arm — the doc blocks.** No deterministic value exists, so the
+    /// change classifies `[ProseNeeding { leaf: Some }]` (named, where pre-T7 it diffed to `[]`)
+    /// and the per-doc corpus fold refuses the doc, leaving it byte-identical v0 — never a silent
+    /// restamp past its own gate.
+    #[test]
+    fn added_required_item_field_with_no_default_blocks_the_doc() {
+        let v1 = deferrals_v1();
+        let v2 = load_schema(
+            b"\
+type: deferrals
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: owner, type: string }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        )
+        .expect("deferrals v2 (required) loads");
+        let src = deferrals_doc(&v1, [None, None]);
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::ProseNeeding {
+                section: "entries".to_string(),
+                leaf: Some("owner".to_string()),
+            }]
+        );
+
+        let corpus = [CorpusDoc {
+            id: "deferrals-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(
+            result.halted_at,
+            Some(0),
+            "the fold halts on the prose need"
+        );
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Untouched {
+                id: "deferrals-a".to_string(),
+                v0: src.clone(),
+            }],
+            "the blocked doc stays byte-identical v0"
+        );
+    }
+
+    /// **An item that already carries the bullet keeps its authored value** (the T2 stranding
+    /// class, at the item locus — the fixture every "historical doc lacks it" test misses). An
+    /// adopter who hand-authored `kind: Idea` on one entry ahead of the bump keeps it; only the
+    /// item that lacks the bullet gets the default. The splice is insert-only per item, so the
+    /// fold is **idempotent** and **No-data-loss** holds.
+    #[test]
+    fn an_item_already_carrying_the_added_field_keeps_its_authored_value() {
+        let v1 = deferrals_v1();
+        let v2 = deferrals_v2_defaulted();
+        // The hand-authored shape: entry 1 already carries `kind: Idea`; entry 2 does not.
+        let src = deferrals_doc(&v2, [Some("Idea"), None]);
+
+        let diff = schema_diff(&v1, &v2);
+        let out = transform(&v1, &v2, &src, &diff).expect("transform succeeds");
+
+        assert_conforms(&v2, &out);
+        assert_byte_stable(&v2, &out);
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let kind_of = |id: &str| {
+            inst.sections
+                .iter()
+                .find(|s| s.id == "entries")
+                .and_then(|s| s.items.iter().find(|i| i.id == id))
+                .and_then(|i| i.fields.iter().find(|f| f.key == "kind"))
+                .map(|f| f.value.clone())
+        };
+        assert_eq!(
+            kind_of("the-freeze-exempt-floor"),
+            Some(Value::Scalar("Idea".to_string())),
+            "the authored value survives — the default never overwrites it"
+        );
+        assert_eq!(
+            kind_of("the-abandon-path"),
+            Some(Value::Scalar("Decision".to_string())),
+            "the item that lacked the bullet gets the default"
+        );
+
+        // Idempotent: re-folding the migrated bytes changes nothing (every item now carries the
+        // bullet, so there is nothing to insert).
+        let again = transform(&v1, &v2, &out, &diff).expect("re-fold succeeds");
+        assert_eq!(again, out, "the item-field fold converges");
     }
 }

@@ -3433,20 +3433,27 @@ fn insert_at(source: &str, at: usize, text: &str) -> String {
     splice(source, at..at, text)
 }
 
-/// Insert `bullet` as a new line immediately after the list ending at `at` (the list
-/// range's end sits just past the last bullet's newline), preserving the contiguous
-/// bullet block.
+/// Insert `bullet` as a new line at the end of the bullet list ending at `at`, keeping the
+/// bullet block **contiguous** — the canonical field-group form (`render`'s writer emits the
+/// bullets as adjacent lines, then one blank before the next block).
+///
+/// `at` is the caller's list-block end, which for a **non-trailing** group runs *past* the last
+/// bullet's terminating newline, over the blank line that separates the group from the following
+/// `##`/`###` heading. Landing there splits the group (`- a\n\n- b\n## Next`) — a doc that
+/// **re-parses fine but fails `render(parse(x)) == x`**, the retired byte-stability invariant, on
+/// **both** insert callers ([`insert_field`] and [`insert_item_field`], i.e. the shipped
+/// `set-field` insert half at both loci; `DECISIONS.md` → 2026-07-13 M42 Inc-5 T7). So the landing
+/// offset **retreats over the trailing blank** to just past the last *content* line's newline. A
+/// trailing group (`at` already just past the last bullet) is unaffected — which is exactly why
+/// every trailing-item/trailing-section fixture passed while the shape was broken (the T6 lesson,
+/// again).
 fn insert_after_line(source: &str, at: usize, bullet: &str) -> String {
-    // The list range ends after the last bullet's content; ensure we land just past
-    // its terminating newline so the new bullet is its own line.
-    let mut pos = at;
-    if !source[..pos].ends_with('\n') {
-        // Advance to the end of the current line.
-        if let Some(nl) = source[pos..].find('\n') {
-            pos += nl + 1;
-        } else {
-            return format!("{source}\n{bullet}");
-        }
+    let mut pos = source[..at.min(source.len())].trim_end().len();
+    // Land just past the terminating newline of that last content line.
+    if let Some(nl) = source[pos..].find('\n') {
+        pos += nl + 1;
+    } else {
+        return format!("{source}\n{bullet}");
     }
     splice(source, pos..pos, &format!("{bullet}\n"))
 }
@@ -4694,6 +4701,147 @@ title: Auth flow
         // Round-trips byte-identical: render(parse(out)) == out.
         let reparsed = instance_from_source(&schema, &out).expect("result conforms");
         assert_eq!(render(&schema, &reparsed), out, "byte-stable insert");
+    }
+
+    /// **The non-trailing insert-into-an-existing-group defect** (M42 Inc-5 T7 — found by the
+    /// `AddedItemField` migration, live on the shipped `doc set-field` item-leaf path). Inserting
+    /// a **second** bullet into an item that (a) already has a field group and (b) is **followed
+    /// by another item** landed the bullet at the list block's end — which for a non-trailing
+    /// group runs *past* the blank line separating it from the next `###` heading. The result
+    /// (`- a\n\n- b\n### Next`) re-parses fine but **breaks `render(parse(x)) == x`**, the retired
+    /// byte-stability invariant. Every prior fixture inserted into a *trailing* item or a
+    /// mint-empty one (the re-render branch), so the shape was invisible — the T6 lesson again.
+    #[test]
+    fn insert_a_second_item_bullet_on_a_non_trailing_item_is_byte_stable() {
+        let schema = crate::schema::load_schema_with_types(
+            b"\
+type: spec
+id-from: title
+sections:
+  - id: criteria
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"x\" } }
+        - { id: implemented-by, type: string }
+        - { id: owner, type: string }
+",
+            &crate::schema::dev_pack_field_types(),
+        )
+        .expect("two-item-field spec schema loads");
+
+        // Two items; the FIRST (non-trailing) already carries one bullet.
+        let src = "\
+# Auth flow
+
+## Criteria
+
+### Rate limit holds  {#rate-limit-holds}
+
+The limiter holds under burst.
+
+<!-- fields -->
+- implemented-by: src/gateway.rs
+
+### Burst allowance  {#burst-allowance}
+
+Bursts are allowed briefly.
+
+<!-- fields -->
+- implemented-by: src/burst.rs
+";
+        let canonical = instance_from_source(&schema, src).expect("fixture parses");
+        assert_eq!(render(&schema, &canonical), src, "the fixture is canonical");
+
+        let out = set_item_field_or_insert(
+            &schema,
+            src,
+            "criteria",
+            "rate-limit-holds",
+            "owner",
+            "platform",
+        )
+        .expect("the absent second bullet is inserted");
+
+        // The bullets stay CONTIGUOUS and the blank before the next item survives.
+        assert!(
+            out.contains("- implemented-by: src/gateway.rs\n- owner: platform\n\n### Burst"),
+            "the group stays contiguous and the item separator is preserved; got:\n{out}"
+        );
+        // The invariant itself, on the emitted bytes.
+        let reparsed = instance_from_source(&schema, &out).expect("result re-parses");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "byte-stable insert on a non-trailing item"
+        );
+        // The sibling item is untouched (no value bleed).
+        assert!(out.contains("- implemented-by: src/burst.rs"));
+        assert_eq!(out.matches("- owner: platform").count(), 1);
+    }
+
+    /// The **same defect at the simple-section locus** — the shared
+    /// [`insert_after_line`] landing offset, exercised through [`insert_field`]: a first-bullet
+    /// group in a **non-trailing** section (followed by a `##` heading) grows a second bullet
+    /// contiguously and stays byte-stable. The one fix covers both callers; the sibling is swept,
+    /// not assumed.
+    #[test]
+    fn insert_a_second_section_bullet_before_a_following_section_is_byte_stable() {
+        let schema = crate::schema::load_schema_with_types(
+            b"\
+type: note
+id-from: title
+sections:
+  - id: meta
+    fields:
+      - { id: owner, type: string }
+      - { id: link, type: string, optional: true }
+    slot: { hint: \"m\" }
+  - id: tail
+    slot: { hint: \"t\" }
+",
+            &crate::schema::dev_pack_field_types(),
+        )
+        .expect("note schema loads");
+        let src = "\
+# A note
+
+## Meta
+
+The meta prose.
+
+<!-- fields -->
+- owner: platform
+
+## Tail
+
+The tail prose.
+";
+        let canonical = instance_from_source(&schema, src).expect("fixture parses");
+        assert_eq!(render(&schema, &canonical), src, "the fixture is canonical");
+
+        let out = insert_field(
+            &schema,
+            src,
+            "meta",
+            &Field {
+                key: "link".to_string(),
+                value: Value::Scalar("docs/x.md".to_string()),
+            },
+        )
+        .expect("the absent second bullet is inserted");
+
+        assert!(
+            out.contains("- owner: platform\n- link: docs/x.md\n\n## Tail"),
+            "the group stays contiguous and the section separator is preserved; got:\n{out}"
+        );
+        let reparsed = instance_from_source(&schema, &out).expect("result re-parses");
+        assert_eq!(
+            render(&schema, &reparsed),
+            out,
+            "byte-stable insert into a non-trailing section's group"
+        );
     }
 
     /// Regression (the increment-2 behavior): when the item field bullet is **already

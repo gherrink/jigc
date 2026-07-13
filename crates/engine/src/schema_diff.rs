@@ -115,6 +115,37 @@ pub enum SchemaChange {
         map: BTreeMap<String, String>,
     },
 
+    /// A field added to a **repeatable item block** — the item-block twin of
+    /// [`Self::AddedOptionalField`], and the locus where the work-doc family's content
+    /// actually lives (9 of 14 persisted doctypes carry a repeatable; `decisions-log` *is* one
+    /// repeatable, so before M42 **zero** content changes to it were migratable).
+    ///
+    /// Emitted for a leaf the driver can place **without new prose** — `optional`, or carrying a
+    /// deterministic value (`default`/`set`) — exactly [`classify_added_field`]'s predicate; a
+    /// *required* leaf with no such value is [`Self::ProseNeeding`] `{ leaf: Some }` instead. The
+    /// driver's two arms mirror that split (`design/corpus-migration.md` → The classifier's holes:
+    /// `AddedItemField`, the per-item semantics):
+    ///
+    /// - **`default:`/`set:` present** → the value is spliced into **every item that lacks the
+    ///   bullet**, through [`crate::write::set_item_field_or_insert`] — the **insert-capable**
+    ///   primitive (`set_item_field` is *update-only* and refuses an absent bullet, which is every
+    ///   item by definition of this kind).
+    /// - **`optional:` with no default** → a byte **no-op**: an item without the bullet **already
+    ///   conforms**, and inventing an empty bullet would fabricate a value. It still names itself
+    ///   — the backstop requires that of every real change — and folds to zero bytes (the
+    ///   [`Self::WidenedCardinality`] sibling).
+    ///
+    /// Pre-M42 the item-block loop emitted [`Self::ValueRemapped`] and nothing else, so an added
+    /// item field diffed to `[]`: an optional one "migrated by accident" (the stamp flipped and a
+    /// declared `default:` silently never landed), a required one was a **permanent mutual dead
+    /// end** (`validate` said *run the migration*, `migrate-corpus` said *author the prose*).
+    AddedItemField {
+        /// The repeatable section whose item block gained the field.
+        section: String,
+        /// The added field's id.
+        field: String,
+    },
+
     /// A wholly-new **optional** slot section in `v2` — an added `## Heading` whose
     /// body is a simple `slot: { optional: true }` (the adr `options` shape). The
     /// driver mints the empty `## Heading` at its schema-ordered offset; an empty
@@ -612,20 +643,21 @@ fn card_bounds(card: Option<&str>) -> Option<(u32, Option<u32>)> {
     }
 }
 
-/// Diff a repeatable section's **item-block Field leaves** (matching by id): the same
-/// existing-leaf rule the simple locus applies ([`diff_leaf`] — the `card` direction and the
-/// enum `of:` direction), then the leaves `new` **drops** ([`removed_fields`] — the second locus
-/// of the removal kind). Non-`Field` leaves (slots, nested repeatables) and leaves present only in
-/// `new` are left unclassified (the nested-repeatable edit and the added item field are their own
-/// kinds — T7 — and, until they land, the backstop's residual).
+/// Diff a repeatable section's **item-block Field leaves** (matching by id): the added leaves
+/// ([`classify_added_item_field`] — the item locus of the add rule), the same existing-leaf rule
+/// the simple locus applies ([`diff_leaf`] — the `card` direction and the enum `of:` direction),
+/// then the leaves `new` **drops** ([`removed_fields`] — the second locus of the removal kind).
+/// Non-`Field` leaves (slots, nested repeatables) are left unclassified — a nested-repeatable edit
+/// is its own unbuilt kind and rides the backstop's residual.
 fn diff_item_fields(section: &str, old: &[Leaf], new: &[Leaf], out: &mut Vec<SchemaChange>) {
     let old_fields: Vec<&Field> = old.iter().filter_map(item_field).collect();
     let old_by_id: HashMap<&str, &Field> = old_fields.iter().map(|f| (f.id.as_str(), *f)).collect();
     for leaf in new {
-        if let Some(field) = item_field(leaf)
-            && let Some(prev) = old_by_id.get(field.id.as_str())
-        {
-            diff_leaf(section, prev, field, out);
+        if let Some(field) = item_field(leaf) {
+            match old_by_id.get(field.id.as_str()) {
+                Some(prev) => diff_leaf(section, prev, field, out),
+                None => out.push(classify_added_item_field(section, field)),
+            }
         }
     }
     let new_fields: Vec<&Field> = new.iter().filter_map(item_field).collect();
@@ -716,12 +748,11 @@ fn diff_fields(section: &str, old: &[Field], new: &[Field], out: &mut Vec<Schema
 }
 
 /// Classify a field present only in `v2`. A field the driver can place without
-/// new prose — `optional`, or carrying a deterministic value (`default`/`set`) —
-/// is [`SchemaChange::AddedOptionalField`]; a *required* field with no such
-/// default is [`SchemaChange::ProseNeeding`] (the design's "no deterministic
+/// new prose ([`placeable_without_prose`]) is [`SchemaChange::AddedOptionalField`]; a *required*
+/// field with no such default is [`SchemaChange::ProseNeeding`] (the design's "no deterministic
 /// default" boundary of the prose-needing kind).
 fn classify_added_field(section: &str, field: &Field) -> SchemaChange {
-    if field.optional || field.default.is_some() || field.set.is_some() {
+    if placeable_without_prose(field) {
         SchemaChange::AddedOptionalField {
             section: section.to_owned(),
             field: field.id.clone(),
@@ -732,6 +763,37 @@ fn classify_added_field(section: &str, field: &Field) -> SchemaChange {
             leaf: Some(field.id.clone()),
         }
     }
+}
+
+/// Classify a leaf present only in `v2`'s **repeatable item block** — the item-locus twin of
+/// [`classify_added_field`], sharing its [`placeable_without_prose`] predicate so the two loci
+/// cannot drift (the M42 lesson: the two item/simple loops disagreeing is what produced the
+/// holes). The **same three arms**, and the driver splits the placeable one
+/// (`design/corpus-migration.md` → The classifier's holes: `AddedItemField`):
+/// `default:`/`set:` → the value is spliced into every item lacking it; `optional:` with no
+/// default → a byte no-op (an item without the bullet already conforms); required with no
+/// default → [`SchemaChange::ProseNeeding`] `{ leaf: Some }`, which blocks and routes to the
+/// agent.
+fn classify_added_item_field(section: &str, field: &Field) -> SchemaChange {
+    if placeable_without_prose(field) {
+        SchemaChange::AddedItemField {
+            section: section.to_owned(),
+            field: field.id.clone(),
+        }
+    } else {
+        SchemaChange::ProseNeeding {
+            section: section.to_owned(),
+            leaf: Some(field.id.clone()),
+        }
+    }
+}
+
+/// Whether an **added** field needs no new prose: it is `optional` (its absence conforms) or it
+/// carries a deterministic value source (`default` / `set` — e.g. the schema-version stamp's
+/// deriver). The one add rule, shared by both loci ([`classify_added_field`] /
+/// [`classify_added_item_field`]).
+fn placeable_without_prose(field: &Field) -> bool {
+    field.optional || field.default.is_some() || field.set.is_some()
 }
 
 #[cfg(test)]
@@ -2078,6 +2140,117 @@ sections:
                 },
             ]
         );
+    }
+
+    // ---- the added item field (T7): the three arms, mirroring `classify_added_field` ----
+
+    /// **A field added to a repeatable item block, carrying a `default:`**, classifies to
+    /// **exactly** `[AddedItemField]` naming the section + field — the deterministic-value arm
+    /// (the driver splices the value into every item). Red before T7: `diff_item_fields`
+    /// classified only *existing* leaves, so an added one was invisible and the pair diffed to
+    /// `[]` — the doc "migrated by accident" (the stamp flipped, the declared default never
+    /// landed).
+    #[test]
+    fn an_added_item_field_with_a_default_classifies_added_item_field() {
+        let v1 = load(ledger_v1_yaml());
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea], default: Decision }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::AddedItemField {
+                section: "entries".to_owned(),
+                field: "kind".to_owned(),
+            }]
+        );
+    }
+
+    /// **An added item field that is `optional:` with no default** classifies to **exactly**
+    /// `[AddedItemField]` too — it *names itself* (the backstop requires that of every real
+    /// change) even though the driver folds it to **zero bytes**: an item without the bullet
+    /// already conforms. Red before T7: `[]`.
+    #[test]
+    fn an_added_optional_item_field_with_no_default_still_classifies_added_item_field() {
+        let v1 = load(ledger_v1_yaml());
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: owner, type: string, optional: true }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::AddedItemField {
+                section: "entries".to_owned(),
+                field: "owner".to_owned(),
+            }]
+        );
+    }
+
+    /// **An added item field that is *required* with no default** classifies to **exactly**
+    /// `[ProseNeeding { leaf: Some }]` — the same arm [`classify_added_field`] takes at the simple
+    /// locus: no deterministic value exists, so it routes to the agent and the doc blocks. Red
+    /// before T7: `[]` — a **permanent mutual dead end** (`validate` said *run the migration*,
+    /// `migrate-corpus` said *author the prose*, and neither instruction was actionable).
+    #[test]
+    fn an_added_required_item_field_with_no_default_classifies_prose_needing() {
+        let v1 = load(ledger_v1_yaml());
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: owner, type: string }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::ProseNeeding {
+                section: "entries".to_owned(),
+                leaf: Some("owner".to_owned()),
+            }]
+        );
+    }
+
+    /// The v1 item block the three added-item-field cases grow a leaf onto (the shipped
+    /// `deferral-ledger` shape: an id-from title, a field, a prose slot).
+    fn ledger_v1_yaml() -> &'static [u8] {
+        b"\
+type: t
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: body, slot: { hint: \"the deferral\" } }
+"
     }
 
     /// The classifier **diffs**, never emits on mere presence: a schema carrying both a

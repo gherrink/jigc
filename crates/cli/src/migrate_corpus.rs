@@ -750,8 +750,13 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             | SchemaChange::AddedRepeatableSection { section }
             | SchemaChange::ProseNeeding { section, .. } => !has_section_heading(source, section),
             // Every other kind splices inside an existing section (or no bytes at all), so it
-            // has no heading to collide with and is always kept.
+            // has no heading to collide with and is always kept. `AddedItemField` mints no
+            // heading either — it splices a field bullet **into each item of an existing
+            // repeatable section** — and it carries its own re-run guard *per item* (the driver
+            // skips an item that already has the bullet, which a whole-change filter here could
+            // not express: one doc can hold both kinds of item).
             SchemaChange::AddedOptionalField { .. }
+            | SchemaChange::AddedItemField { .. }
             | SchemaChange::OptionalRelaxed { .. }
             | SchemaChange::WidenedCardinality { .. }
             | SchemaChange::NarrowedCardinality { .. }
@@ -3010,5 +3015,235 @@ sections:
             "the authored item survives verbatim; got:\n{migrated}"
         );
         assert_conformant_and_stable(&to, &migrated);
+    }
+
+    // ---- the added-item-field kind, through the verb core (M42 Inc-5 T7) ----
+
+    /// The v1 snapshot of a `deferrals` doctype: one repeatable `entries` section (id-from title, a
+    /// `trigger` field, a `body` prose slot) — the shipped `deferral-ledger` shape.
+    fn deferrals_v1_yaml() -> &'static str {
+        "\
+type: deferrals
+location: deferrals/
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: body, slot: { hint: \"the deferral\" } }
+"
+    }
+
+    /// The v2 current shape: the item block grows a **defaulted** `kind` enum — the
+    /// [`SchemaChange::AddedItemField`] deterministic arm.
+    fn deferrals_v2_yaml() -> &'static [u8] {
+        b"\
+type: deferrals
+location: deferrals/
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: kind, type: enum, of: [Decision, Idea], default: Decision }
+        - { id: body, slot: { hint: \"the deferral\" } }
+"
+    }
+
+    /// A committed `ledger` rendered against `schema` with the given stamp and two entries.
+    fn deferrals_doc(schema: &Schema, stamp: &str) -> String {
+        let entry = |id: &str, title: &str, trigger: &str, body: &str| ItemContent {
+            id: id.to_string(),
+            title: title.to_string(),
+            slot: Some(body.to_string()),
+            fields: vec![Field {
+                key: "trigger".to_string(),
+                value: Value::Scalar(trigger.to_string()),
+            }],
+            ..Default::default()
+        };
+        render(
+            schema,
+            &Instance {
+                title: "Deferral Ledger".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar(stamp.to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "entries".to_string(),
+                        items: vec![
+                            entry(
+                                "the-freeze-exempt-floor",
+                                "The freeze-exempt floor",
+                                "M39",
+                                "A detect+route floor for freeze-exempt doctypes.",
+                            ),
+                            entry(
+                                "the-abandon-path",
+                                "The abandon path",
+                                "M42",
+                                "What a milestone's abandon path commits.",
+                            ),
+                        ],
+                        ..Default::default()
+                    },
+                ],
+            },
+        )
+    }
+
+    /// **A defaulted new item field migrates every item, through the verb** (M42 Inc-5 T7). A
+    /// below-version doc (stamp `1`, current `2`) whose v1→v2 pair adds a `default:`-carrying
+    /// field to a repeatable item block gets the value spliced into **each** entry and is
+    /// restamped `1→2` — every prior byte preserved.
+    ///
+    /// Red before T7: the classifier emitted nothing for an added item field, so the diff was
+    /// `[]`, the empty-diff backstop refused the whole corpus (post-T1) — and pre-T1 the doc
+    /// "migrated by accident": the stamp flipped and the declared default never landed.
+    #[test]
+    fn below_version_added_item_field_splices_every_item_and_restamps() {
+        let repo = TempDir::new("added-item-field");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("deferrals", 1, deferrals_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(deferrals_v2_yaml());
+        let from = crate::pack::load_prior_schema(&pack, "deferrals", 1)
+            .expect("the deferrals.v1 snapshot");
+
+        let v1 = deferrals_doc(&from, "1");
+        assert!(
+            !v1.contains("kind:"),
+            "the pre-bump doc carries no kind bullet; got:\n{v1}"
+        );
+        write_doc(repo.path(), "deferrals/deferral-ledger.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
+
+        assert_eq!(
+            report.migrated,
+            vec!["deferrals/deferral-ledger.md".to_string()],
+            "the doc migrates, never blocks: {report:?}"
+        );
+        assert!(
+            report.blocked.is_empty(),
+            "no blockers: {:?}",
+            report.blocked
+        );
+
+        let migrated =
+            fs::read_to_string(repo.path().join("deferrals/deferral-ledger.md")).expect("read");
+        assert_eq!(
+            migrated.matches("- kind: Decision").count(),
+            2,
+            "EVERY item carries the defaulted bullet; got:\n{migrated}"
+        );
+        assert!(
+            migrated.starts_with("---\nschema-version: 2\n---\n"),
+            "the stamp value-bumps 1→2; got:\n{migrated}"
+        );
+        assert_conformant_and_stable(&to, &migrated);
+        assert_eq!(
+            migrated
+                .replace("- kind: Decision\n", "")
+                .replace("schema-version: 2", "schema-version: 1"),
+            v1,
+            "the migration adds the defaulted bullet per item and bumps the stamp — nothing else"
+        );
+    }
+
+    /// **A required-no-default new item field blocks the doc** (the third arm, through the verb).
+    /// The classifier names it `ProseNeeding { leaf: Some }` where pre-T7 it diffed to `[]` — a
+    /// permanent mutual dead end (`validate` said *run the migration*, `migrate-corpus` said
+    /// nothing at all and restamped). T2's guard drops the mint (the section heading is already
+    /// there), so the **per-doc conformance gate** is the adjudicator: the doc is blocked, its
+    /// bytes untouched and its stamp **not** bumped.
+    #[test]
+    fn below_version_required_item_field_blocks_the_doc_and_leaves_it_v0() {
+        let repo = TempDir::new("required-item-field");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("deferrals", 1, deferrals_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        // v2 adds a **required, default-less** `owner` field to the item block.
+        let to = v1_schema(
+            b"\
+type: deferrals
+location: deferrals/
+id-from: title
+sections:
+  - id: entries
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: trigger, type: string }
+        - { id: owner, type: string }
+        - { id: body, slot: { hint: \"the deferral\" } }
+",
+        );
+        let from = crate::pack::load_prior_schema(&pack, "deferrals", 1)
+            .expect("the deferrals.v1 snapshot");
+
+        let v1 = deferrals_doc(&from, "1");
+        write_doc(repo.path(), "deferrals/deferral-ledger.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to, 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
+
+        assert!(
+            report.migrated.is_empty(),
+            "a doc needing per-item prose is never migrated: {report:?}"
+        );
+        assert_eq!(
+            report.blocked.len(),
+            1,
+            "the doc is blocked with a route: {report:?}"
+        );
+        assert_eq!(report.blocked[0].0, "deferrals/deferral-ledger.md");
+        // THE DISCRIMINATING ASSERTION — the block alone does not distinguish T7 (pre-T7 the
+        // change diffed to `[]` and the *backstop* refused it with the `build the transform
+        // kind` route, a schema-authoring instruction). Now the change is **named**, so the
+        // adjudicator is the per-doc conformance gate and the route is the actionable
+        // **prose-authoring** one: the agent fills the required per-item field, then re-runs.
+        assert_eq!(
+            report.blocked[0].1,
+            prose_needing_route("deferrals/deferral-ledger.md"),
+            "a named prose need routes to the author, never to `build the transform kind`"
+        );
+
+        let on_disk =
+            fs::read_to_string(repo.path().join("deferrals/deferral-ledger.md")).expect("read");
+        assert_eq!(
+            on_disk, v1,
+            "the blocked doc is byte-identical v0 — the stamp is NOT bumped"
+        );
     }
 }
