@@ -712,3 +712,165 @@ fn fields_only_header_section_slice_serves_its_fields() {
          (the compound `base` pin included)",
     );
 }
+
+/// A committed changelog at its literal placement home (`CHANGELOG.md`) — the shipped
+/// nested-repeatable singleton, in the exact on-disk shape the writer mints.
+const COMMITTED_CHANGELOG: &str = "\
+# Changelog
+
+## Unreleased Changes
+
+## Releases
+
+### 1.0.0  {#1-0-0}
+
+<!-- fields -->
+- date: 2026-06-14
+
+#### Added  {#added}
+
+- initial release
+";
+
+/// The single live task id under `.jigc/tasks/` (the harness mints exactly one).
+fn only_task(repo: &Path) -> String {
+    let mut ids: Vec<String> = fs::read_dir(repo.join(".jigc").join("tasks"))
+        .expect("read .jigc/tasks")
+        .map(|entry| {
+            entry
+                .expect("task entry")
+                .file_name()
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(ids.len(), 1, "exactly one live task; got {ids:?}");
+    ids.pop().expect("the one task id")
+}
+
+/// (M42 inc-8 T5) **A bare singleton address resolves for the `doc` verbs.**
+///
+/// A **placement** doctype's slug is fixed to its type id (`design/storage.md` → Placement
+/// — `engine::store::read_slice` refuses every *other* slug for one), so `changelog` names
+/// its instance as unambiguously as `changelog:changelog` does — yet every `doc` verb
+/// rejected the bare form with a bare-grammar *"missing ':' between type and slug"*. Five
+/// singletons ship (`changelog`, `vision`, `roadmap`, `decisions-log`, `deferral-ledger`)
+/// and the bare form is the natural first guess; the M41 V12 discoverability repair
+/// reached `rename` only.
+///
+/// Proven on the EMITTED bytes of the real binary: the bare read (whole-doc and
+/// `#fragment`) is byte-identical to its `<type>:<type>` spelling, a bare **non**-singleton
+/// (`adr`) still errors — naming the `<type>:<slug>` form and the `jigc describe` pointer —
+/// and a bare singleton on a **write** verb stages the very same instance.
+#[test]
+fn a_bare_singleton_address_resolves_for_the_doc_verbs() {
+    let repo = TempDir::new("bare-singleton");
+    let home = TempDir::new("home");
+    init_repo(repo.path());
+    commit_vision(repo.path(), home.path());
+    fs::write(repo.path().join("CHANGELOG.md"), COMMITTED_CHANGELOG).expect("write changelog");
+    git(repo.path(), &["add", "CHANGELOG.md"]);
+    git(repo.path(), &["commit", "-q", "-m", "changelog"]);
+
+    // (1) The bare read is byte-identical to the canonical spelling — whole-doc, for a
+    //     dev-pack singleton (`changelog`) and a methodology-pack one (`vision`).
+    for (bare, canonical) in [
+        ("changelog", "changelog:changelog"),
+        ("vision", "vision:vision"),
+    ] {
+        let bare_out = jigc(repo.path(), home.path(), &["doc", "show", bare], None);
+        assert_ok(&bare_out, &format!("`jigc doc show {bare}`"));
+        let canonical_out = jigc(repo.path(), home.path(), &["doc", "show", canonical], None);
+        assert_ok(&canonical_out, &format!("`jigc doc show {canonical}`"));
+        assert_eq!(
+            bare_out.stdout, canonical_out.stdout,
+            "`doc show {bare}` must emit exactly what `doc show {canonical}` does",
+        );
+        assert!(
+            !stdout_of(&bare_out).trim().is_empty(),
+            "the bare read serves the committed doc, not the empty string",
+        );
+    }
+
+    // (2) A bare head carrying a `#fragment` expands too — plain and json.
+    for format in [&[][..], &["--format", "json"][..]] {
+        let mut bare = vec!["doc", "show", "changelog#releases"];
+        bare.extend_from_slice(format);
+        let mut canonical = vec!["doc", "show", "changelog:changelog#releases"];
+        canonical.extend_from_slice(format);
+        let bare_out = jigc(repo.path(), home.path(), &bare, None);
+        assert_ok(&bare_out, "`jigc doc show changelog#releases`");
+        let canonical_out = jigc(repo.path(), home.path(), &canonical, None);
+        assert_ok(
+            &canonical_out,
+            "`jigc doc show changelog:changelog#releases`",
+        );
+        assert_eq!(
+            bare_out.stdout, canonical_out.stdout,
+            "a bare head with a `#fragment` resolves identically ({format:?})",
+        );
+        assert!(
+            stdout_of(&bare_out).contains("1.0.0"),
+            "the `#releases` slice carries the cut release; got:\n{}",
+            stdout_of(&bare_out),
+        );
+    }
+
+    // (3) A bare NON-singleton is still an error — the slug is genuinely missing — and the
+    //     route names the address form + the doctype surface (the V12 repair, now here).
+    let bad = jigc(repo.path(), home.path(), &["doc", "show", "adr"], None);
+    assert!(
+        !bad.status.success(),
+        "a bare non-singleton must exit non-zero; stdout:\n{}",
+        stdout_of(&bad),
+    );
+    let stderr = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        stderr.contains("<type>:<slug>") && stderr.contains("jigc describe"),
+        "the bare non-singleton error names the address form + the `jigc describe` \
+         pointer; got:\n{stderr}",
+    );
+
+    // (4) The WRITE verbs take the bare singleton too — it stages the same instance the
+    //     canonical spelling would (`.jigc/tasks/<id>/docs/vision:vision.md`).
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &["start", "--workflow", "form-vision", "revise the vision"],
+            None,
+        ),
+        "`jigc start --workflow form-vision` (the revision task)",
+    );
+    let task = only_task(repo.path());
+    assert_ok(
+        &jigc(
+            repo.path(),
+            home.path(),
+            &[
+                "doc",
+                "set-slot",
+                "vision#thesis",
+                "--from-file",
+                "-",
+                "--task",
+                &task,
+            ],
+            Some(b"A context compiler, restated.\n"),
+        ),
+        "`jigc doc set-slot vision#thesis` (the bare singleton on a write verb)",
+    );
+    let staged = fs::read_to_string(
+        repo.path()
+            .join(".jigc")
+            .join("tasks")
+            .join(&task)
+            .join("docs")
+            .join("vision:vision.md"),
+    )
+    .expect("the bare write staged `vision:vision`");
+    assert!(
+        staged.contains("A context compiler, restated."),
+        "the bare-addressed write landed in the singleton's staged instance; got:\n{staged}",
+    );
+}

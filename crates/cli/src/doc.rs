@@ -359,7 +359,7 @@ fn run_set_field(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_addr(addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
     machine_maintained_guard(address.r#type.as_str(), "set-field", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target = field_target(&schema, &address)
@@ -471,7 +471,7 @@ fn run_unset_field(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_addr(addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
     machine_maintained_guard(address.r#type.as_str(), "set-field --unset", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target = field_target(&schema, &address)
@@ -669,7 +669,7 @@ fn run_set_slot(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_addr(addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
     machine_maintained_guard(address.r#type.as_str(), "set-slot", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
@@ -756,7 +756,7 @@ fn run_add_item(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_addr(addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
     machine_maintained_guard(address.r#type.as_str(), "add-item", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
@@ -1010,7 +1010,7 @@ fn run_remove_item(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_addr(addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
     machine_maintained_guard(address.r#type.as_str(), "remove-item", addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
@@ -1127,7 +1127,7 @@ fn run_retitle_item(
     format: Format,
 ) -> Result<(), DocFailure> {
     let task = ActiveTask::resolve(cwd, task_id)?;
-    let address = parse_addr(addr)?;
+    let address = parse_verb_addr(task.pack.as_ref(), addr)?;
     let schema = task.schema(address.r#type.as_str())?;
     let target =
         remove_item_target(&address).with_context(|| format!("no item addressed by `{addr}`"))?;
@@ -1724,9 +1724,10 @@ fn apply_leaf(
 /// through the shared [`DocFailure`] envelope, non-zero exit + route, exactly like a
 /// write block.
 fn run_show(cwd: &Path, addr: &str, format: Format) -> Result<(), DocFailure> {
-    let address = parse_addr(addr)?;
+    let pack = make_pack()?;
+    let address = parse_verb_addr(pack.as_ref(), addr)?;
     let jigc_home = crate::ingest::require_project_layer(cwd)?;
-    let schemas = committed_schemas(make_pack()?.as_ref(), &jigc_home)?;
+    let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
     match format {
         Format::Json => {
             let value = show_json(&jigc_home, &schemas, &address)?;
@@ -2759,9 +2760,60 @@ impl ActiveTask {
     }
 }
 
-/// Parse an address string, mapping a grammar error to an actionable message.
+/// Parse an address string, mapping a grammar error to an actionable message. The pure
+/// grammar parse — for addresses the CLI itself composes (already `<type>:<slug>`-headed).
+/// A **user-supplied** address arrives through [`parse_verb_addr`] instead.
 fn parse_addr(addr: &str) -> Result<Address> {
     Address::parse(addr).with_context(|| format!("malformed address `{addr}`"))
+}
+
+/// Parse a **user-supplied** address at a `doc` verb boundary — the schema-aware layer over
+/// the pure grammar: a bare **singleton** head (`changelog`, `vision#thesis`) expands to
+/// its canonical `<type>:<type>` spelling before the grammar sees it, and any other
+/// slug-less address keeps the actionable route (the `<type>:<slug>` form + the
+/// `jigc describe` pointer — the M41 V12 repair, which reached `rename` only).
+///
+/// `engine::address::Address::parse` is **untouched**: the grammar is not widened, this is
+/// an expansion at the verb boundary — the one place a human/agent types an address.
+fn parse_verb_addr(pack: &dyn PackSource, addr: &str) -> Result<Address> {
+    Address::parse(&expand_bare_singleton(pack, addr)).map_err(|err| {
+        anyhow!(
+            "malformed address `{addr}`: {err} — a doc is addressed as `<type>:<slug>`, \
+             e.g. `adr:single-node-cache` (a singleton doctype like `changelog` or `vision` \
+             may be named bare)\n  route: run `jigc describe` for the doctype surface"
+        )
+    })
+}
+
+/// Expand a bare **singleton** head to its canonical `<type>:<type>` spelling, carrying any
+/// `#fragment` through (`changelog#releases` → `changelog:changelog#releases`); every other
+/// address passes through verbatim.
+///
+/// The singleton set is the **placement** doctypes (`design/storage.md` → Placement): their
+/// slug is fixed to the type id by construction — `engine::store::read_slice` refuses every
+/// *other* slug for one — so the bare type names the instance unambiguously.
+fn expand_bare_singleton(pack: &dyn PackSource, addr: &str) -> String {
+    let (head, fragment) = match addr.split_once('#') {
+        Some((head, fragment)) => (head, Some(fragment)),
+        None => (addr, None),
+    };
+    if head.contains(':') || !is_singleton_type(pack, head) {
+        return addr.to_string();
+    }
+    match fragment {
+        Some(fragment) => format!("{head}:{head}#{fragment}"),
+        None => format!("{head}:{head}"),
+    }
+}
+
+/// Does `ty` name a **placement** doctype — one whose single instance homes at a literal
+/// file and whose slug is therefore fixed to the type id? An unknown or malformed doctype
+/// answers `false`, so the address falls through to the grammar's own rejection.
+fn is_singleton_type(pack: &dyn PackSource, ty: &str) -> bool {
+    pack.read(PackResourceKind::Schemas, &ResourceId::from(ty))
+        .ok()
+        .and_then(|bytes| crate::pack::load_pack_schema(pack, &bytes).ok())
+        .is_some_and(|schema| schema.placement.is_some())
 }
 
 /// The staged on-disk path of `address`'s instance within the task working area,
