@@ -3217,14 +3217,25 @@ pub fn set_item_field_or_insert(
 
 /// Render a body section's canonical block (`## Heading` + slot prose + optional
 /// field group), with **no** surrounding blank lines — the caller's insertion adds
-/// the separating blanks. Mirrors [`render_section`]'s simple-section body but takes
-/// the slot/fields directly (the generation caller supplies them, not an `Instance`).
+/// the separating blanks. Mirrors [`render_section`]'s body **per section shape** — a
+/// simple section's slot/field body (taken directly, since the generation caller supplies
+/// them rather than an `Instance`), or a **repeatable** section's **zero-item** body, whose
+/// canonical form is one `\n` shorter (no empty-prose terminator, no field group): a
+/// zero-item repeatable conforms, so an `AddedRepeatableSection` migration mints exactly
+/// this (`design/corpus-migration.md` → The classifier's holes). Rendering a repeatable's
+/// home as a *simple* body would over-pad it by one newline and leave the spliced doc
+/// byte-**un**stable against the canonical writer form.
 fn render_generated_section(section: &Section, slot: Option<&str>, fields: &[Field]) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "## {}", heading_text(&section.id));
     out.push('\n');
-    out.push_str(slot.unwrap_or("").trim_end());
-    append_field_group(&mut out, fields);
+    if !matches!(section.body, SectionBody::Repeatable { .. }) {
+        out.push_str(slot.unwrap_or("").trim_end());
+        append_field_group(&mut out, fields);
+    }
+    // A repeatable's zero-item body is exactly what `render_section`'s `Repeatable` arm
+    // emits over an empty item list: the heading, the blank line, and nothing else (the
+    // caller mints no items — the CLI invents none).
     // Drop the **single** trailing `\n` `append_field_group` leaves so the block is bare
     // and `insert_block` owns the surrounding blank lines. Exactly one — never a greedy
     // strip: a section whose slot is **empty** (`slot: Some("")`, an added *optional*

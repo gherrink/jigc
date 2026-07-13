@@ -128,6 +128,24 @@ pub enum SchemaChange {
         section: String,
     },
 
+    /// A wholly-new **repeatable** section in `v2` — an added `## Heading` whose body is an
+    /// item block. The driver mints the empty `## Heading` at its schema-ordered offset through
+    /// the **same block-insert** [`Self::AddedOptionalSection`] uses, and stops: a **zero-item
+    /// repeatable conforms** (`schema-conformance.repeatable-populated` is a store *advisory*,
+    /// never a conformance break — `design/validation.md` → Repeatable-section conformance), so
+    /// no prose is needed and the doc is done (unlike [`Self::ProseNeeding`]).
+    ///
+    /// It is **not** a byte no-op, for the [`Self::AddedOptionalSection`] reason: the v2 writer
+    /// emits every schema section's heading unconditionally, so a historical doc lacking it is
+    /// non-canonical until the heading is spliced in. Before M42 this shape classified **nothing**
+    /// (`added_section` handled only the simple-slot cases), so it rode the [`Self::Unclassified`]
+    /// residual and the migration refused — a doctype could not grow a repeatable section at all
+    /// (`design/corpus-migration.md` → The classifier's holes).
+    AddedRepeatableSection {
+        /// The added repeatable section's id.
+        section: String,
+    },
+
     /// A section that was a simple `<<slot>>` becoming a repeatable item-block —
     /// the riskiest net-new transform (the old slot content becomes the default
     /// first item; `design/corpus-migration.md`). Only emitted when the old
@@ -651,23 +669,36 @@ fn removed_fields<'a>(
 
 /// Classify the leaves of a section that exists only in `v2` (every leaf is new).
 fn added_section(id: &str, new: &SectionBody, out: &mut Vec<SchemaChange>) {
-    if let SectionBody::Simple { slot, fields } = new {
-        match slot {
-            // An added **optional** slot section is deterministically mintable (empty
-            // slot conforms) — the added-optional-section transform.
-            Some(s) if s.optional => out.push(SchemaChange::AddedOptionalSection {
-                section: id.to_owned(),
-            }),
-            // A new **required** slot needs prose (the slot is anonymous → `leaf: None`).
-            Some(_) => out.push(SchemaChange::ProseNeeding {
-                section: id.to_owned(),
-                leaf: None,
-            }),
-            None => {}
+    match new {
+        SectionBody::Simple { slot, fields } => {
+            match slot {
+                // An added **optional** slot section is deterministically mintable (empty
+                // slot conforms) — the added-optional-section transform.
+                Some(s) if s.optional => out.push(SchemaChange::AddedOptionalSection {
+                    section: id.to_owned(),
+                }),
+                // A new **required** slot needs prose (the slot is anonymous → `leaf: None`).
+                Some(_) => out.push(SchemaChange::ProseNeeding {
+                    section: id.to_owned(),
+                    leaf: None,
+                }),
+                None => {}
+            }
+            diff_fields(id, &[], fields, out);
         }
-        diff_fields(id, &[], fields, out);
+        // A wholly-new **repeatable** section: mint its empty `## Heading` — a zero-item
+        // repeatable conforms, so the same block-insert the added-optional-section arm uses
+        // carries the doc onto the v2 writer's canonical shape with no prose and no items
+        // (`design/corpus-migration.md` → The classifier's holes: `AddedRepeatableSection`).
+        // Before M42 this was *"not one of the transform kinds"* — it classified nothing, so
+        // the pair rode the [`SchemaChange::Unclassified`] residual and the migration refused.
+        // The item block's own leaves are **not** diffed as added fields: they are minted with
+        // the (zero) items, not spliced into existing ones — an added leaf on a *pre-existing*
+        // item block is [`SchemaChange::AddedOptionalField`]'s item-locus twin, its own kind.
+        SectionBody::Repeatable { .. } => out.push(SchemaChange::AddedRepeatableSection {
+            section: id.to_owned(),
+        }),
     }
-    // A wholly-new repeatable section is not one of the transform kinds.
 }
 
 /// Diff a simple section's field list: classify added fields, the existing-leaf deltas through the
@@ -872,6 +903,49 @@ sections:
             schema_diff(&v1, &v2),
             vec![SchemaChange::AddedOptionalSection {
                 section: "options".to_owned(),
+            }]
+        );
+    }
+
+    /// `added-repeatable-section`: a **wholly-new** section whose body is a *repeatable*
+    /// item block classifies to **exactly** [`SchemaChange::AddedRepeatableSection`] naming
+    /// the section — never the empty diff, never the backstop's residual. Red before T6:
+    /// `added_section` classified only the simple-slot cases and closed with the fact in its
+    /// own comment (*"A wholly-new repeatable section is not one of the transform kinds"*), so
+    /// the pair emitted nothing and rode the residual — **refused**, even though a zero-item
+    /// repeatable conforms and the block-insert primitive already exists.
+    #[test]
+    fn a_wholly_new_repeatable_section_classifies_added_repeatable_section() {
+        let v1 = load(
+            b"\
+type: t
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: outcome
+    slot: { hint: \"the outcome\" }
+",
+        );
+        let v2 = load(
+            b"\
+type: t
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: tasks
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"one task\" } }
+  - id: outcome
+    slot: { hint: \"the outcome\" }
+",
+        );
+        assert_eq!(
+            schema_diff(&v1, &v2),
+            vec![SchemaChange::AddedRepeatableSection {
+                section: "tasks".to_owned(),
             }]
         );
     }

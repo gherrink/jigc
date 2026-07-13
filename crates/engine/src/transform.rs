@@ -227,6 +227,18 @@ pub fn transform(
                 // byte-stability test), leaving every prior section's bytes untouched.
                 out = write::generate_section(new_schema, &out, section, Some(""), &[])?;
             }
+            SchemaChange::AddedRepeatableSection { section } => {
+                // Mint the empty `## Heading` at its schema-ordered home through the **same**
+                // block-insert the added-optional-section arm uses — the section body's shape
+                // (repeatable vs simple) is not the *insert's* concern: with no slot prose and
+                // no fields, the generated block is exactly the v2 writer's canonical form for a
+                // **zero-item** repeatable (`render_section`'s `Repeatable` arm over an empty
+                // item list). A zero-item repeatable **conforms** (`repeatable-populated` is a
+                // store advisory, not a conformance break), so this is the migration's final
+                // byte-stable form — not a mint-then-author handoff, and the CLI invents no items
+                // (`corpus-migration.md` → The classifier's holes: `AddedRepeatableSection`).
+                out = write::generate_section(new_schema, &out, section, None, &[])?;
+            }
             SchemaChange::ProseNeeding {
                 section,
                 leaf: None,
@@ -1554,6 +1566,165 @@ sections:
         assert_eq!(
             again, out,
             "added-optional-section transform is deterministic"
+        );
+    }
+
+    // ---- (f2) the added-repeatable-section branch: a wholly-new repeatable mints its heading ----
+
+    /// v1: a `plan` doctype with `context` + `outcome` prose slots (a leading + trailing
+    /// slot, so the splice is on a *non-trailing* section — the byte-fragile case).
+    fn plan_v1() -> Schema {
+        load_schema(
+            b"\
+type: plan
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: outcome
+    slot: { hint: \"the outcome\" }
+",
+        )
+        .expect("plan v1 loads")
+    }
+
+    /// v2: a wholly-new **repeatable** `tasks` section is inserted between them — the
+    /// `AddedRepeatableSection` change (the shape the deferred spec lifecycle needs).
+    fn plan_v2() -> Schema {
+        load_schema(
+            b"\
+type: plan
+sections:
+  - id: context
+    slot: { hint: \"the context\" }
+  - id: tasks
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"one task\" } }
+  - id: outcome
+    slot: { hint: \"the outcome\" }
+",
+        )
+        .expect("plan v2 loads")
+    }
+
+    /// A canonical v0-shaped `plan` (context + outcome filled), built through [`render`] so
+    /// the input is the exact byte-stable form a first-touch-canonicalized corpus doc has.
+    fn plan_v0_doc() -> String {
+        let inst = Instance {
+            title: "Ship the limiter".to_string(),
+            sections: vec![
+                SectionContent {
+                    id: "context".to_string(),
+                    slot: Some("Per-client limits were enforced ad hoc.".to_string()),
+                    ..Default::default()
+                },
+                SectionContent {
+                    id: "outcome".to_string(),
+                    slot: Some("One limiter at the gateway.".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        render(&plan_v1(), &inst)
+    }
+
+    /// **The added-repeatable-section kind, end-to-end.** A wholly-new repeatable section
+    /// classifies through the **real classifier** to exactly `[AddedRepeatableSection]`, and the
+    /// driver mints its empty `## Heading` at the schema-ordered offset through the **same
+    /// block-insert** `AddedOptionalSection` uses: the output round-trips byte-identical under
+    /// v2, **conforms with ZERO items** (a zero-item repeatable conforms — `repeatable-populated`
+    /// is a store advisory, not a conformance break), and preserves every prior byte.
+    ///
+    /// Red before T6: the pair diffed to the backstop's residual (`[Unclassified]`) — the
+    /// migration **refused**, so a doctype could not grow a repeatable section at all.
+    #[test]
+    fn added_repeatable_section_mints_the_empty_heading_and_conforms_with_zero_items() {
+        let v1 = plan_v1();
+        let v2 = plan_v2();
+        let src = plan_v0_doc();
+
+        let diff = schema_diff(&v1, &v2);
+        assert_eq!(
+            diff,
+            vec![SchemaChange::AddedRepeatableSection {
+                section: "tasks".to_string(),
+            }],
+            "a wholly-new repeatable names itself (never the empty diff, never the backstop)"
+        );
+
+        let out = transform(&v1, &v2, &src, &diff).expect("added-repeatable-section transform");
+
+        // The empty `## Tasks` heading is minted between the neighbours, at its schema-ordered
+        // offset — and it is the *only* byte added (every prior byte preserved verbatim).
+        assert!(
+            out.contains("## Tasks"),
+            "the repeatable section heading is spliced in; got {out:?}"
+        );
+        assert!(
+            out.contains("## Context\n\nPer-client limits were enforced ad hoc.\n"),
+            "the context block is byte-preserved; got {out:?}"
+        );
+        assert!(
+            out.contains("## Outcome\n\nOne limiter at the gateway.\n"),
+            "the outcome block is byte-preserved; got {out:?}"
+        );
+        assert_eq!(
+            out.replace("## Tasks\n\n\n", ""),
+            src,
+            "the mint adds exactly the empty heading block and touches nothing else"
+        );
+
+        // The done-criterion: byte-stable under v2 (the minted block is exactly the v2 writer's
+        // canonical shape for a zero-item repeatable) and conformant **with zero items**.
+        assert_byte_stable(&v2, &out);
+        assert_conforms(&v2, &out);
+        let inst = instance_from_source(&v2, &out).expect("v2 re-parse");
+        let tasks = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "tasks")
+            .expect("the tasks section is present");
+        assert!(
+            tasks.items.is_empty(),
+            "the minted repeatable carries zero items; got {:?}",
+            tasks.items
+        );
+        let slot_of = |id: &str| {
+            inst.sections
+                .iter()
+                .find(|s| s.id == id)
+                .and_then(|s| s.slot.clone())
+        };
+        assert_eq!(
+            slot_of("context").as_deref(),
+            Some("Per-client limits were enforced ad hoc.")
+        );
+        assert_eq!(
+            slot_of("outcome").as_deref(),
+            Some("One limiter at the gateway.")
+        );
+
+        // Determinism, and the corpus fold commits it (so the CLI reaches the restamp).
+        let again = transform(&v1, &v2, &src, &diff).expect("re-run succeeds");
+        assert_eq!(again, out, "the mint is deterministic");
+        let corpus = [CorpusDoc {
+            id: "plan-a",
+            old_schema: &v1,
+            new_schema: &v2,
+            source: &src,
+            changes: &diff,
+        }];
+        let result = migrate_corpus(&corpus);
+        assert_eq!(result.halted_at, None, "a zero-item repeatable conforms");
+        assert_eq!(
+            result.docs,
+            vec![DocOutcome::Migrated {
+                id: "plan-a".to_string(),
+                v2: out.clone(),
+            }],
+            "the doc migrates (heading minted) — it does not block"
         );
     }
 

@@ -747,6 +747,7 @@ fn per_doc_changes(fixed: &[SchemaChange], source: &str, stamp_absent: bool) -> 
             }
             // THE HEADING-MINTING KINDS — dropped iff the doc already carries the heading.
             SchemaChange::AddedOptionalSection { section }
+            | SchemaChange::AddedRepeatableSection { section }
             | SchemaChange::ProseNeeding { section, .. } => !has_section_heading(source, section),
             // Every other kind splices inside an existing section (or no bytes at all), so it
             // has no heading to collide with and is always kept.
@@ -1184,7 +1185,7 @@ mod tests {
     use engine::parse::parse_sections;
     use engine::schema::{inject_schema_version_stamp, load_schema};
     use engine::validate::schema_conformance;
-    use engine::write::{Instance, SectionContent, render};
+    use engine::write::{Instance, ItemContent, SectionContent, render};
     use std::fs;
     use std::path::PathBuf;
 
@@ -2759,5 +2760,255 @@ sections:
             record.get("changelog/changelog.md").is_none(),
             "the old-home key is dropped (re-keyed, not orphaned)"
         );
+    }
+
+    // ---- the added-repeatable-section kind, through the verb core (M42 Inc-5 T6) ----
+
+    /// The v1 snapshot of a `plan`: a `context` slot + an `outcome` slot, no repeatable.
+    fn plan_v1_yaml() -> &'static str {
+        "\
+type: plan
+location: plans/
+id-from: title
+sections:
+  - id: context
+    slot: { hint: \"c\" }
+  - id: outcome
+    slot: { hint: \"o\" }
+"
+    }
+
+    /// The v2 current shape: a **wholly-new repeatable** `tasks` section between the two slots
+    /// — the [`SchemaChange::AddedRepeatableSection`] shape.
+    fn plan_v2_yaml() -> &'static [u8] {
+        b"\
+type: plan
+location: plans/
+id-from: title
+sections:
+  - id: context
+    slot: { hint: \"c\" }
+  - id: tasks
+    repeatable:
+      id-from: title
+      block:
+        - { id: title, type: string }
+        - { id: statement, slot: { hint: \"one task\" } }
+  - id: outcome
+    slot: { hint: \"o\" }
+"
+    }
+
+    /// A committed `plan` rendered against `schema` with the given `stamp`, `context`/`outcome`
+    /// prose, and `tasks` items — the byte-stable form a real committed doc has.
+    fn plan_doc(schema: &Schema, stamp: &str, tasks: Vec<ItemContent>) -> String {
+        render(
+            schema,
+            &Instance {
+                title: "Ship The Limiter".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar(stamp.to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "context".to_string(),
+                        slot: Some("Limits were enforced ad hoc.".to_string()),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "tasks".to_string(),
+                        items: tasks,
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "outcome".to_string(),
+                        slot: Some("One limiter at the gateway.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        )
+    }
+
+    /// **A wholly-new repeatable section migrates through the verb** (M42 Inc-5 T6). A
+    /// below-version doc (stamp `1`, current `2`) whose v1→v2 pair adds a repeatable section
+    /// gets its empty `## Tasks` heading minted at the schema-ordered offset, conforms with
+    /// **zero items**, and is restamped `1→2` — every prior byte preserved.
+    ///
+    /// Red before T6: the classifier emitted nothing for a wholly-new repeatable, so the doc
+    /// rode the empty-diff backstop's *unclassifiable* route and the whole corpus was
+    /// **refused** — a doctype could not grow a repeatable section at all.
+    #[test]
+    fn below_version_added_repeatable_section_mints_the_heading_and_restamps() {
+        let repo = TempDir::new("added-repeatable");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("plan", 1, plan_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(plan_v2_yaml());
+        let from = crate::pack::load_prior_schema(&pack, "plan", 1).expect("the plan.v1 snapshot");
+
+        // A conformant, v1-stamped committed doc — authored before the repeatable existed, so
+        // it carries no `## Tasks` heading at all.
+        let v1 = render(
+            &from,
+            &Instance {
+                title: "Ship The Limiter".to_string(),
+                sections: vec![
+                    SectionContent {
+                        id: "meta".to_string(),
+                        fields: vec![Field {
+                            key: SCHEMA_VERSION_FIELD.to_string(),
+                            value: Value::Scalar("1".to_string()),
+                        }],
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "context".to_string(),
+                        slot: Some("Limits were enforced ad hoc.".to_string()),
+                        ..Default::default()
+                    },
+                    SectionContent {
+                        id: "outcome".to_string(),
+                        slot: Some("One limiter at the gateway.".to_string()),
+                        ..Default::default()
+                    },
+                ],
+            },
+        );
+        assert!(
+            !v1.contains("## Tasks"),
+            "the pre-bump doc carries no repeatable section; got:\n{v1}"
+        );
+        write_doc(repo.path(), "plans/ship-the-limiter.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
+
+        assert_eq!(
+            report.migrated,
+            vec!["plans/ship-the-limiter.md".to_string()],
+            "the doc migrates, never blocks: {report:?}"
+        );
+        assert!(
+            report.blocked.is_empty(),
+            "no blockers: {:?}",
+            report.blocked
+        );
+
+        let migrated =
+            fs::read_to_string(repo.path().join("plans/ship-the-limiter.md")).expect("read");
+        assert!(
+            migrated.contains("## Tasks"),
+            "the repeatable heading is minted; got:\n{migrated}"
+        );
+        assert!(
+            migrated.starts_with("---\nschema-version: 2\n---\n"),
+            "the stamp value-bumps 1→2; got:\n{migrated}"
+        );
+        assert_conformant_and_stable(&to, &migrated);
+
+        // Zero items — a zero-item repeatable conforms; the CLI mints no prose.
+        let inst = engine::write::instance_from_source(&to, &migrated).expect("re-parse under v2");
+        let tasks = inst
+            .sections
+            .iter()
+            .find(|s| s.id == "tasks")
+            .expect("the tasks section is present");
+        assert!(
+            tasks.items.is_empty(),
+            "the minted repeatable carries zero items; got {:?}",
+            tasks.items
+        );
+        // Every prior byte is preserved: the migrated doc is the v1 doc plus the empty heading
+        // block, with only the stamp digit flipped.
+        assert_eq!(
+            migrated
+                .replace("## Tasks\n\n\n", "")
+                .replace("schema-version: 2", "schema-version: 1"),
+            v1,
+            "the migration adds the empty heading and bumps the stamp — nothing else"
+        );
+    }
+
+    /// **The re-run/idempotency guard, over the new heading-minting kind** (T2's guard, which
+    /// the exhaustive `per_doc_changes` match forces this kind to declare itself to). A
+    /// below-version doc an adopter **hand-authored** the new repeatable section into — heading
+    /// *and* items already present — migrates **clean**: the mint is dropped (the block-insert
+    /// would refuse an already-present section and strand the doc on a dead-end route), the
+    /// authored items survive verbatim, and the doc restamps `1→2`.
+    #[test]
+    fn a_doc_already_carrying_the_added_repeatable_section_migrates_clean() {
+        let repo = TempDir::new("added-repeatable-present");
+        let jigc_root = repo.path().join(".jigc");
+
+        let pack_dir = snapshot_pack("plan", 1, plan_v1_yaml());
+        let pack = crate::pack::FilesystemPack::new(pack_dir.path().to_path_buf());
+
+        let to = v1_schema(plan_v2_yaml());
+
+        // The hand-authored shape: still stamped `1`, but already carrying `## Tasks` with a
+        // real item (the byte form an adopter who anticipated the bump has on disk).
+        let v1 = plan_doc(
+            &to,
+            "1",
+            vec![ItemContent {
+                id: "rate-limit-the-gateway".to_string(),
+                title: "Rate limit the gateway".to_string(),
+                slot: Some("Enforce one limiter at the edge.".to_string()),
+                ..Default::default()
+            }],
+        );
+        write_doc(repo.path(), "plans/ship-the-limiter.md", &v1);
+
+        let report = migrate_committed_corpus(
+            &pack,
+            repo.path(),
+            &jigc_root,
+            &[migration(to.clone(), 2)],
+            Options::default(),
+        )
+        .expect("migration runs");
+
+        assert_eq!(
+            report.migrated,
+            vec!["plans/ship-the-limiter.md".to_string()],
+            "a doc that already carries the section migrates — it is never stranded: {report:?}"
+        );
+        assert!(
+            report.blocked.is_empty(),
+            "no blockers: {:?}",
+            report.blocked
+        );
+
+        let migrated =
+            fs::read_to_string(repo.path().join("plans/ship-the-limiter.md")).expect("read");
+        assert_eq!(
+            migrated.matches("## Tasks").count(),
+            1,
+            "exactly one heading — the mint is dropped, never re-spliced; got:\n{migrated}"
+        );
+        assert_eq!(
+            migrated,
+            v1.replace("schema-version: 1", "schema-version: 2"),
+            "the doc differs from its authored form only in the stamp digit"
+        );
+        assert!(
+            migrated.contains("Enforce one limiter at the edge."),
+            "the authored item survives verbatim; got:\n{migrated}"
+        );
+        assert_conformant_and_stable(&to, &migrated);
     }
 }
