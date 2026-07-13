@@ -27,7 +27,7 @@ use crate::task::git_head;
 use anyhow::{Context, Result, bail};
 use engine::file_state::{FileStateRecord, hash_bytes, reconcile_committed};
 use engine::finalize::plan_milestone_finalize;
-use engine::finding::{Finding, Severity};
+use engine::finding::{Finding, Location, Severity};
 use engine::index::{EdgeIndex, load_committed};
 use engine::milestone::{
     JoinOutcome, MintedMilestone, add_from_spec, add_task, join, materialize, milestone_dir,
@@ -132,6 +132,19 @@ pub enum MilestoneCommand {
         /// The milestone id (the slug under `.jigc/milestones/`).
         milestone_id: String,
     },
+    /// Abandon the milestone: settle its committed record to the `discarded` terminal
+    /// (a genuinely **joined** sub-task stays `joined` — it really did land) in one
+    /// record-only commit, then tear the workbench down (the sub-task areas, the
+    /// registered fan-out worktrees, and `.jigc/milestones/<id>/`). Refuses when any
+    /// sub-task worktree holds uncommitted work, unless `--force`.
+    Discard {
+        /// The milestone id (the slug under `.jigc/milestones/`).
+        milestone_id: String,
+        /// Discard even when a sub-task worktree holds uncommitted work — the explicit
+        /// consent to destroy it (without this, a dirty worktree refuses the abandon).
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 impl MilestoneCommand {
@@ -171,6 +184,10 @@ impl MilestoneCommand {
             } => run_add_from_spec(cwd, &milestone_id, &spec_addr, &workflow),
             MilestoneCommand::ListTasks { milestone_id } => run_list_tasks(cwd, &milestone_id),
             MilestoneCommand::Provision { milestone_id } => run_provision(cwd, &milestone_id),
+            MilestoneCommand::Discard {
+                milestone_id,
+                force,
+            } => run_discard(cwd, &milestone_id, force),
             MilestoneCommand::Execute { .. } => unreachable!("`Execute` is handled above"),
             MilestoneCommand::Join { .. } => unreachable!("`Join` is handled above"),
             MilestoneCommand::Finalize { .. } => unreachable!("`Finalize` is handled above"),
@@ -1017,6 +1034,179 @@ fn git_worktree(repo_root: &Path, args: &[&str]) -> Result<String> {
         );
     }
     String::from_utf8(out.stdout).context("`git` produced non-UTF-8 output")
+}
+
+/// `jigc milestone discard <milestone-id> [--force]` — the milestone family's terminal verb
+/// (`design/team-ready-state.md` → `jigc milestone discard <id>`; `design/write-commands.md` →
+/// Abandoning a milestone). The milestone is being **abandoned**: settle its committed record to
+/// the `discarded` terminal and tear the workbench down.
+///
+/// The op order is the settled one: (1) the **reconcile preflight** — the record settle is a
+/// `set: on-transition` overwrite, so an out-of-band edit conflict-blocks rather than being
+/// silently clobbered ([`reconcile_record_preflight`]); (2) the **dirty-worktree guard** — the
+/// teardown's `git worktree remove --force` is safe at *finalize* (the commit lands first) but on
+/// the abandon path the sub-agents' work is **by definition uncommitted**, so a dirty worktree
+/// refuses the abandon unless `--force` names the consent to destroy it; (3) the record settle
+/// ([`engine::milestone::discard_record`] — a genuinely **joined** sub-task stays `joined`);
+/// (4) a **record-only** commit carrying a CLI-synthesized structural subject (never sweeping the
+/// agent's in-flight WIP); (5) the teardown — the sub-task areas, the registered fan-out
+/// worktrees, **and** `.jigc/milestones/<id>/` (which no verb removed before: teardown was
+/// reachable only from the landed-finalize path, so an abandoned milestone left a cache
+/// `provision` would happily re-provision worktrees from).
+///
+/// Dev-only (no methodology pack → no `milestone-record` schema) degrades exactly as every other
+/// record arm does: no record to settle, no commit — and the workbench teardown still runs.
+fn run_discard(cwd: &Path, milestone_id: &str, force: bool) -> Result<String> {
+    let repo_root = discover_repo_root(cwd)
+        .with_context(|| format!("not inside a git repository (from {})", cwd.display()))?;
+    let jigc_home = crate::start::jigc_home_or_repo(cwd)?;
+    let jigc_root = jigc_home.join(".jigc");
+    let schemas = shipped_schemas(&jigc_home)?;
+
+    // Fresh-clone resume (M39 T5): re-derive the demoted cache from the committed record before
+    // the `dir.is_dir()` guard + task-list read, so a teammate on a fresh clone can abandon a
+    // milestone whose workbench they never had (`design/team-ready-state.md` → Engine capability 2).
+    reseed_cache(&jigc_home, &jigc_root, &schemas, milestone_id)?;
+
+    let dir = milestone_dir(&jigc_root, milestone_id);
+    if !dir.is_dir() {
+        bail!(
+            "milestone `{milestone_id}` does not exist\n  route: check the milestone id (`jigc milestone list-tasks <id>` names a live milestone's sub-tasks); nothing was discarded"
+        );
+    }
+    let list = read_task_list(&dir)
+        .with_context(|| format!("could not read the task list for milestone `{milestone_id}`"))?;
+
+    // (1) The reconcile preflight — a drifted committed record conflict-blocks before ANY
+    // mutation, leaving the record and the workbench untouched (`design/team-ready-state.md` → F3).
+    // Inert dev-only.
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        reconcile_record_preflight(&jigc_home, &jigc_root, schema, milestone_id)?;
+    }
+
+    // (2) The dirty-worktree guard — the abandon path's WIP safety
+    // (`design/team-ready-state.md` → Abandon refuses on a dirty worktree). The teardown's
+    // [`remove_worktrees`] runs `git worktree remove --force`, which is safe at *finalize* (the
+    // commit lands first, so every byte the worktree held is already in git) and **destroys
+    // uncommitted work** here, where the sub-agents' work is by definition uncommitted. So a
+    // dirty worktree REFUSES the abandon, naming the paths; `--force` is the human's explicit
+    // consent to destroy the work — on the one path whose premise is "throw this away", that
+    // intent is exactly what must be confirmed rather than assumed.
+    if !force {
+        let worktrees = provisioned_worktrees(&repo_root, &jigc_home, &list);
+        let dirty = dirty_worktrees(&worktrees)?;
+        if !dirty.is_empty() {
+            return Err(finding_to_err(dirty_worktree_finding(milestone_id, &dirty)));
+        }
+    }
+
+    // (3) Settle the committed record + (4) commit ONLY it. Dev-only resolves no schema → no
+    // record, no commit (the omitting context).
+    if let Some(schema) = schemas.get(MILESTONE_RECORD_TYPE) {
+        let record_path = engine::store::canonical_path(&jigc_home, schema, milestone_id)
+            .context("the `milestone-record` doctype declares no committed location")?;
+        let settled = engine::milestone::discard_record(&record_path, schema, milestone_id)
+            .map_err(finding_to_err)?;
+        // The message temp file lands in the (gitignored) milestone area — removed by the
+        // teardown below, so it is written before the area goes.
+        commit_record_only(
+            &jigc_home,
+            &record_path,
+            &dir,
+            &format!("chore(milestone): discard record for milestone:{milestone_id}\n"),
+        )?;
+        // Advance the record's file-state baseline to the settled bytes (the [`baseline_record`]
+        // discipline every record write follows), so a later store sweep sees no drift.
+        baseline_record(&jigc_root, schema, milestone_id, settled.as_bytes());
+    }
+
+    // (5) Teardown — the workbench outlives nothing: the sub-task areas, the registered fan-out
+    // worktrees, and the milestone area itself.
+    cleanup_subtask_areas(&jigc_root, &list);
+    remove_worktrees(&repo_root, &jigc_home, &list);
+    remove_milestone_area(&dir);
+
+    Ok(format!(
+        "discarded milestone:{milestone_id} ({} sub-task(s); workbench removed)",
+        list.enumerate().len()
+    ))
+}
+
+/// The milestone's provisioned worktrees that hold **uncommitted work**, each paired with the
+/// `git status --porcelain` entries that make it dirty — the abandon path's WIP probe
+/// (`design/team-ready-state.md` → Abandon refuses on a dirty worktree).
+///
+/// **`--porcelain`, not `git diff --cached`.** Its sibling [`worktrees_have_staged_code`] reads
+/// only the *staged* set, because at `finalize` the staged set is what the combine commits — but
+/// what the abandon path destroys is **everything** in the worktree: staged, unstaged, and
+/// **untracked** alike (`git worktree remove --force` deletes the checkout). So the guard's probe
+/// is the union `git status --porcelain` reports; an ignored file is not work and never appears.
+fn dirty_worktrees(worktrees: &[PathBuf]) -> Result<Vec<(PathBuf, Vec<String>)>> {
+    let mut dirty = Vec::new();
+    for wt in worktrees {
+        let out = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(wt)
+            .output()
+            .context("could not run `git status` (is git on PATH?)")?;
+        if !out.status.success() {
+            bail!(
+                "`git status --porcelain` in worktree {wt:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+        }
+        let entries: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|line| line.trim().to_string())
+            .filter(|line| !line.is_empty())
+            .collect();
+        if !entries.is_empty() {
+            dirty.push((wt.clone(), entries));
+        }
+    }
+    Ok(dirty)
+}
+
+/// A blocking, route-bearing finding naming every dirty sub-task worktree and the uncommitted
+/// entries inside it — the abandon's refusal. The route names both honest exits: get the work out
+/// (commit / stash / copy it), or re-run with `--force` to say the work is genuinely being thrown
+/// away (the [`crate::combine::detect_code_collision`] finding idiom).
+fn dirty_worktree_finding(milestone_id: &str, dirty: &[(PathBuf, Vec<String>)]) -> Finding {
+    let listing: Vec<String> = dirty
+        .iter()
+        .map(|(path, entries)| format!("  {}: {}", path.display(), entries.join(", ")))
+        .collect();
+    let address = dirty[0].0.display().to_string();
+    Finding::graded(
+        Severity::Blocking,
+        "milestone.dirty-worktree",
+        format!(
+            "milestone:{milestone_id} has uncommitted work in {} sub-task worktree(s) — \
+             discarding it would destroy that work:\n{}",
+            dirty.len(),
+            listing.join("\n"),
+        ),
+        Some(Location::addressed(&address, 1, 1)),
+        Some(format!(
+            "get the work out of those worktrees first (commit, stash, or copy it), then re-run \
+             `jigc milestone discard {milestone_id}` — or re-run with `--force` to abandon the \
+             milestone and destroy the uncommitted work"
+        )),
+    )
+}
+
+/// Remove the milestone's gitignored workbench `.jigc/milestones/<id>/` on a settled discard —
+/// the base pin + task-list cache the record no longer stands behind (`design/team-ready-state.md`
+/// → The workbench is actually removed). The **only** remover outside the landed-finalize
+/// executor: without it an abandoned milestone leaves a cache `provision` would re-provision
+/// worktrees from. Best-effort, logged-not-raised — the record commit has already landed, so a
+/// cleanup failure must not fail it (the [`cleanup_subtask_areas`] self-heal stance).
+fn remove_milestone_area(dir: &Path) {
+    if dir.exists()
+        && let Err(err) = std::fs::remove_dir_all(dir)
+    {
+        eprintln!("note: milestone workbench removal at {dir:?} failed (self-heals): {err:#}");
+    }
 }
 
 /// Dispatch `jigc milestone execute <milestone-id>`: compose the milestone-execution

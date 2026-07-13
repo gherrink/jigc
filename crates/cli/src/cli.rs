@@ -129,7 +129,8 @@ pub enum Command {
     },
 
     /// The milestone work-unit surface — `jigc milestone <verb>` mints a
-    /// milestone, builds its sub-task list, and executes, joins, and finalizes it.
+    /// milestone, builds its sub-task list, and executes, joins, and finalizes it —
+    /// or, when the work is abandoned, discards it.
     Milestone {
         #[command(subcommand)]
         verb: MilestoneCommand,
@@ -1946,6 +1947,45 @@ mod cli_parse {
     fn milestone_finalize_requires_a_milestone_id() {
         let err = Cli::try_parse_from(["jigc", "milestone", "finalize"])
             .expect_err("`milestone finalize` with no id must be rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+    }
+
+    /// The abandon path's default is SAFE: `--force` (the consent to destroy a dirty sub-task
+    /// worktree's uncommitted work) is opt-in, never implied (M42 Inc 7 / T5).
+    #[test]
+    fn milestone_discard_parses_the_id_with_force_defaulting_false() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "discard", "cache-rework"])
+            .expect("`jigc milestone discard <id>` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Discard {
+                    milestone_id: "cache-rework".to_string(),
+                    force: false,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_discard_parses_the_force_flag() {
+        let cli = Cli::try_parse_from(["jigc", "milestone", "discard", "cache-rework", "--force"])
+            .expect("`jigc milestone discard <id> --force` parses");
+        assert_eq!(
+            cli.command,
+            Command::Milestone {
+                verb: MilestoneCommand::Discard {
+                    milestone_id: "cache-rework".to_string(),
+                    force: true,
+                },
+            }
+        );
+    }
+
+    #[test]
+    fn milestone_discard_requires_a_milestone_id() {
+        let err = Cli::try_parse_from(["jigc", "milestone", "discard"])
+            .expect_err("`milestone discard` with no id must be rejected");
         assert_eq!(err.kind(), clap::error::ErrorKind::MissingRequiredArgument);
     }
 
