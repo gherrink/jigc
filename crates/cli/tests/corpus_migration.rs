@@ -337,6 +337,189 @@ fn migrate_corpus_relocates_the_v1_changelog_to_root_placement_home() {
     );
 }
 
+/// A **stale** `changelog` sitting at its literal root `CHANGELOG.md` **placement home** but
+/// still carrying the v1 shape (the `# changelog` slug-H1) and the `schema-version: 1` stamp
+/// — the state an operator lands in after hand-moving the doc (`git mv`), or after any partial
+/// migration. Carries a populated change-group so byte-preservation is *provable*, not
+/// vacuous.
+const STALE_ROOT_CHANGELOG_V1: &str = "\
+---
+schema-version: 1
+---
+
+# changelog
+
+## Unreleased Changes
+
+### added  {#added}
+
+- OAuth login button on the sign-in page.
+
+## Releases
+";
+
+/// The bytes the migration must produce from [`STALE_ROOT_CHANGELOG_V1`]: the stamp
+/// value-bumped 1→2, the H1 fixed to the `display-title` (`# Changelog`), **every other byte
+/// preserved**.
+const MIGRATED_ROOT_CHANGELOG_V2: &str = "\
+---
+schema-version: 2
+---
+
+# Changelog
+
+## Unreleased Changes
+
+### added  {#added}
+
+- OAuth login button on the sign-in page.
+
+## Releases
+";
+
+/// Commit `body` at the literal root `CHANGELOG.md` placement home.
+fn commit_root_changelog(repo: &Path, body: &str) {
+    fs::write(repo.join("CHANGELOG.md"), body).expect("write CHANGELOG.md");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "seed root changelog"]);
+}
+
+/// **M42 Inc-1 T1 — the corpus walk's placement branches become a UNION.** Pre-fix,
+/// `candidate_docs` keyed the two placement branches on whether the prior snapshot carried a
+/// `location:` — and `changelog.v1.yaml` always does, so the relocation walk ran over an
+/// (empty) `docs/changelog/` and the in-place branch was **dead code for this doctype**. A
+/// stale root `CHANGELOG.md` was therefore **invisible**: `jigc migrate-corpus` reported
+/// `0 migrated, 0 already current, 0 blocked` and the stamp stayed at 1 forever — which made
+/// the family-5 detector's `migrate` route point at a verb that does nothing.
+///
+/// The union walks the prior home **and** the placement file: the stale doc is FOUND, migrated
+/// in place (`Relocated` is a content no-op; `DisplayTitleChanged` fixes the H1), re-stamped 2
+/// — and an immediate re-run is idempotent.
+#[test]
+fn migrate_corpus_finds_a_stale_changelog_at_its_placement_home() {
+    let repo = TempDir::new("stale-placement");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_root_changelog(repo.path(), STALE_ROOT_CHANGELOG_V1);
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(
+        &migrate,
+        "`jigc migrate-corpus` over a stale placement-home doc",
+    );
+    assert!(
+        out.contains("1 migrated") && out.contains("CHANGELOG.md"),
+        "the stale placement-home changelog is FOUND and migrated; stdout:\n{out}",
+    );
+
+    // Golden: the stamp value-bumped 1→2, the H1 fixed to the display title, every other
+    // byte preserved (the populated change-group survives verbatim).
+    let after = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md");
+    assert_eq!(
+        after, MIGRATED_ROOT_CHANGELOG_V2,
+        "the migrated placement-home changelog is byte-exact",
+    );
+
+    // Idempotent: the re-run finds it already current and rewrites nothing.
+    let again = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out2 = String::from_utf8_lossy(&again.stdout);
+    assert_ok(&again, "the `jigc migrate-corpus` re-run");
+    assert!(
+        out2.contains("1 already current") && out2.contains("0 migrated"),
+        "the re-run is idempotent (already current, nothing migrated); stdout:\n{out2}",
+    );
+    let after2 = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md");
+    assert_eq!(after2, after, "the re-run leaves the doc byte-identical");
+}
+
+/// **M42 Inc-1 T1 — the both-homes state, the CONFLICTING arm.** The union makes it reachable
+/// for the first time that a doc sits at the prior home *and* a **different** doc sits at the
+/// relocation destination. The destination is never silently overwritten (No-data-loss): the
+/// prior-home strand is **blocked with a route**, nothing is written to the destination on its
+/// behalf, and nothing is removed.
+#[test]
+fn migrate_corpus_never_overwrites_a_different_doc_at_the_placement_home() {
+    let repo = TempDir::new("both-homes-conflict");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    // A genuinely different doc at each home: the root one carries the OAuth entry, the
+    // old-home one carries the empty KaC sections (`commit_v1_changelog`).
+    commit_root_changelog(repo.path(), STALE_ROOT_CHANGELOG_V1);
+    commit_v1_changelog(repo.path());
+
+    let migrate = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&migrate.stdout);
+    assert_ok(
+        &migrate,
+        "`jigc migrate-corpus` over the both-homes conflict",
+    );
+
+    // The destination holds ITS OWN migrated content — never the strand's.
+    let dest = fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md");
+    assert_eq!(
+        dest, MIGRATED_ROOT_CHANGELOG_V2,
+        "the destination doc migrated in place and was NOT overwritten by the strand; \
+         stdout:\n{out}",
+    );
+
+    // The strand survives on disk — blocked, never deleted (No-data-loss).
+    let strand = repo.path().join("docs/changelog/changelog.md");
+    assert!(
+        strand.is_file(),
+        "the conflicting prior-home strand is NOT removed; stdout:\n{out}",
+    );
+    assert!(
+        out.contains("1 blocked") && out.contains("docs/changelog/changelog.md"),
+        "the conflicting strand is blocked with a route; stdout:\n{out}",
+    );
+}
+
+/// **M42 Inc-1 T1 — the both-homes state, the SAME-DOC (interrupted-move) arm.** The
+/// relocation is write-before-remove, so an abort between the two halves strands the source at
+/// the old home while the destination already holds that doc's migrated bytes. The union sees
+/// both; the re-run **completes** the move — the destination stays v2 and the old-home strand
+/// is removed. Built from the tool's own output (a real relocation, then the strand restored),
+/// so the "same doc" is genuine, not hand-forged.
+#[test]
+fn migrate_corpus_completes_an_interrupted_relocation() {
+    let repo = TempDir::new("both-homes-interrupted");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    commit_v1_changelog(repo.path());
+
+    // Run 1 — the real relocation: `docs/changelog/changelog.md` → `CHANGELOG.md`.
+    let first = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    assert_ok(&first, "`jigc migrate-corpus` (the relocation)");
+    let dest_after_move =
+        fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md");
+
+    // Re-strand the source at the old home: exactly the state an abort *between* the
+    // destination write and the source remove leaves behind.
+    commit_v1_changelog(repo.path());
+
+    // Run 2 — the union sees both homes and COMPLETES the interrupted move.
+    let second = jigc(repo.path(), home.path(), &["migrate-corpus"]);
+    let out = String::from_utf8_lossy(&second.stdout);
+    assert_ok(
+        &second,
+        "`jigc migrate-corpus` (completing the interrupted move)",
+    );
+    assert!(
+        out.contains("1 migrated") && out.contains("CHANGELOG.md"),
+        "the completed move is reported once; stdout:\n{out}",
+    );
+    assert!(
+        !repo.path().join("docs/changelog/changelog.md").exists(),
+        "the old-home strand is removed once the move completes; stdout:\n{out}",
+    );
+    assert_eq!(
+        fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md"),
+        dest_after_move,
+        "the destination keeps its v2 bytes — the completion is byte-identical",
+    );
+}
+
 /// The false-positive guard: a corpus already stamped at the current version is a clean
 /// no-op — `jigc migrate-corpus` migrates nothing and reports the doc already current.
 #[test]

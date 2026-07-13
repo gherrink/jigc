@@ -316,6 +316,28 @@ pub(crate) fn migrate_committed_corpus(
                 let target = &prep.target_key;
                 let moved = target != id;
 
+                // THE DESTINATION-COLLISION RULE (M42 — the walk union makes the both-homes
+                // state reachable; `corpus-migration.md` → the union). A relocating doc must
+                // never clobber a document already sitting at its destination:
+                //   - the destination already holds **exactly these migrated bytes** → an
+                //     *interrupted move* (write-before-remove aborted between its halves):
+                //     complete it — the write below is a byte-identical no-op and the
+                //     old-home strand is removed;
+                //   - the destination holds **anything else** → a genuine collision: the doc
+                //     is BLOCKED with a route, nothing written and nothing removed
+                //     (No-data-loss, the declared property — the operator reconciles).
+                // Read from disk, so the outcome does not depend on the write order of the
+                // two candidates that share the destination.
+                if moved
+                    && let Ok(existing) = std::fs::read(repo_root.join(target))
+                    && existing != v2.as_bytes()
+                {
+                    report
+                        .blocked
+                        .push((id.clone(), destination_collision_route(id, target)));
+                    continue;
+                }
+
                 // WRITE-BEFORE-REMOVE (`corpus-migration.md` → Relocation: write-to-`to`
                 // precedes remove-`from`, so an abort between strands neither copy). The
                 // gated v2 bytes land at the destination **first** — a fault here leaves the
@@ -349,6 +371,12 @@ pub(crate) fn migrate_committed_corpus(
                     record.save(jigc_root).with_context(|| {
                         format!("saving the file-state record at {jigc_root:?}")
                     })?;
+                }
+                // A completed interrupted move: the destination was *itself* enumerated by the
+                // union and reported `already-current` (it is stamped current). The completion
+                // supersedes that line — the target is reported once, as migrated.
+                if moved {
+                    report.already_current.retain(|k| k != target);
                 }
                 report.migrated.push(target.clone());
             }
@@ -596,6 +624,20 @@ fn prose_needing_route(rel_key: &str) -> String {
     )
 }
 
+/// The route for the **both-homes destination collision** (M42 — the walk union): a
+/// prior-home instance whose relocation destination already holds a *different* document. The
+/// migration refuses to overwrite it — **No-data-loss** is a declared property of the corpus
+/// migration, and no deterministic merge of two documents exists — so the doc is blocked and
+/// the operator reconciles the two homes by hand (`design/corpus-migration.md` → the union).
+fn destination_collision_route(rel_key: &str, target: &str) -> String {
+    format!(
+        "blocked — `{rel_key}` relocates to `{target}`, which already holds a *different* \
+         document; the migration never overwrites it (no data loss). Fold the content of \
+         `{rel_key}` into `{target}` through the write verbs, delete `{rel_key}`, then re-run \
+         `jigc migrate-corpus`"
+    )
+}
+
 /// The route for a doc left untouched behind the run's first blocker (WIP-safety: the fold
 /// halts at the first blocked doc, never half-transforming the rest).
 fn deferred_route(rel_key: &str) -> String {
@@ -612,17 +654,27 @@ fn deferred_route(rel_key: &str) -> String {
 /// - A doctype whose **current** shape declares a `location:` directory migrates
 ///   **in place** — every `.md` under that (already docs-root-resolved) directory,
 ///   `destination == source`.
-/// - A doctype whose current shape is a single-file `placement:` (no `location:`) splits
-///   on its prior snapshot:
-///   - **relocated** (the M38 changelog): the versioned snapshot at `version - 1`
-///     (via [`crate::pack::load_prior_schema`]) declares the `location:` home its
-///     committed instances still sit at — walk that old directory; each instance moves
-///     to the placement `file`;
-///   - **placement-born** (the M40 methodology singletons — placement at v1, so no
-///     location-bearing prior snapshot exists): the committed instance IS the literal
-///     placement file — migrate it **in place** (the stamp-absent v0 arm's placement
-///     case; pre-M40 this arm skipped the doctype entirely, so an unstamped roadmap
-///     never migrated).
+/// - A doctype whose current shape is a single-file `placement:` (no `location:`) walks the
+///   **union of both homes** (`design/corpus-migration.md` → The corpus walk — the placement
+///   branches become a union):
+///   - the **prior home** — for a *relocated* doctype (the M38 changelog) the versioned
+///     snapshot at `version - 1` (via [`crate::pack::load_prior_schema`]) declares the
+///     `location:` home its committed instances still sit at; walk that old directory, each
+///     instance destined for the placement `file`. A *placement-born* doctype (the M40
+///     methodology singletons — placement at v1) has no location-bearing prior snapshot, so
+///     this half is empty;
+///   - the **placement home** — the literal `placement.file`, if committed: that instance is
+///     migrated **in place** (`destination == source`).
+///
+///   Pre-M42 these two were **mutually exclusive**, keyed on whether the prior snapshot
+///   carried a `location:` — and for `changelog` it always does, so the in-place half was
+///   *dead code for that doctype* and a stale root `CHANGELOG.md` was **invisible** to the
+///   verb (`0 migrated, 0 already current, 0 blocked`; the stamp stayed at 1 forever, and the
+///   detector's `migrate` route pointed at a verb that did nothing). Walking both halves and
+///   deduping the `(source, destination)` pairs makes a placement doctype's instances findable
+///   *wherever* a partially-completed migration left them. A destination shared by two
+///   candidates (both homes populated) is resolved at the write boundary — see
+///   [`destination_collision_route`].
 fn candidate_docs(
     pack: &dyn PackSource,
     repo_root: &Path,
@@ -645,6 +697,7 @@ fn candidate_docs(
         .checked_sub(1)
         .and_then(|k| crate::pack::load_prior_schema(pack, &dt.ty, k).ok())
         .and_then(|prior| prior.location);
+    let mut out: Vec<(String, String)> = Vec::new();
     if let Some(raw_home) = prior_location {
         // The prior snapshot stores its `location:` **raw** (docs-root-free), but the
         // committed instances sit under the resolved `docs-root` prefix — re-apply it
@@ -655,15 +708,20 @@ fn candidate_docs(
         } else {
             format!("{}/{raw_home}", dt.docs_root)
         };
-        return committed_slugs(repo_root, &from_home)
-            .into_iter()
-            .map(|slug| (format!("{from_home}{slug}.md"), placement.file.clone()))
-            .collect();
+        out.extend(
+            committed_slugs(repo_root, &from_home)
+                .into_iter()
+                .map(|slug| (format!("{from_home}{slug}.md"), placement.file.clone())),
+        );
     }
     if repo_root.join(&placement.file).is_file() {
-        return vec![(placement.file.clone(), placement.file.clone())];
+        out.push((placement.file.clone(), placement.file.clone()));
     }
-    Vec::new()
+    // Dedupe: the placement file can *itself* sit under the prior home (a `docs/x.md`
+    // placement whose prior home was `docs/`), which enumerates the identical pair twice.
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// The committed-doc slugs of a persisted type — the `.md` file stems under
