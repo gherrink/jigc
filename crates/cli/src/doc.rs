@@ -202,6 +202,19 @@ pub enum DocCommand {
         /// The doctype whose resolved schema to project (e.g. `adr`).
         doctype: String,
     },
+    /// List the **committed** store surface by identity — the fourth read surface, next to
+    /// `describe` (the menu), `doc show` (the content read) and `doc schema` (the schema
+    /// read). Every instance of one doctype (or of every persisted doctype), slug-sorted,
+    /// carrying its `<type>:<slug>` identity, its repo-relative path, and its **registration
+    /// state**: `managed` (jigc's own doc) or `unregistered` (a file at a managed home jigc
+    /// never adopted — adopt it with `jigc ingest` / `jigc migrate <path> --as <doctype>`).
+    /// `--format json` is the pinned shape `{"docs":[{id, path, state}]}` (no in-band version
+    /// integer — `design/doc-read-surface.md` → the fourth read surface). Task-less, like
+    /// `show`: it reads the committed store, never an open task's staged buffer.
+    List {
+        /// The doctype to list (optional — omit to list every persisted doctype).
+        doctype: Option<String>,
+    },
 }
 
 /// A `doc` verb's failure: a write-time **block** (a structured [`Finding`],
@@ -283,6 +296,7 @@ impl DocCommand {
             } => run_author(cwd, &doctype, &from_file, task.as_deref(), format),
             DocCommand::Show { addr } => run_show(cwd, &addr, format),
             DocCommand::Schema { doctype } => run_schema(cwd, &doctype, format),
+            DocCommand::List { doctype } => run_list(cwd, doctype.as_deref(), format),
         };
         match result {
             Ok(()) => Outcome::success(),
@@ -1789,6 +1803,109 @@ fn run_schema(cwd: &Path, doctype: &str, format: Format) -> Result<(), DocFailur
         Format::Agent | Format::Human => print!("{}", schema_listing(schema, schema_version)),
     }
     Ok(())
+}
+
+/// `jigc doc list [<doctype>]` — project the **committed store surface by identity**, the
+/// fourth read surface (`design/doc-read-surface.md` → `jigc doc list` — the fourth read
+/// surface). `doc show` presupposes you already know a doc exists; nothing answered *"which
+/// docs exist"*, so an agent's only route to the corpus was to guess a slug or read the
+/// filesystem — the raw read the adapter rule forbids.
+///
+/// **One primitive, two consumers**: the enumeration is [`engine::index::committed_instances`],
+/// the same placement-aware census the store sweep walks (a placement doctype's singleton at
+/// its literal file, a located doctype's `<location>/*.md`, a transient doctype nothing), and
+/// each row's **registration state** is adjudicated by the one discriminator
+/// [`engine::validate::is_unadopted_foreign`] — `managed` (jigc's own doc, by its committed
+/// stamp/parse) or `unregistered` (a foreign file squatting at a managed home, the brownfield
+/// `CHANGELOG.md` — route: adoption). A second rule here would be a second story about one
+/// file; there is exactly one.
+fn run_list(cwd: &Path, doctype: Option<&str>, format: Format) -> Result<(), DocFailure> {
+    let jigc_home = crate::ingest::require_project_layer(cwd)?;
+    let pack = make_pack()?;
+    let schemas = committed_schemas(pack.as_ref(), &jigc_home)?;
+    if let Some(ty) = doctype
+        && !schemas.contains_key(ty)
+    {
+        return Err(DocFailure::Block(Finding::graded(
+            Severity::Blocking,
+            "store.unknown-type",
+            format!("unknown doctype `{ty}`"),
+            Some(Location::addressed(ty, 1, 1)),
+            Some("list the available doctypes with `jigc describe`".to_string()),
+        )));
+    }
+    // The discriminator's two inputs — the manifest version map (its precondition: it answers
+    // only for a doctype the CLI stamps) and the shipped prior-version shapes its parse arm
+    // reads against — resolved exactly as the store sweep resolves them.
+    let versions = crate::pack::frozen_doctype_versions(pack.as_ref());
+    let priors = crate::pack::prior_doctype_schemas(pack.as_ref(), &versions);
+
+    // `schemas` is keyed by doctype (BTreeMap → type-sorted) and the enumerator is
+    // slug-sorted, so the listing is (type, slug)-sorted by construction.
+    let mut docs = Vec::new();
+    for (ty, schema) in schemas
+        .iter()
+        .filter(|(ty, _)| doctype.is_none_or(|want| want == ty.as_str()))
+    {
+        for (id, path) in engine::index::committed_instances(&jigc_home, ty, schema) {
+            let bytes = std::fs::read(&path)
+                .with_context(|| format!("reading the committed doc at {path:?}"))?;
+            let source = String::from_utf8_lossy(&bytes);
+            let state = if engine::validate::is_unadopted_foreign(
+                ty, schema, &source, &versions, &priors,
+            ) {
+                "unregistered"
+            } else {
+                "managed"
+            };
+            docs.push(DocRow {
+                id,
+                path: path
+                    .strip_prefix(&jigc_home)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .into_owned(),
+                state,
+            });
+        }
+    }
+    match format {
+        Format::Json => println!("{}", render::json(&DocListing { docs: &docs })),
+        Format::Agent | Format::Human => {
+            for row in &docs {
+                println!("{}  {}  {}", row.id, row.path, row.state);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The `jigc doc list --format json` shape — **pinned at ship** with its posture declared
+/// (`design/doc-read-surface.md` → the fourth read surface; the M41 lesson: an undeclared
+/// output calcifies into a de-facto contract). It is an **index/identity** projection, not a
+/// content read, so it rides `doc show`'s posture, **not** `doc schema`'s: **no in-band
+/// version integer**, one pinned shape, additive keys permitted **pre-1.0 only**, evolving
+/// after the pin solely by an explicitly versioned extension. Golden-pinned in
+/// `crates/cli/tests/doc_list.rs`.
+///
+/// An **object wrapper**, never a bare array: a bare top-level array can never take the
+/// additive key the pre-1.0 window permits.
+#[derive(serde::Serialize)]
+struct DocListing<'a> {
+    docs: &'a [DocRow],
+}
+
+/// One listed instance: its identity, its repo-relative home, and its registration state.
+/// `type`/`slug` are **omitted** — both are derivable from `id`, and a contract does not
+/// carry the same fact twice.
+#[derive(serde::Serialize)]
+struct DocRow {
+    /// The `<type>:<slug>` identity — the address every `doc` verb takes.
+    id: String,
+    /// The instance's repo-relative path.
+    path: String,
+    /// `managed` | `unregistered` — [`engine::validate::is_unadopted_foreign`]'s verdict.
+    state: &'static str,
 }
 
 /// The `jigc doc schema --format json` shape — the **separately-pinned, explicitly

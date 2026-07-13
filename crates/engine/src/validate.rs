@@ -748,14 +748,16 @@ fn hollow_surplus_store(
 }
 
 /// Whether a committed instance at a managed home is a **never-adopted foreign file** — the
-/// one question **both** store families ask of the discriminator (M42): family 5's adoption
-/// arm ([`schema_conformance_store`]) *and* family 3's un-baselined advisory
-/// ([`crate::file_state::detect_committed_store`]). A foreign squatter is **one fact — the
-/// adoption case** — so a second family must not also call it *"an un-baselined managed doc,
-/// no action needed — baselined on its next author or finalize"*: a promise about a file jigc
-/// will never author (`design/validation.md` → *the same discriminator applies to family 3's
-/// `un-baselined` advisory*). Single-sourced here so the **precondition** below is stated once
-/// and cannot drift between the two callers.
+/// one question **every** consumer asks of the discriminator (M42): family 5's adoption
+/// arm ([`schema_conformance_store`]), family 3's un-baselined advisory
+/// ([`crate::file_state::detect_committed_store`]), and — since it went `pub` — the CLI's
+/// `jigc doc list` **registration state** (`design/doc-read-surface.md` → the fourth read
+/// surface: a row is `managed` or `unregistered` by *this* answer, never a second rule). A
+/// foreign squatter is **one fact — the adoption case** — so a second family must not also
+/// call it *"an un-baselined managed doc, no action needed — baselined on its next author or
+/// finalize"*: a promise about a file jigc will never author (`design/validation.md` → *the
+/// same discriminator applies to family 3's `un-baselined` advisory*). Single-sourced here so
+/// the **precondition** below is stated once and cannot drift between its callers.
 ///
 /// **The precondition: it answers only where a stamp can exist.** Stamp-absence is
 /// [`classify_provenance`]'s first signal, and it is only *evidence* for a doctype the CLI
@@ -768,7 +770,7 @@ fn hollow_surplus_store(
 /// surfacing its break. An unversioned doctype is therefore **never classified** — both
 /// families keep their pre-M42 behavior over it (`false` here: not foreign, i.e. adjudicated
 /// as managed, exactly as before).
-pub(crate) fn is_unadopted_foreign(
+pub fn is_unadopted_foreign(
     ty: &str,
     schema: &Schema,
     source: &str,

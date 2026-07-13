@@ -2277,6 +2277,31 @@ mod cli_parse {
     }
 
     #[test]
+    fn doc_list_parses_with_an_optional_doctype_filter() {
+        // `jigc doc list [<doctype>]` — the fourth read surface (M42 T6). The doctype is
+        // optional (omit → every persisted doctype); the global `--format json` selects the
+        // pinned listing shape.
+        let all = Cli::try_parse_from(["jigc", "doc", "list", "--format", "json"])
+            .expect("`doc list --format json` parses");
+        assert_eq!(all.format, Format::Json);
+        assert_eq!(
+            all.command,
+            Command::Doc {
+                verb: DocCommand::List { doctype: None },
+            }
+        );
+        let one = Cli::try_parse_from(["jigc", "doc", "list", "adr"]).expect("`doc list adr`");
+        assert_eq!(
+            one.command,
+            Command::Doc {
+                verb: DocCommand::List {
+                    doctype: Some("adr".to_string()),
+                },
+            }
+        );
+    }
+
+    #[test]
     fn start_help_runs_cleanly() {
         let err = Cli::try_parse_from(["jigc", "start", "--help"])
             .expect_err("--help short-circuits parsing");
