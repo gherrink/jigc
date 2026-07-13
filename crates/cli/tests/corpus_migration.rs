@@ -913,6 +913,103 @@ fn migrate_corpus_dry_run_writes_nothing_and_commits_nothing() {
     );
 }
 
+/// A **second, different** committed v1 changelog at the prior folder home — the
+/// two-candidates-one-destination topology the M42 walk union newly makes reachable (the
+/// "partially-completed migration" state it exists to find): *both* prior-home instances
+/// relocate to the single `CHANGELOG.md` placement file, so exactly one can land and the
+/// other collides.
+fn commit_second_v1_changelog(repo: &Path, stem: &str) {
+    let body = format!(
+        "\
+---
+schema-version: 1
+---
+
+# changelog
+
+## Unreleased Changes
+
+### added  {{#added}}
+
+- A {stem} entry.
+
+## Releases
+"
+    );
+    let dir = repo.join("docs").join("changelog");
+    fs::create_dir_all(&dir).expect("mk docs/changelog/");
+    fs::write(dir.join(format!("{stem}.md")), body).expect("write the second v1 changelog");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "seed a second v1 changelog"]);
+}
+
+/// **M42 Inc-1 — `--dry-run` on the COLLISION topology the union creates.** `--dry-run`'s whole
+/// contract is *"the identical triage report an applying run prints"*, and the destination
+/// collision is adjudicated against the destination's bytes **as this run leaves them** — so a
+/// second candidate for a destination an earlier candidate in the same run already claimed must
+/// see that claim whether or not the write was persisted.
+///
+/// The defect this pins: with the adjudication reading only from **disk**, `--dry-run` (which
+/// suppresses the write) had the second candidate see *no* destination at all — it reported
+/// **both** prior-home docs `migrated` (the same `CHANGELOG.md` listed twice) where the applying
+/// run reports `1 migrated, 1 blocked`. The preview described an outcome that does not occur.
+#[test]
+fn migrate_corpus_dry_run_reports_the_collision_the_applying_run_reports() {
+    let repo = TempDir::new("dry-run-collision");
+    let home = TempDir::new("home");
+    setup_repo(repo.path(), home.path());
+    // Two *different* v1 changelogs at the prior home; both relocate to root `CHANGELOG.md`.
+    commit_v1_changelog(repo.path());
+    commit_second_v1_changelog(repo.path(), "legacy");
+
+    // DRY RUN — the preview.
+    let dry = jigc(repo.path(), home.path(), &["migrate-corpus", "--dry-run"]);
+    let dry_out = String::from_utf8_lossy(&dry.stdout).into_owned();
+    assert_ok(
+        &dry,
+        "`jigc migrate-corpus --dry-run` over the collision topology",
+    );
+    assert!(
+        dry_out.contains("1 migrated") && dry_out.contains("1 blocked"),
+        "the dry run adjudicates the collision it would hit — one lands, one blocks; \
+         stdout:\n{dry_out}",
+    );
+    assert_eq!(
+        count(&dry_out, "  migrated   CHANGELOG.md"),
+        1,
+        "the shared destination is never reported migrated twice; stdout:\n{dry_out}",
+    );
+    assert!(
+        dry_out.contains("blocked    docs/changelog/legacy.md"),
+        "the losing candidate is blocked with a route; stdout:\n{dry_out}",
+    );
+    assert!(
+        !repo.path().join("CHANGELOG.md").exists(),
+        "`--dry-run` still writes nothing; stdout:\n{dry_out}",
+    );
+
+    // The applying run (`--no-commit` does exactly what the dry run described, landing nothing).
+    let real = jigc(repo.path(), home.path(), &["migrate-corpus", "--no-commit"]);
+    let real_out = String::from_utf8_lossy(&real.stdout).into_owned();
+    assert_ok(&real, "`jigc migrate-corpus --no-commit` after the dry run");
+    assert_eq!(
+        dry_out, real_out,
+        "the dry run prints the identical triage report to the run that applies it — on the \
+         collision topology, not just the single-candidate one",
+    );
+
+    // Non-vacuity: the applying run really lands exactly one doc and leaves the other on disk.
+    assert_eq!(
+        fs::read_to_string(repo.path().join("CHANGELOG.md")).expect("read CHANGELOG.md"),
+        "---\nschema-version: 2\n---\n\n# Changelog\n\n## Unreleased Changes\n\n## Releases\n",
+        "the winning candidate's migrated bytes land at the destination",
+    );
+    assert!(
+        repo.path().join("docs/changelog/legacy.md").is_file(),
+        "the blocked candidate is never removed (No-data-loss)",
+    );
+}
+
 /// The false-positive guard: a corpus already stamped at the current version is a clean
 /// no-op — `jigc migrate-corpus` migrates nothing and reports the doc already current.
 #[test]

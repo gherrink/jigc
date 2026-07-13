@@ -91,8 +91,10 @@ pub struct Options {
     /// file-state re-baseline, and (necessarily) no commit. Not *"stop before a stage"*: there
     /// is no operator-facing `persist` stage to skip — [`engine::state::persist`] writes the
     /// bytes and flips the baseline in one motion — so the run simply does not apply the fold's
-    /// outcomes. The fold is pure, so the triage report is the identical one an applying run
-    /// prints.
+    /// outcomes. The fold is pure **and the destination-collision adjudication is derived from
+    /// the run's own outcomes** (the claim ledger in [`migrate_committed_corpus`], not from a
+    /// disk side effect this mode suppresses), so the triage report is the identical one an
+    /// applying run prints.
     pub dry_run: bool,
 }
 
@@ -384,6 +386,12 @@ fn git_stdout(repo_root: &Path, args: &[&str]) -> Result<String> {
 /// Under [`Options::writes`] `== false` (`--dry-run`) the fold still runs — it is **pure** —
 /// and the report is built exactly as an applying run would build it; only the on-disk
 /// application (the byte write, the relocation move, the file-state re-baseline) is suppressed.
+/// The one part of the report that is *not* a function of the fold alone — the
+/// destination-collision adjudication, which asks what the destination holds — reads the run's
+/// **claim ledger** before disk, so a destination an earlier doc in this run migrated onto is
+/// seen by the next candidate whether or not the write was persisted (without it, `--dry-run`
+/// reported a second candidate for a shared destination `migrated` where the applying run
+/// reports it `blocked`).
 pub(crate) fn migrate_committed_corpus(
     pack: &dyn PackSource,
     repo_root: &Path,
@@ -497,6 +505,16 @@ pub(crate) fn migrate_committed_corpus(
 
     let mut record = FileStateRecord::load(jigc_root)
         .with_context(|| format!("loading the file-state record at {jigc_root:?}"))?;
+    // THE CLAIM LEDGER: destination → the migrated bytes an *earlier doc in this run* landed
+    // there. The collision rule below adjudicates against the destination's bytes **as this run
+    // leaves them**, which on disk is only half the story: under `--dry-run` the write is
+    // suppressed, so a second candidate for the same destination would read the destination as
+    // it was *before* the run (absent, typically) and be reported `migrated` — the same target
+    // twice — where the applying run reports it `blocked`. That falsifies dry-run's whole
+    // contract (*the identical triage report an applying run prints*). The ledger is recorded in
+    // **both** modes, so the adjudication is a function of the run's own outcomes, not of a disk
+    // side effect the mode suppresses.
+    let mut claimed: BTreeMap<String, String> = BTreeMap::new();
     for (i, outcome) in result.docs.iter().enumerate() {
         match outcome {
             DocOutcome::Migrated { id, v2 } => {
@@ -524,17 +542,25 @@ pub(crate) fn migrate_committed_corpus(
                 //   - the destination holds **anything else** → a genuine collision: the doc
                 //     is BLOCKED with a route, nothing written and nothing removed
                 //     (No-data-loss, the declared property — the operator reconciles).
-                // Read from disk, so the outcome does not depend on the write order of the
-                // two candidates that share the destination.
-                if moved
-                    && let Ok(existing) = std::fs::read(repo_root.join(target))
-                    && existing != v2.as_bytes()
-                {
-                    report
-                        .blocked
-                        .push((id.clone(), destination_collision_route(id, target)));
-                    continue;
+                // The destination's bytes are read **as this run leaves them**: the claim ledger
+                // first (a destination an earlier doc in this run already migrated onto — the
+                // bytes the applying run wrote there, and the bytes `--dry-run` *would* have),
+                // then disk (a destination that was already committed). Never candidate order.
+                if moved {
+                    let existing = match claimed.get(target) {
+                        Some(bytes) => Some(bytes.as_bytes().to_vec()),
+                        None => std::fs::read(repo_root.join(target)).ok(),
+                    };
+                    if existing.is_some_and(|existing| existing != v2.as_bytes()) {
+                        report
+                            .blocked
+                            .push((id.clone(), destination_collision_route(id, target)));
+                        continue;
+                    }
                 }
+                // This doc claims the destination — for every later candidate that shares it,
+                // and in both modes (see THE CLAIM LEDGER above).
+                claimed.insert(target.clone(), v2.clone());
 
                 // THE DRY-RUN GATE (`corpus-migration.md` → The commit boundary: `--dry-run`).
                 // Everything above is pure (the fold, the conformance gate, the collision
